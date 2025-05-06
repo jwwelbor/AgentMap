@@ -1,0 +1,28 @@
+from typing import Dict, Any
+
+def {func_name}(state: Any, success_node="{success_node}", failure_node="{failure_node}") -> str:
+    """
+    Decision function to route between success and failure nodes.
+    
+    Args:
+        state: The current graph state
+        success_node (str): Node to route to on success
+        failure_node (str): Node to route to on failure
+        
+    Returns:
+        str: Name of the next node to execute
+    
+    Node: {node_name}
+    Node Context: {context_description}
+    
+    Available in state:
+{context_fields}
+    """
+    # TODO: Implement routing logic
+    # Determine whether to return success_node or failure_node
+    
+    # Example implementation (replace with actual logic):
+    if state.get("last_action_success", True):
+        return success_node
+    else:
+        return failure_node
