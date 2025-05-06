@@ -1,0 +1,33 @@
+from agentmap.agents.base_agent import BaseAgent
+from typing import Dict, Any
+
+class {class_name}(BaseAgent):
+    """
+    {context_description}
+    
+    Node: {node_name}
+    Expected input fields: {input_fields}
+    Expected output field: {output_field}
+    Default prompt: {prompt}
+    """
+    def process(self, inputs: Dict[str, Any]) -> Any:
+        """
+        Process the inputs and return the output value.
+        
+        Args:
+            inputs (dict): Contains the input values with keys: {input_fields}
+            
+        Returns:
+            The value for {output_field}
+        """
+        # TODO: Implement logic for {class_name}
+        # Context: {context_description}
+        
+        # Access input fields directly from inputs dictionary
+{input_field_access}
+        
+        # Implement your agent logic here
+        # ...
+        
+        # Return just the output value (not the whole state)
+        return "Your {class_name} implementation here"

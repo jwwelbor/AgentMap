@@ -1,0 +1,58 @@
+[project]
+name = "agentmap"
+version = "0.1.0"
+description = "AgentMap: Build and deploy LangGraph workflows from CSV files. Create complex LLM agent graphs without coding, convert simple spreadsheets into powerful AI agents, and orchestrate multi-agent systems with ease. Integrates with OpenAI, Anthropic, and Google AI models. Includes CLI and FastAPI server for quick deployment."
+authors = [{name = "John Welborn", email = "jwwelbor@gmail.com"}]
+readme = "README.md"
+packages = [{ include = "agentmap" }]
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[project.urls]
+Homepage = "https://github.com/jwwelbor/AgentMap"
+Source = "https://github.com/jwwelbor/AgentMap"
+Tracker = "https://github.com/jwwelbor/AgentMap/issues"
+
+[tool.poetry]
+name = "agentmap"
+version = "0.1.0"
+description = "AgentMap: Build and deploy LangGraph workflows from CSV files. Create complex LLM agent graphs without coding, convert simple spreadsheets into powerful AI agents, and orchestrate multi-agent systems with ease. Integrates with OpenAI, Anthropic, and Google AI models. Includes CLI and FastAPI server for quick deployment."
+readme = "README.md"
+packages = [{ include = "agentmap" }]
+authors = [
+    "John Welborn", 
+    "jwwelbor@gmail.com"
+]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+python-multipart = "^0.0.9" 
+typer = "^0.12.3"   
+fastapi = "^0.111.0"
+httpx = "^0.27.0"
+pydantic = "^2.6.3"
+pandas = "^2.2.1"
+dill = "^0.3.6" 
+langgraph = "^0.4.1"
+openai = "^1.12.0"
+anthropic = "^0.17.0"
+google-generativeai = "^0.3.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+
+[tool.poetry.group.test.dependencies]
+pytest = "^8.0.0"
+
+[tool.poetry.scripts]
+agentmap = "agentmap.cli:app"
+agentmap-server = "uvicorn agentmap.fastapi_server:app --reload"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

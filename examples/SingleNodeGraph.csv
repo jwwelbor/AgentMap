@@ -1,0 +1,2 @@
+GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+SingleNodeGraph,Start,,general,Default,,,,response,

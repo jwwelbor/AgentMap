@@ -1,0 +1,7 @@
+GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+WeatherAnalysisFlow,GetWeatherFromChatGPT,,Retrieves weather data and fall back to api,OpenAIAgent,AnalyzeWeatherData,CollectWeatherData,location,weather_data,"Get the current weather for {location}. Return just the temperature and conditions."
+WeatherAnalysisFlow,CollectWeatherData,,Fetches current weather data from API,ApiClient,AnalyzeWeatherData,WeatherError,location,weather_data,
+WeatherAnalysisFlow,AnalyzeWeatherData,ProcessWeatherSummary,Analyzes the raw weather data for patterns,WeatherAnalyzer,GenerateWeatherReport,WeatherError,weather_data,weather_analysis,
+WeatherAnalysisFlow,ProcessWeatherSummary,GenerateWeatherReport,Process the weather details for a human-readable format,OpenAIAgent,,,weather_data|weather_analysis,weather_summary,
+WeatherAnalysisFlow,GenerateWeatherReport,End,Outputs the final weather report to the user,OpenAIAgent,,,,weather_report,
+WeatherAnalysisFlow,WeatherError,,Handles errors in the weather processing pipeline,ErrorHandler,WeatherOutput,,,error_message,

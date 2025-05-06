@@ -1,0 +1,4 @@
+GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+BranchingGraph,Start,,Starting node,Branching,SuccessPath,FailurePath,input,startResponse,
+BranchingGraph,SuccessPath,,Success path reached,Default,,,startResponse,finalResponse,Success path reached!
+BranchingGraph,FailurePath,,Failure path reached,Default,,,startResponse,finalResponse,Failure path reached!

@@ -1,0 +1,23 @@
+csv_path: examples/SingleNodeGraph.csv
+autocompile: false
+
+# Agent and function paths
+paths:
+  custom_agents: "agentmap/agents/custom"
+  functions: "agentmap/functions"
+  compiled_graphs: "agentmap/compiled_graphs"
+
+# LLM configurations
+llm:
+  openai:
+    api_key: ""  # Default empty, will fall back to env var
+    model: "gpt-3.5-turbo"
+    temperature: 0.7
+  anthropic:
+    api_key: ""  # Default empty, will fall back to env var
+    model: "claude-3-sonnet-20240229"
+    temperature: 0.7
+  google:
+    api_key: ""  # Default empty, will fall back to env var
+    model: "gemini-1.0-pro"
+    temperature: 0.7
