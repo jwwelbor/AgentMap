@@ -1,6 +1,8 @@
 # agentmap/agents/builtins/storage/json_document_reader_agent.py
 
 import functools
+import os
+
 from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.document_reader_agent import \
@@ -41,7 +43,8 @@ class JSONDocumentReaderAgent(DocumentReaderAgent, JSONDocumentAgent):
         collection: str, 
         document_id: Optional[str] = None, 
         query: Optional[Dict[str, Any]] = None, 
-        path: Optional[str] = None
+        path: Optional[str] = None,
+        use_envelope: bool = True
     ) -> Any:
         """
         Read document(s) from a JSON file.
@@ -51,51 +54,65 @@ class JSONDocumentReaderAgent(DocumentReaderAgent, JSONDocumentAgent):
             document_id: Optional document ID
             query: Optional query parameters
             path: Optional path within document
+            use_envelope: Whether to wrap results in a consistent envelope structure
             
         Returns:
-            Document data or None if not found
+            Document data, optionally wrapped in an envelope
         """
         # Read the JSON file
         data = self._read_json_file(collection)
         if data is None:
             return None
         
-        # Handle document ID lookup
+        # Process the data based on parameters
         if document_id:
-            data = self._find_document_by_id(data, document_id)
-            if data is None:
+            # Single document lookup
+            result_data = self._find_document_by_id(data, document_id)
+            if result_data is None:
                 return None
-        
-        # Apply query filtering
-        if query:
-            data = self._apply_document_query(data, query)
-        
-        # Apply path extraction
-        if path:
-            data = self._apply_path(data, path)
-        
-        return data
-    
-    def _find_document_by_id(self, data: Any, document_id: str) -> Optional[Dict]:
-        """
-        Find a document by ID in different data structures.
-        
-        Args:
-            data: JSON data structure
-            document_id: Document ID to find
             
-        Returns:
-            Document data or None if not found
-        """
+            # Store ID for envelope
+            result_id = document_id
+        else:
+            # Collection-level operation
+            result_data = data
+            
+            # Apply query filtering if provided
+            if query:
+                result_data = self._apply_document_query(result_data, query)
+            
+            # Use collection name or file path as ID
+            result_id = os.path.basename(collection)
+        
+        # Apply path extraction if needed
+        if path:
+            result_data = self._apply_path(result_data, path)
+            if result_data is None:
+                return None
+            
+            # If we extracted by path, the ID should reflect this
+            result_id = f"{result_id}.{path}"
+        
+        # Return raw data if envelope not requested
+        if not use_envelope:
+            return result_data
+        
+        # Determine if result is a collection
+        is_collection = isinstance(result_data, list)
+        
+        # Wrap in envelope format
+        return {
+            "id": result_id,
+            "data": result_data,
+            "is_collection": is_collection
+        }
+        
+    def _find_document_by_id(self, data: Any, document_id: str) -> Optional[Dict]:
+        """Find a document by ID without modifying it."""
         if isinstance(data, dict):
             # Direct key lookup
             if document_id in data:
-                doc = data[document_id]
-                # Add ID to result if not present
-                if isinstance(doc, dict) and "id" not in doc:
-                    doc = doc.copy()
-                    doc["id"] = document_id
-                return doc
+                return data[document_id]
         
         elif isinstance(data, list):
             # Find in array by id field

@@ -218,7 +218,7 @@ class BaseDocumentStorageAgent(BaseStorageAgent):
         Args:
             error_type: Type of error
             message: Error message
-            exception: Optional exception object
+            exception: Optional exception objectf
             
         Raises:
             ValueError: For input/validation errors
