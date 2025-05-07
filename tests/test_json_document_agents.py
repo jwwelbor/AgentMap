@@ -55,7 +55,7 @@ class TestJSONDocumentAgents:
     @pytest.fixture
     def json_dict_file(self, sample_json_dict):
         """Create a temporary JSON file with dictionary data."""
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as temp:
+        with tempfile.NamedTemporaryFile(suffix=".json", mode='w', delete=False) as temp:
             json.dump(sample_json_dict, temp)
             temp_path = temp.name
         
@@ -68,7 +68,7 @@ class TestJSONDocumentAgents:
     @pytest.fixture
     def json_list_file(self, sample_json_list):
         """Create a temporary JSON file with list data."""
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as temp:
+        with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as temp:
             json.dump(sample_json_list, temp)
             temp_path = temp.name
         
@@ -82,8 +82,8 @@ class TestJSONDocumentAgents:
     
     def test_read_entire_file_dict(self, reader_agent, json_dict_file, sample_json_dict):
         """Test reading an entire JSON file with dictionary structure."""
-        result = reader_agent.process({"collection": json_dict_file})
-        assert result == sample_json_dict
+        result = reader_agent.process({'collection': json_dict_file})
+        assert result == {'id': os.path.basename(json_dict_file),'data': {'user1': {'name': 'Alice', 'role': 'admin'}, 'user2': {'name': 'Bob', 'role': 'user'}}, 'is_collection': True}
     
     def test_read_entire_file_list(self, reader_agent, json_list_file, sample_json_list):
         """Test reading an entire JSON file with list structure."""
@@ -97,7 +97,7 @@ class TestJSONDocumentAgents:
             "document_id": "user1"
         })
         
-        assert result == {"name": "Alice", "role": "admin"}
+        assert result == {'id': "user1",'data': {"name": "Alice", "role": "admin"}, 'is_collection': False}
     
     def test_read_document_by_id_from_list(self, reader_agent, json_list_file):
         """Test reading a specific document by ID from a list structure."""
@@ -106,8 +106,8 @@ class TestJSONDocumentAgents:
             "document_id": "doc2"
         })
         
-        assert result == {"id": "doc2", "title": "Second Document", "tags": ["archive"]}
-    
+        assert result == {'id': "doc2",'data': {"id": "doc2", "title": "Second Document", "tags": ["archive"]}, 'is_collection': False}
+
     def test_read_with_path(self, reader_agent, json_dict_file):
         """Test reading a specific path from a JSON file."""
         result = reader_agent.process({
@@ -115,7 +115,7 @@ class TestJSONDocumentAgents:
             "path": "user1.name"
         })
         
-        assert result == "Alice"
+        assert result == {'data': 'Alice', 'id': f"{os.path.basename(json_dict_file)}.user1.name", 'is_collection': False}
     
     def test_read_with_document_id_and_path(self, reader_agent, json_list_file):
         """Test reading a path within a specific document."""
@@ -125,7 +125,7 @@ class TestJSONDocumentAgents:
             "path": "tags.0"
         })
         
-        assert result == "important"
+        assert result == {'data': 'important', 'id': 'doc1', 'is_collection': False}
     
     def test_read_with_query_list(self, reader_agent, json_list_file):
         """Test filtering list data with a query."""
@@ -133,9 +133,10 @@ class TestJSONDocumentAgents:
             "collection": json_list_file,
             "query": {"title": "First Document"}
         })
-        
-        assert len(result) == 1
-        assert result[0]["id"] == "doc1"
+        import json
+        assert len(result["data"]) == 1
+        assert result["data"][0]["title"] == "First Document"
+        assert result["data"][0]["id"] == "doc1"
     
     def test_read_nonexistent_file(self, reader_agent):
         """Test reading a file that doesn't exist."""
@@ -371,7 +372,7 @@ class TestJSONDocumentAgents:
             
             # Verify state was updated correctly
             assert "result" in result_state
-            assert result_state["result"]["greeting"] == "Hello, World!"
+            assert result_state["result"]["data"]["greeting"] == "Hello, World!"
             assert result_state["last_action_success"] is True
         finally:
             if os.path.exists(temp_path):
