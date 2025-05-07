@@ -1,19 +1,15 @@
 # agent_loader.py
 
-import importlib
-
-from agentmap.agents.base_agent import BaseAgent
-
 class AgentLoader:
     def __init__(self, context: dict):
         self.context = context
         # Import agents here to avoid circular imports
-        from agentmap.agents.builtins.default_agent import DefaultAgent
         from agentmap.agents.builtins.branching_agent import BranchingAgent
-        from agentmap.agents.builtins.success_agent import SuccessAgent
-        from agentmap.agents.builtins.failure_agent import FailureAgent
+        from agentmap.agents.builtins.default_agent import DefaultAgent
         from agentmap.agents.builtins.echo_agent import EchoAgent
-        
+        from agentmap.agents.builtins.failure_agent import FailureAgent
+        from agentmap.agents.builtins.success_agent import SuccessAgent
+
         # Optional imports
         try:
             from agentmap.agents.builtins.openai_agent import OpenAIAgent

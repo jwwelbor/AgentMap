@@ -3,6 +3,7 @@ Common utility functions for AgentMap.
 """
 from typing import Optional
 
+
 def extract_func_ref(value: str) -> Optional[str]:
     """Extract function name from a func: reference."""
     if isinstance(value, str) and value.startswith("func:"):

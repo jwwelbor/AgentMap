@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from langgraph.graph import StateGraph
 
-from agentmap.agents import DefaultAgent, BranchingAgent
+from agentmap.agents import BranchingAgent, DefaultAgent
 from agentmap.graph import GraphAssembler
 
 

@@ -11,7 +11,8 @@ from typing import Any, Dict, Optional, Union
 from langgraph.graph import StateGraph
 
 from agentmap.agents import get_agent_class
-from agentmap.config import (get_compiled_graphs_path, get_csv_path, get_custom_agents_path, load_config)
+from agentmap.config import (get_compiled_graphs_path, get_csv_path,
+                             get_custom_agents_path, load_config)
 from agentmap.exceptions import AgentInitializationError
 from agentmap.graph import GraphAssembler
 from agentmap.graph.builder import GraphBuilder
