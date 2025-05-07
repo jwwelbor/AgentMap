@@ -17,6 +17,7 @@ class WriteMode(Enum):
     UPDATE = "update"  # Update existing document fields
     MERGE = "merge"    # Merge with existing document
     DELETE = "delete"  # Delete document or field
+    APPEND = "append"  # Append to existing document
     
     @classmethod
     def from_string(cls, mode: str) -> "WriteMode":
