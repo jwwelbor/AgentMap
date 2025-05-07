@@ -11,9 +11,9 @@ from typing import Any, Callable, Dict
 from langgraph.graph import StateGraph
 
 from agentmap.config import get_functions_path
+from agentmap.graph.tracked_node import TrackedNode
 from agentmap.logging import get_logger
 from agentmap.utils.common import extract_func_ref, import_function
-from agentmap.graph.tracked_node import TrackedNode
 
 logger = get_logger(__name__)
 

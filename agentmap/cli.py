@@ -1,9 +1,14 @@
 import json
-import typer
 
+import typer
+import yaml
+
+from agentmap.agents.builtins.storage import (get_storage_config_path,
+                                              load_storage_config)
 from agentmap.config import load_config
 from agentmap.graph.scaffold import scaffold_agents
-from agentmap.graph.serialization import (compile_all, export_as_pickle, export_as_source)
+from agentmap.graph.serialization import (compile_all, export_as_pickle,
+                                          export_as_source)
 from agentmap.graph.serialization import export_graph as export_graph_func
 from agentmap.runner import run_graph
 
@@ -123,6 +128,83 @@ def config(
                     print(f"  {sub_k}: {sub_v}")
         else:
             print(f"{k}: {v}")
+
+
+
+@app.command("storage-config")
+def storage_config_cmd(
+    init: bool = typer.Option(False, "--init", "-i", help="Initialize a default storage configuration file"),
+    path: str = typer.Option(None, "--path", "-p", help="Path to storage config file"),
+    config: str = typer.Option(None, "--config", "-c", help="Path to custom config file")
+):
+    """Display or initialize storage configuration."""
+    if init:
+        # Get the storage config path
+        storage_path = get_storage_config_path(config)
+        
+        # Check if file already exists
+        if storage_path.exists():
+            overwrite = typer.confirm(f"Storage config already exists at {storage_path}. Overwrite?")
+            if not overwrite:
+                typer.echo("Aborted.")
+                return
+        
+        # Create default storage config
+        default_config = {
+            "csv": {
+                "default_directory": "data/csv",
+                "collections": {
+                    "users": "data/csv/users.csv",
+                    "products": "data/csv/products.csv"
+                }
+            },
+            "vector": {
+                "default_provider": "local",
+                "collections": {
+                    "documents": {
+                        "provider": "local",
+                        "path": "data/vector/documents"
+                    }
+                }
+            },
+            "kv": {
+                "default_provider": "local",
+                "collections": {
+                    "settings": {
+                        "provider": "local",
+                        "path": "data/kv/settings.json"
+                    }
+                }
+            }
+        }
+        
+        # Create directory if needed
+        storage_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write the file
+        with open(storage_path, "w") as f:
+            yaml.dump(default_config, f, sort_keys=False, default_flow_style=False)
+        
+        typer.secho(f"✅ Created default storage configuration at {storage_path}", fg=typer.colors.GREEN)
+    else:
+        # Display current storage configuration
+        storage_config = load_storage_config(config)
+        typer.echo("Storage Configuration:")
+        typer.echo("----------------------")
+        for storage_type, config in storage_config.items():
+            typer.echo(f"{storage_type}:")
+            for key, value in config.items():
+                if isinstance(value, dict):
+                    typer.echo(f"  {key}:")
+                    for sub_key, sub_value in value.items():
+                        if isinstance(sub_value, dict):
+                            typer.echo(f"    {sub_key}:")
+                            for deep_key, deep_value in sub_value.items():
+                                typer.echo(f"      {deep_key}: {deep_value}")
+                        else:
+                            typer.echo(f"    {sub_key}: {sub_value}")
+                else:
+                    typer.echo(f"  {key}: {value}")
 
 
 if __name__ == "__main__":

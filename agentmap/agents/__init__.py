@@ -5,11 +5,10 @@ Provides a central mapping of agent types to their implementation classes.
 
 # Import base agent class
 from agentmap.agents.base_agent import BaseAgent
-
+from agentmap.agents.builtins.branching_agent import BranchingAgent
 # Import built-in agent types
 from agentmap.agents.builtins.default_agent import DefaultAgent
 from agentmap.agents.builtins.echo_agent import EchoAgent
-from agentmap.agents.builtins.branching_agent import BranchingAgent
 from agentmap.agents.builtins.failure_agent import FailureAgent
 from agentmap.agents.builtins.input_agent import InputAgent
 from agentmap.agents.builtins.success_agent import SuccessAgent
@@ -42,6 +41,14 @@ AGENT_MAP = {
     "failure": FailureAgent,
     "branching": BranchingAgent
 }
+
+# Import storage agents
+try:
+    from agentmap.agents.builtins.storage import CSVReaderAgent, CSVWriterAgent
+    AGENT_MAP["csv_reader"] = CSVReaderAgent
+    AGENT_MAP["csv_writer"] = CSVWriterAgent
+except ImportError:
+    pass
 
 # Add optional agents if available
 if OpenAIAgent:
