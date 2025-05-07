@@ -2,9 +2,9 @@
 from typing import Any, Dict
 
 import pandas as pd
+from typing import List, Dict, Union
 
-from agentmap.agents.builtins.storage.base_storage_agent import \
-    BaseStorageAgent
+from agentmap.agents.builtins.storage.base_storage_agent import BaseStorageAgent
 from agentmap.logging import get_logger
 
 
@@ -100,3 +100,59 @@ class BaseCSVAgent(BaseStorageAgent):
             logger.debug(f"Applied limit: {limit}")
         
         return df
+    
+    def _format_data_for_output(self, df: pd.DataFrame, format_type: str = "records") -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+        """
+        Format a DataFrame for output in the requested format.
+        
+        Args:
+            df: DataFrame to format
+            format_type: Output format type ('records', 'dict', 'list', 'csv', etc.)
+            
+        Returns:
+            Formatted data
+        """
+        logger = get_logger(f"{self.__class__.__name__}")
+        
+        if df is None or df.empty:
+            logger.debug("DataFrame is empty, returning empty list")
+            return []
+        
+        format_type = format_type.lower()
+        
+        if format_type == "records" or format_type == "list":
+            # Convert to list of dictionaries
+            result = df.to_dict(orient="records")
+            logger.debug(f"Formatted {len(result)} records as list of dictionaries")
+            return result
+            
+        elif format_type == "dict":
+            # Convert to dictionary with index as keys
+            result = df.to_dict(orient="index")
+            logger.debug(f"Formatted DataFrame as dictionary with {len(result)} entries")
+            return result
+            
+        elif format_type == "series":
+            # Return first row as a dictionary (useful for single record lookups)
+            if len(df) > 0:
+                result = df.iloc[0].to_dict()
+                logger.debug("Formatted first row as dictionary")
+                return result
+            return {}
+            
+        elif format_type == "csv":
+            # Return as CSV string
+            result = df.to_csv(index=False)
+            logger.debug(f"Formatted DataFrame as CSV string ({len(result)} bytes)")
+            return result
+            
+        elif format_type == "json":
+            # Return as JSON string
+            result = df.to_json(orient="records")
+            logger.debug(f"Formatted DataFrame as JSON string ({len(result)} bytes)")
+            return result
+            
+        else:
+            # Default to records format
+            logger.warning(f"Unknown format type '{format_type}', defaulting to 'records'")
+            return df.to_dict(orient="records")
