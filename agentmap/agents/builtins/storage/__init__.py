@@ -1,4 +1,3 @@
-# agentmap/agents/builtins/storage/__init__.py
 """
 Storage agents for AgentMap.
 

@@ -20,10 +20,10 @@ except ImportError:
 
 # Import Firebase agents
 if FIREBASE_AVAILABLE:
-    from agentmap.agents.builtins.storage.firebase.firebase_document_agent import FirebaseDocumentAgent
-    from agentmap.agents.builtins.storage.firebase.firebase_document_reader_agent import FirebaseDocumentReaderAgent
-    from agentmap.agents.builtins.storage.firebase.firebase_document_writer_agent import FirebaseDocumentWriterAgent
-    from agentmap.agents.builtins.storage.document.document_storage_agent import WriteMode
+    from agentmap.agents.builtins.storage.firebase.base_agent import FirebaseDocumentAgent
+    from agentmap.agents.builtins.storage.firebase.reader import FirebaseDocumentReaderAgent
+    from agentmap.agents.builtins.storage.firebase.writer import FirebaseDocumentWriterAgent
+    from agentmap.agents.builtins.storage.document.base_agent import WriteMode
 
 
 # Mark the entire module to be skipped if Firebase is not available

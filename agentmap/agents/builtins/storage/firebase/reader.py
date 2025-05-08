@@ -10,9 +10,9 @@ from typing import Any, Dict, List, Optional, Union
 
 from firebase_admin import firestore, db
 
-from agentmap.agents.builtins.storage.base_document_storage_agent import (
+from agentmap.agents.builtins.storage.document.base_agent import (
     DocumentReaderAgent, DocumentResult, log_operation)
-from agentmap.agents.builtins.storage.firebase_document_agent import FirebaseDocumentAgent
+from agentmap.agents.builtins.storage.firebase.base_agent import FirebaseDocumentAgent
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)

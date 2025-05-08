@@ -6,8 +6,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from agentmap.agents.builtins.storage.csv.csv_reader_agent import CSVReaderAgent
-from agentmap.agents.builtins.storage.csv.csv_writer_agent import CSVWriterAgent
+from agentmap.agents.builtins.storage.csv.reader import CSVReaderAgent
+from agentmap.agents.builtins.storage.csv.writer import CSVWriterAgent
 
 
 @pytest.fixture
