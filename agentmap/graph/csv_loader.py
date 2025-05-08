@@ -2,7 +2,9 @@ import pandas as pd
 from langgraph.graph import StateGraph
 
 from agentmap.agents import AgentLoader
-from agentmap.graph.assembler import GraphAssembler  # Import directly from module
+from agentmap.graph.assembler import \
+    GraphAssembler  # Import directly from module
+
 
 def build_graph_from_csv(csv_path: str, context: dict = None) -> StateGraph:
     """
