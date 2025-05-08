@@ -7,6 +7,8 @@ from agentmap.exceptions.agent_exceptions import (AgentError,
                                                   AgentNotFoundError)
 from agentmap.exceptions.graph_exceptions import (GraphBuildingError,
                                                   InvalidEdgeDefinitionError)
+from agentmap.exceptions.storage_exceptions import (CollectionNotFoundError,
+                                                    DocumentNotFoundError)
 
 # Re-export at module level
 __all__ = [
@@ -14,5 +16,7 @@ __all__ = [
     'AgentNotFoundError', 
     'AgentInitializationError',
     'GraphBuildingError',
-    'InvalidEdgeDefinitionError'
+    'InvalidEdgeDefinitionError',
+    'CollectionNotFoundError',
+    'DocumentNotFoundError'
 ]   
