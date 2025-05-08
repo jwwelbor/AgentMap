@@ -64,15 +64,22 @@ class JSONDocumentWriterAgent(DocumentWriterAgent, JSONDocumentAgent):
         if isinstance(mode, str):
             mode = WriteMode.from_string(mode)
         
-        # Handle different write modes
-        if mode == WriteMode.WRITE:
-            return self._write_mode_create(collection, data, document_id)
-        elif mode == WriteMode.UPDATE:
-            return self._write_mode_update(collection, data, document_id, path)
-        elif mode == WriteMode.MERGE:
-            return self._write_mode_merge(collection, data, document_id, path)
-        elif mode == WriteMode.DELETE:
-            return self._write_mode_delete(collection, data, document_id, path)
+        # Mode dispatch dictionary
+        mode_handlers = {
+            WriteMode.WRITE.value: self._write_mode_create,
+            WriteMode.UPDATE.value: self._write_mode_update,
+            WriteMode.MERGE.value: self._write_mode_merge,
+            WriteMode.DELETE.value: self._write_mode_delete
+        }
+        
+        # Look up handler by mode value
+        handler = mode_handlers.get(mode.value)
+        
+        if handler:
+            if handler in [self._write_mode_update, self._write_mode_merge, self._write_mode_delete]:
+                return handler(collection, data, document_id, path)
+            else:
+                return handler(collection, data, document_id)
         else:
             self._handle_error("Invalid Mode", f"Unsupported write mode: {mode}")
     
@@ -240,43 +247,11 @@ class JSONDocumentWriterAgent(DocumentWriterAgent, JSONDocumentAgent):
         document_id: str,
         file_exists: bool
     ) -> DocumentResult:
-        """
-        Update a document by ID.
-        
-        Args:
-            collection: Path to the JSON file
-            data: Data to write
-            document_id: Document ID
-            file_exists: Whether the file exists
-            
-        Returns:
-            Result of the update operation
-        """
-        if file_exists:
-            current_data = self._read_json_file(collection)
-            if current_data is None:
-                current_data = {}
-                
-            # Update document in current data
-            updated_data, created_new = self._update_or_create_document(
-                current_data, data, document_id
-            )
-            self._write_json_file(collection, updated_data)
-            
-            return DocumentResult({
-                "success": True,
-                "mode": "update",
-                "file_path": collection,
-                "document_id": document_id,
-                "document_created": created_new
-            })
-        else:
-            # File doesn't exist, create with document
-            self._write_json_file(
-                collection, 
-                self._create_initial_structure(data, document_id)
-            )
-            
+        """Update a document by ID."""
+        if not file_exists:
+            # For new files, create with a single document
+            new_doc = self._ensure_id_in_document(data, document_id)
+            self._write_json_file(collection, [new_doc] if isinstance(new_doc, dict) else {document_id: data})
             return DocumentResult({
                 "success": True,
                 "mode": "update",
@@ -284,7 +259,58 @@ class JSONDocumentWriterAgent(DocumentWriterAgent, JSONDocumentAgent):
                 "document_id": document_id,
                 "created_new": True
             })
-    
+        
+        # Handle existing files
+        current_data = self._read_json_file(collection)
+        if current_data is None:
+            current_data = [] if self._should_use_list_format(data) else {}
+        
+        created_new = False
+        
+        # Handle list vs dictionary formats differently
+        if isinstance(current_data, list):
+            created_new = self._update_document_in_list(current_data, data, document_id)
+        else:
+            # Dictionary format
+            created_new = document_id not in current_data
+            current_data[document_id] = data
+        
+        # Write the updated data back to file
+        self._write_json_file(collection, current_data)
+        
+        return DocumentResult({
+            "success": True,
+            "mode": "update",
+            "file_path": collection,
+            "document_id": document_id,
+            "document_created": created_new
+        })
+
+    def _update_document_in_list(self, documents: list, data: Any, document_id: str) -> bool:
+        """Update a document in a list structure, returning whether a new document was created."""
+        # Find the document index
+        for i, doc in enumerate(documents):
+            if isinstance(doc, dict) and doc.get("id") == document_id:
+                # Found the document, update it
+                documents[i] = self._ensure_id_in_document(data, document_id)
+                return False  # Not a new document
+        
+        # Document not found, append it
+        documents.append(self._ensure_id_in_document(data, document_id))
+        return True  # New document created
+
+    def _ensure_id_in_document(self, data: Any, document_id: str) -> dict:
+        """Ensure the document has the correct ID field."""
+        if not isinstance(data, dict):
+            return {"id": document_id, "value": data}
+        
+        result = data.copy()
+        result["id"] = document_id
+        return result
+
+    def _should_use_list_format(self, data: Any) -> bool:
+        """Determine if we should use list format based on data type."""
+        return isinstance(data, dict)    
     def _write_mode_merge(
         self, 
         collection: str, 
