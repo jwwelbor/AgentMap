@@ -2,7 +2,7 @@
 
 import pytest
 
-from agentmap.agents.builtins.storage.document_path_mixin import \
+from agentmap.agents.builtins.storage.document.path_mixin import \
     DocumentPathMixin
 
 

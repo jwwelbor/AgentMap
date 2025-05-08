@@ -13,8 +13,8 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TextIO, Union
 
-from agentmap.agents.builtins.storage.base_document_storage_agent import BaseDocumentStorageAgent
-from agentmap.agents.builtins.storage.document_path_mixin import DocumentPathMixin
+from agentmap.agents.builtins.storage.document.base_agent import BaseDocumentStorageAgent
+from agentmap.agents.builtins.storage.document.path_mixin import DocumentPathMixin
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)

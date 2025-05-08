@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Union
 
-from agentmap.agents.builtins.storage.base_document_storage_agent import (
+from agentmap.agents.builtins.storage.document.base_agent import (
     DocumentResult, DocumentWriterAgent, WriteMode, log_operation)
-from agentmap.agents.builtins.storage.json_document_agent import JSONDocumentAgent
-from agentmap.agents.builtins.storage.json_document_operations import JSONDocumentOperations
+from agentmap.agents.builtins.storage.json.base_agent import JSONDocumentAgent
+from agentmap.agents.builtins.storage.json.operations import JSONDocumentOperations
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
