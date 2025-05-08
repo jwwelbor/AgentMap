@@ -1,4 +1,6 @@
-class AgentError(Exception):
+from agentmap.exceptions.base_exceptions import AgentMapException
+
+class AgentError(AgentMapException):
     """Base class for agent-related exceptions."""
     pass
 

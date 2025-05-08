@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Union
 
-from agentmap.agents.builtins.storage.base_csv_agent import BaseCSVAgent
+from agentmap.agents.builtins.storage.csv.base_csv_agent import BaseCSVAgent
 from agentmap.agents.builtins.storage.base_storage_agent import DocumentResult, log_operation
 from agentmap.logging import get_logger
 
