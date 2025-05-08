@@ -1,6 +1,17 @@
-# agentmap/agents/builtins/storage/document_path_mixin.py
+"""
+Document path manipulation utilities.
 
-from typing import Any, Dict, List, Optional
+This module provides utilities for working with JSON-path style dot notation
+to access and modify nested data in document structures.
+
+Examples:
+    - "users.0.name" -> users array, first element, name field
+    - "settings.theme.color" -> settings object, theme field, color field
+"""
+from __future__ import annotations
+
+import copy
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from agentmap.logging import get_logger
 
@@ -13,10 +24,6 @@ class DocumentPathMixin:
     
     This mixin contains methods for working with JSON-path style dot notation
     to access and modify nested data in document structures.
-    
-    Examples:
-        - "users.0.name" -> users array, first element, name field
-        - "settings.theme.color" -> settings object, theme field, color field
     """
     
     def _parse_path(self, path: str) -> List[str]:
@@ -55,17 +62,15 @@ class DocumentPathMixin:
             for part in parts:
                 if isinstance(current, dict):
                     # Dictionary access
-                    if part in current:
-                        current = current[part]
-                    else:
+                    if part not in current:
                         return None
+                    current = current[part]
                 elif isinstance(current, list) and part.isdigit():
                     # List index access
                     index = int(part)
-                    if 0 <= index < len(current):
-                        current = current[index]
-                    else:
+                    if not (0 <= index < len(current)):
                         return None
+                    current = current[index]
                 else:
                     # Can't traverse further
                     return None
@@ -126,7 +131,12 @@ class DocumentPathMixin:
         
         return result
     
-    def _navigate_container(self, current: Any, part: str, next_part: Optional[str]) -> Any:
+    def _navigate_container(
+        self, 
+        current: Any, 
+        part: str, 
+        next_part: Optional[str]
+    ) -> Any:
         """
         Navigate to or create the next level container.
         
@@ -176,8 +186,8 @@ class DocumentPathMixin:
         elif isinstance(container, list) and part.isdigit():
             index = int(part)
             # Ensure list is long enough
-            while len(container) <= index:
-                container.append(None)
+            while len(current) <= index:
+                current.append(None)
             container[index] = value
             return container
         else:
@@ -262,13 +272,8 @@ class DocumentPathMixin:
         Returns:
             Deep copy of data
         """
-        if isinstance(data, dict):
-            return {k: self._deep_copy(v) for k, v in data.items()}
-        elif isinstance(data, list):
-            return [self._deep_copy(item) for item in data]
-        else:
-            # Immutable types can be returned as-is
-            return data
+        # Use Python's built-in copy module for deep copies
+        return copy.deepcopy(data)
     
     def _merge_documents(self, dict1: Dict[Any, Any], dict2: Dict[Any, Any]) -> Dict[Any, Any]:
         """
