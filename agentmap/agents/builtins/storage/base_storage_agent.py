@@ -1,18 +1,27 @@
-# agentmap/agents/builtins/storage/base_storage_agent.py
+"""
+Base storage agent implementation.
 
-from enum import Enum
-from typing import Any, Dict, Optional, TypeVar
+This module provides the foundation for all storage agents in AgentMap,
+with utilities for accessing data stores and handling operations.
+"""
+from __future__ import annotations
+
+import functools
+from dataclasses import asdict, dataclass
+from enum import Enum, auto
+from typing import Any, Callable, Dict, Generic, Optional, TypeVar, Union, cast
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
-T = TypeVar('T')  # Generic type for document data
+T = TypeVar('T')  # Generic type for data storage
+F = TypeVar('F', bound=Callable[..., Any])  # Type for callable functions
 
 
-class WriteMode(Enum):
-    """Document write operation modes."""
+class WriteMode(str, Enum):
+    """Document write operation modes using string values."""
     WRITE = "write"    # Create or overwrite document
     UPDATE = "update"  # Update existing document fields
     MERGE = "merge"    # Merge with existing document
@@ -25,27 +34,69 @@ class WriteMode(Enum):
         try:
             return cls(mode.lower())
         except ValueError:
-            valid_modes = [m.value for m in cls]
+            valid_modes = ", ".join(m.value for m in cls)
             raise ValueError(f"Invalid write mode: {mode}. Valid modes: {valid_modes}")
 
 
-class DocumentResult(Dict[str, Any]):
-    """Typed document operation result."""
-    @property
-    def success(self) -> bool:
-        """Whether the operation succeeded."""
-        return self.get("success", False)
-    
-    @property
-    def document_id(self) -> Optional[str]:
-        """ID of the affected document, if any."""
-        return self.get("document_id")
-
-
-# Define the decorator here for shared use
-def log_operation(func):
+@dataclass
+class DocumentResult(Generic[T]):
     """
-    Decorator to log document operations with consistent formatting.
+    Structured result from document operations.
+    
+    This class provides a standardized way to return results from storage operations,
+    with metadata about the operation and its success.
+    """
+    # Required fields
+    success: bool = False
+    
+    # Optional metadata fields
+    document_id: Optional[str] = None
+    mode: Optional[str] = None
+    file_path: Optional[str] = None
+    path: Optional[str] = None
+    count: Optional[int] = None
+    error: Optional[str] = None
+    message: Optional[str] = None
+    data: Optional[T] = None
+    
+    # Operation-specific fields
+    created_new: Optional[bool] = None
+    document_created: Optional[bool] = None
+    file_deleted: Optional[bool] = None
+    rows_written: Optional[int] = None
+    rows_updated: Optional[int] = None
+    rows_added: Optional[int] = None
+    total_affected: Optional[int] = None
+    updated_ids: Optional[list[str]] = None
+    deleted_ids: Optional[list[str]] = None
+    is_collection: Optional[bool] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the result to a dictionary, filtering out None values."""
+        return {k: v for k, v in asdict(self).items() if v is not None}
+    
+    def __getitem__(self, key: str) -> Any:
+        """
+        Make the DocumentResult subscriptable for backward compatibility.
+        
+        Args:
+            key: The attribute name to access
+            
+        Returns:
+            The value of the attribute
+            
+        Raises:
+            KeyError: If the attribute doesn't exist
+        """
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            raise KeyError(key)
+
+
+def log_operation(func: F) -> F:
+    """
+    Decorator to log storage operations with consistent formatting.
     
     Args:
         func: The function to decorate
@@ -53,24 +104,27 @@ def log_operation(func):
     Returns:
         Wrapped function with logging
     """
-    import functools
-    
     @functools.wraps(func)
-    def wrapper(self, *args, **kwargs):
-        logger.debug(f"[{self.__class__.__name__}] Starting {func.__name__}")
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        class_name = self.__class__.__name__
+        logger.debug(f"[{class_name}] Starting {func.__name__}")
         try:
             result = func(self, *args, **kwargs)
-            logger.debug(f"[{self.__class__.__name__}] Completed {func.__name__}")
+            logger.debug(f"[{class_name}] Completed {func.__name__}")
             return result
         except Exception as e:
-            logger.error(f"[{self.__class__.__name__}] Error in {func.__name__}: {str(e)}")
+            logger.error(f"[{class_name}] Error in {func.__name__}: {str(e)}")
             raise
-    return wrapper
+    return cast(F, wrapper)
 
 
 class BaseStorageAgent(BaseAgent):
     """
     Base class for all storage agents in AgentMap.
+    
+    This abstract class defines the contract that all storage
+    implementations must follow, with common utilities for
+    error handling and connection management.
     """
     
     def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
@@ -82,8 +136,8 @@ class BaseStorageAgent(BaseAgent):
             prompt: Prompt or instruction
             context: Additional context including input/output field configuration
         """
-        super().__init__(name, prompt, context)
-        self._client = None
+        super().__init__(name, prompt, context or {})
+        self._client: Any = None
     
     @property
     def client(self) -> Any:
@@ -94,7 +148,7 @@ class BaseStorageAgent(BaseAgent):
             Storage client instance
         
         Note:
-            This property should initialize the client on first access
+            This property will initialize the client on first access
             if it doesn't already exist.
         """
         if self._client is None:
@@ -118,6 +172,9 @@ class BaseStorageAgent(BaseAgent):
             
         Returns:
             Collection identifier (typically a file path for CSV)
+            
+        Raises:
+            ValueError: If no collection is specified
         """
         # Try to get the collection from inputs
         collection = inputs.get("collection")
@@ -129,7 +186,7 @@ class BaseStorageAgent(BaseAgent):
         if collection is None:
             raise ValueError("No collection specified in inputs or prompt")
             
-        # Resolve configuration-based collection
+        # Resolve collection path through configuration
         return self._resolve_collection_path(collection)
     
     def _resolve_collection_path(self, collection: str) -> str:
@@ -149,7 +206,8 @@ class BaseStorageAgent(BaseAgent):
         self, 
         error_type: str, 
         message: str, 
-        exception: Optional[Exception] = None
+        exception: Optional[Exception] = None,
+        raise_error: bool = True
     ) -> None:
         """
         Handle errors with consistent logging.
@@ -158,21 +216,27 @@ class BaseStorageAgent(BaseAgent):
             error_type: Type of error
             message: Error message
             exception: Optional exception object
+            raise_error: Whether to raise the error or just log it
             
         Raises:
             ValueError: For input/validation errors
             RuntimeError: For other errors
         """
+        # Build complete error message
         error_msg = f"{error_type}: {message}"
-        if exception:
+        if exception is not None:
             error_msg += f" - {str(exception)}"
             
-        logger.error(f"[Storage] {error_msg}")
+        logger.error(f"[{self.__class__.__name__}] {error_msg}")
         
+        if not raise_error:
+            return
+            
+        # Choose exception type based on the underlying error
         if isinstance(exception, (ValueError, TypeError)):
-            raise ValueError(error_msg)
+            raise ValueError(error_msg) from exception
         else:
-            raise RuntimeError(error_msg)
+            raise RuntimeError(error_msg) from exception
     
     def _normalize_document_id(self, document_id: Any) -> Optional[str]:
         """

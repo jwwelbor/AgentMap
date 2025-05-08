@@ -1,45 +1,20 @@
-# agentmap/agents/builtins/storage/base_document_storage_agent.py
+"""
+Base document storage agent implementation.
 
-from enum import Enum
+This module provides the foundation for document-based storage agents,
+with methods for reading, writing, and manipulating structured documents.
+"""
+from __future__ import annotations
+
 from typing import Any, Dict, Optional, TypeVar, Union
 
-from agentmap.agents.builtins.storage.base_storage_agent import \
-    BaseStorageAgent
+from agentmap.agents.builtins.storage.base_storage_agent import (
+    BaseStorageAgent, DocumentResult, WriteMode, log_operation)
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
 T = TypeVar('T')  # Generic type for document data
-
-
-class WriteMode(Enum):
-    """Document write operation modes."""
-    WRITE = "write"    # Create or overwrite document
-    UPDATE = "update"  # Update existing document fields
-    MERGE = "merge"    # Merge with existing document
-    DELETE = "delete"  # Delete document or field
-    
-    @classmethod
-    def from_string(cls, mode: str) -> "WriteMode":
-        """Convert string to enum value, case-insensitive."""
-        try:
-            return cls(mode.lower())
-        except ValueError:
-            valid_modes = [m.value for m in cls]
-            raise ValueError(f"Invalid write mode: {mode}. Valid modes: {valid_modes}")
-
-
-class DocumentResult(Dict[str, Any]):
-    """Typed document operation result."""
-    @property
-    def success(self) -> bool:
-        """Whether the operation succeeded."""
-        return self.get("success", False)
-    
-    @property
-    def document_id(self) -> Optional[str]:
-        """ID of the affected document, if any."""
-        return self.get("document_id")
 
 
 class BaseDocumentStorageAgent(BaseStorageAgent):
@@ -52,42 +27,6 @@ class BaseDocumentStorageAgent(BaseStorageAgent):
     This abstract class defines the contract that all document storage
     implementations must follow.
     """
-    
-    def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
-        """
-        Initialize the document storage agent.
-        
-        Args:
-            name: Name of the agent node
-            prompt: Prompt or instruction
-            context: Additional context including input/output field configuration
-        """
-        super().__init__(name, prompt, context)
-        self._client = None
-    
-    @property
-    def client(self) -> Any:
-        """
-        Access the document storage client connection.
-        
-        Returns:
-            Storage client instance
-        
-        Note:
-            This property should initialize the client on first access
-            if it doesn't already exist.
-        """
-        if self._client is None:
-            self._initialize_client()
-        return self._client
-    
-    def _initialize_client(self) -> None:
-        """
-        Initialize the storage client connection.
-        
-        Subclasses should implement this to set up their specific client connection.
-        """
-        raise NotImplementedError("Subclasses must implement _initialize_client")
     
     def _read_document(
         self, 
@@ -203,48 +142,226 @@ class BaseDocumentStorageAgent(BaseStorageAgent):
             NotImplementedError: When not implemented by subclass
         """
         raise NotImplementedError("Subclasses must implement _ensure_document_exists")
+
+
+class DocumentReaderAgent(BaseDocumentStorageAgent):
+    """
+    Base class for document reader agents.
     
-    # Shared utility methods
+    Provides common functionality for reading documents from various storage backends.
+    Concrete implementations are provided for JSON, Firebase, etc.
+    """
     
-    def _handle_error(
-        self, 
-        error_type: str, 
-        message: str, 
-        exception: Optional[Exception] = None
-    ) -> None:
+    @log_operation
+    def process(self, inputs: Dict[str, Any]) -> Any:
         """
-        Handle errors with consistent logging.
+        Read documents from storage.
+        
+        This method parses the inputs, validates them, and calls the
+        appropriate implementation method to perform the actual read.
         
         Args:
-            error_type: Type of error
-            message: Error message
-            exception: Optional exception objectf
-            
+            inputs: Dictionary containing:
+                - collection: Document collection identifier
+                - document_id: Optional specific document ID
+                - query: Optional query parameters
+                - path: Optional path within document
+                - default: Optional default value if not found
+                
+        Returns:
+            Document data or None if not found
+        
         Raises:
-            ValueError: For input/validation errors
-            RuntimeError: For other errors
+            ValueError: If required inputs are missing or invalid
         """
-        error_msg = f"{error_type}: {message}"
-        if exception:
-            error_msg += f" - {str(exception)}"
-            
-        logger.error(f"[DocumentStorage] {error_msg}")
+        # Get required collection
+        collection = self._get_collection_from_inputs(inputs)
         
-        if isinstance(exception, (ValueError, TypeError)):
-            raise ValueError(error_msg)
-        else:
-            raise RuntimeError(error_msg)
+        # Extract optional parameters
+        document_id = inputs.get("document_id")
+        query = inputs.get("query")
+        path = inputs.get("path")
+        
+        # Log the operation details
+        self._log_read_operation(collection, document_id, query, path)
+        
+        try:
+            # Perform the actual read operation
+            result = self._read_document(collection, document_id, query, path)
+            
+            # Return default value if result is None and default is provided
+            if result is None and "default" in inputs:
+                logger.debug(f"[{self.__class__.__name__}] Using default value")
+                return inputs["default"]
+                
+            return result
+            
+        except Exception as e:
+            # Handle the error appropriately
+            self._handle_error("Document Read Error", 
+                              f"Failed to read from {collection}", e)
     
-    def _normalize_document_id(self, document_id: Any) -> Optional[str]:
+    def _get_collection_from_inputs(self, inputs: Dict[str, Any]) -> str:
         """
-        Normalize document ID to string format.
+        Extract and validate the collection from inputs.
         
         Args:
-            document_id: Document ID in any format
+            inputs: Input dictionary
             
         Returns:
-            String document ID or None
+            Collection identifier
+            
+        Raises:
+            ValueError: If collection is missing
         """
-        if document_id is None:
-            return None
-        return str(document_id)
+        collection = self.get_collection(inputs)
+        if not collection:
+            raise ValueError("Missing required 'collection' parameter")
+        return collection
+    
+    def _log_read_operation(
+        self, 
+        collection: str, 
+        document_id: Optional[str] = None,
+        query: Optional[Dict[str, Any]] = None,
+        path: Optional[str] = None
+    ) -> None:
+        """
+        Log details of a read operation.
+        
+        Args:
+            collection: Collection identifier
+            document_id: Optional document ID
+            query: Optional query parameters
+            path: Optional document path
+        """
+        operation_type = "collection"
+        details = []
+        
+        if document_id:
+            operation_type = "document"
+            details.append(f"id={document_id}")
+            
+        if query:
+            operation_type = "query"
+            query_str = ", ".join(f"{k}={v}" for k, v in query.items())
+            details.append(f"query={{{query_str}}}")
+            
+        if path:
+            details.append(f"path={path}")
+            
+        detail_str = ", ".join(details) if details else "all"
+        logger.info(f"[{self.__class__.__name__}] Reading {operation_type} from {collection} ({detail_str})")
+
+
+class DocumentWriterAgent(BaseDocumentStorageAgent):
+    """
+    Base class for document writer agents.
+    
+    Provides common functionality for writing documents to various storage backends.
+    Concrete implementations are provided for JSON, Firebase, etc.
+    """
+    
+    @log_operation
+    def process(self, inputs: Dict[str, Any]) -> DocumentResult:
+        """
+        Write documents to storage.
+        
+        This method parses the inputs, validates them, and calls the
+        appropriate implementation method to perform the actual write.
+        
+        Args:
+            inputs: Dictionary containing:
+                - collection: Document collection identifier
+                - data: Data to write
+                - document_id: Optional document ID
+                - mode: Write mode (write, update, merge, delete)
+                - path: Optional path within document
+                
+        Returns:
+            DocumentResult containing operation results and metadata
+            
+        Raises:
+            ValueError: If required inputs are missing or invalid
+        """
+        # Get required collection
+        collection = self._get_collection_from_inputs(inputs)
+        
+        # Get required data for non-delete operations
+        data = inputs.get("data")
+        mode_str = inputs.get("mode", "write").lower()
+        
+        try:
+            # Convert string mode to enum
+            mode = WriteMode.from_string(mode_str)
+        except ValueError as e:
+            self._handle_error("Invalid Mode", str(e))
+        
+        # Data is required for non-delete operations
+        if mode != WriteMode.DELETE and data is None:
+            self._handle_error("Missing Data", "No data provided to write")
+        
+        # Extract optional parameters
+        document_id = inputs.get("document_id")
+        path = inputs.get("path")
+        
+        # Log the operation details
+        self._log_write_operation(collection, mode, document_id, path)
+        
+        try:
+            # Perform the actual write operation
+            result = self._write_document(collection, data, document_id, mode, path)
+            return result
+            
+        except Exception as e:
+            # Handle the error appropriately
+            self._handle_error("Document Write Error", 
+                              f"Failed to write to {collection}", e)
+    
+    def _get_collection_from_inputs(self, inputs: Dict[str, Any]) -> str:
+        """
+        Extract and validate the collection from inputs.
+        
+        Args:
+            inputs: Input dictionary
+            
+        Returns:
+            Collection identifier
+            
+        Raises:
+            ValueError: If collection is missing
+        """
+        collection = self.get_collection(inputs)
+        if not collection:
+            raise ValueError("Missing required 'collection' parameter")
+        return collection
+    
+    def _log_write_operation(
+        self, 
+        collection: str,
+        mode: WriteMode,
+        document_id: Optional[str] = None,
+        path: Optional[str] = None
+    ) -> None:
+        """
+        Log details of a write operation.
+        
+        Args:
+            collection: Collection identifier
+            mode: Write operation mode
+            document_id: Optional document ID
+            path: Optional document path
+        """
+        operation_type = mode.value.upper()
+        target_type = "collection"
+        details = []
+        
+        if document_id:
+            target_type = "document"
+            details.append(f"id={document_id}")
+            
+        if path:
+            details.append(f"path={path}")
+            
+        detail_str = ", ".join(details) if details else "all"
+        logger.info(f"[{self.__class__.__name__}] {operation_type} {target_type} in {collection} ({detail_str})")
