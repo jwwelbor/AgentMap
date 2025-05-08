@@ -55,6 +55,18 @@ try:
 except ImportError:
     pass
 
+try:
+    from agentmap.agents.builtins.storage.vector import (
+        VectorAgent, VectorReaderAgent, VectorWriterAgent
+    )
+    # In your agent registry
+    AGENT_MAP["vector_agent"] = VectorAgent  # Base agent
+    AGENT_MAP["vector_reader"] = VectorReaderAgent
+    AGENT_MAP["vector_writer"] = VectorWriterAgent
+except ImportError:
+    pass   
+
+
 # Import Firebase agents if available
 try:
     from agentmap.agents.builtins.storage import (

@@ -7,8 +7,7 @@ and deleting JSON documents.
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional, Tuple, Union
-
+from typing import Any, Dict, Optional, Tuple
 from agentmap.agents.builtins.storage.document.base_agent import DocumentResult, WriteMode
 from agentmap.agents.builtins.storage.document.path_mixin import DocumentPathMixin
 from agentmap.agents.builtins.storage.json.utils import (
@@ -756,9 +755,9 @@ class JSONDocumentOperations(DocumentPathMixin):
                     if isinstance(item, dict):
                         # Check if item matches all query conditions
                         matches = True
-                            if item.get(field) != value:
-                                matches = False
-                                break
+                        if item.get(field) != value:
+                            matches = False
+                            break
                         
                         if matches:
                             # Item matched query, mark for deletion
