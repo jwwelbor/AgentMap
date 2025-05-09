@@ -15,7 +15,7 @@ from agentmap.agents.builtins.storage.document import (
 
 # Import CSV agents
 from agentmap.agents.builtins.storage.csv import (
-    BaseCSVAgent, CSVReaderAgent, CSVWriterAgent
+    CSVAgent, CSVReaderAgent, CSVWriterAgent
 )
 
 # Import JSON document agents
@@ -48,7 +48,7 @@ __all__ = [
     'DocumentPathMixin',
     
     # CSV agents
-    'BaseCSVAgent',
+    'CSVAgent',
     'CSVReaderAgent',
     'CSVWriterAgent',
     
@@ -56,6 +56,8 @@ __all__ = [
     'JSONDocumentAgent',
     'JSONDocumentReaderAgent',
     'JSONDocumentWriterAgent',
+
+    #Vector store agents
     
     # Config utilities
     'get_storage_config_path',

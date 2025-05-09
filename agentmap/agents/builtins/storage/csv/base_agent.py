@@ -19,7 +19,7 @@ from agentmap.logging import get_logger
 logger = get_logger(__name__)
 
 
-class BaseCSVAgent(BaseStorageAgent):
+class CSVAgent(BaseStorageAgent):
     """
     Base class for CSV storage agents with shared functionality.
     
