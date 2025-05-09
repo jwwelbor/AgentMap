@@ -65,6 +65,14 @@ def load_config(config_path: Optional[Union[str, Path]] = None) -> Dict[str, Any
                 "model": os.environ.get("AGENTMAP_GOOGLE_MODEL", "gemini-1.0-pro"),
                 "temperature": float(os.environ.get("AGENTMAP_GOOGLE_TEMPERATURE", "0.7"))
             }
+        },
+        # Default memory configuration
+        "memory": {
+            "enabled": False,
+            "default_type": "buffer",
+            "buffer_window_size": 5,
+            "max_token_limit": 2000,
+            "memory_key": "conversation_memory"
         }
     }
     

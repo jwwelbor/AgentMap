@@ -1,66 +1,64 @@
-# agent_loader.py
+"""
+Agent loader for AgentMap.
+
+This module provides utilities for dynamically loading agent classes
+and creating agent instances based on type strings.
+"""
+from typing import Dict, Any
+
+from agentmap.agents.registry import get_agent_class
+
 
 class AgentLoader:
-    def __init__(self, context: dict):
-        self.context = context
-        # Import agents here to avoid circular imports
-        from agentmap.agents.builtins.branching_agent import BranchingAgent
-        from agentmap.agents.builtins.default_agent import DefaultAgent
-        from agentmap.agents.builtins.echo_agent import EchoAgent
-        from agentmap.agents.builtins.failure_agent import FailureAgent
-        from agentmap.agents.builtins.success_agent import SuccessAgent
-
-        # Optional imports
-        try:
-            from agentmap.agents.builtins.openai_agent import OpenAIAgent
-        except ImportError:
-            OpenAIAgent = None
-            
-        try:
-            from agentmap.agents.builtins.anthropic_agent import AnthropicAgent
-        except ImportError:
-            AnthropicAgent = None
-            
-        try:
-            from agentmap.agents.builtins.google_agent import GoogleAgent
-        except ImportError:
-            GoogleAgent = None
-            
-        self.agent_mapping = {
-            "default": DefaultAgent,
-            "branching": BranchingAgent,
-            "success": SuccessAgent,
-            "failure": FailureAgent,
-            "echo": EchoAgent,
-        }
+    """
+    Utility for loading and instantiating agent instances.
+    
+    This class provides convenient methods for creating agent instances
+    based on their registered type strings.
+    """
+    
+    def __init__(self, context: Dict[str, Any] = None):
+        """
+        Initialize the agent loader.
         
-        # Add optional agents if available
-        if OpenAIAgent:
-            self.agent_mapping.update({
-                "openai": OpenAIAgent,
-                "chatgpt": OpenAIAgent,
-                "gpt": OpenAIAgent
-            })
+        Args:
+            context: Context dictionary to pass to created agents
+        """
+        self.context = context or {}
+        
+    def get_agent(self, agent_type: str, name: str, prompt: str) -> Any:
+        """
+        Get an agent instance by type.
+        
+        Args:
+            agent_type: The type identifier for the agent
+            name: Name of the agent node
+            prompt: Prompt or instruction
             
-        if AnthropicAgent:
-            self.agent_mapping.update({
-                "anthropic": AnthropicAgent,
-                "claude": AnthropicAgent
-            })
+        Returns:
+            Agent instance
             
-        if GoogleAgent:
-            self.agent_mapping.update({
-                "google": GoogleAgent,
-                "gemini": GoogleAgent
-            })
-
-    def get_agent(self, agent_type: str, name: str, prompt: str):
-        agent_class = self.agent_mapping.get(agent_type.lower() if agent_type else "default")
+        Raises:
+            ValueError: If agent type not found
+        """
+        agent_class = get_agent_class(agent_type)
         if not agent_class:
             raise ValueError(f"Agent type '{agent_type}' not found.")
         return agent_class(name=name, prompt=prompt, context=self.context)
 
 
-def create_agent(agent_type: str, name: str, prompt: str, context: dict):
-    loader = AgentLoader(context)
+def create_agent(agent_type: str, name: str, prompt: str, context: Dict[str, Any] = None) -> Any:
+    """
+    Create an agent instance with the given parameters.
+    
+    Args:
+        agent_type: The type identifier for the agent
+        name: Name of the agent node
+        prompt: Prompt or instruction
+        context: Context dictionary to pass to the agent
+        
+    Returns:
+        Agent instance
+    """
+    loader = AgentLoader(context or {})
     return loader.get_agent(agent_type, name, prompt)
