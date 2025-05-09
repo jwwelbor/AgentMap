@@ -1,7 +1,7 @@
 import pandas as pd
 from langgraph.graph import StateGraph
 
-from agentmap.agents import AgentLoader
+from agentmap.agents.loader import AgentLoader
 from agentmap.graph.assembler import \
     GraphAssembler  # Import directly from module
 

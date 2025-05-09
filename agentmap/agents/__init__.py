@@ -1,110 +1,91 @@
 """
-AgentMap agent registry.
-Provides a central mapping of agent types to their implementation classes.
-"""
+Agent registration and discovery module for AgentMap.
 
+This module registers built-in agents with the central registry and provides
+agent-related functionality to the rest of the application.
+"""
 # Import base agent class
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.agents.builtins.branching_agent import BranchingAgent
-# Import built-in agent types
+
+# Import registry functions
+from agentmap.agents.registry import (
+    register_agent, 
+    get_agent_class,
+    get_agent_map
+)
+
+# Import built-in agents
 from agentmap.agents.builtins.default_agent import DefaultAgent
 from agentmap.agents.builtins.echo_agent import EchoAgent
+from agentmap.agents.builtins.branching_agent import BranchingAgent
 from agentmap.agents.builtins.failure_agent import FailureAgent
 from agentmap.agents.builtins.input_agent import InputAgent
 from agentmap.agents.builtins.success_agent import SuccessAgent
 
-# Import optional agents if available
+# Register built-in agents
+register_agent("default", DefaultAgent)
+register_agent("echo", EchoAgent)
+register_agent("branching", BranchingAgent)
+register_agent("failure", FailureAgent)
+register_agent("input", InputAgent)
+register_agent("success", SuccessAgent)
+
+# Import and register optional LLM agents
 try:
     from agentmap.agents.builtins.openai_agent import OpenAIAgent
+    register_agent("openai", OpenAIAgent)
+    register_agent("gpt", OpenAIAgent)  # Add alias for convenience
+    register_agent("chatgpt", OpenAIAgent)  # Add alias for convenience
 except ImportError:
     OpenAIAgent = None
 
 try:
     from agentmap.agents.builtins.anthropic_agent import AnthropicAgent
+    register_agent("anthropic", AnthropicAgent)
+    register_agent("claude", AnthropicAgent)  # Add alias for convenience
 except ImportError:
     AnthropicAgent = None
 
 try:
     from agentmap.agents.builtins.google_agent import GoogleAgent
+    register_agent("google", GoogleAgent)
+    register_agent("gemini", GoogleAgent)  # Add alias for convenience
 except ImportError:
     GoogleAgent = None
 
-# Import loader after individual agent imports to avoid circular dependencies
-from agentmap.agents.loader import AgentLoader, create_agent
+# Try to register LLM base class if available
+try:
+    from agentmap.agents.builtins.llm.llm_agent import LLMAgent
+    register_agent("llm", LLMAgent)
+except ImportError:
+    LLMAgent = None
 
-# Central registry of agent types
-AGENT_MAP = {
-    "echo": EchoAgent,
-    "default": DefaultAgent,
-    "input": InputAgent,
-    "success": SuccessAgent,
-    "failure": FailureAgent,
-    "branching": BranchingAgent
-}
-
-# Import storage agents
+# Try to register storage agents if available
 try:
     from agentmap.agents.builtins.storage import CSVReaderAgent, CSVWriterAgent
-    AGENT_MAP["csv_reader"] = CSVReaderAgent
-    AGENT_MAP["csv_writer"] = CSVWriterAgent
+    register_agent("csv_reader", CSVReaderAgent)
+    register_agent("csv_writer", CSVWriterAgent)
 except ImportError:
     pass
 
-# Add optional agents if available
-if OpenAIAgent:
-    AGENT_MAP["openai"] = OpenAIAgent
-    AGENT_MAP["gpt"] = OpenAIAgent  # Add alias for convenience
-    AGENT_MAP["chatgpt"] = OpenAIAgent  # Add alias for convenience
+# Import agent loader functions - no circular dependency anymore
+from agentmap.agents.loader import AgentLoader, create_agent
 
-if AnthropicAgent:
-    AGENT_MAP["anthropic"] = AnthropicAgent
-    AGENT_MAP["claude"] = AnthropicAgent  # Add alias for convenience
+# For backwards compatibility, create an AGENT_MAP variable
+AGENT_MAP = get_agent_map()
 
-if GoogleAgent:
-    AGENT_MAP["google"] = GoogleAgent
-    AGENT_MAP["gemini"] = GoogleAgent  # Add alias for convenience
-
-def get_agent_class(agent_type: str):
-    """
-    Get an agent class by its type string.
-    
-    Args:
-        agent_type: The type identifier for the agent
-        
-    Returns:
-        The agent class or None if not found
-    """
-    if not agent_type:
-        return DefaultAgent
-        
-    agent_type = agent_type.lower()
-    return AGENT_MAP.get(agent_type)
-
-def register_agent(agent_type: str, agent_class):
-    """
-    Register a custom agent class with the agent registry.
-    
-    Args:
-        agent_type: The type identifier for the agent
-        agent_class: The agent class to register
-    """
-    AGENT_MAP[agent_type.lower()] = agent_class
-
-# Export symbols
+# Export public API
 __all__ = [
     'BaseAgent',
-    'DefaultAgent',
-    'EchoAgent',
-    'BranchingAgent',
-    'FailureAgent',
-    'InputAgent',
-    'SuccessAgent',
-    'OpenAIAgent',
-    'AnthropicAgent',
-    'GoogleAgent',
     'AgentLoader',
     'create_agent',
     'get_agent_class',
     'register_agent',
-    'AGENT_MAP'
+    'AGENT_MAP',  # For backwards compatibility
 ]
+
+# Add agent classes to __all__ for convenience
+_agent_classes = set(cls.__name__ for cls in AGENT_MAP.values())
+for class_name in _agent_classes:
+    if class_name and class_name not in __all__:
+        __all__.append(class_name)

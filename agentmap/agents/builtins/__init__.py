@@ -12,6 +12,7 @@ from agentmap.agents.builtins.echo_agent import EchoAgent
 from agentmap.agents.builtins.failure_agent import FailureAgent
 from agentmap.agents.builtins.input_agent import InputAgent
 from agentmap.agents.builtins.success_agent import SuccessAgent
+from agentmap.agents.builtins.graph_agent import GraphAgent
 
 # Import optional agents if available
 try:
@@ -29,8 +30,6 @@ try:
 except ImportError:
     GoogleAgent = None
 
-# Import loader after individual agent imports to avoid circular dependencies
-from agentmap.agents.loader import AgentLoader, create_agent
 
 # Central registry of agent types
 AGENT_MAP = {
@@ -39,7 +38,8 @@ AGENT_MAP = {
     "input": InputAgent,
     "success": SuccessAgent,
     "failure": FailureAgent,
-    "branching": BranchingAgent
+    "branching": BranchingAgent,
+    "graph": GraphAgent
 }
 
 # Import storage agents
@@ -118,6 +118,10 @@ def register_agent(agent_type: str, agent_class):
         agent_class: The agent class to register
     """
     AGENT_MAP[agent_type.lower()] = agent_class
+
+
+# Import loader after individual agent imports to avoid circular dependencies
+from agentmap.agents.loader import AgentLoader, create_agent
 
 # Export symbols
 __all__ = [
