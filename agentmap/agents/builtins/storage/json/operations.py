@@ -9,9 +9,9 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from agentmap.agents.builtins.storage.base_document_storage_agent import DocumentResult, WriteMode
-from agentmap.agents.builtins.storage.document_path_mixin import DocumentPathMixin
-from agentmap.agents.builtins.storage.json_utils import (
+from agentmap.agents.builtins.storage.document.base_agent import DocumentResult, WriteMode
+from agentmap.agents.builtins.storage.document.path_mixin import DocumentPathMixin
+from agentmap.agents.builtins.storage.json.utils import (
     add_document_to_structure, create_initial_structure, ensure_id_in_document,
     find_document_by_id, read_json_file, write_json_file)
 from agentmap.logging import get_logger
