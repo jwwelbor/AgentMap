@@ -13,14 +13,14 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TextIO, Union
 
-from agentmap.agents.builtins.storage.document.base_agent import BaseDocumentStorageAgent
+from agentmap.agents.builtins.storage.document.base_agent import DocumentStorageAgent
 from agentmap.agents.builtins.storage.document.path_mixin import DocumentPathMixin
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class JSONDocumentAgent(BaseDocumentStorageAgent, DocumentPathMixin):
+class JSONDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
     """
     Base class for JSON document storage operations.
     
