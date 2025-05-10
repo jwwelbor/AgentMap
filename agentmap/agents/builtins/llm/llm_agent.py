@@ -2,7 +2,7 @@
 Base LLM Agent with LangChain integration.
 """
 import os
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional
 
 from agentmap.agents.base_agent import BaseAgent, StateAdapter
 from agentmap.logging import get_logger
@@ -32,7 +32,7 @@ class LLMAgent(BaseAgent):
         self.context = context or {}
         
         # Setup memory if configured
-        self.memory = None
+        self.memory = None  
         self.memory_key = self.context.get("memory_key", "conversation_memory")
         
         # Initialize memory if configuration exists

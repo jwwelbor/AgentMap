@@ -32,7 +32,7 @@ register_agent("success", SuccessAgent)
 
 # Import and register optional LLM agents
 try:
-    from agentmap.agents.builtins.openai_agent import OpenAIAgent
+    from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
     register_agent("openai", OpenAIAgent)
     register_agent("gpt", OpenAIAgent)  # Add alias for convenience
     register_agent("chatgpt", OpenAIAgent)  # Add alias for convenience
@@ -40,14 +40,14 @@ except ImportError:
     OpenAIAgent = None
 
 try:
-    from agentmap.agents.builtins.anthropic_agent import AnthropicAgent
+    from agentmap.agents.builtins.llm.anthropic_agent import AnthropicAgent
     register_agent("anthropic", AnthropicAgent)
     register_agent("claude", AnthropicAgent)  # Add alias for convenience
 except ImportError:
     AnthropicAgent = None
 
 try:
-    from agentmap.agents.builtins.google_agent import GoogleAgent
+    from agentmap.agents.builtins.llm.google_agent import GoogleAgent
     register_agent("google", GoogleAgent)
     register_agent("gemini", GoogleAgent)  # Add alias for convenience
 except ImportError:
@@ -67,6 +67,28 @@ try:
     register_agent("csv_writer", CSVWriterAgent)
 except ImportError:
     pass
+
+try:
+    from agentmap.agents.builtins.storage import JSONDocumentReaderAgent, JSONDocumentWriterAgent
+    register_agent("json_reader", JSONDocumentReaderAgent)
+    register_agent("json_writer", JSONDocumentWriterAgent)
+except ImportError:
+    pass    
+
+try:
+    from agentmap.agents.builtins.storage import FileReaderAgent, FileWriterAgent
+    register_agent("file_reader", FileReaderAgent)
+    register_agent("file_writer", FileWriterAgent)
+except ImportError:
+    pass
+
+try:
+    from agentmap.agents.builtins.storage import VectorStoreReaderAgent, VectorStoreWriterAgent
+    register_agent("vector_reader", VectorStoreReaderAgent)
+    register_agent("vector_writer", VectorStoreWriterAgent)
+except ImportError:
+    pass
+
 
 # Import agent loader functions - no circular dependency anymore
 from agentmap.agents.loader import AgentLoader, create_agent

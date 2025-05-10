@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional, Tuple
 from firebase_admin import credentials, firestore, db, initialize_app, delete_app, get_app
 from firebase_admin.exceptions import FirebaseError
 
-from agentmap.agents.builtins.storage.document.base_agent import BaseDocumentStorageAgent
+from agentmap.agents.builtins.storage.document.base_agent import DocumentStorageAgent
 from agentmap.agents.builtins.storage.document.path_mixin import DocumentPathMixin
 from agentmap.config import load_storage_config
 from agentmap.exceptions import CollectionNotFoundError, StorageConnectionError, StorageConfigurationError, StorageOperationError
@@ -21,7 +21,7 @@ from agentmap.logging import get_logger
 logger = get_logger(__name__)
 
 
-class FirebaseDocumentAgent(BaseDocumentStorageAgent, DocumentPathMixin):
+class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
     """
     Base class for Firebase document storage operations.
     

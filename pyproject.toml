@@ -44,6 +44,13 @@ langsmith = "*"
 openai = "^1.12.0"
 anthropic = "^0.17.0"
 google-generativeai = "^0.3.2"
+unstructured = { version = "^0.10.0", extras = ["md", "pdf"], optional = true }
+python-docx = { version = "^0.8.11", optional = true }
+langchain-community = "^0.3.23"
+
+[tool.poetry.extras]
+file = ["langchain"]
+file-full = ["langchain", "unstructured", "python-docx"]  
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
