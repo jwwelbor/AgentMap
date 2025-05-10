@@ -16,17 +16,17 @@ from agentmap.agents.builtins.graph_agent import GraphAgent
 
 # Import optional agents if available
 try:
-    from agentmap.agents.builtins.openai_agent import OpenAIAgent
+    from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
 except ImportError:
     OpenAIAgent = None
 
 try:
-    from agentmap.agents.builtins.anthropic_agent import AnthropicAgent
+    from agentmap.agents.builtins.llm.anthropic_agent import AnthropicAgent
 except ImportError:
     AnthropicAgent = None
 
 try:
-    from agentmap.agents.builtins.google_agent import GoogleAgent
+    from agentmap.agents.builtins.llm.google_agent import GoogleAgent
 except ImportError:
     GoogleAgent = None
 
@@ -46,12 +46,15 @@ AGENT_MAP = {
 try:
     from agentmap.agents.builtins.storage import (
         CSVReaderAgent, CSVWriterAgent, 
-        JSONDocumentReaderAgent, JSONDocumentWriterAgent
+        JSONDocumentReaderAgent, JSONDocumentWriterAgent,
+        FileReaderAgent, FileWriterAgent
     )
     AGENT_MAP["csv_reader"] = CSVReaderAgent
     AGENT_MAP["csv_writer"] = CSVWriterAgent
     AGENT_MAP["json_reader"] = JSONDocumentReaderAgent
     AGENT_MAP["json_writer"] = JSONDocumentWriterAgent
+    AGENT_MAP["file_reader"] = FileReaderAgent
+    AGENT_MAP["file_writer"] = FileWriterAgent    
 except ImportError:
     pass
 

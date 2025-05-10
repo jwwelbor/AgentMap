@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 T = TypeVar('T')  # Generic type for document data
 
 
-class BaseDocumentStorageAgent(BaseStorageAgent):
+class DocumentStorageAgent(BaseStorageAgent):
     """
     Base class for document storage agents.
     
@@ -144,7 +144,7 @@ class BaseDocumentStorageAgent(BaseStorageAgent):
         raise NotImplementedError("Subclasses must implement _ensure_document_exists")
 
 
-class DocumentReaderAgent(BaseDocumentStorageAgent):
+class DocumentReaderAgent(DocumentStorageAgent):
     """
     Base class for document reader agents.
     
@@ -254,7 +254,7 @@ class DocumentReaderAgent(BaseDocumentStorageAgent):
         logger.info(f"[{self.__class__.__name__}] Reading {operation_type} from {collection} ({detail_str})")
 
 
-class DocumentWriterAgent(BaseDocumentStorageAgent):
+class DocumentWriterAgent(DocumentStorageAgent):
     """
     Base class for document writer agents.
     

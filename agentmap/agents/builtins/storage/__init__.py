@@ -9,7 +9,7 @@ from agentmap.agents.builtins.storage.base_storage_agent import BaseStorageAgent
 
 # Import document storage base classes
 from agentmap.agents.builtins.storage.document import (
-    BaseDocumentStorageAgent, DocumentReaderAgent, DocumentWriterAgent,
+    DocumentStorageAgent, DocumentReaderAgent, DocumentWriterAgent,
     DocumentResult, WriteMode, DocumentPathMixin
 )
 
@@ -22,6 +22,15 @@ from agentmap.agents.builtins.storage.csv import (
 from agentmap.agents.builtins.storage.json import (
     JSONDocumentAgent, JSONDocumentReaderAgent, JSONDocumentWriterAgent
 )
+
+from agentmap.agents.builtins.storage.file import (
+    FileReaderAgent, FileWriterAgent
+)
+
+from agentmap.agents.builtins.storage.vector import (
+    VectorAgent, VectorReaderAgent, VectorWriterAgent
+)
+
 
 # Conditionally import Firebase agents if firebase-admin is available
 try:
@@ -40,7 +49,7 @@ from agentmap.config import get_storage_config_path, load_storage_config
 __all__ = [
     # Base classes
     'BaseStorageAgent',
-    'BaseDocumentStorageAgent',
+    'DocumentStorageAgent',
     'DocumentReaderAgent',
     'DocumentWriterAgent',
     'DocumentResult',
@@ -57,7 +66,14 @@ __all__ = [
     'JSONDocumentReaderAgent',
     'JSONDocumentWriterAgent',
 
+    # File agents
+    'FileReaderAgent',
+    'FileWriterAgent',
+
     #Vector store agents
+    'VectorAgent',
+    'VectorReaderAgent',
+    'VectorWriterAgent',
     
     # Config utilities
     'get_storage_config_path',

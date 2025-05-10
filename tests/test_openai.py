@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from agentmap.agents.builtins.openai_agent import OpenAIAgent
+from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
 
 class OpenAIAgentTests(unittest.TestCase):
     @patch('openai.ChatCompletion.create')

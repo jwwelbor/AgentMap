@@ -6,12 +6,12 @@ including readers, writers, and path manipulation utilities.
 """
 
 from agentmap.agents.builtins.storage.document.base_agent import (
-    BaseDocumentStorageAgent, DocumentReaderAgent, DocumentWriterAgent, DocumentResult, WriteMode
+    DocumentStorageAgent, DocumentReaderAgent, DocumentWriterAgent, DocumentResult, WriteMode
 )
 from agentmap.agents.builtins.storage.document.path_mixin import DocumentPathMixin
 
 __all__ = [
-    'BaseDocumentStorageAgent',
+    'DocumentStorageAgent',
     'DocumentReaderAgent',
     'DocumentWriterAgent',
     'DocumentResult',
