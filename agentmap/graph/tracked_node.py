@@ -1,7 +1,7 @@
 import time
 from typing import Any, Callable
 
-from agentmap.agents.base_agent import StateAdapter
+from agentmap.state.adapter import StateAdapter
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
