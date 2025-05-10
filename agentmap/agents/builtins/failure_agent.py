@@ -59,5 +59,5 @@ class FailureAgent(BaseAgent):
         updated_state = self.state_manager.set_output(state, output, success=True)
         
         # Force last_action_success to False to trigger failure paths
-        from agentmap.agents.base_agent import StateAdapter
+        from agentmap.state.adapter import StateAdapter
         return StateAdapter.set_value(updated_state, "last_action_success", False)

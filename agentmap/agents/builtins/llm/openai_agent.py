@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 import openai
 
 from agentmap.agents.builtins.llm.llm_agent import LLMAgent, LANGCHAIN_AVAILABLE
-from agentmap.agents.base_agent import StateAdapter
+from agentmap.state.adapter import StateAdapter
 from agentmap.config import get_llm_config
 from agentmap.logging import get_logger
 

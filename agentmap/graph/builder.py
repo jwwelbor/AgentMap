@@ -1,5 +1,3 @@
-# agentmap/graph/   builder.py
-
 """
 Graph builder for AgentMap.
 
@@ -18,13 +16,14 @@ logger = get_logger(__name__)
 
 
 class Node:
-    def __init__(self, name, context=None, agent_type=None, inputs=None, output=None, prompt=None):
+    def __init__(self, name, context=None, agent_type=None, inputs=None, output=None, prompt=None, description=None):
         self.name = name
         self.context = context
         self.agent_type = agent_type
         self.inputs = inputs or []
         self.output = output
         self.prompt = prompt
+        self.description = description  # New field for node description
         self.edges = {}  # condition: next_node
 
     def add_edge(self, condition, target_node):
@@ -48,10 +47,10 @@ class GraphBuilder:
     def get_graph(self, name):
         return self.graphs.get(name, {})
     
-    def _create_node(self, graph, node_name, context, agent_type, input_fields, output_field, prompt):
+    def _create_node(self, graph, node_name, context, agent_type, input_fields, output_field, prompt, description=None):
         """Create a new node with the given properties."""
         agent_type = agent_type or "Default"
-        logger.trace(f"  ➕ Creating Node: graph: {graph}, node_name: {node_name}, context: {context} , agent_type: {agent_type}, input_fields: {input_fields}, output_field: {output_field}, prompt: {prompt}")
+        logger.trace(f"  ➕ Creating Node: graph: {graph}, node_name: {node_name}, context: {context} , agent_type: {agent_type}, input_fields: {input_fields}, output_field: {output_field}, prompt: {prompt}, description: {description}")
         # Only create if not already exists
         if node_name not in graph:
             graph[node_name] = Node(
@@ -60,7 +59,8 @@ class GraphBuilder:
                 agent_type, 
                 input_fields, 
                 output_field, 
-                prompt
+                prompt,
+                description
             )
             logger.debug(f"  ➕ Created Node: {node_name} with agent_type: {agent_type}, output_field: {output_field}")
         else:
@@ -84,6 +84,7 @@ class GraphBuilder:
                 input_fields = [x.strip() for x in row.get("Input_Fields", "").split("|") if x.strip()]
                 output_field = row.get("Output_Field", "").strip()
                 prompt = row.get("Prompt", "").strip()
+                description = row.get("Description", "").strip()  # New field for node description
                 
                 logger.debug(f"[Row {row_count}] Processing: Graph='{graph_name}', Node='{node_name}', AgentType='{agent_type}'")
                 
@@ -100,7 +101,7 @@ class GraphBuilder:
                 # Create the node if it doesn't exist
                 self._create_node(
                     graph, node_name, context, agent_type, 
-                    input_fields, output_field, prompt
+                    input_fields, output_field, prompt, description
                 )
         
         return row_count

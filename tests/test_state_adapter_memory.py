@@ -1,5 +1,5 @@
 import unittest
-from agentmap.agents.base_agent import StateAdapter
+from agentmap.state.adapter import StateAdapter
 from langchain.memory import ConversationBufferMemory
 
 class StateAdapterMemoryTests(unittest.TestCase):

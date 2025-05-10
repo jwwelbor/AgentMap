@@ -4,7 +4,7 @@ from typing import Optional
 import pytest
 from pydantic import BaseModel
 
-from agentmap.agents.base_agent import StateAdapter
+from agentmap.state.adapter import StateAdapter
 
 
 def test_state_adapter_get_value():
