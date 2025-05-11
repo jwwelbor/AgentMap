@@ -50,7 +50,13 @@ class GraphBuilder:
     def _create_node(self, graph, node_name, context, agent_type, input_fields, output_field, prompt, description=None):
         """Create a new node with the given properties."""
         agent_type = agent_type or "Default"
-        logger.trace(f"  ➕ Creating Node: graph: {graph}, node_name: {node_name}, context: {context} , agent_type: {agent_type}, input_fields: {input_fields}, output_field: {output_field}, prompt: {prompt}, description: {description}")
+        logger.trace(f"  ➕ Creating Node: graph: {graph}, node_name: {node_name}")
+        logger.trace(f"                    context: {context}")
+        logger.trace(f"                    agent_type: {agent_type}")
+        logger.trace(f"                    input_fields: {input_fields}")
+        logger.trace(f"                    output_field: {output_field}")
+        logger.trace(f"                    prompt: {prompt}")
+        logger.trace(f"                    description: {description}")
         # Only create if not already exists
         if node_name not in graph:
             graph[node_name] = Node(

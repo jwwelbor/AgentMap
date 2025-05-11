@@ -60,3 +60,13 @@ def get_default_config():
         "memory": get_default_memory_config(),
         "prompts": get_default_prompts_config()
     }
+
+def get_default_tracing_config():
+    """Get default tracing configuration."""
+    return {
+        "enabled": os.environ.get("AGENTMAP_TRACING_ENABLED", "false").lower() == "true",
+        "langsmith_api_key": os.environ.get("LANGCHAIN_API_KEY", ""),
+        "langsmith_project": os.environ.get("LANGCHAIN_PROJECT", "default"),
+        "trace_graphs": [],  # List of graph names to trace
+        "trace_all": False   # Whether to trace all graphs
+    }

@@ -83,7 +83,7 @@ class TestJSONDocumentAgents:
     def test_read_entire_file_dict(self, reader_agent, json_dict_file, sample_json_dict):
         """Test reading an entire JSON file with dictionary structure."""
         result = reader_agent.process({'collection': json_dict_file})
-        assert result == {'id': os.path.basename(json_dict_file),'data': {'user1': {'name': 'Alice', 'role': 'admin'}, 'user2': {'name': 'Bob', 'role': 'user'}}, 'is_collection': True}
+        assert result == {'success': True, 'document_id': os.path.basename(json_dict_file),'data': {'user1': {'name': 'Alice', 'role': 'admin'}, 'user2': {'name': 'Bob', 'role': 'user'}}, 'is_collection': True}
     
     def test_read_entire_file_list(self, reader_agent, json_list_file, sample_json_list):
         """Test reading an entire JSON file with list structure."""
@@ -97,7 +97,7 @@ class TestJSONDocumentAgents:
             "document_id": "user1"
         })
         
-        assert result == {'id': "user1",'data': {"name": "Alice", "role": "admin"}, 'is_collection': False}
+        assert result == {'success': True, 'document_id': "user1",'data': {"name": "Alice", "role": "admin"}, 'is_collection': False}
     
     def test_read_document_by_id_from_list(self, reader_agent, json_list_file):
         """Test reading a specific document by ID from a list structure."""
@@ -105,8 +105,8 @@ class TestJSONDocumentAgents:
             "collection": json_list_file,
             "document_id": "doc2"
         })
-        
-        assert result == {'id': "doc2",'data': {"id": "doc2", "title": "Second Document", "tags": ["archive"]}, 'is_collection': False}
+        # {'success': True, 'document_id': 'doc2', 'data': {'id': 'doc2', 'title': 'Second Document', 'tags': [...]}, 'is_collection': False}
+        assert result == {'success': True, 'document_id': 'doc2', 'data': {"id": "doc2", "title": "Second Document", "tags": ["archive"]}, 'is_collection': False}
 
     def test_read_with_path(self, reader_agent, json_dict_file):
         """Test reading a specific path from a JSON file."""
@@ -115,7 +115,7 @@ class TestJSONDocumentAgents:
             "path": "user1.name"
         })
         
-        assert result == {'data': 'Alice', 'id': f"{os.path.basename(json_dict_file)}.user1.name", 'is_collection': False}
+        assert result == {'success': True, 'document_id': f"{os.path.basename(json_dict_file)}.user1.name", 'data': 'Alice', 'is_collection': False}
     
     def test_read_with_document_id_and_path(self, reader_agent, json_list_file):
         """Test reading a path within a specific document."""
@@ -125,7 +125,7 @@ class TestJSONDocumentAgents:
             "path": "tags.0"
         })
         
-        assert result == {'data': 'important', 'id': 'doc1', 'is_collection': False}
+        assert result == {'data': 'important', 'success': True, 'document_id': 'doc1', 'is_collection': False}
     
     def test_read_with_query_list(self, reader_agent, json_list_file):
         """Test filtering list data with a query."""
