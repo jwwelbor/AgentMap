@@ -15,7 +15,8 @@ AgentMap uses CSV files to define workflows as directed graphs. Each row in the 
 | `Failure_Next` | No | Where to go on failure. Can be a node name or multiple nodes with pipe separators. |
 | `Input_Fields` | No | State fields to extract as input for this agent. Pipe-separated list. |
 | `Output_Field` | No | Field in state where this agent's output should be stored. |
-| `Prompt` | No | Text or template used by LLM agents. For some agent types, this can be configuration data. |
+| `Prompt` | No | Text or template used by LLM agents. For some agent types, this can be configuration data. Can reference managed prompts using the prompt: notation. |
+| `Description` | No | Detailed documentation for the node's purpose. Unlike Context (which can be used for configuration), Description is solely for documentation and does not affect functionality. |
 
 ## Field Details
 
@@ -36,17 +37,24 @@ func:function_name
 
 The function should be defined in the functions directory and will be called to determine the next node.
 
-### Context Field
+### Context and Description Fields
 
-The Context field can contain:
-- Plain text description
-- JSON for advanced configuration
-- Memory configuration for LLM agents
+AgentMap provides two fields for documenting and configuring nodes:
 
-Example with memory configuration:
-```json
-{"memory":{"type":"buffer","memory_key":"chat_memory"}}
+- **Context**: Can contain plain text description or JSON for advanced configuration
+- **Description**: Purely for documentation purposes - doesn't affect functionality
+
+Examples:
+
+```csv
+GraphA,Node1,"{'memory':{'type':'buffer'}}","This node processes user input to extract key entities",...
 ```
+
+The Description field is useful for:
+- Documenting complex node behavior
+- Explaining the node's role in the workflow
+- Documenting expected inputs and outputs
+- Adding notes for other developers
 
 ### Input_Fields and Output_Field
 
@@ -59,6 +67,240 @@ These fields control data flow between nodes:
 For complex routing patterns:
 - Function references: `func:choose_next`
 - Multiple targets: Use pipe-separator in Success_Next or Failure_Next
+
+# Prompt Management in AgentMap
+
+AgentMap includes a robust prompt management system that helps you organize, maintain, and reuse prompts across your workflows. This system makes it easy to separate prompt content from application logic and provides a centralized way to manage prompts.
+
+## Prompt Reference Types
+
+The PromptManager supports three types of prompt references:
+
+### 1. Registry Prompts
+
+Reference prompts that are stored in a central registry:
+
+```
+prompt:prompt_name
+```
+
+Registry prompts are managed through the `prompts/registry.yaml` file (configurable) and provide a simple way to reuse common prompts across workflows.
+
+### 2. File Prompts
+
+Reference prompts stored in separate files:
+
+```
+file:path/to/prompt.txt
+```
+
+File prompts are ideal for longer prompts or those that include complex formatting. Paths can be absolute or relative to the prompts directory.
+
+### 3. YAML Key Prompts
+
+Reference specific keys within YAML files:
+
+```
+yaml:path/to/file.yaml#key.path
+```
+
+YAML key prompts allow you to organize multiple related prompts in a structured YAML document and reference specific sections.
+
+## Using Prompt References in AgentMap
+
+You can use prompt references in the `Prompt` field of your CSV:
+
+```csv
+GraphName,LLMNode,,Process user input,OpenAI,NextNode,,input,response,prompt:system_instructions
+```
+
+Or directly in your code:
+
+```python
+from agentmap.prompts import resolve_prompt
+
+# Resolve a prompt reference
+prompt_text = resolve_prompt("prompt:customer_service")
+```
+
+## Configuration Options
+
+Prompt management can be configured in your `agentmap_config.yaml`:
+
+```yaml
+prompts:
+  directory: "prompts"  # Directory for prompt files
+  registry_file: "prompts/registry.yaml"  # Registry file location
+  enable_cache: true  # Cache resolved prompts for performance
+```
+
+Or using environment variables:
+
+```bash
+export AGENTMAP_PROMPTS_DIR="my_prompts"
+export AGENTMAP_PROMPT_REGISTRY="my_prompts/registry.yaml"
+export AGENTMAP_PROMPT_CACHE="true"
+```
+
+## Using the PromptManager API
+
+For more advanced use cases, you can use the PromptManager directly:
+
+```python
+from agentmap.prompts import get_prompt_manager
+
+# Get the global PromptManager instance
+manager = get_prompt_manager()
+
+# Resolve a prompt reference
+prompt_text = manager.resolve_prompt("file:prompts/system.txt")
+
+# Register a new prompt
+manager.register_prompt("greeting", "Hello, I'm an AI assistant.", save=True)
+
+# Get all registered prompts
+registry = manager.get_registry()
+```
+
+## Best Practices for Prompt Management
+
+1. **Use descriptive prompt names** - Choose clear, purpose-oriented names for registry prompts
+2. **Organize prompt files logically** - Group related prompts in the same directory
+3. **Use YAML for complex prompt sets** - Organize related prompts in YAML files
+4. **Include version info** - Add version information in prompt files for tracking changes
+5. **Document prompt parameters** - Note any template parameters in comments
+
+# File Agents in AgentMap
+
+AgentMap provides specialized agents for working with files and documents. These agents leverage LangChain document loaders to support a wide range of document formats, making it easy to incorporate file operations into your workflows.
+
+## FileReaderAgent
+
+The FileReaderAgent reads and processes various document types, with optional chunking and filtering capabilities.
+
+### Supported File Formats
+
+- Text files (.txt)
+- PDF files (.pdf)
+- Markdown (.md)
+- HTML (.html, .htm)
+- Word documents (.docx, .doc)
+
+### Configuration Options
+
+The FileReaderAgent can be configured via the Context field or in code:
+
+```csv
+GraphName,ReadDocs,{"chunk_size": 1000, "chunk_overlap": 200, "should_split": true},Read documents,file_reader,Process,,collection,documents,
+```
+
+Available configurations:
+- `chunk_size`: Size of text chunks when splitting (default: 1000)
+- `chunk_overlap`: Overlap between chunks (default: 200)
+- `should_split`: Whether to split documents (default: false)
+- `include_metadata`: Include document metadata (default: true)
+
+### Using FileReaderAgent
+
+Basic usage in a workflow:
+
+```csv
+GraphName,ReadFile,,Read document,file_reader,Process,,collection,document,path/to/file.pdf
+```
+
+The agent requires:
+- `collection`: Path to the file to read
+- `document_id`: Optional specific section to extract
+- `query`: Optional filtering criteria
+- `path`: Optional path within document
+- `format`: Optional output format (default, raw, text)
+
+Example state output:
+```python
+{
+    "document": {
+        "success": true,
+        "file_path": "path/to/file.pdf",
+        "data": [
+            {"content": "Document text here", "metadata": {...}}
+        ],
+        "count": 1
+    }
+}
+```
+
+## FileWriterAgent
+
+The FileWriterAgent writes content to various text-based formats with support for different write modes.
+
+### Supported File Formats
+
+Text-based formats including:
+- Text files (.txt)
+- Markdown (.md)
+- HTML (.html, .htm)
+- CSV (.csv)
+- Log files (.log)
+- Code files (.py, .js, etc.)
+
+### Write Modes
+
+- `write`: Create or overwrite file (default)
+- `append`: Add to existing file
+- `update`: Similar to write for text files
+- `delete`: Delete the file
+
+### Using FileWriterAgent
+
+Basic usage in a workflow:
+
+```csv
+GraphName,WriteFile,,Write document,file_writer,Next,,data,result,path/to/output.txt
+```
+
+The agent requires:
+- `collection`: Path to the file to write
+- `data`: Content to write
+- `mode`: Write mode (write, append, update, delete)
+
+Example input:
+```python
+{
+    "collection": "output/report.md",
+    "data": "# Report\n\nThis is the content of the report.",
+    "mode": "write"
+}
+```
+
+Example output:
+```python
+{
+    "result": {
+        "success": true,
+        "mode": "write",
+        "file_path": "output/report.md",
+        "created_new": true
+    }
+}
+```
+
+## Integration with LangChain
+
+Both file agents integrate with LangChain's document loaders, providing advanced document handling capabilities. The integration brings several benefits:
+
+1. **Standard document format**: Documents are represented with content and metadata
+2. **Text splitting**: Split long documents into manageable chunks
+3. **Metadata extraction**: Extract and utilize document metadata
+4. **Format conversion**: Handle various document formats with a unified API
+
+Example of a document processing workflow:
+
+```csv
+GraphName,ReadDocs,{"should_split": true},Read documents,file_reader,Summarize,,collection,documents,reports/*.pdf
+GraphName,Summarize,,Generate summary,openai,Save,,documents,summary,"Summarize these documents: {documents}"
+GraphName,Save,,Save the summary,file_writer,End,,summary,result,output/summary.md
+GraphName,End,,Workflow complete,echo,,,result,message,
+```
 
 # AgentMap Agent Types
 
@@ -296,11 +538,13 @@ def choose_route(state: Any, success_node: str = "Success", failure_node: str = 
     return next_node_name
 ```
 
-## Context
+## Context and Description
 
-The `Context` field can contain:
+The `Context` and `Description` fields serve different but complementary purposes:
 
-1. **Text description** - For documentation purposes
+### Context
+The Context field can contain:
+1. **Text description** - For basic documentation
 2. **JSON configuration** - For advanced agent configuration
 
 **JSON configuration example:**
@@ -308,7 +552,18 @@ The `Context` field can contain:
 GraphA,MemoryNode,,{"memory":{"type":"buffer","memory_key":"chat_history"}},...
 ```
 
-Common JSON configurations:
+### Description
+The Description field is purely for documentation purposes:
+1. **Node purpose** - What the node is meant to accomplish
+2. **Implementation notes** - Details about how the node operates
+3. **Developer documentation** - Notes for other developers
+
+**Example:**
+```csv
+GraphA,ProcessInput,,{"memory":{"type":"buffer"}},"This node extracts key entities from user input and classifies the intent. Used for routing to appropriate handler nodes.",...
+```
+
+Common JSON configurations for Context:
 - Memory settings for LLM agents
 - Vector database configurations
 - Storage settings
@@ -324,6 +579,7 @@ The `AgentType` field determines which agent implementation to use. Available ty
 - `input` - User input agent
 - `csv_reader`, `csv_writer` - CSV file operations
 - `json_reader`, `json_writer` - JSON file operations
+- `file_reader`, `file_writer` - File operations
 - Custom agent types with `scaffold` command
 
 If not specified, defaults to `default`.
@@ -371,6 +627,13 @@ The `Prompt` field serves different purposes depending on the agent type:
 3. **GraphAgent** - Name of the subgraph to execute
 
 4. **Storage Agents** - Optional path or configuration
+
+5. **Prompt References** - References to managed prompts:
+   ```
+   prompt:system_instructions
+   file:prompts/system.txt
+   yaml:prompts/system.yaml#instructions.default
+   ```
 
 # State Management and Data Flow
 
@@ -567,6 +830,25 @@ This workflow:
 3. Generates a response with an LLM, preserving conversation memory
 4. Formats the response
 5. Returns to user input for the next interaction
+
+## Document Processing Workflow with File Agents
+
+A workflow for processing documents:
+
+```csv
+GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+DocFlow,ReadFile,,"{'should_split': true, 'chunk_size': 1000}",file_reader,Summarize,ErrorHandler,"collection",documents,path/to/document.pdf
+DocFlow,Summarize,,Generate summary,openai,SaveSummary,ErrorHandler,"documents",summary,"prompt:document_summary"
+DocFlow,SaveSummary,,Save the summary,file_writer,End,ErrorHandler,"summary",write_result,output/summary.md
+DocFlow,End,,Workflow complete,Echo,,,"write_result",final_message,"Summary saved successfully"
+DocFlow,ErrorHandler,,Handle processing errors,Echo,End,,"error",error_message,"Error processing document: {error}"
+```
+
+This workflow:
+1. Reads a PDF file and splits it into chunks
+2. Summarizes the documents using OpenAI with a prompt from the registry
+3. Saves the summary to a Markdown file
+4. Reports completion or handles errors
 
 ## Data Processing Pipeline
 

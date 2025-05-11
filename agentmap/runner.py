@@ -19,6 +19,7 @@ from agentmap.graph.builder import GraphBuilder
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
+from agentmap.logging import tracing # Initialize tracing if enabled
 
 
 def load_compiled_graph(graph_name: str, config_path: Optional[Union[str, Path]] = None):
@@ -71,20 +72,20 @@ def build_graph_in_memory(graph_name: str, csv_path: str, config_path: Optional[
     Returns:
         Compiled graph with logging wrappers
     """
-    logger.debug(f"[RUN] Building graph in memory: {graph_name}")
+    logger.debug(f"[BuildGraph] Building graph in memory: {graph_name}")
     csv = csv_path or get_csv_path(config_path)
     gb = GraphBuilder(csv)
-    logger.debug(f"[RUN] Building graph in memory: {csv}")
+    logger.debug(f"[BuildGraph] Building graph in memory: {csv}")
     graphs = gb.build()
     graph_def = graphs.get(graph_name)
     if not graph_def:
-        raise ValueError(f"No graph found with name: {graph_name}")
+        raise ValueError(f"[BuildGraph] No graph found with name: {graph_name}")
 
     # Create the StateGraph builder
     builder = StateGraph(dict)
     
     # Create the graph assembler
-    assembler = GraphAssembler(builder, config_path=config_path, enable_logging=True)
+    assembler = GraphAssembler(builder, config_path=config_path)
     
     # Add all nodes to the graph
     for node in graph_def.values():
@@ -185,42 +186,36 @@ def run_graph(
     Returns:
         Output from the graph execution
     """
+    from agentmap.logging.tracing import trace_graph
+    
     config = load_config(config_path)
     autocompile = autocompile_override if autocompile_override is not None else config.get("autocompile", False)
 
-    logger.info(f"[RUN] ⭐ STARTING GRAPH: '{graph_name}'")
-    logger.info(f"[RUN] Initial state: {initial_state}") 
-    logger.info(f"[RUN] Autocompile: {autocompile}")    
-    logger.info(f"[RUN] CSV path: {csv_path}")    
-    logger.info(f"[RUN] Config path: {config_path}")
-
-    # Try to load a compiled graph first
-    graph = load_compiled_graph(graph_name, config_path)
-    if graph:
-        logger.debug(f"[RUN] Loaded compiled graph: {graph_name}")
-    # If autocompile is enabled, compile and load the graph
-    elif autocompile:
-        logger.debug(f"[RUN] Autocompile enabled. Compiling: {graph_name}")
-        graph = autocompile_and_load(graph_name, config_path)
-    else:
-        # Otherwise, build the graph in memory
-        logger.debug(f"[RUN] Building graph in memory: {graph_name}")
-        graph = build_graph_in_memory(graph_name, csv_path, config_path)
-
-    # Run the graph with the initial state
-    logger.debug(f"[RUN] Executing graph: {graph_name}")
+    logger.info(f"⭐ STARTING GRAPH: '{graph_name}'")
     
-    # Track overall execution time
-    start_time = time.time()
-    
-    try:
-        result = graph.invoke(initial_state)
-        execution_time = time.time() - start_time
+    # Use trace_graph context manager to conditionally enable tracing
+    with trace_graph(graph_name):
+        # Try to load a compiled graph first
+        graph = load_compiled_graph(graph_name, config_path)
+
+        # If autocompile is enabled, compile and load the graph
+        if autocompile:
+            graph = autocompile_and_load(graph_name, config_path)
+        else:
+            # Otherwise, build the graph in memory
+            graph = build_graph_in_memory(graph_name, csv_path, config_path)
         
-        logger.info(f"[RUN] ✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s")
-        return result
-    except Exception as e:
-        execution_time = time.time() - start_time
-        logger.error(f"[RUN] ❌ GRAPH EXECUTION FAILED: '{graph_name}' after {execution_time:.2f}s")
-        logger.error(f"[RUN] Error: {str(e)}")
-        raise
+        # Track overall execution time
+        start_time = time.time()
+        
+        try:
+            result = graph.invoke(initial_state)
+            execution_time = time.time() - start_time
+            
+            logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s")
+            return result
+        except Exception as e:
+            execution_time = time.time() - start_time
+            logger.error(f"❌ GRAPH EXECUTION FAILED: '{graph_name}' after {execution_time:.2f}s")
+            logger.error(f"[RUN] Error: {str(e)}")
+            raise
