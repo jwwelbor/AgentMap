@@ -60,6 +60,7 @@ def collect_agent_info(
                 prompt = row.get("Prompt", "").strip()
                 input_fields = [x.strip() for x in row.get("Input_Fields", "").split("|") if x.strip()]
                 output_field = row.get("Output_Field", "").strip()
+                description = row.get("Description", "").strip() 
                 
                 if agent_type not in agent_info:
                     agent_info[agent_type] = {
@@ -67,7 +68,8 @@ def collect_agent_info(
                         "context": context,
                         "prompt": prompt,
                         "input_fields": input_fields,
-                        "output_field": output_field
+                        "output_field": output_field,
+                        "description": description
                     }
     
     return agent_info
@@ -106,6 +108,7 @@ def collect_function_info(
                     output_field = row.get("Output_Field", "").strip()
                     success_next = row.get("Success_Next", "").strip()
                     failure_next = row.get("Failure_Next", "").strip()
+                    description = row.get("Description", "").strip()
                     
                     if func not in func_info:
                         func_info[func] = {
@@ -114,7 +117,8 @@ def collect_function_info(
                             "input_fields": input_fields,
                             "output_field": output_field,
                             "success_next": success_next,
-                            "failure_next": failure_next
+                            "failure_next": failure_next,
+                            "description": description
                         }
     
     return func_info
@@ -198,12 +202,13 @@ def scaffold_agent(
     with path.open("w") as out:
         out.write(template.format(
             class_name=class_name,
-            context_description=info["context"] or "No context description provided",
+            context=info["context"] or "No context provided",
             input_fields=", ".join(info["input_fields"]) or "None specified",
             output_field=info["output_field"] or "None specified",
             input_field_access=input_field_access,
             node_name=info["node_name"],
-            prompt=info["prompt"] or "No default prompt provided"
+            prompt=info["prompt"] or "No default prompt provided",
+            description=info["description"] or ""
         ))
     
     logger.debug(f"Scaffolded agent: {path}")
@@ -242,11 +247,12 @@ def scaffold_function(
     with path.open("w") as out:
         out.write(template.format(
             func_name=func_name,
-            context_description=info["context"] or "No context description provided",
+            context=info["context"] or "No context provided",
             context_fields=context_fields,
             success_node=info["success_next"] or "None",
             failure_node=info["failure_next"] or "None",
-            node_name=info["node_name"]
+            node_name=info["node_name"],
+            description=info["description"] or ""
         ))
     
     logger.debug(f"Scaffolded function: {path}")

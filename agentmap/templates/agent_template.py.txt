@@ -3,12 +3,12 @@ from typing import Dict, Any
 
 class {class_name}(BaseAgent):
     """
-    {context_description}
-    
+    description: {description}
+    context:{context}
     Node: {node_name}
     Expected input fields: {input_fields}
     Expected output field: {output_field}
-    Default prompt: {prompt}
+    Prompt: {prompt}
     """
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
@@ -21,7 +21,8 @@ class {class_name}(BaseAgent):
             The value for {output_field}
         """
         # TODO: Implement logic for {class_name}
-        # Context: {context_description}
+        # description: {description}
+        # Context: {context}
         
         # Access input fields directly from inputs dictionary
 {input_field_access}
@@ -29,5 +30,5 @@ class {class_name}(BaseAgent):
         # Implement your agent logic here
         # ...
         
-        # Return just the output value (not the whole state)
-        return "Your {class_name} implementation here"
+        # Return just the output value (not the whole state it will be placed into {output_field} in the state object)
+        return "Your {class_name} result here"

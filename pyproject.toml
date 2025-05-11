@@ -47,6 +47,7 @@ google-generativeai = "^0.3.2"
 unstructured = { version = "^0.10.0", extras = ["md", "pdf"], optional = true }
 python-docx = { version = "^0.8.11", optional = true }
 langchain-community = "^0.3.23"
+firebase-admin = "^6.8.0"
 
 [tool.poetry.extras]
 file = ["langchain"]

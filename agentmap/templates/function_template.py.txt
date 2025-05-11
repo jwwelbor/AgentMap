@@ -13,7 +13,8 @@ def {func_name}(state: Any, success_node="{success_node}", failure_node="{failur
         str: Name of the next node to execute
     
     Node: {node_name}
-    Node Context: {context_description}
+    Description: {description}
+    Context: {context}
     
     Available in state:
 {context_fields}

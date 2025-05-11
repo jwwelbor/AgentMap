@@ -64,7 +64,7 @@ def mock_firebase_config():
 @pytest.fixture
 def mock_storage_config(mock_firebase_config):
     """Mock the storage config loading."""
-    with patch("agentmap.agents.builtins.storage.firebase_document_agent.load_storage_config") as mock_load:
+    with patch("agentmap.agents.builtins.storage.firebase.base_agent.load_storage_config") as mock_load:
         mock_load.return_value = mock_firebase_config
         yield mock_load
 
