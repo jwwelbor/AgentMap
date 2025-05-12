@@ -59,6 +59,12 @@ except ImportError:
     pass
 
 try:
+    from agentmap.agents.builtins.summary_agent import SummaryAgent
+    AGENT_MAP["summary"] = SummaryAgent
+except ImportError:
+    pass
+
+try:
     from agentmap.agents.builtins.storage.vector import (
         VectorAgent, VectorReaderAgent, VectorWriterAgent
     )

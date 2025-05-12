@@ -21,6 +21,7 @@ from agentmap.agents.builtins.branching_agent import BranchingAgent
 from agentmap.agents.builtins.failure_agent import FailureAgent
 from agentmap.agents.builtins.input_agent import InputAgent
 from agentmap.agents.builtins.success_agent import SuccessAgent
+from agentmap.agents.builtins.summary_agent import SummaryAgent
 
 # Register built-in agents
 register_agent("default", DefaultAgent)
@@ -29,6 +30,7 @@ register_agent("branching", BranchingAgent)
 register_agent("failure", FailureAgent)
 register_agent("input", InputAgent)
 register_agent("success", SuccessAgent)
+register_agent("summary", SummaryAgent)
 
 # Import and register optional LLM agents
 try:
@@ -70,10 +72,18 @@ except ImportError:
 
 try:
     from agentmap.agents.builtins.storage import JSONDocumentReaderAgent, JSONDocumentWriterAgent
+
     register_agent("json_reader", JSONDocumentReaderAgent)
     register_agent("json_writer", JSONDocumentWriterAgent)
 except ImportError:
-    pass    
+    pass
+
+try:
+    from agentmap.agents.builtins.storage.json.cloud_agent import JSONCloudDocumentReaderAgent, JSONCloudDocumentWriterAgent
+    register_agent("json_reader", JSONCloudDocumentReaderAgent)
+    register_agent("json_writer", JSONCloudDocumentWriterAgent)
+except ImportError:
+    pass
 
 try:
     from agentmap.agents.builtins.storage import FileReaderAgent, FileWriterAgent

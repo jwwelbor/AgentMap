@@ -1,0 +1,163 @@
+# agentmap/agents/builtins/summary_agent.py
+from typing import Any, Dict, Optional
+
+from agentmap.agents.base_agent import BaseAgent
+from agentmap.config import get_llm_config
+from agentmap.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+class SummaryAgent(BaseAgent):
+    """
+    Agent that summarizes multiple input fields into a single output.
+
+    Operates in two modes:
+    1. Basic mode (default): Formats and concatenates inputs with templates
+    2. LLM mode (optional): Uses LLM to create an intelligent summary
+    """
+
+    def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
+        """
+        Initialize the summary agent.
+
+        Args:
+            name: Name of the agent node
+            prompt: Instructions for summarization (used by LLM mode)
+            context: Additional configuration including:
+                - format: Template for formatting items (default: "{key}: {value}")
+                - separator: String to join items (default: "\n\n")
+                - include_keys: Whether to include keys in output (default: True)
+                - llm: Optional LLM to use ("openai", "anthropic", "google")
+                - model: Optional specific model name
+                - temperature: Optional temperature for LLM
+        """
+        super().__init__(name, prompt, context or {})
+
+        # Extract configuration with defaults
+        self.format_template = self.context.get("format", "{key}: {value}")
+        self.separator = self.context.get("separator", "\n\n")
+        self.include_keys = self.context.get("include_keys", True)
+
+        # Check if LLM mode is enabled
+        self.llm_type = self.context.get("llm")
+        self.use_llm = bool(self.llm_type)
+
+        if self.use_llm:
+            logger.debug(f"SummaryAgent '{name}' using LLM mode: {self.llm_type}")
+        else:
+            logger.debug(f"SummaryAgent '{name}' using basic concatenation mode")
+
+    def process(self, inputs: Dict[str, Any]) -> Any:
+        """
+        Process the inputs and generate a summary.
+
+        Args:
+            inputs: Dictionary containing input values
+
+        Returns:
+            Summarized output as string
+        """
+        if not inputs:
+            logger.warning(f"SummaryAgent '{self.name}' received empty inputs")
+            return ""
+
+        # If LLM mode is enabled, use that
+        if self.use_llm:
+            return self._summarize_with_llm(inputs)
+
+        # Otherwise use basic concatenation
+        return self._basic_concatenation(inputs)
+
+    def _basic_concatenation(self, inputs: Dict[str, Any]) -> str:
+        """Format and concatenate inputs using simple templates."""
+        formatted_items = []
+
+        for key, value in inputs.items():
+            # Skip None values
+            if value is None:
+                continue
+
+            if self.include_keys:
+                try:
+                    formatted = self.format_template.format(key=key, value=value)
+                except Exception as e:
+                    logger.warning(f"Error formatting {key}: {str(e)}")
+                    formatted = f"{key}: {value}"
+            else:
+                formatted = str(value)
+            formatted_items.append(formatted)
+
+        return self.separator.join(formatted_items)
+
+    def _summarize_with_llm(self, inputs: Dict[str, Any]) -> str:
+        """Use LLM to generate an intelligent summary."""
+        # Prepare basic concatenation as input for the LLM
+        concatenated = self._basic_concatenation(inputs)
+
+        # Get LLM config
+        llm_config = get_llm_config(self.llm_type) if self.llm_type else {}
+
+        try:
+            # Create LLM context with our settings
+            llm_context = {
+                "model": self.context.get("model") or llm_config.get("model"),
+                "temperature": self.context.get("temperature") or llm_config.get("temperature"),
+                # Use our input/output fields configuration
+                "input_fields": ["content"],
+                "output_field": "summary"
+            }
+
+            llm_prompt = self._get_llm_prompt(concatenated)
+            llm_input = {"content": concatenated}
+
+            # Import and use the appropriate LLM agent
+            if self.llm_type == "openai":
+                from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
+                llm_agent = OpenAIAgent(
+                    name=f"{self.name}_llm",
+                    prompt=llm_prompt,
+                    context=llm_context
+                )
+                result = llm_agent.process(llm_input)
+
+            elif self.llm_type == "anthropic":
+                from agentmap.agents.builtins.llm.anthropic_agent import AnthropicAgent
+                llm_agent = AnthropicAgent(
+                    name=f"{self.name}_llm",
+                    prompt=llm_prompt,
+                    context=llm_context
+                )
+                result = llm_agent.process(llm_input)
+
+            elif self.llm_type == "google":
+                from agentmap.agents.builtins.llm.google_agent import GoogleAgent
+                llm_agent = GoogleAgent(
+                    name=f"{self.name}_llm",
+                    prompt=llm_prompt,
+                    context=llm_context
+                )
+                result = llm_agent.process(llm_input)
+
+            else:
+                logger.error(f"Unsupported LLM type: {self.llm_type}")
+                return f"ERROR: Unsupported LLM type '{self.llm_type}'"
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error in LLM summarization: {str(e)}")
+            return f"ERROR in summarization: {str(e)}\n\nOriginal content:\n{concatenated}"
+
+    def _get_llm_prompt(self, content: str) -> str:
+        """Create a prompt for the LLM based on the agent's prompt and content."""
+        if not self.prompt:
+            return f"Please summarize the following information:\n\n{content}"
+
+        # Use the agent's prompt with a content placeholder
+        # First try using format() with content as a named parameter
+        try:
+            return self.prompt.format(content=content)
+        except KeyError:
+            # If that fails, append the content to the prompt
+            return f"{self.prompt}\n\n{content}"
