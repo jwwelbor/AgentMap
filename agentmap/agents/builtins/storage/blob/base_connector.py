@@ -1,0 +1,235 @@
+"""
+Base interfaces and utilities for cloud blob storage connectors.
+
+This module provides a common interface for cloud storage operations,
+allowing JSON agents to seamlessly work with various cloud providers.
+"""
+from __future__ import annotations
+
+import os
+import re
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional, Tuple, Union
+from urllib.parse import urlparse, unquote
+
+from agentmap.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+class BlobStorageConnector(ABC):
+    """
+    Interface for cloud blob storage operations.
+
+    This abstract class defines the contract that all cloud storage
+    implementations must follow, with common utilities for parsing URIs,
+    handling authentication, and performing basic blob operations.
+    """
+
+    # URI scheme handled by this connector
+    URI_SCHEME = None
+
+    def __init__(self, config: Dict[str, Any] = None):
+        """
+        Initialize the storage connector.
+
+        Args:
+            config: Configuration for this storage provider
+        """
+        self.config = config or {}
+        self._client = None
+
+    @property
+    def client(self) -> Any:
+        """
+        Access the storage client connection.
+
+        Returns:
+            Storage client instance
+
+        Note:
+            This property will initialize the client on first access
+            if it doesn't already exist.
+        """
+        if self._client is None:
+            self._initialize_client()
+        return self._client
+
+    @abstractmethod
+    def _initialize_client(self) -> None:
+        """
+        Initialize the storage client connection.
+
+        Subclasses should implement this to set up their specific client connection.
+
+        Raises:
+            StorageConnectionError: If client initialization fails
+        """
+        pass
+
+    @abstractmethod
+    def read_blob(self, uri: str) -> bytes:
+        """
+        Read raw bytes from blob storage.
+
+        Args:
+            uri: URI of the blob to read
+
+        Returns:
+            Blob content as bytes
+
+        Raises:
+            FileNotFoundError: If the blob doesn't exist
+            StorageOperationError: For other storage-related errors
+        """
+        pass
+
+    @abstractmethod
+    def write_blob(self, uri: str, data: bytes) -> None:
+        """
+        Write raw bytes to blob storage.
+
+        Args:
+            uri: URI where the blob should be written
+            data: Blob content as bytes
+
+        Raises:
+            StorageOperationError: If the write operation fails
+        """
+        pass
+
+    @abstractmethod
+    def blob_exists(self, uri: str) -> bool:
+        """
+        Check if a blob exists at the specified URI.
+
+        Args:
+            uri: URI to check
+
+        Returns:
+            True if the blob exists, False otherwise
+        """
+        pass
+
+    def parse_uri(self, uri: str) -> Dict[str, str]:
+        """
+        Parse a blob URI into components.
+
+        Args:
+            uri: Blob storage URI
+
+        Returns:
+            Dictionary with parsed components (scheme, bucket/container, path)
+
+        Raises:
+            ValueError: If the URI is invalid or not supported by this connector
+        """
+        if not uri:
+            raise ValueError("Empty URI provided")
+
+        if self.URI_SCHEME and not uri.startswith(f"{self.URI_SCHEME}://"):
+            # If this is a named collection reference without scheme, let it through
+            if "://" not in uri:
+                return {
+                    "scheme": self.URI_SCHEME,
+                    "container": "",
+                    "path": uri
+                }
+            else:
+                raise ValueError(f"URI scheme not supported by this connector: {uri}")
+
+        parsed = urlparse(uri)
+
+        # Extract scheme
+        scheme = parsed.scheme or self.URI_SCHEME
+
+        # Extract container/bucket name (netloc)
+        container = parsed.netloc
+
+        # Extract blob path (removing leading slash)
+        path = unquote(parsed.path)
+        if path.startswith('/'):
+            path = path[1:]
+
+        return {
+            "scheme": scheme,
+            "container": container,
+            "path": path
+        }
+
+    def resolve_env_value(self, value: str) -> str:
+        """
+        Resolve environment variable references in config values.
+
+        Args:
+            value: Config value, possibly containing env: prefix
+
+        Returns:
+            Resolved value
+        """
+        if not isinstance(value, str):
+            return value
+
+        if value.startswith("env:"):
+            env_var = value[4:]
+            env_value = os.environ.get(env_var, "")
+            if not env_value:
+                logger.warning(f"Environment variable not found: {env_var}")
+            return env_value
+
+        return value
+
+
+def get_connector_for_uri(uri: str, config: Dict[str, Any] = None) -> BlobStorageConnector:
+    """
+    Factory function to get the appropriate connector for a URI.
+
+    Args:
+        uri: Blob storage URI or collection name
+        config: Configuration dictionary for storage providers
+
+    Returns:
+        Appropriate BlobStorageConnector instance
+
+    Raises:
+        ValueError: If no suitable connector is found
+    """
+    # Handle named collections that might not have URI scheme
+    if "://" not in uri:
+        # Check if this is a named collection in the config
+        collections = config.get("collections", {})
+        if uri in collections:
+            # Resolve named collection to actual URI
+            uri = collections[uri]
+
+    # Lazy imports to avoid circular dependencies and allow optional installations
+    if uri.startswith("azure://"):
+        from agentmap.agents.builtins.storage.blob.azure_connector import AzureBlobConnector
+        return AzureBlobConnector(config.get("providers", {}).get("azure", {}))
+    elif uri.startswith("s3://"):
+        from agentmap.agents.builtins.storage.blob.aws_connector import AWSS3Connector
+        return AWSS3Connector(config.get("providers", {}).get("aws", {}))
+    elif uri.startswith("gs://"):
+        from agentmap.agents.builtins.storage.blob.gcp_connector import GCPStorageConnector
+        return GCPStorageConnector(config.get("providers", {}).get("gcp", {}))
+    else:
+        # Default to local file connector if no scheme or unrecognized
+        from agentmap.agents.builtins.storage.blob.local_connector import LocalFileConnector
+        return LocalFileConnector(config.get("providers", {}).get("local", {}))
+
+
+def normalize_json_uri(uri: str) -> str:
+    """
+    Normalize a JSON URI to ensure consistent paths.
+
+    Args:
+        uri: URI or path to normalize
+
+    Returns:
+        Normalized URI
+    """
+    # Ensure path has .json extension
+    if not uri.lower().endswith('.json') and '://' not in uri:
+        uri = f"{uri}.json"
+
+    return uri
