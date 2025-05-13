@@ -20,7 +20,8 @@ from agentmap.agents.builtins.storage.csv import (
 
 # Import JSON document agents
 from agentmap.agents.builtins.storage.json import (
-    JSONDocumentAgent, JSONDocumentReaderAgent, JSONDocumentWriterAgent
+    JSONDocumentAgent, JSONDocumentReaderAgent, JSONDocumentWriterAgent,
+
 )
 
 from agentmap.agents.builtins.storage.file import (
@@ -86,4 +87,11 @@ if _firebase_available:
         'FirebaseDocumentAgent',
         'FirebaseDocumentReaderAgent',
         'FirebaseDocumentWriterAgent',
+    ])
+
+if _json_cloud_available:
+    __all__.extend([
+        'JSONCloudDocumentAgent',
+        'JSONCloudDocumentReaderAgent',
+        'JSONCloudDocumentWriterAgent',
     ])

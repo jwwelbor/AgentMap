@@ -9,6 +9,17 @@ from agentmap.agents.builtins.storage.json.reader import JSONDocumentReaderAgent
 from agentmap.agents.builtins.storage.json.writer import JSONDocumentWriterAgent
 from agentmap.agents.builtins.storage.json.operations import JSONDocumentOperations
 
+try:
+    from agentmap.agents.builtins.storage.cloud_json import (
+        JSONCloudDocumentAgent, JSONCloudDocumentReaderAgent, JSONCloudDocumentWriterAgent
+    )
+    _json_cloud_available = True
+except ImportError:
+    JSONCloudDocumentAgent = None
+    JSONCloudDocumentReaderAgent = None
+    JSONCloudDocumentWriterAgent = None
+    _json_cloud_available = False
+
 # Import utilities if they exist
 try:
     from agentmap.agents.builtins.storage.json.utils import (
@@ -25,6 +36,13 @@ __all__ = [
     'JSONDocumentWriterAgent',
     'JSONDocumentOperations',
 ]
+
+if _json_cloud_available:
+    __all__.extend([
+        'JSONCloudDocumentAgent',
+        'JSONCloudDocumentReaderAgent',
+        'JSONCloudDocumentWriterAgent',
+    ])
 
 # Add utils to __all__ if available
 if _utils_available:
