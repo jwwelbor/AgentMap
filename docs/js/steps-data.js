@@ -22,7 +22,6 @@ SimpleQA,HandleError,,Handle error,echo,END,,error,error_message,"Sorry, an erro
                     ProcessInput -->|failure| HandleError[HandleError]
                     GenerateResponse --> END
                     HandleError --> END
-                    end
 
                     classDef default fill:#1F2937,stroke:#4B5563,color:#E5E7EB
                     classDef input fill:#164E63,stroke:#22D3EE,color:#A5F3FC
