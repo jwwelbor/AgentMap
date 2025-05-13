@@ -93,40 +93,44 @@ graph_definition = {
     # ...more nodes
 }`,
         visual: `
-            <div class="workflow-visual graph-diagram">
-                <svg width="500" height="220" viewBox="0 0 500 220">
-                    <defs>
-                        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
-                            <polygon points="0 0, 10 3.5, 0 7" fill="#4B5563" />
-                        </marker>
-                    </defs>
-                    <!-- Nodes -->
-                    <g>
-                        <rect x="20" y="80" width="100" height="40" rx="5" fill="#93C5FD" stroke="#3B82F6" strokeWidth="2" />
-                        <text x="70" y="105" fontSize="12" textAnchor="middle" fill="#1E3A8A">GetInput</text>
-                        
-                        <rect x="200" y="80" width="100" height="40" rx="5" fill="#FDE68A" stroke="#F59E0B" strokeWidth="2" />
-                        <text x="250" y="105" fontSize="12" textAnchor="middle" fill="#92400E">ProcessInput</text>
-                        
-                        <rect x="380" y="40" width="100" height="40" rx="5" fill="#A7F3D0" stroke="#10B981" strokeWidth="2" />
-                        <text x="430" y="65" fontSize="12" textAnchor="middle" fill="#065F46">GenerateResponse</text>
-                        
-                        <rect x="380" y="120" width="100" height="40" rx="5" fill="#FCA5A5" stroke="#EF4444" strokeWidth="2" />
-                        <text x="430" y="145" fontSize="12" textAnchor="middle" fill="#7F1D1D">HandleError</text>
-                    </g>
-                    <!-- Edges -->
-                    <g>
-                        <line x1="120" y1="100" x2="190" y2="100" stroke="#4B5563" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                        <text x="155" y="95" fontSize="10" textAnchor="middle" fill="#4B5563">success</text>
-                        
-                        <line x1="300" y1="90" x2="370" y2="60" stroke="#10B981" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                        <text x="335" y="60" fontSize="10" textAnchor="middle" fill="#10B981">success</text>
-                        
-                        <line x1="300" y1="110" x2="370" y2="140" stroke="#EF4444" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                        <text x="335" y="140" fontSize="10" textAnchor="middle" fill="#EF4444">failure</text>
-                    </g>
-                </svg>
-            </div>
+        <div class="workflow-visual graph-diagram">
+            <svg width="500" height="220" viewBox="0 0 500 220">
+                <defs>
+                    <marker id="arrowhead-step2" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#A5F3FC" />
+                    </marker>
+                </defs>
+                <!-- Nodes -->
+                <g>
+                    <!-- GetInput node -->
+                    <rect x="20" y="80" width="120" height="50" rx="5" fill="#164E63" stroke="#22D3EE" strokeWidth="2" />
+                    <text x="80" y="110" fontSize="14" textAnchor="middle" fill="#A5F3FC">GetInput</text>
+                    
+                    <!-- ProcessInput node -->
+                    <rect x="200" y="80" width="120" height="50" rx="5" fill="#854D0E" stroke="#FCD34D" strokeWidth="2" />
+                    <text x="260" y="110" fontSize="14" textAnchor="middle" fill="#FCD34D">ProcessInput</text>
+                    
+                    <!-- GenerateResponse node -->
+                    <rect x="380" y="30" width="120" height="50" rx="5" fill="#065F46" stroke="#6EE7B7" strokeWidth="2" />
+                    <text x="440" y="60" fontSize="14" textAnchor="middle" fill="#6EE7B7">GenerateResponse</text>
+                    
+                    <!-- HandleError node -->
+                    <rect x="380" y="130" width="120" height="50" rx="5" fill="#7F1D1D" stroke="#FCA5A5" strokeWidth="2" />
+                    <text x="440" y="160" fontSize="14" textAnchor="middle" fill="#FCA5A5">HandleError</text>
+                </g>
+                <!-- Edges -->
+                <g>
+                    <line x1="140" y1="105" x2="190" y2="105" stroke="#A5F3FC" strokeWidth="2" markerEnd="url(#arrowhead-step2)" />
+                    <text x="165" y="95" fontSize="12" textAnchor="middle" fill="#A5F3FC">success</text>
+                    
+                    <line x1="320" y1="95" x2="370" y2="65" stroke="#6EE7B7" strokeWidth="2" markerEnd="url(#arrowhead-step2)" />
+                    <text x="345" y="65" fontSize="12" textAnchor="middle" fill="#6EE7B7">success</text>
+                    
+                    <line x1="320" y1="115" x2="370" y2="145" stroke="#FCA5A5" strokeWidth="2" markerEnd="url(#arrowhead-step2)" />
+                    <text x="345" y="145" fontSize="12" textAnchor="middle" fill="#FCA5A5">failure</text>
+                </g>
+            </svg>
+        </div>
         `
     },
     {
