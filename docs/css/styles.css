@@ -588,3 +588,10 @@ footer {
     display: flex;
     justify-content: center;
 }
+
+/* Add to styles.css */
+.mermaid {
+  background-color: #1f2937;
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
