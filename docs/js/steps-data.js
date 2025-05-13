@@ -71,8 +71,7 @@ SimpleQA,HandleError,,Handle error,echo,END,,error,error_message,"Sorry, an erro
  * Documentation files available in the project
  */
 const documentationFiles = [
-    { path: '../README.md', title: 'Main README' },
-    { path: '../agentmap/agents/builtins/storage/json/json_cloud_readme.md', title: 'JSON Cloud Storage' },
-    { path: '../agentmap/agents/builtins/storage/blob/readme.md', title: 'Blob Storage' },
-    { path: '../agentmap/templates/readme.md', title: 'Templates' }
+    { path: 'README.md', title: 'Main README' },
+    { path: 'README_usage_details.md', title: 'Usage Details' },
+    { path: 'README_cloud_storage.md', title: 'Cloud Storage' }
 ];

@@ -10,6 +10,10 @@
     
     <!-- Our separated CSS file -->
     <link rel="stylesheet" href="css/styles.css">
+    <!-- Add console logging for debugging -->
+    <script>
+        console.log("AgentMap documentation page loading...");
+    </script>
 </head>
 <body>
     <div class="container" id="app-container">
@@ -20,5 +24,16 @@
     <script src="js/steps-data.js"></script>
     <script src="js/markdown-viewer.js"></script>
     <script src="js/app.js"></script>
+    <script>
+        // Ensure DOM is fully loaded before initializing
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("DOM fully loaded, initializing app...");
+            if (typeof app !== 'undefined') {
+                app.init();
+            } else {
+                console.error("App object not found!");
+            }
+        });
+    </script>
 </body>
 </html>
