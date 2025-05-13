@@ -112,7 +112,6 @@ class OrchestratorAgent(BaseAgent):
         logger.info(f"[OrchestratorAgent] Selected node: '{selected_node}'")
         return selected_node
 
-    @staticmethod
     def _get_nodes(self, inputs: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         """Get node dictionary from the specified input field."""
         if self.input_fields and self.input_fields[0] in inputs:

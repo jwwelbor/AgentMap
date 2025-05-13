@@ -1,7 +1,6 @@
 import unittest
 from unittest.mock import patch
 from agentmap.runner import run_graph
-from agentmap.graph.builder import GraphBuilder
 import tempfile
 import csv
 import os
@@ -13,70 +12,46 @@ class WorkflowMemoryTests(unittest.TestCase):
         with open(self.csv_path, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow([
-                "GraphName", "Node", "Edge", "Context", "AgentType", 
-                "Success_Next", "Failure_Next", "Input_Fields", "Output_Field", "Prompt"
+                "GraphName", "Node", "Edge", "Context", "AgentType", "Success_Next", "Failure_Next", 
+                "Input_Fields", "Output_Field", "Prompt"
             ])
-            # Node 1 with memory initialization
+            # Use OpenAI agent with memory
             writer.writerow([
-                "TestGraph", "Node1", "", 
-                '{"memory":{"type":"buffer","memory_key":"chat_memory"}}', 
-                "echo", "Node2", "", "input", "output", "Echo: {input}"
+                "TestGraph", "Node1", "", '{"memory":{"type":"buffer","memory_key":"chat_memory"}}', 
+                "openai", "Node2", "", "input", "output", "Echo: {input}"
             ])
-            # Node 2 using memory from Node 1
             writer.writerow([
-                "TestGraph", "Node2", "", 
-                '{"memory":{"memory_key":"chat_memory"}}',
-                "echo", "", "", "input|output|chat_memory", "final_output", 
-                "Previous: {output}, New: {input}"
+                "TestGraph", "Node2", "", '{"memory":{"memory_key":"chat_memory"}}', 
+                "openai", "", "", "input|output|chat_memory", "final_output", "Prior: {output}, New: {input}"
             ])
     
     def tearDown(self):
         """Clean up the test CSV."""
         os.close(self.csv_fd)
         os.unlink(self.csv_path)
-        
-    @patch('agentmap.agents.builtins.echo_agent.EchoAgent.process')
-    def test_memory_flow_through_graph(self, mock_process):
-        """Test memory flows through graph nodes correctly."""
-        # Mock the EchoAgent.process method to handle memory
-        def mock_echo_process(self, inputs):
-            output = f"Echo: {inputs.get('input', '')}"
-            
-            # If there's memory, get it
-            memory = inputs.get("chat_memory")
-            
-            # Add to memory and return if available
-            if hasattr(self, "memory") and self.memory:
-                # Add to memory
-                self.memory.chat_memory.add_user_message(inputs.get('input', ''))
-                self.memory.chat_memory.add_ai_message(output)
-                
-                # Serialize memory for output
-                from agentmap.agents.builtins.memory.utils import serialize_memory
-                serialized_memory = serialize_memory(self.memory)
-                
-                # Return with memory
-                return {
-                    self.output_field: output,
-                    "chat_memory": serialized_memory
-                }
-            
-            return output
-            
-        mock_process.side_effect = mock_echo_process
+    
+    @patch('agentmap.agents.builtins.llm.llm_agent.LANGCHAIN_AVAILABLE', True)
+    @patch('agentmap.agents.builtins.llm.openai_agent.OpenAIAgent._get_llm')
+    def test_memory_flow_through_graph(self, mock_get_llm):
+        """Test memory flows correctly through the workflow."""
+        # Simple mock that returns a response
+        mock_llm = mock_get_llm.return_value
+        mock_llm.side_effect = lambda x: "LLM response"
         
         # Run the graph
         result = run_graph(
             graph_name="TestGraph",
-            initial_state={"input": "Hello"},
+            initial_state={"input": "Test Input"},
             csv_path=self.csv_path
         )
         
-        # Check result
-        self.assertIn("final_output", result)
+        # Check for memory in result
         self.assertIn("chat_memory", result)
         
         # Verify memory structure
         memory = result["chat_memory"]
         self.assertEqual(memory["_type"], "langchain_memory")
-        self.assertGreaterEqual(len(memory["messages"]), 2)
+        
+        # Verify messages in memory - should have at least 2 exchanges (4 messages)
+        self.assertIn("messages", memory)
+        self.assertGreaterEqual(len(memory["messages"]), 4)

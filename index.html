@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgentMap Workflow Visualization</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React Dependencies -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://unpkg.com/marked/marked.min.js"></script>
+    
+    <!-- Tailwind Typography plugin for markdown styling -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {},
+            },
+            plugins: [
+                function({ addComponents }) {
+                    addComponents({
+                        '.prose': {
+                            'h1': { fontWeight: '700', fontSize: '1.875rem', marginTop: '1.5rem', marginBottom: '0.75rem' },
+                            'h2': { fontWeight: '600', fontSize: '1.5rem', marginTop: '1.5rem', marginBottom: '0.75rem' },
+                            'h3': { fontWeight: '600', fontSize: '1.25rem', marginTop: '1.5rem', marginBottom: '0.5rem' },
+                            'p': { marginBottom: '1rem' },
+                            'ul': { listStyleType: 'disc', paddingLeft: '1.5rem', marginBottom: '1rem' },
+                            'ol': { listStyleType: 'decimal', paddingLeft: '1.5rem', marginBottom: '1rem' },
+                            'li': { marginBottom: '0.25rem' },
+                            'a': { color: '#2563eb', textDecoration: 'underline' },
+                            'code': { backgroundColor: '#f3f4f6', padding: '0.125rem 0.25rem', borderRadius: '0.25rem', fontSize: '0.875rem' },
+                            'pre': { backgroundColor: '#1f2937', color: '#f3f4f6', padding: '1rem', borderRadius: '0.375rem', overflowX: 'auto', marginBottom: '1rem' },
+                            'pre code': { backgroundColor: 'transparent', padding: '0' },
+                            'blockquote': { borderLeftWidth: '4px', borderLeftColor: '#d1d5db', paddingLeft: '1rem', fontStyle: 'italic', marginBottom: '1rem' },
+                            'hr': { marginTop: '1.5rem', marginBottom: '1.5rem' },
+                            'table': { width: '100%', borderCollapse: 'collapse', marginBottom: '1rem' },
+                            'th': { borderBottomWidth: '2px', padding: '0.5rem', textAlign: 'left' },
+                            'td': { borderBottomWidth: '1px', borderBottomColor: '#e5e7eb', padding: '0.5rem' }
+                        }
+                    })
+                }
+            ]
+        }
+    </script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <!-- React Component -->
+    <script type="text/babel" src="agentmap-workflow.jsx"></script>
+    
+    <!-- Initialize React -->
+    <script type="text/babel">
+        ReactDOM.render(
+            <AgentMapWorkflow />,
+            document.getElementById('root')
+        );
+    </script>
+</body>
+</html>
