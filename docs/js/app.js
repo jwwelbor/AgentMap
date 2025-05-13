@@ -166,6 +166,7 @@ class AgentMapApp {
         `;
         
         // Render step content
+        // In app.js, modify the renderWorkflowStep function to handle the case when code is null
         let stepContent = `
             <div class="content-card">
                 <h2 class="card-title">${step.title}</h2>
@@ -173,7 +174,7 @@ class AgentMapApp {
                 <p class="card-details">${step.details}</p>
                 
                 <div class="flex-row">
-                    <div class="flex-col-50">
+                    <div class="flex-col-${step.code ? '50' : '100'}">
                         <h3 class="section-title">Visual Representation</h3>
                         ${step.visual}
                     </div>

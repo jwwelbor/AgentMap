@@ -7,11 +7,7 @@ const stepsData = [
         title: "1. CSV Workflow Definition",
         description: "AgentMap begins with a CSV file that defines the workflow structure.",
         details: "The CSV file contains rows defining each node in the workflow graph, including agents, edges, prompts, and routing logic.",
-        code: `GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
-SimpleQA,GetInput,,User input,input,ProcessInput,,user_query,input,"Please enter your question:"
-SimpleQA,ProcessInput,,Process with LLM,openai,GenerateResponse,HandleError,input,answer,""
-SimpleQA,GenerateResponse,,Format response,echo,END,,answer,formatted_answer,"Your answer is: {answer}"
-SimpleQA,HandleError,,Handle error,echo,END,,error,error_message,"Sorry, an error occurred: {error}"`,
+        code: null,
         visual: `
             <div class="mermaid-wrapper">
                 <pre class="mermaid">
@@ -37,6 +33,76 @@ SimpleQA,HandleError,,Handle error,echo,END,,error,error_message,"Sorry, an erro
                         class HandleError error
                         class END endNode
                 </pre>
+            </div>
+
+            <h3 class="section-title">CSV Definition</h3>
+            <div class="csv-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>GraphName</th>
+                            <th>Node</th>
+                            <th>Edge</th>
+                            <th>Context</th>
+                            <th>AgentType</th>
+                            <th>Success_Next</th>
+                            <th>Failure_Next</th>
+                            <th>Input_Fields</th>
+                            <th>Output_Field</th>
+                            <th>Prompt</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>SimpleQA</td>
+                            <td>GetInput</td>
+                            <td></td>
+                            <td>User input</td>
+                            <td>input</td>
+                            <td>ProcessInput</td>
+                            <td></td>
+                            <td>user_query</td>
+                            <td>input</td>
+                            <td>"Please enter your question:"</td>
+                        </tr>
+                        <tr>
+                            <td>SimpleQA</td>
+                            <td>ProcessInput</td>
+                            <td></td>
+                            <td>Process with LLM</td>
+                            <td>openai</td>
+                            <td>GenerateResponse</td>
+                            <td>HandleError</td>
+                            <td>input</td>
+                            <td>answer</td>
+                            <td>""</td>
+                        </tr>
+                        <tr>
+                            <td>SimpleQA</td>
+                            <td>GenerateResponse</td>
+                            <td></td>
+                            <td>Format response</td>
+                            <td>echo</td>
+                            <td>END</td>
+                            <td></td>
+                            <td>answer</td>
+                            <td>formatted_answer</td>
+                            <td>"Your answer is: {answer}"</td>
+                        </tr>
+                        <tr>
+                            <td>SimpleQA</td>
+                            <td>HandleError</td>
+                            <td></td>
+                            <td>Handle error</td>
+                            <td>echo</td>
+                            <td>END</td>
+                            <td></td>
+                            <td>error</td>
+                            <td>error_message</td>
+                            <td>"Sorry, an error occurred: {error}"</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         `
     },
