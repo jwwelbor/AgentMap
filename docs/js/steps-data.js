@@ -13,58 +13,63 @@ SimpleQA,ProcessInput,,Process with LLM,openai,GenerateResponse,HandleError,inpu
 SimpleQA,GenerateResponse,,Format response,echo,END,,answer,formatted_answer,"Your answer is: {answer}"
 SimpleQA,HandleError,,Handle error,echo,END,,error,error_message,"Sorry, an error occurred: {error}"`,
         visual: `
-            <div class="border border-gray-300 rounded-md p-4 bg-gray-900">
-                <div class="flex flex-col space-y-2">
-                    <div class="flex text-xs font-bold">
-                        <div class="w-24 border-r border-gray-600 p-1">GraphName</div>
-                        <div class="w-24 border-r border-gray-600 p-1">Node</div>
-                        <div class="w-24 border-r border-gray-600 p-1">Edge</div>
-                        <div class="w-32 border-r border-gray-600 p-1">Context</div>
-                        <div class="w-24 border-r border-gray-600 p-1">AgentType</div>
-                        <div class="w-24 border-r border-gray-600 p-1">Success_Next</div>
-                        <div class="w-24 border-r border-gray-600 p-1">Failure_Next</div>
-                    </div>
-                    <div class="flex text-xs">
-                        <div class="w-24 border-r border-gray-600 p-1">SimpleQA</div>
-                        <div class="w-24 border-r border-gray-600 p-1 font-medium text-cyan-300">GetInput</div>
-                        <div class="w-24 border-r border-gray-600 p-1"></div>
-                        <div class="w-32 border-r border-gray-600 p-1">User input</div>
-                        <div class="w-24 border-r border-gray-600 p-1">input</div>
-                        <div class="w-24 border-r border-gray-600 p-1">ProcessInput</div>
-                        <div class="w-24 border-r border-gray-600 p-1"></div>
-                    </div>
-                    <div class="flex text-xs">
-                        <div class="w-24 border-r border-gray-600 p-1">SimpleQA</div>
-                        <div class="w-24 border-r border-gray-600 p-1 font-medium text-cyan-300">ProcessInput</div>
-                        <div class="w-24 border-r border-gray-600 p-1"></div>
-                        <div class="w-32 border-r border-gray-600 p-1">Process with LLM</div>
-                        <div class="w-24 border-r border-gray-600 p-1">openai</div>
-                        <div class="w-24 border-r border-gray-600 p-1">GenerateResponse</div>
-                        <div class="w-24 border-r border-gray-600 p-1">HandleError</div>
-                    </div>
-                    <div class="flex text-xs">
-                        <div class="w-24 border-r border-gray-600 p-1">SimpleQA</div>
-                        <div class="w-24 border-r border-gray-600 p-1 font-medium text-cyan-300">GenerateResponse</div>
-                        <div class="w-24 border-r border-gray-600 p-1"></div>
-                        <div class="w-32 border-r border-gray-600 p-1">Format response</div>
-                        <div class="w-24 border-r border-gray-600 p-1">echo</div>
-                        <div class="w-24 border-r border-gray-600 p-1">END</div>
-                        <div class="w-24 border-r border-gray-600 p-1"></div>
-                    </div>
-                    <div class="flex text-xs">
-                        <div class="w-24 border-r border-gray-600 p-1">SimpleQA</div>
-                        <div class="w-24 border-r border-gray-600 p-1 font-medium text-cyan-300">HandleError</div>
-                        <div class="w-24 border-r border-gray-600 p-1"></div>
-                        <div class="w-32 border-r border-gray-600 p-1">Handle error</div>
-                        <div class="w-24 border-r border-gray-600 p-1">echo</div>
-                        <div class="w-24 border-r border-gray-600 p-1">END</div>
-                        <div class="w-24 border-r border-gray-600 p-1"></div>
-                    </div>
-                </div>
+            <div class="code-block">
+                <table class="workflow-table">
+                    <thead>
+                        <tr>
+                            <th>GraphName</th>
+                            <th>Node</th>
+                            <th>Edge</th>
+                            <th>Context</th>
+                            <th>AgentType</th>
+                            <th>Success_Next</th>
+                            <th>Failure_Next</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>SimpleQA</td>
+                            <td class="highlight-node">GetInput</td>
+                            <td></td>
+                            <td>User input</td>
+                            <td>input</td>
+                            <td>ProcessInput</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>SimpleQA</td>
+                            <td class="highlight-node">ProcessInput</td>
+                            <td></td>
+                            <td>Process with LLM</td>
+                            <td>openai</td>
+                            <td>GenerateResponse</td>
+                            <td>HandleError</td>
+                        </tr>
+                        <tr>
+                            <td>SimpleQA</td>
+                            <td class="highlight-node">GenerateResponse</td>
+                            <td></td>
+                            <td>Format response</td>
+                            <td>echo</td>
+                            <td>END</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>SimpleQA</td>
+                            <td class="highlight-node">HandleError</td>
+                            <td></td>
+                            <td>Handle error</td>
+                            <td>echo</td>
+                            <td>END</td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         `
     },
-    // Add the remaining step data objects here...
+    // Keep the rest of the steps data as is
+    // ...
 ];
 
 /**

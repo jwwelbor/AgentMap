@@ -379,3 +379,35 @@ footer {
     display: inline-block;
     margin-bottom: 1rem;
 }
+
+/* Add this to the end of docs/css/styles.css */
+
+/* Workflow table styles */
+.workflow-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+    background-color: #1f2937;
+    color: #d1d5db;
+}
+
+.workflow-table th, .workflow-table td {
+    border: 1px solid #374151;
+    padding: 0.5rem;
+    text-align: left;
+}
+
+.workflow-table th {
+    background-color: #111827;
+    color: #f3f4f6;
+    font-weight: 600;
+}
+
+.workflow-table tr:nth-child(even) {
+    background-color: #1a202c;
+}
+
+.workflow-table .highlight-node {
+    color: #22d3ee;
+    font-weight: 500;
+}
