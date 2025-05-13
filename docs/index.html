@@ -8,22 +8,26 @@
     <!-- Marked.js for Markdown parsing -->
     <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
     
+    <!-- Mermaid.js for diagrams -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+    
     <!-- Our separated CSS file -->
     <link rel="stylesheet" href="css/styles.css">
-    <!-- Add console logging for debugging -->
+    
     <script>
-        console.log("AgentMap documentation page loading...");
+        // Initialize Mermaid with dark theme
+        document.addEventListener('DOMContentLoaded', function() {
+            mermaid.initialize({
+                startOnLoad: false, // We'll manually initialize
+                theme: 'dark',
+                flowchart: {
+                    curve: 'basis',
+                    useMaxWidth: true
+                },
+                securityLevel: 'loose'
+            });
+        });
     </script>
-    <!-- Add to your index.html -->
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
-    <script>
-    mermaid.initialize({ 
-        theme: 'dark',
-        flowchart: { 
-        curve: 'basis'
-        }
-    });
-</script>
 </head>
 <body>
     <div class="container" id="app-container">
@@ -34,16 +38,5 @@
     <script src="js/steps-data.js"></script>
     <script src="js/markdown-viewer.js"></script>
     <script src="js/app.js"></script>
-    <script>
-        // Ensure DOM is fully loaded before initializing
-        document.addEventListener('DOMContentLoaded', () => {
-            console.log("DOM fully loaded, initializing app...");
-            if (typeof app !== 'undefined') {
-                app.init();
-            } else {
-                console.error("App object not found!");
-            }
-        });
-    </script>
 </body>
 </html>
