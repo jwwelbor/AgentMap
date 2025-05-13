@@ -379,35 +379,212 @@ footer {
     display: inline-block;
     margin-bottom: 1rem;
 }
+/* Workflow visual styles */
+.workflow-visual {
+    background-color: #1f2937;
+    color: #d1d5db;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    overflow-x: auto;
+}
 
-/* Add this to the end of docs/css/styles.css */
-
-/* Workflow table styles */
-.workflow-table {
+/* CSV Table styles */
+.csv-table table {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.75rem;
-    background-color: #1f2937;
-    color: #d1d5db;
 }
 
-.workflow-table th, .workflow-table td {
+.csv-table th, .csv-table td {
     border: 1px solid #374151;
     padding: 0.5rem;
     text-align: left;
 }
 
-.workflow-table th {
+.csv-table th {
     background-color: #111827;
     color: #f3f4f6;
     font-weight: 600;
 }
 
-.workflow-table tr:nth-child(even) {
+.csv-table tr:nth-child(even) {
     background-color: #1a202c;
 }
 
-.workflow-table .highlight-node {
-    color: #22d3ee;
+.csv-table .node-highlight {
+    color: #22d3ee; /* cyan color */
     font-weight: 500;
+}
+
+/* SVG styles for workflow diagrams */
+.workflow-visual svg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+}
+
+/* Agent boxes styles */
+.agent-boxes {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.agent-box {
+    display: flex;
+    border: 1px solid;
+    border-radius: 0.375rem;
+    overflow: hidden;
+}
+
+.agent-name {
+    width: 6rem;
+    padding: 0.5rem;
+    font-weight: 500;
+}
+
+.agent-content {
+    flex: 1;
+    padding: 0.5rem;
+}
+
+.agent-type {
+    font-size: 0.875rem;
+}
+
+.agent-desc {
+    font-size: 0.75rem;
+    opacity: 0.8;
+    margin-top: 0.25rem;
+}
+
+.agent-input {
+    background-color: rgba(59, 130, 246, 0.1);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+.agent-openai {
+    background-color: rgba(245, 158, 11, 0.1);
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.agent-echo {
+    background-color: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.agent-error {
+    background-color: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* Compilation view styles */
+.compilation-view {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.compilation-header {
+    background-color: rgba(31, 41, 55, 0.6);
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+}
+
+.compilation-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.compilation-subtitle {
+    font-size: 0.75rem;
+    opacity: 0.8;
+    margin-top: 0.25rem;
+}
+
+.compilation-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+}
+
+.compilation-row {
+    display: flex;
+}
+
+.compilation-label {
+    width: 8rem;
+    font-weight: 500;
+}
+
+.compilation-value {
+    flex: 1;
+}
+
+/* Execution flow styles */
+.execution-flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.state-box {
+    width: 100%;
+    border: 1px solid;
+    border-radius: 0.375rem;
+    padding: 0.5rem;
+}
+
+.state-title {
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+.state-content {
+    font-size: 0.75rem;
+    margin: 0;
+    white-space: pre-wrap;
+    background-color: rgba(17, 24, 39, 0.3);
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+}
+
+.flow-arrow {
+    font-size: 1.5rem;
+    opacity: 0.8;
+}
+
+.initial-state {
+    background-color: rgba(31, 41, 55, 0.6);
+    border-color: rgba(156, 163, 175, 0.4);
+}
+
+.input-state {
+    background-color: rgba(59, 130, 246, 0.1);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+.process-state {
+    background-color: rgba(245, 158, 11, 0.1);
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.response-state {
+    background-color: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.final-state {
+    background-color: rgba(31, 41, 55, 0.6);
+    border-color: rgba(156, 163, 175, 0.4);
+}
+
+/* Complete workflow diagram styles */
+.complete-workflow {
+    display: flex;
+    justify-content: center;
 }
