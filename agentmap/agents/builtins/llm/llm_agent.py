@@ -103,7 +103,12 @@ class LLMAgent(BaseAgent):
         try:
             # Get or restore memory from inputs
             if self.memory_key in inputs and self.memory is not None:
-                self.memory = inputs[self.memory_key]
+                from agentmap.agents.builtins.memory.utils import deserialize_memory
+                memory_data = inputs[self.memory_key]
+                if isinstance(memory_data, dict) and memory_data.get("_type") == "langchain_memory":
+                    self.memory = deserialize_memory(memory_data)
+                else:
+                    self.memory = memory_data  # Handle case when it's already a memory object
             
             # Get LLM from subclass
             llm = self._get_llm()
