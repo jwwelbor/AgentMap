@@ -67,7 +67,7 @@ These fields control data flow between nodes:
 For complex routing patterns:
 - Function references: `func:choose_next`
 - Multiple targets: Use pipe-separator in Success_Next or Failure_Next
-
+---
 # Prompt Management in AgentMap
 
 AgentMap includes a robust prompt management system that helps you organize, maintain, and reuse prompts across your workflows. This system makes it easy to separate prompt content from application logic and provides a centralized way to manage prompts.
@@ -169,139 +169,7 @@ registry = manager.get_registry()
 3. **Use YAML for complex prompt sets** - Organize related prompts in YAML files
 4. **Include version info** - Add version information in prompt files for tracking changes
 5. **Document prompt parameters** - Note any template parameters in comments
-
-# File Agents in AgentMap
-
-AgentMap provides specialized agents for working with files and documents. These agents leverage LangChain document loaders to support a wide range of document formats, making it easy to incorporate file operations into your workflows.
-
-## FileReaderAgent
-
-The FileReaderAgent reads and processes various document types, with optional chunking and filtering capabilities.
-
-### Supported File Formats
-
-- Text files (.txt)
-- PDF files (.pdf)
-- Markdown (.md)
-- HTML (.html, .htm)
-- Word documents (.docx, .doc)
-
-### Configuration Options
-
-The FileReaderAgent can be configured via the Context field or in code:
-
-```csv
-GraphName,ReadDocs,{"chunk_size": 1000, "chunk_overlap": 200, "should_split": true},Read documents,file_reader,Process,,collection,documents,
-```
-
-Available configurations:
-- `chunk_size`: Size of text chunks when splitting (default: 1000)
-- `chunk_overlap`: Overlap between chunks (default: 200)
-- `should_split`: Whether to split documents (default: false)
-- `include_metadata`: Include document metadata (default: true)
-
-### Using FileReaderAgent
-
-Basic usage in a workflow:
-
-```csv
-GraphName,ReadFile,,Read document,file_reader,Process,,collection,document,path/to/file.pdf
-```
-
-The agent requires:
-- `collection`: Path to the file to read
-- `document_id`: Optional specific section to extract
-- `query`: Optional filtering criteria
-- `path`: Optional path within document
-- `format`: Optional output format (default, raw, text)
-
-Example state output:
-```python
-{
-    "document": {
-        "success": true,
-        "file_path": "path/to/file.pdf",
-        "data": [
-            {"content": "Document text here", "metadata": {...}}
-        ],
-        "count": 1
-    }
-}
-```
-
-## FileWriterAgent
-
-The FileWriterAgent writes content to various text-based formats with support for different write modes.
-
-### Supported File Formats
-
-Text-based formats including:
-- Text files (.txt)
-- Markdown (.md)
-- HTML (.html, .htm)
-- CSV (.csv)
-- Log files (.log)
-- Code files (.py, .js, etc.)
-
-### Write Modes
-
-- `write`: Create or overwrite file (default)
-- `append`: Add to existing file
-- `update`: Similar to write for text files
-- `delete`: Delete the file
-
-### Using FileWriterAgent
-
-Basic usage in a workflow:
-
-```csv
-GraphName,WriteFile,,Write document,file_writer,Next,,data,result,path/to/output.txt
-```
-
-The agent requires:
-- `collection`: Path to the file to write
-- `data`: Content to write
-- `mode`: Write mode (write, append, update, delete)
-
-Example input:
-```python
-{
-    "collection": "output/report.md",
-    "data": "# Report\n\nThis is the content of the report.",
-    "mode": "write"
-}
-```
-
-Example output:
-```python
-{
-    "result": {
-        "success": true,
-        "mode": "write",
-        "file_path": "output/report.md",
-        "created_new": true
-    }
-}
-```
-
-## Integration with LangChain
-
-Both file agents integrate with LangChain's document loaders, providing advanced document handling capabilities. The integration brings several benefits:
-
-1. **Standard document format**: Documents are represented with content and metadata
-2. **Text splitting**: Split long documents into manageable chunks
-3. **Metadata extraction**: Extract and utilize document metadata
-4. **Format conversion**: Handle various document formats with a unified API
-
-Example of a document processing workflow:
-
-```csv
-GraphName,ReadDocs,{"should_split": true},Read documents,file_reader,Summarize,,collection,documents,reports/*.pdf
-GraphName,Summarize,,Generate summary,openai,Save,,documents,summary,"Summarize these documents: {documents}"
-GraphName,Save,,Save the summary,file_writer,End,,summary,result,output/summary.md
-GraphName,End,,Workflow complete,echo,,,result,message,
-```
-
+---
 # AgentMap Agent Types
 
 AgentMap includes several built-in agent types for different purposes. Each agent type processes inputs and produces outputs differently.
@@ -416,7 +284,7 @@ Uses Google's Gemini models for text generation.
 - **Output Field**: LLM response
 - **Prompt Usage**: Used as prompt template
 - **Context**: Can contain model, temperature, memory settings
-
+---
 ## Storage Agent Types
 
 ### CSVReaderAgent and CSVWriterAgent
@@ -459,10 +327,140 @@ VectorGraph,Search,,Search for similar documents,VectorReader,Process,,query,sea
 ```
 
 The `VectorReaderAgent` allows you to perform similarity searches against vector databases, while the `VectorWriterAgent` handles adding documents and embeddings to the database. These agents integrate with LangChain's vector stores like Chroma and FAISS for semantic search capabilities.
+## File Agents in AgentMap
 
-## Advanced Agent Types
+AgentMap provides specialized agents for working with files and documents. These agents leverage LangChain document loaders to support a wide range of document formats, making it easy to incorporate file operations into your workflows.
 
-### GraphAgent
+### FileReaderAgent
+
+The FileReaderAgent reads and processes various document types, with optional chunking and filtering capabilities.
+
+#### Supported File Formats
+
+- Text files (.txt)
+- PDF files (.pdf)
+- Markdown (.md)
+- HTML (.html, .htm)
+- Word documents (.docx, .doc)
+
+#### Configuration Options
+
+The FileReaderAgent can be configured via the Context field or in code:
+
+```csv
+GraphName,ReadDocs,{"chunk_size": 1000, "chunk_overlap": 200, "should_split": true},Read documents,file_reader,Process,,collection,documents,
+```
+
+Available configurations:
+- `chunk_size`: Size of text chunks when splitting (default: 1000)
+- `chunk_overlap`: Overlap between chunks (default: 200)
+- `should_split`: Whether to split documents (default: false)
+- `include_metadata`: Include document metadata (default: true)
+
+#### Using FileReaderAgent
+
+Basic usage in a workflow:
+
+```csv
+GraphName,ReadFile,,Read document,file_reader,Process,,collection,document,path/to/file.pdf
+```
+
+The agent requires:
+- `collection`: Path to the file to read
+- `document_id`: Optional specific section to extract
+- `query`: Optional filtering criteria
+- `path`: Optional path within document
+- `format`: Optional output format (default, raw, text)
+
+Example state output:
+```python
+{
+    "document": {
+        "success": true,
+        "file_path": "path/to/file.pdf",
+        "data": [
+            {"content": "Document text here", "metadata": {...}}
+        ],
+        "count": 1
+    }
+}
+```
+
+### FileWriterAgent
+
+The FileWriterAgent writes content to various text-based formats with support for different write modes.
+
+#### Supported File Formats
+
+Text-based formats including:
+- Text files (.txt)
+- Markdown (.md)
+- HTML (.html, .htm)
+- CSV (.csv)
+- Log files (.log)
+- Code files (.py, .js, etc.)
+
+#### Write Modes
+
+- `write`: Create or overwrite file (default)
+- `append`: Add to existing file
+- `update`: Similar to write for text files
+- `delete`: Delete the file
+
+#### Using FileWriterAgent
+
+Basic usage in a workflow:
+
+```csv
+GraphName,WriteFile,,Write document,file_writer,Next,,data,result,path/to/output.txt
+```
+
+The agent requires:
+- `collection`: Path to the file to write
+- `data`: Content to write
+- `mode`: Write mode (write, append, update, delete)
+
+Example input:
+```python
+{
+    "collection": "output/report.md",
+    "data": "## Report\n\nThis is the content of the report.",
+    "mode": "write"
+}
+```
+
+Example output:
+```python
+{
+    "result": {
+        "success": true,
+        "mode": "write",
+        "file_path": "output/report.md",
+        "created_new": true
+    }
+}
+```
+
+### Integration with LangChain
+
+Both file agents integrate with LangChain's document loaders, providing advanced document handling capabilities. The integration brings several benefits:
+
+1. **Standard document format**: Documents are represented with content and metadata
+2. **Text splitting**: Split long documents into manageable chunks
+3. **Metadata extraction**: Extract and utilize document metadata
+4. **Format conversion**: Handle various document formats with a unified API
+
+Example of a document processing workflow:
+
+```csv
+GraphName,ReadDocs,{"should_split": true},Read documents,file_reader,Summarize,,collection,documents,reports/*.pdf
+GraphName,Summarize,,Generate summary,openai,Save,,documents,summary,"Summarize these documents: {documents}"
+GraphName,Save,,Save the summary,file_writer,End,,summary,result,output/summary.md
+GraphName,End,,Workflow complete,echo,,,result,message,
+```
+# Advanced Agent Types
+
+## GraphAgent
 
 Executes a subgraph and returns its result.
 
@@ -470,6 +468,224 @@ Executes a subgraph and returns its result.
 - **Output Field**: Result from the subgraph
 - **Prompt Usage**: Name of the subgraph to execute
 
+## SummaryAgent
+
+Combines and summarizes multiple input fields into a single output. Useful for consolidating outputs from parallel operations or creating concise summaries from multiple data sources.
+
+- **Input Fields**: Multiple fields to be summarized (pipe-separated list)
+- **Output Field**: Single field for the consolidated output
+- **Prompt Usage**: Instructions for LLM-based summarization
+- **Context**: Can contain configuration for formatting and LLM usage
+
+The SummaryAgent operates in two modes:
+### 1. Basic Concatenation Mode (Default)
+
+Simply formats and joins the input fields according to templates.
+
+Example:
+```csv
+TestGraph,Summarize,,{"format":"{key}: {value}","separator":"\n\n"},summary,Next,,field1|field2|field3,summary_output,
+```
+
+Configuration options:
+- `format`: Template for formatting each item (default: `"{key}: {value}"`)
+- `separator`: String used to join formatted items (default: `"\n\n"`)
+- `include_keys`: Whether to include field names in output (default: `true`)
+
+### 2. LLM Summarization Mode
+
+Uses an LLM to create an intelligent summary of the inputs.
+
+Example:
+```csv
+TestGraph,Summarize,,{"llm":"openai","model":"gpt-3.5-turbo"},summary,Next,,field1|field2|field3,summary_output,Create a concise summary of these data points.
+```
+
+LLM Configuration options:
+- `llm`: LLM provider to use (`"openai"`, `"anthropic"`, or `"google"`)
+- `model`: Specific model to use (optional)
+- `temperature`: Temperature for generation (optional)
+
+The prompt field provides instructions to the LLM on how to create the summary.
+
+### Usage Patterns
+
+**Summarizing Parallel Branch Results:**
+```csv
+ParallelFlow,Branch1,,Process first set of data,Default,Join,,input,result1,
+ParallelFlow,Branch2,,Process second set of data,Default,Join,,input,result2,
+ParallelFlow,Branch3,,Process third set of data,Default,Join,,input,result3,
+ParallelFlow,Join,,{"separator":"\n\n---\n\n"},summary,NextStep,,result1|result2|result3,combined_results,
+```
+
+**Creating a Report with LLM:**
+```csv
+ReportFlow,GetData1,,Fetch financial data,ApiClient,Summarize,,query,financial_data,
+ReportFlow,GetData2,,Fetch market data,ApiClient,Summarize,,query,market_data,
+ReportFlow,GetData3,,Fetch competitor data,ApiClient,Summarize,,query,competitor_data,
+ReportFlow,Summarize,,{"llm":"anthropic"},summary,Store,,financial_data|market_data|competitor_data,executive_summary,Create a concise executive summary of the financial, market, and competitor data. Highlight key insights and trends.
+ReportFlow,Store,,Save the report,json_writer,,,executive_summary,report_status,
+```
+
+## OrchestratorAgent
+
+The `OrchestratorAgent` is designed to dynamically route user input to the most appropriate node in your workflow based on intent matching. It uses LLMs or algorithmic matching to determine which node best matches the user's request.
+
+### Key Features
+
+- **Built-in Routing**: Automatically navigates to the selected node without requiring a separate routing function
+- **Multiple Matching Strategies**: Choose between LLM-based, algorithmic, or tiered matching
+- **Flexible Node Filtering**: Filter available nodes by type, specific list, or use all nodes
+- **Confidence Thresholds**: Configure when to use LLM vs. algorithmic matching
+
+### CSV Configuration
+
+```csv
+GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+MyGraph,RouteIntent,,nodes:NodeA|NodeB|NodeC,orchestrator,DefaultHandler,ErrorHandler,available_nodes|user_input,selected_node,"Route the user request to the appropriate node."
+```
+
+#### Context Parameters
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| nodes | Filter to specific nodes (pipe-separated) or "all" | "all" |
+| nodeType | Filter nodes by type | |
+| llm_type | LLM to use for matching ("openai", "anthropic", "google") | "openai" |
+| temperature | Temperature setting for LLM | 0.2 |
+| default_target | Default node if no match found | Success_Next |
+| matching_strategy | Strategy to use ("tiered", "algorithm", or "llm") | "tiered" |
+| confidence_threshold | Threshold for algorithmic confidence (0.0-1.0) | 0.8 |
+
+#### Node Filtering Options
+
+There are three ways to filter which nodes are available for the orchestrator:
+
+1. **Specific List**: `nodes:NodeA|NodeB|NodeC` - Only include listed nodes
+2. **By Type**: `nodeType:data_processor` - Only include nodes of specified type
+3. **All Nodes**: `nodes:all` - Include all available nodes (default)
+
+#### Input/Output Fields
+
+The `OrchestratorAgent` expects:
+- **First Input Field**: Location in state of available nodes (`available_nodes`)
+- **Second Input Field**: Text input to match against node intents (`user_input`)
+- **Output Field**: Where to store the selected node name
+
+### Built-in Routing
+
+The OrchestratorAgent has built-in routing capability. Unlike other agents that require explicit routing function definitions, the OrchestratorAgent will automatically:
+
+1. Select the best node for the user input
+2. Store this node name in the output field
+3. Automatically navigate to that node in the graph
+
+This means you do not need to use a routing function in the Edge column when using the OrchestratorAgent.
+
+### Node Metadata
+
+Each node in the available nodes dictionary has this structure:
+
+```python
+{
+    "node_name": {
+        "description": "Human-readable description of the node's purpose",
+        "prompt": "The node's prompt from the CSV definition",
+        "type": "The agent type of the node"
+    }
+}
+```
+
+The node registry is automatically populated from:
+1. **description**: Extracted from the Context column's `description:` parameter
+2. **prompt**: Directly from the node's Prompt column
+3. **type**: Directly from the node's AgentType column
+
+### Matching Strategies
+
+#### Tiered Matching (Default)
+
+Combines the speed of algorithmic matching with the intelligence of LLM matching:
+
+1. First attempts algorithmic matching
+2. If confidence exceeds threshold (default 0.8), uses that result
+3. Otherwise, falls back to LLM-based matching
+
+Example:
+```csv
+RouterFlow,RoutingNode,,matching_strategy:tiered,orchestrator,Default,Error,available_nodes|user_input,selected_node,
+```
+
+#### Algorithm-Only Matching
+
+Uses only fast algorithmic matching without LLM calls:
+
+1. Checks if node names appear in user input 
+2. Otherwise, counts matching keywords between node prompts and user input
+3. Returns the node with highest keyword match ratio
+
+Example:
+```csv
+RouterFlow,RoutingNode,,matching_strategy:algorithm,orchestrator,Default,Error,available_nodes|user_input,selected_node,
+```
+
+#### LLM-Only Matching
+
+Uses only LLM-based matching for highest quality but slower performance:
+
+Example:
+```csv
+RouterFlow,RoutingNode,,matching_strategy:llm,orchestrator,Default,Error,available_nodes|user_input,selected_node,
+```
+
+### Usage Examples
+
+#### General Intent Router
+
+```csv
+IntentRouter,RouteIntent,,nodes:AnswerQuestion|FetchData|GenerateReport,orchestrator,DefaultHandler,ErrorHandler,available_nodes|user_input,selected_node,"Route the user request to the appropriate node."
+```
+
+#### Type-Based Router
+
+```csv
+DataProcessor,RouteDataOp,,nodeType:data_processor,orchestrator,DefaultHandler,ErrorHandler,available_nodes|user_input,selected_node,"Select the appropriate data processing operation."
+```
+
+#### All Nodes Router
+
+```csv
+Router,RouteRequest,,nodes:all,orchestrator,DefaultHandler,ErrorHandler,available_nodes|user_input,selected_node,"Route to the most appropriate node."
+```
+
+### Complete Workflow Example
+
+```csv
+Router,GetUserInput,,Get user request,Input,RouteRequest,,message,user_input,What would you like to do?
+Router,RouteRequest,,nodes:all,orchestrator,DefaultHandler,ErrorHandler,available_nodes|user_input,selected_node,Route to the appropriate node
+Router,WeatherNode,,Get weather,Default,End,,location,weather,Getting weather for {location}
+Router,NewsNode,,Get news,Default,End,,topic,news,Getting news about {topic}
+Router,DefaultHandler,,Handle unmatched requests,Default,End,,user_input,response,I can't handle that request
+Router,ErrorHandler,,Handle errors,Default,End,,error,error_message,An error occurred
+Router,End,,End flow,Echo,,,response|weather|news|error_message,final_output,
+```
+
+In this example:
+1. `GetUserInput` collects user input
+2. `RouteRequest` (OrchestratorAgent) analyzes the input and selects the best node
+3. The graph automatically navigates to the selected node
+4. The selected node processes the input
+5. All paths end at the `End` node which consolidates outputs
+
+### Best Practices
+
+1. **Descriptive Metadata**: Ensure each node has a clear description and prompt
+2. **Unique Node Purposes**: Make each node's purpose distinct to avoid confusion
+3. **Input Text Clarity**: Ensure the user input field contains the relevant text for matching
+4. **Fallback Handling**: Set a default_target for cases where no good match is found
+5. **Testing**: Test with a variety of inputs to ensure proper routing behavior
+
+---
 # Field Usage in AgentMap
 
 This document explains how each field in the CSV is used by different components of AgentMap.
