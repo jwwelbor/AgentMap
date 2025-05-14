@@ -119,7 +119,7 @@ Or directly in your code:
 ```python
 from agentmap.prompts import resolve_prompt
 
-# Resolve a prompt reference
+### Resolve a prompt reference
 prompt_text = resolve_prompt("prompt:customer_service")
 ```
 
@@ -149,16 +149,16 @@ For more advanced use cases, you can use the PromptManager directly:
 ```python
 from agentmap.prompts import get_prompt_manager
 
-# Get the global PromptManager instance
+### Get the global PromptManager instance
 manager = get_prompt_manager()
 
-# Resolve a prompt reference
+### Resolve a prompt reference
 prompt_text = manager.resolve_prompt("file:prompts/system.txt")
 
-# Register a new prompt
+### Register a new prompt
 manager.register_prompt("greeting", "Hello, I'm an AI assistant.", save=True)
 
-# Get all registered prompts
+### Get all registered prompts
 registry = manager.get_registry()
 ```
 
@@ -686,11 +686,11 @@ In this example:
 5. **Testing**: Test with a variety of inputs to ensure proper routing behavior
 
 ---
-# Field Usage in AgentMap
+## Field Usage in AgentMap
 
 This document explains how each field in the CSV is used by different components of AgentMap.
 
-## GraphName
+### GraphName
 
 The `GraphName` field groups nodes together into a single workflow. When running a graph with `run_graph(graph_name)`, only nodes with the matching `GraphName` are included.
 
@@ -698,7 +698,7 @@ The `GraphName` field groups nodes together into a single workflow. When running
 - Create separate workflows in a single CSV file
 - Organize related nodes under a common name
 
-## Node
+### Node
 
 The `Node` field defines a unique identifier for each node in the graph. It is used:
 
@@ -711,11 +711,11 @@ The `Node` field defines a unique identifier for each node in the graph. It is u
 - Ensure uniqueness within a graph
 - CamelCase or snake_case naming is recommended
 
-## Edge vs Success_Next/Failure_Next
+### Edge vs Success_Next/Failure_Next
 
 There are two routing methods in AgentMap:
 
-### Simple Routing with Edge
+#### Simple Routing with Edge
 
 When `Edge` is specified, the node will always proceed to the target node:
 
@@ -725,7 +725,7 @@ GraphA,Next,End,...
 GraphA,End,,...
 ```
 
-### Conditional Routing with Success_Next/Failure_Next
+#### Conditional Routing with Success_Next/Failure_Next
 
 When `Success_Next` and/or `Failure_Next` are specified, routing depends on the `last_action_success` flag:
 
@@ -866,17 +866,17 @@ The state is a dictionary that contains:
 
 Example state evolution:
 ```python
-# Initial state
+### Initial state
 state = {"input": "Hello, world!"}
 
-# After Node1 (Echo)
+### After Node1 (Echo)
 state = {
     "input": "Hello, world!",
     "echoed": "Hello, world!",  # output_field from Node1
     "last_action_success": True
 }
 
-# After Node2 (OpenAI)
+### After Node2 (OpenAI)
 state = {
     "input": "Hello, world!",
     "echoed": "Hello, world!",
@@ -896,10 +896,10 @@ The `StateAdapter` class handles different state formats:
 It provides methods for getting and setting values regardless of state type:
 
 ```python
-# Get a value
+### Get a value
 value = StateAdapter.get_value(state, "field_name", default="default value")
 
-# Set a value
+### Set a value
 new_state = StateAdapter.set_value(state, "field_name", "new value")
 ```
 
@@ -934,7 +934,7 @@ For agents with memory (like LLM agents), there's additional state handling:
 
 Example with memory:
 ```python
-# After LLM agent with memory
+### After LLM agent with memory
 state = {
     "input": "Hello",
     "response": "Hi there!",
@@ -952,24 +952,7 @@ state = {
 
 ## Execution Tracking
 
-AgentMap tracks execution steps in the `execution_steps` field:
-
-```python
-state["execution_steps"] = [
-    {
-        "node": "Start",
-        "timestamp": 1622547212.456,
-        "duration": 0.123,
-        "success": True
-    },
-    {
-        "node": "Process",
-        "timestamp": 1622547212.789,
-        "duration": 0.456,
-        "success": True
-    }
-]
-```
+Execution tracking is handled via LangSmith
 
 This tracking is useful for:
 - Debugging workflow execution
@@ -1265,7 +1248,7 @@ def choose_route(state: Any, success_node="SuccessPath", failure_node="FailurePa
 You can customize the directories where scaffolds are generated:
 
 ```yaml
-# In agentmap_config.yaml
+### In agentmap_config.yaml
 paths:
   custom_agents: "path/to/custom/agents"
   functions: "path/to/functions"
