@@ -11,6 +11,8 @@ const stepsData = [
         visual: `
             <div class="mermaid-wrapper">
                 <pre class="mermaid">
+                    flowchart TD
+
                     csv[CSV Definition] -->|Parse| graphBuilder[Graph Builder]
                     graphBuilder -->|Build| graphDef[Graph Definition]
                     registry[Agent Registry] -->|Lookup| graphDef
@@ -345,27 +347,27 @@ def run_graph(graph_name, initial_state, csv_path=None, ...):
             </div>
         `
     },
-    {
-        title: "6. State Management",
-        description: "AgentMap manages state transitions and updates between agents.",
-        details: "The runner handles state updates, ensuring that each agent receives the correct context and data.",
-        code: null,
-        visual: `<div></div>`
-    },
-    {
-        title: "7. Result Handling",
-        description: "The final state is returned after the workflow execution.",
-        details: "The runner returns the final state, which contains all outputs from the agents.",
-        code: null,
-        visual: `<div></div>`
-    },
-    {
-        title: "8. Error Handling",
-        description: "AgentMap provides mechanisms for error handling and recovery.",
-        details: "Errors are logged, and the workflow can be retried or redirected based on the error type.",
-        code: null,
-        visual: `<div></div>`
-    }    
+    // {
+    //     title: "6. State Management",
+    //     description: "AgentMap manages state transitions and updates between agents.",
+    //     details: "The runner handles state updates, ensuring that each agent receives the correct context and data.",
+    //     code: null,
+    //     visual: `<div></div>`
+    // },
+    // {
+    //     title: "7. Result Handling",
+    //     description: "The final state is returned after the workflow execution.",
+    //     details: "The runner returns the final state, which contains all outputs from the agents.",
+    //     code: null,
+    //     visual: `<div></div>`
+    // },
+    // {
+    //     title: "8. Error Handling",
+    //     description: "AgentMap provides mechanisms for error handling and recovery.",
+    //     details: "Errors are logged, and the workflow can be retried or redirected based on the error type.",
+    //     code: null,
+    //     visual: `<div></div>`
+    // }    
 ];
 
 
