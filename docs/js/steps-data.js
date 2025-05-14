@@ -4,6 +4,51 @@
  */
 const stepsData = [
     {
+        title: "The Complete AgentMap Workflow",
+        description: "A comprehensive overview of how all parts work together.",
+        details: "AgentMap combines CSV parsing, agent creation, graph building, and state management to create flexible workflows.",
+        code: null,
+        visual: `
+            <div class="mermaid-wrapper">
+                <pre class="mermaid">
+                    csv[CSV Definition] -->|Parse| graphBuilder[Graph Builder]
+                    graphBuilder -->|Build| graphDef[Graph Definition]
+                    registry[Agent Registry] -->|Lookup| graphDef
+                    graphDef -->|Create| agents[Agent Instances]
+                    graphDef -->|Build| stateGraph[StateGraph]
+                    stateGraph -->|Compile| compiledGraph[Compiled Graph]
+                    agents -->|Add| compiledGraph
+                    initialState[Initial State] -->|State Flow| resultState[Result State]
+                    resultState -->|Return| runner[Runner]
+                    compiledGraph -->|Execute| runner
+                    runner -->|Update| resultState
+                    
+                    classDef csv fill:#F3F4F6,stroke:#9CA3AF,color:#4B5563
+                    classDef graphBuilder fill:#DBEAFE,stroke:#3B82F6,color:#1E40AF
+                    classDef graphDef fill:#E0F2FE,stroke:#0EA5E9,color:#0C4A6E
+                    classDef registry fill:#F3E8FF,stroke:#A855F7,color:#6B21A8
+                    classDef agents fill:#FCE7F3,stroke:#EC4899,color:#9D174D
+                    classDef stateGraph fill:#D1FAE5,stroke:#10B981,color:#065F46
+                    classDef compiled fill:#A7F3D0,stroke:#059669,color:#064E3B
+                    classDef initialState fill:#FEF3C7,stroke:#F59E0B,color:#92400E
+                    classDef resultState fill:#FFE4E6,stroke:#F43F5E,color:#9F1239
+                    classDef runner fill:#FEE2E2,stroke:#EF4444,color:#991B1B
+                    
+                    class csv csv
+                    class graphBuilder graphBuilder
+                    class graphDef graphDef
+                    class registry registry
+                    class agents agents
+                    class stateGraph stateGraph
+                    class compiledGraph compiled
+                    class initialState initialState
+                    class resultState resultState
+                    class runner runner
+                </pre>
+            </div>
+        `
+    },
+    {
         title: "1. CSV Workflow Definition",
         description: "AgentMap begins with a CSV file that defines the workflow structure.",
         details: "The CSV file contains rows defining each node in the workflow graph, including agents, edges, prompts, and routing logic.",
@@ -301,51 +346,28 @@ def run_graph(graph_name, initial_state, csv_path=None, ...):
         `
     },
     {
-        title: "The Complete AgentMap Workflow",
-        description: "A comprehensive overview of how all parts work together.",
-        details: "AgentMap combines CSV parsing, agent creation, graph building, and state management to create flexible workflows.",
+        title: "6. State Management",
+        description: "AgentMap manages state transitions and updates between agents.",
+        details: "The runner handles state updates, ensuring that each agent receives the correct context and data.",
         code: null,
-        visual: `
-            <div class="mermaid-wrapper">
-                <pre class="mermaid">
-                    csv[CSV Definition] -->|Parse| graphBuilder[Graph Builder]
-                    graphBuilder -->|Build| graphDef[Graph Definition]
-                    registry[Agent Registry] -->|Lookup| graphDef
-                    graphDef -->|Create| agents[Agent Instances]
-                    graphDef -->|Build| stateGraph[StateGraph]
-                    stateGraph -->|Compile| compiledGraph[Compiled Graph]
-                    agents -->|Add| compiledGraph
-                    initialState[Initial State] -->|State Flow| resultState[Result State]
-                    resultState -->|Return| runner[Runner]
-                    compiledGraph -->|Execute| runner
-                    runner -->|Update| resultState
-                    
-                    classDef csv fill:#F3F4F6,stroke:#9CA3AF,color:#4B5563
-                    classDef graphBuilder fill:#DBEAFE,stroke:#3B82F6,color:#1E40AF
-                    classDef graphDef fill:#E0F2FE,stroke:#0EA5E9,color:#0C4A6E
-                    classDef registry fill:#F3E8FF,stroke:#A855F7,color:#6B21A8
-                    classDef agents fill:#FCE7F3,stroke:#EC4899,color:#9D174D
-                    classDef stateGraph fill:#D1FAE5,stroke:#10B981,color:#065F46
-                    classDef compiled fill:#A7F3D0,stroke:#059669,color:#064E3B
-                    classDef initialState fill:#FEF3C7,stroke:#F59E0B,color:#92400E
-                    classDef resultState fill:#FFE4E6,stroke:#F43F5E,color:#9F1239
-                    classDef runner fill:#FEE2E2,stroke:#EF4444,color:#991B1B
-                    
-                    class csv csv
-                    class graphBuilder graphBuilder
-                    class graphDef graphDef
-                    class registry registry
-                    class agents agents
-                    class stateGraph stateGraph
-                    class compiledGraph compiled
-                    class initialState initialState
-                    class resultState resultState
-                    class runner runner
-                </pre>
-            </div>
-        `
-    }
+        visual: `<div></div>`
+    },
+    {
+        title: "7. Result Handling",
+        description: "The final state is returned after the workflow execution.",
+        details: "The runner returns the final state, which contains all outputs from the agents.",
+        code: null,
+        visual: `<div></div>`
+    },
+    {
+        title: "8. Error Handling",
+        description: "AgentMap provides mechanisms for error handling and recovery.",
+        details: "Errors are logged, and the workflow can be retried or redirected based on the error type.",
+        code: null,
+        visual: `<div></div>`
+    }    
 ];
+
 
 /**
  * Documentation files available in the project
@@ -353,5 +375,6 @@ def run_graph(graph_name, initial_state, csv_path=None, ...):
 const documentationFiles = [
     { path: 'README.md', title: 'Main README' },
     { path: 'README_usage_details.md', title: 'Usage Details' },
-    { path: 'README_cloud_storage.md', title: 'Cloud Storage' }
+    { path: 'README_cloud_storage.md', title: 'Cloud Storage' },
+    { path: 'README_orchestrator.md', title: 'Orchestrator Agent' }
 ];
