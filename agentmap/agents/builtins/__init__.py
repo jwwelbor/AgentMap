@@ -30,18 +30,6 @@ try:
 except ImportError:
     GoogleAgent = None
 
-
-# Central registry of agent types
-AGENT_MAP = {
-    "echo": EchoAgent,
-    "default": DefaultAgent,
-    "input": InputAgent,
-    "success": SuccessAgent,
-    "failure": FailureAgent,
-    "branching": BranchingAgent,
-    "graph": GraphAgent
-}
-
 # Import storage agents
 try:
     from agentmap.agents.builtins.storage import (
@@ -49,18 +37,11 @@ try:
         JSONDocumentReaderAgent, JSONDocumentWriterAgent,
         FileReaderAgent, FileWriterAgent
     )
-    AGENT_MAP["csv_reader"] = CSVReaderAgent
-    AGENT_MAP["csv_writer"] = CSVWriterAgent
-    AGENT_MAP["json_reader"] = JSONDocumentReaderAgent
-    AGENT_MAP["json_writer"] = JSONDocumentWriterAgent
-    AGENT_MAP["file_reader"] = FileReaderAgent
-    AGENT_MAP["file_writer"] = FileWriterAgent    
 except ImportError:
     pass
 
 try:
     from agentmap.agents.builtins.summary_agent import SummaryAgent
-    AGENT_MAP["summary"] = SummaryAgent
 except ImportError:
     pass
 
@@ -68,69 +49,20 @@ try:
     from agentmap.agents.builtins.storage.vector import (
         VectorAgent, VectorReaderAgent, VectorWriterAgent
     )
-    # In your agent registry
-    AGENT_MAP["vector_agent"] = VectorAgent  # Base agent
-    AGENT_MAP["vector_reader"] = VectorReaderAgent
-    AGENT_MAP["vector_writer"] = VectorWriterAgent
 except ImportError:
     pass   
-
 
 # Import Firebase agents if available
 try:
     from agentmap.agents.builtins.storage import (
         FirebaseDocumentReaderAgent, FirebaseDocumentWriterAgent
     )
-    AGENT_MAP["firebase_reader"] = FirebaseDocumentReaderAgent
-    AGENT_MAP["firebase_writer"] = FirebaseDocumentWriterAgent
-    AGENT_MAP["firestore_reader"] = FirebaseDocumentReaderAgent  # Alias for convenience
-    AGENT_MAP["firestore_writer"] = FirebaseDocumentWriterAgent  # Alias for convenience
 except (ImportError, AttributeError):
     pass
 
-# Add optional agents if available
-if OpenAIAgent:
-    AGENT_MAP["openai"] = OpenAIAgent
-    AGENT_MAP["gpt"] = OpenAIAgent  # Add alias for convenience
-    AGENT_MAP["chatgpt"] = OpenAIAgent  # Add alias for convenience
-
-if AnthropicAgent:
-    AGENT_MAP["anthropic"] = AnthropicAgent
-    AGENT_MAP["claude"] = AnthropicAgent  # Add alias for convenience
-
-if GoogleAgent:
-    AGENT_MAP["google"] = GoogleAgent
-    AGENT_MAP["gemini"] = GoogleAgent  # Add alias for convenience
-
-def get_agent_class(agent_type: str):
-    """
-    Get an agent class by its type string.
-    
-    Args:
-        agent_type: The type identifier for the agent
-        
-    Returns:
-        The agent class or None if not found
-    """
-    if not agent_type:
-        return DefaultAgent
-        
-    agent_type = agent_type.lower()
-    return AGENT_MAP.get(agent_type)
-
-def register_agent(agent_type: str, agent_class):
-    """
-    Register a custom agent class with the agent registry.
-    
-    Args:
-        agent_type: The type identifier for the agent
-        agent_class: The agent class to register
-    """
-    AGENT_MAP[agent_type.lower()] = agent_class
-
-
 # Import loader after individual agent imports to avoid circular dependencies
 from agentmap.agents.loader import AgentLoader, create_agent
+from agentmap.agents.registry import get_agent_class, register_agent
 
 # Export symbols
 __all__ = [
@@ -147,6 +79,5 @@ __all__ = [
     'AgentLoader',
     'create_agent',
     'get_agent_class',
-    'register_agent',
-    'AGENT_MAP'
+    'register_agent'
 ]

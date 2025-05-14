@@ -11,7 +11,6 @@ from agentmap.agents.base_agent import BaseAgent
 from agentmap.agents.registry import (
     register_agent, 
     get_agent_class,
-    get_agent_map
 )
 
 # Import built-in agents
@@ -103,9 +102,6 @@ except ImportError:
 # Import agent loader functions - no circular dependency anymore
 from agentmap.agents.loader import AgentLoader, create_agent
 
-# For backwards compatibility, create an AGENT_MAP variable
-AGENT_MAP = get_agent_map()
-
 # Export public API
 __all__ = [
     'BaseAgent',
@@ -113,11 +109,11 @@ __all__ = [
     'create_agent',
     'get_agent_class',
     'register_agent',
-    'AGENT_MAP',  # For backwards compatibility
 ]
 
-# Add agent classes to __all__ for convenience
-_agent_classes = set(cls.__name__ for cls in AGENT_MAP.values())
+# Add agent classes to __all__ for convenience - using registry instead of AGENT_MAP
+from agentmap.agents.registry import get_agent_map
+_agent_classes = set(cls.__name__ for cls in get_agent_map().values())
 for class_name in _agent_classes:
     if class_name and class_name not in __all__:
         __all__.append(class_name)

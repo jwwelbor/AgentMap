@@ -1,3 +1,4 @@
+# agentmap/agents/builtins/storage/file/reader.py
 """
 File document reader agent implementation.
 
@@ -9,23 +10,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-
-# In agentmap/agents/builtins/storage/file/reader.py
-# In agentmap/agents/builtins/storage/file/reader.py
-try:
-    # New import path
-    from langchain_community.document_loaders import (
-        CSVLoader, TextLoader,  # Add all the classes being imported
-        # other imports...
-    )
-except ImportError:
-    # Legacy import path
-    from langchain.document_loaders import (
-        CSVLoader, TextLoader,  # Same imports as above
-        # other imports...
-    )
-
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, DocumentResult, log_operation
@@ -44,20 +28,8 @@ class FileReaderAgent(BaseStorageAgent):
     """
     
     def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
-        """
-        Initialize the file reader agent.
-        
-        Args:
-            name: Name of the agent node
-            prompt: File path or prompt with path
-            context: Additional configuration including:
-                - chunk_size: Size of text chunks when splitting (default: 1000)
-                - chunk_overlap: Overlap between chunks (default: 200)
-                - should_split: Whether to split documents (default: False)
-                - input_fields: Input fields to use
-                - output_field: Output field to return results
-        """
-        super().__init__(name, prompt, context)
+        """Initialize the file reader agent."""
+        super().__init__(name, prompt, context or {})
         
         # Extract document processing configuration from context
         context = context or {}
@@ -65,6 +37,9 @@ class FileReaderAgent(BaseStorageAgent):
         self.chunk_overlap = int(context.get("chunk_overlap", 200))
         self.should_split = context.get("should_split", False)
         self.include_metadata = context.get("include_metadata", True)
+        
+        # For testing - allows a test to inject a mock loader
+        self._test_loader = None
     
     def _initialize_client(self) -> None:
         """No client needed for filesystem operations."""
@@ -72,20 +47,7 @@ class FileReaderAgent(BaseStorageAgent):
     
     @log_operation
     def process(self, inputs: Dict[str, Any]) -> Any:
-        """
-        Process inputs and read document(s).
-        
-        Args:
-            inputs: Dictionary with keys:
-                - collection: File path or collection name
-                - document_id: Optional specific document section
-                - query: Optional filtering criteria
-                - path: Optional path within document
-                - format: Optional output format (default: 'default')
-                
-        Returns:
-            Documents read from the specified location, optionally filtered
-        """
+        """Process inputs and read document(s)."""
         # Get the file path from inputs
         file_path = self.get_collection(inputs)
         
@@ -96,6 +58,14 @@ class FileReaderAgent(BaseStorageAgent):
         output_format = inputs.get("format", "default")
         
         try:
+            # Check file exists (skip this check if using test loader)
+            if not self._test_loader and not os.path.exists(file_path):
+                return DocumentResult(
+                    success=False,
+                    file_path=file_path,
+                    error=f"File not found: {file_path}"
+                )
+            
             # Read the document
             documents = self._read_document(file_path, document_id, query, path)
             
@@ -116,57 +86,36 @@ class FileReaderAgent(BaseStorageAgent):
                 return self._format_result(documents, file_path)
                 
         except Exception as e:
+            logger.error(f"Error reading file {file_path}: {str(e)}")
             # Handle and log the error
-            return self._handle_error_result(file_path, e)
+            return DocumentResult(
+                success=False,
+                file_path=file_path,
+                error=f"Error reading file {file_path}: {str(e)}"
+            )
     
     def _read_document(self, file_path: str, document_id=None, query=None, path=None) -> Any:
-        """
-        Read a document using LangChain document loaders.
-        
-        Args:
-            file_path: Path to the document file
-            document_id: Optional specific document ID or section
-            query: Optional query parameters
-            path: Optional path within document
+        """Read a document using LangChain document loaders."""
+        # Use test loader if provided (for testing)
+        if self._test_loader:
+            loader = self._test_loader
+        else:
+            # Validate file exists
+            file_path = os.path.expanduser(file_path)
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"File not found: {file_path}")
             
-        Returns:
-            Loaded documents from the file
-            
-        Raises:
-            FileNotFoundError: If the file doesn't exist
-            ValueError: For unsupported file types
-        """
-        # Validate file exists
-        file_path = os.path.expanduser(file_path)
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
+            # Get appropriate loader
+            loader = self._get_loader(file_path)
         
-        # Load document using LangChain
-        loader = self._get_loader(file_path)
-        documents = loader.load()
+        # Load documents
+        try:
+            documents = loader.load()
+            return documents
+        except Exception as e:
+            logger.error(f"Error loading {file_path}: {str(e)}")
+            raise ValueError(f"Error loading {file_path}")
         
-        # Split documents if requested
-        if self.should_split and documents:
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=self.chunk_size,
-                chunk_overlap=self.chunk_overlap
-            )
-            documents = text_splitter.split_documents(documents)
-        
-        # If document_id is specified, filter to just that document
-        if document_id is not None:
-            documents = self._filter_by_id(documents, document_id)
-        
-        # If path is specified, extract that path from documents
-        if path and documents:
-            documents = self._apply_document_path(documents, path)
-        
-        # If query is specified, filter documents
-        if query and documents:
-            documents = self._apply_query_filter(documents, query)
-        
-        return documents
-    
     def _get_loader(self, file_path: str) -> Any:
         """
         Select appropriate LangChain document loader based on file extension.
@@ -183,43 +132,71 @@ class FileReaderAgent(BaseStorageAgent):
         """
         file_path = file_path.lower()
         
-        if file_path.endswith('.txt'):
+        # Try using the new import paths first
+        try:
             try:
-                from langchain.document_loaders import TextLoader
+                from langchain_community.document_loaders import TextLoader
+                from langchain_community.document_loaders import PyPDFLoader
+                from langchain_community.document_loaders import UnstructuredMarkdownLoader
+                from langchain_community.document_loaders import UnstructuredHTMLLoader
+                from langchain_community.document_loaders import UnstructuredWordDocumentLoader
+                from langchain_community.document_loaders import CSVLoader
+            except ImportError:
+                # Fall back to legacy import paths
+                from langchain.document_loaders import (
+                    TextLoader, PyPDFLoader, UnstructuredMarkdownLoader,
+                    UnstructuredHTMLLoader, UnstructuredWordDocumentLoader, CSVLoader
+                )
+            
+            if file_path.endswith('.txt'):
                 return TextLoader(file_path)
-            except ImportError:
-                raise ImportError("langchain is required. Install with 'pip install langchain'")
-                
-        elif file_path.endswith('.pdf'):
-            try:
-                from langchain.document_loaders import PyPDFLoader
+            elif file_path.endswith('.pdf'):
                 return PyPDFLoader(file_path)
-            except ImportError:
-                raise ImportError("PDF support requires additional dependencies. Install with 'pip install \"unstructured[pdf]\"'")
-                
-        elif file_path.endswith('.md'):
-            try:
-                from langchain.document_loaders import UnstructuredMarkdownLoader
+            elif file_path.endswith('.md'):
                 return UnstructuredMarkdownLoader(file_path)
-            except ImportError:
-                raise ImportError("Markdown support requires additional dependencies. Install with 'pip install \"unstructured[md]\"'")
-                
-        elif file_path.endswith('.html') or file_path.endswith('.htm'):
-            try:
-                from langchain.document_loaders import UnstructuredHTMLLoader
+            elif file_path.endswith('.html') or file_path.endswith('.htm'):
                 return UnstructuredHTMLLoader(file_path)
-            except ImportError:
-                raise ImportError("HTML support requires additional dependencies. Install with 'pip install unstructured'")
-                
-        elif file_path.endswith('.docx') or file_path.endswith('.doc'):
-            try:
-                from langchain.document_loaders import UnstructuredWordDocumentLoader
+            elif file_path.endswith('.docx') or file_path.endswith('.doc'):
                 return UnstructuredWordDocumentLoader(file_path)
-            except ImportError:
-                raise ImportError("Word document support requires additional dependencies. Install with 'pip install python-docx'")
+            elif file_path.endswith('.csv'):
+                return CSVLoader(file_path)
+            else:
+                # Default to text loader for unknown types
+                return TextLoader(file_path)
+        except ImportError as e:
+            # Create a simple loader that returns a document with the file content
+            logger.warning(f"LangChain document loaders not available ({e}), using fallback loader")
+            return self._create_fallback_loader(file_path)
+        except Exception as e:
+            raise ValueError(f"Error creating loader for {file_path}: {e}")
+    
+    def _create_fallback_loader(self, file_path: str) -> Any:
+        """
+        Create a fallback loader when LangChain is not available.
+        
+        Args:
+            file_path: Path to the document file
+            
+        Returns:
+            Simple loader object with a load method
+        """
+        # Define a simple Document class for fallback
+        class SimpleDocument:
+            def __init__(self, content, metadata=None):
+                self.page_content = content
+                self.metadata = metadata or {"source": file_path}
+        
+        # Create a simple loader
+        class FallbackLoader:
+            def __init__(self, file_path):
+                self.file_path = file_path
                 
-        else:
-            raise ValueError(f"Unsupported file type: {file_path}. Use specialized agent for this format.")
+            def load(self):
+                with open(self.file_path, 'r') as f:
+                    content = f.read()
+                return [SimpleDocument(content)]
+        
+        return FallbackLoader(file_path)
     
     def _filter_by_id(self, documents: List[Any], document_id: str) -> List[Any]:
         """
@@ -365,35 +342,4 @@ class FileReaderAgent(BaseStorageAgent):
             data=formatted_docs,
             count=len(formatted_docs) if isinstance(formatted_docs, list) else 1,
             is_collection=isinstance(formatted_docs, list)
-        )
-    
-    def _handle_error_result(self, file_path: str, exception: Exception) -> DocumentResult:
-        """
-        Create an error result object.
-        
-        Args:
-            file_path: Path to the file
-            exception: Exception that occurred
-            
-        Returns:
-            Error result object
-        """
-        # Log the error
-        logger.error(f"Error reading file {file_path}: {str(exception)}")
-        
-        # Map common exceptions to appropriate errors
-        if isinstance(exception, FileNotFoundError):
-            error_msg = f"File not found: {file_path}"
-        elif isinstance(exception, PermissionError):
-            error_msg = f"Permission denied for file: {file_path}"
-        elif isinstance(exception, ValueError) and "Unsupported file type" in str(exception):
-            error_msg = str(exception)
-        else:
-            error_msg = f"Error reading file: {str(exception)}"
-        
-        # Return formatted error
-        return DocumentResult(
-            success=False,
-            file_path=file_path,
-            error=error_msg
         )
