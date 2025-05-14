@@ -88,7 +88,7 @@ class OrchestratorAgent(BaseAgent):
         logger.debug(f"[OrchestratorAgent] Input text: '{input_text}'")
 
         # Get available nodes from input field
-        available_nodes = self._get_nodes(self, inputs)
+        available_nodes = self._get_nodes(inputs)
 
         # Apply filtering based on context options
         filtered_nodes = self._apply_node_filter(available_nodes)
