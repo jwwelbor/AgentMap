@@ -16,25 +16,26 @@ SimpleQA,HandleError,,Handle error,echo,END,,error,error_message,"Sorry, an erro
             <div class="mermaid-wrapper">
                 <pre class="mermaid">
                     flowchart LR
-                    subgraph SimpleQA
-                    GetInput[GetInput] --> ProcessInput[ProcessInput]
-                    ProcessInput -->|success| GenerateResponse[GenerateResponse]
-                    ProcessInput -->|failure| HandleError[HandleError]
-                    GenerateResponse --> END
-                    HandleError --> END
+                        subgraph SimpleQA
+                            GetInput[GetInput] --> ProcessInput[ProcessInput]
+                            ProcessInput -->|success| GenerateResponse[GenerateResponse]
+                            ProcessInput -->|failure| HandleError[HandleError]
+                            GenerateResponse --> END
+                            HandleError --> END
+                        end
 
-                    classDef default fill:#1F2937,stroke:#4B5563,color:#E5E7EB
-                    classDef input fill:#164E63,stroke:#22D3EE,color:#A5F3FC
-                    classDef process fill:#854D0E,stroke:#FCD34D,color:#FCD34D
-                    classDef success fill:#065F46,stroke:#6EE7B7,color:#6EE7B7
-                    classDef error fill:#7F1D1D,stroke:#FCA5A5,color:#FCA5A5
-                    classDef end fill:#374151,stroke:#6B7280,color:#9CA3AF
+                        classDef default fill:#1F2937,stroke:#4B5563,color:#E5E7EB
+                        classDef input fill:#164E63,stroke:#22D3EE,color:#A5F3FC
+                        classDef process fill:#854D0E,stroke:#FCD34D,color:#FCD34D
+                        classDef success fill:#065F46,stroke:#6EE7B7,color:#6EE7B7
+                        classDef error fill:#7F1D1D,stroke:#FCA5A5,color:#FCA5A5
+                        classDef endNode fill:#374151,stroke:#6B7280,color:#9CA3AF
 
-                    class GetInput input
-                    class ProcessInput process
-                    class GenerateResponse success
-                    class HandleError error
-                    class END end
+                        class GetInput input
+                        class ProcessInput process
+                        class GenerateResponse success
+                        class HandleError error
+                        class END endNode
                 </pre>
             </div>
         `
@@ -241,8 +242,6 @@ def run_graph(graph_name, initial_state, csv_path=None, ...):
         visual: `
             <div class="mermaid-wrapper">
                 <pre class="mermaid">
-                    flowchart TD
-                    
                     csv[CSV Definition] -->|Parse| graphBuilder[Graph Builder]
                     graphBuilder -->|Build| graphDef[Graph Definition]
                     registry[Agent Registry] -->|Lookup| graphDef
@@ -256,7 +255,7 @@ def run_graph(graph_name, initial_state, csv_path=None, ...):
                     runner -->|Update| resultState
                     
                     classDef csv fill:#F3F4F6,stroke:#9CA3AF,color:#4B5563
-                    classDef graph fill:#DBEAFE,stroke:#3B82F6,color:#1E40AF
+                    classDef graphBuilder fill:#DBEAFE,stroke:#3B82F6,color:#1E40AF
                     classDef graphDef fill:#E0F2FE,stroke:#0EA5E9,color:#0C4A6E
                     classDef registry fill:#F3E8FF,stroke:#A855F7,color:#6B21A8
                     classDef agents fill:#FCE7F3,stroke:#EC4899,color:#9D174D
@@ -267,7 +266,7 @@ def run_graph(graph_name, initial_state, csv_path=None, ...):
                     classDef runner fill:#FEE2E2,stroke:#EF4444,color:#991B1B
                     
                     class csv csv
-                    class graphBuilder graph
+                    class graphBuilder graphBuilder
                     class graphDef graphDef
                     class registry registry
                     class agents agents
