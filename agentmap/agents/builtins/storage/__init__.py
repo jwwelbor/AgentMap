@@ -44,6 +44,16 @@ except ImportError:
     FirebaseDocumentWriterAgent = None
     _firebase_available = False
 
+try:
+    from agentmap.agents.builtins.storage.json.cloud_agent import (
+        JSONCloudDocumentAgent, JSONCloudDocumentReaderAgent, JSONCloudDocumentWriterAgent
+    )
+    _json_cloud_available = True
+except ImportError:
+    _json_cloud_available = False
+
+
+
 # Import config utilities
 from agentmap.config import get_storage_config_path, load_storage_config
 
