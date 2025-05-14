@@ -5,13 +5,11 @@ import pytest
 
 def test_agent_imports():
     """Test that important agent classes can be imported."""
-    from agentmap.agents import (AGENT_MAP, BaseAgent, DefaultAgent, EchoAgent,
-                                 get_agent_class)
+    from agentmap.agents import (BaseAgent, DefaultAgent, EchoAgent, get_agent_class)
     
     assert BaseAgent is not None
     assert DefaultAgent is not None
     assert EchoAgent is not None
-    assert isinstance(AGENT_MAP, dict)
     assert callable(get_agent_class)
     
     # Test that we can get built-in agent classes
