@@ -1,5 +1,5 @@
 /**
- * Markdown handling functionality
+ * Markdown handling functionality with Mermaid support
  */
 class MarkdownViewer {
     constructor() {
@@ -30,7 +30,7 @@ class MarkdownViewer {
     }
     
     /**
-     * Render the current markdown content
+     * Render the current markdown content with Mermaid support
      */
     renderMarkdown() {
         const markdownSection = document.getElementById('markdown-section');
@@ -47,17 +47,61 @@ class MarkdownViewer {
                         Back to Documentation
                     </button>
                 </div>
-                <div class="markdown-content">${marked.parse(this.markdownContent)}</div>
+                <div class="markdown-content">${this.processMarkdown(this.markdownContent)}</div>
             </div>
         `;
         
-        // Initialize any Mermaid diagrams that might be in the markdown
+        // Initialize Mermaid diagrams after the content is rendered
+        this.initMermaid();
+    }
+    
+    /**
+     * Process markdown content before rendering
+     * This allows us to handle special content like Mermaid diagrams
+     */
+    processMarkdown(content) {
+        if (!content) return '';
+        
+        try {
+            // Process the markdown content
+            const processedContent = marked.parse(content);
+            return processedContent;
+        } catch (error) {
+            console.error('Error processing markdown:', error);
+            return `<p>Error processing markdown: ${error.message}</p><pre>${content}</pre>`;
+        }
+    }
+    
+    /**
+     * Initialize Mermaid diagrams after content is rendered
+     */
+    initMermaid() {
         if (window.mermaid) {
             try {
-                window.mermaid.init(undefined, document.querySelectorAll('.mermaid'));
+                console.log('Initializing Mermaid diagrams in markdown content');
+                
+                // Reset Mermaid configuration
+                window.mermaid.initialize({
+                    startOnLoad: false,
+                    theme: 'dark',
+                    flowchart: {
+                        curve: 'basis',
+                        useMaxWidth: true
+                    },
+                    securityLevel: 'loose'
+                });
+                
+                // Find all pre.mermaid and div.mermaid elements
+                const mermaidElements = document.querySelectorAll('.markdown-content pre.mermaid, .markdown-content .mermaid');
+                console.log(`Found ${mermaidElements.length} Mermaid diagrams`);
+                
+                // Initialize each Mermaid diagram
+                window.mermaid.init(undefined, mermaidElements);
             } catch (error) {
                 console.error('Error initializing Mermaid in markdown:', error);
             }
+        } else {
+            console.warn('Mermaid library not loaded');
         }
     }
 }
