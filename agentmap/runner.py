@@ -17,9 +17,10 @@ from agentmap.exceptions import AgentInitializationError
 from agentmap.graph import GraphAssembler
 from agentmap.graph.builder import GraphBuilder
 from agentmap.logging import get_logger
+from agentmap.utils.node_registry import build_node_registry, populate_orchestrator_inputs
+from agentmap.state.adapter import StateAdapter
 
 logger = get_logger(__name__)
-from agentmap.logging import tracing # Initialize tracing if enabled
 
 
 def load_compiled_graph(graph_name: str, config_path: Optional[Union[str, Path]] = None):
@@ -110,9 +111,51 @@ def build_graph_in_memory(graph_name: str, csv_path: str, config_path: Optional[
     # Process edges for all nodes
     for node_name, node in graph_def.items():
         assembler.process_node_edges(node_name, node.edges)
+    
+    # Add special handling for orchestrator nodes
+    add_dynamic_routing(builder, graph_def)
 
     # Compile and return the graph
     return assembler.compile()
+
+
+def add_dynamic_routing(builder: StateGraph, graph_def: Dict[str, Any]) -> None:
+    """
+    Add dynamic routing support for orchestrator nodes.
+    
+    Args:
+        builder: StateGraph builder
+        graph_def: Graph definition
+    """
+    # Find orchestrator nodes
+    orchestrator_nodes = []
+    for node_name, node in graph_def.items():
+        if node.agent_type and node.agent_type.lower() == "orchestrator":
+            orchestrator_nodes.append(node_name)
+    
+    if not orchestrator_nodes:
+        return
+    
+    # For each orchestrator node, add a dynamic edge handler
+    for node_name in orchestrator_nodes:
+        logger.debug(f"[DynamicRouting] Adding dynamic routing for node: {node_name}")
+        
+        def dynamic_router(state, node=node_name):
+            """Route based on __next_node value in state."""
+            # Check if __next_node is set
+            next_node = StateAdapter.get_value(state, "__next_node")
+            
+            if next_node:
+                # Clear the next_node field to prevent loops
+                state = StateAdapter.set_value(state, "__next_node", None)
+                logger.debug(f"[DynamicRouter] Routing from {node} to {next_node}")
+                return next_node
+            
+            # If there are standard edges defined, let them handle routing
+            return None
+        
+        # Add a conditional edge with our dynamic router
+        builder.add_conditional_edges(node_name, dynamic_router)
 
 
 def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]] = None):
@@ -144,7 +187,7 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
         
     # Try to load from custom agents path
     custom_agents_path = get_custom_agents_path(config_path)
-    logger.trace(f"[AgentInit] Custom agents path: {custom_agents_path}")    
+    logger.debug(f"[AgentInit] Custom agents path: {custom_agents_path}")    
     # Convert file path to module path
     module_path = str(custom_agents_path).replace("/", ".").replace("\\", ".")
     if module_path.endswith("."):
@@ -155,8 +198,8 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
         modname = f"{module_path}.{agent_type.lower()}_agent"
         classname = f"{agent_type}Agent"
         module = __import__(modname, fromlist=[classname])
-        logger.trace(f"[AgentInit] Imported custom agent module: {modname}")
-        logger.trace(f"[AgentInit] Using custom agent class: {classname}")
+        logger.debug(f"[AgentInit] Imported custom agent module: {modname}")
+        logger.debug(f"[AgentInit] Using custom agent class: {classname}")
         agent_class = getattr(module, classname)
         return agent_class
     
@@ -199,11 +242,23 @@ def run_graph(
         graph = load_compiled_graph(graph_name, config_path)
 
         # If autocompile is enabled, compile and load the graph
-        if autocompile:
+        if not graph and autocompile:
             graph = autocompile_and_load(graph_name, config_path)
-        else:
-            # Otherwise, build the graph in memory
+        
+        # If still no graph, build it in memory
+        if not graph:
             graph = build_graph_in_memory(graph_name, csv_path, config_path)
+        
+        # Get the graph definition for node registry
+        csv_file = csv_path or get_csv_path(config_path)
+        gb = GraphBuilder(csv_file)
+        graphs = gb.build()
+        graph_def = graphs.get(graph_name)
+        
+        # Build node registry and populate orchestrator inputs
+        if graph_def:
+            node_registry = build_node_registry(graph_def)
+            initial_state = populate_orchestrator_inputs(initial_state, graph_def, node_registry)
         
         # Track overall execution time
         start_time = time.time()
