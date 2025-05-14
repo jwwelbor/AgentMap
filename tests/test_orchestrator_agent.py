@@ -164,7 +164,7 @@ class TestOrchestratorAgent(unittest.TestCase):
         self.assertEqual(node, "WeatherNode")
         self.assertEqual(confidence, 0.0)
 
-    @patch('agentmap.agents.get_agent_class')
+    @patch('agentmap.agents.builtins.orchestrator_agent.get_agent_class')
     def test_llm_match(self, mock_get_agent_class):
         """Test LLM-based matching."""
         # Setup mock LLM agent
@@ -187,7 +187,7 @@ class TestOrchestratorAgent(unittest.TestCase):
         mock_llm_class.assert_called_once()
         mock_llm_agent.process.assert_called_once()
 
-    @patch('agentmap.agents.get_agent_class')
+    @patch('agentmap.agents.builtins.orchestrator_agent.get_agent_class')
     def test_llm_match_no_selection_format(self, mock_get_agent_class):
         """Test LLM matching when response doesn't contain 'Selected: ' format."""
         # Setup mock LLM agent without the "Selected: " format
@@ -205,7 +205,7 @@ class TestOrchestratorAgent(unittest.TestCase):
         result = agent._llm_match(input_text, self.sample_nodes)
         self.assertEqual(result, "NewsNode")
 
-    @patch('agentmap.agents.get_agent_class')
+    @patch('agentmap.agents.builtins.orchestrator_agent.get_agent_class')
     def test_llm_match_completely_invalid_response(self, mock_get_agent_class):
         """Test LLM matching when response doesn't contain any valid node."""
         # Setup mock LLM agent with completely unhelpful response

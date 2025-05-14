@@ -17,7 +17,7 @@ from agentmap.exceptions import AgentInitializationError
 from agentmap.graph import GraphAssembler
 from agentmap.graph.builder import GraphBuilder
 from agentmap.logging import get_logger
-from agentmap.utils.node_registry import build_node_registry, populate_orchestrator_inputs
+from agentmap.graph.node_registry import build_node_registry, populate_orchestrator_inputs
 from agentmap.state.adapter import StateAdapter
 
 logger = get_logger(__name__)
