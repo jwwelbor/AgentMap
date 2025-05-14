@@ -13,58 +13,30 @@ SimpleQA,ProcessInput,,Process with LLM,openai,GenerateResponse,HandleError,inpu
 SimpleQA,GenerateResponse,,Format response,echo,END,,answer,formatted_answer,"Your answer is: {answer}"
 SimpleQA,HandleError,,Handle error,echo,END,,error,error_message,"Sorry, an error occurred: {error}"`,
         visual: `
-            <div class="workflow-visual csv-table">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>GraphName</th>
-                            <th>Node</th>
-                            <th>Edge</th>
-                            <th>Context</th>
-                            <th>AgentType</th>
-                            <th>Success_Next</th>
-                            <th>Failure_Next</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>SimpleQA</td>
-                            <td class="node-highlight">GetInput</td>
-                            <td></td>
-                            <td>User input</td>
-                            <td>input</td>
-                            <td>ProcessInput</td>
-                            <td></td>
-                        </tr>
-                        <tr>
-                            <td>SimpleQA</td>
-                            <td class="node-highlight">ProcessInput</td>
-                            <td></td>
-                            <td>Process with LLM</td>
-                            <td>openai</td>
-                            <td>GenerateResponse</td>
-                            <td>HandleError</td>
-                        </tr>
-                        <tr>
-                            <td>SimpleQA</td>
-                            <td class="node-highlight">GenerateResponse</td>
-                            <td></td>
-                            <td>Format response</td>
-                            <td>echo</td>
-                            <td>END</td>
-                            <td></td>
-                        </tr>
-                        <tr>
-                            <td>SimpleQA</td>
-                            <td class="node-highlight">HandleError</td>
-                            <td></td>
-                            <td>Handle error</td>
-                            <td>echo</td>
-                            <td>END</td>
-                            <td></td>
-                        </tr>
-                    </tbody>
-                </table>
+            <div class="mermaid-wrapper">
+                <pre class="mermaid">
+                    flowchart LR
+                    subgraph SimpleQA
+                    GetInput[GetInput] --> ProcessInput[ProcessInput]
+                    ProcessInput -->|success| GenerateResponse[GenerateResponse]
+                    ProcessInput -->|failure| HandleError[HandleError]
+                    GenerateResponse --> END
+                    HandleError --> END
+                    end
+
+                    classDef default fill:#1F2937,stroke:#4B5563,color:#E5E7EB
+                    classDef input fill:#164E63,stroke:#22D3EE,color:#A5F3FC
+                    classDef process fill:#854D0E,stroke:#FCD34D,color:#FCD34D
+                    classDef success fill:#065F46,stroke:#6EE7B7,color:#6EE7B7
+                    classDef error fill:#7F1D1D,stroke:#FCA5A5,color:#FCA5A5
+                    classDef end fill:#374151,stroke:#6B7280,color:#9CA3AF
+
+                    class GetInput input
+                    class ProcessInput process
+                    class GenerateResponse success
+                    class HandleError error
+                    class END end
+                </pre>
             </div>
         `
     },
@@ -93,21 +65,23 @@ graph_definition = {
     # ...more nodes
 }`,
         visual: `
-            <div class="mermaid">
-            flowchart LR
-                GetInput["GetInput"] -->|success| ProcessInput["ProcessInput"]
-                ProcessInput -->|success| GenerateResponse["GenerateResponse"]
-                ProcessInput -->|failure| HandleError["HandleError"]
-                
-                classDef input fill:#164E63,stroke:#22D3EE,color:#A5F3FC
-                classDef process fill:#854D0E,stroke:#FCD34D,color:#FCD34D
-                classDef success fill:#065F46,stroke:#6EE7B7,color:#6EE7B7
-                classDef error fill:#7F1D1D,stroke:#FCA5A5,color:#FCA5A5
-                
-                class GetInput input
-                class ProcessInput process
-                class GenerateResponse success
-                class HandleError error
+            <div class="mermaid-wrapper">
+                <pre class="mermaid">
+                    flowchart LR
+                    GetInput[GetInput] -->|success| ProcessInput[ProcessInput]
+                    ProcessInput -->|success| GenerateResponse[GenerateResponse]
+                    ProcessInput -->|failure| HandleError[HandleError]
+                    
+                    classDef input fill:#164E63,stroke:#22D3EE,color:#A5F3FC
+                    classDef process fill:#854D0E,stroke:#FCD34D,color:#FCD34D
+                    classDef success fill:#065F46,stroke:#6EE7B7,color:#6EE7B7
+                    classDef error fill:#7F1D1D,stroke:#FCA5A5,color:#FCA5A5
+                    
+                    class GetInput input
+                    class ProcessInput process
+                    class GenerateResponse success
+                    class HandleError error
+                </pre>
             </div>
         `
     },
@@ -135,38 +109,27 @@ agent_instance = agent_cls(
     context={"input_fields": node.inputs, "output_field": node.output}
 )`,
         visual: `
-            <div class="workflow-visual agent-boxes">
-                <div class="agent-box agent-input">
-                    <div class="agent-name">GetInput</div>
-                    <div class="agent-content">
-                        <div class="agent-type">InputAgent</div>
-                        <div class="agent-desc">Prompts the user for input</div>
-                    </div>
-                </div>
-                
-                <div class="agent-box agent-openai">
-                    <div class="agent-name">ProcessInput</div>
-                    <div class="agent-content">
-                        <div class="agent-type">OpenAIAgent</div>
-                        <div class="agent-desc">Uses GPT for processing</div>
-                    </div>
-                </div>
-                
-                <div class="agent-box agent-echo">
-                    <div class="agent-name">GenerateResponse</div>
-                    <div class="agent-content">
-                        <div class="agent-type">EchoAgent</div>
-                        <div class="agent-desc">Formats the response</div>
-                    </div>
-                </div>
-                
-                <div class="agent-box agent-error">
-                    <div class="agent-name">HandleError</div>
-                    <div class="agent-content">
-                        <div class="agent-type">EchoAgent</div>
-                        <div class="agent-desc">Formats error messages</div>
-                    </div>
-                </div>
+            <div class="mermaid-wrapper">
+                <pre class="mermaid">
+                    flowchart TB
+                    
+                    registry[Agent Registry] -->|Lookup| agent1[InputAgent]
+                    registry -->|Lookup| agent2[OpenAIAgent]
+                    registry -->|Lookup| agent3[EchoAgent]
+
+                    agent1 -->|Instantiate| node1[GetInput]
+                    agent2 -->|Instantiate| node2[ProcessInput]
+                    agent3 -->|Instantiate| node3[GenerateResponse]
+                    agent3 -->|Instantiate| node4[HandleError]
+                    
+                    classDef registry fill:#F3E8FF,stroke:#A855F7,color:#6B21A8
+                    classDef agent fill:#FCE7F3,stroke:#EC4899,color:#9D174D
+                    classDef node fill:#1F2937,stroke:#4B5563,color:#E5E7EB
+                    
+                    class registry registry
+                    class agent1,agent2,agent3 agent
+                    class node1,node2,node3,node4 node
+                </pre>
             </div>
         `
     },
@@ -204,37 +167,31 @@ def compile_graph(graph_name, ...):
     # Compile the graph
     return builder.compile()`,
         visual: `
-            <div class="workflow-visual compilation-view">
-                <div class="compilation-header">
-                    <div class="compilation-title">StateGraph Compilation</div>
-                    <div class="compilation-subtitle">Internal representation of the workflow as a LangGraph StateGraph</div>
-                </div>
-                
-                <div class="compilation-details">
-                    <div class="compilation-row">
-                        <div class="compilation-label">Nodes:</div>
-                        <div class="compilation-value">GetInput, ProcessInput, GenerateResponse, HandleError</div>
-                    </div>
-                    <div class="compilation-row">
-                        <div class="compilation-label">Entry Point:</div>
-                        <div class="compilation-value">GetInput</div>
-                    </div>
-                    <div class="compilation-row">
-                        <div class="compilation-label">Conditional Edges:</div>
-                        <div class="compilation-value">
-                            <div>ProcessInput → GenerateResponse (if success)</div>
-                            <div>ProcessInput → HandleError (if failure)</div>
-                        </div>
-                    </div>
-                    <div class="compilation-row">
-                        <div class="compilation-label">Direct Edges:</div>
-                        <div class="compilation-value">
-                            <div>GetInput → ProcessInput</div>
-                            <div>GenerateResponse → END</div>
-                            <div>HandleError → END</div>
-                        </div>
-                    </div>
-                </div>
+            <div class="mermaid-wrapper">
+                <pre class="mermaid">
+                    flowchart TB
+                    
+                    graphDef[Graph Definition] -->|Create| stateGraph[StateGraph Builder]
+                    stateGraph -->|AddNode| node1[GetInput]
+                    stateGraph -->|AddNode| node2[ProcessInput]
+                    stateGraph -->|AddNode| node3[GenerateResponse]
+                    stateGraph -->|AddNode| node4[HandleError]
+                    stateGraph -->|SetEntryPoint| node1
+                    stateGraph -->|AddEdge| edge1{Conditional Edge}
+                    stateGraph -->|Compile| compiledGraph[Compiled Graph]
+                    
+                    classDef graphDef fill:#E0F2FE,stroke:#0EA5E9,color:#0C4A6E
+                    classDef builder fill:#DBEAFE,stroke:#3B82F6,color:#1E40AF
+                    classDef node fill:#1F2937,stroke:#4B5563,color:#E5E7EB
+                    classDef edge fill:#818CF8,stroke:#4F46E5,color:#C7D2FE
+                    classDef compiled fill:#D1FAE5,stroke:#10B981,color:#065F46
+                    
+                    class graphDef graphDef
+                    class stateGraph builder
+                    class node1,node2,node3,node4 node
+                    class edge1 edge
+                    class compiledGraph compiled
+                </pre>
             </div>
         `
     },
@@ -257,39 +214,23 @@ def run_graph(graph_name, initial_state, csv_path=None, ...):
         logger.error(f"❌ GRAPH EXECUTION FAILED: '{graph_name}'")
         raise`,
         visual: `
-            <div class="workflow-visual execution-flow">
-                <div class="state-box initial-state">
-                    <div class="state-title">Initial State</div>
-                    <pre class="state-content">{\n  "user_query": "What is AgentMap?"\n}</pre>
-                </div>
-                
-                <div class="flow-arrow">↓</div>
-                
-                <div class="state-box input-state">
-                    <div class="state-title">GetInput (InputAgent)</div>
-                    <pre class="state-content">{\n  "user_query": "What is AgentMap?",\n  "input": "What is AgentMap?",\n  "last_action_success": true\n}</pre>
-                </div>
-                
-                <div class="flow-arrow">↓</div>
-                
-                <div class="state-box process-state">
-                    <div class="state-title">ProcessInput (OpenAIAgent)</div>
-                    <pre class="state-content">{\n  "user_query": "What is AgentMap?",\n  "input": "What is AgentMap?",\n  "answer": "AgentMap is a framework for building...",\n  "last_action_success": true\n}</pre>
-                </div>
-                
-                <div class="flow-arrow">↓</div>
-                
-                <div class="state-box response-state">
-                    <div class="state-title">GenerateResponse (EchoAgent)</div>
-                    <pre class="state-content">{\n  "user_query": "What is AgentMap?",\n  "input": "What is AgentMap?",\n  "answer": "AgentMap is a framework for building...",\n  "formatted_answer": "Your answer is: AgentMap is a framework for building...",\n  "last_action_success": true\n}</pre>
-                </div>
-                
-                <div class="flow-arrow">↓</div>
-                
-                <div class="state-box final-state">
-                    <div class="state-title">Final State (Result)</div>
-                    <pre class="state-content">{\n  "user_query": "What is AgentMap?",\n  "input": "What is AgentMap?",\n  "answer": "AgentMap is a framework for building...",\n  "formatted_answer": "Your answer is: AgentMap is a framework for building...",\n  "last_action_success": true\n}</pre>
-                </div>
+            <div class="mermaid-wrapper">
+                <pre class="mermaid">
+                    flowchart TB
+                    
+                    initialState[Initial State] --> getInput[GetInput]
+                    getInput -->|Update State| processInput[ProcessInput]
+                    processInput -->|Update State| generateResponse[GenerateResponse]
+                    generateResponse -->|Update State| finalState[Final State]
+                    
+                    classDef state fill:#FEF3C7,stroke:#F59E0B,color:#92400E
+                    classDef node fill:#1F2937,stroke:#4B5563,color:#E5E7EB
+                    classDef final fill:#FFE4E6,stroke:#F43F5E,color:#9F1239
+                    
+                    class initialState state
+                    class getInput,processInput,generateResponse node
+                    class finalState final
+                </pre>
             </div>
         `
     },
@@ -299,41 +240,44 @@ def run_graph(graph_name, initial_state, csv_path=None, ...):
         details: "AgentMap combines CSV parsing, agent creation, graph building, and state management to create flexible workflows.",
         code: null,
         visual: `
-            <div class="mermaid">
-            flowchart TD
-                CSV["CSV Definition"] -->|Parse| GraphBuilder["Graph Builder"]
-                GraphBuilder -->|Build| GraphDef["Graph Definition"]
-                AgentRegistry["Agent Registry"] -->|Lookup| GraphDef
-                GraphDef -->|Create| AgentInstances["Agent Instances"]
-                GraphDef -->|Build| StateGraph["StateGraph"]
-                StateGraph -->|Compile| CompiledGraph["Compiled Graph"]
-                AgentInstances -->|Add| CompiledGraph
-                InitialState["Initial State"] -->|State Flow| ResultState["Result State"]
-                ResultState -->|Return| Runner["Runner"]
-                CompiledGraph -->|Execute| Runner
-                Runner -->|Update| ResultState
-                
-                classDef csv fill:#F3F4F6,stroke:#9CA3AF,color:#4B5563
-                classDef graph fill:#DBEAFE,stroke:#3B82F6,color:#1E40AF
-                classDef graphDef fill:#E0F2FE,stroke:#0EA5E9,color:#0C4A6E
-                classDef agent fill:#F3E8FF,stroke:#A855F7,color:#6B21A8
-                classDef instances fill:#FCE7F3,stroke:#EC4899,color:#9D174D
-                classDef state fill:#D1FAE5,stroke:#10B981,color:#065F46
-                classDef compiled fill:#A7F3D0,stroke:#059669,color:#064E3B
-                classDef initial fill:#FEF3C7,stroke:#F59E0B,color:#92400E
-                classDef runner fill:#FEE2E2,stroke:#EF4444,color:#991B1B
-                classDef result fill:#FFE4E6,stroke:#F43F5E,color:#9F1239
-                
-                class CSV csv
-                class GraphBuilder graph
-                class GraphDef graphDef
-                class AgentRegistry agent
-                class AgentInstances instances
-                class StateGraph state
-                class CompiledGraph compiled
-                class InitialState initial
-                class ResultState result
-                class Runner runner
+            <div class="mermaid-wrapper">
+                <pre class="mermaid">
+                    flowchart TD
+                    
+                    csv[CSV Definition] -->|Parse| graphBuilder[Graph Builder]
+                    graphBuilder -->|Build| graphDef[Graph Definition]
+                    registry[Agent Registry] -->|Lookup| graphDef
+                    graphDef -->|Create| agents[Agent Instances]
+                    graphDef -->|Build| stateGraph[StateGraph]
+                    stateGraph -->|Compile| compiledGraph[Compiled Graph]
+                    agents -->|Add| compiledGraph
+                    initialState[Initial State] -->|State Flow| resultState[Result State]
+                    resultState -->|Return| runner[Runner]
+                    compiledGraph -->|Execute| runner
+                    runner -->|Update| resultState
+                    
+                    classDef csv fill:#F3F4F6,stroke:#9CA3AF,color:#4B5563
+                    classDef graph fill:#DBEAFE,stroke:#3B82F6,color:#1E40AF
+                    classDef graphDef fill:#E0F2FE,stroke:#0EA5E9,color:#0C4A6E
+                    classDef registry fill:#F3E8FF,stroke:#A855F7,color:#6B21A8
+                    classDef agents fill:#FCE7F3,stroke:#EC4899,color:#9D174D
+                    classDef stateGraph fill:#D1FAE5,stroke:#10B981,color:#065F46
+                    classDef compiled fill:#A7F3D0,stroke:#059669,color:#064E3B
+                    classDef initialState fill:#FEF3C7,stroke:#F59E0B,color:#92400E
+                    classDef resultState fill:#FFE4E6,stroke:#F43F5E,color:#9F1239
+                    classDef runner fill:#FEE2E2,stroke:#EF4444,color:#991B1B
+                    
+                    class csv csv
+                    class graphBuilder graph
+                    class graphDef graphDef
+                    class registry registry
+                    class agents agents
+                    class stateGraph stateGraph
+                    class compiledGraph compiled
+                    class initialState initialState
+                    class resultState resultState
+                    class runner runner
+                </pre>
             </div>
         `
     }

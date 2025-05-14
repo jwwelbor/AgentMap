@@ -10,24 +10,24 @@ class MarkdownViewer {
     /**
      * Fetch a markdown file and display its contents
      */
-async fetchMarkdown(path, title) {
-    try {
-        console.log(`Attempting to fetch markdown from: ${path}`);
-        const response = await fetch(path);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+    async fetchMarkdown(path, title) {
+        try {
+            console.log(`Attempting to fetch markdown from: ${path}`);
+            const response = await fetch(path);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            this.markdownContent = await response.text();
+            this.markdownTitle = title;
+            app.setActiveTab('markdown');
+            console.log(`Successfully loaded markdown: ${title}`);
+        } catch (error) {
+            console.error('Error fetching markdown:', error);
+            this.markdownContent = `Error loading markdown content from ${path}. ${error.message}`;
+            this.markdownTitle = 'Error';
+            app.setActiveTab('markdown');
         }
-        this.markdownContent = await response.text();
-        this.markdownTitle = title;
-        app.setActiveTab('markdown');
-        console.log(`Successfully loaded markdown: ${title}`);
-    } catch (error) {
-        console.error('Error fetching markdown:', error);
-        this.markdownContent = `Error loading markdown content from ${path}. ${error.message}`;
-        this.markdownTitle = 'Error';
-        app.setActiveTab('markdown');
     }
-}
     
     /**
      * Render the current markdown content
@@ -50,6 +50,15 @@ async fetchMarkdown(path, title) {
                 <div class="markdown-content">${marked.parse(this.markdownContent)}</div>
             </div>
         `;
+        
+        // Initialize any Mermaid diagrams that might be in the markdown
+        if (window.mermaid) {
+            try {
+                window.mermaid.init(undefined, document.querySelectorAll('.mermaid'));
+            } catch (error) {
+                console.error('Error initializing Mermaid in markdown:', error);
+            }
+        }
     }
 }
 
