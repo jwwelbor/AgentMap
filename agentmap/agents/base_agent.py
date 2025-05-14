@@ -29,7 +29,7 @@ class BaseAgent:
         
         # Extract input_fields and output_field from context if available
         self.input_fields = self.context.get("input_fields", [])
-        self.output_field = self.context.get("output_field")
+        self.output_field = self.context.get("output_field", "output")
         
         # Create state manager
         self.state_manager = StateManager(self.input_fields, self.output_field)
