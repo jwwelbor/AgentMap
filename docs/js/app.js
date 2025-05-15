@@ -11,24 +11,18 @@ class AgentMapApp {
      * Initialize the application
      */
     init() {
-        try {
-            console.log("Initializing AgentMap app...");
-            this.renderHeader();
-            this.renderTabs();
-            this.renderContentSections();
-            this.renderFooter();
-            this.updateContent();
-            
-            // Add event listeners to tabs
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.addEventListener('click', () => {
-                    this.setActiveTab(tab.dataset.tab);
-                });
+        this.renderHeader();
+        this.renderTabs();
+        this.renderContentSections();
+        this.renderFooter();
+        this.updateContent();
+        
+        // Add event listeners to tabs
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                this.setActiveTab(tab.dataset.tab);
             });
-            console.log("AgentMap app initialized successfully");
-        } catch (error) {
-            console.error("Error initializing AgentMap app:", error);
-        }
+        });
     }
     
     /**
@@ -146,6 +140,31 @@ class AgentMapApp {
             </div>
         `;
         
+        // Render navigation buttons ABOVE content
+        let navButtons = `
+            <div class="nav-buttons">
+                <button 
+                    onclick="app.handlePrev()"
+                    class="btn-nav ${this.currentStep === 0 ? 'btn-nav-disabled' : 'btn-nav-active'}"
+                    ${this.currentStep === 0 ? 'disabled' : ''}
+                >
+                    Previous
+                </button>
+                
+                <div class="step-counter">
+                    Step ${this.currentStep + 1} of ${stepsData.length}
+                </div>
+                
+                <button 
+                    onclick="app.handleNext()"
+                    class="btn-nav ${this.currentStep === stepsData.length - 1 ? 'btn-nav-disabled' : 'btn-nav-active'}"
+                    ${this.currentStep === stepsData.length - 1 ? 'disabled' : ''}
+                >
+                    Next
+                </button>
+            </div>
+        `;
+        
         // Render step content
         let stepContent = `
             <div class="content-card">
@@ -171,33 +190,26 @@ class AgentMapApp {
             </div>
         `;
         
-        // Render navigation buttons
-        let navButtons = `
-            <div class="nav-buttons">
-                <button 
-                    onclick="app.handlePrev()"
-                    class="btn-nav ${this.currentStep === 0 ? 'btn-nav-disabled' : 'btn-nav-active'}"
-                    ${this.currentStep === 0 ? 'disabled' : ''}
-                >
-                    Previous
-                </button>
-                
-                <div class="step-counter">
-                    Step ${this.currentStep + 1} of ${stepsData.length}
-                </div>
-                
-                <button 
-                    onclick="app.handleNext()"
-                    class="btn-nav ${this.currentStep === stepsData.length - 1 ? 'btn-nav-disabled' : 'btn-nav-active'}"
-                    ${this.currentStep === stepsData.length - 1 ? 'disabled' : ''}
-                >
-                    Next
-                </button>
-            </div>
-        `;
+        // Combine sections - note nav buttons are now ABOVE the content
+        workflowSection.innerHTML = progressBar + navButtons + stepContent;
         
-        // Combine all sections
-        workflowSection.innerHTML = progressBar + stepContent + navButtons;
+        // Initialize Mermaid diagrams
+        this.initMermaid();
+    }
+    
+    /**
+     * Initialize Mermaid diagrams after DOM update
+     */
+    initMermaid() {
+        if (window.mermaid) {
+            try {
+                window.mermaid.init(undefined, document.querySelectorAll('.mermaid'));
+            } catch (error) {
+                console.error('Error initializing Mermaid:', error);
+            }
+        } else {
+            console.warn('Mermaid library not loaded');
+        }
     }
     
     /**
