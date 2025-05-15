@@ -88,7 +88,7 @@ class TestJSONDocumentAgents:
     def test_read_entire_file_list(self, reader_agent, json_list_file, sample_json_list):
         """Test reading an entire JSON file with list structure."""
         result = reader_agent.process({"collection": json_list_file})
-        assert result == sample_json_list
+        assert result["data"] == sample_json_list
     
     def test_read_document_by_id_from_dict(self, reader_agent, json_dict_file):
         """Test reading a specific document by ID from a dictionary structure."""
