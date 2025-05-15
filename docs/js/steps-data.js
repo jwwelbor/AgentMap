@@ -379,10 +379,10 @@ const documentationFiles = [
         "path": "README.md",
         "title": "Main README"
     },
-    {
-        "path": "./usage/index.md",
-        "title": "Usage Documentation"
-    },
+    // {
+    //     "path": "./usage/index.md",
+    //     "title": "Usage Documentation"
+    // },
     {
         "path": "./usage/agentmap_cli_documentation.md",
         "title": "AgentMap CLI Documentation"

@@ -138,5 +138,3 @@ This workflow uses custom functions (`split_tasks` and `join_results`) to implem
 
 
 ---
-
-[↑ Back to Index](index.md) | [← Previous: State Management and Data Flow](state_management_and_data_flow.md) | [Next: AgentMap CLI Documentation →](agentmap_cli_documentation.md)
