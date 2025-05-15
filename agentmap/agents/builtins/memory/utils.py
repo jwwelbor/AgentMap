@@ -82,7 +82,7 @@ def serialize_memory(memory: Any) -> Optional[Dict[str, Any]]:
             "messages": messages
         }
     except Exception as e:
-        logger.error(f"Error serializing memory: {e}")
+        logger.error(f"Error serializing memory: {str(e)}")
         return None
 
 
@@ -151,54 +151,5 @@ def deserialize_memory(memory_data: Dict[str, Any]) -> Any:
         
         return memory
     except Exception as e:
-        logger.error(f"Error deserializing memory: {e}")
+        logger.error(f"Error deserializing memory: {str(e)}")
         return memory_data
-
-
-def create_memory_from_config(memory_config: Dict[str, Any]) -> Any:
-    """
-    Create a LangChain memory object from configuration.
-    
-    Args:
-        memory_config: Memory configuration dictionary
-        
-    Returns:
-        LangChain memory object or None
-    """
-    if not memory_config or not LANGCHAIN_AVAILABLE:
-        return None
-    
-    try:
-        # Get memory type with fallback
-        memory_type = memory_config.get("type", "buffer")
-        memory_key = memory_config.get("memory_key", "history")
-        
-        # Configure memory based on type
-        if memory_type == "buffer_window":
-            k = memory_config.get("k", 5)
-            return ConversationBufferWindowMemory(
-                k=k,
-                return_messages=True,
-                memory_key=memory_key
-            )
-        elif memory_type == "summary":
-            return ConversationSummaryMemory(
-                return_messages=True,
-                memory_key=memory_key
-            )
-        elif memory_type == "token_buffer":
-            max_token_limit = memory_config.get("max_token_limit", 2000)
-            return ConversationTokenBufferMemory(
-                max_token_limit=max_token_limit,
-                return_messages=True,
-                memory_key=memory_key
-            )
-        else:
-            # Default to buffer memory
-            return ConversationBufferMemory(
-                return_messages=True,
-                memory_key=memory_key
-            )
-    except Exception as e:
-        logger.error(f"Error creating memory from config: {e}")
-        return None

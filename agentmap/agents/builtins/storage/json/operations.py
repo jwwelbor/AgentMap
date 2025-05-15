@@ -750,6 +750,9 @@ class JSONDocumentOperations(DocumentPathMixin):
                 original_length = len(current_data)
                 remaining_items = []
                 deleted_ids = []
+
+                field = list(query.keys())[0]
+                value = query[field]
                 
                 for item in current_data:
                     if isinstance(item, dict):
@@ -757,7 +760,6 @@ class JSONDocumentOperations(DocumentPathMixin):
                         matches = True
                         if item.get(field) != value:
                             matches = False
-                            break
                         
                         if matches:
                             # Item matched query, mark for deletion
