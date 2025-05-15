@@ -190,7 +190,7 @@ class DocumentReaderAgent(DocumentStorageAgent):
             result = self._read_document(collection, document_id, query, path)
             
             # Return default value if result is None and default is provided
-            if result is None and "default" in inputs:
+            if result["success"] is False and "default" in inputs:
                 logger.debug(f"[{self.__class__.__name__}] Using default value")
                 return inputs["default"]
                 
