@@ -342,3 +342,92 @@ def format_prompt(self, prompt_ref_or_text: str, values: Dict[str, Any]) -> str:
         logger.warning(f"Error using LangChain PromptTemplate: {e}, falling back to standard formatting")
         # Fall back to standard formatting
         return prompt_text.format(**values)
+    
+def get_formatted_prompt(primary_prompt: Optional[str], 
+                         template_file: str, 
+                         default_template: str,
+                         values: Dict[str, Any],
+                         context_name: str = "Agent") -> str:
+    """
+    Comprehensive prompt resolution with multi-level fallbacks.
+    
+    This function tries multiple approaches to get a formatted prompt:
+    1. First tries the primary_prompt (if provided)
+    2. Falls back to the template_file
+    3. Falls back to the default_template
+    4. Ensures proper formatting with the provided values
+    
+    Args:
+        primary_prompt: First choice prompt (can be None)
+        template_file: File reference to use as fallback (e.g., "file:path/to/template.txt")
+        default_template: Hardcoded template to use as final fallback
+        values: Dictionary of values to use in formatting
+        context_name: Name to use in logging (e.g., agent type)
+        
+    Returns:
+        Formatted prompt text
+    """
+    logger = get_logger(__name__)
+    
+    # Try primary prompt if provided
+    if primary_prompt and primary_prompt.strip():
+        try:
+            prompt_text = resolve_prompt(primary_prompt)
+            logger.debug(f"[{context_name}] Using provided primary prompt")
+            try:
+                from langchain.prompts import PromptTemplate
+                template = PromptTemplate(template=prompt_text, input_variables=list(values.keys()))
+                return template.format(**values)
+            except Exception as e:
+                logger.debug(f"[{context_name}] LangChain formatting failed: {str(e)}")
+                try:
+                    return prompt_text.format(**values)
+                except Exception as e2:
+                    logger.warning(f"[{context_name}] Primary prompt formatting failed: {str(e2)}")
+                    # Continue to next fallback
+        except Exception as e:
+            logger.warning(f"[{context_name}] Failed to resolve primary prompt: {str(e)}")
+            # Continue to next fallback
+    
+    # Try template file
+    try:
+        prompt_text = resolve_prompt(template_file)
+        logger.debug(f"[{context_name}] Using file-based template: {template_file}")
+        try:
+            from langchain.prompts import PromptTemplate
+            template = PromptTemplate(template=prompt_text, input_variables=list(values.keys()))
+            return template.format(**values)
+        except Exception as e:
+            logger.debug(f"[{context_name}] LangChain formatting failed for file template: {str(e)}")
+            try:
+                return prompt_text.format(**values)
+            except Exception as e2:
+                logger.warning(f"[{context_name}] File template formatting failed: {str(e2)}")
+                # Continue to final fallback
+    except Exception as e:
+        logger.warning(f"[{context_name}] Failed to resolve file template: {str(e)}")
+        # Continue to final fallback
+    
+    # Final fallback to default template
+    logger.debug(f"[{context_name}] Using default hardcoded template")
+    try:
+        from langchain.prompts import PromptTemplate
+        template = PromptTemplate(template=default_template, input_variables=list(values.keys()))
+        return template.format(**values)
+    except Exception as e:
+        logger.debug(f"[{context_name}] LangChain formatting failed for default template: {str(e)}")
+        try:
+            return default_template.format(**values)
+        except Exception as e2:
+            logger.warning(f"[{context_name}] Default template formatting failed: {str(e2)}")
+            
+            # Last resort: manual string concatenation with the most critical values
+            result = default_template
+            for key, value in values.items():
+                placeholder = "{" + key + "}"
+                if placeholder in result:
+                    result = result.replace(placeholder, str(value))
+                else:
+                    result += f"\n\n{key}: {value}"
+            
+            return result
