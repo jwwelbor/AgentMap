@@ -11,18 +11,24 @@ class AgentMapApp {
      * Initialize the application
      */
     init() {
-        this.renderHeader();
-        this.renderTabs();
-        this.renderContentSections();
-        this.renderFooter();
-        this.updateContent();
-        
-        // Add event listeners to tabs
-        document.querySelectorAll('.tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                this.setActiveTab(tab.dataset.tab);
+        try {
+            console.log("Initializing AgentMap app...");
+            this.renderHeader();
+            this.renderTabs();
+            this.renderContentSections();
+            this.renderFooter();
+            this.updateContent();
+            
+            // Add event listeners to tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    this.setActiveTab(tab.dataset.tab);
+                });
             });
-        });
+            console.log("AgentMap app initialized successfully");
+        } catch (error) {
+            console.error("Error initializing AgentMap app:", error);
+        }
     }
     
     /**

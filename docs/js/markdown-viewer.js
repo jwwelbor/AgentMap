@@ -10,22 +10,24 @@ class MarkdownViewer {
     /**
      * Fetch a markdown file and display its contents
      */
-    async fetchMarkdown(path, title) {
-        try {
-            const response = await fetch(path);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            this.markdownContent = await response.text();
-            this.markdownTitle = title;
-            app.setActiveTab('markdown');
-        } catch (error) {
-            console.error('Error fetching markdown:', error);
-            this.markdownContent = `Error loading markdown content from ${path}. ${error.message}`;
-            this.markdownTitle = 'Error';
-            app.setActiveTab('markdown');
+async fetchMarkdown(path, title) {
+    try {
+        console.log(`Attempting to fetch markdown from: ${path}`);
+        const response = await fetch(path);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
+        this.markdownContent = await response.text();
+        this.markdownTitle = title;
+        app.setActiveTab('markdown');
+        console.log(`Successfully loaded markdown: ${title}`);
+    } catch (error) {
+        console.error('Error fetching markdown:', error);
+        this.markdownContent = `Error loading markdown content from ${path}. ${error.message}`;
+        this.markdownTitle = 'Error';
+        app.setActiveTab('markdown');
     }
+}
     
     /**
      * Render the current markdown content
