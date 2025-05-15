@@ -30,11 +30,13 @@ def should_trace_graph(graph_name):
 @contextmanager
 def trace_graph(graph_name):
     """Context manager to selectively trace a graph run."""
-    if not should_trace_graph(graph_name):
-        yield False
-        return
-        
     config = get_langsmith_config()
+    
+    # Try local tracing first
+    if setup_local_tracing(config):
+        logger.info(f"🔍 Local LangChain tracing enabled for graph '{graph_name}'")
+        yield True
+        return
     
     # Get API key and project
     api_key = os.environ.get("LANGCHAIN_API_KEY") or config.get("langsmith_api_key")
@@ -67,3 +69,28 @@ def trace_graph(graph_name):
             os.environ["LANGCHAIN_PROJECT"] = prev_project
         else:
             os.environ.pop("LANGCHAIN_PROJECT", None)
+
+def setup_local_tracing(config):
+    """Setup local LangChain tracing based on AgentMap config."""
+    if not config.get("enabled", False):
+        return False
+        
+    if config.get("mode", "langsmith") != "local":
+        return False
+        
+    # Set environment variables for LangChain tracing
+    os.environ["LANGCHAIN_TRACING_V2"] = "true"
+    os.environ["LANGCHAIN_TRACING_V2_EXPORTER"] = config.get("local_exporter", "file")
+    
+    # Set directory path if provided
+    if "local_directory" in config:
+        dir_path = config.get("local_directory")
+        # Ensure directory exists
+        os.makedirs(dir_path, exist_ok=True)
+        os.environ["LANGCHAIN_TRACING_V2_FILE_PATH"] = dir_path
+    
+    # Set project name if provided
+    if "project" in config:
+        os.environ["LANGCHAIN_PROJECT"] = config.get("project")
+        
+    return True
