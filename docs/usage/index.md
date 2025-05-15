@@ -8,6 +8,7 @@ This documentation provides detailed information about using AgentMap, a declara
 - [Prompt Management in AgentMap](prompt_management_in_agentmap.md)
 - [AgentMap Agent Types](agentmap_agent_types.md)
 - [Advanced Agent Types](advanced_agent_types.md)
+- [Agent Development Contract](agent_contract.md)
 - [Orchestration Agent](orchestration_agent.md)
 - [State Management and Data Flow](state_management_and_data_flow.md)
 - [AgentMap Example Workflows](agentmap_example_workflows.md)
