@@ -426,7 +426,7 @@ sequenceDiagram
     
     Note over S3: {<br>"user_input": "Tell me about AgentMap",<br>"response": "AgentMap is...",<br>"conversation_memory": {<br>  "_type": "langchain_memory",<br>  "messages": [<br>    {"type": "human", "content": "Hello"},<br>    {"type": "ai", "content": "I'm well"},<br>    {"type": "human", "content": "Tell me about AgentMap"},<br>    {"type": "ai", "content": "AgentMap is..."}<br>  ]<br>},<br>"last_action_success": true<br>}
     
-    ```
+```
 
 ## Best Practices
 
