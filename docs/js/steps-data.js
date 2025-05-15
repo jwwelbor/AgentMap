@@ -375,8 +375,48 @@ def run_graph(graph_name, initial_state, csv_path=None, ...):
  * Documentation files available in the project
  */
 const documentationFiles = [
-    { path: 'README.md', title: 'Main README' },
-    { path: 'README_usage_details.md', title: 'Usage Details' },
-    { path: 'README_cloud_storage.md', title: 'Cloud Storage' },
-    { path: 'README_orchestrator.md', title: 'Orchestrator Agent' }
+    {
+        "path": "README.md",
+        "title": "Main README"
+    },
+    {
+        "path": "usage/index.md",
+        "title": "Usage Documentation"
+    },
+    {
+        "path": "usage/agentmap_cli_documentation.md",
+        "title": "AgentMap CLI Documentation"
+    },
+    {
+        "path": "usage/agentmap_csv_schema_documentation.md",
+        "title": "AgentMap CSV Schema Documentation"
+    },
+    {
+        "path": "usage/prompt_management_in_agentmap.md",
+        "title": "Prompt Management in AgentMap"
+    },
+    {
+        "path": "usage/agentmap_agent_types.md",
+        "title": "AgentMap Agent Types"
+    },
+    {
+        "path": "usage/advanced_agent_types.md",
+        "title": "Advanced Agent Types"
+    },
+    {
+        "path": "usage/README_orchestrator.md",
+        "title": "Orchestrator Agent"
+    },
+    {
+        "path": "usage/state_management_and_data_flow.md",
+        "title": "State Management and Data Flow"
+    },
+    {
+        "path": "usage/agentmap_example_workflows.md",
+        "title": "AgentMap Example Workflows"
+    },
+    {
+        "path": "usage/README_cloud_storage.md",
+        "title": "Cloud Storage"
+    }
 ];
