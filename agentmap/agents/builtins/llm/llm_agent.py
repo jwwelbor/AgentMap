@@ -9,42 +9,44 @@ from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Flag to indicate if LangChain is available
 try:
     import langchain
     from langchain.schema import BaseMemory
-    LANGCHAIN_AVAILABLE = True
 except ImportError:
     logger.warning("LangChain not installed. Install with 'pip install langchain'")
-    LANGCHAIN_AVAILABLE = False
-
+    raise ImportError("LangChain is not installed. Please install it to use this module.")
 
 class LLMAgent(BaseAgent):
     """
     Base class for LLM agents using LangChain.
     """
     
-    def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
-        """Initialize the LLM agent."""
-        super().__init__(name, prompt, context)
-        
-        # Parse context configuration
-        self.context = context or {}
-        
-        # Setup memory if configured
-        self.memory = None  
-        self.memory_key = self.context.get("memory_key", "conversation_memory")
-        
-        # Initialize memory if configuration exists
-        if LANGCHAIN_AVAILABLE and "memory" in self.context:
-            self.memory = self._create_memory(self.context["memory"])
-        
-        # Set fallback implementation flag
-        self.use_langchain = LANGCHAIN_AVAILABLE
+class LLMAgent(BaseAgent):
+    """Base class for LLM agents using LangChain."""
+    
+def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
+    """Initialize the LLM agent."""
+    # First, resolve prompt reference if applicable
+    from agentmap.prompts import resolve_prompt
+    resolved_prompt = resolve_prompt(prompt)
+    
+    # Then initialize with the resolved prompt
+    super().__init__(name, resolved_prompt, context)
+    
+    # Parse context configuration
+    self.context = context or {}
+    
+    # Setup memory if configured
+    self.memory = None  
+    self.memory_key = self.context.get("memory_key", "conversation_memory")
+    
+    # Initialize memory if configuration exists
+    if "memory" in self.context:
+        self.memory = self._create_memory(self.context["memory"])
         
     def _create_memory(self, memory_config: Dict[str, Any]) -> Optional[Any]:
         """Create a LangChain memory object based on configuration."""
-        if not memory_config or not LANGCHAIN_AVAILABLE:
+        if not memory_config:
             return None
             
         try:

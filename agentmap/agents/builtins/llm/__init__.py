@@ -6,12 +6,11 @@ including prompt template management and conversation memory.
 """
 
 from agentmap.agents.builtins.llm.llm_agent import (
-    LLMAgent, 
-    LANGCHAIN_AVAILABLE
+    LLMAgent
 )
 
 from agentmap.agents.builtins.memory.utils import (
     serialize_memory, 
     deserialize_memory
 )
-__all__ = ['LLMAgent', 'serialize_memory', 'deserialize_memory', 'LANGCHAIN_AVAILABLE']
+__all__ = ['LLMAgent', 'serialize_memory', 'deserialize_memory']

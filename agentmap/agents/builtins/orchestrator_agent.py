@@ -27,6 +27,7 @@ class OrchestratorAgent(BaseAgent):
         self.llm_type = context.get("llm_type", "openai")
         self.temperature = float(context.get("temperature", 0.2))
         self.default_target = context.get("default_target", None)
+        self.intent_prompt = context.get("intent_prompt", "file:orchestrator/intent_matching_v1.txt")
 
         # Matching strategy configuration
         self.matching_strategy = context.get("matching_strategy", "tiered")  # "tiered", "algorithm", or "llm"
@@ -200,16 +201,7 @@ class OrchestratorAgent(BaseAgent):
             return self._llm_match(input_text, available_nodes)
 
     def _llm_match(self, input_text: str, available_nodes: Dict[str, Dict[str, Any]]) -> str:
-        """
-        Use an LLM to match input to the best node.
-
-        Args:
-            input_text: User input text
-            available_nodes: Dictionary of nodes with their metadata
-
-        Returns:
-            Best matching node name
-        """
+        """Use an LLM to match input to the best node."""
         # Create a formatted description of available nodes
         node_descriptions = []
         for node_name, node_info in available_nodes.items():
@@ -225,15 +217,28 @@ class OrchestratorAgent(BaseAgent):
             )
 
         nodes_text = "\n".join(node_descriptions)
+        template_values = {"nodes_text": nodes_text, "input_text": input_text}
 
-        # Construct prompt for the LLM
-        llm_prompt = (
-            f"You are an intent router that selects the most appropriate node to handle a user request.\n\n"
-            f"Available nodes:\n{nodes_text}\n\n"
-            f"User input: \"{input_text}\"\n\n"
-            f"Select the SINGLE BEST node to handle this request. "
-            f"Consider the semantics and intent of the user request. "
-            f"First explain your reasoning, then on a new line write just the selected node name prefixed with 'Selected: '."
+        # Import our comprehensive function
+        from agentmap.prompts import get_formatted_prompt
+        
+        # Default template as fallback
+        default_template = (
+            "You are an intent router that selects the most appropriate node to handle a user request.\n\n"
+            "Available nodes:\n{nodes_text}\n\n"
+            "User input: \"{input_text}\"\n\n"
+            "Select the SINGLE BEST node to handle this request. "
+            "Consider the semantics and intent of the user request. "
+            "First explain your reasoning, then on a new line write just the selected node name prefixed with 'Selected: '."
+        )
+        
+        # Get formatted prompt with all fallbacks handled internally
+        llm_prompt = get_formatted_prompt(
+            primary_prompt=self.prompt,
+            template_file="file:orchestrator/intent_matching_v1.txt",
+            default_template=default_template,
+            values=template_values,
+            context_name="OrchestratorAgent"
         )
 
         # Use appropriate LLM agent
@@ -255,7 +260,7 @@ class OrchestratorAgent(BaseAgent):
         except Exception as e:
             logger.error(f"[OrchestratorAgent] Error from LLM: {e}")
             return next(iter(available_nodes.keys()))
-
+        
         # Extract the selected node from the response
         if isinstance(llm_response, str) and "Selected: " in llm_response:
             for line in llm_response.split("\n"):

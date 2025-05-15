@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch, MagicMock, Mock
 
 # Import functions under test
-from agentmap.agents.builtins.memory.utils import serialize_memory, deserialize_memory, LANGCHAIN_AVAILABLE
+from agentmap.agents.builtins.memory.utils import serialize_memory, deserialize_memory
 
 
 class MemorySerializationTests(unittest.TestCase):
@@ -11,8 +11,6 @@ class MemorySerializationTests(unittest.TestCase):
     def setUp(self):
         """Set up common test fixtures."""
         # Skip tests if LangChain is not available
-        if not LANGCHAIN_AVAILABLE:
-            self.skipTest("LangChain is not available")
 
         # Import LangChain components
         from langchain.memory import ConversationBufferMemory
@@ -131,7 +129,6 @@ class MemorySerializationTests(unittest.TestCase):
 class MockedMemorySerializationTests(unittest.TestCase):
     """Tests memory serialization with mocks to isolate from LangChain."""
     
-    @patch('agentmap.agents.builtins.memory.utils.LANGCHAIN_AVAILABLE', True)
     @patch('agentmap.agents.builtins.memory.utils.ConversationBufferMemory')
     def test_serialize_with_mocked_memory(self, mock_memory_class):
         """Test serialization with mocked memory object."""
@@ -151,7 +148,6 @@ class MockedMemorySerializationTests(unittest.TestCase):
         self.assertEqual(serialized["messages"][0]["type"], "human")
         self.assertEqual(serialized["messages"][0]["content"], "Hello")
         
-    @patch('agentmap.agents.builtins.memory.utils.LANGCHAIN_AVAILABLE', True)
     @patch('agentmap.agents.builtins.memory.utils.ConversationBufferMemory')
     def test_deserialize_with_mocked_classes(self, mock_memory_class):
         """Test deserialization with mocked LangChain classes."""
@@ -215,7 +211,6 @@ class ErrorCaseTests(unittest.TestCase):
         result = deserialize_memory(data)
         self.assertEqual(result, data)
     
-    @patch('agentmap.agents.builtins.memory.utils.LANGCHAIN_AVAILABLE', False)
     def test_deserialize_without_langchain(self):
         """Test deserializing when LangChain is not available."""
         data = {
@@ -227,7 +222,6 @@ class ErrorCaseTests(unittest.TestCase):
         # Should return the original data unchanged
         self.assertEqual(result, data)
     
-    @patch('agentmap.agents.builtins.memory.utils.LANGCHAIN_AVAILABLE', True)
     @patch('agentmap.agents.builtins.memory.utils.ConversationBufferMemory')
     def test_deserialize_with_exception(self, mock_memory_class):
         """Test deserializing when an exception occurs."""
@@ -247,7 +241,6 @@ class ErrorCaseTests(unittest.TestCase):
 class StateAdapterIntegrationTests(unittest.TestCase):
     """Test integration with StateAdapter."""
     
-    @patch('agentmap.agents.builtins.memory.utils.LANGCHAIN_AVAILABLE', True)
     def test_state_adapter_with_memory(self):
         """Test StateAdapter handling of memory objects."""
         from agentmap.state.adapter import StateAdapter

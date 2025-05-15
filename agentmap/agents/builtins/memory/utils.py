@@ -21,10 +21,9 @@ try:
         ConversationTokenBufferMemory
     )
     from langchain.schema import HumanMessage, AIMessage, SystemMessage
-    LANGCHAIN_AVAILABLE = True
 except ImportError:
     logger.warning("LangChain not installed. Memory functionality will be limited.")
-    LANGCHAIN_AVAILABLE = False
+    raise ImportError("LangChain is not installed. Please install it to use this module.")
 
 
 def serialize_memory(memory: Any) -> Optional[Dict[str, Any]]:
@@ -100,10 +99,6 @@ def deserialize_memory(memory_data: Dict[str, Any]) -> Any:
         return memory_data
         
     if memory_data.get("_type") != "langchain_memory":
-        return memory_data
-    
-    if not LANGCHAIN_AVAILABLE:
-        logger.warning("LangChain not installed. Cannot deserialize memory.")
         return memory_data
     
     try:

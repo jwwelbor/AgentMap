@@ -255,3 +255,4 @@ def test_resolve_prompt_function(mock_config):
     # Should return non-reference prompts as-is
     assert resolve_prompt("Hello world") == "Hello world"
     assert resolve_prompt(None) is None
+

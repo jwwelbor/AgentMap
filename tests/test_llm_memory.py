@@ -14,7 +14,6 @@ class MockLLMAgent(LLMAgent):
         return "Fallback response"
 
 class LLMAgentMemoryTests(unittest.TestCase):
-    @patch('agentmap.agents.builtins.llm.llm_agent.LANGCHAIN_AVAILABLE', True)
     def test_memory_usage_in_llm_agent(self):
         """Test that LLMAgent correctly uses memory."""
         # Create agent with memory config
@@ -46,3 +45,19 @@ class LLMAgentMemoryTests(unittest.TestCase):
         self.assertIn("chat_history", result2)
         serialized_memory = result2["chat_history"]
         self.assertEqual(len(serialized_memory["messages"]), 4)  # 2 exchanges, 2 messages each
+
+    # Add this test method to the LLMAgentMemoryTests class
+    def test_prompt_resolution_in_llm_agent(self):
+        """Test that LLMAgent correctly resolves prompt references."""
+        # Mock the resolve_prompt function
+        with patch('agentmap.prompts.resolve_prompt') as mock_resolve:
+            mock_resolve.return_value = "Resolved prompt"
+            
+            # Create agent with a prompt reference
+            agent = MockLLMAgent("test_agent", "prompt:test_prompt", {})
+            
+            # Verify resolve_prompt was called
+            mock_resolve.assert_called_once_with("prompt:test_prompt")
+            
+            # Verify the agent is using the resolved prompt
+            self.assertEqual(agent.prompt, "Resolved prompt")
