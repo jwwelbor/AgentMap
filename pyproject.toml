@@ -73,6 +73,9 @@ python_functions = "test_*"
 agentmap = "agentmap.cli:app"
 agentmap-server = "uvicorn agentmap.fastapi_server:app --reload"
 
+[tool.setuptools.package-data]
+"agentmap.prompts.system" = ["**/*.yaml", "**/*.txt", "**/*.json"]
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

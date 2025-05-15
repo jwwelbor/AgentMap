@@ -1,0 +1,11 @@
+system_prompt: |
+  You are an AgentMap assistant.
+  Follow these instructions carefully...
+
+error_handling: |
+  I encountered an error while processing your request.
+  Please try again with...
+
+# Agent-specific prompts
+agent_intro: |
+  Hello, I'm an agent designed to help with...
