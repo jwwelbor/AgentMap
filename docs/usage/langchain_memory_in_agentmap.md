@@ -253,10 +253,7 @@ sequenceDiagram
     A->>U: Response
     
     Note over S: Summary keeps essence<br>without storing full text
-    
-    style U fill:#FFEB7F,stroke:#FFFFFF,stroke-width:1px
-    style A fill:#FF9EFF,stroke:#FFFFFF,stroke-width:1px
-    style S fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px
+
 ```
 
 **When to use**:
@@ -429,12 +426,6 @@ sequenceDiagram
     
     Note over S3: {<br>"user_input": "Tell me about AgentMap",<br>"response": "AgentMap is...",<br>"conversation_memory": {<br>  "_type": "langchain_memory",<br>  "messages": [<br>    {"type": "human", "content": "Hello"},<br>    {"type": "ai", "content": "I'm well"},<br>    {"type": "human", "content": "Tell me about AgentMap"},<br>    {"type": "ai", "content": "AgentMap is..."}<br>  ]<br>},<br>"last_action_success": true<br>}
     
-    style U fill:#FFEB7F,stroke:#FFFFFF,stroke-width:1px
-    style S1 fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px
-    style A1 fill:#FF9EFF,stroke:#FFFFFF,stroke-width:1px
-    style S2 fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px
-    style A2 fill:#FF9EFF,stroke:#FFFFFF,stroke-width:1px
-    style S3 fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px
     ```
 
 ## Best Practices
