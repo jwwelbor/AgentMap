@@ -7,12 +7,10 @@ including serialization and deserialization for state persistence.
 
 from agentmap.agents.builtins.memory.utils import (
     serialize_memory,
-    deserialize_memory,
-    LANGCHAIN_AVAILABLE
+    deserialize_memory
 )
 
 __all__ = [
     'serialize_memory',
-    'deserialize_memory',
-    'LANGCHAIN_AVAILABLE'
+    'deserialize_memory'
 ]
