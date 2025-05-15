@@ -93,44 +93,22 @@ graph_definition = {
     # ...more nodes
 }`,
         visual: `
-        <div class="workflow-visual graph-diagram">
-            <svg width="600" height="220" viewBox="0 0 500 220">
-                <defs>
-                    <marker id="arrowhead-step2" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
-                        <polygon points="0 0, 10 3.5, 0 7" fill="#A5F3FC"></polygon>
-                    </marker>
-                </defs>
-                <!-- Nodes -->
-                <g>
-                    <!-- GetInput node -->
-                    <rect x="20" y="80" width="120" height="50" rx="5" fill="#164E63" stroke="#22D3EE" strokewidth="2"></rect>
-                    <text x="50" y="110" fontsize="14" textanchor="middle" fill="#A5F3FC">GetInput</text>
-                    
-                    <!-- ProcessInput node -->
-                    <rect x="200" y="80" width="120" height="50" rx="5" fill="#854D0E" stroke="#FCD34D" strokewidth="2"></rect>
-                    <text x="220" y="110" fontsize="14" textanchor="middle" fill="#FCD34D">ProcessInput</text>
-                    
-                    <!-- GenerateResponse node -->
-                    <rect x="380" y="30" width="160" height="50" rx="5" fill="#065F46" stroke="#6EE7B7" strokewidth="2"></rect>
-                    <text x="395" y="60" fontsize="10" textanchor="middle" fill="#6EE7B7">GenerateResponse</text>
-                    
-                    <!-- HandleError node -->
-                    <rect x="380" y="130" width="120" height="50" rx="5" fill="#7F1D1D" stroke="#FCA5A5" strokewidth="2"></rect>
-                    <text x="400" y="160" fontsize="14" textanchor="middle" fill="#FCA5A5">HandleError</text>
-                </g>
-                <!-- Edges -->
-                <g>
-                    <line x1="140" y1="105" x2="190" y2="105" stroke="#A5F3FC" strokewidth="2" markerend="url(#arrowhead-step2)"></line>
-                    <text x="165" y="95" fontsize="12" textanchor="middle" fill="#A5F3FC">success</text>
-                    
-                    <line x1="320" y1="95" x2="370" y2="65" stroke="#6EE7B7" strokewidth="2" markerend="url(#arrowhead-step2)"></line>
-                    <text x="320" y="85" fontsize="12" textanchor="middle" fill="#6EE7B7">success</text>
-                    
-                    <line x1="320" y1="115" x2="370" y2="145" stroke="#FCA5A5" strokewidth="2" markerend="url(#arrowhead-step2)"></line>
-                    <text x="320" y="135" fontsize="12" textanchor="middle" fill="#FCA5A5">failure</text>
-                </g>
-            </svg>
-        </div>
+            <div class="mermaid">
+            flowchart LR
+                GetInput["GetInput"] -->|success| ProcessInput["ProcessInput"]
+                ProcessInput -->|success| GenerateResponse["GenerateResponse"]
+                ProcessInput -->|failure| HandleError["HandleError"]
+                
+                classDef input fill:#164E63,stroke:#22D3EE,color:#A5F3FC
+                classDef process fill:#854D0E,stroke:#FCD34D,color:#FCD34D
+                classDef success fill:#065F46,stroke:#6EE7B7,color:#6EE7B7
+                classDef error fill:#7F1D1D,stroke:#FCA5A5,color:#FCA5A5
+                
+                class GetInput input
+                class ProcessInput process
+                class GenerateResponse success
+                class HandleError error
+            </div>
         `
     },
     {
@@ -321,85 +299,41 @@ def run_graph(graph_name, initial_state, csv_path=None, ...):
         details: "AgentMap combines CSV parsing, agent creation, graph building, and state management to create flexible workflows.",
         code: null,
         visual: `
-            <div class="workflow-visual complete-workflow">
-                <svg width="550" height="400" viewBox="0 0 550 400">
-                    <!-- Main flow components -->
-                    <g>
-                        <!-- CSV file -->
-                        <rect x="-40" y="20" width="140" height="60" rx="5" fill="#F3F4F6" stroke="#9CA3AF" strokeWidth="2" />
-                        <text x="30" y="55" fontSize="14" textAnchor="middle" fill="#4B5563">CSV Definition</text>
-                        
-                        <!-- GraphBuilder -->
-                        <rect x="150" y="20" width="140" height="60" rx="5" fill="#DBEAFE" stroke="#3B82F6" strokeWidth="2" />
-                        <text x="220" y="55" fontSize="14" textAnchor="middle" fill="#1E40AF">Graph Builder</text>
-                        
-                        <!-- Graph Definition -->
-                        <rect x="150" y="120" width="140" height="60" rx="5" fill="#E0F2FE" stroke="#0EA5E9" strokeWidth="2" />
-                        <text x="220" y="155" fontSize="14" textAnchor="middle" fill="#0C4A6E">Graph Definition</text>
-                        
-                        <!-- Agent Registry -->
-                        <rect x="-40" y="120" width="140" height="60" rx="5" fill="#F3E8FF" stroke="#A855F7" strokeWidth="2" />
-                        <text x="30" y="155" fontSize="14" textAnchor="middle" fill="#6B21A8">Agent Registry</text>
-                        
-                        <!-- Agent Instances -->
-                        <rect x="150" y="220" width="140" height="60" rx="5" fill="#FCE7F3" stroke="#EC4899" strokeWidth="2" />
-                        <text x="220" y="255" fontSize="14" textAnchor="middle" fill="#9D174D">Agent Instances</text>
-                        
-                        <!-- StateGraph -->
-                        <rect x="340" y="120" width="140" height="60" rx="5" fill="#D1FAE5" stroke="#10B981" strokeWidth="2" />
-                        <text x="410" y="155" fontSize="14" textAnchor="middle" fill="#065F46">StateGraph</text>
-                        
-                        <!-- Compiled Graph -->
-                        <rect x="340" y="220" width="140" height="60" rx="5" fill="#A7F3D0" stroke="#059669" strokeWidth="2" />
-                        <text x="410" y="255" fontSize="14" textAnchor="middle" fill="#064E3B">Compiled Graph</text>
-                        
-                        <!-- Initial State -->
-                        <rect x="-40" y="320" width="140" height="60" rx="5" fill="#FEF3C7" stroke="#F59E0B" strokeWidth="2" />
-                        <text x="30" y="355" fontSize="14" textAnchor="middle" fill="#92400E">Initial State</text>
-                        
-                        <!-- Runner -->
-                        <rect x="340" y="320" width="140" height="60" rx="5" fill="#FEE2E2" stroke="#EF4444" strokeWidth="2" />
-                        <text x="410" y="355" fontSize="14" textAnchor="middle" fill="#991B1B">Runner</text>
-                        
-                        <!-- Result -->
-                        <rect x="150" y="320" width="140" height="60" rx="5" fill="#FFE4E6" stroke="#F43F5E" strokeWidth="2" />
-                        <text x="220" y="355" fontSize="14" textAnchor="middle" fill="#9F1239">Result State</text>
-                    </g>
-                    
-                    <!-- Connecting arrows -->
-                    <g>
-                        <line x1="100" y1="50" x2="140" y2="50" stroke="#A5F3FC" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                        <line x1="220" y1="80" x2="220" y2="110" stroke="#A5F3FC" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                        <line x1="100" y1="150" x2="140" y2="150" stroke="#A5F3FC" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                        <line x1="220" y1="180" x2="220" y2="210" stroke="#A5F3FC" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                        <line x1="290" y1="150" x2="330" y2="150" stroke="#A5F3FC" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                        <line x1="410" y1="180" x2="410" y2="210" stroke="#A5F3FC" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                        <line x1="30" y1="180" x2="30" y2="310" stroke="#A5F3FC" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                        
-                        <line x1="100" y1="350" x2="140" y2="350" stroke="#A5F3FC" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                        <line x1="290" y1="350" x2="330" y2="350" stroke="#A5F3FC" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                        
-                        <line x1="410" y1="280" x2="410" y2="310" stroke="#A5F3FC" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                        <line x1="290" y1="250" x2="330" y2="250" stroke="#A5F3FC" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                        
-                        <path d="M 340 320 C 300 300, 270 300, 240 280" fill="none" stroke="#A5F3FC" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                    </g>
-                    
-                    <!-- Labels for arrows -->
-                    <g>
-                        <text x="120" y="40" fontSize="10" textAnchor="middle" fill="#A5F3FC">Parse</text>
-                        <text x="230" y="100" fontSize="10" textAnchor="middle" fill="#A5F3FC">Build</text>
-                        <text x="120" y="140" fontSize="10" textAnchor="middle" fill="#A5F3FC">Lookup</text>
-                        <text x="230" y="200" fontSize="10" textAnchor="middle" fill="#A5F3FC">Create</text>
-                        <text x="310" y="140" fontSize="10" textAnchor="middle" fill="#A5F3FC">Build</text>
-                        <text x="420" y="200" fontSize="10" textAnchor="middle" fill="#A5F3FC">Compile</text>
-                        <text x="120" y="340" fontSize="10" textAnchor="middle" fill="#A5F3FC">State Flow</text>
-                        <text x="310" y="340" fontSize="10" textAnchor="middle" fill="#A5F3FC">Return</text>
-                        <text x="310" y="240" fontSize="10" textAnchor="middle" fill="#A5F3FC">Add</text>
-                        <text x="420" y="300" fontSize="10" textAnchor="middle" fill="#A5F3FC">Execute</text>
-                        <text x="300" y="300" fontSize="10" textAnchor="middle" fill="#A5F3FC">Update</text>
-                    </g>
-                </svg>
+            <div class="mermaid">
+            flowchart TD
+                CSV["CSV Definition"] -->|Parse| GraphBuilder["Graph Builder"]
+                GraphBuilder -->|Build| GraphDef["Graph Definition"]
+                AgentRegistry["Agent Registry"] -->|Lookup| GraphDef
+                GraphDef -->|Create| AgentInstances["Agent Instances"]
+                GraphDef -->|Build| StateGraph["StateGraph"]
+                StateGraph -->|Compile| CompiledGraph["Compiled Graph"]
+                AgentInstances -->|Add| CompiledGraph
+                InitialState["Initial State"] -->|State Flow| ResultState["Result State"]
+                ResultState -->|Return| Runner["Runner"]
+                CompiledGraph -->|Execute| Runner
+                Runner -->|Update| ResultState
+                
+                classDef csv fill:#F3F4F6,stroke:#9CA3AF,color:#4B5563
+                classDef graph fill:#DBEAFE,stroke:#3B82F6,color:#1E40AF
+                classDef graphDef fill:#E0F2FE,stroke:#0EA5E9,color:#0C4A6E
+                classDef agent fill:#F3E8FF,stroke:#A855F7,color:#6B21A8
+                classDef instances fill:#FCE7F3,stroke:#EC4899,color:#9D174D
+                classDef state fill:#D1FAE5,stroke:#10B981,color:#065F46
+                classDef compiled fill:#A7F3D0,stroke:#059669,color:#064E3B
+                classDef initial fill:#FEF3C7,stroke:#F59E0B,color:#92400E
+                classDef runner fill:#FEE2E2,stroke:#EF4444,color:#991B1B
+                classDef result fill:#FFE4E6,stroke:#F43F5E,color:#9F1239
+                
+                class CSV csv
+                class GraphBuilder graph
+                class GraphDef graphDef
+                class AgentRegistry agent
+                class AgentInstances instances
+                class StateGraph state
+                class CompiledGraph compiled
+                class InitialState initial
+                class ResultState result
+                class Runner runner
             </div>
         `
     }
