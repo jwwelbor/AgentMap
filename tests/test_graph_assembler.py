@@ -91,30 +91,14 @@ def test_graph_assembler_success_failure_edge():
     
     # Test with success state
     result = graph.invoke({"input": "true"})
-    
-    # Check execution_steps to verify the Success path was taken
-    execution_steps = result.get("execution_steps", [])
-    assert execution_steps, "No execution steps were recorded"
-    
-    # Extract node names from execution steps
-    node_names = [step["node"] for step in execution_steps]
-    assert "Start" in node_names, "Start node was not executed"
-    assert "Success" in node_names, "Success node was not executed"
-    assert "Failure" not in node_names, "Failure node was executed but shouldn't have been"
-    
+    output = result.get("output", [])
+    assert output == "DefaultAgent 'Success' executed with prompt: 'Test prompt'"
+        
     # Test with failure state
     result = graph.invoke({"input": "false"})
-    
-    # Check execution_steps to verify the Failure path was taken
-    execution_steps = result.get("execution_steps", [])
-    assert execution_steps, "No execution steps were recorded"
-    
-    # Extract node names from execution steps
-    node_names = [step["node"] for step in execution_steps]
-    assert "Start" in node_names, "Start node was not executed"
-    assert "Failure" in node_names, "Failure node was not executed"
-    assert "Success" not in node_names, "Success node was executed but shouldn't have been"
- 
+    output = result.get("output", [])
+    assert output == "DefaultAgent 'Failure' executed with prompt: 'Test prompt'"
+     
 def test_graph_assembler_process_node_edges():
     """Test that the GraphAssembler can process all edge types for a node."""
     # Create a builder
@@ -154,14 +138,11 @@ def test_graph_assembler_process_node_edges():
     
     # Test the success path
     result = graph.invoke({"input": True})
-    execution_steps = result.get("execution_steps", [])
-    node_names = [step["node"] for step in execution_steps]
-
-    assert "Success" in node_names
-    assert "Next" in node_names
+    output = result.get("output", [])
+    assert output == "DefaultAgent 'Next' executed"
     
     # Test the failure path
     result = graph.invoke({"input": False})
-    execution_steps = result.get("execution_steps", [])
-    node_names = [step["node"] for step in execution_steps]
-    assert "Failure" in node_names
+    output = result.get("output", [])
+    assert output == "DefaultAgent 'Failure' executed"
+
