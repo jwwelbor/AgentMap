@@ -418,5 +418,9 @@ const documentationFiles = [
     {
         "path": "./usage/README_cloud_storage.md",
         "title": "Cloud Storage"
+    },
+    {
+        "path": "./usage/langchain_memory_in_agentmap.md",
+        "title": "LangChain Memory in AgentMap"
     }
 ];
