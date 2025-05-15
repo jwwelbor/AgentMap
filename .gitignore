@@ -174,3 +174,8 @@ cython_debug/
 .pypirc
 
 scripts/
+junk/
+agentmap_local_config.yaml
+agentmap_local_storage_config.yaml
+
+.idea
