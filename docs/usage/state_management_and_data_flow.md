@@ -119,5 +119,3 @@ Custom error handling can be implemented in agents' `process` method.
 
 
 ---
-
-[↑ Back to Index](index.md) | [← Previous: Advanced Agent Types](advanced_agent_types.md) | [Next: AgentMap Example Workflows →](agentmap_example_workflows.md)

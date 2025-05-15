@@ -393,5 +393,3 @@ The `Prompt` field serves different purposes depending on the agent type:
 
 
 ---
-
-[↑ Back to Index](index.md) | [← Previous: AgentMap Agent Types](agentmap_agent_types.md) | [Next: State Management and Data Flow →](state_management_and_data_flow.md)

@@ -288,5 +288,3 @@ GraphName,End,,Workflow complete,echo,,,result,message,
 ```
 
 ---
-
-[↑ Back to Index](index.md) | [← Previous: Prompt Management in AgentMap](prompt_management_in_agentmap.md) | [Next: Advanced Agent Types →](advanced_agent_types.md)

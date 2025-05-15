@@ -102,5 +102,3 @@ registry = manager.get_registry()
 ---
 
 ---
-
-[↑ Back to Index](index.md) | [← Previous: AgentMap CSV Schema Documentation](agentmap_csv_schema_documentation.md) | [Next: AgentMap Agent Types →](agentmap_agent_types.md)
