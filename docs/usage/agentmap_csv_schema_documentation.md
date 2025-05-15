@@ -70,5 +70,3 @@ For complex routing patterns:
 ---
 
 ---
-
-[↑ Back to Index](index.md) | [Next: Prompt Management in AgentMap →](prompt_management_in_agentmap.md)

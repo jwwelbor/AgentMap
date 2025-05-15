@@ -198,5 +198,3 @@ Options:
 - `--config`, `-c`: Path to custom config file
 
 ---
-
-[↑ Back to Index](index.md) | [← Previous: AgentMap Example Workflows](agentmap_example_workflows.md)
