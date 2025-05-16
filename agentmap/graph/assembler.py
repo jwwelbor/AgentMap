@@ -11,7 +11,9 @@ from langgraph.graph import StateGraph
 from agentmap.config import get_functions_path
 from agentmap.utils.common import extract_func_ref, import_function
 from agentmap.state.adapter import StateAdapter
+from agentmap.agents import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
 from agentmap.logging import get_logger
+
 logger = get_logger("AgentMap")
 
 
@@ -41,13 +43,16 @@ class GraphAssembler:
             logger.info("Graph assembler initialized")
     
     def add_node(self, name: str, agent_instance: Any) -> None:
-        """
-        Add a node to the graph.
+        """Add a node to the graph."""
+        # Handle special case for LLM-based orchestrators
+        agent_class_name = agent_instance.__class__.__name__
         
-        Args:
-            name: Name of the node
-            agent_instance: Agent instance to add
-        """
+        # Log helpful warnings about potential missing dependencies
+        if agent_class_name == "OrchestratorAgent" and not HAS_LLM_AGENTS:
+            logger.warning(f"Orchestrator agent '{name}' may have limited functionality without LLM agents.")
+            logger.warning("Install LLM dependencies with: pip install agentmap[llm]")
+
+        
         self.builder.add_node(name, agent_instance.run)
         
         # Check if this is an orchestrator agent to enable dynamic routing

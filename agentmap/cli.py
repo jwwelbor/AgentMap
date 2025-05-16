@@ -11,6 +11,7 @@ from agentmap.graph.serialization import (compile_all, export_as_pickle,
                                           export_as_source)
 from agentmap.graph.serialization import export_graph as export_graph_func
 from agentmap.runner import run_graph
+from agentmap.agents import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS, get_agent_map
 
 app = typer.Typer()
 
@@ -206,6 +207,35 @@ def storage_config_cmd(
                 else:
                     typer.echo(f"  {key}: {value}")
 
+@app.command()
+def list_agents():
+    """List all available agent types in the current environment."""
+    agents = get_agent_map()
+    
+    typer.echo("Available Agent Types:")
+    typer.echo("=====================")
+    
+    # Core agents
+    typer.echo("\nCore Agents:")
+    for agent_type in ["default", "echo", "branching", "success", "failure", "input", "graph"]:
+        typer.echo(f"  - {agent_type}")
+    
+    # LLM agents
+    if HAS_LLM_AGENTS:
+        typer.echo("\nLLM Agents:")
+        for agent_type in ["openai", "anthropic", "google", "llm"]:
+            typer.echo(f"  - {agent_type}")
+    else:
+        typer.echo("\nLLM Agents: [Not Available] - Install with: pip install agentmap[llm]")
+    
+    # Storage agents
+    if HAS_STORAGE_AGENTS:
+        typer.echo("\nStorage Agents:")
+        for agent_type in ["csv_reader", "csv_writer", "json_reader", "json_writer", 
+                          "file_reader", "file_writer", "vector_reader", "vector_writer"]:
+            typer.echo(f"  - {agent_type}")
+    else:
+        typer.echo("\nStorage Agents: [Not Available] - Install with: pip install agentmap[storage]")
 
 if __name__ == "__main__":
     app()

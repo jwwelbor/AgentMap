@@ -10,7 +10,6 @@ from typing import Any, Dict, Optional, Union
 
 from langgraph.graph import StateGraph
 
-from agentmap.agents import get_agent_class
 from agentmap.config import (get_compiled_graphs_path, get_csv_path,
                              get_custom_agents_path, load_config)
 from agentmap.exceptions import AgentInitializationError
@@ -19,6 +18,8 @@ from agentmap.graph.builder import GraphBuilder
 from agentmap.logging import get_logger
 from agentmap.graph.node_registry import build_node_registry, populate_orchestrator_inputs
 from agentmap.state.adapter import StateAdapter
+from agentmap.agents import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
+from agentmap.agents import get_agent_class
 
 logger = get_logger(__name__)
 
@@ -174,8 +175,22 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
     """
     logger.debug(f"[AgentInit] resolving agent class for type '{agent_type}'")
     
+    agent_type_lower = agent_type.lower()
+    
+    # Check LLM agent types
+    if not HAS_LLM_AGENTS and agent_type_lower in ("openai", "anthropic", "google", "gpt", "claude", "gemini", "llm"):
+        raise ImportError(f"LLM agent '{agent_type}' requested but LLM dependencies are not installed. "
+                         "Install with: pip install agentmap[llm]")
+    
+    # Check storage agent types
+    if not HAS_STORAGE_AGENTS and agent_type_lower in ("csv_reader", "csv_writer", "json_reader", "json_writer", 
+                                                      "file_reader", "file_writer", "vector_reader", "vector_writer"):
+        raise ImportError(f"Storage agent '{agent_type}' requested but storage dependencies are not installed. "
+                         "Install with: pip install agentmap[storage]")
+
+    
     # Handle empty or None agent_type - default to DefaultAgent
-    if not agent_type or agent_type.lower() == "none":
+    if not agent_type or agent_type_lower == "none":
         logger.debug("[AgentInit] Empty or None agent type, defaulting to DefaultAgent")
         from agentmap.agents.builtins.default_agent import DefaultAgent
         return DefaultAgent
