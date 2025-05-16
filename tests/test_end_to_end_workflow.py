@@ -30,7 +30,6 @@ class WorkflowMemoryTests(unittest.TestCase):
         os.close(self.csv_fd)
         os.unlink(self.csv_path)
     
-    @patch('agentmap.agents.builtins.llm.llm_agent.LANGCHAIN_AVAILABLE', True)
     @patch('agentmap.agents.builtins.llm.openai_agent.OpenAIAgent._get_llm')
     def test_memory_flow_through_graph(self, mock_get_llm):
         """Test memory flows correctly through the workflow."""

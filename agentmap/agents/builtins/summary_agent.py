@@ -151,13 +151,16 @@ class SummaryAgent(BaseAgent):
 
     def _get_llm_prompt(self, content: str) -> str:
         """Create a prompt for the LLM based on the agent's prompt and content."""
-        if not self.prompt:
-            return f"Please summarize the following information:\n\n{content}"
-
-        # Use the agent's prompt with a content placeholder
-        # First try using format() with content as a named parameter
-        try:
-            return self.prompt.format(content=content)
-        except KeyError:
-            # If that fails, append the content to the prompt
-            return f"{self.prompt}\n\n{content}"
+        from agentmap.prompts import get_formatted_prompt
+        
+        template_values = {"content": content}
+        default_template = "Please summarize the following information:\n\n{content}"
+        
+        # Get formatted prompt with all fallbacks handled internally
+        return get_formatted_prompt(
+            primary_prompt=self.prompt,
+            template_file="file:summary/summarization_v1.txt",
+            default_template=default_template,
+            values=template_values,
+            context_name="SummaryAgent"
+        )

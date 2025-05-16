@@ -7,7 +7,7 @@ This module provides an agent for interacting with Anthropic's Claude language m
 import os
 from typing import Any, Dict, List, Optional, Union
 
-from agentmap.agents.builtins.llm.llm_agent import LLMAgent, LANGCHAIN_AVAILABLE
+from agentmap.agents.builtins.llm.llm_agent import LLMAgent
 from agentmap.state.adapter import StateAdapter
 from agentmap.config import get_llm_config
 from agentmap.logging import get_logger
@@ -45,9 +45,7 @@ class AnthropicAgent(LLMAgent):
     
     def _get_llm(self) -> Any:
         """Get LangChain ChatAnthropic instance."""
-        if not LANGCHAIN_AVAILABLE:
-            return None
-            
+
         if not self.api_key:
             logger.error("Anthropic API key not found in config or environment")
             return None

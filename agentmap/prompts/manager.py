@@ -311,3 +311,34 @@ def resolve_prompt(prompt_ref: str, config_path: Optional[Union[str, Path]] = No
     
     # Return as-is if not a reference
     return prompt_ref
+
+def format_prompt(self, prompt_ref_or_text: str, values: Dict[str, Any]) -> str:
+    """
+    Resolve a prompt reference (if needed) and format it with LangChain.
+    
+    Args:
+        prompt_ref_or_text: Prompt reference string or direct prompt text
+        values: Values to use in formatting the prompt
+        
+    Returns:
+        Formatted prompt text
+    """
+    from langchain.prompts import PromptTemplate
+    
+    # Resolve the prompt if it's a reference
+    known_prefixes = ["prompt:", "file:", "yaml:"]
+    is_reference = any(prompt_ref_or_text.startswith(prefix) for prefix in known_prefixes)
+    
+    prompt_text = self.resolve_prompt(prompt_ref_or_text) if is_reference else prompt_ref_or_text
+    
+    # Use LangChain's PromptTemplate
+    try:
+        prompt_template = PromptTemplate(
+            template=prompt_text,
+            input_variables=list(values.keys())
+        )
+        return prompt_template.format(**values)
+    except Exception as e:
+        logger.warning(f"Error using LangChain PromptTemplate: {e}, falling back to standard formatting")
+        # Fall back to standard formatting
+        return prompt_text.format(**values)

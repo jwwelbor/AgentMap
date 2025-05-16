@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 import openai
 
-from agentmap.agents.builtins.llm.llm_agent import LLMAgent, LANGCHAIN_AVAILABLE
+from agentmap.agents.builtins.llm.llm_agent import LLMAgent
 from agentmap.state.adapter import StateAdapter
 from agentmap.config import get_llm_config
 from agentmap.logging import get_logger
@@ -29,8 +29,6 @@ class OpenAIAgent(LLMAgent):
     
     def _get_llm(self) -> Any:
         """Get LangChain ChatOpenAI instance."""
-        if not LANGCHAIN_AVAILABLE:
-            return None
             
         if not self.api_key:
             logger.error("OpenAI API key not found in config or environment")
