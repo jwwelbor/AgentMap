@@ -98,3 +98,56 @@ class JSONDocumentWriterAgent(DocumentWriterAgent, JSONDocumentAgent):
                 path=path,
                 error=str(e)
             )
+    
+    # Implement or override other required methods
+    def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
+        """
+        Validate inputs for write operations.
+        
+        Args:
+            inputs: Input dictionary
+            
+        Raises:
+            ValueError: If inputs are invalid
+        """
+        # Call parent validation
+        super()._validate_inputs(inputs)
+        
+        # Add JSON-specific validation if needed
+        collection = self.get_collection(inputs)
+        if not collection.lower().endswith('.json'):
+            logger.warning(f"Collection path does not end with .json: {collection}")
+    
+    def _handle_operation_error(
+        self, 
+        error: Exception, 
+        collection: str, 
+        inputs: Dict[str, Any]
+    ) -> DocumentResult:
+        """
+        Handle JSON-specific write operation errors.
+        
+        Args:
+            error: The exception that occurred
+            collection: Collection identifier
+            inputs: Input dictionary
+            
+        Returns:
+            DocumentResult with error information
+        """
+        # Add JSON-specific error handling
+        if isinstance(error, FileNotFoundError):
+            return DocumentResult(
+                success=False,
+                file_path=collection,
+                error=f"JSON file not found: {collection}"
+            )
+        elif isinstance(error, ValueError) and "Invalid JSON" in str(error):
+            return DocumentResult(
+                success=False,
+                file_path=collection,
+                error=f"Invalid JSON in file: {collection}"
+            )
+        
+        # Fall back to parent error handling
+        return super()._handle_operation_error(error, collection, inputs)

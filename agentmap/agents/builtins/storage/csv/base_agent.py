@@ -14,18 +14,41 @@ import pandas as pd
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, DocumentResult, log_operation)
+from agentmap.agents.builtins.storage.mixins import StorageErrorHandlerMixin
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class CSVAgent(BaseStorageAgent):
+class CSVAgent(BaseStorageAgent, StorageErrorHandlerMixin):
     """
     Base class for CSV storage agents with shared functionality.
     
     Provides common methods for reading, writing, and filtering CSV data
     that can be used by both reader and writer implementations.
     """
+    
+    def _initialize_client(self) -> None:
+        """No client initialization needed for CSV files."""
+        pass
+    
+    def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
+        """
+        Validate inputs for CSV operations.
+        
+        Args:
+            inputs: Input dictionary
+            
+        Raises:
+            ValueError: If inputs are invalid
+        """
+        collection = self.get_collection(inputs)
+        if not collection:
+            raise ValueError("Missing required 'collection' parameter")
+        
+        # Check if file path has CSV extension
+        if not collection.lower().endswith('.csv'):
+            logger.warning(f"Collection path does not end with .csv: {collection}")
     
     def _ensure_directory_exists(self, file_path: str) -> None:
         """
@@ -217,6 +240,33 @@ class CSVAgent(BaseStorageAgent):
             logger.warning(f"Unknown format type '{format_type}', defaulting to 'records'")
             return df.to_dict(orient="records")
     
-    def _initialize_client(self) -> None:
-        """No client initialization needed for CSV files."""
-        pass
+    def _handle_operation_error(
+        self, 
+        error: Exception, 
+        collection: str, 
+        inputs: Dict[str, Any]
+    ) -> DocumentResult:
+        """
+        Handle CSV operation errors.
+        
+        Args:
+            error: The exception that occurred
+            collection: Collection identifier
+            inputs: Input dictionary
+            
+        Returns:
+            DocumentResult with error information
+        """
+        if isinstance(error, FileNotFoundError):
+            return DocumentResult(
+                success=False,
+                file_path=collection,
+                error=f"CSV file not found: {collection}"
+            )
+        
+        return self._handle_storage_error(
+            error,
+            "CSV operation",
+            collection,
+            file_path=collection
+        )

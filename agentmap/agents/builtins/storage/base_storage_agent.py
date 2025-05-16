@@ -251,3 +251,116 @@ class BaseStorageAgent(BaseAgent):
         if document_id is None:
             return None
         return str(document_id)
+        
+    # Template method pattern implementation
+    @log_operation
+    def process(self, inputs: Dict[str, Any]) -> Any:
+        """
+        Process inputs using the template method pattern.
+        
+        Args:
+            inputs: Dictionary of input values
+            
+        Returns:
+            Operation result
+        """
+        # Extract common parameters
+        collection = self.get_collection(inputs)
+        
+        # Pre-process operation
+        self._log_operation_start(collection, inputs)
+        
+        try:
+            # Validate inputs
+            self._validate_inputs(inputs)
+            
+            # Execute storage operation
+            result = self._execute_operation(collection, inputs)
+            
+            # Post-process result
+            return self._process_result(result, inputs)
+            
+        except Exception as e:
+            # Handle error
+            return self._handle_operation_error(e, collection, inputs)
+    
+    def _log_operation_start(self, collection: str, inputs: Dict[str, Any]) -> None:
+        """
+        Log the start of a storage operation.
+        
+        Args:
+            collection: Collection identifier
+            inputs: Input dictionary
+        """
+        logger.debug(f"[{self.__class__.__name__}] Starting operation on {collection}")
+    
+    def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
+        """
+        Validate operation inputs.
+        
+        Args:
+            inputs: Input dictionary
+            
+        Raises:
+            ValueError: If inputs are invalid
+        """
+        # Base implementation - subclasses should override
+        if not self.get_collection(inputs):
+            raise ValueError("Missing required 'collection' parameter")
+    
+    def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> Any:
+        """
+        Execute the storage operation.
+        
+        Args:
+            collection: Collection identifier
+            inputs: Input dictionary
+            
+        Returns:
+            Operation result
+            
+        Raises:
+            NotImplementedError: When not implemented by subclass
+        """
+        raise NotImplementedError("Subclasses must implement _execute_operation")
+    
+    def _process_result(self, result: Any, inputs: Dict[str, Any]) -> Any:
+        """
+        Process the operation result.
+        
+        Args:
+            result: Operation result
+            inputs: Input dictionary
+            
+        Returns:
+            Processed result
+        """
+        # Base implementation - return result as-is
+        return result
+    
+    def _handle_operation_error(
+        self, 
+        error: Exception, 
+        collection: str, 
+        inputs: Dict[str, Any]
+    ) -> DocumentResult:
+        """
+        Handle operation errors.
+        
+        Args:
+            error: The exception that occurred
+            collection: Collection identifier
+            inputs: Input dictionary
+            
+        Returns:
+            DocumentResult with error information
+        """
+        error_msg = f"Error processing {collection}: {str(error)}"
+        logger.error(f"[{self.__class__.__name__}] {error_msg}")
+        
+        # Create error result
+        return DocumentResult(
+            success=False,
+            file_path=collection,
+            error=error_msg
+        )

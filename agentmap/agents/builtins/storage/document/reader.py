@@ -1,47 +1,52 @@
-# agentmap/agents/builtins/storage/document_reader_agent.py
+"""
+Base document reader agent implementation.
+
+This module provides the foundation for reading documents from various
+storage backends, with standardized error handling and result formatting.
+"""
+from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from agentmap.agents.builtins.storage.base_storage_agent import (
-    BaseStorageAgent, log_operation)
+from agentmap.agents.builtins.storage.document.base_agent import (
+    DocumentStorageAgent, DocumentResult, log_operation)
+from agentmap.agents.builtins.storage.mixins import ReaderOperationsMixin
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class DocumentReaderAgent(BaseStorageAgent):
+class DocumentReaderAgent(DocumentStorageAgent, ReaderOperationsMixin):
     """
-    Generic document reader agent.
+    Base class for document reader agents.
     
-    Base class for reading documents from various storage backends.
+    Provides common functionality for reading documents from various storage backends.
     Concrete implementations are provided for JSON, Firebase, etc.
     """
     
-    @log_operation
-    def process(self, inputs: Dict[str, Any]) -> Any:
+    def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
         """
-        Read documents from storage.
-        
-        This method parses the inputs, validates them, and calls the
-        appropriate implementation method to perform the actual read.
+        Validate inputs for read operations.
         
         Args:
-            inputs: Dictionary containing:
-                - collection: Document collection identifier
-                - document_id: Optional specific document ID
-                - query: Optional query parameters
-                - path: Optional path within document
-                - default: Optional default value if not found
-                
-        Returns:
-            Document data or None if not found
-        
+            inputs: Input dictionary
+            
         Raises:
-            ValueError: If required inputs are missing or invalid
+            ValueError: If inputs are invalid
         """
-        # Get required collection
-        collection = self._get_collection_from_inputs(inputs)
+        self._validate_reader_inputs(inputs)
+    
+    def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> Any:
+        """
+        Execute read operation.
         
+        Args:
+            collection: Collection identifier
+            inputs: Input dictionary
+            
+        Returns:
+            Read operation result
+        """
         # Extract optional parameters
         document_id = inputs.get("document_id")
         query = inputs.get("query")
@@ -50,94 +55,48 @@ class DocumentReaderAgent(BaseStorageAgent):
         # Log the operation details
         self._log_read_operation(collection, document_id, query, path)
         
-        try:
-            # Perform the actual read operation
-            result = self._read_document(collection, document_id, query, path)
-            
-            # Return default value if result is None and default is provided
-            if result is None and "default" in inputs:
-                logger.debug(f"[{self.__class__.__name__}] Using default value")
-                return inputs["default"]
-                
-            return result
-            
-        except Exception as e:
-            # Handle the error appropriately
-            self._handle_error("Document Read Error", 
-                              f"Failed to read from {collection}", e)
+        # Perform the actual read operation
+        return self._read_document(collection, document_id, query, path)
     
-    def _read_document(
-        self, 
-        collection: str, 
-        document_id: Optional[str] = None, 
-        query: Optional[Dict[str, Any]] = None, 
-        path: Optional[str] = None
-    ) -> Any:
+    def _process_result(self, result: Any, inputs: Dict[str, Any]) -> Any:
         """
-        Read a document or collection of documents.
+        Process read operation result.
         
         Args:
-            collection: Collection identifier
-            document_id: Optional specific document ID
-            query: Optional query parameters
-            path: Optional path within document
-            
-        Returns:
-            Document data
-            
-        Raises:
-            NotImplementedError: When not implemented by subclass
-        """
-        raise NotImplementedError("Subclasses must implement _read_document")
-    
-    def _get_collection_from_inputs(self, inputs: Dict[str, Any]) -> str:
-        """
-        Extract and validate the collection from inputs.
-        
-        Args:
+            result: Read operation result
             inputs: Input dictionary
             
         Returns:
-            Collection identifier
+            Processed result
+        """
+        # Return default value if result is None and default is provided
+        if result is None and "default" in inputs:
+            logger.debug(f"[{self.__class__.__name__}] Using default value")
+            return inputs["default"]
             
-        Raises:
-            ValueError: If collection is missing
-        """
-        collection = self.get_collection(inputs)
-        if not collection:
-            raise ValueError("Missing required 'collection' parameter")
-        return collection
+        return result
     
-    def _log_read_operation(
+    def _handle_operation_error(
         self, 
+        error: Exception, 
         collection: str, 
-        document_id: Optional[str] = None,
-        query: Optional[Dict[str, Any]] = None,
-        path: Optional[str] = None
-    ) -> None:
+        inputs: Dict[str, Any]
+    ) -> DocumentResult:
         """
-        Log details of a read operation.
+        Handle read operation errors.
         
         Args:
+            error: The exception that occurred
             collection: Collection identifier
-            document_id: Optional document ID
-            query: Optional query parameters
-            path: Optional document path
+            inputs: Input dictionary
+            
+        Returns:
+            DocumentResult with error information
         """
-        operation_type = "collection"
-        details = []
-        
-        if document_id:
-            operation_type = "document"
-            details.append(f"id={document_id}")
-            
-        if query:
-            operation_type = "query"
-            query_str = ", ".join(f"{k}={v}" for k, v in query.items())
-            details.append(f"query={{{query_str}}}")
-            
-        if path:
-            details.append(f"path={path}")
-            
-        detail_str = ", ".join(details) if details else "all"
-        logger.info(f"[{self.__class__.__name__}] Reading {operation_type} from {collection} ({detail_str})")
+        return self._handle_storage_error(
+            error, 
+            "read", 
+            collection,
+            document_id=inputs.get("document_id"),
+            path=inputs.get("path")
+        )

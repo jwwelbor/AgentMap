@@ -14,39 +14,31 @@ import pandas as pd
 from agentmap.agents.builtins.storage.csv.base_agent import CSVAgent
 from agentmap.agents.builtins.storage.base_storage_agent import (
     DocumentResult, WriteMode, log_operation)
+from agentmap.agents.builtins.storage.mixins import WriterOperationsMixin
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class CSVWriterAgent(CSVAgent):
+class CSVWriterAgent(CSVAgent, WriterOperationsMixin):
     """
     Agent for writing data to CSV files.
     
     Writes data to CSV files with support for creation, appending, and updates.
     """
     
-    @log_operation
-    def process(self, inputs: Dict[str, Any]) -> DocumentResult:
+    def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> DocumentResult:
         """
-        Write data to a CSV file.
+        Execute write operation for CSV files.
         
         Args:
-            inputs: Dictionary containing input values, including:
-                - collection: Path to the CSV file
-                - data: Data to write (list of dicts, dict, or DataFrame)
-                - mode: Write mode (write, append, update)
-                - id_field: Field to use as ID for updates
-                
-        Returns:
-            DocumentResult with operation results and metadata
+            collection: CSV file path
+            inputs: Input dictionary
             
-        Raises:
-            ValueError: If required inputs are missing or invalid
+        Returns:
+            Write operation result
         """
-        # Get the CSV file path
-        csv_path = self.get_collection(inputs)
-        logger.info(f"Writing to {csv_path}")
+        logger.info(f"Writing to {collection}")
         
         # Get the data to write
         data = inputs.get("data")
@@ -67,21 +59,21 @@ class CSVWriterAgent(CSVAgent):
             
             # Handle different write modes
             if mode == WriteMode.WRITE:
-                return self._write_mode_create(csv_path, df)
+                return self._write_mode_create(collection, df)
             elif mode == WriteMode.APPEND:
-                return self._write_mode_append(csv_path, df)
+                return self._write_mode_append(collection, df)
             elif mode == WriteMode.UPDATE:
                 id_field = inputs.get("id_field", "id")
-                return self._write_mode_update(csv_path, df, id_field)
+                return self._write_mode_update(collection, df, id_field)
             else:
                 # Default to write mode
-                return self._write_mode_create(csv_path, df)
+                return self._write_mode_create(collection, df)
                 
         except Exception as e:
             return DocumentResult(
                 success=False,
                 mode=mode_str,
-                file_path=csv_path,
+                file_path=collection,
                 error=str(e)
             )
     
