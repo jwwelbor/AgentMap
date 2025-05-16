@@ -13,12 +13,13 @@ from typing import Any, Dict, List, Optional, Union
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, DocumentResult, WriteMode, log_operation
 )
+from agentmap.agents.builtins.storage.mixins import WriterOperationsMixin, StorageErrorHandlerMixin
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class FileWriterAgent(BaseStorageAgent):
+class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandlerMixin):
     """
     Enhanced document writer agent for text-based file formats.
     
@@ -33,11 +34,7 @@ class FileWriterAgent(BaseStorageAgent):
         Args:
             name: Name of the agent node
             prompt: File path or prompt with path
-            context: Additional configuration including:
-                - encoding: File encoding (default: 'utf-8')
-                - newline: Newline character (default: system default)
-                - input_fields: Input fields to use
-                - output_field: Output field to return results
+            context: Additional configuration including encoding and newline settings
         """
         super().__init__(name, prompt, context)
         
@@ -50,74 +47,105 @@ class FileWriterAgent(BaseStorageAgent):
         """No client needed for filesystem operations."""
         pass
     
-    @log_operation
-    def process(self, inputs: Dict[str, Any]) -> DocumentResult:
+    def _log_operation_start(self, collection: str, inputs: Dict[str, Any]) -> None:
         """
-        Process inputs and write to document.
+        Log the start of a file write operation.
         
         Args:
-            inputs: Dictionary with keys:
-                - collection: File path or collection name
-                - data: Content to write
-                - mode: Write mode (default: 'write')
-                - document_id: Optional document section (for some formats)
-                - path: Optional path within document
-                
-        Returns:
-            Result of the write operation
+            collection: File path
+            inputs: Input dictionary
         """
-        # Get required parameters
-        file_path = self.get_collection(inputs)
-        data = inputs.get("data")
+        mode = inputs.get("mode", "write")
+        logger.debug(f"[{self.__class__.__name__}] Starting write operation (mode: {mode}) on file: {collection}")
+    
+    def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
+        """
+        Validate inputs for file write operations.
         
-        # Get optional parameters
+        Args:
+            inputs: Input dictionary
+            
+        Raises:
+            ValueError: If inputs are invalid
+        """
+        super()._validate_inputs(inputs)
+        self._validate_writer_inputs(inputs)
+        
+        # Add file-specific validation if needed
+        file_path = self.get_collection(inputs)
+        mode = inputs.get("mode", "write").lower()
+        
+        # Check if we have data for non-delete operations
+        if mode != "delete" and "data" not in inputs:
+            raise ValueError("Missing required 'data' parameter for non-delete operations")
+    
+    def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> DocumentResult:
+        """
+        Execute write operation for file.
+        
+        Args:
+            collection: File path
+            inputs: Input dictionary
+            
+        Returns:
+            Write operation result
+        """
+        # Get required data
+        data = inputs.get("data")
         mode_str = inputs.get("mode", "write").lower()
+        
+        # Convert string mode to enum
+        try:
+            mode = WriteMode.from_string(mode_str)
+        except ValueError as e:
+            return DocumentResult(
+                success=False,
+                file_path=collection,
+                error=str(e)
+            )
+        
+        # Extract optional parameters
         document_id = inputs.get("document_id")
         path = inputs.get("path")
         
-        # Validate data
-        if data is None and mode_str != "delete":
+        # Log the write operation
+        self._log_write_operation(collection, mode, document_id, path)
+        
+        # Perform the write operation
+        return self._write_document(collection, data, document_id, mode, path)
+    
+    def _handle_operation_error(self, error: Exception, collection: str, inputs: Dict[str, Any]) -> DocumentResult:
+        """
+        Handle file write operation errors.
+        
+        Args:
+            error: The exception that occurred
+            collection: File path
+            inputs: Input dictionary
+            
+        Returns:
+            DocumentResult with error information
+        """
+        if isinstance(error, FileNotFoundError):
             return DocumentResult(
                 success=False,
-                file_path=file_path,
-                error="No data provided to write"
+                file_path=collection,
+                error=f"File not found: {collection}"
+            )
+        elif isinstance(error, PermissionError):
+            return DocumentResult(
+                success=False,
+                file_path=collection,
+                error=f"Permission denied for file: {collection}"
             )
         
-        try:
-            # Convert string mode to enum
-            try:
-                mode = WriteMode.from_string(mode_str)
-            except ValueError as e:
-                return DocumentResult(
-                    success=False,
-                    file_path=file_path,
-                    error=str(e)
-                )
-            
-            # Write the document
-            return self._write_document(file_path, data, document_id, mode, path)
-            
-        except Exception as e:
-            # Handle and log the error
-            logger.error(f"Error writing to file {file_path}: {str(e)}")
-            
-            # Map common exceptions to appropriate errors
-            if isinstance(e, FileNotFoundError):
-                error_msg = f"File not found: {file_path}"
-            elif isinstance(e, PermissionError):
-                error_msg = f"Permission denied for file: {file_path}"
-            elif isinstance(e, ValueError) and "Unsupported file type" in str(e):
-                error_msg = str(e)
-            else:
-                error_msg = f"Error writing to file: {str(e)}"
-            
-            # Return formatted error
-            return DocumentResult(
-                success=False,
-                file_path=file_path,
-                mode=mode_str,
-                error=error_msg
-            )
+        return self._handle_storage_error(
+            error,
+            "file write",
+            collection,
+            file_path=collection,
+            mode=inputs.get("mode", "write")
+        )
     
     def _write_document(
         self, 

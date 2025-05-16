@@ -14,18 +14,53 @@ from google.cloud import firestore_v1
 from agentmap.agents.builtins.storage.document.base_agent import (
     DocumentResult, DocumentWriterAgent, WriteMode, log_operation)
 from agentmap.agents.builtins.storage.firebase.base_agent import FirebaseDocumentAgent
+from agentmap.agents.builtins.storage.mixins import WriterOperationsMixin
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class FirebaseDocumentWriterAgent(DocumentWriterAgent, FirebaseDocumentAgent):
+class FirebaseDocumentWriterAgent(DocumentWriterAgent, FirebaseDocumentAgent, WriterOperationsMixin):
     """
     Agent for writing data to Firebase databases.
     
     Provides functionality for writing to both Firestore and Realtime Database,
     with support for document creation, updates, merges, and deletions.
     """
+    
+    def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> DocumentResult:
+        """
+        Execute write operation for Firebase.
+        
+        Args:
+            collection: Collection identifier
+            inputs: Input dictionary
+            
+        Returns:
+            Write operation result
+        """
+        # Get required data
+        data = inputs.get("data")
+        mode_str = inputs.get("mode", "write").lower()
+        
+        # Convert string mode to enum
+        try:
+            mode = WriteMode.from_string(mode_str)
+        except ValueError as e:
+            return DocumentResult(
+                success=False,
+                error=str(e)
+            )
+        
+        # Extract optional parameters
+        document_id = inputs.get("document_id")
+        path = inputs.get("path")
+        
+        # Log the write operation
+        self._log_write_operation(collection, mode, document_id, path)
+        
+        # Perform the write operation
+        return self._write_document(collection, data, document_id, mode, path)
     
     @log_operation
     def _write_document(
@@ -76,111 +111,7 @@ class FirebaseDocumentWriterAgent(DocumentWriterAgent, FirebaseDocumentAgent):
                 error=str(error)
             )
     
-    def _write_to_firestore(
-        self, 
-        collection_ref: firestore.CollectionReference,
-        data: Any, 
-        document_id: Optional[str] = None,
-        mode: WriteMode = WriteMode.WRITE, 
-        path: Optional[str] = None
-    ) -> DocumentResult:
-        """
-        Write document to Firestore.
         
-        Args:
-            collection_ref: Firestore collection reference
-            data: Data to write
-            document_id: Optional document ID
-            mode: Write mode
-            path: Optional path within document
-            
-        Returns:
-            Result of the write operation
-        """
-        # Get document reference - either existing or new
-        if document_id:
-            doc_ref = collection_ref.document(document_id)
-            existed = doc_ref.get().exists
-        else:
-            # Auto-generate ID for new document
-            doc_ref = collection_ref.document()
-            document_id = doc_ref.id
-            existed = False
-        
-        # Handle path updates
-        if path and mode != WriteMode.DELETE:
-            return self._update_firestore_path(doc_ref, data, mode, path, existed)
-        
-        # Handle different write modes
-        if mode == WriteMode.WRITE:
-            # Create or overwrite document
-            doc_ref.set(data)
-            return DocumentResult(
-                success=True,
-                mode=str(mode),
-                document_id=document_id,
-                created_new=not existed
-            )
-            
-        elif mode == WriteMode.UPDATE:
-            # Update existing document
-            if existed:
-                doc_ref.update(data)
-                return DocumentResult(
-                    success=True,
-                    mode=str(mode),
-                    document_id=document_id
-                )
-            else:
-                # Document doesn't exist, create it
-                doc_ref.set(data)
-                return DocumentResult(
-                    success=True,
-                    mode=str(mode),
-                    document_id=document_id,
-                    created_new=True
-                )
-                
-        elif mode == WriteMode.MERGE:
-            # Merge with existing document
-            doc_ref.set(data, merge=True)
-            return DocumentResult(
-                success=True,
-                mode=str(mode),
-                document_id=document_id,
-                created_new=not existed
-            )
-            
-        elif mode == WriteMode.DELETE:
-            # Delete document or field
-            if path:
-                # Delete specific field
-                return self._delete_firestore_path(doc_ref, path, existed)
-            else:
-                # Delete entire document
-                if existed:
-                    doc_ref.delete()
-                    return DocumentResult(
-                        success=True,
-                        mode=str(mode),
-                        document_id=document_id
-                    )
-                else:
-                    return DocumentResult(
-                        success=False,
-                        mode=str(mode),
-                        document_id=document_id,
-                        error="Document does not exist"
-                    )
-        
-        # Unsupported mode
-        return DocumentResult(
-            success=False,
-            mode=str(mode),
-            document_id=document_id,
-            error=f"Unsupported write mode: {mode}"
-        )
-    
     def _update_firestore_path(
         self,
         doc_ref: firestore.DocumentReference,

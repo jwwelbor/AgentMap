@@ -13,18 +13,41 @@ from firebase_admin import firestore, db
 from agentmap.agents.builtins.storage.document.base_agent import (
     DocumentReaderAgent, DocumentResult, log_operation)
 from agentmap.agents.builtins.storage.firebase.base_agent import FirebaseDocumentAgent
+from agentmap.agents.builtins.storage.mixins import ReaderOperationsMixin
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class FirebaseDocumentReaderAgent(DocumentReaderAgent, FirebaseDocumentAgent):
+class FirebaseDocumentReaderAgent(DocumentReaderAgent, FirebaseDocumentAgent, ReaderOperationsMixin):
     """
     Agent for reading data from Firebase databases.
     
     Provides functionality for reading from both Firestore and Realtime Database,
     with support for document lookups, query filtering, and path extraction.
     """
+    
+    def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> Any:
+        """
+        Execute read operation for Firebase.
+        
+        Args:
+            collection: Collection name
+            inputs: Input dictionary
+            
+        Returns:
+            Read operation result
+        """
+        # Extract parameters
+        document_id = inputs.get("document_id")
+        query = inputs.get("query")
+        path = inputs.get("path")
+        
+        # Log the read operation
+        self._log_read_operation(collection, document_id, query, path)
+        
+        # Perform the read operation
+        return self._read_document(collection, document_id, query, path)
     
     @log_operation
     def _read_document(

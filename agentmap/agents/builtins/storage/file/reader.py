@@ -1,4 +1,3 @@
-# agentmap/agents/builtins/storage/file/reader.py
 """
 File document reader agent implementation.
 
@@ -12,14 +11,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
-    BaseStorageAgent, DocumentResult, log_operation
-)
+    BaseStorageAgent, DocumentResult, log_operation)
+from agentmap.agents.builtins.storage.mixins import ReaderOperationsMixin, StorageErrorHandlerMixin
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class FileReaderAgent(BaseStorageAgent):
+class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandlerMixin):
     """
     Enhanced document reader agent using LangChain document loaders.
     
@@ -28,8 +27,15 @@ class FileReaderAgent(BaseStorageAgent):
     """
     
     def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
-        """Initialize the file reader agent."""
-        super().__init__(name, prompt, context or {})
+        """
+        Initialize the file reader agent.
+        
+        Args:
+            name: Name of the agent node
+            prompt: Prompt or instruction
+            context: Additional context including chunking and format configuration
+        """
+        super().__init__(name, prompt, context)
         
         # Extract document processing configuration from context
         context = context or {}
@@ -45,57 +51,118 @@ class FileReaderAgent(BaseStorageAgent):
         """No client needed for filesystem operations."""
         pass
     
-    @log_operation
-    def process(self, inputs: Dict[str, Any]) -> Any:
-        """Process inputs and read document(s)."""
-        # Get the file path from inputs
-        file_path = self.get_collection(inputs)
+    def _log_operation_start(self, collection: str, inputs: Dict[str, Any]) -> None:
+        """
+        Log the start of a file read operation.
         
-        # Extract optional parameters
+        Args:
+            collection: File path
+            inputs: Input dictionary
+        """
+        logger.debug(f"[{self.__class__.__name__}] Starting read operation on file: {collection}")
+    
+    def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
+        """
+        Validate inputs for file read operations.
+        
+        Args:
+            inputs: Input dictionary
+            
+        Raises:
+            ValueError: If inputs are invalid
+        """
+        super()._validate_inputs(inputs)
+        self._validate_reader_inputs(inputs)
+        
+        # Add file-specific validation
+        file_path = self.get_collection(inputs)
+        if not os.path.exists(file_path) and not self._test_loader:
+            raise FileNotFoundError(f"File not found: {file_path}")
+    
+    def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> Any:
+        """
+        Execute read operation for file.
+        
+        Args:
+            collection: File path
+            inputs: Input dictionary
+            
+        Returns:
+            Read operation result
+        """
+        # Extract parameters
         document_id = inputs.get("document_id")
         query = inputs.get("query")
         path = inputs.get("path")
         output_format = inputs.get("format", "default")
         
-        try:
-            # Check file exists (skip this check if using test loader)
-            if not self._test_loader and not os.path.exists(file_path):
-                return DocumentResult(
-                    success=False,
-                    file_path=file_path,
-                    error=f"File not found: {file_path}"
-                )
-            
-            # Read the document
-            documents = self._read_document(file_path, document_id, query, path)
-            
-            # Format the result based on requested format
-            if output_format == "raw":
-                # Just return the raw documents
-                return documents
-            elif output_format == "text":
-                # Return just the text content
-                if isinstance(documents, list):
-                    return "\n\n".join(doc.page_content for doc in documents)
-                elif hasattr(documents, 'page_content'):
-                    return documents.page_content
-                else:
-                    return str(documents)
+        # Log the read operation
+        self._log_read_operation(collection, document_id, query, path)
+        
+        # Read the document
+        documents = self._read_document(collection, document_id, query, path)
+        
+        # Format the result based on requested format
+        if output_format == "raw":
+            # Just return the raw documents
+            return documents
+        elif output_format == "text":
+            # Return just the text content
+            if isinstance(documents, list):
+                return "\n\n".join(doc.page_content for doc in documents if hasattr(doc, 'page_content'))
+            elif hasattr(documents, 'page_content'):
+                return documents.page_content
             else:
-                # Default format - return structured result
-                return self._format_result(documents, file_path)
-                
-        except Exception as e:
-            logger.error(f"Error reading file {file_path}: {str(e)}")
-            # Handle and log the error
+                return str(documents)
+        else:
+            # Default format - return structured result
+            return self._format_result(documents, collection)
+    
+    def _handle_operation_error(self, error: Exception, collection: str, inputs: Dict[str, Any]) -> DocumentResult:
+        """
+        Handle file read operation errors.
+        
+        Args:
+            error: The exception that occurred
+            collection: File path
+            inputs: Input dictionary
+            
+        Returns:
+            DocumentResult with error information
+        """
+        if isinstance(error, FileNotFoundError):
             return DocumentResult(
                 success=False,
-                file_path=file_path,
-                error=f"Error reading file {file_path}: {str(e)}"
+                file_path=collection,
+                error=f"File not found: {collection}"
             )
+        
+        return self._handle_storage_error(
+            error,
+            "file read",
+            collection,
+            file_path=collection
+        )
     
-    def _read_document(self, file_path: str, document_id=None, query=None, path=None) -> Any:
-        """Read a document using LangChain document loaders."""
+    def _read_document(
+        self, 
+        file_path: str, 
+        document_id: Optional[str] = None, 
+        query: Optional[Dict[str, Any]] = None, 
+        path: Optional[str] = None
+    ) -> Any:
+        """
+        Read a document using LangChain document loaders.
+        
+        Args:
+            file_path: Path to the file
+            document_id: Optional section ID
+            query: Optional query parameters
+            path: Optional path within document
+            
+        Returns:
+            Document content
+        """
         # Use test loader if provided (for testing)
         if self._test_loader:
             loader = self._test_loader
@@ -111,11 +178,26 @@ class FileReaderAgent(BaseStorageAgent):
         # Load documents
         try:
             documents = loader.load()
+            
+            # Apply document ID filter if provided
+            if document_id:
+                documents = self._filter_by_id(documents, document_id)
+                if not documents:
+                    return None
+            
+            # Apply query filter if provided
+            if query:
+                documents = self._apply_query_filter(documents, query)
+            
+            # Apply path extraction if provided
+            if path:
+                return self._apply_document_path(documents, path)
+            
             return documents
         except Exception as e:
             logger.error(f"Error loading {file_path}: {str(e)}")
-            raise ValueError(f"Error loading {file_path}")
-        
+            raise ValueError(f"Error loading {file_path}: {str(e)}")
+    
     def _get_loader(self, file_path: str) -> Any:
         """
         Select appropriate LangChain document loader based on file extension.

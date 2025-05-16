@@ -48,6 +48,7 @@ class AzureBlobConnector(BlobStorageConnector):
             # Import Azure SDK
             try:
                 from azure.storage.blob import BlobServiceClient
+                from azure.core.exceptions import ResourceNotFoundError, ResourceExistsError
             except ImportError:
                 raise StorageConnectionError(
                     "Azure Blob Storage SDK not installed. "
@@ -64,6 +65,9 @@ class AzureBlobConnector(BlobStorageConnector):
             self.account_key = self.resolve_env_value(
                 self.config.get("account_key", "")
             )
+            self.sas_token = self.resolve_env_value(
+                self.config.get("sas_token", "")
+            )
             self.default_container = self.config.get("default_container", "")
 
             # Create client
@@ -78,10 +82,18 @@ class AzureBlobConnector(BlobStorageConnector):
                     credential=self.account_key
                 )
                 logger.debug("Azure Blob Storage client initialized using account key")
+            elif self.account_name and self.sas_token:
+                # Connect using SAS token
+                if not self.sas_token.startswith('?'):
+                    self.sas_token = '?' + self.sas_token
+                endpoint = f"https://{self.account_name}.blob.core.windows.net{self.sas_token}"
+                self._client = BlobServiceClient(account_url=endpoint)
+                logger.debug("Azure Blob Storage client initialized using SAS token")
             else:
                 raise StorageConnectionError(
                     "Azure Blob Storage connection not configured. "
-                    "Please provide either connection_string or account_name+account_key"
+                    "Please provide either connection_string, account_name+account_key, "
+                    "or account_name+sas_token"
                 )
 
         except Exception as e:
@@ -109,23 +121,45 @@ class AzureBlobConnector(BlobStorageConnector):
             # Get container client
             container_client = self.client.get_container_client(container_name)
 
+            # Check if container exists
+            try:
+                container_properties = container_client.get_container_properties()
+            except Exception as e:
+                return self._handle_provider_error(
+                    "accessing", container_name, e,
+                    raise_error=True, resource_type="container"
+                )
+
             # Get blob client
             blob_client = container_client.get_blob_client(blob_path)
 
             # Check if blob exists
-            if not blob_client.exists():
-                logger.error(f"Blob not found: {uri}")
-                raise FileNotFoundError(f"Blob not found: {uri}")
+            try:
+                blob_properties = blob_client.get_blob_properties()
+            except Exception as e:
+                return self._handle_provider_error(
+                    "accessing", uri, e,
+                    raise_error=True, resource_type="blob"
+                )
 
             # Download blob
-            download = blob_client.download_blob()
-            return download.readall()
+            try:
+                download = blob_client.download_blob()
+                return download.readall()
+            except Exception as e:
+                return self._handle_provider_error(
+                    "downloading", uri, e,
+                    raise_error=True, resource_type="blob"
+                )
 
-        except FileNotFoundError:
+        except (FileNotFoundError, StorageOperationError, StorageConnectionError):
+            # Re-raise standard exceptions
             raise
         except Exception as e:
-            logger.error(f"Error reading blob {uri}: {str(e)}")
-            raise StorageOperationError(f"Failed to read blob {uri}: {str(e)}")
+            return self._handle_provider_error(
+                "reading", uri, e,
+                raise_error=True, resource_type="blob"
+            )
 
     def write_blob(self, uri: str, data: bytes) -> None:
         """
@@ -146,19 +180,38 @@ class AzureBlobConnector(BlobStorageConnector):
             container_client = self.client.get_container_client(container_name)
 
             # Create container if it doesn't exist
-            if not container_client.exists():
+            try:
+                container_properties = container_client.get_container_properties()
+            except Exception:
                 logger.info(f"Creating container: {container_name}")
-                container_client.create_container()
+                try:
+                    container_client.create_container()
+                except Exception as e:
+                    return self._handle_provider_error(
+                        "creating", container_name, e,
+                        raise_error=True, resource_type="container"
+                    )
 
             # Get blob client
             blob_client = container_client.get_blob_client(blob_path)
 
             # Upload blob
-            blob_client.upload_blob(data, overwrite=True)
+            try:
+                blob_client.upload_blob(data, overwrite=True)
+            except Exception as e:
+                return self._handle_provider_error(
+                    "writing", uri, e,
+                    raise_error=True, resource_type="blob"
+                )
 
+        except (StorageOperationError, StorageConnectionError):
+            # Re-raise standard exceptions
+            raise
         except Exception as e:
-            logger.error(f"Error writing blob {uri}: {str(e)}")
-            raise StorageOperationError(f"Failed to write blob {uri}: {str(e)}")
+            return self._handle_provider_error(
+                "writing", uri, e,
+                raise_error=True, resource_type="blob"
+            )
 
     def blob_exists(self, uri: str) -> bool:
         """
@@ -178,17 +231,25 @@ class AzureBlobConnector(BlobStorageConnector):
             container_client = self.client.get_container_client(container_name)
 
             # Check if container exists
-            if not container_client.exists():
+            try:
+                container_properties = container_client.get_container_properties()
+            except Exception:
+                logger.debug(f"Container not found: {container_name}")
                 return False
 
             # Get blob client
             blob_client = container_client.get_blob_client(blob_path)
 
             # Check if blob exists
-            return blob_client.exists()
+            try:
+                blob_properties = blob_client.get_blob_properties()
+                return True
+            except Exception:
+                logger.debug(f"Blob not found: {blob_path}")
+                return False
 
         except Exception as e:
-            logger.error(f"Error checking blob existence {uri}: {str(e)}")
+            logger.warning(f"Error checking blob existence {uri}: {str(e)}")
             return False
 
     def _parse_azure_uri(self, uri: str) -> tuple[str, str]:
