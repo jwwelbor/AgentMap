@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from agentmap.agents import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
+from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
 
 from agentmap.runner import run_graph
 

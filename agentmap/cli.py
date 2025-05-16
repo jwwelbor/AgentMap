@@ -11,7 +11,8 @@ from agentmap.graph.serialization import (compile_all, export_as_pickle,
                                           export_as_source)
 from agentmap.graph.serialization import export_graph as export_graph_func
 from agentmap.runner import run_graph
-from agentmap.agents import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS, get_agent_map
+from agentmap.agents import get_agent_map
+from agentmap.agents.features import (HAS_LLM_AGENTS, HAS_STORAGE_AGENTS)
 
 app = typer.Typer()
 

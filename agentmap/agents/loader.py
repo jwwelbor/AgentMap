@@ -1,3 +1,4 @@
+# agentmap/agents/loader.py
 """
 Agent loader for AgentMap.
 
@@ -6,7 +7,8 @@ and creating agent instances based on type strings.
 """
 from typing import Dict, Any
 
-from agentmap.agents import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS, get_agent_class
+from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
+from agentmap.agents.registry import get_agent_class
 
 
 class AgentLoader:
