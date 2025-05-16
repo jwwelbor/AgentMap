@@ -7,8 +7,8 @@ import pandas as pd
 import pytest
 
 # Import directly from agent files to avoid potential circular issues
-from agentmap.agents.builtins.default_agent import DefaultAgent
-from agentmap.agents.builtins.echo_agent import EchoAgent
+from agentmap.agents import DefaultAgent
+from agentmap.agents import EchoAgent
 # Import GraphBuilder directly from the file
 from agentmap.graph.builder import GraphBuilder
 from agentmap.logging import TRACE

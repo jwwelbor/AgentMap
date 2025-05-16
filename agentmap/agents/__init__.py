@@ -1,106 +1,109 @@
 """
 Agent registration and discovery module for AgentMap.
 
-This module registers built-in agents with the central registry and provides
+This module registers all available agents with the central registry and provides
 agent-related functionality to the rest of the application.
 """
-# Import base agent class
 from agentmap.agents.base_agent import BaseAgent
+from agentmap.agents.registry import register_agent, get_agent_class, get_agent_map
+from agentmap.agents.loader import AgentLoader, create_agent
+from agentmap.logging import get_logger
 
-# Import registry functions
-from agentmap.agents.registry import (
-    register_agent, 
-    get_agent_class,
-)
+logger = get_logger(__name__)
 
-# Import built-in agents
+# ----- CORE AGENTS (always available) -----
 from agentmap.agents.builtins.default_agent import DefaultAgent
 from agentmap.agents.builtins.echo_agent import EchoAgent
 from agentmap.agents.builtins.branching_agent import BranchingAgent
 from agentmap.agents.builtins.failure_agent import FailureAgent
-from agentmap.agents.builtins.input_agent import InputAgent
 from agentmap.agents.builtins.success_agent import SuccessAgent
-from agentmap.agents.builtins.summary_agent import SummaryAgent
+from agentmap.agents.builtins.input_agent import InputAgent
+from agentmap.agents.builtins.graph_agent import GraphAgent
 
-# Register built-in agents
+# Register core agents
 register_agent("default", DefaultAgent)
 register_agent("echo", EchoAgent)
 register_agent("branching", BranchingAgent)
 register_agent("failure", FailureAgent)
-register_agent("input", InputAgent)
 register_agent("success", SuccessAgent)
-register_agent("summary", SummaryAgent)
+register_agent("input", InputAgent)
+register_agent("graph", GraphAgent)
 
-# Import and register optional LLM agents
+# ----- LLM AGENTS (requires 'llm' extras) -----
 try:
+    # Import all LLM agents at once
+    from agentmap.agents.builtins.llm.llm_agent import LLMAgent
     from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
+    from agentmap.agents.builtins.llm.anthropic_agent import AnthropicAgent
+    from agentmap.agents.builtins.llm.google_agent import GoogleAgent
+    
+    # Register all LLM agents
+    register_agent("llm", LLMAgent)
     register_agent("openai", OpenAIAgent)
     register_agent("gpt", OpenAIAgent)  # Add alias for convenience
-    register_agent("chatgpt", OpenAIAgent)  # Add alias for convenience
-except ImportError:
-    OpenAIAgent = None
-
-try:
-    from agentmap.agents.builtins.llm.anthropic_agent import AnthropicAgent
     register_agent("anthropic", AnthropicAgent)
     register_agent("claude", AnthropicAgent)  # Add alias for convenience
-except ImportError:
-    AnthropicAgent = None
-
-try:
-    from agentmap.agents.builtins.llm.google_agent import GoogleAgent
     register_agent("google", GoogleAgent)
     register_agent("gemini", GoogleAgent)  # Add alias for convenience
-except ImportError:
-    GoogleAgent = None
+    
+    # Log successful loading
+    logger.info("LLM agents registered successfully")
+    
+    # Flag indicating LLM agents are available
+    HAS_LLM_AGENTS = True
+    
+except ImportError as e:
+    logger.debug(f"LLM agents not available: {e}. Install with: pip install agentmap[llm]")
+    HAS_LLM_AGENTS = False
 
-# Try to register LLM base class if available
+# ----- STORAGE AGENTS (requires 'storage' extras) -----
 try:
-    from agentmap.agents.builtins.llm.llm_agent import LLMAgent
-    register_agent("llm", LLMAgent)
-except ImportError:
-    LLMAgent = None
-
-# Try to register storage agents if available
-try:
-    from agentmap.agents.builtins.storage import CSVReaderAgent, CSVWriterAgent
+    # Import all storage agents at once
+    from agentmap.agents.builtins.storage import (
+        CSVReaderAgent, CSVWriterAgent,
+        JSONDocumentReaderAgent, JSONDocumentWriterAgent,
+        FileReaderAgent, FileWriterAgent,
+        VectorStoreReaderAgent, VectorStoreWriterAgent
+    )
+    
+    # Register all storage agents
     register_agent("csv_reader", CSVReaderAgent)
     register_agent("csv_writer", CSVWriterAgent)
-except ImportError:
-    pass
-
-try:
-    from agentmap.agents.builtins.storage import JSONDocumentReaderAgent, JSONDocumentWriterAgent
-
     register_agent("json_reader", JSONDocumentReaderAgent)
     register_agent("json_writer", JSONDocumentWriterAgent)
-except ImportError:
-    pass
-
-try:
-    from agentmap.agents.builtins.storage.json.cloud_agent import JSONCloudDocumentReaderAgent, JSONCloudDocumentWriterAgent
-    register_agent("json_reader", JSONCloudDocumentReaderAgent)
-    register_agent("json_writer", JSONCloudDocumentWriterAgent)
-except ImportError:
-    pass
-
-try:
-    from agentmap.agents.builtins.storage import FileReaderAgent, FileWriterAgent
     register_agent("file_reader", FileReaderAgent)
     register_agent("file_writer", FileWriterAgent)
-except ImportError:
-    pass
-
-try:
-    from agentmap.agents.builtins.storage import VectorStoreReaderAgent, VectorStoreWriterAgent
     register_agent("vector_reader", VectorStoreReaderAgent)
     register_agent("vector_writer", VectorStoreWriterAgent)
-except ImportError:
-    pass
+    
+    # Log successful loading
+    logger.info("Storage agents registered successfully")
+    
+    # Flag indicating storage agents are available
+    HAS_STORAGE_AGENTS = True
+    
+except ImportError as e:
+    logger.debug(f"Storage agents not available: {e}. Install with: pip install agentmap[storage]")
+    HAS_STORAGE_AGENTS = False
 
+# ----- SUMMARY AGENT (mixed dependency) -----
+try:
+    from agentmap.agents.builtins.summary_agent import SummaryAgent
+    register_agent("summary", SummaryAgent)
+    logger.info("Summary agent registered successfully")
+except ImportError as e:
+    logger.debug(f"Summary agent not available: {e}")
 
-# Import agent loader functions - no circular dependency anymore
-from agentmap.agents.loader import AgentLoader, create_agent
+# ----- ORCHESTRATOR AGENT -----
+try:
+    from agentmap.agents.builtins.orchestrator_agent import OrchestratorAgent
+    register_agent("orchestrator", OrchestratorAgent)
+    logger.info("Orchestrator agent registered successfully")
+except ImportError as e:
+    logger.debug(f"Orchestrator agent not available: {e}")
+
+# Dynamic registry access
+REGISTERED_AGENTS = get_agent_map()
 
 # Export public API
 __all__ = [
@@ -109,10 +112,13 @@ __all__ = [
     'create_agent',
     'get_agent_class',
     'register_agent',
+    'get_agent_map',
+    'REGISTERED_AGENTS',
+    'HAS_LLM_AGENTS',
+    'HAS_STORAGE_AGENTS',
 ]
 
-# Add agent classes to __all__ for convenience - using registry instead of AGENT_MAP
-from agentmap.agents.registry import get_agent_map
+# Add agent classes to __all__ for convenience
 _agent_classes = set(cls.__name__ for cls in get_agent_map().values())
 for class_name in _agent_classes:
     if class_name and class_name not in __all__:

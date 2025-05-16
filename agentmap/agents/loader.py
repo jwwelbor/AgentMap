@@ -6,7 +6,7 @@ and creating agent instances based on type strings.
 """
 from typing import Dict, Any
 
-from agentmap.agents.registry import get_agent_class
+from agentmap.agents import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS, get_agent_class
 
 
 class AgentLoader:
@@ -27,20 +27,19 @@ class AgentLoader:
         self.context = context or {}
         
     def get_agent(self, agent_type: str, name: str, prompt: str) -> Any:
-        """
-        Get an agent instance by type.
+        """Get an agent instance by type."""
+        agent_type_lower = agent_type.lower()
         
-        Args:
-            agent_type: The type identifier for the agent
-            name: Name of the agent node
-            prompt: Prompt or instruction
-            
-        Returns:
-            Agent instance
-            
-        Raises:
-            ValueError: If agent type not found
-        """
+        # Provide helpful error messages for missing dependencies
+        if not HAS_LLM_AGENTS and agent_type_lower in ("openai", "anthropic", "google", "gpt", "claude", "gemini", "llm"):
+            raise ValueError(f"LLM agent '{agent_type}' requires additional dependencies. "
+                            "Install with: pip install agentmap[llm]")
+        
+        if not HAS_STORAGE_AGENTS and agent_type_lower in ("csv_reader", "csv_writer", "json_reader", "json_writer", 
+                                                          "file_reader", "file_writer", "vector_reader", "vector_writer"):
+            raise ValueError(f"Storage agent '{agent_type}' requires additional dependencies. "
+                            "Install with: pip install agentmap[storage]")
+        
         agent_class = get_agent_class(agent_type)
         if not agent_class:
             raise ValueError(f"Agent type '{agent_type}' not found.")

@@ -1,3 +1,4 @@
+# agentmap/config/__init__.py
 """
 Configuration loader for AgentMap.
 Supports loading from YAML or environment variable fallback.

@@ -15,39 +15,100 @@ from agentmap.logging import get_logger
 logger = get_logger(__name__)
 
 
+"""
+Anthropic Claude LLM agent implementation.
+
+This module provides an agent for interacting with Anthropic's Claude language models.
+"""
+
+from typing import Any, Optional, Dict
+
+from agentmap.agents.builtins.llm.llm_agent import LLMAgent
+from agentmap.logging import get_logger
+
+logger = get_logger(__name__)
+
+
 class AnthropicAgent(LLMAgent):
     """
-    Anthropic Claude agent with LangChain integration.
-
-    Uses Anthropic's API to generate text completions, with optional
-    LangChain integration for memory and prompt management.
+    Anthropic Claude agent implementation.
+    
+    Uses Anthropic's API to generate text completions, with provider-specific
+    functionality while inheriting common LLM behaviors from the base class.
     """
     
-    def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None,
-                 model: Optional[str] = None, temperature: Optional[float] = None):
+    def _get_provider_name(self) -> str:
+        """Get the provider name for configuration loading."""
+        return "anthropic"
+        
+    def _get_api_key_env_var(self) -> str:
+        """Get the environment variable name for the API key."""
+        return "ANTHROPIC_API_KEY"
+        
+    def _get_default_model_name(self) -> str:
+        """Get default model name for this provider."""
+        return "claude-3-sonnet-20240229"
+    
+    def _call_api(self, formatted_prompt: str) -> str:
         """
-        Initialize the Anthropic agent.
+        Call the Anthropic API and return the result text.
         
         Args:
-            name: Name of the agent
-            prompt: Prompt text or template
-            context: Optional context configuration
-            model: Optional model override
-            temperature: Optional temperature override
+            formatted_prompt: Formatted prompt text
+            
+        Returns:
+            Response text from Claude
+            
+        Raises:
+            ValueError: If API key is missing
+            ImportError: If Anthropic package is not installed
+            RuntimeError: If API call fails
         """
-        super().__init__(name, prompt, context)
-        
-        # Get config with fallbacks
-        config = get_llm_config("anthropic")
-        self.model = model or context.get("model") or config.get("model", "claude-3-sonnet-20240229")
-        self.temperature = temperature or context.get("temperature") or config.get("temperature", 0.7)
-        self.api_key = config.get("api_key") or os.getenv("ANTHROPIC_API_KEY")
-    
-    def _get_llm(self) -> Any:
-        """Get LangChain ChatAnthropic instance."""
-
         if not self.api_key:
-            logger.error("Anthropic API key not found in config or environment")
+            raise ValueError("Anthropic API key not found in config or environment")
+        
+        # Try newer Anthropic client first
+        try:
+            from anthropic import Anthropic
+            
+            client = Anthropic(api_key=self.api_key)
+            completion = client.messages.create(
+                model=self.model,
+                max_tokens=1024,
+                temperature=self.temperature,
+                messages=[{"role": "user", "content": formatted_prompt}]
+            )
+            
+            return completion.content[0].text.strip()
+            
+        except ImportError:
+            # Fallback to older API version if necessary
+            try:
+                from anthropic import Client as AnthropicClient
+                
+                client = AnthropicClient(api_key=self.api_key)
+                result = client.completion(
+                    prompt=f"\n\nHuman: {formatted_prompt}\n\nAssistant:",
+                    model=self.model,
+                    max_tokens_to_sample=1024,
+                    temperature=self.temperature
+                ).completion.strip()
+                
+                return result
+                
+            except ImportError:
+                raise ImportError("Anthropic package not installed. Install with 'pip install anthropic'")
+        except Exception as e:
+            raise RuntimeError(f"Anthropic API error: {str(e)}")
+    
+    def _create_langchain_client(self) -> Optional[Any]:
+        """
+        Create a LangChain ChatAnthropic client.
+        
+        Returns:
+            LangChain ChatAnthropic client or None if unavailable
+        """
+        if not self.api_key:
             return None
             
         try:
@@ -55,107 +116,9 @@ class AnthropicAgent(LLMAgent):
             
             return ChatAnthropic(
                 model=self.model,
-                temperature=float(self.temperature),
+                temperature=self.temperature,
                 anthropic_api_key=self.api_key
             )
         except Exception as e:
-            logger.error(f"Error creating ChatAnthropic: {e}")
+            logger.debug(f"Could not create LangChain ChatAnthropic client: {e}")
             return None
-    
-    def _fallback_process(self, inputs: Dict[str, Any]) -> Any:
-        """Direct Anthropic API implementation when LangChain is not available."""
-        if not self.api_key:
-            return {
-                "error": "Anthropic API key not found in config or environment",
-                "last_action_success": False
-            }
-        
-        try:
-            # Format the prompt
-            formatted_prompt = self._format_prompt(inputs)
-            
-            # Import Anthropic client
-            try:
-                from anthropic import Anthropic
-                
-                client = Anthropic(api_key=self.api_key)
-                completion = client.messages.create(
-                    model=self.model,
-                    max_tokens=1024,
-                    temperature=float(self.temperature),
-                    messages=[{"role": "user", "content": formatted_prompt}]
-                )
-                
-                result = completion.content[0].text.strip()
-                
-            except ImportError:
-                # Fallback to older API version if necessary
-                try:
-                    from anthropic import Client as AnthropicClient
-                    
-                    client = AnthropicClient(api_key=self.api_key)
-                    result = client.completion(
-                        prompt=f"\n\nHuman: {formatted_prompt}\n\nAssistant:",
-                        model=self.model,
-                        max_tokens_to_sample=1024,
-                        temperature=float(self.temperature)
-                    ).completion.strip()
-                    
-                except ImportError:
-                    return {
-                        "error": "Anthropic package not installed. Install with 'pip install anthropic'",
-                        "last_action_success": False
-                    }
-            
-            return result
-            
-        except Exception as e:
-            return {
-                "error": str(e),
-                "last_action_success": False
-            }
-    
-    def run(self, state: Any) -> Any:
-        """Run the agent on the current state."""
-        # Extract inputs from state
-        inputs = self.state_manager.get_inputs(state)
-        
-        try:
-            # Process inputs
-            result = self.process(inputs)
-            
-            # Update state with output and last_action_success
-            if isinstance(result, dict) and "error" in result:
-                # Handle error case
-                state = self.state_manager.set_output(state, result.get("error", "Unknown error"), success=False)
-            else:
-                # Handle success case - may be dict with memory or just output string
-                if isinstance(result, dict):
-                    # Extract memory if present
-                    memory = result.pop(self.memory_key, None)
-                    
-                    # Set the output first
-                    if self.output_field and self.output_field in result:
-                        output = result[self.output_field]
-                        state = self.state_manager.set_output(state, output, success=True)
-                    else:
-                        # Use the whole result dict as output
-                        state = self.state_manager.set_output(state, result, success=True)
-                    
-                    # Then set memory if present
-                    if memory:
-                        state = StateAdapter.set_value(state, self.memory_key, memory)
-                else:
-                    # Just a string output
-                    state = self.state_manager.set_output(state, result, success=True)
-            
-            return state
-            
-        except Exception as e:
-            # Handle any unexpected errors
-            error_msg = f"Error in {self.name}: {str(e)}"
-            logger.error(error_msg)
-            
-            # Set error in state
-            error_state = StateAdapter.set_value(state, "error", error_msg)
-            return self.state_manager.set_output(error_state, None, success=False)

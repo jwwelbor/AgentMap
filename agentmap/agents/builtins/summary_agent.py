@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.config import get_llm_config
 from agentmap.logging import get_logger
+from agentmap.agents import HAS_LLM_AGENTS
 
 logger = get_logger(__name__)
 
@@ -42,6 +43,10 @@ class SummaryAgent(BaseAgent):
         # Check if LLM mode is enabled
         self.llm_type = self.context.get("llm")
         self.use_llm = bool(self.llm_type)
+
+        if bool(self.llm_type) and not HAS_LLM_AGENTS:
+            logger.warning(f"SummaryAgent '{name}' requested LLM mode but LLM dependencies are not installed.")
+            logger.warning("Falling back to basic concatenation mode. Install with: pip install agentmap[llm]")
 
         if self.use_llm:
             logger.debug(f"SummaryAgent '{name}' using LLM mode: {self.llm_type}")

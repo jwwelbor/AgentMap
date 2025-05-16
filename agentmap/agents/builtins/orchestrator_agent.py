@@ -5,6 +5,7 @@ from agentmap.agents import get_agent_class
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.logging import get_logger
 from agentmap.state.adapter import StateAdapter
+from agentmap.agents import HAS_LLM_AGENTS
 
 logger = get_logger(__name__)
 
@@ -43,6 +44,12 @@ class OrchestratorAgent(BaseAgent):
             self.node_filter = f"nodeType:{context['nodeType']}"
         else:
             self.node_filter = "all"  # Default to all nodes
+
+        if not HAS_LLM_AGENTS and self.matching_strategy == "llm" or self.matching_strategy == "tiered":
+            logger.warning(f"OrchestratorAgent '{name}' requires LLM dependencies for optimal operation.")
+            logger.warning("Will use simple keyword matching only. Install with: pip install agentmap[llm]")
+            # Force algorithm matching if LLMs not available
+            self.matching_strategy = "algorithm"
 
         logger.debug(f"[OrchestratorAgent] Initialized with: matching_strategy={self.matching_strategy}, "
                      f"node_filter={self.node_filter}, llm_type={self.llm_type}")
