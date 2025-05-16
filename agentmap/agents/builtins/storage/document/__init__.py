@@ -6,8 +6,9 @@ including readers, writers, and path manipulation utilities.
 """
 
 from agentmap.agents.builtins.storage.document.base_agent import (
-    DocumentStorageAgent, DocumentReaderAgent, DocumentWriterAgent, DocumentResult, WriteMode
+    DocumentStorageAgent, DocumentReaderAgent, DocumentWriterAgent
 )
+from agentmap.agents.builtins.storage.base_storage_agent import DocumentResult, WriteMode
 from agentmap.agents.builtins.storage.document.path_mixin import DocumentPathMixin
 
 __all__ = [

@@ -5,7 +5,7 @@ This module provides a GCP-specific implementation of the BlobStorageConnector
 interface for reading and writing JSON files in Google Cloud Storage buckets.
 """
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from agentmap.agents.builtins.storage.blob.base_connector import BlobStorageConnector
 from agentmap.exceptions import StorageConnectionError, StorageOperationError
@@ -36,6 +36,7 @@ class GCPStorageConnector(BlobStorageConnector):
         self.project_id = None
         self.credentials_file = None
         self.default_bucket = None
+        self.gcp_exceptions = None
 
     def _initialize_client(self) -> None:
         """
@@ -48,7 +49,15 @@ class GCPStorageConnector(BlobStorageConnector):
             # Import Google Cloud Storage
             try:
                 from google.cloud import storage
+                from google.cloud.exceptions import NotFound, Forbidden
                 from google.auth.exceptions import DefaultCredentialsError
+                
+                # Store exception classes for future reference
+                self.gcp_exceptions = {
+                    "NotFound": NotFound,
+                    "Forbidden": Forbidden,
+                    "DefaultCredentialsError": DefaultCredentialsError
+                }
             except ImportError:
                 raise StorageConnectionError(
                     "Google Cloud Storage SDK not installed. "
@@ -65,16 +74,31 @@ class GCPStorageConnector(BlobStorageConnector):
             self.default_bucket = self.config.get("default_bucket", "")
 
             # Set credentials environment variable if provided
+            original_credential_env = None
             if self.credentials_file and os.path.exists(self.credentials_file):
+                original_credential_env = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
                 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.credentials_file
 
             # Create client
-            client_kwargs = {}
-            if self.project_id:
-                client_kwargs["project"] = self.project_id
+            try:
+                client_kwargs = {}
+                if self.project_id:
+                    client_kwargs["project"] = self.project_id
 
-            self._client = storage.Client(**client_kwargs)
-            logger.debug("Google Cloud Storage client initialized")
+                self._client = storage.Client(**client_kwargs)
+                logger.debug("Google Cloud Storage client initialized successfully")
+            except DefaultCredentialsError:
+                raise StorageConnectionError(
+                    "GCP credentials not found. Please configure credentials via "
+                    "environment variables, service account key file, or GCE metadata server."
+                )
+            finally:
+                # Restore original environment variable if it was changed
+                if original_credential_env is not None:
+                    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = original_credential_env
+                elif self.credentials_file and "GOOGLE_APPLICATION_CREDENTIALS" in os.environ:
+                    # Remove the environment variable if it wasn't present before
+                    del os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
 
         except Exception as e:
             logger.error(f"Failed to initialize Google Cloud Storage client: {str(e)}")
@@ -99,24 +123,46 @@ class GCPStorageConnector(BlobStorageConnector):
             bucket_name, blob_path = self._parse_gs_uri(uri)
 
             # Get bucket
-            bucket = self.client.bucket(bucket_name)
+            try:
+                bucket = self.client.bucket(bucket_name)
+                if not bucket.exists():
+                    return self._handle_provider_error(
+                        "reading", uri, Exception(f"Bucket {bucket_name} not found"), 
+                        raise_error=True, resource_type="bucket"
+                    )
+            except Exception as e:
+                return self._handle_provider_error(
+                    "accessing", bucket_name, e, 
+                    raise_error=True, resource_type="bucket"
+                )
 
             # Get blob
             blob = bucket.blob(blob_path)
 
             # Check if blob exists
             if not blob.exists():
-                logger.error(f"Blob not found: {uri}")
-                raise FileNotFoundError(f"Blob not found: {uri}")
+                return self._handle_provider_error(
+                    "reading", uri, Exception(f"Blob {blob_path} not found"), 
+                    raise_error=True, resource_type="blob"
+                )
 
             # Download blob
-            return blob.download_as_bytes()
+            try:
+                return blob.download_as_bytes()
+            except Exception as e:
+                return self._handle_provider_error(
+                    "downloading", uri, e, 
+                    raise_error=True, resource_type="blob"
+                )
 
-        except FileNotFoundError:
+        except (FileNotFoundError, StorageOperationError, StorageConnectionError):
+            # Re-raise standard exceptions
             raise
         except Exception as e:
-            logger.error(f"Error reading blob {uri}: {str(e)}")
-            raise StorageOperationError(f"Failed to read blob {uri}: {str(e)}")
+            return self._handle_provider_error(
+                "reading", uri, e, 
+                raise_error=True, resource_type="blob"
+            )
 
     def write_blob(self, uri: str, data: bytes) -> None:
         """
@@ -134,22 +180,48 @@ class GCPStorageConnector(BlobStorageConnector):
             bucket_name, blob_path = self._parse_gs_uri(uri)
 
             # Get bucket
-            bucket = self.client.bucket(bucket_name)
-
-            # Create bucket if it doesn't exist
-            if not bucket.exists():
-                logger.info(f"Creating bucket: {bucket_name}")
-                bucket = self.client.create_bucket(bucket_name)
+            try:
+                bucket = self.client.bucket(bucket_name)
+                
+                # Create bucket if it doesn't exist
+                if not bucket.exists():
+                    logger.info(f"Creating bucket: {bucket_name}")
+                    try:
+                        if self.project_id:
+                            self.client.create_bucket(bucket, project=self.project_id)
+                        else:
+                            self.client.create_bucket(bucket)
+                    except Exception as e:
+                        return self._handle_provider_error(
+                            "creating", bucket_name, e, 
+                            raise_error=True, resource_type="bucket"
+                        )
+            except Exception as e:
+                return self._handle_provider_error(
+                    "accessing", bucket_name, e, 
+                    raise_error=True, resource_type="bucket"
+                )
 
             # Get blob
             blob = bucket.blob(blob_path)
 
             # Upload blob
-            blob.upload_from_string(data)
+            try:
+                blob.upload_from_string(data)
+            except Exception as e:
+                return self._handle_provider_error(
+                    "writing", uri, e, 
+                    raise_error=True, resource_type="blob"
+                )
 
+        except (StorageOperationError, StorageConnectionError):
+            # Re-raise standard exceptions
+            raise
         except Exception as e:
-            logger.error(f"Error writing blob {uri}: {str(e)}")
-            raise StorageOperationError(f"Failed to write blob {uri}: {str(e)}")
+            return self._handle_provider_error(
+                "writing", uri, e, 
+                raise_error=True, resource_type="blob"
+            )
 
     def blob_exists(self, uri: str) -> bool:
         """
@@ -170,19 +242,23 @@ class GCPStorageConnector(BlobStorageConnector):
 
             # Check if bucket exists
             if not bucket.exists():
+                logger.debug(f"Bucket not found: {bucket_name}")
                 return False
 
             # Get blob
             blob = bucket.blob(blob_path)
 
             # Check if blob exists
-            return blob.exists()
+            exists = blob.exists()
+            if not exists:
+                logger.debug(f"Blob not found: {blob_path}")
+            return exists
 
         except Exception as e:
-            logger.error(f"Error checking blob existence {uri}: {str(e)}")
+            logger.warning(f"Error checking blob existence {uri}: {str(e)}")
             return False
 
-    def _parse_gs_uri(self, uri: str) -> tuple[str, str]:
+    def _parse_gs_uri(self, uri: str) -> Tuple[str, str]:
         """
         Parse Google Cloud Storage URI into bucket and blob path.
 

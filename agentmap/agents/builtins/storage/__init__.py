@@ -2,15 +2,22 @@
 Storage agents for AgentMap.
 
 These agents provide interfaces to different storage backends,
-including CSV files, JSON documents, Firebase, and other databases.
+including CSV files, JSON documents, Firebase, vector stores, and cloud storage.
 """
 
-from agentmap.agents.builtins.storage.base_storage_agent import BaseStorageAgent
+from agentmap.agents.builtins.storage.base_storage_agent import (
+    BaseStorageAgent, DocumentResult, WriteMode, log_operation
+)
 
 # Import document storage base classes
 from agentmap.agents.builtins.storage.document import (
     DocumentStorageAgent, DocumentReaderAgent, DocumentWriterAgent,
-    DocumentResult, WriteMode, DocumentPathMixin
+    DocumentPathMixin
+)
+
+# Import mixins
+from agentmap.agents.builtins.storage.mixins import (
+    StorageErrorHandlerMixin, ReaderOperationsMixin, WriterOperationsMixin
 )
 
 # Import CSV agents
@@ -20,18 +27,25 @@ from agentmap.agents.builtins.storage.csv import (
 
 # Import JSON document agents
 from agentmap.agents.builtins.storage.json import (
-    JSONDocumentAgent, JSONDocumentReaderAgent, JSONDocumentWriterAgent,
-
+    JSONDocumentAgent, JSONDocumentReaderAgent, JSONDocumentWriterAgent
 )
 
+# Import File agents
 from agentmap.agents.builtins.storage.file import (
     FileReaderAgent, FileWriterAgent
 )
 
-from agentmap.agents.builtins.storage.vector import (
-    VectorAgent, VectorReaderAgent, VectorWriterAgent
-)
-
+# Import Vector agents
+try:
+    from agentmap.agents.builtins.storage.vector import (
+        VectorAgent, VectorReaderAgent, VectorWriterAgent
+    )
+    _vector_available = True
+except ImportError:
+    VectorAgent = None
+    VectorReaderAgent = None
+    VectorWriterAgent = None
+    _vector_available = False
 
 # Conditionally import Firebase agents if firebase-admin is available
 try:
@@ -40,19 +54,22 @@ try:
     )
     _firebase_available = True
 except ImportError:
+    FirebaseDocumentAgent = None
     FirebaseDocumentReaderAgent = None
     FirebaseDocumentWriterAgent = None
     _firebase_available = False
 
+# Conditionally import Cloud JSON agents
 try:
-    from agentmap.agents.builtins.storage.json.cloud_agent import (
+    from agentmap.agents.builtins.storage.json import (
         JSONCloudDocumentAgent, JSONCloudDocumentReaderAgent, JSONCloudDocumentWriterAgent
     )
     _json_cloud_available = True
 except ImportError:
+    JSONCloudDocumentAgent = None
+    JSONCloudDocumentReaderAgent = None
+    JSONCloudDocumentWriterAgent = None
     _json_cloud_available = False
-
-
 
 # Import config utilities
 from agentmap.config import get_storage_config_path, load_storage_config
@@ -60,12 +77,20 @@ from agentmap.config import get_storage_config_path, load_storage_config
 __all__ = [
     # Base classes
     'BaseStorageAgent',
+    'DocumentResult',
+    'WriteMode',
+    'log_operation',
+    
+    # Document storage
     'DocumentStorageAgent',
     'DocumentReaderAgent',
     'DocumentWriterAgent',
-    'DocumentResult',
-    'WriteMode',
     'DocumentPathMixin',
+    
+    # Mixins
+    'StorageErrorHandlerMixin',
+    'ReaderOperationsMixin',
+    'WriterOperationsMixin',
     
     # CSV agents
     'CSVAgent',
@@ -80,16 +105,19 @@ __all__ = [
     # File agents
     'FileReaderAgent',
     'FileWriterAgent',
-
-    #Vector store agents
-    'VectorAgent',
-    'VectorReaderAgent',
-    'VectorWriterAgent',
     
     # Config utilities
     'get_storage_config_path',
     'load_storage_config',
 ]
+
+# Add Vector agents if available
+if _vector_available:
+    __all__.extend([
+        'VectorAgent',
+        'VectorReaderAgent',
+        'VectorWriterAgent',
+    ])
 
 # Add Firebase agents if available
 if _firebase_available:
@@ -99,6 +127,7 @@ if _firebase_available:
         'FirebaseDocumentWriterAgent',
     ])
 
+# Add Cloud JSON agents if available
 if _json_cloud_available:
     __all__.extend([
         'JSONCloudDocumentAgent',

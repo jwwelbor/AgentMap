@@ -6,7 +6,7 @@ interface, serving as a fallback when cloud storage is not specified.
 """
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.blob.base_connector import BlobStorageConnector
 from agentmap.exceptions import StorageOperationError
@@ -31,14 +31,27 @@ class LocalFileConnector(BlobStorageConnector):
         Initialize the local file connector.
 
         Args:
-            config: Configuration for local file storage
+            config: Configuration for local file storage including:
+                - base_dir: Base directory for file operations
         """
         super().__init__(config)
-        self.base_dir = config.get("base_dir", "")
+        self.base_dir = config.get("base_dir", "") if config else ""
 
     def _initialize_client(self) -> None:
-        """No client initialization needed for local files."""
+        """
+        No client initialization needed for local files.
+        
+        This is a placeholder to satisfy the interface requirement.
+        """
         self._client = True  # Just a placeholder
+        
+        # Create base directory if configured
+        if self.base_dir and not os.path.exists(self.base_dir):
+            try:
+                os.makedirs(self.base_dir, exist_ok=True)
+                logger.debug(f"Created base directory: {self.base_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to create base directory {self.base_dir}: {str(e)}")
 
     def read_blob(self, uri: str) -> bytes:
         """
@@ -56,14 +69,26 @@ class LocalFileConnector(BlobStorageConnector):
         """
         try:
             path = self._resolve_path(uri)
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"File not found: {path}")
+                
             with open(path, "rb") as f:
                 return f.read()
-        except FileNotFoundError:
-            logger.error(f"File not found: {path}")
-            raise
+        except FileNotFoundError as e:
+            return self._handle_provider_error(
+                "reading", path, e,
+                raise_error=True, resource_type="file"
+            )
+        except PermissionError as e:
+            return self._handle_provider_error(
+                "reading", path, e,
+                raise_error=True, resource_type="file"
+            )
         except Exception as e:
-            logger.error(f"Error reading file {path}: {str(e)}")
-            raise StorageOperationError(f"Failed to read file {path}: {str(e)}")
+            return self._handle_provider_error(
+                "reading", uri, e,
+                raise_error=True, resource_type="file"
+            )
 
     def write_blob(self, uri: str, data: bytes) -> None:
         """
@@ -78,13 +103,27 @@ class LocalFileConnector(BlobStorageConnector):
         """
         try:
             path = self._resolve_path(uri)
+            
             # Ensure directory exists
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            directory = os.path.dirname(path)
+            if not os.path.exists(directory):
+                os.makedirs(directory, exist_ok=True)
+                
+            # Write file
             with open(path, "wb") as f:
                 f.write(data)
+                
+            logger.debug(f"Successfully wrote {len(data)} bytes to {path}")
+        except PermissionError as e:
+            return self._handle_provider_error(
+                "writing", path, e,
+                raise_error=True, resource_type="file"
+            )
         except Exception as e:
-            logger.error(f"Error writing to file {path}: {str(e)}")
-            raise StorageOperationError(f"Failed to write to file {path}: {str(e)}")
+            return self._handle_provider_error(
+                "writing", uri, e,
+                raise_error=True, resource_type="file"
+            )
 
     def blob_exists(self, uri: str) -> bool:
         """
@@ -96,8 +135,15 @@ class LocalFileConnector(BlobStorageConnector):
         Returns:
             True if the file exists, False otherwise
         """
-        path = self._resolve_path(uri)
-        return os.path.exists(path)
+        try:
+            path = self._resolve_path(uri)
+            exists = os.path.exists(path) and os.path.isfile(path)
+            if not exists:
+                logger.debug(f"File not found: {path}")
+            return exists
+        except Exception as e:
+            logger.warning(f"Error checking file existence {uri}: {str(e)}")
+            return False
 
     def _resolve_path(self, uri: str) -> str:
         """
@@ -122,5 +168,8 @@ class LocalFileConnector(BlobStorageConnector):
 
         # Ensure path is absolute
         path = os.path.abspath(path)
+        
+        # Expand user directory if needed (e.g., ~/)
+        path = os.path.expanduser(path)
 
         return path

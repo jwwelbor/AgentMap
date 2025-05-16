@@ -4,7 +4,7 @@ AWS S3 connector for JSON storage.
 This module provides an AWS-specific implementation of the BlobStorageConnector
 interface for reading and writing JSON files in S3 buckets.
 """
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from agentmap.agents.builtins.storage.blob.base_connector import BlobStorageConnector
 from agentmap.exceptions import StorageConnectionError, StorageOperationError
@@ -36,6 +36,7 @@ class AWSS3Connector(BlobStorageConnector):
         self.secret_key = None
         self.session_token = None
         self.default_bucket = None
+        self.boto_exceptions = None
 
     def _initialize_client(self) -> None:
         """
@@ -48,7 +49,12 @@ class AWSS3Connector(BlobStorageConnector):
             # Import boto3
             try:
                 import boto3
-                from botocore.exceptions import ClientError
+                from botocore.exceptions import ClientError, NoCredentialsError
+                # Store exception classes for future reference
+                self.boto_exceptions = {
+                    "ClientError": ClientError,
+                    "NoCredentialsError": NoCredentialsError
+                }
             except ImportError:
                 raise StorageConnectionError(
                     "AWS boto3 SDK not installed. "
@@ -81,8 +87,14 @@ class AWSS3Connector(BlobStorageConnector):
                     session_kwargs["aws_session_token"] = self.session_token
 
             # Create client
-            self._client = boto3.client("s3", **session_kwargs)
-            logger.debug("AWS S3 client initialized")
+            try:
+                self._client = boto3.client("s3", **session_kwargs)
+                logger.debug("AWS S3 client initialized successfully")
+            except NoCredentialsError:
+                raise StorageConnectionError(
+                    "AWS credentials not found. Please configure credentials via "
+                    "environment variables, config file, or IAM role."
+                )
 
         except Exception as e:
             logger.error(f"Failed to initialize AWS S3 client: {str(e)}")
@@ -111,17 +123,29 @@ class AWSS3Connector(BlobStorageConnector):
                 response = self.client.get_object(Bucket=bucket_name, Key=object_key)
                 return response["Body"].read()
             except self.client.exceptions.NoSuchKey:
-                logger.error(f"Object not found: {uri}")
-                raise FileNotFoundError(f"S3 object not found: {uri}")
+                return self._handle_provider_error(
+                    "reading", uri, Exception("Object not found"), 
+                    raise_error=True, resource_type="object"
+                )
             except self.client.exceptions.NoSuchBucket:
-                logger.error(f"Bucket not found: {bucket_name}")
-                raise FileNotFoundError(f"S3 bucket not found: {bucket_name}")
+                return self._handle_provider_error(
+                    "reading", uri, Exception("Bucket not found"), 
+                    raise_error=True, resource_type="bucket"
+                )
+            except Exception as e:
+                return self._handle_provider_error(
+                    "reading", uri, e, 
+                    raise_error=True, resource_type="object"
+                )
 
-        except FileNotFoundError:
+        except (FileNotFoundError, StorageOperationError, StorageConnectionError):
+            # Re-raise standard exceptions
             raise
         except Exception as e:
-            logger.error(f"Error reading S3 object {uri}: {str(e)}")
-            raise StorageOperationError(f"Failed to read S3 object {uri}: {str(e)}")
+            return self._handle_provider_error(
+                "reading", uri, e, 
+                raise_error=True, resource_type="object"
+            )
 
     def write_blob(self, uri: str, data: bytes) -> None:
         """
@@ -141,29 +165,51 @@ class AWSS3Connector(BlobStorageConnector):
             # Check if bucket exists
             try:
                 self.client.head_bucket(Bucket=bucket_name)
-            except self.client.exceptions.NoSuchBucket:
-                # Create bucket if it doesn't exist
-                logger.info(f"Creating bucket: {bucket_name}")
-                bucket_params = {"Bucket": bucket_name}
-                if self.region:
-                    bucket_params["CreateBucketConfiguration"] = {
-                        "LocationConstraint": self.region
-                    }
-                self.client.create_bucket(**bucket_params)
             except Exception as e:
-                logger.error(f"Error checking bucket {bucket_name}: {str(e)}")
-                raise StorageOperationError(f"Failed to access bucket {bucket_name}: {str(e)}")
+                # Check error type to determine if bucket doesn't exist
+                if hasattr(e, "response") and e.response.get("Error", {}).get("Code") == "404":
+                    # Create bucket if it doesn't exist
+                    logger.info(f"Creating bucket: {bucket_name}")
+                    bucket_params = {"Bucket": bucket_name}
+                    if self.region and self.region != "us-east-1":
+                        bucket_params["CreateBucketConfiguration"] = {
+                            "LocationConstraint": self.region
+                        }
+                    try:
+                        self.client.create_bucket(**bucket_params)
+                    except Exception as bucket_error:
+                        return self._handle_provider_error(
+                            "creating", bucket_name, bucket_error, 
+                            raise_error=True, resource_type="bucket"
+                        )
+                else:
+                    # Some other error accessing the bucket
+                    return self._handle_provider_error(
+                        "accessing", bucket_name, e, 
+                        raise_error=True, resource_type="bucket"
+                    )
 
             # Put object
-            self.client.put_object(
-                Bucket=bucket_name,
-                Key=object_key,
-                Body=data
-            )
+            try:
+                self.client.put_object(
+                    Bucket=bucket_name,
+                    Key=object_key,
+                    Body=data
+                )
+            except Exception as e:
+                return self._handle_provider_error(
+                    "writing", uri, e, 
+                    raise_error=True, resource_type="object"
+                )
 
+        except (StorageOperationError, StorageConnectionError):
+            # Re-raise standard exceptions
+            raise
         except Exception as e:
-            logger.error(f"Error writing S3 object {uri}: {str(e)}")
-            raise StorageOperationError(f"Failed to write S3 object {uri}: {str(e)}")
+            return self._handle_provider_error(
+                "writing", uri, e, 
+                raise_error=True, resource_type="object"
+            )
 
     def blob_exists(self, uri: str) -> bool:
         """
@@ -179,22 +225,33 @@ class AWSS3Connector(BlobStorageConnector):
             # Parse URI into bucket and object key
             bucket_name, object_key = self._parse_s3_uri(uri)
 
+            # Check if bucket exists
+            try:
+                self.client.head_bucket(Bucket=bucket_name)
+            except Exception:
+                logger.debug(f"Bucket not found: {bucket_name}")
+                return False
+
             # Check if object exists
             try:
                 self.client.head_object(Bucket=bucket_name, Key=object_key)
                 return True
-            except self.client.exceptions.ClientError as e:
-                error_code = int(e.response.get("Error", {}).get("Code", 0))
-                if error_code == 404:
+            except Exception as e:
+                # Check for 404 error code
+                if hasattr(e, "response") and e.response.get("Error", {}).get("Code") == "404":
+                    logger.debug(f"Object not found: {object_key}")
                     return False
-                # Other errors - propagate
-                raise
+                # For other errors, log warning and return False
+                logger.warning(
+                    f"Error checking if object exists at {uri}: {str(e)}"
+                )
+                return False
 
         except Exception as e:
-            logger.error(f"Error checking S3 object existence {uri}: {str(e)}")
+            logger.warning(f"Error checking S3 object existence {uri}: {str(e)}")
             return False
 
-    def _parse_s3_uri(self, uri: str) -> tuple[str, str]:
+    def _parse_s3_uri(self, uri: str) -> Tuple[str, str]:
         """
         Parse S3 URI into bucket and object key.
 
