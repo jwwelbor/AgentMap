@@ -1,3 +1,6 @@
+"""
+Base agent class for all AgentMap agents.
+"""
 from typing import Any, Dict, List, Optional, Tuple
 
 from agentmap.logging import get_logger
@@ -54,8 +57,15 @@ class BaseAgent:
         Returns:
             Updated state with output field and success flag
         """
+        # Ensure execution tracker is present
+        state = StateAdapter.initialize_execution_tracker(state)
+        tracker = StateAdapter.get_execution_tracker(state)
+        
         # Extract inputs
         inputs = self.state_manager.get_inputs(state)
+        
+        # Record node start
+        tracker.record_node_start(self.name, inputs)
         
         try:
             # Pre-processing hook for subclasses
@@ -66,6 +76,15 @@ class BaseAgent:
             
             # Post-processing hook for subclasses - can modify both state and output
             state, output = self._post_process(state, output)
+            
+            # Record successful result
+            tracker.record_node_result(self.name, True, result=output)
+            
+            # Update graph success based on policy
+            graph_success = tracker.update_graph_success()
+            
+            # Store graph success in state
+            state = StateAdapter.set_value(state, "graph_success", graph_success)
             
             # Now set the final output and success flag
             if self.output_field:
@@ -81,6 +100,15 @@ class BaseAgent:
             # Handle errors
             error_msg = f"Error in {self.name}: {str(e)}"
             logger.error(error_msg)
+            
+            # Record failure
+            tracker.record_node_result(self.name, False, error=error_msg)
+            
+            # Update graph success based on policy
+            graph_success = tracker.update_graph_success()
+            
+            # Store graph success in state
+            state = StateAdapter.set_value(state, "graph_success", graph_success)
             
             # Set error in state
             state = StateAdapter.set_value(state, "error", error_msg)

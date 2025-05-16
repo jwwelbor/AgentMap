@@ -1,5 +1,3 @@
-# agentmap/runner.py
-
 """
 Graph runner for executing AgentMap workflows from compiled graphs or CSV.
 """
@@ -20,6 +18,7 @@ from agentmap.graph.node_registry import build_node_registry, populate_orchestra
 from agentmap.state.adapter import StateAdapter
 from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
 from agentmap.agents import get_agent_class
+from agentmap.logging.tracking.policy import evaluate_success_policy
 
 logger = get_logger(__name__)
 
@@ -175,7 +174,7 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
     """
     logger.debug(f"[AgentInit] resolving agent class for type '{agent_type}'")
     
-    agent_type_lower = agent_type.lower()
+    agent_type_lower = agent_type.lower() if agent_type else ""
     
     # Check LLM agent types
     if not HAS_LLM_AGENTS and agent_type_lower in ("openai", "anthropic", "google", "gpt", "claude", "gemini", "llm"):
@@ -248,8 +247,14 @@ def run_graph(
     
     config = load_config(config_path)
     autocompile = autocompile_override if autocompile_override is not None else config.get("autocompile", False)
+    execution_config = config.get("execution", {})
+    tracking_config = execution_config.get("tracking", {})
+    tracking_enabled = tracking_config.get("enabled", True)
 
     logger.info(f"⭐ STARTING GRAPH: '{graph_name}'")
+    
+    # Initialize execution tracking (always active, may be minimal)
+    initial_state = StateAdapter.initialize_execution_tracker(initial_state, execution_config)
     
     # Use trace_graph context manager to conditionally enable tracing
     with trace_graph(graph_name):
@@ -282,7 +287,26 @@ def run_graph(
             result = graph.invoke(initial_state)
             execution_time = time.time() - start_time
             
-            logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s")
+            # Process execution results
+            tracker = StateAdapter.get_execution_tracker(result)
+            tracker.complete_execution()
+            summary = tracker.get_summary()
+            
+            # Store summary in result
+            result = StateAdapter.set_value(result, "__execution_summary", summary)
+            
+            # The graph_success field is already updated during execution
+            graph_success = summary["graph_success"]
+            # For backwards compatibility
+            result = StateAdapter.set_value(result, "__policy_success", graph_success)
+            
+            # Log result with different detail based on tracking mode
+            if tracking_enabled:
+                logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s")
+                logger.info(f"  Policy success: {graph_success}, Raw success: {summary['overall_success']}")
+            else:
+                logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s, Success: {graph_success}")
+                
             return result
         except Exception as e:
             execution_time = time.time() - start_time

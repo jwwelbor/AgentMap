@@ -422,5 +422,10 @@ const documentationFiles = [
     {
         "path": "./usage/langchain_memory_in_agentmap.md",
         "title": "LangChain Memory in AgentMap"
+    },
+    {
+        "path": "./usage/agentmap_execution_tracking.md",
+        "title": "AgentMap Execution Tracking"
     }
+
 ];
