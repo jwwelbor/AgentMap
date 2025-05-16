@@ -1,14 +1,10 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
-
-# Add these imports at the top if needed
-import importlib
-from typing import Any, Dict, List, Optional
 from agentmap.state.adapter import StateAdapter
 from agentmap.state.manager import StateManager
+
+logger = get_logger(__name__)
 
 class BaseAgent:
     """Base class for all agents in AgentMap."""
@@ -50,6 +46,7 @@ class BaseAgent:
     def run(self, state: Any) -> Any:
         """
         Run the agent on the state, extracting inputs and setting outputs.
+        This is the standard execution flow that most agents should follow.
         
         Args:
             state: Current state object (can be dict, Pydantic model, etc.)
@@ -61,19 +58,70 @@ class BaseAgent:
         inputs = self.state_manager.get_inputs(state)
         
         try:
+            # Pre-processing hook for subclasses
+            state = self._pre_process(state, inputs)
+            
             # Process inputs to get output
             output = self.process(inputs)
             
-            # Update state with output
-            return self.state_manager.set_output(state, output, success=True)
+            # Post-processing hook for subclasses - can modify both state and output
+            state, output = self._post_process(state, output)
+            
+            # Now set the final output and success flag
+            if self.output_field:
+                logger.debug(f"[{self.name}] Setting output in field '{self.output_field}' with value: {output}")
+                state = StateAdapter.set_value(state, self.output_field, output)
+            
+            # Set action success flag
+            state = StateAdapter.set_value(state, "last_action_success", True)
+            
+            return state
+            
         except Exception as e:
             # Handle errors
             error_msg = f"Error in {self.name}: {str(e)}"
             logger.error(error_msg)
             
             # Set error in state
-            error_state = StateAdapter.set_value(state, "error", error_msg)
-            return self.state_manager.set_output(error_state, None, success=False)
+            state = StateAdapter.set_value(state, "error", error_msg)
+            
+            # Mark as failure
+            state = StateAdapter.set_value(state, "last_action_success", False)
+            
+            # Try to run post-process but don't let its errors override the original error
+            try:
+                state, _ = self._post_process(state, None)
+            except Exception as post_error:
+                logger.error(f"Error in post-processing: {str(post_error)}")
+            
+            return state
+    
+    def _pre_process(self, state: Any, inputs: Dict[str, Any]) -> Any:
+        """
+        Pre-processing hook that can be overridden by subclasses.
+        
+        Args:
+            state: Current state
+            inputs: Extracted input values
+            
+        Returns:
+            Potentially modified state
+        """
+        return state
+    
+    def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
+        """
+        Post-processing hook that can be overridden by subclasses.
+        Allows modification of both the state and output.
+        
+        Args:
+            state: The current state
+            output: The output value from the process method
+            
+        Returns:
+            Tuple of (state, output) - both can be modified
+        """
+        return state, output
     
     def invoke(self, state: Any) -> Any:
         """Alias for run() to maintain compatibility with LangGraph."""

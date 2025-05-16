@@ -1,8 +1,9 @@
 # agentmap/agents/builtins/branching_agent.py
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
-from agentmap.agents.base_agent import BaseAgent, StateAdapter
+from agentmap.agents.base_agent import BaseAgent
 from agentmap.logging import get_logger
+from agentmap.state.adapter import StateAdapter
 
 logger = get_logger(__name__)
 
@@ -70,28 +71,31 @@ class BranchingAgent(BaseAgent):
         # Default to True if no relevant fields found
         return True
     
-    def run(self, state: Any) -> Any:
+    def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
         """
-        Override the run method to dynamically set last_action_success.
+        Override the post-processing hook to set the success flag based on inputs.
         
         Args:
-            state: Current state object
+            state: Current state
+            output: The output value from the process method
             
         Returns:
-            Updated state with output field and success flag based on inputs
+            Tuple of (state, output) with success flag set
         """
-        # Get inputs and process as normal
+        # Get inputs
         inputs = self.state_manager.get_inputs(state)
-        output = self.process(inputs)
         
         # Determine success based on inputs
         success = self._determine_success(inputs)
         
-        # Update state with output and dynamic success flag
-        updated_state = self.state_manager.set_output(state, output, success=success)
+        # Set the last_action_success flag based on inputs
+        # We'll set this flag now to make it available in the state, but BaseAgent will set it again
+        state = StateAdapter.set_value(state, "last_action_success", success)
         
-        # Double-check that last_action_success is explicitly set to our desired value
-        if StateAdapter.get_value(updated_state, "last_action_success") != success:
-            updated_state = StateAdapter.set_value(updated_state, "last_action_success", success)
+        # We can modify the output here if needed
+        if not success:
+            output = f"{output} (Will trigger FAILURE branch)"
+        else:
+            output = f"{output} (Will trigger SUCCESS branch)"
             
-        return updated_state
+        return state, output
