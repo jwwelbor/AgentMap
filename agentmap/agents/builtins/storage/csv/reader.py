@@ -10,46 +10,35 @@ from typing import Any, Dict, List, Optional, Union
 
 from agentmap.agents.builtins.storage.csv.base_agent import CSVAgent
 from agentmap.agents.builtins.storage.base_storage_agent import DocumentResult, log_operation
+from agentmap.agents.builtins.storage.mixins import ReaderOperationsMixin
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class CSVReaderAgent(CSVAgent):
+class CSVReaderAgent(CSVAgent, ReaderOperationsMixin):
     """Agent for reading data from CSV files."""
     
-    @log_operation
-    def process(self, inputs: Dict[str, Any]) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
         """
-        Read and process data from a CSV file.
+        Execute read operation for CSV files.
         
         Args:
-            inputs: Dictionary containing:
-                - collection: Path to the CSV file
-                - query: Optional query parameters (string or dict)
-                - id: Optional record ID to find
-                - id_field: Optional field to use as ID (default: 'id')
-                - limit: Optional maximum number of records to return
-                - format: Optional output format (default: 'records')
-                
-        Returns:
-            Formatted CSV data as specified in the format parameter
+            collection: CSV file path
+            inputs: Input dictionary
             
-        Raises:
-            ValueError: If required inputs are missing or invalid
-            FileNotFoundError: If the CSV file doesn't exist
+        Returns:
+            Formatted CSV data
         """
-        # Get file path
-        csv_path = self.get_collection(inputs)
-        logger.info(f"Reading from {csv_path}")
+        logger.info(f"Reading from {collection}")
         
         # Check if file exists
-        if not self._check_file_exists(csv_path):
-            self._handle_error("File Not Found", f"CSV file not found: {csv_path}")
+        if not self._check_file_exists(collection):
+            self._handle_error("File Not Found", f"CSV file not found: {collection}")
         
         try:
             # Read CSV with pandas
-            df = self._read_csv(csv_path)
+            df = self._read_csv(collection)
             
             # Apply filters
             df = self._apply_filters(df, inputs)
@@ -70,4 +59,15 @@ class CSVReaderAgent(CSVAgent):
             return self._format_data_for_output(df, output_format)
             
         except Exception as e:
-            self._handle_error("CSV Processing Error", f"Error processing {csv_path}", e)
+            self._handle_error("CSV Processing Error", f"Error processing {collection}", e)
+    
+    def _log_operation_start(self, collection: str, inputs: Dict[str, Any]) -> None:
+        """
+        Log the start of a CSV read operation.
+        
+        Args:
+            collection: CSV file path
+            inputs: Input dictionary
+        """
+        format_type = inputs.get("format", "records")
+        logger.debug(f"[{self.__class__.__name__}] Starting CSV read operation on {collection} (format: {format_type})")
