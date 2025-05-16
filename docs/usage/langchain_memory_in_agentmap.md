@@ -40,14 +40,28 @@ flowchart TD
         EEE --> FFF[Update State]
     end
     
-    style A fill:#f9f,stroke:#333,stroke-width:2px
-    style D fill:#bbf,stroke:#333,stroke-width:2px
-    style E fill:#bbf,stroke:#333,stroke-width:2px
-    style F fill:#bbf,stroke:#333,stroke-width:2px
-    style G fill:#bbf,stroke:#333,stroke-width:2px
-    style CC fill:#fbb,stroke:#333,stroke-width:2px
-    style FF fill:#fbb,stroke:#333,stroke-width:2px
-    style HH fill:#fbb,stroke:#333,stroke-width:2px
+    style A fill:#FF9EFF,stroke:#FFFFFF,stroke-width:2px,color:#000000
+    style B fill:#FF9EFF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style C fill:#FFEB7F,stroke:#FFFFFF,stroke-width:2px,color:#000000
+    style D fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style E fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style F fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style G fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style AA fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style BB fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style CC fill:#FF9B9B,stroke:#FFFFFF,stroke-width:2px,color:#000000
+    style DD fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style EE fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style FF fill:#FF9B9B,stroke:#FFFFFF,stroke-width:2px,color:#000000
+    style GG fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style HH fill:#FF9B9B,stroke:#FFFFFF,stroke-width:2px,color:#000000
+    style II fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style AAA fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style BBB fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style CCC fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style DDD fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style EEE fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style FFF fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
 ```
 
 ### Key Components
@@ -81,8 +95,14 @@ flowchart LR
     F --> G
     G --> H[Memory Instance]
     
-    style C fill:#f96,stroke:#333,stroke-width:2px
-    style G fill:#69f,stroke:#333,stroke-width:2px
+    style A fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style B fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style C fill:#FFEB7F,stroke:#FFFFFF,stroke-width:2px,color:#000000
+    style D fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style E fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style F fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style G fill:#7FD4FF,stroke:#FFFFFF,stroke-width:2px,color:#000000
+    style H fill:#FF9EFF,stroke:#FFFFFF,stroke-width:1px,color:#000000
 ```
 
 ### Basic Configuration Structure
@@ -128,15 +148,15 @@ graph LR
         A8 --> A9[...]
     end
     
-    style A1 fill:#bbf,stroke:#333,stroke-width:1px
-    style A2 fill:#bbf,stroke:#333,stroke-width:1px
-    style A3 fill:#bbf,stroke:#333,stroke-width:1px
-    style A4 fill:#bbf,stroke:#333,stroke-width:1px
-    style A5 fill:#bbf,stroke:#333,stroke-width:1px
-    style A6 fill:#bbf,stroke:#333,stroke-width:1px
-    style A7 fill:#bbf,stroke:#333,stroke-width:1px
-    style A8 fill:#bbf,stroke:#333,stroke-width:1px
-    style A9 fill:#bbf,stroke:#333,stroke-width:1px
+    style A1 fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style A2 fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style A3 fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style A4 fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style A5 fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style A6 fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style A7 fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style A8 fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style A9 fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
 ```
 
 **When to use**:
@@ -177,16 +197,16 @@ graph LR
         end
     end
     
-    style B1 fill:#bbf,stroke:#333,stroke-width:1px
-    style B2 fill:#bbf,stroke:#333,stroke-width:1px
-    style B3 fill:#bbf,stroke:#333,stroke-width:1px
-    style B4 fill:#bbf,stroke:#333,stroke-width:1px
-    style B5 fill:#bbf,stroke:#333,stroke-width:1px
-    style C1 fill:#bbf,stroke:#333,stroke-width:1px
-    style C2 fill:#bbf,stroke:#333,stroke-width:1px
-    style C3 fill:#bbf,stroke:#333,stroke-width:1px
-    style C4 fill:#bbf,stroke:#333,stroke-width:1px
-    style C5 fill:#bbf,stroke:#333,stroke-width:1px
+    style B1 fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style B2 fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style B3 fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style B4 fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style B5 fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style C1 fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style C2 fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style C3 fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style C4 fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style C5 fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
 ```
 
 **When to use**:
@@ -233,6 +253,10 @@ sequenceDiagram
     A->>U: Response
     
     Note over S: Summary keeps essence<br>without storing full text
+    
+    style U fill:#FFEB7F,stroke:#FFFFFF,stroke-width:1px
+    style A fill:#FF9EFF,stroke:#FFFFFF,stroke-width:1px
+    style S fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px
 ```
 
 **When to use**:
@@ -265,8 +289,12 @@ graph TD
         E -->|"Over limit<br>(2300 > 2000)"| F[Remove Oldest Messages<br>Until Under Limit]
     end
     
-    style B fill:#9f9,stroke:#333,stroke-width:1px
-    style E fill:#f99,stroke:#333,stroke-width:1px
+    style A fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style B fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style C fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style D fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style E fill:#FF9B9B,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style F fill:#FF9B9B,stroke:#FFFFFF,stroke-width:1px,color:#000000
 ```
 
 **When to use**:
@@ -283,6 +311,33 @@ graph TD
   }
 }
 ```
+
+## Default Configuration
+
+The minimal configuration to enable memory is simply:
+
+```json
+{
+  "memory": {}
+}
+```
+
+When you use this minimal configuration or omit specific parameters, AgentMap applies these defaults:
+
+| Parameter | Default Value | Description |
+|-----------|--------------|-------------|
+| `type` | `"buffer"` | Uses `ConversationBufferMemory` which stores all messages without limits |
+| `memory_key` | `"conversation_memory"` | Field in state where memory is stored |
+| `k` | `5` | For buffer_window type, default window size |
+| `max_token_limit` | `2000` | For token_buffer type, default token limit |
+
+Example with default memory configuration:
+```csv
+ChatBot,Response,,{"memory":{}},claude,Next,Error,user_input|conversation_memory,response,"Human: {user_input}"
+```
+
+**Important**: Remember that you must include the memory_key (default: `conversation_memory`) in your agent's `Input_Fields` for memory to work properly.
+
 
 ## Memory Flow in Multi-Agent Workflows
 
@@ -307,11 +362,20 @@ flowchart TD
         M --> N[Final State]
     end
     
-    style C fill:#f9f,stroke:#333,stroke-width:2px
-    style F fill:#f9f,stroke:#333,stroke-width:2px
-    style H fill:#f9f,stroke:#333,stroke-width:2px
-    style K fill:#f9f,stroke:#333,stroke-width:2px
-    style M fill:#f9f,stroke:#333,stroke-width:2px
+    style A fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style B fill:#FF9EFF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style C fill:#FF9B9B,stroke:#FFFFFF,stroke-width:2px,color:#000000
+    style D fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style E fill:#FF9EFF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style F fill:#FF9B9B,stroke:#FFFFFF,stroke-width:2px,color:#000000
+    style G fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style H fill:#FF9B9B,stroke:#FFFFFF,stroke-width:2px,color:#000000
+    style I fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style J fill:#FF9EFF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style K fill:#FF9B9B,stroke:#FFFFFF,stroke-width:2px,color:#000000
+    style L fill:#7FD4FF,stroke:#FFFFFF,stroke-width:1px,color:#000000
+    style M fill:#FF9B9B,stroke:#FFFFFF,stroke-width:2px,color:#000000
+    style N fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px,color:#000000
 ```
 
 ## Memory Implementation Examples
@@ -364,7 +428,14 @@ sequenceDiagram
     A2->>S3: Update response and memory
     
     Note over S3: {<br>"user_input": "Tell me about AgentMap",<br>"response": "AgentMap is...",<br>"conversation_memory": {<br>  "_type": "langchain_memory",<br>  "messages": [<br>    {"type": "human", "content": "Hello"},<br>    {"type": "ai", "content": "I'm well"},<br>    {"type": "human", "content": "Tell me about AgentMap"},<br>    {"type": "ai", "content": "AgentMap is..."}<br>  ]<br>},<br>"last_action_success": true<br>}
-```
+    
+    style U fill:#FFEB7F,stroke:#FFFFFF,stroke-width:1px
+    style S1 fill:#DDDDDD,stroke:#FFFFFF,stroke-width:1px
+    style A1 fill:#FF9EFF,stroke:#FFFFFF,stroke-width:1px
+    style S2 fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px
+    style A2 fill:#FF9EFF,stroke:#FFFFFF,stroke-width:1px
+    style S3 fill:#B6FFB6,stroke:#FFFFFF,stroke-width:1px
+    ```
 
 ## Best Practices
 
