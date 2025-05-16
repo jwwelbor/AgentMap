@@ -1,23 +1,59 @@
-csv_path: examples/SingleNodeGraph.csv
+# Core configuration
+csv_path: "examples/SingleNodeGraph.csv"
 autocompile: false
+storage_config_path: "storage_config.yaml"
 
-# Agent and function paths
+# Directory paths
 paths:
   custom_agents: "agentmap/agents/custom"
   functions: "agentmap/functions"
-  compiled_graphs: "agentmap/compiled_graphs"
+  compiled_graphs: "compiled_graphs"
 
-# LLM configurations
+# LLM configuration
 llm:
   openai:
-    api_key: ""  # Default empty, will fall back to env var
+    api_key: ""  # Or use env: OPENAI_API_KEY
     model: "gpt-3.5-turbo"
     temperature: 0.7
   anthropic:
-    api_key: ""  # Default empty, will fall back to env var
+    api_key: ""  # Or use env: ANTHROPIC_API_KEY
     model: "claude-3-sonnet-20240229"
     temperature: 0.7
   google:
-    api_key: ""  # Default empty, will fall back to env var
+    api_key: ""  # Or use env: GOOGLE_API_KEY
     model: "gemini-1.0-pro"
     temperature: 0.7
+
+# Memory configuration
+memory:
+  enabled: false
+  default_type: "buffer"  # Options: buffer, buffer_window, summary, token_buffer
+  buffer_window_size: 5
+  max_token_limit: 2000
+  memory_key: "conversation_memory"
+
+# Prompts configuration
+prompts:
+  directory: "prompts"
+  #registry_file: "prompts/registry.yaml"
+  enable_cache: true
+
+# Tracing configuration
+tracing:
+  enabled: false
+  mode: "local"  # "local" or "langsmith"
+  local_exporter: "file"  # "file" or "csv"
+  local_directory: "./traces"
+  project: "agentmap-development"
+  langsmith_api_key: ""
+  trace_all: false
+  trace_graphs: []  # List of graph names to trace
+
+# Logging configuration
+logging:
+  level: "INFO"  # TRACE, DEBUG, INFO, WARNING, ERROR
+  format: "[%(levelname)s] %(name)s: %(message)s"
+  file_path: null  # Set to a path to enable file logging
+
+# Storage-specific configurations
+# storage: look in separate file storage_config.yaml
