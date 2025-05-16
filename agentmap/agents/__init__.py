@@ -1,3 +1,4 @@
+# agentmap/agents/__init__.py
 """
 Agent registration and discovery module for AgentMap.
 
@@ -8,6 +9,7 @@ from agentmap.agents.base_agent import BaseAgent
 from agentmap.agents.registry import register_agent, get_agent_class, get_agent_map
 from agentmap.agents.loader import AgentLoader, create_agent
 from agentmap.logging import get_logger
+from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS, enable_llm_agents, enable_storage_agents
 
 logger = get_logger(__name__)
 
@@ -50,11 +52,10 @@ try:
     logger.info("LLM agents registered successfully")
     
     # Flag indicating LLM agents are available
-    HAS_LLM_AGENTS = True
+    enable_llm_agents()
     
 except ImportError as e:
     logger.debug(f"LLM agents not available: {e}. Install with: pip install agentmap[llm]")
-    HAS_LLM_AGENTS = False
 
 # ----- STORAGE AGENTS (requires 'storage' extras) -----
 try:
@@ -80,11 +81,10 @@ try:
     logger.info("Storage agents registered successfully")
     
     # Flag indicating storage agents are available
-    HAS_STORAGE_AGENTS = True
+    enable_storage_agents()
     
 except ImportError as e:
     logger.debug(f"Storage agents not available: {e}. Install with: pip install agentmap[storage]")
-    HAS_STORAGE_AGENTS = False
 
 # ----- SUMMARY AGENT (mixed dependency) -----
 try:

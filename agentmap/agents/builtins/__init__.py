@@ -5,7 +5,7 @@ This module provides pre-configured agents for common tasks. All agent
 registration happens in the main agents/__init__.py.
 """
 # Import feature flags from main agents module
-from agentmap.agents import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
+from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
 
 # Core agents - always available
 from agentmap.agents.base_agent import BaseAgent

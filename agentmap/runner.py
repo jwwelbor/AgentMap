@@ -18,7 +18,7 @@ from agentmap.graph.builder import GraphBuilder
 from agentmap.logging import get_logger
 from agentmap.graph.node_registry import build_node_registry, populate_orchestrator_inputs
 from agentmap.state.adapter import StateAdapter
-from agentmap.agents import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
+from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
 from agentmap.agents import get_agent_class
 
 logger = get_logger(__name__)
