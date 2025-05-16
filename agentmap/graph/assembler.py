@@ -11,7 +11,7 @@ from langgraph.graph import StateGraph
 from agentmap.config import get_functions_path
 from agentmap.utils.common import extract_func_ref, import_function
 from agentmap.state.adapter import StateAdapter
-from agentmap.agents import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
+from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
 from agentmap.logging import get_logger
 
 logger = get_logger("AgentMap")
