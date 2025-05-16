@@ -4,6 +4,8 @@ Cloud-enabled JSON document agent implementation.
 This module extends the standard JSON document agent to work with
 cloud blob storage services like Azure Blob Storage, AWS S3, and Google Cloud Storage.
 """
+from __future__ import annotations
+
 import json
 from typing import Any, Dict, Optional, Union
 
@@ -47,10 +49,30 @@ class JSONCloudDocumentAgent(JSONDocumentAgent):
 
     @property
     def storage_config(self) -> Dict[str, Any]:
-        """Get the JSON storage configuration."""
+        """
+        Get the JSON storage configuration.
+        
+        Returns:
+            JSON storage configuration dictionary
+        """
         if self._storage_config is None:
             self._storage_config = load_storage_config().get("json", {})
         return self._storage_config
+
+    def _log_operation_start(self, collection: str, inputs: Dict[str, Any]) -> None:
+        """
+        Log the start of a cloud storage operation.
+        
+        Args:
+            collection: Collection identifier or URI
+            inputs: Input dictionary
+        """
+        # Normalize URI for better logging
+        uri = self._resolve_collection_path(collection)
+        scheme = uri.split("://")[0] if "://" in uri else "file"
+        
+        operation = "read" if hasattr(self, "_read_document") else "write"
+        logger.debug(f"[{self.__class__.__name__}] Starting cloud {operation} operation on {scheme}://{uri.split('://')[-1]}")
 
     def _resolve_collection_path(self, collection: str) -> str:
         """
@@ -60,7 +82,7 @@ class JSONCloudDocumentAgent(JSONDocumentAgent):
             collection: Collection name or path
 
         Returns:
-            Resolved path
+            Resolved path (URI)
         """
         # Check if this is a named collection in the config
         collections = self.storage_config.get("collections", {})
@@ -219,32 +241,46 @@ class JSONCloudDocumentAgent(JSONDocumentAgent):
             return False
         except Exception:
             return False
-
-
-# Register the cloud-enabled JSON agent classes
-from agentmap.agents.registry import register_agent
-
-
-class JSONCloudDocumentReaderAgent(JSONCloudDocumentAgent):
-    """JSON document reader agent with cloud storage support."""
-
-    def process(self, inputs: Dict[str, Any]) -> Any:
-        """Process inputs and read documents."""
-        # Use the same implementation as the parent DocumentReaderAgent
-        from agentmap.agents.builtins.storage.document.reader import DocumentReaderAgent
-        return DocumentReaderAgent.process(self, inputs)
-
-
-class JSONCloudDocumentWriterAgent(JSONCloudDocumentAgent):
-    """JSON document writer agent with cloud storage support."""
-
-    def process(self, inputs: Dict[str, Any]) -> Any:
-        """Process inputs and write documents."""
-        # Use the same implementation as the parent DocumentWriterAgent
-        from agentmap.agents.builtins.storage.document.writer import DocumentWriterAgent
-        return DocumentWriterAgent.process(self, inputs)
-
-
-# Register agents
-register_agent("cloud_json_reader", JSONCloudDocumentReaderAgent)
-register_agent("cloud_json_writer", JSONCloudDocumentWriterAgent)
+    
+    def _handle_operation_error(
+        self, 
+        error: Exception, 
+        collection: str, 
+        inputs: Dict[str, Any]
+    ) -> Any:
+        """
+        Handle cloud storage operation errors.
+        
+        Args:
+            error: The exception that occurred
+            collection: Collection identifier or URI
+            inputs: Input dictionary
+            
+        Returns:
+            Error result
+        """
+        # Normalize URI for better error reporting
+        try:
+            uri = self._resolve_collection_path(collection)
+            scheme = uri.split("://")[0] if "://" in uri else "file"
+            resource = uri.split("://")[-1]
+        except Exception:
+            scheme = "unknown"
+            resource = collection
+            
+        if isinstance(error, FileNotFoundError):
+            error_msg = f"Resource not found: {resource}"
+        elif isinstance(error, StorageConnectionError):
+            error_msg = f"Connection error for {scheme} storage: {str(error)}"
+        elif isinstance(error, StorageOperationError):
+            error_msg = f"Operation failed on {scheme} storage: {str(error)}"
+        else:
+            error_msg = f"Error accessing {scheme} storage: {str(error)}"
+            
+        logger.error(f"[{self.__class__.__name__}] {error_msg}")
+        
+        return {
+            "success": False,
+            "error": error_msg,
+            "collection": collection
+        }

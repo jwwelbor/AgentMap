@@ -12,8 +12,9 @@ from typing import Any, Dict, Optional, Tuple
 from firebase_admin import credentials, firestore, db, initialize_app, delete_app, get_app
 from firebase_admin.exceptions import FirebaseError
 
-from agentmap.agents.builtins.storage.document.base_agent import DocumentStorageAgent
+from agentmap.agents.builtins.storage.document.base_agent import DocumentStorageAgent, DocumentResult
 from agentmap.agents.builtins.storage.document.path_mixin import DocumentPathMixin
+from agentmap.agents.builtins.storage.mixins import StorageErrorHandlerMixin
 from agentmap.config import load_storage_config
 from agentmap.exceptions import CollectionNotFoundError, StorageConnectionError, StorageConfigurationError, StorageOperationError
 from agentmap.logging import get_logger
@@ -61,6 +62,70 @@ class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
         except Exception as e:
             logger.error(f"Failed to initialize Firebase client: {str(e)}")
             raise
+    
+    def _log_operation_start(self, collection: str, inputs: Dict[str, Any]) -> None:
+        """
+        Log the start of a Firebase operation.
+        
+        Args:
+            collection: Collection name
+            inputs: Input dictionary
+        """
+        operation_type = self.__class__.__name__.replace("FirebaseDocument", "").replace("Agent", "").lower()
+        logger.debug(f"[{self.__class__.__name__}] Starting {operation_type} operation on Firebase collection {collection}")
+    
+    def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
+        """
+        Validate inputs for Firebase operations.
+        
+        Args:
+            inputs: Input dictionary
+            
+        Raises:
+            ValueError: If inputs are invalid
+        """
+        super()._validate_inputs(inputs)
+        
+        # Add Firebase-specific validation if needed
+        collection = self.get_collection(inputs)
+        if not collection:
+            raise ValueError("Missing required 'collection' parameter")
+    
+    def _handle_operation_error(self, error: Exception, collection: str, inputs: Dict[str, Any]) -> DocumentResult:
+        """
+        Handle Firebase operation errors.
+        
+        Args:
+            error: The exception that occurred
+            collection: Collection name
+            inputs: Input dictionary
+            
+        Returns:
+            DocumentResult with error information
+        """
+        # Convert Firebase-specific errors
+        if isinstance(error, FirebaseError):
+            error = self._convert_firebase_error(error)
+        
+        # Handle based on error type
+        if isinstance(error, StorageConfigurationError):
+            return DocumentResult(
+                success=False,
+                error=f"Firebase configuration error: {str(error)}"
+            )
+        elif isinstance(error, StorageConnectionError):
+            return DocumentResult(
+                success=False,
+                error=f"Firebase connection error: {str(error)}"
+            )
+        elif isinstance(error, CollectionNotFoundError):
+            return DocumentResult(
+                success=False,
+                error=f"Firebase collection not found: {collection}"
+            )
+        
+        # Use the mixin's error handling for other errors
+        return super()._handle_operation_error(error, collection, inputs)
     
     def _init_firebase_app(self, firebase_config: Dict[str, Any]) -> None:
         """
@@ -186,8 +251,6 @@ class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
                 firestore_collections[collection],
                 "firestore"
             )
-        else:
-            raise CollectionNotFoundError(f"Collection '{collection}' not found in Firebase config")
         
         # Check in Realtime DB collections
         realtime_collections = firebase_config.get("realtime_db", {}).get("collections", {})
@@ -220,7 +283,6 @@ class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
         if project_id and project_id != self._current_project:
             logger.debug(f"Using project override: {project_id}")
             # TODO: Handle project override with new Firebase app
-            
         
         # Get appropriate database reference
         if db_type == "firestore":

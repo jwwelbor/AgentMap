@@ -17,6 +17,18 @@ from agentmap.agents.builtins.storage.firebase.utils import (
     format_query_results
 )
 
+# Register agents with the registry when available
+try:
+    from agentmap.agents.registry import register_agent
+    
+    # Register the Firebase agents
+    register_agent("firebase_reader", FirebaseDocumentReaderAgent)
+    register_agent("firebase_writer", FirebaseDocumentWriterAgent)
+    
+    _registry_available = True
+except ImportError:
+    _registry_available = False
+
 __all__ = [
     'FirebaseDocumentAgent',
     'FirebaseDocumentReaderAgent',
