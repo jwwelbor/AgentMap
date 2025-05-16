@@ -1,8 +1,9 @@
 # agentmap/agents/builtins/failure_agent.py
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.logging import get_logger
+from agentmap.state.adapter import StateAdapter
 
 logger = get_logger(__name__)
 
@@ -33,6 +34,7 @@ class FailureAgent(BaseAgent):
         # Include the prompt if available
         if self.prompt:
             message += f" with prompt: '{self.prompt}'"
+
         # Log the execution with additional details for debugging
         logger.info(f"[FailureAgent] {self.name} executed with success")
         logger.debug(f"[FailureAgent] Full output: {message}")
@@ -41,23 +43,22 @@ class FailureAgent(BaseAgent):
             
         return message
     
-    def run(self, state: Any) -> Any:
+    def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
         """
-        Override the run method to ensure failure by setting last_action_success to False.
+        Override the post-processing hook to always set success flag to False.
         
         Args:
-            state: Current state object (can be dict, Pydantic model, etc.)
+            state: Current state
+            output: The output value from the process method
             
         Returns:
-            Updated state with output field and success flag set to False
+            Tuple of (state, output) with success flag set to False
         """
-        # Get inputs and process as normal
-        inputs = self.state_manager.get_inputs(state)
-        output = self.process(inputs)
+        # We'll set this flag now to make it available in the state, but BaseAgent will set it again
+        state = StateAdapter.set_value(state, "last_action_success", False)
         
-        # Update state with output
-        updated_state = self.state_manager.set_output(state, output, success=True)
-        
-        # Force last_action_success to False to trigger failure paths
-        from agentmap.state.adapter import StateAdapter
-        return StateAdapter.set_value(updated_state, "last_action_success", False)
+        # We can modify the output if needed
+        if output:
+            output = f"{output} (Will force FAILURE branch)"
+            
+        return state, output
