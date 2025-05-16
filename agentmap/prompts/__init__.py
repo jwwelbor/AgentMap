@@ -9,7 +9,8 @@ various sources, including files, YAML configs, and a prompt registry.
 from agentmap.prompts.manager import (
     PromptManager,
     get_prompt_manager,
-    resolve_prompt
+    resolve_prompt,
+    get_formatted_prompt
 )
 
 # Export version info
@@ -20,4 +21,5 @@ __all__ = [
     'PromptManager',
     'get_prompt_manager',
     'resolve_prompt',
+    'get_formatted_prompt'
 ]
