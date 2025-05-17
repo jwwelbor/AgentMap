@@ -7,12 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from agentmap.agents.builtins.storage.document.base_agent import \
-    WriteMode
-from agentmap.agents.builtins.storage.json.reader import \
-    JSONDocumentReaderAgent
-from agentmap.agents.builtins.storage.json.writer import \
-    JSONDocumentWriterAgent
+from agentmap.agents.builtins.storage.document.base_agent import WriteMode
+from agentmap.agents.builtins.storage.json.reader import JSONDocumentReaderAgent
+from agentmap.agents.builtins.storage.json.writer import JSONDocumentWriterAgent
 
 
 class TestJSONDocumentAgents:

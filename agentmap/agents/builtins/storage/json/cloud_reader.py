@@ -6,8 +6,8 @@ through the standardized connector interface.
 """
 from typing import Any, Dict, Optional
 
-from agentmap.agents.builtins.storage.document.base_agent import (
-    DocumentReaderAgent, DocumentWriterAgent)
+from agentmap.agents.builtins.storage.document.writer import DocumentWriterAgent
+from agentmap.agents.builtins.storage.document.reader import DocumentReaderAgent
 from agentmap.agents.builtins.storage.json.cloud_agent import JSONCloudDocumentAgent
 from agentmap.agents.registry import register_agent
 from agentmap.logging import get_logger
