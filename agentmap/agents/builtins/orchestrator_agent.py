@@ -54,32 +54,23 @@ class OrchestratorAgent(BaseAgent):
         logger.debug(f"[OrchestratorAgent] Initialized with: matching_strategy={self.matching_strategy}, "
                      f"node_filter={self.node_filter}, llm_type={self.llm_type}")
 
-    def run(self, state: Any) -> Any:
+    def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
         """
-        Override the standard run method to provide built-in routing.
-
+        Override the post-processing hook to add routing directives.
+        
         Args:
-            state: Current state object
-
+            state: Current state
+            output: The output value from the process method (selected node name)
+            
         Returns:
-            Updated state with output field and routing metadata
+            Tuple of (state, output) with routing directives
         """
-        # First, run the normal agent process to select a node
-        updated_state = super().run(state)
-
-        # Get the selected node from the output
-        selected_node = StateAdapter.get_value(updated_state, self.output_field)
-
-        # Add a special routing directive to the state
-        if selected_node:
-            logger.info(f"[OrchestratorAgent] Setting __next_node to '{selected_node}'")
-            updated_state = StateAdapter.set_value(
-                updated_state,
-                "__next_node",
-                selected_node
-            )
-
-        return updated_state
+        # If we have a valid node name, set the routing directive
+        if output:
+            logger.info(f"[OrchestratorAgent] Setting __next_node to '{output}'")
+            state = StateAdapter.set_value(state, "__next_node", output)
+            
+        return state, output
 
     def process(self, inputs: Dict[str, Any]) -> str:
         """
