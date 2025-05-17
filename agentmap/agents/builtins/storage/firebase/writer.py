@@ -10,9 +10,10 @@ from typing import Any, Dict, List, Optional, Union
 
 from firebase_admin import firestore, db
 from google.cloud import firestore_v1
+from agentmap.agents.builtins.storage.document.writer import DocumentWriterAgent
 
 from agentmap.agents.builtins.storage.document.base_agent import (
-    DocumentResult, DocumentWriterAgent, WriteMode, log_operation)
+    DocumentResult,  WriteMode, log_operation)
 from agentmap.agents.builtins.storage.firebase.base_agent import FirebaseDocumentAgent
 from agentmap.agents.builtins.storage.mixins import WriterOperationsMixin
 from agentmap.logging import get_logger

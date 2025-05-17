@@ -11,8 +11,10 @@ import functools
 from dataclasses import asdict
 from typing import Any, Dict, Optional, Union
 
+from agentmap.agents.builtins.storage.document.reader import DocumentReaderAgent
+
 from agentmap.agents.builtins.storage.document.base_agent import (
-    DocumentReaderAgent, DocumentResult, log_operation)
+    DocumentResult, log_operation)
 from agentmap.agents.builtins.storage.json.base_agent import JSONDocumentAgent
 from agentmap.logging import get_logger
 
