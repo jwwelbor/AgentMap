@@ -64,7 +64,8 @@ try:
         CSVReaderAgent, CSVWriterAgent,
         JSONDocumentReaderAgent, JSONDocumentWriterAgent,
         FileReaderAgent, FileWriterAgent,
-        VectorStoreReaderAgent, VectorStoreWriterAgent
+        VectorStoreReaderAgent, VectorStoreWriterAgent,
+        DocumentReaderAgent, DocumentWriterAgent
     )
     
     # Register all storage agents
