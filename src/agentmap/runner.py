@@ -1,6 +1,7 @@
 """
 Graph runner for executing AgentMap workflows from compiled graphs or CSV.
 """
+
 import pickle
 import time
 from pathlib import Path
@@ -18,28 +19,44 @@ from agentmap.graph.node_registry import build_node_registry, populate_orchestra
 from agentmap.state.adapter import StateAdapter
 from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
 from agentmap.agents import get_agent_class
+from agentmap.logging.tracking.policy import evaluate_success_policy
 
 logger = get_logger(__name__)
 
 
 def load_compiled_graph(graph_name: str, config_path: Optional[Union[str, Path]] = None):
     """
-    Load a compiled graph from the configured path.
+    Load a compiled graph bundle from the configured path.
     
     Args:
         graph_name: Name of the graph to load
         config_path: Optional path to a custom config file
     
     Returns:
-        Compiled graph or None if not found
+        Graph bundle dictionary or legacy graph object
     """
     compiled_path = get_compiled_graphs_path(config_path) / f"{graph_name}.pkl"
     if compiled_path.exists():
-        logger.debug(f"[RUN] Using compiled graph: {compiled_path}")
-        with open(compiled_path, "rb") as f:
-            return pickle.load(f)
+        logger.debug(f"[RUN] Loading compiled graph: {compiled_path}")
+        
+        # Use GraphBundle to load
+        from agentmap.graph.bundle import GraphBundle
+        bundle = GraphBundle.load(compiled_path)
+        
+        if bundle:
+            if bundle.graph:
+                # Return the bundle as a dictionary
+                return bundle.to_dict()
+        
+        # Legacy fallback - try direct load
+        try:
+            with open(compiled_path, "rb") as f:
+                return pickle.load(f)
+        except Exception as e:
+            logger.error(f"[RUN] Error loading graph directly: {e}")
     else:
         logger.debug(f"[RUN] Compiled graph not found: {compiled_path}")
+    
     return None
 
 
@@ -52,7 +69,7 @@ def autocompile_and_load(graph_name: str, config_path: Optional[Union[str, Path]
         config_path: Optional path to a custom config file
     
     Returns:
-        Compiled graph
+        Compiled graph bundle or legacy graph
     """
     from agentmap.compiler import compile_graph
     logger.debug(f"[RUN] Autocompile enabled. Compiling: {graph_name}")
@@ -60,26 +77,26 @@ def autocompile_and_load(graph_name: str, config_path: Optional[Union[str, Path]
     return load_compiled_graph(graph_name, config_path=config_path)
 
 
-def build_graph_in_memory(graph_name: str, csv_path: str, config_path: Optional[Union[str, Path]] = None):
+def build_graph_in_memory(
+    graph_name: str, 
+    graph_def: Dict[str, Any], 
+    config_path: Optional[Union[str, Path]] = None
+):
     """
-    Build a graph in memory from CSV with execution logging.
+    Build a graph in memory from pre-loaded graph definition with execution logging.
     
     Args:
         graph_name: Name of the graph to build
-        csv_path: Path to the CSV file
+        graph_def: Pre-loaded graph definition from GraphBuilder
         config_path: Optional path to a custom config file
     
     Returns:
         Compiled graph with logging wrappers
     """
     logger.debug(f"[BuildGraph] Building graph in memory: {graph_name}")
-    csv = csv_path or get_csv_path(config_path)
-    gb = GraphBuilder(csv)
-    logger.debug(f"[BuildGraph] Building graph in memory: {csv}")
-    graphs = gb.build()
-    graph_def = graphs.get(graph_name)
+    
     if not graph_def:
-        raise ValueError(f"[BuildGraph] No graph found with name: {graph_name}")
+        raise ValueError(f"[BuildGraph] Invalid or empty graph definition for graph: {graph_name}")
 
     # Create the StateGraph builder
     builder = StateGraph(dict)
@@ -257,17 +274,59 @@ def run_graph(
     
     # Use trace_graph context manager to conditionally enable tracing
     with trace_graph(graph_name):
-        graph = get_graph(autocompile, config_path, csv_path, graph_name)
-
-        # Get the graph definition for node registry
-        csv_file = csv_path or get_csv_path(config_path)
-        gb = GraphBuilder(csv_file)
-        graphs = gb.build()
-        graph_def = graphs.get(graph_name)
+        # Try to load a compiled graph first - may include bundled node registry
+        graph_bundle = load_compiled_graph(graph_name, config_path)
+        node_registry = None
+        graph = None
+        graph_def = None
         
-        # Build node registry and populate orchestrator inputs
-        if graph_def:
+        if graph_bundle:
+            # If we loaded a bundle, extract the components
+            if isinstance(graph_bundle, dict) and "graph" in graph_bundle:
+                # New format with bundled components
+                graph = graph_bundle.get("graph")
+                node_registry = graph_bundle.get("node_registry")
+                version_hash = graph_bundle.get("version_hash")
+                logger.debug(f"[RUN] Loaded bundled graph with version hash: {version_hash}")
+
+        # If autocompile is enabled and we don't have a graph, compile and load
+        if not graph and autocompile:
+            graph_bundle = autocompile_and_load(graph_name, config_path)
+            if isinstance(graph_bundle, dict) and "graph" in graph_bundle:
+                graph = graph_bundle.get("graph")
+                node_registry = graph_bundle.get("node_registry")
+                version_hash = graph_bundle.get("version_hash")
+                logger.debug(f"[RUN] Autocompiled graph with version hash: {version_hash}")
+            else:
+                graph = graph_bundle
+        
+        # If we still don't have a graph, need to load CSV and build graph
+        if not graph:
+            csv_file = csv_path or get_csv_path(config_path)
+            gb = GraphBuilder(csv_file)
+            graphs = gb.build()
+            graph_def = graphs.get(graph_name)
+            
+            if not graph_def:
+                raise ValueError(f"No graph found with name: {graph_name}")
+                
+            # Build graph in memory, passing the already loaded graph definition
+            graph = build_graph_in_memory(graph_name, graph_def, config_path)
+        
+        # If we don't have a node registry yet, but need to build it from CSV
+        if node_registry is None and graph_def is None:
+            # Need to load CSV to build node registry
+            csv_file = csv_path or get_csv_path(config_path)
+            gb = GraphBuilder(csv_file)
+            graphs = gb.build()
+            graph_def = graphs.get(graph_name)
+
+        # Build node registry if we have a graph definition
+        if node_registry is None and graph_def:
             node_registry = build_node_registry(graph_def)
+        
+        # Populate orchestrator inputs if we have a node registry
+        if node_registry and graph_def:
             initial_state = populate_orchestrator_inputs(initial_state, graph_def, node_registry)
         
         # Track overall execution time
@@ -287,11 +346,13 @@ def run_graph(
             
             # The graph_success field is already updated during execution
             graph_success = summary["graph_success"]
-
+            # For backwards compatibility
+            result = StateAdapter.set_value(result, "__policy_success", graph_success)
+            
             # Log result with different detail based on tracking mode
             if tracking_enabled:
                 logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s")
-                logger.info(f"  Policy success: {graph_success}, All node success: {summary['overall_success']}")
+                logger.info(f"  Policy success: {graph_success}, Raw success: {summary['overall_success']}")
             else:
                 logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s, Success: {graph_success}")
                 
@@ -301,7 +362,6 @@ def run_graph(
             logger.error(f"❌ GRAPH EXECUTION FAILED: '{graph_name}' after {execution_time:.2f}s")
             logger.error(f"[RUN] Error: {str(e)}")
             raise
-
 
 def get_graph(autocompile, config_path, csv_path, graph_name):
     # Try to load a compiled graph first
