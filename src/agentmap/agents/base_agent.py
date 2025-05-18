@@ -1,6 +1,8 @@
 """
 Base agent class for all AgentMap agents.
 """
+import time
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from agentmap.logging import get_logger
@@ -45,36 +47,47 @@ class BaseAgent:
             Output value for the output_field
         """
         raise NotImplementedError("Subclasses must implement process()")
-    
+
+    # Update to agentmap/agents/base_agent.py
+    import uuid
+    import time
+
     def run(self, state: Any) -> Any:
         """
         Run the agent on the state, extracting inputs and setting outputs.
         This is the standard execution flow that most agents should follow.
-        
+
         Args:
             state: Current state object (can be dict, Pydantic model, etc.)
-            
+
         Returns:
             Updated state with output field and success flag
         """
-        print(f"\n*** AGENT {self.name} RUN CALLED ***")
+        # Generate a unique execution ID
+        execution_id = str(uuid.uuid4())[:8]
+        start_time = time.time()
+
+        print(f"\n*** AGENT {self.name} RUN START [{execution_id}] at {start_time} ***")
 
         # Ensure execution tracker is present
         state = StateAdapter.initialize_execution_tracker(state)
         tracker = StateAdapter.get_execution_tracker(state)
-        
+
         # Extract inputs
         inputs = self.state_manager.get_inputs(state)
-        
+
         # Record node start
         tracker.record_node_start(self.name, inputs)
-        
+
         try:
             # Pre-processing hook for subclasses
             state = self._pre_process(state, inputs)
-            
+
             # Process inputs to get output
+            print(f"*** AGENT {self.name} CALLING PROCESS [{execution_id}] ***")
             output = self.process(inputs)
+            print(f"*** AGENT {self.name} PROCESS COMPLETE [{execution_id}] ***")
+
             # Set action success flag
             state = StateAdapter.set_value(state, "last_action_success", True)
 
@@ -82,44 +95,49 @@ class BaseAgent:
             state, output = self._post_process(state, output)
 
             # read last_action_success in case it was changed in post_process
-            tracker.record_node_result(self.name, state["last_action_success"], result=output)
+            tracker.record_node_result(self.name, state.get("last_action_success", True), result=output)
             graph_success = tracker.update_graph_success()
             state = StateAdapter.set_value(state, "graph_success", graph_success)
-            
+
             # Now set the final output and success flag
             if self.output_field:
                 logger.debug(f"[{self.name}] Setting output in field '{self.output_field}' with value: {output}")
                 state = StateAdapter.set_value(state, self.output_field, output)
 
-            print(f"\n*** AGENT {self.name} RUN RETURNING ***")
+            end_time = time.time()
+            duration = end_time - start_time
+            print(f"\n*** AGENT {self.name} RUN COMPLETED [{execution_id}] in {duration:.4f}s ***")
             return state
-            
+
         except Exception as e:
             # Handle errors
             error_msg = f"Error in {self.name}: {str(e)}"
             logger.error(error_msg)
-            
+
             # Record failure
             tracker.record_node_result(self.name, False, error=error_msg)
-            
+
             # Update graph success based on policy
             graph_success = tracker.update_graph_success()
-            
+
             # Store graph success in state
             state = StateAdapter.set_value(state, "graph_success", graph_success)
-            
+
             # Set error in state
             state = StateAdapter.set_value(state, "error", error_msg)
-            
+
             # Mark as failure
             state = StateAdapter.set_value(state, "last_action_success", False)
-            
+
             # Try to run post-process but don't let its errors override the original error
             try:
                 state, _ = self._post_process(state, None)
             except Exception as post_error:
                 logger.error(f"Error in post-processing: {str(post_error)}")
-            
+
+            end_time = time.time()
+            duration = end_time - start_time
+            print(f"\n*** AGENT {self.name} RUN FAILED [{execution_id}] in {duration:.4f}s ***")
             return state
     
     def _pre_process(self, state: Any, inputs: Dict[str, Any]) -> Any:
