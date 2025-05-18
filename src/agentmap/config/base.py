@@ -1,23 +1,21 @@
 # agentmap/config/base.py
 from pathlib import Path
+
 import logging
 import yaml
 import os
 import threading
 from typing import Any, Dict, List, Optional, Union
 
+from agentmap.logging.logger_utils import get_clean_logger, configure_basic_logger
+
 # Set up basic logging for the config module
 def _setup_config_logging():
     """Set up basic logging for the config module."""
-    logger = logging.getLogger("agentmap.config")
+    logger = get_clean_logger("agentmap.config")
     
     # Only configure if no handlers exist
     if not logger.handlers:
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter("[%(levelname)s] %(name)s: %(message)s")
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        
         # Get level from environment with fallback
         level_name = os.environ.get("AGENTMAP_CONFIG_LOG_LEVEL", "INFO").upper()
         try:
@@ -25,9 +23,10 @@ def _setup_config_logging():
         except AttributeError:
             level = logging.INFO
             
-        logger.setLevel(level)
+        configure_basic_logger(logger, level=level)
     
     return logger
+
 
 # Create logger for this module
 logger = _setup_config_logging()
@@ -77,18 +76,20 @@ class ConfigManager:
     
     def __new__(cls):
         """Ensure only one instance exists (singleton pattern)."""
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = super(ConfigManager, cls).__new__(cls)
-                cls._instance._initialize()
-            return cls._instance
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(ConfigManager, cls).__new__(cls)
+                    cls._instance._initialize()
+        return cls._instance
     
     def _initialize(self):
         """Initialize the configuration manager."""
         self._config = None
         self._config_path = None
+        self._initialized = False
+        logger.debug("[ConfigManager] Config initialized")
         self._initialized = True
-        logger.debug("ConfigManager initialized")
     
     def load_config(self, config_path: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
         """
@@ -101,9 +102,9 @@ class ConfigManager:
             Dictionary containing configuration values
         """
         with self._lock:
-            # Return cached config if path hasn't changed
+            # Return cached config if path hasn't changed and we have a config
             if self._config is not None and self._config_path == config_path:
-                logger.debug("Returning cached configuration")
+                logger.debug("[ConfigManager] Returning cached configuration")
                 return self._config
             
             # Otherwise, load the configuration
@@ -111,9 +112,9 @@ class ConfigManager:
             self._config_path = config_path
             
             # Log detailed info about config loading
-            logger.info(f"Loading configuration from: {config_file}")
+            logger.info(f"[ConfigManager] Loading configuration from: {config_file}")
             if not config_file.exists():
-                logger.warning(f"Config file not found at {config_file}. Using defaults.")
+                logger.warning(f"[ConfigManager] Config file not found at {config_file}. Using defaults.")
             
             # Load configuration from file if it exists
             config = {}
@@ -121,21 +122,21 @@ class ConfigManager:
                 try:
                     with config_file.open() as f:
                         config = yaml.safe_load(f) or {}
-                    logger.info(f"Successfully loaded configuration from {config_file}")
+                    logger.info(f"[ConfigManager] Successfully loaded configuration from {config_file}")
                     
                     # Log top-level sections for visibility
                     sections = list(config.keys())
-                    logger.info(f"Loaded configuration sections: {sections}")
+                    logger.info(f"[ConfigManager] Loaded configuration sections: {sections}")
                     
                 except Exception as e:
-                    logger.error(f"Error loading config file {config_file}: {e}")
+                    logger.error(f"[ConfigManager] Error loading config file {config_file}: {e}")
             
             # Get default configuration
-            logger.debug("Loading default configuration values")
+            logger.debug("[ConfigManager] Loading default configuration values")
             defaults = get_default_config()
             
             # Merge with defaults
-            logger.debug("Merging user configuration with defaults")
+            logger.debug("[ConfigManager] Merging user configuration with defaults")
             self._config = _merge_with_defaults(config, defaults)  # Use the standalone function
             
             return self._config
@@ -151,14 +152,14 @@ class ConfigManager:
         Returns:
             Configuration section or empty dict if not found
         """
-        logger.debug(f"Loading configuration section: {section}")
+        logger.trace(f"[ConfigManager] Requested configuration section: {section}")
         config = self.load_config(config_path)
         
         if section not in config:
-            logger.warning(f"Section '{section}' not found in configuration. Using empty dict.")
+            logger.warning(f"[ConfigManager] Section '{section}' not found in configuration. Using empty dict.")
             
         config_section = config.get(section, {})
-        logger.debug(f"Loaded configuration section: {section} -> {config_section}")
+        logger.debug(f"[ConfigManager] Loaded configuration section: {section} -> {config_section}")
         return config_section
     
     def refresh(self, config_path: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
