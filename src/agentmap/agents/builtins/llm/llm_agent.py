@@ -2,12 +2,12 @@
 Base LLM Agent with unified configuration and handling for all providers.
 """
 import os
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.state.adapter import StateAdapter
-from agentmap.logging import get_logger
 from agentmap.config import get_llm_config
+from agentmap.logging import get_logger
+from agentmap.state.adapter import StateAdapter
 
 logger = get_logger(__name__)
 

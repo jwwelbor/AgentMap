@@ -1,14 +1,9 @@
 """
 OpenAI LLM agent implementation using LangChain.
 """
-import os
-from typing import Any, Dict, Optional
-
-import openai
+from typing import Any
 
 from agentmap.agents.builtins.llm.llm_agent import LLMAgent
-from agentmap.state.adapter import StateAdapter
-from agentmap.config import get_llm_config
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)

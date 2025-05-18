@@ -10,7 +10,7 @@ authors = [
     {name = "John Welborn", email = "jwwelbor@gmail.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<4.0"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
@@ -29,6 +29,7 @@ dependencies = [
     "langgraph>=0.4.1",
     "langchain",
     "langchain-community>=0.3.23",
+    "langchain-openai (>=0.3.17,<0.4.0)"
 ]
 
 [project.optional-dependencies]
@@ -39,7 +40,8 @@ llm = [
     "google-generativeai>=0.3.2",
 ]
 storage = [
-    "firebase-admin>=6.8.0",
+    "firebase (>=4.0.1,<5.0.0)",
+    "firebase-admin (>=6.8.0,<7.0.0)", 
     "unstructured[md,pdf]>=0.10.0",
     "python-docx>=0.8.11",
 ]
@@ -65,7 +67,11 @@ Tracker = "https://github.com/jwwelbor/AgentMap/issues"
 
 [project.scripts]
 agentmap = "agentmap.cli:app"
-agentmap-server = "uvicorn.cli:main --app agentmap.fastapi_server:app --reload"
+agentmap-server = "agentmap.server_cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["agentmap"]
 
 [tool.setuptools.package-data]
 "agentmap.prompts.system" = ["**/*.yaml", "**/*.txt", "**/*.json"]
