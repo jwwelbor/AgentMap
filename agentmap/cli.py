@@ -3,8 +3,7 @@ import json
 import typer
 import yaml
 
-from agentmap.agents.builtins.storage import (get_storage_config_path,
-                                              load_storage_config)
+from agentmap.agents.builtins.storage import (get_storage_config_path, load_storage_config)
 from agentmap.config import load_config
 from agentmap.graph.scaffold import scaffold_agents
 from agentmap.graph.serialization import (compile_all, export_as_pickle,
