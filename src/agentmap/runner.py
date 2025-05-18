@@ -2,6 +2,7 @@
 Graph runner for executing AgentMap workflows from compiled graphs or CSV.
 """
 
+import json
 import pickle
 import time
 from pathlib import Path
@@ -240,18 +241,18 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
 
 
 def run_graph(
-    graph_name: str, 
-    initial_state: dict, 
-    csv_path: str = None, 
-    autocompile_override: bool = None,
+    graph_name: Optional[str] = None, 
+    initial_state: Optional[dict] = {}, 
+    csv_path: Optional[str] = None, 
+    autocompile_override: Optional[bool] = None,
     config_path: Optional[Union[str, Path]] = None
 ) -> Dict[str, Any]:
     """
     Run a graph with the given initial state.
     
     Args:
-        graph_name: Name of the graph to run
-        initial_state: Initial state for the graph 
+        graph_name: Name of the graph to run. If None, uses the first graph in the CSV.
+        initial_state: Initial state for the graph. If None, uses an empty dictionary.
         csv_path: Optional path to CSV file
         autocompile_override: Override autocompile setting
         config_path: Optional path to a custom config file
@@ -261,11 +262,23 @@ def run_graph(
     """
     from agentmap.logging.tracing import trace_graph
     
+    # Set defaults for optional parameters
+    initial_state = initial_state or {}
+    
     config = load_config(config_path)
     autocompile = autocompile_override if autocompile_override is not None else config.get("autocompile", False)
     execution_config = config.get("execution", {})
     tracking_config = execution_config.get("tracking", {})
     tracking_enabled = tracking_config.get("enabled", True)
+    
+    #initialize variables
+    graph_bundle = None
+    node_registry = None
+    graph = None
+    graph_def = None
+
+    # Get the CSV file path
+    csv_file = csv_path or get_csv_path(config_path)
 
     logger.info(f"⭐ STARTING GRAPH: '{graph_name}'")
     
@@ -275,10 +288,8 @@ def run_graph(
     # Use trace_graph context manager to conditionally enable tracing
     with trace_graph(graph_name):
         # Try to load a compiled graph first - may include bundled node registry
-        graph_bundle = load_compiled_graph(graph_name, config_path)
-        node_registry = None
-        graph = None
-        graph_def = None
+        if graph_name:
+            graph_bundle = load_compiled_graph(graph_name, config_path)
         
         if graph_bundle:
             # If we loaded a bundle, extract the components
@@ -288,9 +299,13 @@ def run_graph(
                 node_registry = graph_bundle.get("node_registry")
                 version_hash = graph_bundle.get("version_hash")
                 logger.debug(f"[RUN] Loaded bundled graph with version hash: {version_hash}")
+            else:
+                # Old format with just the graph
+                graph = graph_bundle
+                logger.debug(f"[RUN] Loaded legacy compiled graph (no bundled registry)")
 
-        # If autocompile is enabled and we don't have a graph, compile and load
-        if not graph and autocompile:
+        # If autocompile is enabled and we don't have a graph, compile and load, graph_name must be specified
+        if not graph and autocompile and graph_name:
             graph_bundle = autocompile_and_load(graph_name, config_path)
             if isinstance(graph_bundle, dict) and "graph" in graph_bundle:
                 graph = graph_bundle.get("graph")
@@ -298,13 +313,19 @@ def run_graph(
                 version_hash = graph_bundle.get("version_hash")
                 logger.debug(f"[RUN] Autocompiled graph with version hash: {version_hash}")
             else:
-                graph = graph_bundle
+                raise ValueError(f"Failed to autocompile and load graph: {graph_name}")
         
         # If we still don't have a graph, need to load CSV and build graph
         if not graph:
-            csv_file = csv_path or get_csv_path(config_path)
+            # Load the CSV file and parse graph definition only once
             gb = GraphBuilder(csv_file)
             graphs = gb.build()
+            if not graph_name: # Use the first graph in the CSV
+                graph_name = list(graphs.keys())[0] if graphs else None
+                if not graph_name:
+                    raise ValueError("No graphs found in CSV file")
+                logger.debug(f"[RUN] Loaded first graph name from CSV: {graph_name}")
+    
             graph_def = graphs.get(graph_name)
             
             if not graph_def:
@@ -312,19 +333,8 @@ def run_graph(
                 
             # Build graph in memory, passing the already loaded graph definition
             graph = build_graph_in_memory(graph_name, graph_def, config_path)
-        
-        # If we don't have a node registry yet, but need to build it from CSV
-        if node_registry is None and graph_def is None:
-            # Need to load CSV to build node registry
-            csv_file = csv_path or get_csv_path(config_path)
-            gb = GraphBuilder(csv_file)
-            graphs = gb.build()
-            graph_def = graphs.get(graph_name)
-
-        # Build node registry if we have a graph definition
-        if node_registry is None and graph_def:
             node_registry = build_node_registry(graph_def)
-        
+                
         # Populate orchestrator inputs if we have a node registry
         if node_registry and graph_def:
             initial_state = populate_orchestrator_inputs(initial_state, graph_def, node_registry)
@@ -355,7 +365,10 @@ def run_graph(
                 logger.info(f"  Policy success: {graph_success}, Raw success: {summary['overall_success']}")
             else:
                 logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s, Success: {graph_success}")
-                
+
+            # pretty print the result
+            logger.debug(json.dumps(create_serializable_result(result), indent=4))    
+
             return result
         except Exception as e:
             execution_time = time.time() - start_time
@@ -373,3 +386,23 @@ def get_graph(autocompile, config_path, csv_path, graph_name):
     if not graph:
         graph = build_graph_in_memory(graph_name, csv_path, config_path)
     return graph
+
+def create_serializable_result(result):
+    """Create a JSON-serializable copy of the result dictionary."""
+    if not isinstance(result, dict):
+        return {"result": str(result)}
+    
+    serializable = {}
+    for key, value in result.items():
+        # Skip ExecutionTracker objects
+        if key == "__execution_tracker":
+            continue
+        # Include other values, converting non-serializable ones to strings
+        try:
+            # Test if it's JSON serializable
+            json.dumps(value)
+            serializable[key] = value
+        except (TypeError, OverflowError):
+            serializable[key] = str(value)
+    
+    return serializable

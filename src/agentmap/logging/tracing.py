@@ -33,6 +33,7 @@ def should_trace_graph(graph_name):
 def trace_graph(graph_name):
     """Context manager to selectively trace a graph run."""
     config = get_tracing_config()
+    graph_name = graph_name if graph_name else "default"
     
     # If tracing is disabled or this graph shouldn't be traced, early return
     if not config.get("enabled", False) or not should_trace_graph(graph_name):
