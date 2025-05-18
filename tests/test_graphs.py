@@ -7,7 +7,7 @@ from agentmap.graph.builder import GraphBuilder
 
 def test_can_load_graphs():
     # Use an example CSV that definitely exists
-    csv_path = Path("examples/LinearGraph.csv")
+    csv_path = Path("../examples/LinearGraph.csv")
     assert csv_path.exists(), f"Test CSV file not found at {csv_path}"
     
     gb = GraphBuilder(csv_path)
@@ -26,7 +26,7 @@ def test_can_load_graphs():
     assert "Ender" in graph
 
 def test_node_has_required_attributes():
-    csv_path = Path("examples/SingleNodeGraph.csv")
+    csv_path = Path("../examples/SingleNodeGraph.csv")
     assert csv_path.exists(), f"Test CSV file not found at {csv_path}"
     
     gb = GraphBuilder(csv_path)
