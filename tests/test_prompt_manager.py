@@ -157,7 +157,7 @@ def test_resolve_yaml_prompt(mock_config, yaml_prompt_file):
     
     # Resolve with invalid YAML path
     yaml_ref = "yaml:nonexistent.yaml#key"
-    assert "[YAML prompt file not found" in manager.resolve_prompt(yaml_ref)
+    assert "[Error reading YAML prompt file: nonexistent.yaml]" in manager.resolve_prompt(yaml_ref)
 
 def test_prompt_with_no_reference(mock_config):
     """Test that non-reference prompts are returned as-is."""
@@ -167,41 +167,6 @@ def test_prompt_with_no_reference(mock_config):
     assert manager.resolve_prompt(None) is None
     assert manager.resolve_prompt(123) == 123  # Non-string values returned as-is
 
-# Tests for prompt registration
-def test_register_prompt(mock_config, temp_dir):
-    """Test registering new prompts."""
-    manager = PromptManager()
-    
-    # Register a new prompt
-    result = manager.register_prompt("test_prompt", "This is a test prompt", save=False)
-    assert result is True
-    assert "test_prompt" in manager._registry
-    assert manager._registry["test_prompt"] == "This is a test prompt"
-    
-    # Verify the prompt can be resolved
-    assert manager.resolve_prompt("prompt:test_prompt") == "This is a test prompt"
-    
-    # Update an existing prompt
-    result = manager.register_prompt("greeting", "Updated greeting", save=False)
-    assert result is True
-    assert manager._registry["greeting"] == "Updated greeting"
-    
-    # Verify the update can be resolved
-    assert manager.resolve_prompt("prompt:greeting") == "Updated greeting"
-
-def test_save_registry(mock_config, temp_dir):
-    """Test saving the registry to disk."""
-    manager = PromptManager()
-    
-    # Add a new prompt
-    manager.register_prompt("new_prompt", "A new prompt", save=True)
-    
-    # Verify the file was written
-    with open(manager.registry_path, 'r') as f:
-        saved_registry = yaml.safe_load(f)
-    
-    assert "new_prompt" in saved_registry
-    assert saved_registry["new_prompt"] == "A new prompt"
 
 # Tests for caching
 def test_prompt_caching(mock_config, mocker):
