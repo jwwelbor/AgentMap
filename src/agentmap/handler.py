@@ -15,16 +15,11 @@ def handler(event, context=None):
         else:
             body = event
 
-        graph_name = body.get("graph")
+        graph_name = body.get("graph")  # Now optional
         initial_state = body.get("state", {}) 
         autocompile = body.get("autocompile", False)
 
-        if not graph_name:
-            return {
-                "statusCode": 400,
-                "body": json.dumps({ "error": "Missing required 'graph' field" })
-            }
-
+        # Run the graph - graph_name can now be None
         output = run_graph(graph_name, initial_state, autocompile_override=autocompile) 
 
         return {
