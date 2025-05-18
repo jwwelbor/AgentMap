@@ -57,6 +57,8 @@ class BaseAgent:
         Returns:
             Updated state with output field and success flag
         """
+        print(f"\n*** AGENT {self.name} RUN CALLED ***")
+
         # Ensure execution tracker is present
         state = StateAdapter.initialize_execution_tracker(state)
         tracker = StateAdapter.get_execution_tracker(state)
@@ -89,6 +91,7 @@ class BaseAgent:
                 logger.debug(f"[{self.name}] Setting output in field '{self.output_field}' with value: {output}")
                 state = StateAdapter.set_value(state, self.output_field, output)
 
+            print(f"\n*** AGENT {self.name} RUN RETURNING ***")
             return state
             
         except Exception as e:

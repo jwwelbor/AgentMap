@@ -5,7 +5,8 @@ import os
 import logging
 from contextlib import contextmanager
 
-logger = logging.getLogger("AgentMap")
+from agentmap.logging import get_logger
+logger = get_logger(__name__)
 
 def get_tracing_config():
     """Get LangSmith tracing configuration."""
@@ -32,6 +33,10 @@ def should_trace_graph(graph_name):
 @contextmanager
 def trace_graph(graph_name):
     """Context manager to selectively trace a graph run."""
+    yield False
+    return
+
+
     config = get_tracing_config()
     graph_name = graph_name if graph_name else "default"
     
@@ -40,6 +45,18 @@ def trace_graph(graph_name):
         yield False
         return
     
+    #trying to avoid duplicate tracing
+    trace_key = f"trace_{graph_name}"
+    if not hasattr(trace_graph, '_active_traces'):
+        trace_graph._active_traces = set()
+        
+    if trace_key in trace_graph._active_traces:
+        # Already tracing this graph, avoid duplicating
+        yield True
+        return
+        
+    trace_graph._active_traces.add(trace_key)
+
     # Try local tracing first if mode is local
     if config.get("mode", "langsmith") == "local":
         if setup_local_tracing(config):

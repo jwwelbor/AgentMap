@@ -3,6 +3,13 @@ import logging
 import os
 from typing import Dict, Optional, Any
 
+from agentmap.logging.logger_utils import (
+    get_clean_logger,
+    configure_basic_logger,
+    fix_root_logger,
+    debug_loggers
+)
+
 # Define custom TRACE level (lower than DEBUG)
 TRACE = 5  # Lower number = more verbose
 logging.addLevelName(TRACE, "TRACE")
@@ -35,25 +42,20 @@ def get_logger(name="AgentMap"):
     if name in _LOGGER_REGISTRY:
         return _LOGGER_REGISTRY[name]
     
-    # Create new logger
-    logger = logging.getLogger(name)
+    # Get a clean logger with unique handlers
+    logger = get_clean_logger(name)
     
-    # Only configure if no handlers exist
+    # Configure the logger if needed
     if not logger.handlers:
-        # Basic configuration with reasonable defaults
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter("[%(levelname)s] %(name)s: %(message)s")
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        
-        # Set level from environment or default
+        # Get level from environment or default
         level_name = os.environ.get("AGENTMAP_LOG_LEVEL", "INFO").upper()
         try:
             level = TRACE if level_name == "TRACE" else getattr(logging, level_name, logging.INFO)
         except AttributeError:
             level = logging.INFO
         
-        logger.setLevel(level)
+        # Configure with basic console handler
+        configure_basic_logger(logger, level=level)
     
     # Store in registry
     _LOGGER_REGISTRY[name] = logger
@@ -73,14 +75,13 @@ def configure_logging(config: Optional[Dict[str, Any]] = None):
     if _LOGGING_CONFIGURED or not config:
         return
     
+    # Fix root logger first to prevent duplication
+    fix_root_logger()
+    
     _LOGGING_CONFIGURED = True
     
     # Configure root logger
-    root_logger = logging.getLogger()
-    
-    # Clear existing handlers if reconfiguring
-    for handler in list(root_logger.handlers):
-        root_logger.removeHandler(handler)
+    root_logger = get_clean_logger("")  # Empty string is root logger
     
     # Set level if specified
     if "level" in config:
@@ -92,10 +93,15 @@ def configure_logging(config: Optional[Dict[str, Any]] = None):
     log_format = config.get("format", "[%(levelname)s] %(name)s: %(message)s")
     formatter = logging.Formatter(log_format)
     
-    # Create handler
-    handler = logging.StreamHandler()
-    handler.setFormatter(formatter)
-    root_logger.addHandler(handler)
+    # Configure root logger with the formatter
+    for handler in root_logger.handlers:
+        handler.setFormatter(formatter)
+    
+    # If no handlers, add one
+    if not root_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        root_logger.addHandler(handler)
     
     # Configure specific loggers
     if "loggers" in config:
@@ -107,20 +113,10 @@ def configure_logging(config: Optional[Dict[str, Any]] = None):
                 level_name = logger_config["level"].upper()
                 level = TRACE if level_name == "TRACE" else getattr(logging, level_name, logging.INFO)
                 logger.setLevel(level)
-    
-    # Update all existing loggers
-    for name, logger in _LOGGER_REGISTRY.items():
-        # Configure specific level if defined
-        if "loggers" in config and name in config["loggers"]:
-            logger_config = config["loggers"][name]
-            if "level" in logger_config:
-                level_name = logger_config["level"].upper()
-                level = TRACE if level_name == "TRACE" else getattr(logging, level_name, logging.INFO)
-                logger.setLevel(level)
-        
-        # Update handlers with new formatter
-        for handler in logger.handlers:
-            handler.setFormatter(formatter)
+            
+            # Update handlers with new formatter
+            for handler in logger.handlers:
+                handler.setFormatter(formatter)
 
 def reset_logging():
     """Reset logging configuration. Mainly for testing."""
@@ -135,3 +131,12 @@ def reset_logging():
     # Clear registry and reset flag
     _LOGGER_REGISTRY = {}
     _LOGGING_CONFIGURED = False
+
+def inspect_loggers():
+    """
+    Return diagnostic information about all loggers for debugging.
+    
+    Returns:
+        Dictionary with logger information
+    """
+    return debug_loggers()

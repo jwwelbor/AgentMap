@@ -7,6 +7,7 @@ import pickle
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
+import threading
 
 from langgraph.graph import StateGraph
 
@@ -23,7 +24,8 @@ from agentmap.agents import get_agent_class
 from agentmap.logging.tracking.policy import evaluate_success_policy
 
 logger = get_logger(__name__)
-
+_GRAPH_EXECUTION_LOCK = threading.RLock()
+_CURRENT_EXECUTIONS = set()
 
 def load_compiled_graph(graph_name: str, config_path: Optional[Union[str, Path]] = None):
     """
@@ -239,7 +241,6 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
         logger.error(error_message)
         raise AgentInitializationError(error_message)
 
-
 def run_graph(
     graph_name: Optional[str] = None, 
     initial_state: Optional[dict] = {}, 
@@ -260,121 +261,192 @@ def run_graph(
     Returns:
         Output from the graph execution
     """
-    from agentmap.logging.tracing import trace_graph
-    
-    # Set defaults for optional parameters
-    initial_state = initial_state or {}
-    
-    config = load_config(config_path)
-    autocompile = autocompile_override if autocompile_override is not None else config.get("autocompile", False)
-    execution_config = config.get("execution", {})
-    tracking_config = execution_config.get("tracking", {})
-    tracking_enabled = tracking_config.get("enabled", True)
-    
-    #initialize variables
-    graph_bundle = None
-    node_registry = None
-    graph = None
-    graph_def = None
+    # Create a unique execution key based on the parameters
+    import inspect
+    import traceback
+    caller_frame = inspect.currentframe().f_back
+    caller_info = f"{caller_frame.f_code.co_filename}:{caller_frame.f_lineno}"
+    print(f"\n===== RUN_GRAPH CALLED FROM: {caller_info} =====")
+    print("STACK TRACE:")
+    for line in traceback.format_stack()[:-1]:  # Exclude this frame
+        print(f"  {line.strip()}")
+    print("=====\n")
 
-    # Get the CSV file path
-    csv_file = csv_path or get_csv_path(config_path)
+    import sys
+    agentmap_modules = [mod for mod in sys.modules.keys() if mod.startswith('agentmap')]
+    print(f"LOADED AGENTMAP MODULES: {len(agentmap_modules)}")
+    for mod in sorted(agentmap_modules):
+        print(f"  {mod}")
 
-    logger.info(f"⭐ STARTING GRAPH: '{graph_name}'")
+    print("\n=== ENTERING run_graph ===")
+    print(f"Parameters: graph_name={graph_name}, csv_path={csv_path}")
+    print("=====\n")
+
+
+    import hashlib
+    execution_key = hashlib.md5(
+        f"{graph_name}:{id(initial_state)}:{csv_path}:{autocompile_override}:{config_path}".encode()
+    ).hexdigest()
     
-    # Initialize execution tracking (always active, may be minimal)
-    initial_state = StateAdapter.initialize_execution_tracker(initial_state, execution_config)
-    
-    # Use trace_graph context manager to conditionally enable tracing
-    with trace_graph(graph_name):
-        # Try to load a compiled graph first - may include bundled node registry
-        if graph_name:
-            graph_bundle = load_compiled_graph(graph_name, config_path)
+    with _GRAPH_EXECUTION_LOCK:
+        # Check if this exact execution is already in progress
+        if execution_key in _CURRENT_EXECUTIONS:
+            logger.warning(f"Detected recursive/duplicate call to run_graph with same parameters")
+            # Return a placeholder to break the recursion
+            return {"error": "Recursive execution detected and prevented"}
         
-        if graph_bundle:
-            # If we loaded a bundle, extract the components
-            if isinstance(graph_bundle, dict) and "graph" in graph_bundle:
-                # New format with bundled components
-                graph = graph_bundle.get("graph")
-                node_registry = graph_bundle.get("node_registry")
-                version_hash = graph_bundle.get("version_hash")
-                logger.debug(f"[RUN] Loaded bundled graph with version hash: {version_hash}")
-            else:
-                # Old format with just the graph
-                graph = graph_bundle
-                logger.debug(f"[RUN] Loaded legacy compiled graph (no bundled registry)")
-
-        # If autocompile is enabled and we don't have a graph, compile and load, graph_name must be specified
-        if not graph and autocompile and graph_name:
-            graph_bundle = autocompile_and_load(graph_name, config_path)
-            if isinstance(graph_bundle, dict) and "graph" in graph_bundle:
-                graph = graph_bundle.get("graph")
-                node_registry = graph_bundle.get("node_registry")
-                version_hash = graph_bundle.get("version_hash")
-                logger.debug(f"[RUN] Autocompiled graph with version hash: {version_hash}")
-            else:
-                raise ValueError(f"Failed to autocompile and load graph: {graph_name}")
-        
-        # If we still don't have a graph, need to load CSV and build graph
-        if not graph:
-            # Load the CSV file and parse graph definition only once
-            gb = GraphBuilder(csv_file)
-            graphs = gb.build()
-            if not graph_name: # Use the first graph in the CSV
-                graph_name = list(graphs.keys())[0] if graphs else None
-                if not graph_name:
-                    raise ValueError("No graphs found in CSV file")
-                logger.debug(f"[RUN] Loaded first graph name from CSV: {graph_name}")
+        _CURRENT_EXECUTIONS.add(execution_key)
     
-            graph_def = graphs.get(graph_name)
+    try:
+        from agentmap.logging.tracing import trace_graph
+        print("DEBUG 1: After trace_graph import")
+
+        # Set defaults for optional parameters
+        initial_state = initial_state or {}
+        print("DEBUG 2: After setting initial_state")
+
+        config = load_config(config_path)
+        print("DEBUG 3: After load_config")
+
+        autocompile = autocompile_override if autocompile_override is not None else config.get("autocompile", False)
+        print("DEBUG 4: After setting autocompile")
+
+        execution_config = config.get("execution", {})
+        print("DEBUG 5: After getting execution_config")
+
+        tracking_config = execution_config.get("tracking", {})
+        print("DEBUG 6: After getting tracking_config")
+
+        tracking_enabled = tracking_config.get("enabled", True)
+        print("DEBUG 7: After setting tracking_enabled")
+
+        #initialize variables
+        graph_bundle = None
+        node_registry = None
+        graph = None
+        graph_def = None
+        print("DEBUG 8: After initializing variables")
+
+        # Get the CSV file path
+        csv_file = csv_path or get_csv_path(config_path)
+        print("DEBUG 9: After getting csv_file")
+
+        import inspect
+        frame = inspect.currentframe()
+        caller_info = inspect.getframeinfo(frame.f_back)
+        log_key = f"{caller_info.function}:{caller_info.lineno}:STARTING:{graph_name}"
+        
+        if not hasattr(run_graph, '_logged_messages'):
+            run_graph._logged_messages = set()
+        
+        if log_key not in run_graph._logged_messages:
+            logger.info(f"⭐ STARTING GRAPH: '{graph_name}'")
+            run_graph._logged_messages.add(log_key)
+
+        print("DEBUG 10: After STARTING GRAPH log")
+        
+        # Initialize execution tracking (always active, may be minimal)
+        initial_state = StateAdapter.initialize_execution_tracker(initial_state, execution_config)
+        
+        # Use trace_graph context manager to conditionally enable tracing
+        with trace_graph(graph_name):
+            # Try to load a compiled graph first - may include bundled node registry
+            if graph_name:
+                graph_bundle = load_compiled_graph(graph_name, config_path)
             
-            if not graph_def:
-                raise ValueError(f"No graph found with name: {graph_name}")
+            if graph_bundle:
+                logger.debug(f"[RUN] Loaded compiled graph bundle: {graph_bundle}")
+                # If we loaded a bundle, extract the components
+                if isinstance(graph_bundle, dict) and "graph" in graph_bundle:
+                    # New format with bundled components
+                    graph = graph_bundle.get("graph")
+                    node_registry = graph_bundle.get("node_registry")
+                    version_hash = graph_bundle.get("version_hash")
+                    logger.debug(f"[RUN] Loaded bundled graph with version hash: {version_hash}")
+                else:
+                    # Old format with just the graph
+                    graph = graph_bundle
+                    logger.debug(f"[RUN] Loaded legacy compiled graph (no bundled registry)")
+
+            # If autocompile is enabled and we don't have a graph, compile and load, graph_name must be specified
+            if not graph and autocompile and graph_name:
+                graph_bundle = autocompile_and_load(graph_name, config_path)
+                if isinstance(graph_bundle, dict) and "graph" in graph_bundle:
+                    graph = graph_bundle.get("graph")
+                    node_registry = graph_bundle.get("node_registry")
+                    version_hash = graph_bundle.get("version_hash")
+                    logger.debug(f"[RUN] Autocompiled graph with version hash: {version_hash}")
+                else:
+                    raise ValueError(f"Failed to autocompile and load graph: {graph_name}")
+            
+            # If we still don't have a graph, need to load CSV and build graph
+            if not graph:
+                # Load the CSV file and parse graph definition only once
+                logger.debug(f"[RUN] Loading graph from CSV file: {csv_file}")
+                gb = GraphBuilder(csv_file)
+                graphs = gb.build()
+                if not graph_name: # Use the first graph in the CSV
+                    graph_name = list(graphs.keys())[0] if graphs else None
+                    if not graph_name:
+                        raise ValueError("No graphs found in CSV file")
+                    logger.debug(f"[RUN] Loaded first graph name from CSV: {graph_name}")
+        
+                graph_def = graphs.get(graph_name)
                 
-            # Build graph in memory, passing the already loaded graph definition
-            graph = build_graph_in_memory(graph_name, graph_def, config_path)
-            node_registry = build_node_registry(graph_def)
+                if not graph_def:
+                    raise ValueError(f"[RUN] No graph found with name: {graph_name}")
+                    
+                # Build graph in memory, passing the already loaded graph definition
+                graph = build_graph_in_memory(graph_name, graph_def, config_path)
+                node_registry = build_node_registry(graph_def)
+                    
+            # Populate orchestrator inputs if we have a node registry
+            if node_registry and graph_def:
+                initial_state = populate_orchestrator_inputs(initial_state, graph_def, node_registry)
+            
+            # Track overall execution time
+            start_time = time.time()
+            
+            try:
+                print(f"\n=== BEFORE INVOKING GRAPH: {graph_name or 'unnamed'} ===")
+                result = graph.invoke(initial_state)
+                print(f"\n=== AFTER INVOKING GRAPH: {graph_name or 'unnamed'} ===")
+                execution_time = time.time() - start_time
                 
-        # Populate orchestrator inputs if we have a node registry
-        if node_registry and graph_def:
-            initial_state = populate_orchestrator_inputs(initial_state, graph_def, node_registry)
-        
-        # Track overall execution time
-        start_time = time.time()
-        
-        try:
-            result = graph.invoke(initial_state)
-            execution_time = time.time() - start_time
-            
-            # Process execution results
-            tracker = StateAdapter.get_execution_tracker(result)
-            tracker.complete_execution()
-            summary = tracker.get_summary()
-            
-            # Store summary in result
-            result = StateAdapter.set_value(result, "__execution_summary", summary)
-            
-            # The graph_success field is already updated during execution
-            graph_success = summary["graph_success"]
-            # For backwards compatibility
-            result = StateAdapter.set_value(result, "__policy_success", graph_success)
-            
-            # Log result with different detail based on tracking mode
-            if tracking_enabled:
-                logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s")
-                logger.info(f"  Policy success: {graph_success}, Raw success: {summary['overall_success']}")
-            else:
-                logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s, Success: {graph_success}")
+                # Process execution results
+                tracker = StateAdapter.get_execution_tracker(result)
+                tracker.complete_execution()
+                summary = tracker.get_summary()
+                
+                # Store summary in result
+                result = StateAdapter.set_value(result, "__execution_summary", summary)
+                
+                # The graph_success field is already updated during execution
+                graph_success = summary["graph_success"]
+                # For backwards compatibility
+                result = StateAdapter.set_value(result, "__policy_success", graph_success)
+                
+                # Log result with different detail based on tracking mode
+                if tracking_enabled:
+                    logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s")
+                    logger.info(f"  Policy success: {graph_success}, Raw success: {summary['overall_success']}")
+                else:
+                    logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s, Success: {graph_success}")
 
-            # pretty print the result
-            logger.debug(json.dumps(create_serializable_result(result), indent=4))    
-
-            return result
-        except Exception as e:
-            execution_time = time.time() - start_time
-            logger.error(f"❌ GRAPH EXECUTION FAILED: '{graph_name}' after {execution_time:.2f}s")
-            logger.error(f"[RUN] Error: {str(e)}")
-            raise
+                # pretty print the result
+                logger.debug(json.dumps(create_serializable_result(result), indent=4))    
+                print("\n=== EXITING run_graph ===")
+                print(f"Parameters: graph_name={graph_name}, csv_path={csv_path}")
+                print("=====\n")
+                return result
+            except Exception as e:
+                execution_time = time.time() - start_time
+                logger.error(f"❌ GRAPH EXECUTION FAILED: '{graph_name}' after {execution_time:.2f}s")
+                logger.error(f"[RUN] Error: {str(e)}")
+                raise
+    finally:
+        with _GRAPH_EXECUTION_LOCK:
+            _CURRENT_EXECUTIONS.remove(execution_key)
 
 def get_graph(autocompile, config_path, csv_path, graph_name):
     # Try to load a compiled graph first

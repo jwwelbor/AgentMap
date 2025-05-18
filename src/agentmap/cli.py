@@ -257,5 +257,31 @@ def list_agents():
     else:
         typer.echo("\nStorage Agents: [Not Available] - Install with: pip install agentmap[storage]")
 
+@app.command()
+def inspect_logging():
+    """Inspect the current logging configuration."""
+    from agentmap.logging.logger import inspect_loggers
+    
+    loggers_info = inspect_loggers()
+    typer.echo("Current Logger Configuration:")
+    typer.echo("----------------------------")
+    
+    # Print root logger first
+    if "root" in loggers_info:
+        root_info = loggers_info.pop("root")
+        typer.echo("ROOT LOGGER:")
+        typer.echo(f"  Level: {root_info['level']}")
+        typer.echo(f"  Handlers: {', '.join(root_info['handlers'])}")
+        typer.echo(f"  Disabled: {root_info['disabled']}")
+        typer.echo(f"  Propagate: {root_info['propagate']}")
+    
+    # Then print all other loggers
+    for name, info in sorted(loggers_info.items()):
+        typer.echo(f"\n{name}:")
+        typer.echo(f"  Level: {info['level']}")
+        typer.echo(f"  Handlers: {', '.join(info['handlers'])}")
+        typer.echo(f"  Disabled: {info['disabled']}")
+        typer.echo(f"  Propagate: {info['propagate']}")
+
 if __name__ == "__main__":
     app()
