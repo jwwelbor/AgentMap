@@ -19,9 +19,7 @@ from agentmap.graph.builder import GraphBuilder
 from agentmap.logging import get_logger
 from agentmap.graph.node_registry import build_node_registry, populate_orchestrator_inputs
 from agentmap.state.adapter import StateAdapter
-from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
 from agentmap.agents import get_agent_class
-from agentmap.logging.tracking.policy import evaluate_success_policy
 
 logger = get_logger(__name__)
 _GRAPH_EXECUTION_LOCK = threading.RLock()
@@ -177,6 +175,7 @@ def add_dynamic_routing(builder: StateGraph, graph_def: Dict[str, Any]) -> None:
         builder.add_conditional_edges(node_name, dynamic_router)
 
 
+
 def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]] = None):
     """
     Get an agent class by type, with fallback to custom agents.
@@ -193,19 +192,10 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
     """
     logger.debug(f"[AgentInit] resolving agent class for type '{agent_type}'")
     
+    from agentmap.features_registry import features
+    from agentmap.agents.dependency_checker import get_llm_installation_guide
+    
     agent_type_lower = agent_type.lower() if agent_type else ""
-    
-    # Check LLM agent types
-    if not HAS_LLM_AGENTS and agent_type_lower in ("openai", "anthropic", "google", "gpt", "claude", "gemini", "llm"):
-        raise ImportError(f"LLM agent '{agent_type}' requested but LLM dependencies are not installed. "
-                         "Install with: pip install agentmap[llm]")
-    
-    # Check storage agent types
-    if not HAS_STORAGE_AGENTS and agent_type_lower in ("csv_reader", "csv_writer", "json_reader", "json_writer", 
-                                                      "file_reader", "file_writer", "vector_reader", "vector_writer"):
-        raise ImportError(f"Storage agent '{agent_type}' requested but storage dependencies are not installed. "
-                         "Install with: pip install agentmap[storage]")
-
     
     # Handle empty or None agent_type - default to DefaultAgent
     if not agent_type or agent_type_lower == "none":
@@ -213,6 +203,42 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
         from agentmap.agents.builtins.default_agent import DefaultAgent
         return DefaultAgent
     
+    # Check LLM agent types
+    if agent_type_lower in ("openai", "anthropic", "google", "gpt", "claude", "gemini", "llm"):
+        llm_enabled = features.is_feature_enabled("llm")
+        
+        if not llm_enabled:
+            missing = features.get_missing_dependencies().get("llm", [])
+            missing_str = ", ".join(missing) if missing else "required dependencies"
+            raise ImportError(f"LLM agent '{agent_type}' requested but LLM dependencies are not installed. "
+                             f"Missing: {missing_str}. Install with: pip install agentmap[llm]")
+        
+        # Check specific provider
+        if agent_type_lower != "llm":
+            provider_available = features.is_provider_available("llm", agent_type_lower)
+            
+            if not provider_available:
+                provider_name = agent_type_lower
+                if provider_name in ("gpt", "claude", "gemini"):
+                    provider_name = {"gpt": "openai", "claude": "anthropic", "gemini": "google"}[provider_name]
+                
+                missing = features.get_missing_dependencies().get(provider_name, [])
+                guide = get_llm_installation_guide(provider_name)
+                
+                raise ImportError(f"LLM agent '{agent_type}' requested but provider is not available. "
+                                f"Missing: {', '.join(missing) if missing else 'required dependencies'}. "
+                                f"Install with: {guide}")
+    
+    # Check storage agent types
+    if agent_type_lower in ("csv_reader", "csv_writer", "json_reader", "json_writer", 
+                            "file_reader", "file_writer", "vector_reader", "vector_writer"):
+        storage_enabled = features.is_feature_enabled("storage")
+        
+        if not storage_enabled:
+            raise ImportError(f"Storage agent '{agent_type}' requested but storage dependencies are not installed. "
+                             "Install with: pip install agentmap[storage]")
+    
+    # Get agent class from registry
     agent_class = get_agent_class(agent_type)
     if agent_class:
         logger.debug(f"[AgentInit] Using built-in agent class: {agent_class.__name__}")
@@ -240,6 +266,7 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
         error_message = f"[AgentInit] Failed to import custom agent '{agent_type}': {e}"
         logger.error(error_message)
         raise AgentInitializationError(error_message)
+    
 
 def run_graph(
     graph_name: Optional[str] = None, 

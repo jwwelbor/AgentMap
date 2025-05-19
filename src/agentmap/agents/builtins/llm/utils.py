@@ -12,17 +12,27 @@ logger = get_logger(__name__, False)
 # Flag to indicate if LangChain is available
 try:
     import langchain
-    from langchain.memory import (
-        ConversationBufferMemory,
-        ConversationBufferWindowMemory,
-        ConversationSummaryMemory,
-        ConversationTokenBufferMemory
-    )
-    from langchain.schema import HumanMessage, AIMessage, SystemMessage
+    # Try to use new imports first
+    try:
+        from langchain_community.memory import (
+            ConversationBufferMemory,
+            ConversationBufferWindowMemory,
+            ConversationSummaryMemory,
+            ConversationTokenBufferMemory
+        )
+        from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+    except ImportError:
+        # Fall back to legacy imports
+        from langchain.memory import (
+            ConversationBufferMemory,
+            ConversationBufferWindowMemory,
+            ConversationSummaryMemory,
+            ConversationTokenBufferMemory
+        )
+        from langchain.schema import HumanMessage, AIMessage, SystemMessage
 except ImportError:
     logger.warning("LangChain not installed. Memory functionality will be limited.")
     raise ImportError("LangChain is not installed. Please install it to use this module.")
-
 
 def serialize_memory(memory: Any) -> Optional[Dict[str, Any]]:
     """
