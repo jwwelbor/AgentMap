@@ -27,36 +27,43 @@ class OpenAIAgent(LLMAgent):
             raise ValueError("OpenAI API key not found in config or environment")
         
         try:
-            # Set up the API client
+            # Set up the API client using the new API format
             import openai
-            openai.api_key = self.api_key
+            client = openai.OpenAI(api_key=self.api_key)
             
-            # Make the API call
-            response = openai.ChatCompletion.create(
+            # Make the API call with the new format
+            response = client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": formatted_prompt}],
                 temperature=self.temperature
             )
             
-            return response['choices'][0]['message']['content'].strip()
+            return response.choices[0].message.content.strip()
             
         except ImportError:
-            raise ImportError("OpenAI package not installed. Install with 'pip install openai'")
+            raise ImportError("OpenAI package not installed. Install with 'pip install openai>=1.0.0'")
         except Exception as e:
             raise RuntimeError(f"OpenAI API error: {str(e)}")
     
     def _create_langchain_client(self) -> Any:
-        """Create a LangChain ChatOpenAI client."""
+        """Create a LangChain ChatOpenAI client with the updated imports."""
         if not self.api_key:
             return None
             
         try:
-            from langchain.chat_models import ChatOpenAI
-            
+            # Try to use the new langchain-openai package
+            try:
+                from langchain_openai import ChatOpenAI
+            except ImportError:
+                # Fall back to legacy imports with warning
+                from langchain.chat_models import ChatOpenAI
+                self.log_warning("Using deprecated LangChain import path. Consider upgrading to langchain-openai.")
+                
             return ChatOpenAI(
                 model_name=self.model,
                 temperature=self.temperature,
                 openai_api_key=self.api_key
             )
-        except (ImportError, Exception):
+        except (ImportError, Exception) as e:
+            self.log_warning(f"Could not create LangChain client: {str(e)}")
             return None

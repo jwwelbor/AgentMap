@@ -31,31 +31,67 @@ register_agent("success", SuccessAgent)
 register_agent("input", InputAgent)
 register_agent("graph", GraphAgent)
 
+# agentmap/agents/__init__.py - Modified section for LLM agent imports
+
 # ----- LLM AGENTS (requires 'llm' extras) -----
+from agentmap.features_registry import features
+from agentmap.agents.dependency_checker import check_llm_dependencies, get_llm_installation_guide
+
 try:
     # Import all LLM agents at once
     from agentmap.agents.builtins.llm.llm_agent import LLMAgent
-    from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
-    from agentmap.agents.builtins.llm.anthropic_agent import AnthropicAgent
-    from agentmap.agents.builtins.llm.google_agent import GoogleAgent
     
-    # Register all LLM agents
+    # Check and register each provider
+    # OpenAI
+    try:
+        from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
+        register_agent("openai", OpenAIAgent)
+        register_agent("gpt", OpenAIAgent)  # Add alias for convenience
+        features.set_provider_available("llm", "openai", True)
+        _logger.debug("OpenAI agent registered successfully")
+    except ImportError as e:
+        _logger.debug(f"OpenAI agent not available: {e}")
+        _, missing = check_llm_dependencies("openai")
+        features.record_missing_dependencies("openai", missing)
+    
+    # Anthropic
+    try:
+        from agentmap.agents.builtins.llm.anthropic_agent import AnthropicAgent
+        register_agent("anthropic", AnthropicAgent)
+        register_agent("claude", AnthropicAgent)  # Add alias for convenience
+        features.set_provider_available("llm", "anthropic", True)
+        _logger.debug("Anthropic agent registered successfully")
+    except ImportError as e:
+        _logger.debug(f"Anthropic agent not available: {e}")
+        _, missing = check_llm_dependencies("anthropic")
+        features.record_missing_dependencies("anthropic", missing)
+    
+    # Google
+    try:
+        from agentmap.agents.builtins.llm.google_agent import GoogleAgent
+        register_agent("google", GoogleAgent)
+        register_agent("gemini", GoogleAgent)  # Add alias for convenience
+        features.set_provider_available("llm", "google", True)
+        _logger.debug("Google agent registered successfully")
+    except ImportError as e:
+        _logger.debug(f"Google agent not available: {e}")
+        _, missing = check_llm_dependencies("google")
+        features.record_missing_dependencies("google", missing)
+    
+    # Register the base LLM agent
     register_agent("llm", LLMAgent)
-    register_agent("openai", OpenAIAgent)
-    register_agent("gpt", OpenAIAgent)  # Add alias for convenience
-    register_agent("anthropic", AnthropicAgent)
-    register_agent("claude", AnthropicAgent)  # Add alias for convenience
-    register_agent("google", GoogleAgent)
-    register_agent("gemini", GoogleAgent)  # Add alias for convenience
     
-    # Log successful loading
-    _logger.info("LLM agents registered successfully")
-    
-    # Flag indicating LLM agents are available
-    enable_llm_agents()
+    # Enable LLM agents if at least one provider is available
+    if features.get_available_providers("llm"):
+        enable_llm_agents()
+        _logger.info("LLM agents registered successfully")
+    else:
+        _logger.warning("No LLM providers available.")
     
 except ImportError as e:
     _logger.debug(f"LLM agents not available: {e}. Install with: pip install agentmap[llm]")
+    _, missing = check_llm_dependencies()
+    features.record_missing_dependencies("llm", missing)
 
 # ----- STORAGE AGENTS (requires 'storage' extras) -----
 try:
@@ -64,7 +100,7 @@ try:
         CSVReaderAgent, CSVWriterAgent,
         JSONDocumentReaderAgent, JSONDocumentWriterAgent,
         FileReaderAgent, FileWriterAgent,
-        VectorStoreReaderAgent, VectorStoreWriterAgent,
+        VectorReaderAgent, VectorWriterAgent,
         DocumentReaderAgent, DocumentWriterAgent
     )
     
@@ -75,8 +111,8 @@ try:
     register_agent("json_writer", JSONDocumentWriterAgent)
     register_agent("file_reader", FileReaderAgent)
     register_agent("file_writer", FileWriterAgent)
-    register_agent("vector_reader", VectorStoreReaderAgent)
-    register_agent("vector_writer", VectorStoreWriterAgent)
+    register_agent("vector_reader", VectorReaderAgent)
+    register_agent("vector_writer", VectorWriterAgent)
     
     # Log successful loading
     _logger.info("Storage agents registered successfully")
