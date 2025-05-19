@@ -8,12 +8,6 @@ import os
 from typing import Any, Dict, List, Optional, Union
 
 from agentmap.agents.builtins.llm.llm_agent import LLMAgent
-from agentmap.state.adapter import StateAdapter
-from agentmap.config import get_llm_config
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__, False)
-
 
 """
 Google Gemini LLM agent implementation.
@@ -24,9 +18,6 @@ This module provides an agent for interacting with Google's Gemini language mode
 from typing import Any, Optional, Dict
 
 from agentmap.agents.builtins.llm.llm_agent import LLMAgent
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class GoogleAgent(LLMAgent):
@@ -80,15 +71,22 @@ class GoogleAgent(LLMAgent):
             )
             
             # Generate content
-            response = model.generate_content(formatted_prompt)
-            
-            # Extract the response text
-            if hasattr(response, 'text'):
-                return response.text.strip()
-            else:
-                # Handle alternative response formats
-                return str(response).strip()
+            try:
+                response = model.generate_content(formatted_prompt)
                 
+                # Extract the response text
+                if hasattr(response, 'text'):
+                    return response.text.strip()
+                elif hasattr(response, 'parts') and len(response.parts) > 0:
+                    return response.parts[0].text.strip()
+                else:
+                    # Handle alternative response formats
+                    return str(response).strip()
+            except AttributeError:
+                # Older API version might use different methods
+                response = model.generate_text(formatted_prompt)
+                return response.strip()
+                    
         except ImportError:
             raise ImportError("Google GenerativeAI package not installed. Install with 'pip install google-generativeai'")
         except Exception as e:
@@ -105,17 +103,8 @@ class GoogleAgent(LLMAgent):
             return None
             
         try:
-            # Try newer LangChain version first
+            # Try langchain-google-genai first
             try:
-                from langchain.chat_models import ChatGoogleGenerativeAI
-                
-                return ChatGoogleGenerativeAI(
-                    model=self.model,
-                    temperature=self.temperature,
-                    google_api_key=self.api_key
-                )
-            except (ImportError, AttributeError):
-                # Fallback to older/community package
                 from langchain_google_genai import ChatGoogleGenerativeAI
                 
                 return ChatGoogleGenerativeAI(
@@ -123,6 +112,22 @@ class GoogleAgent(LLMAgent):
                     temperature=self.temperature,
                     google_api_key=self.api_key
                 )
+            except ImportError:
+                # Try community package
+                try:
+                    from langchain_community.chat_models import ChatGoogleGenerativeAI
+                    self.log_warning("Using community LangChain import. Consider upgrading to langchain-google-genai.")
+                    
+                    return ChatGoogleGenerativeAI(
+                        model=self.model,
+                        temperature=self.temperature,
+                        google_api_key=self.api_key
+                    )
+                except (ImportError, AttributeError):
+                    # Legacy fallback
+                    self.log_warning("Could not create LangChain Google client. "
+                                "Install with 'pip install langchain-google-genai'")
+                    return None
         except Exception as e:
-            self.log_debug(f"Could not create LangChain ChatGoogleGenerativeAI client: {e}")
+            self.log_debug(f"Could not create LangChain Google client: {e}")
             return None
