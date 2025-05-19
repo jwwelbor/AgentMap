@@ -60,7 +60,7 @@ class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
             self._init_firebase_app(firebase_config)
             
         except Exception as e:
-            logger.error(f"Failed to initialize Firebase client: {str(e)}")
+            self.log_error(f"Failed to initialize Firebase client: {str(e)}")
             raise
     
     def _log_operation_start(self, collection: str, inputs: Dict[str, Any]) -> None:
@@ -72,7 +72,7 @@ class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
             inputs: Input dictionary
         """
         operation_type = self.__class__.__name__.replace("FirebaseDocument", "").replace("Agent", "").lower()
-        logger.debug(f"[{self.__class__.__name__}] Starting {operation_type} operation on Firebase collection {collection}")
+        self.log_debug(f"[{self.__class__.__name__}] Starting {operation_type} operation on Firebase collection {collection}")
     
     def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
         """
@@ -140,7 +140,7 @@ class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
         )
         
         if not default_project:
-            logger.warning("No default Firebase project specified in config")
+            self.log_warning("No default Firebase project specified in config")
         
         # Get auth credentials
         auth_config = firebase_config.get("auth", {})
@@ -151,7 +151,7 @@ class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
         try:
             # Check if app already exists
             self._app = get_app(app_name)
-            logger.debug(f"Using existing Firebase app: {app_name}")
+            self.log_debug(f"Using existing Firebase app: {app_name}")
         except ValueError:
             # Create new app
             self._app = initialize_app(
@@ -159,7 +159,7 @@ class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
                 name=app_name,
                 options={"projectId": default_project} if default_project else None
             )
-            logger.debug(f"Initialized new Firebase app: {app_name}")
+            self.log_debug(f"Initialized new Firebase app: {app_name}")
         
         # Store current project
         self._current_project = default_project
@@ -222,7 +222,7 @@ class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
             env_var = value[4:]
             env_value = os.environ.get(env_var, "")
             if not env_value:
-                logger.warning(f"Environment variable not found: {env_var}")
+                self.log_warning(f"Environment variable not found: {env_var}")
             return env_value
         
         return value
@@ -262,7 +262,7 @@ class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
             )
         
         # Default to using collection name directly
-        logger.warning(f"Collection '{collection}' not found in Firebase config, using directly")
+        self.log_warning(f"Collection '{collection}' not found in Firebase config, using directly")
         return collection, {}, "firestore"
     
     def _get_db_reference(self, collection: str) -> Tuple[Any, str, Dict[str, Any]]:
@@ -281,7 +281,7 @@ class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
         # Check for project override
         project_id = self._resolve_env_value(config.get("project_id", ""))
         if project_id and project_id != self._current_project:
-            logger.debug(f"Using project override: {project_id}")
+            self.log_debug(f"Using project override: {project_id}")
             # TODO: Handle project override with new Firebase app
         
         # Get appropriate database reference
@@ -307,7 +307,7 @@ class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
         parts = path.split("/")
         if len(parts) % 2 == 0:
             # Even number of parts means it ends with a document reference
-            logger.warning(f"Path '{path}' should be a collection path, not a document path")
+            self.log_warning(f"Path '{path}' should be a collection path, not a document path")
             # Make it a collection by adding a default subcollection
             path = f"{path}/items"
             parts.append("items")
@@ -369,6 +369,6 @@ class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
             if self._app:
                 app_name = self._app.name
                 delete_app(self._app)
-                logger.debug(f"Deleted Firebase app: {app_name}")
+                self.log_debug(f"Deleted Firebase app: {app_name}")
         except Exception:
             pass

@@ -92,12 +92,12 @@ def test_graph_assembler_success_failure_edge():
     # Test with success state
     result = graph.invoke({"input": "true"})
     output = result.get("output", [])
-    assert output == "DefaultAgent 'Success' executed with prompt: 'Test prompt'"
+    assert output == "[Success] DefaultAgent executed with prompt: 'Test prompt'"
         
     # Test with failure state
     result = graph.invoke({"input": "false"})
     output = result.get("output", [])
-    assert output == "DefaultAgent 'Failure' executed with prompt: 'Test prompt'"
+    assert output == "[Failure] DefaultAgent executed with prompt: 'Test prompt'"
      
 def test_graph_assembler_process_node_edges():
     """Test that the GraphAssembler can process all edge types for a node."""
@@ -139,10 +139,10 @@ def test_graph_assembler_process_node_edges():
     # Test the success path
     result = graph.invoke({"input": True})
     output = result.get("output", [])
-    assert output == "DefaultAgent 'Next' executed"
+    assert output == "[Next] DefaultAgent executed"
     
     # Test the failure path
     result = graph.invoke({"input": False})
     output = result.get("output", [])
-    assert output == "DefaultAgent 'Failure' executed"
+    assert output == "[Failure] DefaultAgent executed"
 

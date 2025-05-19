@@ -139,7 +139,7 @@ def initialize_firebase_app(
     try:
         # Check if app already exists
         app = get_app(app_name)
-        logger.debug(f"Using existing Firebase app: {app_name}")
+        self.log_debug(f"Using existing Firebase app: {app_name}")
     except ValueError:
         # Create new app
         app = initialize_app(
@@ -147,7 +147,7 @@ def initialize_firebase_app(
             name=app_name,
             options={"projectId": default_project} if default_project else None
         )
-        logger.debug(f"Initialized new Firebase app: {app_name}")
+        self.log_debug(f"Initialized new Firebase app: {app_name}")
     
     return app
 

@@ -77,7 +77,7 @@ packages = ["agentmap"]
 "agentmap.prompts.system" = ["**/*.yaml", "**/*.txt", "**/*.json"]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = ["src"]
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"

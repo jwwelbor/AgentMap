@@ -107,13 +107,13 @@ def log_operation(func: F) -> F:
     @functools.wraps(func)
     def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         class_name = self.__class__.__name__
-        logger.debug(f"[{class_name}] Starting {func.__name__}")
+        self.log_debug(f"[{class_name}] Starting {func.__name__}")
         try:
             result = func(self, *args, **kwargs)
-            logger.debug(f"[{class_name}] Completed {func.__name__}")
+            self.log_debug(f"[{class_name}] Completed {func.__name__}")
             return result
         except Exception as e:
-            logger.error(f"[{class_name}] Error in {func.__name__}: {str(e)}")
+            self.log_error(f"[{class_name}] Error in {func.__name__}: {str(e)}")
             raise
     return cast(F, wrapper)
 
@@ -227,7 +227,7 @@ class BaseStorageAgent(BaseAgent):
         if exception is not None:
             error_msg += f" - {str(exception)}"
             
-        logger.error(f"[{self.__class__.__name__}] {error_msg}")
+        self.log_error(f"[{self.__class__.__name__}] {error_msg}")
         
         if not raise_error:
             return
@@ -292,7 +292,7 @@ class BaseStorageAgent(BaseAgent):
             collection: Collection identifier
             inputs: Input dictionary
         """
-        logger.debug(f"[{self.__class__.__name__}] Starting operation on {collection}")
+        self.log_debug(f"[{self.__class__.__name__}] Starting operation on {collection}")
     
     def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
         """
@@ -356,7 +356,7 @@ class BaseStorageAgent(BaseAgent):
             DocumentResult with error information
         """
         error_msg = f"Error processing {collection}: {str(error)}"
-        logger.error(f"[{self.__class__.__name__}] {error_msg}")
+        self.log_error(f"[{self.__class__.__name__}] {error_msg}")
         
         # Create error result
         return DocumentResult(

@@ -25,7 +25,7 @@ def pytest_configure(config):
 @pytest.fixture
 def example_csv_path():
     """Path to an example CSV file that exists."""
-    path = Path("examples/LinearGraph.csv")
+    path = Path("../examples/LinearGraph.csv")
     assert path.exists(), f"Example CSV not found: {path}"
     return path
 

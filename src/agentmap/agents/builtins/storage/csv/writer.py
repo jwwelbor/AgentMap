@@ -38,7 +38,7 @@ class CSVWriterAgent(CSVAgent, WriterOperationsMixin):
         Returns:
             Write operation result
         """
-        logger.info(f"Writing to {collection}")
+        self.log_info(f"Writing to {collection}")
         
         # Get the data to write
         data = inputs.get("data")
@@ -54,7 +54,7 @@ class CSVWriterAgent(CSVAgent, WriterOperationsMixin):
             try:
                 mode = WriteMode.from_string(mode_str)
             except ValueError:
-                logger.warning(f"Invalid mode '{mode_str}', using 'write' mode")
+                self.log_warning(f"Invalid mode '{mode_str}', using 'write' mode")
                 mode = WriteMode.WRITE
             
             # Handle different write modes

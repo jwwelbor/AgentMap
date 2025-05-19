@@ -1,10 +1,8 @@
 # agentmap/agents/builtins/default_agent.py
-from sympy import false
-
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.logging import get_logger
 import uuid
-logger = get_logger(__name__, propagate = false)
+logger = get_logger(__name__, propagate = False)
 from typing import Any, Dict
 
 
@@ -33,7 +31,7 @@ class DefaultAgent(BaseAgent):
             base_message = f"{base_message} with prompt: '{self.prompt}'"
 
         # Log with process ID
-        logger.info(f"[{self.name}] [{process_id}] output: {base_message}")
+        self.log_info(f"[{self.name}] [{process_id}] output: {base_message}")
 
         print(f"DefaultAgent.process [{process_id}] COMPLETE")
 

@@ -6,7 +6,7 @@ This module provides an agent for interacting with Anthropic's Claude language m
 
 from agentmap.logging import get_logger
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, False)
 
 
 """
@@ -114,5 +114,5 @@ class AnthropicAgent(LLMAgent):
                 anthropic_api_key=self.api_key
             )
         except Exception as e:
-            logger.debug(f"Could not create LangChain ChatAnthropic client: {e}")
+            self.log_debug(f"Could not create LangChain ChatAnthropic client: {e}")
             return None

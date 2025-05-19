@@ -5,7 +5,7 @@ from agentmap.agents.base_agent import BaseAgent
 from agentmap.logging import get_logger
 from agentmap.state.adapter import StateAdapter
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, False)
 
 class FailureAgent(BaseAgent):
     """
@@ -36,10 +36,10 @@ class FailureAgent(BaseAgent):
             message += f" with prompt: '{self.prompt}'"
 
         # Log the execution with additional details for debugging
-        logger.info(f"[FailureAgent] {self.name} executed with success")
-        logger.debug(f"[FailureAgent] Full output: {message}")
-        logger.debug(f"[FailureAgent] Input fields: {self.input_fields}")
-        logger.debug(f"[FailureAgent] Output field: {self.output_field}")
+        self.log_info(f"[FailureAgent] {self.name} executed with success")
+        self.log_debug(f"[FailureAgent] Full output: {message}")
+        self.log_debug(f"[FailureAgent] Input fields: {self.input_fields}")
+        self.log_debug(f"[FailureAgent] Output field: {self.output_field}")
             
         return message
     

@@ -92,7 +92,7 @@ class JSONDocumentWriterAgent(DocumentWriterAgent, JSONDocumentAgent):
                 )
         except Exception as e:
             # Handle any unexpected errors
-            logger.error(f"Error in {self.__class__.__name__}: {str(e)}")
+            self.log_error(f"Error in {self.__class__.__name__}: {str(e)}")
             return DocumentResult(
                 success=False,
                 mode=str(mode),
@@ -119,7 +119,7 @@ class JSONDocumentWriterAgent(DocumentWriterAgent, JSONDocumentAgent):
         # Add JSON-specific validation if needed
         collection = self.get_collection(inputs)
         if not collection.lower().endswith('.json'):
-            logger.warning(f"Collection path does not end with .json: {collection}")
+            self.log_warning(f"Collection path does not end with .json: {collection}")
     
     def _handle_operation_error(
         self, 

@@ -175,7 +175,7 @@ class BlobStorageConnector(ABC):
             env_var = value[4:]
             env_value = os.environ.get(env_var, "")
             if not env_value:
-                logger.warning(f"Environment variable not found: {env_var}")
+                self.log_warning(f"Environment variable not found: {env_var}")
             return env_value
 
         return value
@@ -216,7 +216,7 @@ class BlobStorageConnector(ABC):
         
         # Handle different error types
         error_msg = f"Error {operation} {resource_type} at {resource}: {str(error)}"
-        logger.error(f"[{self.__class__.__name__}] {error_msg}")
+        self.log_error(f"[{self.__class__.__name__}] {error_msg}")
         
         if not raise_error:
             return {
