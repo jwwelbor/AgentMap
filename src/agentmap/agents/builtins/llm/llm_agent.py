@@ -2,14 +2,12 @@
 Base LLM Agent with unified configuration and handling for all providers.
 """
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.config import get_llm_config
-from agentmap.logging import get_logger
-from agentmap.state.adapter import StateAdapter
 
-logger = get_logger(__name__, False)
+from agentmap.state.adapter import StateAdapter
 
 class LLMAgent(BaseAgent):
     """
@@ -173,7 +171,23 @@ class LLMAgent(BaseAgent):
             return None
             
         try:
-            from langchain.memory import ConversationBufferMemory
+            # Try the newer imports first
+            try:
+                from langchain_community.memory import (
+                    ConversationBufferMemory,
+                    ConversationBufferWindowMemory,
+                    ConversationSummaryMemory,
+                    ConversationTokenBufferMemory
+                )
+            except ImportError:
+                # Fallback to legacy imports
+                from langchain.memory import (
+                    ConversationBufferMemory,
+                    ConversationBufferWindowMemory,
+                    ConversationSummaryMemory,
+                    ConversationTokenBufferMemory
+                )
+                self.log_warning("Using deprecated LangChain memory imports. Consider upgrading to langchain-community.")
             
             # Get memory type with fallback to buffer
             memory_type = memory_config.get("type", "buffer")
@@ -184,7 +198,6 @@ class LLMAgent(BaseAgent):
                     memory_key="history"
                 )
             elif memory_type == "buffer_window":
-                from langchain.memory import ConversationBufferWindowMemory
                 k = memory_config.get("k", 5)
                 return ConversationBufferWindowMemory(
                     k=k,
@@ -192,13 +205,11 @@ class LLMAgent(BaseAgent):
                     memory_key="history"
                 )
             elif memory_type == "summary":
-                from langchain.memory import ConversationSummaryMemory
                 return ConversationSummaryMemory(
                     return_messages=True,
                     memory_key="history"
                 )
             elif memory_type == "token_buffer":
-                from langchain.memory import ConversationTokenBufferMemory
                 max_token_limit = memory_config.get("max_token_limit", 2000)
                 return ConversationTokenBufferMemory(
                     max_token_limit=max_token_limit,
@@ -381,56 +392,32 @@ class LLMAgent(BaseAgent):
                 "last_action_success": False
             }
 
-    # def run(self, state: Any) -> Any:
-    #     """
-    #     Run the agent on the current state.
+    def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
+        """
+        Post-processing hook to handle memory in output.
         
-    #     Args:
-    #         state: Current state object
+        Args:
+            state: Current state
+            output: Output from process method
             
-    #     Returns:
-    #         Updated state with output and success flag
-    #     """
-    #     # Extract inputs from state
-    #     inputs = self.state_manager.get_inputs(state)
+        Returns:
+            Tuple of (updated_state, updated_output)
+        """
         
-    #     try:
-    #         # Process inputs
-    #         result = self.process(inputs)
+        # Handle case where output includes memory
+        if isinstance(output, dict) and self.memory_key in output:
+            memory = output.pop(self.memory_key, None)
             
-    #         # Process the result based on type
-    #         if isinstance(result, dict) and "error" in result:
-    #             # Handle error case
-    #             error_msg = result.get("error", "Unknown error")
-    #             state = self.state_manager.set_output(state, error_msg, success=False)
-    #             return state
-                
-    #         elif isinstance(result, dict):
-    #             # Handle dictionary result (with memory or structured data)
-    #             memory = result.pop(self.memory_key, None)
-                
-    #             # Set output
-    #             if self.output_field and self.output_field in result:
-    #                 state = self.state_manager.set_output(state, result[self.output_field], success=True)
-    #             else:
-    #                 state = self.state_manager.set_output(state, result, success=True)
-                
-    #             # Set memory if present
-    #             if memory:
-    #                 state = StateAdapter.set_value(state, self.memory_key, memory)
-                
-    #             return state
-                
-    #         else:
-    #             # Handle simple string result
-    #             state = self.state_manager.set_output(state, result, success=True)
-    #             return state
-                
-    #     except Exception as e:
-    #         # Handle any unexpected errors
-    #         error_msg = f"Error in {self.name}: {str(e)}"
-    #         self.log_error(error_msg)
+            # Set memory in state if present
+            if memory:
+                state = StateAdapter.set_value(state, self.memory_key, memory)
             
-    #         # Set error in state
-    #         error_state = StateAdapter.set_value(state, "error", error_msg)
-    #         return self.state_manager.set_output(error_state, None, success=False)
+            # Get the actual output value
+            if self.output_field and self.output_field in output:
+                output = output[self.output_field]
+        
+        # Set output in state if output field is specified
+        if self.output_field:
+            state = StateAdapter.set_value(state, self.output_field, output)
+        
+        return state, output
