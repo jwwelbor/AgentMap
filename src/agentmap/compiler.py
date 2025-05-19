@@ -394,10 +394,28 @@ def compile_graph(
         ValueError: If graph not found
         FileNotFoundError: If function file not found
     """
+    # Import node_registry here to avoid circular imports
+    from agentmap.graph.node_registry import build_node_registry
+    
     logger.info(f"[Compiler] Compiling graph: {graph_name}")
     
     # Get the graph definition
-    graph_def = get_graph_definition(graph_name, csv_path, config_path)
+    csv_file = csv_path or get_csv_path(config_path)
+    
+    # Read the CSV content for versioning
+    with open(csv_file, 'r') as f:
+        csv_content = f.read()
+    
+    # Load graph definition
+    gb = GraphBuilder(csv_file)
+    graphs = gb.build()
+    graph_def = graphs.get(graph_name)
+    
+    if not graph_def:
+        raise ValueError(f"No graph found with name: {graph_name}")
+    
+    # Build node registry from the same graph definition
+    node_registry = build_node_registry(graph_def)
     
     # Use configured output directory if not specified
     output_dir = output_dir or get_compiled_graphs_path(config_path)
@@ -409,12 +427,15 @@ def compile_graph(
     # Compile the graph
     graph = builder.compile()
     
-    # Save .pkl
-    output_path = Path(output_dir) / f"{graph_name}.pkl"
-    with open(output_path, "wb") as f:
-        pickle.dump(graph, f)
+    # Create a graph bundle with graph, registry, and version info
+    from agentmap.graph.bundle import GraphBundle
+    bundle = GraphBundle(graph, node_registry, csv_content)
     
-    # Save .src (flattened LangGraph build)
+    # Save the bundle to .pkl
+    output_path = Path(output_dir) / f"{graph_name}.pkl"
+    bundle.save(output_path)
+    
+    # Save .src (flattened LangGraph build) - still useful for visibility
     src_path = Path(output_dir) / f"{graph_name}.src"
     with open(src_path, "w") as f:
         f.write("\n".join(src_lines))

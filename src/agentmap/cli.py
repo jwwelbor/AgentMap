@@ -86,7 +86,7 @@ def compile_cmd(
         )
 @app.command()
 def run(
-    graph: str = typer.Option(..., "--graph", "-g", help="Graph name to run"),
+    graph: str = typer.Option(None, "--graph", "-g", help="Graph name to run (defaults to first graph in CSV)"),
     csv: str = typer.Option(None, "--csv", help="CSV path override"),
     state: str = typer.Option("{}", "--state", "-s", help="Initial state as JSON string"),  
     autocompile: bool = typer.Option(None, "--autocompile", "-a", help="Autocompile graph if missing"),
@@ -100,7 +100,7 @@ def run(
         raise typer.Exit(code=1)
 
     output = run_graph(
-        graph_name=graph, 
+        graph_name=graph,  # Can be None now
         initial_state=data, 
         csv_path=csv, 
         autocompile_override=autocompile,

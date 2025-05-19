@@ -1,20 +1,39 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
+from typing import Dict, Any, Optional
 
+from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
 from agentmap.runner import run_graph
 
-app = FastAPI()
+app = FastAPI(title="AgentMap Graph API")
 
-class GraphRequest(BaseModel):
-    graph: str
-    state: dict = {} 
+# Optional CORS for browser-based tools
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class GraphRunRequest(BaseModel):
+    """Request model for running a graph."""
+    graph: Optional[str] = None  # Optional graph name (defaults to first graph in CSV)
+    state: Dict[str, Any] = {}   # Initial state (defaults to empty dict)
+    autocompile: bool = False    # Whether to autocompile the graph if missing
 
 @app.post("/run")
-def run_graph_api(body: GraphRequest):
-    output = run_graph(graph_name=body.graph, initial_state=body.state, state=body.state)  
-    return {"output": output}
-
+def run_graph_api(request: GraphRunRequest):
+    """Run a graph with the provided parameters."""
+    try:
+        output = run_graph(
+            graph_name=request.graph, 
+            initial_state=request.state, 
+            autocompile_override=request.autocompile
+        ) 
+        return {"output": output}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/agents/available")
 def list_available_agents():
