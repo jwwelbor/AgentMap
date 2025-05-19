@@ -73,7 +73,7 @@ class AzureBlobConnector(BlobStorageConnector):
             # Create client
             if self.connection_string:
                 self._client = BlobServiceClient.from_connection_string(self.connection_string)
-                logger.debug("Azure Blob Storage client initialized using connection string")
+                self.log_debug("Azure Blob Storage client initialized using connection string")
             elif self.account_name and self.account_key:
                 # Connect using account key
                 endpoint = f"https://{self.account_name}.blob.core.windows.net"
@@ -81,14 +81,14 @@ class AzureBlobConnector(BlobStorageConnector):
                     account_url=endpoint,
                     credential=self.account_key
                 )
-                logger.debug("Azure Blob Storage client initialized using account key")
+                self.log_debug("Azure Blob Storage client initialized using account key")
             elif self.account_name and self.sas_token:
                 # Connect using SAS token
                 if not self.sas_token.startswith('?'):
                     self.sas_token = '?' + self.sas_token
                 endpoint = f"https://{self.account_name}.blob.core.windows.net{self.sas_token}"
                 self._client = BlobServiceClient(account_url=endpoint)
-                logger.debug("Azure Blob Storage client initialized using SAS token")
+                self.log_debug("Azure Blob Storage client initialized using SAS token")
             else:
                 raise StorageConnectionError(
                     "Azure Blob Storage connection not configured. "
@@ -97,7 +97,7 @@ class AzureBlobConnector(BlobStorageConnector):
                 )
 
         except Exception as e:
-            logger.error(f"Failed to initialize Azure Blob Storage client: {str(e)}")
+            self.log_error(f"Failed to initialize Azure Blob Storage client: {str(e)}")
             raise StorageConnectionError(f"Failed to initialize Azure Blob Storage client: {str(e)}")
 
     def read_blob(self, uri: str) -> bytes:
@@ -183,7 +183,7 @@ class AzureBlobConnector(BlobStorageConnector):
             try:
                 container_properties = container_client.get_container_properties()
             except Exception:
-                logger.info(f"Creating container: {container_name}")
+                self.log_info(f"Creating container: {container_name}")
                 try:
                     container_client.create_container()
                 except Exception as e:
@@ -234,7 +234,7 @@ class AzureBlobConnector(BlobStorageConnector):
             try:
                 container_properties = container_client.get_container_properties()
             except Exception:
-                logger.debug(f"Container not found: {container_name}")
+                self.log_debug(f"Container not found: {container_name}")
                 return False
 
             # Get blob client
@@ -245,11 +245,11 @@ class AzureBlobConnector(BlobStorageConnector):
                 blob_properties = blob_client.get_blob_properties()
                 return True
             except Exception:
-                logger.debug(f"Blob not found: {blob_path}")
+                self.log_debug(f"Blob not found: {blob_path}")
                 return False
 
         except Exception as e:
-            logger.warning(f"Error checking blob existence {uri}: {str(e)}")
+            self.log_warning(f"Error checking blob existence {uri}: {str(e)}")
             return False
 
     def _parse_azure_uri(self, uri: str) -> tuple[str, str]:

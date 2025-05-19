@@ -7,7 +7,7 @@ from agentmap.logging import get_logger
 from agentmap.state.adapter import StateAdapter
 from agentmap.agents import HAS_LLM_AGENTS
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, False)
 
 
 class OrchestratorAgent(BaseAgent):
@@ -46,12 +46,12 @@ class OrchestratorAgent(BaseAgent):
             self.node_filter = "all"  # Default to all nodes
 
         if not HAS_LLM_AGENTS and self.matching_strategy == "llm" or self.matching_strategy == "tiered":
-            logger.warning(f"OrchestratorAgent '{name}' requires LLM dependencies for optimal operation.")
-            logger.warning("Will use simple keyword matching only. Install with: pip install agentmap[llm]")
+            self.log_warning(f"OrchestratorAgent '{name}' requires LLM dependencies for optimal operation.")
+            self.log_warning("Will use simple keyword matching only. Install with: pip install agentmap[llm]")
             # Force algorithm matching if LLMs not available
             self.matching_strategy = "algorithm"
 
-        logger.debug(f"[OrchestratorAgent] Initialized with: matching_strategy={self.matching_strategy}, "
+        self.log_debug(f"[OrchestratorAgent] Initialized with: matching_strategy={self.matching_strategy}, "
                      f"node_filter={self.node_filter}, llm_type={self.llm_type}")
 
     def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
@@ -67,7 +67,7 @@ class OrchestratorAgent(BaseAgent):
         """
         # If we have a valid node name, set the routing directive
         if output:
-            logger.info(f"[OrchestratorAgent] Setting __next_node to '{output}'")
+            self.log_info(f"[OrchestratorAgent] Setting __next_node to '{output}'")
             state = StateAdapter.set_value(state, "__next_node", output)
             
         return state, output
@@ -84,7 +84,7 @@ class OrchestratorAgent(BaseAgent):
         """
         # Get input text for intent matching
         input_text = self._get_input_text(inputs)
-        logger.debug(f"[OrchestratorAgent] Input text: '{input_text}'")
+        self.log_debug(f"[OrchestratorAgent] Input text: '{input_text}'")
 
         # Get available nodes from input field
         available_nodes = self._get_nodes(inputs)
@@ -92,23 +92,23 @@ class OrchestratorAgent(BaseAgent):
         # Apply filtering based on context options
         filtered_nodes = self._apply_node_filter(available_nodes)
 
-        logger.debug(f"[OrchestratorAgent] Available nodes after filtering: {list(filtered_nodes.keys())}")
+        self.log_debug(f"[OrchestratorAgent] Available nodes after filtering: {list(filtered_nodes.keys())}")
 
         # If no nodes are available, return default target
         if not filtered_nodes:
-            logger.warning(
+            self.log_warning(
                 f"[OrchestratorAgent] No nodes available for matching after filtering. Using default: {self.default_target}")
             return self.default_target or ""
 
         # Handle case with a single node - no need for matching
         if len(filtered_nodes) == 1:
             node_name = next(iter(filtered_nodes.keys()))
-            logger.debug(f"[OrchestratorAgent] Only one node available, selecting '{node_name}' without matching")
+            self.log_debug(f"[OrchestratorAgent] Only one node available, selecting '{node_name}' without matching")
             return node_name
 
         # Select node based on matching strategy
         selected_node = self._match_intent(input_text, filtered_nodes)
-        logger.info(f"[OrchestratorAgent] Selected node: '{selected_node}'")
+        self.log_info(f"[OrchestratorAgent] Selected node: '{selected_node}'")
         return selected_node
 
     def _get_nodes(self, inputs: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -117,7 +117,7 @@ class OrchestratorAgent(BaseAgent):
             nodes = inputs[self.input_fields[0]]
             if isinstance(nodes, dict):
                 return nodes
-            logger.warning(f"[OrchestratorAgent] Input field '{self.input_fields[0]}' does not contain a dictionary")
+            self.log_warning(f"[OrchestratorAgent] Input field '{self.input_fields[0]}' does not contain a dictionary")
 
         # Fallback to looking for standard names
         for field_name in ["available_nodes", "nodes", "__node_registry"]:
@@ -125,7 +125,7 @@ class OrchestratorAgent(BaseAgent):
                 return inputs[field_name]
 
         # No nodes found
-        logger.warning(f"[OrchestratorAgent] No node dictionary found in inputs")
+        self.log_warning(f"[OrchestratorAgent] No node dictionary found in inputs")
         return {}
 
     def _get_input_text(self, inputs: Dict[str, Any]) -> str:
@@ -144,7 +144,7 @@ class OrchestratorAgent(BaseAgent):
                 return str(inputs[field])
 
         # Last resort: empty string
-        logger.warning(f"[OrchestratorAgent] No input text found in inputs")
+        self.log_warning(f"[OrchestratorAgent] No input text found in inputs")
         return ""
 
     def _apply_node_filter(self, nodes: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
@@ -153,7 +153,7 @@ class OrchestratorAgent(BaseAgent):
         if self.node_filter.count("|") > 0:
             node_names = [n.strip() for n in self.node_filter.split("|")]
             filtered = {name: info for name, info in nodes.items() if name in node_names}
-            logger.debug(f"[OrchestratorAgent] Filtered to specific nodes: {list(filtered.keys())}")
+            self.log_debug(f"[OrchestratorAgent] Filtered to specific nodes: {list(filtered.keys())}")
             return filtered
 
         # Handle nodeType option
@@ -163,11 +163,11 @@ class OrchestratorAgent(BaseAgent):
                 name: info for name, info in nodes.items()
                 if info.get("type", "").lower() == type_filter.lower()
             }
-            logger.debug(f"[OrchestratorAgent] Filtered to node type '{type_filter}': {list(filtered.keys())}")
+            self.log_debug(f"[OrchestratorAgent] Filtered to node type '{type_filter}': {list(filtered.keys())}")
             return filtered
 
         # Handle "all" option (default)
-        logger.debug(f"[OrchestratorAgent] Using all available nodes: {list(nodes.keys())}")
+        self.log_debug(f"[OrchestratorAgent] Using all available nodes: {list(nodes.keys())}")
         return nodes
 
     def _match_intent(self, input_text: str, available_nodes: Dict[str, Dict[str, Any]]) -> str:
@@ -175,7 +175,7 @@ class OrchestratorAgent(BaseAgent):
         if self.matching_strategy == "algorithm":
             # Skip LLM entirely, use only algorithmic matching
             node, confidence = self._simple_match(input_text, available_nodes)
-            logger.debug(
+            self.log_debug(
                 f"[OrchestratorAgent] Using algorithm matching, selected '{node}' with confidence {confidence:.2f}")
             return node
 
@@ -189,12 +189,12 @@ class OrchestratorAgent(BaseAgent):
 
             # If confidence is high enough, skip the LLM call
             if confidence >= self.confidence_threshold:
-                logger.info(
+                self.log_info(
                     f"[OrchestratorAgent] Algorithmic match confidence {confidence:.2f} exceeds threshold. Using '{node}'")
                 return node
 
             # Otherwise, use LLM for better matching
-            logger.info(
+            self.log_info(
                 f"[OrchestratorAgent] Algorithmic match confidence {confidence:.2f} below threshold. Using LLM.")
             return self._llm_match(input_text, available_nodes)
 
@@ -242,7 +242,7 @@ class OrchestratorAgent(BaseAgent):
         # Use appropriate LLM agent
         llm_agent_class = get_agent_class(self.llm_type)
         if not llm_agent_class:
-            logger.error(f"[OrchestratorAgent] LLM type '{self.llm_type}' not found in registry.")
+            self.log_error(f"[OrchestratorAgent] LLM type '{self.llm_type}' not found in registry.")
             return next(iter(available_nodes.keys()))
 
         # Create LLM agent with configured temperature
@@ -256,7 +256,7 @@ class OrchestratorAgent(BaseAgent):
         try:
             llm_response = llm_agent.process({})
         except Exception as e:
-            logger.error(f"[OrchestratorAgent] Error from LLM: {e}")
+            self.log_error(f"[OrchestratorAgent] Error from LLM: {e}")
             return next(iter(available_nodes.keys()))
         
         # Extract the selected node from the response
@@ -275,7 +275,7 @@ class OrchestratorAgent(BaseAgent):
                 return node_name
 
         # Last resort: if no node found, return the first available
-        logger.warning(f"[OrchestratorAgent] Couldn't extract node from LLM response. Using first available.")
+        self.log_warning(f"[OrchestratorAgent] Couldn't extract node from LLM response. Using first available.")
         return next(iter(available_nodes.keys()))
 
     @staticmethod

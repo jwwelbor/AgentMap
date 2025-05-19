@@ -72,7 +72,7 @@ class JSONCloudDocumentAgent(JSONDocumentAgent):
         scheme = uri.split("://")[0] if "://" in uri else "file"
         
         operation = "read" if hasattr(self, "_read_document") else "write"
-        logger.debug(f"[{self.__class__.__name__}] Starting cloud {operation} operation on {scheme}://{uri.split('://')[-1]}")
+        self.log_debug(f"[{self.__class__.__name__}] Starting cloud {operation} operation on {scheme}://{uri.split('://')[-1]}")
 
     def _resolve_collection_path(self, collection: str) -> str:
         """
@@ -122,7 +122,7 @@ class JSONCloudDocumentAgent(JSONDocumentAgent):
             self._connectors[scheme] = connector
             return connector
         except Exception as e:
-            logger.error(f"Failed to get connector for {uri}: {str(e)}")
+            self.log_error(f"Failed to get connector for {uri}: {str(e)}")
             raise StorageConnectionError(f"Failed to initialize storage connector: {str(e)}")
 
     def _read_json_file(self, collection: str) -> Any:
@@ -156,16 +156,16 @@ class JSONCloudDocumentAgent(JSONDocumentAgent):
             try:
                 return json.loads(json_bytes.decode('utf-8'))
             except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON in {uri}: {str(e)}")
+                self.log_error(f"Invalid JSON in {uri}: {str(e)}")
                 raise ValueError(f"Invalid JSON in {uri}: {str(e)}")
 
         except FileNotFoundError:
-            logger.error(f"File not found: {collection}")
+            self.log_error(f"File not found: {collection}")
             raise
         except Exception as e:
             if isinstance(e, (FileNotFoundError, ValueError)):
                 raise
-            logger.error(f"Error reading JSON from {collection}: {str(e)}")
+            self.log_error(f"Error reading JSON from {collection}: {str(e)}")
             raise StorageOperationError(f"Failed to read JSON from {collection}: {str(e)}")
 
     def _write_json_file(self, collection: str, data: Any, indent: int = 2) -> None:
@@ -194,7 +194,7 @@ class JSONCloudDocumentAgent(JSONDocumentAgent):
             try:
                 json_str = json.dumps(data, indent=indent)
             except (TypeError, ValueError) as e:
-                logger.error(f"Cannot serialize to JSON: {str(e)}")
+                self.log_error(f"Cannot serialize to JSON: {str(e)}")
                 raise ValueError(f"Cannot serialize to JSON: {str(e)}")
 
             # Write the blob
@@ -203,7 +203,7 @@ class JSONCloudDocumentAgent(JSONDocumentAgent):
         except Exception as e:
             if isinstance(e, ValueError):
                 raise
-            logger.error(f"Error writing JSON to {collection}: {str(e)}")
+            self.log_error(f"Error writing JSON to {collection}: {str(e)}")
             raise StorageOperationError(f"Failed to write JSON to {collection}: {str(e)}")
 
     def _ensure_document_exists(self, collection: str, document_id: str) -> bool:
@@ -277,7 +277,7 @@ class JSONCloudDocumentAgent(JSONDocumentAgent):
         else:
             error_msg = f"Error accessing {scheme} storage: {str(error)}"
             
-        logger.error(f"[{self.__class__.__name__}] {error_msg}")
+        self.log_error(f"[{self.__class__.__name__}] {error_msg}")
         
         return {
             "success": False,

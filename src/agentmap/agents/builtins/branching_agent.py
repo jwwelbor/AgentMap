@@ -5,7 +5,7 @@ from agentmap.agents.base_agent import BaseAgent
 from agentmap.logging import get_logger
 from agentmap.state.adapter import StateAdapter
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, False)
 
 class BranchingAgent(BaseAgent):
     """
@@ -24,7 +24,7 @@ class BranchingAgent(BaseAgent):
         Returns:
             String describing the branching decision
         """
-        logger.info(f"[BranchingAgent] {self.name} executed with inputs: {inputs} and prompt: {self.prompt}")
+        self.log_info(f"[BranchingAgent] {self.name} executed with inputs: {inputs} and prompt: {self.prompt}")
         
         # Check for success parameter in multiple possible input fields
         success = self._determine_success(inputs)
@@ -32,7 +32,7 @@ class BranchingAgent(BaseAgent):
         
         # Create descriptive message
         message = f"BRANCH: {self.name} will {action}"
-        logger.info(f"[BranchingAgent] {message}")
+        self.log_info(f"[BranchingAgent] {message}")
 
         # If we have any inputs, include them in the output
         if inputs:

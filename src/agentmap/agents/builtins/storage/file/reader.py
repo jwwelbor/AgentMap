@@ -59,7 +59,7 @@ class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandl
             collection: File path
             inputs: Input dictionary
         """
-        logger.debug(f"[{self.__class__.__name__}] Starting read operation on file: {collection}")
+        self.log_debug(f"[{self.__class__.__name__}] Starting read operation on file: {collection}")
     
     def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
         """
@@ -195,7 +195,7 @@ class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandl
             
             return documents
         except Exception as e:
-            logger.error(f"Error loading {file_path}: {str(e)}")
+            self.log_error(f"Error loading {file_path}: {str(e)}")
             raise ValueError(f"Error loading {file_path}: {str(e)}")
     
     def _get_loader(self, file_path: str) -> Any:
@@ -247,7 +247,7 @@ class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandl
                 return TextLoader(file_path)
         except ImportError as e:
             # Create a simple loader that returns a document with the file content
-            logger.warning(f"LangChain document loaders not available ({e}), using fallback loader")
+            self.log_warning(f"LangChain document loaders not available ({e}), using fallback loader")
             return self._create_fallback_loader(file_path)
         except Exception as e:
             raise ValueError(f"Error creating loader for {file_path}: {e}")

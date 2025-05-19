@@ -18,7 +18,7 @@ def test_default_agent_respects_output_field():
     
     # Verify that the output is in the correct field
     assert "custom_output" in result
-    assert "DefaultAgent 'TestAgent' executed with prompt: 'Test'" == result["custom_output"]
+    assert "[TestAgent] DefaultAgent executed with prompt: 'Test'" == result["custom_output"]
     assert "last_action_success" in result
     assert result["last_action_success"] is True
 
@@ -35,7 +35,7 @@ def test_branching_agent_respects_output_field():
     
     # Verify that the output is in the correct field
     assert "custom_output" in result
-    assert "BRANCH: TestAgent will SUCCEED based on inputs: [input=None] with prompt: 'Test'" == result["custom_output"]
+    assert "BRANCH: TestAgent will SUCCEED based on inputs: [input=None] with prompt: 'Test' (Will trigger SUCCESS branch)" == result["custom_output"]
     logger.info(f"result: {result}")
     assert "last_action_success" in result
     assert result["last_action_success"] is True

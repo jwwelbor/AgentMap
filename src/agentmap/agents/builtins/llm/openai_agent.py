@@ -4,10 +4,6 @@ OpenAI LLM agent implementation using LangChain.
 from typing import Any
 
 from agentmap.agents.builtins.llm.llm_agent import LLMAgent
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
-
 
 # agentmap/agents/builtins/llm/openai_agent.py
 class OpenAIAgent(LLMAgent):

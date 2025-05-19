@@ -45,7 +45,7 @@ def open_json_file(file_path: str, mode: str = 'r') -> Generator[TextIO, None, N
             yield f
     except FileNotFoundError:
         if 'r' in mode:
-            logger.debug(f"JSON file not found: {file_path}")
+            self.log_debug(f"JSON file not found: {file_path}")
             raise
         else:
             # For write mode, create the file
@@ -74,7 +74,7 @@ def read_json_file(file_path: str) -> Any:
         with open_json_file(file_path, 'r') as f:
             return json.load(f)
     except FileNotFoundError:
-        logger.debug(f"JSON file not found: {file_path}")
+        self.log_debug(f"JSON file not found: {file_path}")
         raise FileNotFoundError(f"File not found: {file_path}")
     except json.JSONDecodeError as e:
         error_msg = f"Invalid JSON in {file_path}: {str(e)}"
@@ -98,7 +98,7 @@ def write_json_file(file_path: str, data: Any, indent: int = 2) -> None:
     try:
         with open_json_file(file_path, 'w') as f:
             json.dump(data, f, indent=indent)
-        logger.debug(f"Successfully wrote to {file_path}")
+        self.log_debug(f"Successfully wrote to {file_path}")
     except TypeError as e:
         error_msg = f"Cannot serialize to JSON: {str(e)}"
         logger.error(error_msg)

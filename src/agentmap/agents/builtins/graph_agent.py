@@ -6,7 +6,7 @@ from agentmap.logging import get_logger
 from agentmap.runner import run_graph
 from agentmap.utils.common import extract_func_ref, import_function
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, False)
 
 class GraphAgent(BaseAgent):
     """
@@ -43,7 +43,7 @@ class GraphAgent(BaseAgent):
         Returns:
             Output from the subgraph execution
         """
-        logger.info(f"[GraphAgent] Executing subgraph: {self.subgraph_name}")
+        self.log_info(f"[GraphAgent] Executing subgraph: {self.subgraph_name}")
         
         # Determine and prepare the initial state for the subgraph
         subgraph_state = self._prepare_subgraph_state(inputs)
@@ -57,7 +57,7 @@ class GraphAgent(BaseAgent):
                 autocompile_override=True
             )
             
-            logger.info(f"[GraphAgent] Subgraph execution completed successfully")
+            self.log_info(f"[GraphAgent] Subgraph execution completed successfully")
             
             # Process the result based on output field mapping
             if self.output_field and "=" in self.output_field:
@@ -69,7 +69,7 @@ class GraphAgent(BaseAgent):
             return result
             
         except Exception as e:
-            logger.error(f"[GraphAgent] Error executing subgraph: {str(e)}")
+            self.log_error(f"[GraphAgent] Error executing subgraph: {str(e)}")
             return {
                 "error": f"Failed to execute subgraph '{self.subgraph_name}': {str(e)}",
                 "last_action_success": False
@@ -122,7 +122,7 @@ class GraphAgent(BaseAgent):
         """Apply function-based mapping."""
         func_ref = extract_func_ref(self.input_fields[0])
         if not func_ref:
-            logger.warning(f"[GraphAgent] Invalid function reference: {self.input_fields[0]}")
+            self.log_warning(f"[GraphAgent] Invalid function reference: {self.input_fields[0]}")
             return inputs.copy()
         
         try:
@@ -134,11 +134,11 @@ class GraphAgent(BaseAgent):
             
             # Ensure we got a dictionary back
             if not isinstance(mapped_state, dict):
-                logger.warning(f"[GraphAgent] Mapping function {func_ref} returned non-dict: {type(mapped_state)}")
+                self.log_warning(f"[GraphAgent] Mapping function {func_ref} returned non-dict: {type(mapped_state)}")
                 return inputs.copy()
             
             return mapped_state
             
         except Exception as e:
-            logger.error(f"[GraphAgent] Error in mapping function: {str(e)}")
+            self.log_error(f"[GraphAgent] Error in mapping function: {str(e)}")
             return inputs.copy()

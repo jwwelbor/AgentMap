@@ -48,7 +48,7 @@ class CSVAgent(BaseStorageAgent, StorageErrorHandlerMixin):
         
         # Check if file path has CSV extension
         if not collection.lower().endswith('.csv'):
-            logger.warning(f"Collection path does not end with .csv: {collection}")
+            self.log_warning(f"Collection path does not end with .csv: {collection}")
     
     def _ensure_directory_exists(self, file_path: str) -> None:
         """
@@ -73,7 +73,7 @@ class CSVAgent(BaseStorageAgent, StorageErrorHandlerMixin):
         exists = os.path.exists(file_path)
         
         if not exists:
-            logger.debug(f"File does not exist: {file_path}")
+            self.log_debug(f"File does not exist: {file_path}")
         return exists
     
     def _read_csv(self, file_path: str, **kwargs) -> pd.DataFrame:
@@ -103,14 +103,14 @@ class CSVAgent(BaseStorageAgent, StorageErrorHandlerMixin):
             read_kwargs.update(kwargs)
             
             df = pd.read_csv(file_path, **read_kwargs)
-            logger.debug(f"Read {len(df)} rows from {file_path}")
+            self.log_debug(f"Read {len(df)} rows from {file_path}")
             return df
         except FileNotFoundError:
-            logger.debug(f"CSV file not found: {file_path}")
+            self.log_debug(f"CSV file not found: {file_path}")
             raise FileNotFoundError(f"File not found: {file_path}")
         except Exception as e:
             error_msg = f"Error reading CSV file {file_path}: {str(e)}"
-            logger.error(error_msg)
+            self.log_error(error_msg)
             self._handle_error("CSV Read Error", error_msg, e)
     
     def _write_csv(
@@ -149,10 +149,10 @@ class CSVAgent(BaseStorageAgent, StorageErrorHandlerMixin):
             # Write to CSV
             df.to_csv(file_path, mode=mode, header=header, **write_kwargs)
             
-            logger.debug(f"Wrote {len(df)} rows to {file_path} (mode: {mode})")
+            self.log_debug(f"Wrote {len(df)} rows to {file_path} (mode: {mode})")
         except Exception as e:
             error_msg = f"Error writing to CSV file {file_path}: {str(e)}"
-            logger.error(error_msg)
+            self.log_error(error_msg)
             self._handle_error("CSV Write Error", error_msg, e)
     
     def _apply_filters(self, df: pd.DataFrame, inputs: Dict[str, Any]) -> pd.DataFrame:
@@ -172,14 +172,14 @@ class CSVAgent(BaseStorageAgent, StorageErrorHandlerMixin):
             if isinstance(query, str):
                 try:
                     df = df.query(query)
-                    logger.debug(f"Applied query filter: {query}, {len(df)} rows remaining")
+                    self.log_debug(f"Applied query filter: {query}, {len(df)} rows remaining")
                 except Exception as e:
-                    logger.warning(f"Failed to apply query filter '{query}': {str(e)}")
+                    self.log_warning(f"Failed to apply query filter '{query}': {str(e)}")
             elif isinstance(query, dict):
                 for col, value in query.items():
                     if col in df.columns:
                         df = df[df[col] == value]
-                logger.debug(f"Applied dict filter, {len(df)} rows remaining")
+                self.log_debug(f"Applied dict filter, {len(df)} rows remaining")
         
         # Apply ID filter
         id_value = inputs.get("id")
@@ -187,13 +187,13 @@ class CSVAgent(BaseStorageAgent, StorageErrorHandlerMixin):
             id_field = inputs.get("id_field", "id")
             if id_field in df.columns:
                 df = df[df[id_field] == id_value]
-                logger.debug(f"Applied ID filter: {id_field}={id_value}, {len(df)} rows remaining")
+                self.log_debug(f"Applied ID filter: {id_field}={id_value}, {len(df)} rows remaining")
         
         # Apply limit
         limit = inputs.get("limit")
         if limit and isinstance(limit, int) and limit > 0:
             df = df.head(limit)
-            logger.debug(f"Applied limit: {limit}")
+            self.log_debug(f"Applied limit: {limit}")
         
         return df
     
@@ -213,7 +213,7 @@ class CSVAgent(BaseStorageAgent, StorageErrorHandlerMixin):
             Formatted data
         """
         if df is None or df.empty:
-            logger.debug("DataFrame is empty, returning empty list")
+            self.log_debug("DataFrame is empty, returning empty list")
             return []
         
         format_type = format_type.lower()
@@ -233,11 +233,11 @@ class CSVAgent(BaseStorageAgent, StorageErrorHandlerMixin):
         
         if handler:
             result = handler(df)
-            logger.debug(f"Formatted DataFrame as {format_type}")
+            self.log_debug(f"Formatted DataFrame as {format_type}")
             return result
         else:
             # Default to records format
-            logger.warning(f"Unknown format type '{format_type}', defaulting to 'records'")
+            self.log_warning(f"Unknown format type '{format_type}', defaulting to 'records'")
             return df.to_dict(orient="records")
     
     def _handle_operation_error(

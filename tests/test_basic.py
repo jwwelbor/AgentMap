@@ -13,3 +13,8 @@ def test_import():
     assert config is not None
     assert builder is not None
     assert runner is not None
+
+    from agentmap.agents.builtins.llm.llm_agent import LLMAgent
+    from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
+    from agentmap.agents.builtins.llm.anthropic_agent import AnthropicAgent
+    from agentmap.agents.builtins.llm.google_agent import GoogleAgent

@@ -55,7 +55,7 @@ class VectorWriterAgent(VectorAgent, WriterOperationsMixin):
             else "1" if docs is not None
             else "0"
         )
-        logger.debug(f"[{self.__class__.__name__}] Starting vector storage with {doc_count} document(s)")
+        self.log_debug(f"[{self.__class__.__name__}] Starting vector storage with {doc_count} document(s)")
     
     def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
         """
@@ -126,7 +126,7 @@ class VectorWriterAgent(VectorAgent, WriterOperationsMixin):
                 persist_directory=self.persist_directory if self.should_persist else None
             )
         except Exception as e:
-            logger.error(f"Vector storage error: {str(e)}")
+            self.log_error(f"Vector storage error: {str(e)}")
             return self._format_vector_result(
                 success=False,
                 error=f"Failed to store documents: {str(e)}"

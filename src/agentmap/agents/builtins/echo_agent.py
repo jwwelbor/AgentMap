@@ -1,7 +1,7 @@
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.logging import get_logger
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, False)
 from typing import Any, Dict
 
 
@@ -18,7 +18,7 @@ class EchoAgent(BaseAgent):
         Returns:
             The input data unchanged
         """
-        logger.info(f"[EchoAgent] '{self.name}' received inputs: {inputs} and prompt: '{self.prompt}'")
+        self.log_info(f"[EchoAgent] '{self.name}' received inputs: {inputs} and prompt: '{self.prompt}'")
         
         # If there are inputs, return the first one
         if inputs:
