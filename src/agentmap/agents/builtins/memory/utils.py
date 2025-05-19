@@ -6,10 +6,8 @@ including serialization and deserialization for state persistence.
 """
 
 from typing import Any, Dict, List, Optional, Union
-import logging
-
-# Get logger
-logger = logging.getLogger("AgentMap")
+from agentmap.logging import get_logger
+logger = get_logger(__name__)
 
 # Flag to indicate if LangChain is available
 try:
