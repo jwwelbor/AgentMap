@@ -84,14 +84,34 @@ def compile_cmd(
             state_schema=state_schema,
             config_path=config
         )
+
+def initialize(config_path=None):
+    """
+    Initialize configuration and logging.
+    
+    Args:
+        config_path: Optional path to a custom config file
+    """
+    # Load configuration once at startup with the provided path
+    from agentmap.config import load_config
+    config = load_config(config_path)
+    
+    # Configure logging with the loaded config
+    from agentmap.logging import configure_logging
+    configure_logging(config.get("logging", {}))
+
 @app.command()
 def run(
-    graph: str = typer.Option(None, "--graph", "-g", help="Graph name to run (defaults to first graph in CSV)"),
+    graph: str = typer.Option(None, "--graph", "-g", help="Graph name to run"),
     csv: str = typer.Option(None, "--csv", help="CSV path override"),
     state: str = typer.Option("{}", "--state", "-s", help="Initial state as JSON string"),  
     autocompile: bool = typer.Option(None, "--autocompile", "-a", help="Autocompile graph if missing"),
     config: str = typer.Option(None, "--config", "-c", help="Path to custom config file")
 ):
+    """Run a graph with optional CSV, initial state, and autocompile support."""
+    # Initialize with config path
+    initialize(config)
+
     """Run a graph with optional CSV, initial state, and autocompile support."""
     try:
         data = json.loads(state)  
@@ -100,7 +120,7 @@ def run(
         raise typer.Exit(code=1)
 
     output = run_graph(
-        graph_name=graph,  # Can be None now
+        graph_name=graph,  # Can be None
         initial_state=data, 
         csv_path=csv, 
         autocompile_override=autocompile,
