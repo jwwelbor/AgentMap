@@ -275,24 +275,46 @@ class LLMAgent(BaseAgent):
             
             if isinstance(formatted_prompt, list):
                 # Chat messages format
-                from langchain.schema import HumanMessage
+                from langchain_core.messages import HumanMessage
                 messages = formatted_prompt
                 if not messages:
                     messages = [HumanMessage(content=self.prompt)]
-                response = client.generate([messages])
-                result = response.generations[0][0].text
+                try:
+                    # Use the invoke method instead of the deprecated __call__
+                    response = client.invoke(messages)
+                    result = response.content
+                except AttributeError:
+                    # Fall back to legacy method if needed
+                    response = client.generate([messages])
+                    result = response.generations[0][0].text
             else:
                 # String prompt format
                 if memory_variables:
                     # Combine prompt with memory
-                    from langchain.prompts import PromptTemplate
+                    from langchain_core.prompts import PromptTemplate
                     history = memory_variables.get("history", "")
                     template = f"{{history}}\n\n{formatted_prompt}" if history else formatted_prompt
                     prompt = PromptTemplate(template=template, input_variables=["history"])
-                    result = client(prompt.format(history=history))
+                    try:
+                        # Use invoke method for newer LangChain versions
+                        result = client.invoke(prompt.format(history=history))
+                        # Check if result is a message with content attribute
+                        if hasattr(result, 'content'):
+                            result = result.content
+                    except AttributeError:
+                        # Fall back to legacy method if needed
+                        result = client(prompt.format(history=history))
                 else:
                     # Just the prompt
-                    result = client(formatted_prompt)
+                    try:
+                        # Use invoke method for newer LangChain versions
+                        result = client.invoke(formatted_prompt)
+                        # Check if result is a message with content attribute
+                        if hasattr(result, 'content'):
+                            result = result.content
+                    except AttributeError:
+                        # Fall back to legacy method if needed
+                        result = client(formatted_prompt)
             
             # Save to memory if available
             if self.memory:
@@ -359,56 +381,56 @@ class LLMAgent(BaseAgent):
                 "last_action_success": False
             }
 
-    def run(self, state: Any) -> Any:
-        """
-        Run the agent on the current state.
+    # def run(self, state: Any) -> Any:
+    #     """
+    #     Run the agent on the current state.
         
-        Args:
-            state: Current state object
+    #     Args:
+    #         state: Current state object
             
-        Returns:
-            Updated state with output and success flag
-        """
-        # Extract inputs from state
-        inputs = self.state_manager.get_inputs(state)
+    #     Returns:
+    #         Updated state with output and success flag
+    #     """
+    #     # Extract inputs from state
+    #     inputs = self.state_manager.get_inputs(state)
         
-        try:
-            # Process inputs
-            result = self.process(inputs)
+    #     try:
+    #         # Process inputs
+    #         result = self.process(inputs)
             
-            # Process the result based on type
-            if isinstance(result, dict) and "error" in result:
-                # Handle error case
-                error_msg = result.get("error", "Unknown error")
-                state = self.state_manager.set_output(state, error_msg, success=False)
-                return state
+    #         # Process the result based on type
+    #         if isinstance(result, dict) and "error" in result:
+    #             # Handle error case
+    #             error_msg = result.get("error", "Unknown error")
+    #             state = self.state_manager.set_output(state, error_msg, success=False)
+    #             return state
                 
-            elif isinstance(result, dict):
-                # Handle dictionary result (with memory or structured data)
-                memory = result.pop(self.memory_key, None)
+    #         elif isinstance(result, dict):
+    #             # Handle dictionary result (with memory or structured data)
+    #             memory = result.pop(self.memory_key, None)
                 
-                # Set output
-                if self.output_field and self.output_field in result:
-                    state = self.state_manager.set_output(state, result[self.output_field], success=True)
-                else:
-                    state = self.state_manager.set_output(state, result, success=True)
+    #             # Set output
+    #             if self.output_field and self.output_field in result:
+    #                 state = self.state_manager.set_output(state, result[self.output_field], success=True)
+    #             else:
+    #                 state = self.state_manager.set_output(state, result, success=True)
                 
-                # Set memory if present
-                if memory:
-                    state = StateAdapter.set_value(state, self.memory_key, memory)
+    #             # Set memory if present
+    #             if memory:
+    #                 state = StateAdapter.set_value(state, self.memory_key, memory)
                 
-                return state
+    #             return state
                 
-            else:
-                # Handle simple string result
-                state = self.state_manager.set_output(state, result, success=True)
-                return state
+    #         else:
+    #             # Handle simple string result
+    #             state = self.state_manager.set_output(state, result, success=True)
+    #             return state
                 
-        except Exception as e:
-            # Handle any unexpected errors
-            error_msg = f"Error in {self.name}: {str(e)}"
-            self.log_error(error_msg)
+    #     except Exception as e:
+    #         # Handle any unexpected errors
+    #         error_msg = f"Error in {self.name}: {str(e)}"
+    #         self.log_error(error_msg)
             
-            # Set error in state
-            error_state = StateAdapter.set_value(state, "error", error_msg)
-            return self.state_manager.set_output(error_state, None, success=False)
+    #         # Set error in state
+    #         error_state = StateAdapter.set_value(state, "error", error_msg)
+    #         return self.state_manager.set_output(error_state, None, success=False)

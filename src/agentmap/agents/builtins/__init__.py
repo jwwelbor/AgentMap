@@ -66,7 +66,7 @@ if HAS_STORAGE_AGENTS:
         CSVReaderAgent, CSVWriterAgent,
         JSONDocumentReaderAgent, JSONDocumentWriterAgent,
         FileReaderAgent, FileWriterAgent,
-        VectorStoreReaderAgent, VectorStoreWriterAgent
+        VectorReaderAgent, VectorWriterAgent
     )
     
     # Add storage agents to exports
@@ -77,6 +77,6 @@ if HAS_STORAGE_AGENTS:
         'JSONDocumentWriterAgent',
         'FileReaderAgent',
         'FileWriterAgent',
-        'VectorStoreReaderAgent',
-        'VectorStoreWriterAgent',
+        'VectorReaderAgent',
+        'VectorWriterAgent',
     ])

@@ -1,4 +1,4 @@
 GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
-LinearGraph,Start,Next,general,Default,,,input,response,
-LinearGraph,Next,Ender,general,Default,,,input,response,
-LinearGraph,Ender,,general,Default,,,,response,
+LinearGraph,Start,Next,,Default,,,input,response,
+LinearGraph,Next,Ender,,Default,,,input,response,
+LinearGraph,Ender,,,Echo,,,,response,"All done"
