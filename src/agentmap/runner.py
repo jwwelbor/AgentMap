@@ -266,21 +266,21 @@ def run_graph(
     import traceback
     caller_frame = inspect.currentframe().f_back
     caller_info = f"{caller_frame.f_code.co_filename}:{caller_frame.f_lineno}"
-    print(f"\n===== RUN_GRAPH CALLED FROM: {caller_info} =====")
-    print("STACK TRACE:")
+    logger.trace(f"\n===== RUN_GRAPH CALLED FROM: {caller_info} =====")
+    logger.trace("STACK TRACE:")
     for line in traceback.format_stack()[:-1]:  # Exclude this frame
-        print(f"  {line.strip()}")
-    print("=====\n")
+        logger.trace(f"  {line.strip()}")
+    logger.trace("=====\n")
 
     import sys
     agentmap_modules = [mod for mod in sys.modules.keys() if mod.startswith('agentmap')]
-    print(f"LOADED AGENTMAP MODULES: {len(agentmap_modules)}")
+    logger.trace(f"LOADED AGENTMAP MODULES: {len(agentmap_modules)}")
     for mod in sorted(agentmap_modules):
-        print(f"  {mod}")
+        logger.trace(f"  {mod}")
 
-    print("\n=== ENTERING run_graph ===")
-    print(f"Parameters: graph_name={graph_name}, csv_path={csv_path}")
-    print("=====\n")
+    logger.trace("\n=== ENTERING run_graph ===")
+    logger.trace(f"Parameters: graph_name={graph_name}, csv_path={csv_path}")
+    logger.trace("=====\n")
 
 
     import hashlib
@@ -291,7 +291,7 @@ def run_graph(
     with _GRAPH_EXECUTION_LOCK:
         # Check if this exact execution is already in progress
         if execution_key in _CURRENT_EXECUTIONS:
-            logger.warning(f"Detected recursive/duplicate call to run_graph with same parameters")
+            logger.warning(f"[RUN] Detected recursive/duplicate call to run_graph with same parameters")
             # Return a placeholder to break the recursion
             return {"error": "Recursive execution detected and prevented"}
         
@@ -299,37 +299,28 @@ def run_graph(
     
     try:
         from agentmap.logging.tracing import trace_graph
-        print("DEBUG 1: After trace_graph import")
 
         # Set defaults for optional parameters
         initial_state = initial_state or {}
-        print("DEBUG 2: After setting initial_state")
 
         config = load_config(config_path)
-        print("DEBUG 3: After load_config")
 
         autocompile = autocompile_override if autocompile_override is not None else config.get("autocompile", False)
-        print("DEBUG 4: After setting autocompile")
 
         execution_config = config.get("execution", {})
-        print("DEBUG 5: After getting execution_config")
 
         tracking_config = execution_config.get("tracking", {})
-        print("DEBUG 6: After getting tracking_config")
 
         tracking_enabled = tracking_config.get("enabled", True)
-        print("DEBUG 7: After setting tracking_enabled")
 
         #initialize variables
         graph_bundle = None
         node_registry = None
         graph = None
         graph_def = None
-        print("DEBUG 8: After initializing variables")
 
         # Get the CSV file path
         csv_file = csv_path or get_csv_path(config_path)
-        print("DEBUG 9: After getting csv_file")
 
         import inspect
         frame = inspect.currentframe()
@@ -342,8 +333,6 @@ def run_graph(
         if log_key not in run_graph._logged_messages:
             logger.info(f"⭐ STARTING GRAPH: '{graph_name}'")
             run_graph._logged_messages.add(log_key)
-
-        print("DEBUG 10: After STARTING GRAPH log")
         
         # Initialize execution tracking (always active, may be minimal)
         initial_state = StateAdapter.initialize_execution_tracker(initial_state, execution_config)
@@ -408,9 +397,9 @@ def run_graph(
             start_time = time.time()
             
             try:
-                print(f"\n=== BEFORE INVOKING GRAPH: {graph_name or 'unnamed'} ===")
+                logger.trace(f"\n=== BEFORE INVOKING GRAPH: {graph_name or 'unnamed'} ===")
                 result = graph.invoke(initial_state)
-                print(f"\n=== AFTER INVOKING GRAPH: {graph_name or 'unnamed'} ===")
+                logger.trace(f"\n=== AFTER INVOKING GRAPH: {graph_name or 'unnamed'} ===")
                 execution_time = time.time() - start_time
                 
                 # Process execution results
@@ -433,11 +422,11 @@ def run_graph(
                 else:
                     logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s, Success: {graph_success}")
 
-                # pretty print the result
+                # pretty logger.trace the result
                 logger.debug(json.dumps(create_serializable_result(result), indent=4))    
-                print("\n=== EXITING run_graph ===")
-                print(f"Parameters: graph_name={graph_name}, csv_path={csv_path}")
-                print("=====\n")
+                logger.trace("\n=== EXITING run_graph ===")
+                logger.trace(f"Parameters: graph_name={graph_name}, csv_path={csv_path}")
+                logger.trace("=====\n")
                 return result
             except Exception as e:
                 execution_time = time.time() - start_time

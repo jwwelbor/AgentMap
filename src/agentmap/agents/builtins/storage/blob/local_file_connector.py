@@ -49,9 +49,9 @@ class LocalFileConnector(BlobStorageConnector):
         if self.base_dir and not os.path.exists(self.base_dir):
             try:
                 os.makedirs(self.base_dir, exist_ok=True)
-                logger.debug(f"Created base directory: {self.base_dir}")
+                self.log_debug(f"Created base directory: {self.base_dir}")
             except Exception as e:
-                logger.warning(f"Failed to create base directory {self.base_dir}: {str(e)}")
+                self.log_warning(f"Failed to create base directory {self.base_dir}: {str(e)}")
 
     def read_blob(self, uri: str) -> bytes:
         """
@@ -113,7 +113,7 @@ class LocalFileConnector(BlobStorageConnector):
             with open(path, "wb") as f:
                 f.write(data)
                 
-            logger.debug(f"Successfully wrote {len(data)} bytes to {path}")
+            self.log_debug(f"Successfully wrote {len(data)} bytes to {path}")
         except PermissionError as e:
             return self._handle_provider_error(
                 "writing", path, e,
@@ -139,10 +139,10 @@ class LocalFileConnector(BlobStorageConnector):
             path = self._resolve_path(uri)
             exists = os.path.exists(path) and os.path.isfile(path)
             if not exists:
-                logger.debug(f"File not found: {path}")
+                self.log_debug(f"File not found: {path}")
             return exists
         except Exception as e:
-            logger.warning(f"Error checking file existence {uri}: {str(e)}")
+            self.log_warning(f"Error checking file existence {uri}: {str(e)}")
             return False
 
     def _resolve_path(self, uri: str) -> str:

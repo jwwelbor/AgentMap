@@ -71,7 +71,7 @@ class DocumentReaderAgent(DocumentStorageAgent, ReaderOperationsMixin):
         """
         # Return default value if result is None and default is provided
         if result is None and "default" in inputs:
-            logger.debug(f"[{self.__class__.__name__}] Using default value")
+            self.log_debug(f"[{self.__class__.__name__}] Using default value")
             return inputs["default"]
             
         return result

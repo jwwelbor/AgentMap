@@ -4,7 +4,7 @@ from typing import Any, Dict
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.logging import get_logger
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, False)
 
 class SuccessAgent(BaseAgent):
     """
@@ -35,9 +35,9 @@ class SuccessAgent(BaseAgent):
             message += f" with prompt: '{self.prompt}'"
 
         # Log the execution with additional details for debugging
-        logger.info(f"[SuccessAgent] {self.name} executed with success")
-        logger.debug(f"[SuccessAgent] Full output: {message}")
-        logger.debug(f"[SuccessAgent] Input fields: {self.input_fields}")
-        logger.debug(f"[SuccessAgent] Output field: {self.output_field}")
+        self.log_info(f"[SuccessAgent] {self.name} executed with success")
+        self.log_debug(f"[SuccessAgent] Full output: {message}")
+        self.log_debug(f"[SuccessAgent] Input fields: {self.input_fields}")
+        self.log_debug(f"[SuccessAgent] Output field: {self.output_field}")
             
         return message

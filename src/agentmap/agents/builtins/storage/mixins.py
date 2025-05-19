@@ -83,7 +83,7 @@ class ReaderOperationsMixin:
             details.append(f"path={path}")
             
         detail_str = ", ".join(details) if details else "all"
-        logger.info(f"[{self.__class__.__name__}] Reading {operation_type} from {collection} ({detail_str})")
+        self.log_info(f"[{self.__class__.__name__}] Reading {operation_type} from {collection} ({detail_str})")
     
     def _format_read_result(self, result: Any, inputs: Dict[str, Any]) -> Any:
         """
@@ -158,7 +158,7 @@ class WriterOperationsMixin:
             details.append(f"path={path}")
             
         detail_str = ", ".join(details) if details else "all"
-        logger.info(f"[{self.__class__.__name__}] {operation_type} {target_type} in {collection} ({detail_str})")
+        self.log_info(f"[{self.__class__.__name__}] {operation_type} {target_type} in {collection} ({detail_str})")
 
 
 class StorageErrorHandlerMixin:
@@ -184,7 +184,7 @@ class StorageErrorHandlerMixin:
             DocumentResult with error information
         """
         error_msg = f"Failed to {operation_type} from {collection}: {str(error)}"
-        logger.error(f"[{self.__class__.__name__}] {error_msg}")
+        self.log_error(f"[{self.__class__.__name__}] {error_msg}")
         
         # Create standardized error result
         return DocumentResult(

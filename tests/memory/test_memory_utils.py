@@ -23,7 +23,6 @@ try:
 except ImportError:
     HAS_LANGCHAIN = False
 
-from agentmap.agents.features import HAS_LLM_AGENTS
 
 # Memory creation helpers
 
@@ -242,7 +241,7 @@ def verify_memory_persistence(state: Dict[str, Any], memory_key: str = "conversa
         True if memory is valid, False otherwise
     """
     from agentmap.state.adapter import StateAdapter
-    from agentmap.agents.builtins.memory.utils import deserialize_memory
+    from agentmap.agents.builtins.llm.utils import deserialize_memory
     
     # Get memory from state
     memory = StateAdapter.get_value(state, memory_key)
@@ -277,7 +276,7 @@ def get_memory_messages(state: Dict[str, Any], memory_key: str = "conversation_m
         List of message objects or empty list if memory not found
     """
     from agentmap.state.adapter import StateAdapter
-    from agentmap.agents.builtins.memory.utils import deserialize_memory
+    from agentmap.agents.builtins.llm.utils import deserialize_memory
     
     # Get memory from state
     memory = StateAdapter.get_value(state, memory_key)

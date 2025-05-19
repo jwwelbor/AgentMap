@@ -86,7 +86,7 @@ class GCPStorageConnector(BlobStorageConnector):
                     client_kwargs["project"] = self.project_id
 
                 self._client = storage.Client(**client_kwargs)
-                logger.debug("Google Cloud Storage client initialized successfully")
+                self.log_debug("Google Cloud Storage client initialized successfully")
             except DefaultCredentialsError:
                 raise StorageConnectionError(
                     "GCP credentials not found. Please configure credentials via "
@@ -101,7 +101,7 @@ class GCPStorageConnector(BlobStorageConnector):
                     del os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
 
         except Exception as e:
-            logger.error(f"Failed to initialize Google Cloud Storage client: {str(e)}")
+            self.log_error(f"Failed to initialize Google Cloud Storage client: {str(e)}")
             raise StorageConnectionError(f"Failed to initialize Google Cloud Storage client: {str(e)}")
 
     def read_blob(self, uri: str) -> bytes:
@@ -185,7 +185,7 @@ class GCPStorageConnector(BlobStorageConnector):
                 
                 # Create bucket if it doesn't exist
                 if not bucket.exists():
-                    logger.info(f"Creating bucket: {bucket_name}")
+                    self.log_info(f"Creating bucket: {bucket_name}")
                     try:
                         if self.project_id:
                             self.client.create_bucket(bucket, project=self.project_id)
@@ -242,7 +242,7 @@ class GCPStorageConnector(BlobStorageConnector):
 
             # Check if bucket exists
             if not bucket.exists():
-                logger.debug(f"Bucket not found: {bucket_name}")
+                self.log_debug(f"Bucket not found: {bucket_name}")
                 return False
 
             # Get blob
@@ -251,11 +251,11 @@ class GCPStorageConnector(BlobStorageConnector):
             # Check if blob exists
             exists = blob.exists()
             if not exists:
-                logger.debug(f"Blob not found: {blob_path}")
+                self.log_debug(f"Blob not found: {blob_path}")
             return exists
 
         except Exception as e:
-            logger.warning(f"Error checking blob existence {uri}: {str(e)}")
+            self.log_warning(f"Error checking blob existence {uri}: {str(e)}")
             return False
 
     def _parse_gs_uri(self, uri: str) -> Tuple[str, str]:

@@ -11,7 +11,7 @@ from agentmap.agents.loader import AgentLoader, create_agent
 from agentmap.logging import get_logger
 from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS, enable_llm_agents, enable_storage_agents
 
-logger = get_logger(__name__)
+_logger = get_logger("agentmap.agents")
 
 # ----- CORE AGENTS (always available) -----
 from agentmap.agents.builtins.default_agent import DefaultAgent
@@ -49,13 +49,13 @@ try:
     register_agent("gemini", GoogleAgent)  # Add alias for convenience
     
     # Log successful loading
-    logger.info("LLM agents registered successfully")
+    _logger.info("LLM agents registered successfully")
     
     # Flag indicating LLM agents are available
     enable_llm_agents()
     
 except ImportError as e:
-    logger.debug(f"LLM agents not available: {e}. Install with: pip install agentmap[llm]")
+    _logger.debug(f"LLM agents not available: {e}. Install with: pip install agentmap[llm]")
 
 # ----- STORAGE AGENTS (requires 'storage' extras) -----
 try:
@@ -79,29 +79,29 @@ try:
     register_agent("vector_writer", VectorStoreWriterAgent)
     
     # Log successful loading
-    logger.info("Storage agents registered successfully")
+    _logger.info("Storage agents registered successfully")
     
     # Flag indicating storage agents are available
     enable_storage_agents()
     
 except ImportError as e:
-    logger.debug(f"Storage agents not available: {e}. Install with: pip install agentmap[storage]")
+     _logger.debug(f"Storage agents not available: {e}. Install with: pip install agentmap[storage]")
 
 # ----- SUMMARY AGENT (mixed dependency) -----
 try:
     from agentmap.agents.builtins.summary_agent import SummaryAgent
     register_agent("summary", SummaryAgent)
-    logger.info("Summary agent registered successfully")
+    _logger.info("Summary agent registered successfully")
 except ImportError as e:
-    logger.debug(f"Summary agent not available: {e}")
+    _logger.debug(f"Summary agent not available: {e}")
 
 # ----- ORCHESTRATOR AGENT -----
 try:
     from agentmap.agents.builtins.orchestrator_agent import OrchestratorAgent
     register_agent("orchestrator", OrchestratorAgent)
-    logger.info("Orchestrator agent registered successfully")
+    _logger.info("Orchestrator agent registered successfully")
 except ImportError as e:
-    logger.debug(f"Orchestrator agent not available: {e}")
+    _logger.debug(f"Orchestrator agent not available: {e}")
 
 # Dynamic registry access
 REGISTERED_AGENTS = get_agent_map()

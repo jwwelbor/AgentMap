@@ -89,7 +89,7 @@ class AWSS3Connector(BlobStorageConnector):
             # Create client
             try:
                 self._client = boto3.client("s3", **session_kwargs)
-                logger.debug("AWS S3 client initialized successfully")
+                self.log_debug("AWS S3 client initialized successfully")
             except NoCredentialsError:
                 raise StorageConnectionError(
                     "AWS credentials not found. Please configure credentials via "
@@ -97,7 +97,7 @@ class AWSS3Connector(BlobStorageConnector):
                 )
 
         except Exception as e:
-            logger.error(f"Failed to initialize AWS S3 client: {str(e)}")
+            self.log_error(f"Failed to initialize AWS S3 client: {str(e)}")
             raise StorageConnectionError(f"Failed to initialize AWS S3 client: {str(e)}")
 
     def read_blob(self, uri: str) -> bytes:
@@ -169,7 +169,7 @@ class AWSS3Connector(BlobStorageConnector):
                 # Check error type to determine if bucket doesn't exist
                 if hasattr(e, "response") and e.response.get("Error", {}).get("Code") == "404":
                     # Create bucket if it doesn't exist
-                    logger.info(f"Creating bucket: {bucket_name}")
+                    self.log_info(f"Creating bucket: {bucket_name}")
                     bucket_params = {"Bucket": bucket_name}
                     if self.region and self.region != "us-east-1":
                         bucket_params["CreateBucketConfiguration"] = {
@@ -229,7 +229,7 @@ class AWSS3Connector(BlobStorageConnector):
             try:
                 self.client.head_bucket(Bucket=bucket_name)
             except Exception:
-                logger.debug(f"Bucket not found: {bucket_name}")
+                self.log_debug(f"Bucket not found: {bucket_name}")
                 return False
 
             # Check if object exists
@@ -239,16 +239,16 @@ class AWSS3Connector(BlobStorageConnector):
             except Exception as e:
                 # Check for 404 error code
                 if hasattr(e, "response") and e.response.get("Error", {}).get("Code") == "404":
-                    logger.debug(f"Object not found: {object_key}")
+                    self.log_debug(f"Object not found: {object_key}")
                     return False
                 # For other errors, log warning and return False
-                logger.warning(
+                self.log_warning(
                     f"Error checking if object exists at {uri}: {str(e)}"
                 )
                 return False
 
         except Exception as e:
-            logger.warning(f"Error checking S3 object existence {uri}: {str(e)}")
+            self.log_warning(f"Error checking S3 object existence {uri}: {str(e)}")
             return False
 
     def _parse_s3_uri(self, uri: str) -> Tuple[str, str]:

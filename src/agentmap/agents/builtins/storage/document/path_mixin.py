@@ -80,7 +80,7 @@ class DocumentPathMixin:
             
             return current
         except Exception as e:
-            logger.debug(f"Error applying path '{path}': {str(e)}")
+            self.log_debug(f"Error applying path '{path}': {str(e)}")
             return None
     
     def _update_path(self, data: Any, path: str, value: Any) -> Any:
@@ -115,7 +115,7 @@ class DocumentPathMixin:
             current = self._navigate_container(current, part, next_part)
             if current is None:
                 # If navigation failed, return original data
-                logger.debug(f"Cannot update path {path}: navigation failed at part {part}")
+                self.log_debug(f"Cannot update path {path}: navigation failed at part {part}")
                 return result
         
         # Set the value in the final container

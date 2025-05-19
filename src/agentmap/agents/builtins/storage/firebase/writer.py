@@ -102,7 +102,7 @@ class FirebaseDocumentWriterAgent(DocumentWriterAgent, FirebaseDocumentAgent, Wr
         except Exception as e:
             # Convert Firebase errors to standard exceptions
             error = self._convert_firebase_error(e)
-            logger.error(f"Firebase write error: {str(error)}")
+            self.log_error(f"Firebase write error: {str(error)}")
             
             return DocumentResult(
                 success=False,

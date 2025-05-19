@@ -1,7 +1,7 @@
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.logging import get_logger
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, False)
 
 from typing import Any, Dict
 
@@ -20,7 +20,7 @@ class InputAgent(BaseAgent):
             The user's input as a string
         """
         # Log the execution
-        logger.info(f"[InputAgent] {self.name} prompting for user input")
+        self.log_info(f"[InputAgent] {self.name} prompting for user input")
         
         # Use the prompt from initialization or a default
         prompt_text = self.prompt or "Please provide input: "

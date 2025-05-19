@@ -51,7 +51,7 @@ class VectorReaderAgent(VectorAgent, ReaderOperationsMixin):
         """
         query = inputs.get(self.input_fields[0], "")
         query_preview = query[:30] + "..." if len(query) > 30 else query
-        logger.debug(f"[{self.__class__.__name__}] Starting vector search with query: {query_preview}")
+        self.log_debug(f"[{self.__class__.__name__}] Starting vector search with query: {query_preview}")
     
     def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -109,7 +109,7 @@ class VectorReaderAgent(VectorAgent, ReaderOperationsMixin):
                 count=len(formatted_results)
             )
         except Exception as e:
-            logger.error(f"Vector search error: {str(e)}")
+            self.log_error(f"Vector search error: {str(e)}")
             return self._format_vector_result(
                 success=False,
                 query=query,

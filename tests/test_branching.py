@@ -33,7 +33,7 @@ TestBranching,FailurePath,,Failure Path,Default,,,startOutput,finalOutput,Failur
         assert isinstance(result, dict)
         assert result.get("last_action_success") is True
         assert "finalOutput" in result
-        assert "DefaultAgent 'SuccessPath' executed" in result["finalOutput"]
+        assert "[SuccessPath] DefaultAgent executed with prompt: 'Success reached'" in result["finalOutput"]
         assert "Success reached" in result["finalOutput"]
     finally:
         # Clean up the temporary file
@@ -69,7 +69,7 @@ TestBranching,FailurePath,,Failure Path,Default,,,startOutput,finalOutput,Failur
         assert isinstance(result, dict)
         assert result.get("last_action_success") is True
         assert "finalOutput" in result
-        assert "DefaultAgent 'FailurePath' executed" in result["finalOutput"]
+        assert "[FailurePath] DefaultAgent executed with prompt: 'Failure reached'" in result["finalOutput"]
         assert "Failure reached" in result["finalOutput"]
 
         

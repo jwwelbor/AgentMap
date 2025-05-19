@@ -30,7 +30,7 @@ class CSVReaderAgent(CSVAgent, ReaderOperationsMixin):
         Returns:
             Formatted CSV data
         """
-        logger.info(f"Reading from {collection}")
+        self.log_info(f"Reading from {collection}")
         
         # Check if file exists
         if not self._check_file_exists(collection):
@@ -70,4 +70,4 @@ class CSVReaderAgent(CSVAgent, ReaderOperationsMixin):
             inputs: Input dictionary
         """
         format_type = inputs.get("format", "records")
-        logger.debug(f"[{self.__class__.__name__}] Starting CSV read operation on {collection} (format: {format_type})")
+        self.log_debug(f"[{self.__class__.__name__}] Starting CSV read operation on {collection} (format: {format_type})")

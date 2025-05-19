@@ -8,7 +8,6 @@ import os
 import pytest
 import tempfile
 from unittest.mock import MagicMock, patch
-from pathlib import Path
 
 # We need to handle the case where LangChain is not installed
 try:
@@ -24,7 +23,7 @@ except ImportError:
     HAS_LANGCHAIN = False
     
 # Import AgentMap functionality
-from agentmap.agents.builtins.memory.utils import serialize_memory, deserialize_memory
+from agentmap.agents.builtins.llm.utils import serialize_memory, deserialize_memory
 from agentmap.state.adapter import StateAdapter
 from agentmap.agents.features import HAS_LLM_AGENTS
 

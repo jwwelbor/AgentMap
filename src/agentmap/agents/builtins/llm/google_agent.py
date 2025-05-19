@@ -12,7 +12,7 @@ from agentmap.state.adapter import StateAdapter
 from agentmap.config import get_llm_config
 from agentmap.logging import get_logger
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, False)
 
 
 """
@@ -124,5 +124,5 @@ class GoogleAgent(LLMAgent):
                     google_api_key=self.api_key
                 )
         except Exception as e:
-            logger.debug(f"Could not create LangChain ChatGoogleGenerativeAI client: {e}")
+            self.log_debug(f"Could not create LangChain ChatGoogleGenerativeAI client: {e}")
             return None

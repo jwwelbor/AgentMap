@@ -6,7 +6,7 @@ from agentmap.config import get_llm_config
 from agentmap.logging import get_logger
 from agentmap.agents import HAS_LLM_AGENTS
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, False)
 
 
 class SummaryAgent(BaseAgent):
@@ -45,13 +45,13 @@ class SummaryAgent(BaseAgent):
         self.use_llm = bool(self.llm_type)
 
         if bool(self.llm_type) and not HAS_LLM_AGENTS:
-            logger.warning(f"SummaryAgent '{name}' requested LLM mode but LLM dependencies are not installed.")
-            logger.warning("Falling back to basic concatenation mode. Install with: pip install agentmap[llm]")
+            self.log_warning(f"SummaryAgent '{name}' requested LLM mode but LLM dependencies are not installed.")
+            self.log_warning("Falling back to basic concatenation mode. Install with: pip install agentmap[llm]")
 
         if self.use_llm:
-            logger.debug(f"SummaryAgent '{name}' using LLM mode: {self.llm_type}")
+            self.log_debug(f"SummaryAgent '{name}' using LLM mode: {self.llm_type}")
         else:
-            logger.debug(f"SummaryAgent '{name}' using basic concatenation mode")
+            self.log_debug(f"SummaryAgent '{name}' using basic concatenation mode")
 
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
@@ -64,7 +64,7 @@ class SummaryAgent(BaseAgent):
             Summarized output as string
         """
         if not inputs:
-            logger.warning(f"SummaryAgent '{self.name}' received empty inputs")
+            self.log_warning(f"SummaryAgent '{self.name}' received empty inputs")
             return ""
 
         # If LLM mode is enabled, use that
@@ -87,7 +87,7 @@ class SummaryAgent(BaseAgent):
                 try:
                     formatted = self.format_template.format(key=key, value=value)
                 except Exception as e:
-                    logger.warning(f"Error formatting {key}: {str(e)}")
+                    self.log_warning(f"Error formatting {key}: {str(e)}")
                     formatted = f"{key}: {value}"
             else:
                 formatted = str(value)
@@ -145,13 +145,13 @@ class SummaryAgent(BaseAgent):
                 result = llm_agent.process(llm_input)
 
             else:
-                logger.error(f"Unsupported LLM type: {self.llm_type}")
+                self.log_error(f"Unsupported LLM type: {self.llm_type}")
                 return f"ERROR: Unsupported LLM type '{self.llm_type}'"
 
             return result
 
         except Exception as e:
-            logger.error(f"Error in LLM summarization: {str(e)}")
+            self.log_error(f"Error in LLM summarization: {str(e)}")
             return f"ERROR in summarization: {str(e)}\n\nOriginal content:\n{concatenated}"
 
     def _get_llm_prompt(self, content: str) -> str:

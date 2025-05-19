@@ -57,7 +57,7 @@ class JSONCloudDocumentReaderAgent(JSONCloudDocumentAgent, DocumentReaderAgent):
         if path:
             operation += f", path: {path}"
         
-        logger.debug(f"[{self.__class__.__name__}] Starting {operation}")
+        self.log_debug(f"[{self.__class__.__name__}] Starting {operation}")
 
 
 # Register agents

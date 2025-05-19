@@ -7,7 +7,7 @@ including serialization and deserialization for state persistence.
 
 from typing import Any, Dict, List, Optional, Union
 from agentmap.logging import get_logger
-logger = get_logger(__name__)
+logger = get_logger(__name__, False)
 
 # Flag to indicate if LangChain is available
 try:

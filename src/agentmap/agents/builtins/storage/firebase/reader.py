@@ -82,7 +82,7 @@ class FirebaseDocumentReaderAgent(DocumentReaderAgent, FirebaseDocumentAgent, Re
         except Exception as e:
             # Convert Firebase errors to standard exceptions
             error = self._convert_firebase_error(e)
-            logger.error(f"Firebase read error: {str(error)}")
+            self.log_error(f"Firebase read error: {str(error)}")
             raise error
     
     def _read_from_firestore(

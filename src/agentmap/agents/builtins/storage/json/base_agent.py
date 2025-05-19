@@ -59,14 +59,14 @@ class JSONDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
                 yield f
         except FileNotFoundError:
             if 'r' in mode:
-                logger.debug(f"JSON file not found: {file_path}")
+                self.log_debug(f"JSON file not found: {file_path}")
                 raise
             else:
                 # For write mode, create the file
                 with open(file_path, 'w', encoding='utf-8') as f:
                     yield f
         except (PermissionError, IOError) as e:
-            logger.error(f"File access error for {file_path}: {str(e)}")
+            self.log_error(f"File access error for {file_path}: {str(e)}")
             raise
     
     def _read_json_file(self, file_path: str) -> Any:
@@ -87,11 +87,11 @@ class JSONDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
             with self._open_json_file(file_path, 'r') as f:
                 return json.load(f)
         except FileNotFoundError:
-            logger.debug(f"JSON file not found: {file_path}")
+            self.log_debug(f"JSON file not found: {file_path}")
             raise FileNotFoundError(f"File not found: {file_path}")
         except json.JSONDecodeError as e:
             error_msg = f"Invalid JSON in {file_path}: {str(e)}"
-            logger.error(error_msg)
+            self.log_error(error_msg)
             raise ValueError(error_msg)
     
     def _write_json_file(self, file_path: str, data: Any, indent: int = 2) -> None:
@@ -110,10 +110,10 @@ class JSONDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
         try:
             with self._open_json_file(file_path, 'w') as f:
                 json.dump(data, f, indent=indent)
-            logger.debug(f"Successfully wrote to {file_path}")
+            self.log_debug(f"Successfully wrote to {file_path}")
         except TypeError as e:
             error_msg = f"Cannot serialize to JSON: {str(e)}"
-            logger.error(error_msg)
+            self.log_error(error_msg)
             raise ValueError(error_msg)
     
     def _ensure_document_exists(self, collection: str, document_id: str) -> bool:

@@ -84,7 +84,7 @@ class VectorAgent(BaseStorageAgent, StorageErrorHandlerMixin):
             import langchain
             return True
         except ImportError:
-            logger.error("LangChain not installed. Use 'pip install langchain langchain-openai'")
+            self.log_error("LangChain not installed. Use 'pip install langchain langchain-openai'")
             return False
     
     def _get_or_create_vectorstore(self, inputs: Dict[str, Any]) -> Any:
@@ -286,7 +286,7 @@ class VectorAgent(BaseStorageAgent, StorageErrorHandlerMixin):
         Returns:
             Error result dictionary
         """
-        logger.error(f"Vector operation error ({collection}): {str(error)}")
+        self.log_error(f"Vector operation error ({collection}): {str(error)}")
         return self._format_vector_result(
             success=False,
             error=f"Operation failed: {str(error)}"

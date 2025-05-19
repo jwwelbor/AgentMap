@@ -56,7 +56,7 @@ class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandl
             inputs: Input dictionary
         """
         mode = inputs.get("mode", "write")
-        logger.debug(f"[{self.__class__.__name__}] Starting write operation (mode: {mode}) on file: {collection}")
+        self.log_debug(f"[{self.__class__.__name__}] Starting write operation (mode: {mode}) on file: {collection}")
     
     def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
         """

@@ -9,7 +9,7 @@ from agentmap.config import get_llm_config
 from agentmap.logging import get_logger
 from agentmap.state.adapter import StateAdapter
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, False)
 
 class LLMAgent(BaseAgent):
     """
@@ -206,16 +206,16 @@ class LLMAgent(BaseAgent):
                     memory_key="history"
                 )
             else:
-                logger.warning(f"Unsupported memory type: {memory_type}. Using buffer memory.")
+                self.log_warning(f"Unsupported memory type: {memory_type}. Using buffer memory.")
                 return ConversationBufferMemory(
                     return_messages=True, 
                     memory_key="history"
                 )
         except ImportError:
-            logger.warning("LangChain not installed, memory features unavailable")
+            self.log_warning("LangChain not installed, memory features unavailable")
             return None
         except Exception as e:
-            logger.error(f"Error creating memory: {e}")
+            self.log_error(f"Error creating memory: {e}")
             return None
 
     def _format_prompt(self, inputs: Dict[str, Any]) -> str:
@@ -233,10 +233,10 @@ class LLMAgent(BaseAgent):
             formatted_inputs = {k: v for k, v in inputs.items() if k in self.input_fields}
             return self.prompt.format(**formatted_inputs)
         except KeyError as e:
-            logger.warning(f"Missing key in prompt format: {e}")
+            self.log_warning(f"Missing key in prompt format: {e}")
             return self.prompt
         except Exception as e:
-            logger.error(f"Error formatting prompt: {e}")
+            self.log_error(f"Error formatting prompt: {e}")
             return self.prompt
 
     def _process_with_langchain(self, client: Any, formatted_prompt: str, inputs: Dict[str, Any]) -> Any:
@@ -254,7 +254,7 @@ class LLMAgent(BaseAgent):
         try:
             # Get or restore memory from inputs
             if self.memory_key in inputs and self.memory is not None:
-                from agentmap.agents.builtins.memory.utils import deserialize_memory
+                from agentmap.agents.builtins.llm.utils import deserialize_memory
                 memory_data = inputs[self.memory_key]
                 if isinstance(memory_data, dict) and memory_data.get("_type") == "langchain_memory":
                     self.memory = deserialize_memory(memory_data)
@@ -267,7 +267,7 @@ class LLMAgent(BaseAgent):
                 try:
                     memory_variables = self.memory.load_memory_variables({})
                 except Exception as e:
-                    logger.warning(f"Error loading memory variables: {e}")
+                    self.log_warning(f"Error loading memory variables: {e}")
             
             # Run the LLM
             response = None
@@ -306,7 +306,7 @@ class LLMAgent(BaseAgent):
                 )
                 
                 # Create response with memory
-                from agentmap.agents.builtins.memory.utils import serialize_memory
+                from agentmap.agents.builtins.llm.utils import serialize_memory
                 
                 if self.output_field:
                     return {
@@ -323,7 +323,7 @@ class LLMAgent(BaseAgent):
                 return result
                 
         except Exception as e:
-            logger.error(f"Error in LangChain processing: {e}")
+            self.log_error(f"Error in LangChain processing: {e}")
             raise
 
     def process(self, inputs: Dict[str, Any]) -> Any:
@@ -346,14 +346,14 @@ class LLMAgent(BaseAgent):
                 if langchain_client:
                     return self._process_with_langchain(langchain_client, formatted_prompt, inputs)
             except Exception as e:
-                logger.debug(f"LangChain processing failed, falling back to direct API: {e}")
+                self.log_debug(f"LangChain processing failed, falling back to direct API: {e}")
             
             # Fall back to direct API call
             result = self._call_api(formatted_prompt)
             return result
             
         except Exception as e:
-            logger.error(f"Error in {self.provider_name} processing: {e}")
+            self.log_error(f"Error in {self.provider_name} processing: {e}")
             return {
                 "error": str(e),
                 "last_action_success": False
@@ -407,7 +407,7 @@ class LLMAgent(BaseAgent):
         except Exception as e:
             # Handle any unexpected errors
             error_msg = f"Error in {self.name}: {str(e)}"
-            logger.error(error_msg)
+            self.log_error(error_msg)
             
             # Set error in state
             error_state = StateAdapter.set_value(state, "error", error_msg)
