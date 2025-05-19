@@ -1,142 +1,146 @@
-# agentmap/logging/logger.py
+# agentmap/logging/logger.py (updated)
 import logging
 import os
 from typing import Dict, Optional, Any
 
-from agentmap.logging.logger_utils import (
-    get_clean_logger,
-    configure_basic_logger,
-    fix_root_logger,
-    debug_loggers
-)
-
 # Define custom TRACE level (lower than DEBUG)
 TRACE = 5  # Lower number = more verbose
 logging.addLevelName(TRACE, "TRACE")
+
 
 # Add a trace method to the logger class
 def trace(self, message, *args, **kwargs):
     if self.isEnabledFor(TRACE):
         self._log(TRACE, message, args, **kwargs)
 
+
 # Add the method to the Logger class
 logging.Logger.trace = trace
 
-# Singleton logger instance cache
-_LOGGER_REGISTRY = {}
-_LOGGING_CONFIGURED = False
+# Import our manager
+from agentmap.logging.manager import get_logger as _get_manager_logger
+from agentmap.logging.manager import configure_logger, reset as _reset_manager
 
-def get_logger(name="AgentMap"):
+
+def get_logger(name="AgentMap", propagate=True):
     """
     Get a logger with the AgentMap configuration.
-    
+
     Args:
         name: Logger name
-        
+        propagate: Whether to propagate messages to parent loggers
+
     Returns:
         Configured logger
     """
-    global _LOGGER_REGISTRY
-    
-    # Check if logger already exists in registry
-    if name in _LOGGER_REGISTRY:
-        return _LOGGER_REGISTRY[name]
-    
-    # Get a clean logger with unique handlers
-    logger = get_clean_logger(name)
-    
-    # Configure the logger if needed
+    # Get level from environment or default
+    level_name = os.environ.get("AGENTMAP_LOG_LEVEL", "INFO").upper()
+    try:
+        level = TRACE if level_name == "TRACE" else getattr(logging, level_name, logging.INFO)
+    except AttributeError:
+        level = logging.INFO
+
+    # Get logger and configure it
+    logger = logging.getLogger(name)
+
+    # Set propagation flag
+    logger.propagate = propagate
+
+    # Configure if not already configured
     if not logger.handlers:
-        # Get level from environment or default
-        level_name = os.environ.get("AGENTMAP_LOG_LEVEL", "INFO").upper()
-        try:
-            level = TRACE if level_name == "TRACE" else getattr(logging, level_name, logging.INFO)
-        except AttributeError:
-            level = logging.INFO
-        
-        # Configure with basic console handler
-        configure_basic_logger(logger, level=level)
-    
-    # Store in registry
-    _LOGGER_REGISTRY[name] = logger
-    
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter("[%(levelname)s] %(name)s: %(message)s")
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.setLevel(level)
+
     return logger
+
 
 def configure_logging(config: Optional[Dict[str, Any]] = None):
     """
     Configure logging system from configuration.
-    
+
     Args:
         config: Logging configuration dictionary
     """
-    global _LOGGING_CONFIGURED, _LOGGER_REGISTRY
-    
-    # Skip if already configured or config is empty
-    if _LOGGING_CONFIGURED or not config:
+    # Skip if config is empty
+    if not config:
         return
-    
-    # Fix root logger first to prevent duplication
-    fix_root_logger()
-    
-    _LOGGING_CONFIGURED = True
-    
+
     # Configure root logger
-    root_logger = get_clean_logger("")  # Empty string is root logger
-    
+    root_logger = _get_manager_logger("")
+
     # Set level if specified
     if "level" in config:
         level_name = config["level"].upper()
         level = TRACE if level_name == "TRACE" else getattr(logging, level_name, logging.INFO)
-        root_logger.setLevel(level)
-    
+        configure_logger(root_logger, level=level)
+
     # Set format
     log_format = config.get("format", "[%(levelname)s] %(name)s: %(message)s")
-    formatter = logging.Formatter(log_format)
-    
-    # Configure root logger with the formatter
+
+    # Configure existing handlers
     for handler in root_logger.handlers:
-        handler.setFormatter(formatter)
-    
-    # If no handlers, add one
-    if not root_logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(formatter)
-        root_logger.addHandler(handler)
-    
+        if isinstance(handler, logging.Handler) and not isinstance(handler, logging.NullHandler):
+            handler.setFormatter(logging.Formatter(log_format))
+
+    # Add handler if needed
+    if not any(not isinstance(h, logging.NullHandler) for h in root_logger.handlers):
+        configure_logger(root_logger, format=log_format, handler="console")
+
     # Configure specific loggers
     if "loggers" in config:
         for logger_name, logger_config in config["loggers"].items():
             logger = get_logger(logger_name)
-            
-            # Set level if specified
+
+            # Extract configuration
+            level = None
             if "level" in logger_config:
                 level_name = logger_config["level"].upper()
                 level = TRACE if level_name == "TRACE" else getattr(logging, level_name, logging.INFO)
-                logger.setLevel(level)
-            
-            # Update handlers with new formatter
-            for handler in logger.handlers:
-                handler.setFormatter(formatter)
+
+            # Configure the logger
+            configure_logger(
+                logger,
+                level=level,
+                format=log_format,
+                propagate=logger_config.get("propagate")
+            )
+
 
 def reset_logging():
     """Reset logging configuration. Mainly for testing."""
-    global _LOGGER_REGISTRY, _LOGGING_CONFIGURED
-    
-    # Reset all loggers in the registry
-    for name, logger in _LOGGER_REGISTRY.items():
-        # Remove all handlers
-        for handler in list(logger.handlers):
-            logger.removeHandler(handler)
-    
-    # Clear registry and reset flag
-    _LOGGER_REGISTRY = {}
-    _LOGGING_CONFIGURED = False
+    _reset_manager()
+
 
 def inspect_loggers():
     """
     Return diagnostic information about all loggers for debugging.
-    
+
     Returns:
         Dictionary with logger information
     """
-    return debug_loggers()
+    result = {}
+    root = logging.getLogger()
+
+    # Get root logger info
+    result["root"] = {
+        "level": logging.getLevelName(root.level),
+        "handlers": [type(h).__name__ for h in root.handlers],
+        "disabled": root.disabled,
+        "propagate": root.propagate
+    }
+
+    # Find all loggers
+    manager = root.manager
+    for logger_name in manager.loggerDict:
+        logger = logging.getLogger(logger_name)
+        result[logger_name] = {
+            "level": logging.getLevelName(logger.level),
+            "handlers": [type(h).__name__ for h in logger.handlers],
+            "disabled": logger.disabled,
+            "propagate": logger.propagate
+        }
+
+    return result
