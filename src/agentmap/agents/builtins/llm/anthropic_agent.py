@@ -4,10 +4,6 @@ Anthropic Claude LLM agent implementation.
 This module provides an agent for interacting with Anthropic's Claude language models.
 """
 
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__, False)
-
 
 """
 Anthropic Claude LLM agent implementation.
@@ -18,10 +14,6 @@ This module provides an agent for interacting with Anthropic's Claude language m
 from typing import Any, Optional
 
 from agentmap.agents.builtins.llm.llm_agent import LLMAgent
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
-
 
 class AnthropicAgent(LLMAgent):
     """
@@ -63,18 +55,31 @@ class AnthropicAgent(LLMAgent):
         
         # Try newer Anthropic client first
         try:
-            from anthropic import Anthropic
+            from anthropic import Anthropic, HUMAN_PROMPT, AI_PROMPT
             
             client = Anthropic(api_key=self.api_key)
-            completion = client.messages.create(
-                model=self.model,
-                max_tokens=1024,
-                temperature=self.temperature,
-                messages=[{"role": "user", "content": formatted_prompt}]
-            )
             
-            return completion.content[0].text.strip()
-            
+            try:
+                # Try new messages API first
+                completion = client.messages.create(
+                    model=self.model,
+                    max_tokens=1024,
+                    temperature=self.temperature,
+                    messages=[{"role": "user", "content": formatted_prompt}]
+                )
+                
+                return completion.content[0].text.strip()
+            except (AttributeError, TypeError):
+                # Fall back to older completions API
+                completion = client.completions.create(
+                    model=self.model,
+                    max_tokens=1024,
+                    temperature=self.temperature,
+                    prompt=f"{HUMAN_PROMPT} {formatted_prompt} {AI_PROMPT}",
+                )
+                
+                return completion.completion.strip()
+                
         except ImportError:
             # Fallback to older API version if necessary
             try:
@@ -106,13 +111,36 @@ class AnthropicAgent(LLMAgent):
             return None
             
         try:
-            from langchain.chat_models import ChatAnthropic
-            
-            return ChatAnthropic(
-                model=self.model,
-                temperature=self.temperature,
-                anthropic_api_key=self.api_key
-            )
+            # Try to use the new langchain-anthropic package
+            try:
+                from langchain_anthropic import ChatAnthropic
+                
+                return ChatAnthropic(
+                    model=self.model,
+                    temperature=self.temperature,
+                    anthropic_api_key=self.api_key
+                )
+            except ImportError:
+                # Fall back to legacy imports with warning
+                try:
+                    from langchain_community.chat_models import ChatAnthropic
+                    self.log_warning("Using deprecated LangChain import. Consider upgrading to langchain-anthropic.")
+                    
+                    return ChatAnthropic(
+                        model=self.model,
+                        temperature=self.temperature,
+                        anthropic_api_key=self.api_key
+                    )
+                except ImportError:
+                    # Last resort, try the oldest import path
+                    from langchain.chat_models import ChatAnthropic
+                    self.log_warning("Using legacy LangChain import. Please upgrade your dependencies.")
+                    
+                    return ChatAnthropic(
+                        model=self.model,
+                        temperature=self.temperature,
+                        anthropic_api_key=self.api_key
+                    )
         except Exception as e:
             self.log_debug(f"Could not create LangChain ChatAnthropic client: {e}")
             return None
