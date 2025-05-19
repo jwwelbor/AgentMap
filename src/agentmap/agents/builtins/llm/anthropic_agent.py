@@ -4,12 +4,6 @@ Anthropic Claude LLM agent implementation.
 This module provides an agent for interacting with Anthropic's Claude language models.
 """
 
-import os
-from typing import Any, Dict, List, Optional, Union
-
-from agentmap.agents.builtins.llm.llm_agent import LLMAgent
-from agentmap.state.adapter import StateAdapter
-from agentmap.config import get_llm_config
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
@@ -21,7 +15,7 @@ Anthropic Claude LLM agent implementation.
 This module provides an agent for interacting with Anthropic's Claude language models.
 """
 
-from typing import Any, Optional, Dict
+from typing import Any, Optional
 
 from agentmap.agents.builtins.llm.llm_agent import LLMAgent
 from agentmap.logging import get_logger

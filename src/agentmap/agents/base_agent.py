@@ -73,27 +73,22 @@ class BaseAgent:
             
             # Process inputs to get output
             output = self.process(inputs)
-            
+            # Set action success flag
+            state = StateAdapter.set_value(state, "last_action_success", True)
+
             # Post-processing hook for subclasses - can modify both state and output
             state, output = self._post_process(state, output)
-            
-            # Record successful result
-            tracker.record_node_result(self.name, True, result=output)
-            
-            # Update graph success based on policy
+
+            # read last_action_success in case it was changed in post_process
+            tracker.record_node_result(self.name, state["last_action_success"], result=output)
             graph_success = tracker.update_graph_success()
-            
-            # Store graph success in state
             state = StateAdapter.set_value(state, "graph_success", graph_success)
             
             # Now set the final output and success flag
             if self.output_field:
                 logger.debug(f"[{self.name}] Setting output in field '{self.output_field}' with value: {output}")
                 state = StateAdapter.set_value(state, self.output_field, output)
-            
-            # Set action success flag
-            state = StateAdapter.set_value(state, "last_action_success", True)
-            
+
             return state
             
         except Exception as e:

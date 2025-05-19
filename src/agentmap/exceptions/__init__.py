@@ -23,8 +23,6 @@ __all__ = [
     'InvalidEdgeDefinitionError',
     'CollectionNotFoundError',
     'DocumentNotFoundError',
-    'StorageError',
-    'StorageNotFoundError',
     'StorageAuthenticationError',
     'StorageConnectionError',
     'StorageConfigurationError',

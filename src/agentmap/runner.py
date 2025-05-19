@@ -18,7 +18,6 @@ from agentmap.graph.node_registry import build_node_registry, populate_orchestra
 from agentmap.state.adapter import StateAdapter
 from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
 from agentmap.agents import get_agent_class
-from agentmap.logging.tracking.policy import evaluate_success_policy
 
 logger = get_logger(__name__)
 
@@ -140,7 +139,7 @@ def add_dynamic_routing(builder: StateGraph, graph_def: Dict[str, Any]) -> None:
     for node_name in orchestrator_nodes:
         logger.debug(f"[DynamicRouting] Adding dynamic routing for node: {node_name}")
         
-        def dynamic_router(state, node=node_name):
+        def dynamic_router(state, dynamic_node=node_name):
             """Route based on __next_node value in state."""
             # Check if __next_node is set
             next_node = StateAdapter.get_value(state, "__next_node")
@@ -148,7 +147,7 @@ def add_dynamic_routing(builder: StateGraph, graph_def: Dict[str, Any]) -> None:
             if next_node:
                 # Clear the next_node field to prevent loops
                 state = StateAdapter.set_value(state, "__next_node", None)
-                logger.debug(f"[DynamicRouter] Routing from {node} to {next_node}")
+                logger.debug(f"[DynamicRouter] Routing from {dynamic_node} to {next_node}")
                 return next_node
             
             # If there are standard edges defined, let them handle routing
@@ -218,9 +217,9 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
         return agent_class
     
     except (ImportError, AttributeError) as e:
-        errorMessage = f"[AgentInit] Failed to import custom agent '{agent_type}': {e}"
-        logger.error(errorMessage)
-        raise AgentInitializationError(errorMessage)
+        error_message = f"[AgentInit] Failed to import custom agent '{agent_type}': {e}"
+        logger.error(error_message)
+        raise AgentInitializationError(error_message)
 
 
 def run_graph(
@@ -258,17 +257,8 @@ def run_graph(
     
     # Use trace_graph context manager to conditionally enable tracing
     with trace_graph(graph_name):
-        # Try to load a compiled graph first
-        graph = load_compiled_graph(graph_name, config_path)
+        graph = get_graph(autocompile, config_path, csv_path, graph_name)
 
-        # If autocompile is enabled, compile and load the graph
-        if not graph and autocompile:
-            graph = autocompile_and_load(graph_name, config_path)
-        
-        # If still no graph, build it in memory
-        if not graph:
-            graph = build_graph_in_memory(graph_name, csv_path, config_path)
-        
         # Get the graph definition for node registry
         csv_file = csv_path or get_csv_path(config_path)
         gb = GraphBuilder(csv_file)
@@ -297,13 +287,11 @@ def run_graph(
             
             # The graph_success field is already updated during execution
             graph_success = summary["graph_success"]
-            # For backwards compatibility
-            result = StateAdapter.set_value(result, "__policy_success", graph_success)
-            
+
             # Log result with different detail based on tracking mode
             if tracking_enabled:
                 logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s")
-                logger.info(f"  Policy success: {graph_success}, Raw success: {summary['overall_success']}")
+                logger.info(f"  Policy success: {graph_success}, All node success: {summary['overall_success']}")
             else:
                 logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s, Success: {graph_success}")
                 
@@ -313,3 +301,15 @@ def run_graph(
             logger.error(f"❌ GRAPH EXECUTION FAILED: '{graph_name}' after {execution_time:.2f}s")
             logger.error(f"[RUN] Error: {str(e)}")
             raise
+
+
+def get_graph(autocompile, config_path, csv_path, graph_name):
+    # Try to load a compiled graph first
+    graph = load_compiled_graph(graph_name, config_path)
+    # If autocompile is enabled, compile and load the graph
+    if not graph and autocompile:
+        graph = autocompile_and_load(graph_name, config_path)
+    # If still no graph, build it in memory
+    if not graph:
+        graph = build_graph_in_memory(graph_name, csv_path, config_path)
+    return graph
