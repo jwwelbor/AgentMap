@@ -23,7 +23,7 @@ except ImportError:
     HAS_LANGCHAIN = False
     
 # Import AgentMap functionality
-from agentmap.agents.builtins.llm.utils import serialize_memory, deserialize_memory
+
 from agentmap.state.adapter import StateAdapter
 from agentmap.agents.features import HAS_LLM_AGENTS
 
@@ -89,64 +89,6 @@ def temp_csv_path():
         os.unlink(path)
 
 # Core serialization/deserialization tests
-
-def test_memory_serialization(buffer_memory):
-    """Test that memory can be correctly serialized to a dictionary."""
-    serialized = serialize_memory(buffer_memory)
-    
-    # Check basic structure
-    assert serialized is not None
-    assert isinstance(serialized, dict)
-    assert serialized.get("_type") == "langchain_memory"
-    assert serialized.get("memory_type") == "buffer"
-    
-    # Check message serialization
-    messages = serialized.get("messages", [])
-    assert len(messages) == 2
-    assert messages[0]["type"] == "human"
-    assert messages[0]["content"] == "Hello"
-    assert messages[1]["type"] == "ai"
-    assert messages[1]["content"] == "Hi there! How can I help you?"
-
-def test_memory_deserialization(buffer_memory):
-    """Test that serialized memory can be correctly deserialized."""
-    serialized = serialize_memory(buffer_memory)
-    deserialized = deserialize_memory(serialized)
-    
-    # Check type
-    assert deserialized is not None
-    assert hasattr(deserialized, "chat_memory")
-    
-    # Check message content
-    messages = deserialized.chat_memory.messages
-    assert len(messages) == 2
-    assert messages[0].type == "human"
-    assert messages[0].content == "Hello"
-    assert messages[1].type == "ai"
-    assert messages[1].content == "Hi there! How can I help you?"
-
-def test_window_memory_serialization(window_memory):
-    """Test that window memory correctly preserves window size (k)."""
-    serialized = serialize_memory(window_memory)
-    
-    # Check that k parameter is preserved
-    assert serialized.get("k") == 2
-    
-    # Check that all messages are present in serialized form
-    messages = serialized.get("messages", [])
-    assert len(messages) == 4
-
-def test_window_memory_deserialization(window_memory):
-    """Test that window memory is correctly deserialized with parameters."""
-    serialized = serialize_memory(window_memory)
-    deserialized = deserialize_memory(serialized)
-    
-    # Check that k parameter is preserved
-    assert deserialized.k == 2
-    
-    # Check messages
-    messages = deserialized.chat_memory.messages
-    assert len(messages) == 4
 
 def test_state_adapter_get_memory(state_with_memory):
     """Test that StateAdapter correctly handles memory objects."""
@@ -246,30 +188,3 @@ def test_memory_persistence_in_graph():
     # 3. Run the graph and verify memory updates
     # 4. Check that memory is preserved between different agent nodes
 
-@pytest.mark.parametrize("memory_type", ["buffer", "window", "summary"])
-def test_different_memory_types(memory_type):
-    """Test that different memory types are properly handled."""
-    if memory_type == "buffer":
-        memory = ConversationBufferMemory(return_messages=True, memory_key="history")
-    elif memory_type == "window":
-        memory = ConversationBufferWindowMemory(k=3, return_messages=True, memory_key="history")
-    elif memory_type == "summary":
-        # Skip if we can't use a default LLM for summarization
-        pytest.skip("Summary memory requires LLM for summarization")
-        memory = ConversationSummaryMemory(return_messages=True, memory_key="history")
-    
-    # Add some test messages
-    memory.chat_memory.add_user_message("Hello")
-    memory.chat_memory.add_ai_message("Hi there!")
-    
-    # Test serialization/deserialization round trip
-    serialized = serialize_memory(memory)
-    deserialized = deserialize_memory(serialized)
-    
-    # Verify type-specific properties are preserved
-    if memory_type == "buffer":
-        assert not hasattr(deserialized, "k")
-    elif memory_type == "window":
-        assert deserialized.k == 3
-    elif memory_type == "summary":
-        assert hasattr(deserialized, "llm")

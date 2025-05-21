@@ -13,9 +13,6 @@ from typing import Any, Dict, List, Optional, Union
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, DocumentResult, log_operation)
 from agentmap.agents.builtins.storage.mixins import ReaderOperationsMixin, StorageErrorHandlerMixin
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandlerMixin):
@@ -216,38 +213,31 @@ class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandl
         
         # Try using the new import paths first
         try:
-            try:
-                from langchain_community.document_loaders import TextLoader
-                from langchain_community.document_loaders import PyPDFLoader
-                from langchain_community.document_loaders import UnstructuredMarkdownLoader
-                from langchain_community.document_loaders import UnstructuredHTMLLoader
-                from langchain_community.document_loaders import UnstructuredWordDocumentLoader
-                from langchain_community.document_loaders import CSVLoader
-            except ImportError:
-                # Fall back to legacy import paths
-                from langchain.document_loaders import (
-                    TextLoader, PyPDFLoader, UnstructuredMarkdownLoader,
-                    UnstructuredHTMLLoader, UnstructuredWordDocumentLoader, CSVLoader
-                )
-            
+           
             if file_path.endswith('.txt'):
+                from langchain_community.document_loaders import TextLoader
                 return TextLoader(file_path)
             elif file_path.endswith('.pdf'):
+                from langchain_community.document_loaders import PyPDFLoader
                 return PyPDFLoader(file_path)
             elif file_path.endswith('.md'):
+                from langchain_community.document_loaders import UnstructuredMarkdownLoader
                 return UnstructuredMarkdownLoader(file_path)
             elif file_path.endswith('.html') or file_path.endswith('.htm'):
+                from langchain_community.document_loaders import UnstructuredHTMLLoader
                 return UnstructuredHTMLLoader(file_path)
             elif file_path.endswith('.docx') or file_path.endswith('.doc'):
+                from langchain_community.document_loaders import UnstructuredWordDocumentLoader
                 return UnstructuredWordDocumentLoader(file_path)
             elif file_path.endswith('.csv'):
+                from langchain_community.document_loaders import CSVLoader
                 return CSVLoader(file_path)
             else:
                 # Default to text loader for unknown types
                 return TextLoader(file_path)
         except ImportError as e:
             # Create a simple loader that returns a document with the file content
-            self.log_warning(f"LangChain document loaders not available ({e}), using fallback loader")
+            self.log_warning(f"LangChain document loaders not available ({e})")
             return self._create_fallback_loader(file_path)
         except Exception as e:
             raise ValueError(f"Error creating loader for {file_path}: {e}")

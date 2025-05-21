@@ -35,63 +35,90 @@ register_agent("graph", GraphAgent)
 
 # ----- LLM AGENTS (requires 'llm' extras) -----
 from agentmap.features_registry import features
-from agentmap.agents.dependency_checker import check_llm_dependencies, get_llm_installation_guide
+from agentmap.agents.dependency_checker import check_llm_dependencies
 
-try:
-    # Import all LLM agents at once
-    from agentmap.agents.builtins.llm.llm_agent import LLMAgent
-    
-    # Check and register each provider
-    # OpenAI
+# Global check for basic LLM capabilities
+has_basic_llm, missing_basic = check_llm_dependencies()
+if not has_basic_llm:
+    _logger.debug(f"LLM dependencies not available: {missing_basic}")
+    features.record_missing_dependencies("llm", missing_basic)
+else:
+    # Try to register LLM base classes
     try:
-        from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
-        register_agent("openai", OpenAIAgent)
-        register_agent("gpt", OpenAIAgent)  # Add alias for convenience
-        features.set_provider_available("llm", "openai", True)
-        _logger.debug("OpenAI agent registered successfully")
+        # Import and register base LLM agent
+        from agentmap.agents.builtins.llm.llm_agent import LLMAgent
+        register_agent("llm", LLMAgent)
+        
+        # Register individual providers if their dependencies are available
+        
+        # OpenAI provider
+        has_openai, missing_openai = check_llm_dependencies("openai")
+        if has_openai:
+            try:
+                from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
+                register_agent("openai", OpenAIAgent)
+                register_agent("gpt", OpenAIAgent)  # Add alias for convenience
+                features.set_provider_available("llm", "openai", True)
+                features.set_provider_validated("llm", "openai", True)
+                _logger.debug("OpenAI agent validated and registered")
+            except ImportError as e:
+                _logger.debug(f"OpenAI agent import failed: {e}")
+                features.set_provider_validated("llm", "openai", False)
+        else:
+            _logger.debug(f"OpenAI dependencies not available: {missing_openai}")
+            features.record_missing_dependencies("openai", missing_openai)
+            features.set_provider_available("llm", "openai", False)
+            features.set_provider_validated("llm", "openai", False)
+        
+        # Anthropic provider
+        has_anthropic, missing_anthropic = check_llm_dependencies("anthropic")
+        if has_anthropic:
+            try:
+                from agentmap.agents.builtins.llm.anthropic_agent import AnthropicAgent
+                register_agent("anthropic", AnthropicAgent)
+                register_agent("claude", AnthropicAgent)  # Add alias for convenience
+                features.set_provider_available("llm", "anthropic", True)
+                features.set_provider_validated("llm", "anthropic", True)
+                _logger.debug("Anthropic agent validated and registered")
+            except ImportError as e:
+                _logger.debug(f"Anthropic agent import failed: {e}")
+                features.set_provider_validated("llm", "anthropic", False)
+        else:
+            _logger.debug(f"Anthropic dependencies not available: {missing_anthropic}")
+            features.record_missing_dependencies("anthropic", missing_anthropic)
+            features.set_provider_available("llm", "anthropic", False)
+            features.set_provider_validated("llm", "anthropic", False)
+        
+        # Google provider
+        has_google, missing_google = check_llm_dependencies("google")
+        if has_google:
+            try:
+                from agentmap.agents.builtins.llm.google_agent import GoogleAgent
+                register_agent("google", GoogleAgent)
+                register_agent("gemini", GoogleAgent)  # Add alias for convenience
+                features.set_provider_available("llm", "google", True)
+                features.set_provider_validated("llm", "google", True)
+                _logger.debug("Google agent validated and registered")
+            except ImportError as e:
+                _logger.debug(f"Google agent import failed: {e}")
+                features.set_provider_validated("llm", "google", False)
+        else:
+            _logger.debug(f"Google dependencies not available: {missing_google}")
+            features.record_missing_dependencies("google", missing_google)
+            features.set_provider_available("llm", "google", False)
+            features.set_provider_validated("llm", "google", False)
+        
+        # Enable LLM feature if at least one provider is validated
+        if (features.is_provider_validated("llm", "openai") or 
+            features.is_provider_validated("llm", "anthropic") or 
+            features.is_provider_validated("llm", "google")):
+            features.enable_feature("llm")
+            _logger.info("LLM agents registered successfully with validated providers")
+        else:
+            _logger.warning("No validated LLM providers available")
+            
     except ImportError as e:
-        _logger.debug(f"OpenAI agent not available: {e}")
-        _, missing = check_llm_dependencies("openai")
-        features.record_missing_dependencies("openai", missing)
-    
-    # Anthropic
-    try:
-        from agentmap.agents.builtins.llm.anthropic_agent import AnthropicAgent
-        register_agent("anthropic", AnthropicAgent)
-        register_agent("claude", AnthropicAgent)  # Add alias for convenience
-        features.set_provider_available("llm", "anthropic", True)
-        _logger.debug("Anthropic agent registered successfully")
-    except ImportError as e:
-        _logger.debug(f"Anthropic agent not available: {e}")
-        _, missing = check_llm_dependencies("anthropic")
-        features.record_missing_dependencies("anthropic", missing)
-    
-    # Google
-    try:
-        from agentmap.agents.builtins.llm.google_agent import GoogleAgent
-        register_agent("google", GoogleAgent)
-        register_agent("gemini", GoogleAgent)  # Add alias for convenience
-        features.set_provider_available("llm", "google", True)
-        _logger.debug("Google agent registered successfully")
-    except ImportError as e:
-        _logger.debug(f"Google agent not available: {e}")
-        _, missing = check_llm_dependencies("google")
-        features.record_missing_dependencies("google", missing)
-    
-    # Register the base LLM agent
-    register_agent("llm", LLMAgent)
-    
-    # Enable LLM agents if at least one provider is available
-    if features.get_available_providers("llm"):
-        enable_llm_agents()
-        _logger.info("LLM agents registered successfully")
-    else:
-        _logger.warning("No LLM providers available.")
-    
-except ImportError as e:
-    _logger.debug(f"LLM agents not available: {e}. Install with: pip install agentmap[llm]")
-    _, missing = check_llm_dependencies()
-    features.record_missing_dependencies("llm", missing)
+        _logger.debug(f"Base LLM agent import failed: {e}")
 
 # ----- STORAGE AGENTS (requires 'storage' extras) -----
 try:
