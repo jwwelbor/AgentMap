@@ -1,41 +1,45 @@
-"""
-Dependency injection module for AgentMap.
-
-This module provides a DI framework integration that leverages
-the existing ConfigManager.
-"""
+# agentmap/di/__init__.py
 from typing import Optional, Union
 from pathlib import Path
+from agentmap.di.containers import ApplicationContainer
 
-from agentmap.di.containers import (
-    ApplicationContainer,
-    initialize_container,
-    application
-)
+# Global container instance
+application = ApplicationContainer()
 
-# Initialize on import for backward compatibility
-initialized = False
 
-def init(config_path: Optional[Union[str, Path]] = None) -> ApplicationContainer:
+def init_for_cli(config_path: Optional[Union[str, Path]] = None) -> ApplicationContainer:
     """
-    Initialize the dependency injection system.
-    
+    Initialize the DI container for CLI usage.
+
+    This should be called at the start of every CLI command before
+    any code that uses @inject decorators.
+
     Args:
-        config_path: Optional path to configuration file
-        
+        config_path: Path to the configuration file
+
     Returns:
         Initialized application container
     """
-    global initialized
-    container = initialize_container(config_path)
-    initialized = True
-    return container
+    # Configure the container with the provided config path
+    application.config.config_path.override(config_path)
+
+    # Wire the container to all modules that use injection
+    application.wire(modules=[
+        "agentmap.graph.assembler",
+        "agentmap.graph.builder",
+        "agentmap.runner",
+        "agentmap.prompts.manager",
+        "agentmap.compiler",
+        "agentmap.graph.scaffold",
+        # Add other modules that use @inject
+    ])
+
+    # Force initialization of configuration to catch any errors early
+    _ = application.config.configuration()
+
+    return application
 
 
-# Export public API
-__all__ = [
-    'ApplicationContainer',
-    'initialize_container',
-    'init',
-    'application'
-]
+def cleanup():
+    """Clean up the DI container (useful for testing or between commands)."""
+    application.unwire()
