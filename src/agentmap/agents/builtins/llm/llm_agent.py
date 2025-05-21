@@ -102,23 +102,6 @@ class LLMAgent(BaseAgent):
         """
         raise NotImplementedError("Subclasses must implement _get_default_model_name()")
         
-    def _call_api(self, messages: List[Dict[str, str]]) -> str:
-        """
-        Call the provider-specific API with messages.
-        
-        Args:
-            messages: List of message dictionaries with role and content
-            
-        Returns:
-            Response text from the LLM
-            
-        Raises:
-            ValueError: If API key is missing
-            ImportError: If provider package is not installed
-            RuntimeError: If API call fails
-        """
-        raise NotImplementedError("Subclasses must implement _call_api()")
-        
     def _create_langchain_client(self) -> Any:
         """
         Create a LangChain client for this provider if LangChain is available.
@@ -233,9 +216,6 @@ class LLMAgent(BaseAgent):
                 if langchain_client:
                     response = langchain_client.invoke(messages)
                     result = response.content if hasattr(response, 'content') else str(response)
-                else:
-                    # Fall back to direct API call
-                    result = self._call_api(messages)
                 
                 # Add assistant response to memory
                 add_assistant_message(inputs, result, self.memory_key)
