@@ -113,7 +113,8 @@ def build_graph_in_memory(
         # Create context with input/output field information
         context = {
             "input_fields": node.inputs,
-            "output_field": node.output
+            "output_field": node.output,
+            "description": node.description or ""
         }
         
         logger.debug(f"[AgentInit] Instantiating {agent_cls.__name__} as node '{node.name}'")
@@ -193,7 +194,7 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
     logger.debug(f"[AgentInit] resolving agent class for type '{agent_type}'")
     
     from agentmap.features_registry import features
-    from agentmap.agents.dependency_checker import get_llm_installation_guide
+    from agentmap.agents.dependency_checker import get_llm_installation_guide, check_llm_dependencies
     
     agent_type_lower = agent_type.lower() if agent_type else ""
     
@@ -206,37 +207,70 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
     # Check LLM agent types
     if agent_type_lower in ("openai", "anthropic", "google", "gpt", "claude", "gemini", "llm"):
         llm_enabled = features.is_feature_enabled("llm")
+        logger.debug(f"[AgentInit] LLM feature enabled: {llm_enabled}")
         
         if not llm_enabled:
-            missing = features.get_missing_dependencies().get("llm", [])
-            missing_str = ", ".join(missing) if missing else "required dependencies"
-            raise ImportError(f"LLM agent '{agent_type}' requested but LLM dependencies are not installed. "
-                             f"Missing: {missing_str}. Install with: pip install agentmap[llm]")
+            # Double-check dependencies directly
+            has_deps, missing = check_llm_dependencies()
+            if not has_deps:
+                missing_str = ", ".join(missing) if missing else "required dependencies"
+                raise ImportError(
+                    f"LLM agent '{agent_type}' requested but LLM dependencies are not installed. "
+                    f"Missing: {missing_str}. Install with: pip install agentmap[llm]"
+                )
         
-        # Check specific provider
-        if agent_type_lower != "llm":
-            provider_available = features.is_provider_available("llm", agent_type_lower)
-            
-            if not provider_available:
-                provider_name = agent_type_lower
-                if provider_name in ("gpt", "claude", "gemini"):
-                    provider_name = {"gpt": "openai", "claude": "anthropic", "gemini": "google"}[provider_name]
-                
-                missing = features.get_missing_dependencies().get(provider_name, [])
-                guide = get_llm_installation_guide(provider_name)
-                
-                raise ImportError(f"LLM agent '{agent_type}' requested but provider is not available. "
-                                f"Missing: {', '.join(missing) if missing else 'required dependencies'}. "
-                                f"Install with: {guide}")
+        # Handle base LLM case
+        if agent_type_lower == "llm":
+            agent_class = get_agent_class("llm")
+            if agent_class:
+                return agent_class
+            raise ImportError(
+                "Base LLM agent requested but not available. "
+                "Install with: pip install agentmap[llm]"
+            )
+        
+        # Check specific provider - be extra careful with validation
+        provider = agent_type_lower
+        if provider in ("gpt", "claude", "gemini"):
+            provider = {"gpt": "openai", "claude": "anthropic", "gemini": "google"}[provider]
+        
+        # Validate provider directly
+        has_provider_deps, missing_provider = check_llm_dependencies(provider)
+        
+        if not has_provider_deps:
+            guide = get_llm_installation_guide(provider)
+            raise ImportError(
+                f"LLM agent '{agent_type}' requested but dependencies are not available. "
+                f"Missing: {', '.join(missing_provider)}. Install with: {guide}"
+            )
+        
+        # If we get here, dependencies should be available, so get the agent class
+        agent_class = get_agent_class(agent_type)
+        if agent_class:
+            return agent_class
+        
+        # If we still failed, something unexpected happened
+        raise ImportError(
+            f"LLM agent '{agent_type}' requested. Dependencies are available "
+            f"but agent class could not be loaded. This might be a registration issue."
+        )
     
-    # Check storage agent types
+    # Check storage agent types - similar approach
     if agent_type_lower in ("csv_reader", "csv_writer", "json_reader", "json_writer", 
                             "file_reader", "file_writer", "vector_reader", "vector_writer"):
         storage_enabled = features.is_feature_enabled("storage")
         
         if not storage_enabled:
-            raise ImportError(f"Storage agent '{agent_type}' requested but storage dependencies are not installed. "
-                             "Install with: pip install agentmap[storage]")
+            # Additional direct validation
+            from agentmap.agents.dependency_checker import check_storage_dependencies
+            has_deps, missing = check_storage_dependencies()
+            
+            if not has_deps:
+                missing_str = ", ".join(missing) if missing else "required dependencies"
+                raise ImportError(
+                    f"Storage agent '{agent_type}' requested but storage dependencies are not installed. "
+                    f"Missing: {missing_str}. Install with: pip install agentmap[storage]"
+                )
     
     # Get agent class from registry
     agent_class = get_agent_class(agent_type)
@@ -330,7 +364,12 @@ def run_graph(
         # Set defaults for optional parameters
         initial_state = initial_state or {}
 
-        config = load_config(config_path)
+        try:
+            from agentmap.di import application
+            config = application.config.config()
+        except (ImportError, AttributeError):
+            # Fall back to direct config loading
+            config = load_config(config_path)
 
         autocompile = autocompile_override if autocompile_override is not None else config.get("autocompile", False)
 

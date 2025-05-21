@@ -48,17 +48,6 @@ class StateAdapter:
                 value = default
         else:
             value = default
-            
-        # Special handling for memory objects
-        if value is not None and key.endswith("_memory") and isinstance(value, dict) and value.get("_type") == "langchain_memory":
-            # Try to deserialize memory
-            try:
-                # Import dynamically to avoid circular imports
-                memory_utils = importlib.import_module("agentmap.agents.builtins.memory.utils")
-                if hasattr(memory_utils, "deserialize_memory"):
-                    value = memory_utils.deserialize_memory(value)
-            except (ImportError, AttributeError) as e:
-                logger.debug(f"Could not deserialize memory: {e}")
                 
         return value
 
@@ -75,16 +64,6 @@ class StateAdapter:
         Returns:
             New state object with updated value
         """
-        # Handle special case for memory objects
-        if key.endswith("_memory") and hasattr(value, "chat_memory"):
-            # Try to serialize memory
-            try:
-                # Import dynamically to avoid circular imports
-                memory_utils = importlib.import_module("agentmap.agents.builtins.memory.utils")
-                if hasattr(memory_utils, "serialize_memory"):
-                    value = memory_utils.serialize_memory(value)
-            except (ImportError, AttributeError) as e:
-                logger.debug(f"Could not serialize memory: {e}")
         
         # Handle special case for execution tracker
         if key == "__execution_tracker" and hasattr(value, "get_summary"):

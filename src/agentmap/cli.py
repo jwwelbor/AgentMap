@@ -12,6 +12,7 @@ from agentmap.graph.serialization import export_graph as export_graph_func
 from agentmap.runner import run_graph
 from agentmap.agents import get_agent_map
 from agentmap.agents.features import (HAS_LLM_AGENTS, HAS_STORAGE_AGENTS)
+from agentmap.di import init
 
 app = typer.Typer()
 
@@ -62,6 +63,8 @@ def compile_cmd(
 ):
     """Compile a graph or all graphs from the CSV to pickle files."""
     
+    initialize(config)
+
     if graph:
         export_as_pickle(
             graph, 
@@ -87,18 +90,23 @@ def compile_cmd(
 
 def initialize(config_path=None):
     """
-    Initialize configuration and logging.
+    Initialize dependency injection, configuration and logging.
     
     Args:
         config_path: Optional path to a custom config file
     """
-    # Load configuration once at startup with the provided path
-    from agentmap.config import load_config
-    config = load_config(config_path)
+    # Initialize the DI container with the config path
+    from agentmap.di import init, application
+    container = init(config_path)
+    
+    # Get config from the container
+    config = container.config.config()
     
     # Configure logging with the loaded config
     from agentmap.logging import configure_logging
     configure_logging(config.get("logging", {}))
+    
+    return container
 
 @app.command()
 def run(
@@ -110,9 +118,8 @@ def run(
 ):
     """Run a graph with optional CSV, initial state, and autocompile support."""
     # Initialize with config path
-    initialize(config)
+    container = initialize(config)
 
-    """Run a graph with optional CSV, initial state, and autocompile support."""
     try:
         data = json.loads(state)  
     except json.JSONDecodeError:
@@ -134,7 +141,12 @@ def config(
     path: str = typer.Option(None, "--path", "-p", help="Path to config file to display")
 ):
     """Print the current configuration values."""
-    config_data = load_config(path)
+    # Initialize the container
+    container = initialize(path)
+    
+    # Get the config from the container
+    config_data = container.config.config()
+    
     print("Configuration values:")
     print("---------------------")
     for k, v in config_data.items():
@@ -149,7 +161,6 @@ def config(
                     print(f"  {sub_k}: {sub_v}")
         else:
             print(f"{k}: {v}")
-
 
 
 @app.command("storage-config")
@@ -283,5 +294,107 @@ def inspect_logging():
         typer.echo(f"  Disabled: {info['disabled']}")
         typer.echo(f"  Propagate: {info['propagate']}")
 
-if __name__ == "__main__":
+@app.command("diagnose")
+def diagnose_command():
+    """Check and display dependency status for all components."""
+    from agentmap.features_registry import features
+    from agentmap.agents.dependency_checker import check_llm_dependencies, check_storage_dependencies
+    
+    typer.echo("AgentMap Dependency Diagnostics")
+    typer.echo("=============================")
+    
+    # Check LLM dependencies
+    typer.echo("\nLLM Dependencies:")
+    llm_enabled = features.is_feature_enabled("llm")
+    typer.echo(f"LLM feature enabled: {llm_enabled}")
+    
+    for provider in ["openai", "anthropic", "google"]:
+        # Always get fresh dependency info
+        has_deps, missing = check_llm_dependencies(provider)
+        
+        # Check registry status for comparison
+        registered = features.is_provider_registered("llm", provider)
+        validated = features.is_provider_validated("llm", provider)
+        available = features.is_provider_available("llm", provider)
+        
+        status = "✅ Available" if has_deps and available else "❌ Not available"
+        
+        # Detect inconsistencies
+        if has_deps and not available:
+            status = "⚠️ Dependencies OK but provider not available (Registration issue)"
+        elif not has_deps and available:
+            status = "⚠️ INCONSISTENT: Provider marked available but dependencies missing"
+        
+        if missing:
+            status += f" (Missing: {', '.join(missing)})"
+            
+        # Add registry status
+        status += f" [Registry: reg={registered}, val={validated}, avail={available}]"
+        
+        typer.echo(f"  {provider.capitalize()}: {status}")
+    
+    # Check storage dependencies
+    typer.echo("\nStorage Dependencies:")
+    storage_enabled = features.is_feature_enabled("storage")
+    typer.echo(f"Storage feature enabled: {storage_enabled}")
+    
+    for storage_type in ["csv", "vector", "firebase", "azure_blob", "aws_s3", "gcp_storage"]:
+        available = features.is_provider_available("storage", storage_type)
+        has_deps, missing = check_storage_dependencies(storage_type)
+        
+        status = "✅ Available" if available else "❌ Not available"
+        if not has_deps and missing:
+            status += f" (Missing: {', '.join(missing)})"
+        
+        typer.echo(f"  {storage_type}: {status}")
+    
+    # Installation suggestions
+    typer.echo("\nInstallation Suggestions:")
+    
+    # Always check dependencies directly for accurate reporting
+    has_llm, missing_llm = check_llm_dependencies()
+    has_openai, missing_openai = check_llm_dependencies("openai")
+    has_anthropic, missing_anthropic = check_llm_dependencies("anthropic")
+    has_google, missing_google = check_llm_dependencies("google")
+    
+    if not has_llm or not llm_enabled:
+        typer.echo("  To enable LLM agents: pip install agentmap[llm]")
+    if not storage_enabled:
+        typer.echo("  To enable storage agents: pip install agentmap[storage]")
+    
+    # Provider-specific suggestions
+    if not has_openai:
+        typer.echo("  For OpenAI support: pip install agentmap[openai] or pip install openai>=1.0.0")
+    if not has_anthropic:
+        typer.echo("  For Anthropic support: pip install agentmap[anthropic] or pip install anthropic")
+    if not has_google:
+        typer.echo("  For Google support: pip install agentmap[google] or pip install google-generativeai langchain-google-genai")
+    
+    # Show path and Python info
+    typer.echo("\nEnvironment Information:")
+    import sys
+    import os
+    typer.echo(f"  Python Version: {sys.version}")
+    typer.echo(f"  Python Path: {sys.executable}")
+    typer.echo(f"  Current Directory: {os.getcwd()}")
+    
+    # List installed versions of LLM packages
+    typer.echo("\nRelevant Package Versions:")
+    packages = ["openai", "anthropic", "google.generativeai", "langchain", "langchain_google_genai"]
+    for package in packages:
+        try:
+            if "." in package:
+                base_pkg = package.split(".")[0]
+                module = __import__(base_pkg)
+                typer.echo(f"  {package}: Installed (base package {base_pkg})")
+            else:
+                module = __import__(package)
+                version = getattr(module, "__version__", "unknown")
+                typer.echo(f"  {package}: v{version}")
+        except ImportError:
+            typer.echo(f"  {package}: Not installed")
+
+
+
+if __name__ == "__main__":    
     app()

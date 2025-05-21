@@ -9,7 +9,7 @@ from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
-def evaluate_success_policy(summary: Dict[str, Any], config_path: Optional[str] = None) -> bool:
+def evaluate_success_policy(summary: Dict[str, Any]) -> bool:
     """
     Evaluate the success of a graph execution based on the configured policy.
     
@@ -21,7 +21,8 @@ def evaluate_success_policy(summary: Dict[str, Any], config_path: Optional[str] 
         Boolean indicating overall success based on policy
     """
     # Load config
-    config = load_config(config_path)
+    from agentmap.di import application
+    config = application.config.config()
     execution_config = config.get("execution", {})
     policy_config = execution_config.get("success_policy", {})
     

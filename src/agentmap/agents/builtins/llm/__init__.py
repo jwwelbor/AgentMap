@@ -9,8 +9,4 @@ from agentmap.agents.builtins.llm.llm_agent import (
     LLMAgent
 )
 
-from agentmap.agents.builtins.llm.utils import (
-    serialize_memory, 
-    deserialize_memory
-)
-__all__ = ['LLMAgent', 'serialize_memory', 'deserialize_memory']
+__all__ = ['LLMAgent']
