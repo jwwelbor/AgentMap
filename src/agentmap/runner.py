@@ -20,6 +20,9 @@ from agentmap.logging import get_logger
 from agentmap.graph.node_registry import build_node_registry, populate_orchestrator_inputs
 from agentmap.state.adapter import StateAdapter
 from agentmap.agents import get_agent_class
+from dependency_injector.wiring import inject, Provide
+from agentmap.di.containers import ApplicationContainer
+from agentmap.config.configuration import Configuration
 
 logger = get_logger(__name__)
 _GRAPH_EXECUTION_LOCK = threading.RLock()
@@ -302,12 +305,14 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
         raise AgentInitializationError(error_message)
     
 
+
+@inject
 def run_graph(
     graph_name: Optional[str] = None, 
     initial_state: Optional[dict] = {}, 
     csv_path: Optional[str] = None, 
     autocompile_override: Optional[bool] = None,
-    config_path: Optional[Union[str, Path]] = None
+    configuration: Configuration = Provide[ApplicationContainer.config.configuration]
 ) -> Dict[str, Any]:
     """
     Run a graph with the given initial state.
@@ -386,7 +391,7 @@ def run_graph(
         graph_def = None
 
         # Get the CSV file path
-        csv_file = csv_path or get_csv_path(config_path)
+        csv_file = csv_path or configuration.get_csv_path()
 
         import inspect
         frame = inspect.currentframe()
@@ -410,51 +415,21 @@ def run_graph(
                 graph_bundle = load_compiled_graph(graph_name, config_path)
             
             if graph_bundle:
-                logger.debug(f"[RUN] Loaded compiled graph bundle: {graph_bundle}")
-                # If we loaded a bundle, extract the components
-                if isinstance(graph_bundle, dict) and "graph" in graph_bundle:
-                    # New format with bundled components
-                    graph = graph_bundle.get("graph")
-                    node_registry = graph_bundle.get("node_registry")
-                    version_hash = graph_bundle.get("version_hash")
-                    logger.debug(f"[RUN] Loaded bundled graph with version hash: {version_hash}")
-                else:
-                    # Old format with just the graph
-                    graph = graph_bundle
-                    logger.debug(f"[RUN] Loaded legacy compiled graph (no bundled registry)")
+                graph, node_registry = load_from_compiled_graph(graph, graph_bundle, node_registry)
 
-            # If autocompile is enabled and we don't have a graph, compile and load, graph_name must be specified
+            # If autocompile is enabled, and we don't have a graph, compile and load, graph_name must be specified
             if not graph and autocompile and graph_name:
-                graph_bundle = autocompile_and_load(graph_name, config_path)
-                if isinstance(graph_bundle, dict) and "graph" in graph_bundle:
-                    graph = graph_bundle.get("graph")
-                    node_registry = graph_bundle.get("node_registry")
-                    version_hash = graph_bundle.get("version_hash")
-                    logger.debug(f"[RUN] Autocompiled graph with version hash: {version_hash}")
-                else:
-                    raise ValueError(f"Failed to autocompile and load graph: {graph_name}")
-            
+                graph, node_registry = compile_and_load(config_path, graph, graph_name, node_registry)
+
             # If we still don't have a graph, need to load CSV and build graph
             if not graph:
                 # Load the CSV file and parse graph definition only once
-                logger.debug(f"[RUN] Loading graph from CSV file: {csv_file}")
-                gb = GraphBuilder(csv_file)
-                graphs = gb.build()
-                if not graph_name: # Use the first graph in the CSV
-                    graph_name = list(graphs.keys())[0] if graphs else None
-                    if not graph_name:
-                        raise ValueError("No graphs found in CSV file")
-                    logger.debug(f"[RUN] Loaded first graph name from CSV: {graph_name}")
-        
-                graph_def = graphs.get(graph_name)
-                
-                if not graph_def:
-                    raise ValueError(f"[RUN] No graph found with name: {graph_name}")
-                    
+                graph_def, graph_name = read_graph_definition_and_get_graph_name(csv_file, graph_name)
+
                 # Build graph in memory, passing the already loaded graph definition
                 graph = build_graph_in_memory(graph_name, graph_def, config_path)
                 node_registry = build_node_registry(graph_def)
-                    
+
             # Populate orchestrator inputs if we have a node registry
             if node_registry and graph_def:
                 initial_state = populate_orchestrator_inputs(initial_state, graph_def, node_registry)
@@ -489,7 +464,6 @@ def run_graph(
                     logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s, Success: {graph_success}")
 
                 # pretty logger.trace the result
-                logger.debug(json.dumps(create_serializable_result(result), indent=4))    
                 logger.trace("\n=== EXITING run_graph ===")
                 logger.trace(f"Parameters: graph_name={graph_name}, csv_path={csv_path}")
                 logger.trace("=====\n")
@@ -502,6 +476,50 @@ def run_graph(
     finally:
         with _GRAPH_EXECUTION_LOCK:
             _CURRENT_EXECUTIONS.remove(execution_key)
+
+
+def read_graph_definition_and_get_graph_name(csv_file, graph_name):
+    logger.debug(f"[RUN] Loading graph from CSV file: {csv_file}")
+    gb = GraphBuilder(csv_file)
+    graphs = gb.build()
+    if not graph_name:  # Use the first graph in the CSV
+        graph_name = list(graphs.keys())[0] if graphs else None
+        if not graph_name:
+            raise ValueError("No graphs found in CSV file")
+        logger.debug(f"[RUN] Loaded first graph name from CSV: {graph_name}")
+    graph_def = graphs.get(graph_name)
+    if not graph_def:
+        raise ValueError(f"[RUN] No graph found with name: {graph_name}")
+    return graph_def, graph_name
+
+
+def compile_and_load(config_path, graph, graph_name, node_registry):
+    graph_bundle = autocompile_and_load(graph_name, config_path)
+    if isinstance(graph_bundle, dict) and "graph" in graph_bundle:
+        graph = graph_bundle.get("graph")
+        node_registry = graph_bundle.get("node_registry")
+        version_hash = graph_bundle.get("version_hash")
+        logger.debug(f"[RUN] Autocompiled graph with version hash: {version_hash}")
+    else:
+        raise ValueError(f"Failed to autocompile and load graph: {graph_name}")
+    return graph, node_registry
+
+
+def load_from_compiled_graph(graph, graph_bundle, node_registry):
+    logger.debug(f"[RUN] Loaded compiled graph bundle: {graph_bundle}")
+    # If we loaded a bundle, extract the components
+    if isinstance(graph_bundle, dict) and "graph" in graph_bundle:
+        # New format with bundled components
+        graph = graph_bundle.get("graph")
+        node_registry = graph_bundle.get("node_registry")
+        version_hash = graph_bundle.get("version_hash")
+        logger.debug(f"[RUN] Loaded bundled graph with version hash: {version_hash}")
+    else:
+        # Old format with just the graph
+        graph = graph_bundle
+        logger.debug(f"[RUN] Loaded legacy compiled graph (no bundled registry)")
+    return graph, node_registry
+
 
 def get_graph(autocompile, config_path, csv_path, graph_name):
     # Try to load a compiled graph first
