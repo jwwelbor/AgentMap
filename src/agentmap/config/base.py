@@ -32,7 +32,7 @@ def _setup_config_logging():
 logger = _setup_config_logging()
 
 # Default config file location
-DEFAULT_CONFIG_FILE = Path("agentmap_config.yaml")
+#DEFAULT_CONFIG_FILE = Path("agentmap_config.yaml")
 
 # Import defaults
 from agentmap.config.defaults import get_default_config
@@ -108,7 +108,7 @@ class ConfigManager:
                 return self._config
             
             # Otherwise, load the configuration
-            config_file = Path(config_path) if config_path else DEFAULT_CONFIG_FILE
+            config_file = Path(config_path) #if config_path else DEFAULT_CONFIG_FILE
             self._config_path = config_path
             
             # Log detailed info about config loading
