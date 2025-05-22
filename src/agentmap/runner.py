@@ -11,35 +11,38 @@ import threading
 
 from langgraph.graph import StateGraph
 
-from agentmap.config import (get_compiled_graphs_path, get_csv_path,
-                             get_custom_agents_path, load_config)
+#from agentmap.config import (get_compiled_graphs_path, get_csv_path, get_custom_agents_path, load_config)
 from agentmap.exceptions import AgentInitializationError
 from agentmap.graph import GraphAssembler
 from agentmap.graph.builder import GraphBuilder
-from agentmap.logging import get_logger
 from agentmap.graph.node_registry import build_node_registry, populate_orchestrator_inputs
 from agentmap.state.adapter import StateAdapter
 from agentmap.agents import get_agent_class
 from dependency_injector.wiring import inject, Provide
 from agentmap.di.containers import ApplicationContainer
 from agentmap.config.configuration import Configuration
+from agentmap.logging.service import LoggingService
 
-logger = get_logger(__name__)
 _GRAPH_EXECUTION_LOCK = threading.RLock()
 _CURRENT_EXECUTIONS = set()
 
-def load_compiled_graph(graph_name: str, config_path: Optional[Union[str, Path]] = None):
+@inject
+def load_compiled_graph(
+        graph_name: str,
+        configuration: Configuration = Provide[ApplicationContainer.config.configuration],
+        logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+):
     """
     Load a compiled graph bundle from the configured path.
     
     Args:
         graph_name: Name of the graph to load
-        config_path: Optional path to a custom config file
     
     Returns:
         Graph bundle dictionary or legacy graph object
     """
-    compiled_path = get_compiled_graphs_path(config_path) / f"{graph_name}.pkl"
+    logger = logging_service.get_logger("agentmap.runner")
+    compiled_path = configuration.get_compiled_graphs_path() / f"{graph_name}.pkl"
     if compiled_path.exists():
         logger.debug(f"[RUN] Loading compiled graph: {compiled_path}")
         
@@ -63,8 +66,11 @@ def load_compiled_graph(graph_name: str, config_path: Optional[Union[str, Path]]
     
     return None
 
-
-def autocompile_and_load(graph_name: str, config_path: Optional[Union[str, Path]] = None):
+@inject
+def autocompile_and_load(
+    graph_name: str, 
+    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+):
     """
     Compile and load a graph.
     
@@ -75,16 +81,19 @@ def autocompile_and_load(graph_name: str, config_path: Optional[Union[str, Path]
     Returns:
         Compiled graph bundle or legacy graph
     """
+    logger = logging_service.get_logger("agentmap.runner")
+
     from agentmap.compiler import compile_graph
     logger.debug(f"[RUN] Autocompile enabled. Compiling: {graph_name}")
-    compile_graph(graph_name, config_path=config_path)
-    return load_compiled_graph(graph_name, config_path=config_path)
+    compile_graph(graph_name)
 
+    return load_compiled_graph(graph_name)
 
+@inject
 def build_graph_in_memory(
     graph_name: str, 
     graph_def: Dict[str, Any], 
-    config_path: Optional[Union[str, Path]] = None
+    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
 ):
     """
     Build a graph in memory from pre-loaded graph definition with execution logging.
@@ -97,6 +106,7 @@ def build_graph_in_memory(
     Returns:
         Compiled graph with logging wrappers
     """
+    logger = logging_service.get_logger("agentmap.runner")
     logger.debug(f"[BuildGraph] Building graph in memory: {graph_name}")
     
     if not graph_def:
@@ -106,12 +116,12 @@ def build_graph_in_memory(
     builder = StateGraph(dict)
     
     # Create the graph assembler
-    assembler = GraphAssembler(builder, config_path=config_path)
+    assembler = GraphAssembler(builder)
     
     # Add all nodes to the graph
     for node in graph_def.values():
         logger.debug(f"[AgentInit] resolving agent class for {node.name} with type {node.agent_type}")
-        agent_cls = resolve_agent_class(node.agent_type, config_path)
+        agent_cls = resolve_agent_class(node.agent_type)
         
         # Create context with input/output field information
         context = {
@@ -140,7 +150,11 @@ def build_graph_in_memory(
     return assembler.compile()
 
 
-def add_dynamic_routing(builder: StateGraph, graph_def: Dict[str, Any]) -> None:
+def add_dynamic_routing(
+        builder: StateGraph, 
+        graph_def: Dict[str, Any],
+        logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    ) -> None:
     """
     Add dynamic routing support for orchestrator nodes.
     
@@ -148,6 +162,8 @@ def add_dynamic_routing(builder: StateGraph, graph_def: Dict[str, Any]) -> None:
         builder: StateGraph builder
         graph_def: Graph definition
     """
+
+    logger = logging_service.get_logger("agentmap.runner")
     # Find orchestrator nodes
     orchestrator_nodes = []
     for node_name, node in graph_def.items():
@@ -180,7 +196,11 @@ def add_dynamic_routing(builder: StateGraph, graph_def: Dict[str, Any]) -> None:
 
 
 
-def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]] = None):
+def resolve_agent_class(
+        agent_type: str, 
+        configuration: Configuration = Provide[ApplicationContainer.config.configuration],
+        logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    ):
     """
     Get an agent class by type, with fallback to custom agents.
     
@@ -194,6 +214,7 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
     Raises:
         ValueError: If agent type cannot be resolved
     """
+    logger = logging_service.get_logger("agentmap.runner")
     logger.debug(f"[AgentInit] resolving agent class for type '{agent_type}'")
     
     from agentmap.features_registry import features
@@ -282,7 +303,7 @@ def resolve_agent_class(agent_type: str, config_path: Optional[Union[str, Path]]
         return agent_class
         
     # Try to load from custom agents path
-    custom_agents_path = get_custom_agents_path(config_path)
+    custom_agents_path = configuration.get_custom_agents_path
     logger.debug(f"[AgentInit] Custom agents path: {custom_agents_path}")    
     # Convert file path to module path
     module_path = str(custom_agents_path).replace("/", ".").replace("\\", ".")
@@ -312,7 +333,8 @@ def run_graph(
     initial_state: Optional[dict] = {}, 
     csv_path: Optional[str] = None, 
     autocompile_override: Optional[bool] = None,
-    configuration: Configuration = Provide[ApplicationContainer.config.configuration]
+    configuration: Configuration = Provide[ApplicationContainer.config.configuration],
+    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
 ) -> Dict[str, Any]:
     """
     Run a graph with the given initial state.
@@ -330,6 +352,9 @@ def run_graph(
     # Create a unique execution key based on the parameters
     import inspect
     import traceback
+
+    logger = logging_service.get_logger("agentmap.runner")
+
     caller_frame = inspect.currentframe().f_back
     caller_info = f"{caller_frame.f_code.co_filename}:{caller_frame.f_lineno}"
     logger.trace(f"\n===== RUN_GRAPH CALLED FROM: {caller_info} =====")
@@ -351,7 +376,7 @@ def run_graph(
 
     import hashlib
     execution_key = hashlib.md5(
-        f"{graph_name}:{id(initial_state)}:{csv_path}:{autocompile_override}:{config_path}".encode()
+        f"{graph_name}:{id(initial_state)}:{csv_path}:{autocompile_override}".encode()
     ).hexdigest()
     
     with _GRAPH_EXECUTION_LOCK:
@@ -369,16 +394,9 @@ def run_graph(
         # Set defaults for optional parameters
         initial_state = initial_state or {}
 
-        try:
-            from agentmap.di import application
-            config = application.config.config()
-        except (ImportError, AttributeError):
-            # Fall back to direct config loading
-            config = load_config(config_path)
+        autocompile = autocompile_override if autocompile_override is not None else configuration.get("autocompile", False)
 
-        autocompile = autocompile_override if autocompile_override is not None else config.get("autocompile", False)
-
-        execution_config = config.get("execution", {})
+        execution_config = configuration.get("execution", {})
 
         tracking_config = execution_config.get("tracking", {})
 
@@ -412,14 +430,14 @@ def run_graph(
         with trace_graph(graph_name):
             # Try to load a compiled graph first - may include bundled node registry
             if graph_name:
-                graph_bundle = load_compiled_graph(graph_name, config_path)
+                graph_bundle = load_compiled_graph(graph_name)
             
             if graph_bundle:
                 graph, node_registry = load_from_compiled_graph(graph, graph_bundle, node_registry)
 
             # If autocompile is enabled, and we don't have a graph, compile and load, graph_name must be specified
             if not graph and autocompile and graph_name:
-                graph, node_registry = compile_and_load(config_path, graph, graph_name, node_registry)
+                graph, node_registry = compile_and_load(graph, graph_name, node_registry)
 
             # If we still don't have a graph, need to load CSV and build graph
             if not graph:
@@ -427,7 +445,7 @@ def run_graph(
                 graph_def, graph_name = read_graph_definition_and_get_graph_name(csv_file, graph_name)
 
                 # Build graph in memory, passing the already loaded graph definition
-                graph = build_graph_in_memory(graph_name, graph_def, config_path)
+                graph = build_graph_in_memory(graph_name, graph_def)
                 node_registry = build_node_registry(graph_def)
 
             # Populate orchestrator inputs if we have a node registry
@@ -477,8 +495,13 @@ def run_graph(
         with _GRAPH_EXECUTION_LOCK:
             _CURRENT_EXECUTIONS.remove(execution_key)
 
-
-def read_graph_definition_and_get_graph_name(csv_file, graph_name):
+@inject
+def read_graph_definition_and_get_graph_name(
+    csv_file, 
+    graph_name,
+    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+):
+    logger = logging_service.get_logger("agentmap.runner")
     logger.debug(f"[RUN] Loading graph from CSV file: {csv_file}")
     gb = GraphBuilder(csv_file)
     graphs = gb.build()
@@ -492,9 +515,16 @@ def read_graph_definition_and_get_graph_name(csv_file, graph_name):
         raise ValueError(f"[RUN] No graph found with name: {graph_name}")
     return graph_def, graph_name
 
+@inject
+def compile_and_load(
+    graph, 
+    graph_name, 
+    node_registry,
+    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+):
+    logger = logging_service.get_logger("agentmap.runner")
 
-def compile_and_load(config_path, graph, graph_name, node_registry):
-    graph_bundle = autocompile_and_load(graph_name, config_path)
+    graph_bundle = autocompile_and_load(graph_name)
     if isinstance(graph_bundle, dict) and "graph" in graph_bundle:
         graph = graph_bundle.get("graph")
         node_registry = graph_bundle.get("node_registry")
@@ -504,8 +534,14 @@ def compile_and_load(config_path, graph, graph_name, node_registry):
         raise ValueError(f"Failed to autocompile and load graph: {graph_name}")
     return graph, node_registry
 
-
-def load_from_compiled_graph(graph, graph_bundle, node_registry):
+@inject
+def load_from_compiled_graph(
+    graph, 
+    graph_bundle, 
+    node_registry,
+    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+):
+    logger = logging_service.get_logger("agentmap.runner")
     logger.debug(f"[RUN] Loaded compiled graph bundle: {graph_bundle}")
     # If we loaded a bundle, extract the components
     if isinstance(graph_bundle, dict) and "graph" in graph_bundle:
@@ -520,16 +556,20 @@ def load_from_compiled_graph(graph, graph_bundle, node_registry):
         logger.debug(f"[RUN] Loaded legacy compiled graph (no bundled registry)")
     return graph, node_registry
 
-
-def get_graph(autocompile, config_path, csv_path, graph_name):
+@inject
+def get_graph(
+    autocompile, 
+    csv_path, 
+    graph_name
+):
     # Try to load a compiled graph first
-    graph = load_compiled_graph(graph_name, config_path)
+    graph = load_compiled_graph(graph_name)
     # If autocompile is enabled, compile and load the graph
     if not graph and autocompile:
-        graph = autocompile_and_load(graph_name, config_path)
+        graph = autocompile_and_load(graph_name)
     # If still no graph, build it in memory
     if not graph:
-        graph = build_graph_in_memory(graph_name, csv_path, config_path)
+        graph = build_graph_in_memory(graph_name, csv_path)
     return graph
 
 def create_serializable_result(result):
