@@ -14,10 +14,10 @@ logger = logging.getLogger(__name__)
 
 # Define dependency groups
 LLM_DEPENDENCIES = {
-    "openai": ["openai"],  # Specify minimum version
-    "anthropic": ["anthropic"],
-    "google": ["google.generativeai"], #, "langchain_google_genai"],
-    "langchain": ["langchain"]
+    "openai": ["langchain_openai"],  
+    "anthropic": ["langchain_anthropic"],
+    "google": ["langchain_google_genai"],
+    "langchain": ["langchain_core"]
 }
 
 STORAGE_DEPENDENCIES = {
@@ -118,14 +118,26 @@ def check_llm_dependencies(provider: str = None) -> Tuple[bool, List[str]]:
         if not dependencies:
             logger.warning(f"Unknown LLM provider: {provider}")
             return False, [f"unknown-provider:{provider}"]
-    else:
-        # Check core dependencies needed for any LLM
-        dependencies = []
-        # Include basic dependencies from all providers
-        for deps in LLM_DEPENDENCIES.values():
-            dependencies.extend(deps)
+        
+        return validate_imports(dependencies)
     
-    return validate_imports(dependencies)
+    # Check if at least one provider is available
+    for provider_name in ["openai", "anthropic", "google"]:
+        dependencies = LLM_DEPENDENCIES.get(provider_name, [])
+        available, _ = validate_imports(dependencies)
+        if available:
+            return True, []  # At least one provider is available
+    
+    # No provider is available, collect all missing dependencies
+    all_missing = []
+    for provider_name in ["openai", "anthropic", "google"]:
+        dependencies = LLM_DEPENDENCIES.get(provider_name, [])
+        _, missing = validate_imports(dependencies)
+        all_missing.extend(missing)
+    
+    # Remove duplicates from missing dependencies
+    return False, list(set(all_missing))
+
 
 def check_storage_dependencies(storage_type: str = None) -> Tuple[bool, List[str]]:
     """
