@@ -6,7 +6,7 @@ import json
 import pickle
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Tuple
 import threading
 
 from langgraph.graph import StateGraph
@@ -22,6 +22,7 @@ from dependency_injector.wiring import inject, Provide
 from agentmap.di.containers import ApplicationContainer
 from agentmap.config.configuration import Configuration
 from agentmap.logging.service import LoggingService
+from agentmap.logging.tracking.execution_tracker import ExecutionTracker 
 
 _GRAPH_EXECUTION_LOCK = threading.RLock()
 _CURRENT_EXECUTIONS = set()
@@ -29,8 +30,8 @@ _CURRENT_EXECUTIONS = set()
 @inject
 def load_compiled_graph(
         graph_name: str,
-        configuration: Configuration = Provide[ApplicationContainer.config.configuration],
-        logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+        configuration: Configuration = Provide[ApplicationContainer.configuration],
+        logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ):
     """
     Load a compiled graph bundle from the configured path.
@@ -69,7 +70,7 @@ def load_compiled_graph(
 @inject
 def autocompile_and_load(
     graph_name: str, 
-    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ):
     """
     Compile and load a graph.
@@ -93,7 +94,7 @@ def autocompile_and_load(
 def build_graph_in_memory(
     graph_name: str, 
     graph_def: Dict[str, Any], 
-    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ):
     """
     Build a graph in memory from pre-loaded graph definition with execution logging.
@@ -149,11 +150,11 @@ def build_graph_in_memory(
     # Compile and return the graph
     return assembler.compile()
 
-
+@inject
 def add_dynamic_routing(
         builder: StateGraph, 
         graph_def: Dict[str, Any],
-        logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+        logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
     ) -> None:
     """
     Add dynamic routing support for orchestrator nodes.
@@ -195,11 +196,11 @@ def add_dynamic_routing(
         builder.add_conditional_edges(node_name, dynamic_router)
 
 
-
+@inject
 def resolve_agent_class(
         agent_type: str, 
-        configuration: Configuration = Provide[ApplicationContainer.config.configuration],
-        logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+        configuration: Configuration = Provide[ApplicationContainer.configuration],
+        logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
     ):
     """
     Get an agent class by type, with fallback to custom agents.
@@ -333,8 +334,8 @@ def run_graph(
     initial_state: Optional[dict] = {}, 
     csv_path: Optional[str] = None, 
     autocompile_override: Optional[bool] = None,
-    configuration: Configuration = Provide[ApplicationContainer.config.configuration],
-    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    configuration: Configuration = Provide[ApplicationContainer.configuration],
+    logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ) -> Dict[str, Any]:
     """
     Run a graph with the given initial state.
@@ -354,6 +355,7 @@ def run_graph(
     import traceback
 
     logger = logging_service.get_logger("agentmap.runner")
+    state = initial_state or {}
 
     caller_frame = inspect.currentframe().f_back
     caller_info = f"{caller_frame.f_code.co_filename}:{caller_frame.f_lineno}"
@@ -376,7 +378,7 @@ def run_graph(
 
     import hashlib
     execution_key = hashlib.md5(
-        f"{graph_name}:{id(initial_state)}:{csv_path}:{autocompile_override}".encode()
+        f"{graph_name}:{id(state)}:{csv_path}:{autocompile_override}".encode()
     ).hexdigest()
     
     with _GRAPH_EXECUTION_LOCK:
@@ -392,14 +394,12 @@ def run_graph(
         from agentmap.logging.tracing import trace_graph
 
         # Set defaults for optional parameters
-        initial_state = initial_state or {}
+
 
         autocompile = autocompile_override if autocompile_override is not None else configuration.get("autocompile", False)
 
         execution_config = configuration.get("execution", {})
-
         tracking_config = execution_config.get("tracking", {})
-
         tracking_enabled = tracking_config.get("enabled", True)
 
         #initialize variables
@@ -414,17 +414,11 @@ def run_graph(
         import inspect
         frame = inspect.currentframe()
         caller_info = inspect.getframeinfo(frame.f_back)
-        log_key = f"{caller_info.function}:{caller_info.lineno}:STARTING:{graph_name}"
-        
-        if not hasattr(run_graph, '_logged_messages'):
-            run_graph._logged_messages = set()
-        
-        if log_key not in run_graph._logged_messages:
-            logger.info(f"⭐ STARTING GRAPH: '{graph_name}'")
-            run_graph._logged_messages.add(log_key)
+
+        logger.info(f"⭐ STARTING GRAPH: '{graph_name}'")
         
         # Initialize execution tracking (always active, may be minimal)
-        initial_state = StateAdapter.initialize_execution_tracker(initial_state, execution_config)
+        tracker, state = StateAdapter.get_execution_tracker(state, configuration.get_tracking_config, configuration.get_execution_config, logger)
         
         # Use trace_graph context manager to conditionally enable tracing
         with trace_graph(graph_name):
@@ -450,19 +444,19 @@ def run_graph(
 
             # Populate orchestrator inputs if we have a node registry
             if node_registry and graph_def:
-                initial_state = populate_orchestrator_inputs(initial_state, graph_def, node_registry)
+                state = populate_orchestrator_inputs(state, graph_def, node_registry)
             
             # Track overall execution time
             start_time = time.time()
             
             try:
                 logger.trace(f"\n=== BEFORE INVOKING GRAPH: {graph_name or 'unnamed'} ===")
-                result = graph.invoke(initial_state)
+                result = graph.invoke(state)
                 logger.trace(f"\n=== AFTER INVOKING GRAPH: {graph_name or 'unnamed'} ===")
                 execution_time = time.time() - start_time
                 
                 # Process execution results
-                tracker = StateAdapter.get_execution_tracker(result)
+                # tracker = StateAdapter.get_execution_tracker(result)
                 tracker.complete_execution()
                 summary = tracker.get_summary()
                 
@@ -499,7 +493,7 @@ def run_graph(
 def read_graph_definition_and_get_graph_name(
     csv_file, 
     graph_name,
-    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ):
     logger = logging_service.get_logger("agentmap.runner")
     logger.debug(f"[RUN] Loading graph from CSV file: {csv_file}")
@@ -520,7 +514,7 @@ def compile_and_load(
     graph, 
     graph_name, 
     node_registry,
-    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ):
     logger = logging_service.get_logger("agentmap.runner")
 
@@ -539,7 +533,7 @@ def load_from_compiled_graph(
     graph, 
     graph_bundle, 
     node_registry,
-    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ):
     logger = logging_service.get_logger("agentmap.runner")
     logger.debug(f"[RUN] Loaded compiled graph bundle: {graph_bundle}")
@@ -591,3 +585,20 @@ def create_serializable_result(result):
             serializable[key] = str(value)
     
     return serializable
+
+def get_execution_tracker(state: Any, tracker_config, execution_config, logger) -> Tuple[ExecutionTracker, Any]:
+    """
+    Get the execution tracker from state.
+    
+    Args:
+        state: Current state
+        
+    Returns:
+        ExecutionTracker instance or None
+    """
+    execution_tracker = StateAdapter.get_value(state, "__execution_tracker")
+    if execution_tracker is None:
+        execution_tracker = ExecutionTracker(tracker_config, execution_config, logger)
+        state = StateAdapter.set_value(state, "__execution_tracker", execution_tracker)
+
+    return execution_tracker, state
