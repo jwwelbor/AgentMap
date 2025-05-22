@@ -40,6 +40,7 @@ class GraphAssembler:
         self.builder = builder
         self.functions_dir = configuration.get_functions_path()
         self.enable_logging = enable_logging
+        self.orchestrator_nodes = []  # Initialize the orchestrator nodes list
 
         self.logger = logging_service.get_class_logger(self)
 

@@ -396,9 +396,9 @@ def run_graph(
         # Set defaults for optional parameters
 
 
-        autocompile = autocompile_override if autocompile_override is not None else configuration.get("autocompile", False)
+        autocompile = autocompile_override if autocompile_override is not None else configuration.get_value("autocompile", False)
 
-        execution_config = configuration.get("execution", {})
+        execution_config = configuration.get_section("execution")
         tracking_config = execution_config.get("tracking", {})
         tracking_enabled = tracking_config.get("enabled", True)
 
@@ -418,7 +418,7 @@ def run_graph(
         logger.info(f"⭐ STARTING GRAPH: '{graph_name}'")
         
         # Initialize execution tracking (always active, may be minimal)
-        tracker, state = StateAdapter.get_execution_tracker(state, configuration.get_tracking_config, configuration.get_execution_config, logger)
+        tracker, state = get_execution_tracker(state, configuration.get_tracking_config(), configuration.get_execution_config(), logger)
         
         # Use trace_graph context manager to conditionally enable tracing
         with trace_graph(graph_name):
