@@ -12,16 +12,13 @@ from agentmap.state.manager import StateManager
 class BaseAgent:
     """Base class for all agents in AgentMap."""
     
-    # Class-level logger for shared logging configuration
-    _logger = None
-    
     def __init__(
         self, 
         name: str, 
         prompt: str, 
-        context: dict,
-        logger: Optional[logging.Logger],
-        execution_tracker: Optional[Any]
+        context: dict = None,
+        logger: Optional[logging.Logger] = None,
+        execution_tracker: Optional[Any] = None
     ):
         """
         Initialize the agent.
@@ -30,12 +27,13 @@ class BaseAgent:
             name: Name of the agent node
             prompt: Prompt or instruction for LLM-based agents
             context: Additional context including configuration
+            logger: Optional logger instance (can be None, will be obtained from DI)
+            execution_tracker: Optional execution tracker (can be None, will be obtained from state)
         """
         self.name = name
         self.prompt = prompt
         self.context = context or {}
         self.prompt_template = prompt
-        self.tracker = execution_tracker
         
         # Extract input_fields and output_field from context if available
         self.input_fields = self.context.get("input_fields", [])
@@ -45,10 +43,27 @@ class BaseAgent:
         # Create state manager
         self.state_manager = StateManager(self.input_fields, self.output_field)
         
-        # Initialize logger with instance-specific prefix
-        # We use the class-level logger but store the prefix
+        # Store logger and tracker - these can be None initially
         self._logger = logger
+        self._execution_tracker = execution_tracker
         self._log_prefix = f"[{self.__class__.__name__}:{self.name}]"
+        
+    def _get_logger(self):
+        """Get the logger, using DI if needed."""
+        if self._logger is None:
+            # Get logger from DI container
+            try:
+                from agentmap.di import application
+                logging_service = application.logging_service()
+                self._logger = logging_service.get_logger("agentmap.agents")
+            except Exception:
+                # Fallback to basic logger
+                self._logger = logging.getLogger("agentmap.agents")
+        return self._logger
+        
+    def _get_execution_tracker(self, state):
+        """Get the execution tracker from state."""
+        return StateAdapter.get_value(state, "__execution_tracker")
         
     def log(self, level: str, message: str, *args, **kwargs):
         """
@@ -59,7 +74,8 @@ class BaseAgent:
             message: Log message
             *args, **kwargs: Additional arguments passed to the logger
         """
-        logger_method = getattr(self._logger, level, self._logger.info)
+        logger = self._get_logger()
+        logger_method = getattr(logger, level, logger.info)
         logger_method(f"{self._log_prefix} {message}", *args, **kwargs)
     
     def log_debug(self, message: str, *args, **kwargs):
@@ -95,7 +111,6 @@ class BaseAgent:
         """
         raise NotImplementedError("Subclasses must implement process()")
 
-
     def run(self, state: Any) -> Any:
         """
         Run the agent on the state, extracting inputs and setting outputs.
@@ -113,15 +128,20 @@ class BaseAgent:
 
         self.log_trace(f"\n*** AGENT {self.name} RUN START [{execution_id}] at {start_time} ***")
 
-        # # Ensure execution tracker is present
-        # state = StateAdapter.initialize_execution_tracker(state)
-        # tracker = StateAdapter.get_execution_tracker(state)
+        # Get execution tracker from state
+        tracker = self._get_execution_tracker(state)
+        if tracker is None:
+            self.log_warning(f"No execution tracker found in state for agent {self.name}")
+            # Create a minimal tracker if needed (this shouldn't normally happen)
+            from agentmap.logging.tracking.execution_tracker import ExecutionTracker
+            logger = self._get_logger()
+            tracker = ExecutionTracker({}, {}, logger)
 
         # Extract inputs
         inputs = self.state_manager.get_inputs(state)
 
         # Record node start
-        self.tracker.record_node_start(self.name, inputs)
+        tracker.record_node_start(self.name, inputs)
 
         try:
             # Pre-processing hook for subclasses
@@ -139,8 +159,9 @@ class BaseAgent:
             state, output = self._post_process(state, output)
 
             # read last_action_success in case it was changed in post_process
-            self.tracker.record_node_result(self.name, state.get("last_action_success", True), result=output)
-            graph_success = self.tracker.update_graph_success()
+            last_action_success = StateAdapter.get_value(state, "last_action_success", True)
+            tracker.record_node_result(self.name, last_action_success, result=output)
+            graph_success = tracker.update_graph_success()
             state = StateAdapter.set_value(state, "graph_success", graph_success)
 
             # Now set the final output and success flag
@@ -159,10 +180,10 @@ class BaseAgent:
             self.log_error(error_msg)
 
             # Record failure
-            self.tracker.record_node_result(self.name, False, error=error_msg)
+            tracker.record_node_result(self.name, False, error=error_msg)
 
             # Update graph success based on policy
-            graph_success = self.tracker.update_graph_success()
+            graph_success = tracker.update_graph_success()
 
             # Store graph success in state
             state = StateAdapter.set_value(state, "graph_success", graph_success)

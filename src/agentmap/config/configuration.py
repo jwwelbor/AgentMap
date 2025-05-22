@@ -12,9 +12,9 @@ class Configuration:
         self._config = config_data
 
     # Core access methods
-    def get_section(self, section: str) -> Dict[str, Any]:
+    def get_section(self, section: str, default: T = None) -> Dict[str, Any]:
         """Get a configuration section."""
-        return self._config.get(section, {})
+        return self._config.get(section, default)
 
     def get_value(self, path: str, default: T = None) -> T:
         """Get a specific configuration value using dot notation."""
