@@ -4,15 +4,18 @@ Graph assembler for AgentMap with OrchestratorAgent support.
 Adds dynamic routing capabilities for OrchestratorAgent nodes.
 """
 
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict
 
 from langgraph.graph import StateGraph
 
+from agentmap.agents.features import HAS_LLM_AGENTS
 from agentmap.config import get_functions_path
-from agentmap.utils.common import extract_func_ref, import_function
-from agentmap.state.adapter import StateAdapter
-from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
 from agentmap.logging import get_logger
+from agentmap.state.adapter import StateAdapter
+from agentmap.utils.common import extract_func_ref, import_function
+from dependency_injector.wiring import inject, Provide
+from agentmap.di.containers import ApplicationContainer
+from agentmap.config.configuration import Configuration
 
 logger = get_logger("AgentMap")
 
@@ -24,21 +27,18 @@ class GraphAssembler:
     Encapsulates all the logic for adding nodes and edges to graphs,
     reducing code duplication across the codebase.
     """
-    
-    def __init__(self, builder: StateGraph, config_path=None, enable_logging=True):
-        """
-        Initialize the graph assembler.
-        
-        Args:
-            builder: StateGraph builder instance
-            config_path: Optional path to a custom config file
-            enable_logging: Whether to log assembler operations
-        """
+
+    @inject
+    def __init__(
+            self,
+            builder: StateGraph,
+            enable_logging=True,
+            configuration: Configuration = Provide[ApplicationContainer.config.configuration]
+    ):
         self.builder = builder
-        self.config_path = config_path
-        self.functions_dir = get_functions_path(config_path)
+        self.functions_dir = configuration.get_functions_path()
         self.enable_logging = enable_logging
-        self.orchestrator_nodes = []
+
         if enable_logging:
             logger.info("Graph assembler initialized")
     

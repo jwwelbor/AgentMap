@@ -19,6 +19,10 @@ from agentmap.utils.common import extract_func_ref, import_function
 from agentmap.agents import get_agent_class
 from agentmap.logging import get_logger
 
+from dependency_injector.wiring import inject, Provide
+from agentmap.di.containers import ApplicationContainer
+from agentmap.config.configuration import Configuration
+
 logger = get_logger(__name__)
 
 
@@ -372,7 +376,7 @@ def add_edges_to_builder(
                 target = node.edges["default"]
                 builder.add_edge(node.name, target)
 
-
+@inject
 def compile_graph(
     graph_name: str, 
     output_dir: Optional[str] = None,
@@ -443,7 +447,7 @@ def compile_graph(
     logger.info(f"[Compiler] ✅ Compiled {graph_name} to {output_path}")
     return output_path
 
-
+@inject
 def compile_all(
     csv_path: Optional[str] = None,
     state_schema: str = "dict",

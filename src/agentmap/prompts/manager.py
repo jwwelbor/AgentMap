@@ -21,6 +21,10 @@ from agentmap.config import (
 
 logger = get_logger(__name__)
 
+from dependency_injector.wiring import inject, Provide
+from agentmap.di.containers import ApplicationContainer
+from agentmap.config.configuration import Configuration
+
 
 class PromptManager:
     """
@@ -29,21 +33,16 @@ class PromptManager:
     This class provides a centralized way to manage prompts from
     different sources, including a registry, files, and YAML configurations.
     """
-    
-    def __init__(self, config_path: Optional[Union[str, Path]] = None):
-        """
-        Initialize the prompt manager with configuration.
-        
-        Args:
-            config_path: Optional path to a custom config file
-        """
-        self.config_path = config_path
-        self.config = get_prompts_config(config_path)
-        self.prompts_dir = get_prompts_directory(config_path)
-        self.registry_path = get_prompt_registry_path(config_path)
-        self.enable_cache = self.config.get("enable_cache", True)
-        self._cache = {}
-        self._registry = self._load_registry()
+    @inject
+    def __init__(
+            self,
+            configuration: Configuration = Provide[ApplicationContainer.config.configuration]
+    ):
+        prompts_config = configuration.get_section("prompts")
+        self.config = prompts_config
+        self.prompts_dir = Path(prompts_config.get("directory", "prompts"))
+        self.registry_path = Path(prompts_config.get("registry_file", "prompts/registry.yaml"))
+        self.enable_cache = prompts_config.get("enable_cache", True)
         
         # Ensure prompts directory exists
         self.prompts_dir.mkdir(parents=True, exist_ok=True)
