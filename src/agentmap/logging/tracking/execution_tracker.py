@@ -3,24 +3,29 @@ Execution tracker for monitoring graph execution flow and results.
 """
 import time
 from typing import Any, Dict, List, Optional
-
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
-
+from dependency_injector.wiring import inject, Provide
+import logging
 class ExecutionTracker:
     """Track execution status and history through a graph execution."""
-    
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(
+        self, 
+        tracking_config: Dict[str, Any],
+        execution_config: Dict[str, Any],
+        logger: logging.Logger
+    ):
         """
         Initialize the execution tracker with optional configuration.
         
         Args:
             config: Tracking configuration dictionary
         """
-        self.config = config or {}
-        tracking_config = self.config.get("tracking", {})
+        # self.logging_service = logging_service
+        # self.configuration = configuration.get("execution_tracker", {})
+        # tracking_config = self.configuration.get("tracking", {})
         self.minimal_mode = not tracking_config.get("enabled", True)
+        self.execution_config = execution_config
+        self.tracking_config = tracking_config
+        self.logger = logger
         
         self.node_results = {}  # node_name -> {success, result, error, time}
         self.execution_path = []  # List of nodes in execution order
@@ -99,7 +104,7 @@ class ExecutionTracker:
         
         # Get current summary and evaluate policy
         summary = self.get_summary()
-        self.graph_success = evaluate_success_policy(summary)
+        self.graph_success = evaluate_success_policy(summary, self.execution_config, self.logger)
         
         return self.graph_success
         

@@ -11,10 +11,6 @@ from typing import Optional, Union, Any, Dict, List
 from langgraph.graph import StateGraph
 
 from agentmap.graph.builder import GraphBuilder
-from agentmap.config import (
-    get_csv_path, get_functions_path, get_custom_agents_path, 
-    get_compiled_graphs_path
-)
 from agentmap.utils.common import extract_func_ref, import_function
 from agentmap.agents import get_agent_class
 from agentmap.logging.service import LoggingService
@@ -22,7 +18,6 @@ from agentmap.logging.service import LoggingService
 from dependency_injector.wiring import inject, Provide
 from agentmap.di.containers import ApplicationContainer
 from agentmap.config.configuration import Configuration
-
 
 def resolve_state_schema(state_schema: str) -> tuple:
     """
@@ -60,7 +55,7 @@ def get_graph_definition(
         graph_name: str, 
         csv_path: Optional[str] = None,
         configuration: Configuration = Provide[ApplicationContainer.configuration],
-        logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+        logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
     ) -> Dict:
     """
     Get the graph definition from the CSV.
@@ -95,7 +90,7 @@ def build_source_lines(
     graph_def: Dict, 
     state_schema: str = "dict", 
     configuration: Configuration = Provide[ApplicationContainer.configuration],
-    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ) -> List[str]:
     """
     Build the source lines for the graph.
@@ -329,7 +324,7 @@ def add_edges_to_builder(
     builder: StateGraph, 
     graph_def: Dict, 
     configuration: Configuration = Provide[ApplicationContainer.configuration],
-    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ) -> None:
     """
     Add edges to the StateGraph builder.
@@ -394,7 +389,7 @@ def compile_graph(
     csv_path: Optional[str] = None,
     state_schema: str = "dict",
     configuration: Configuration = Provide[ApplicationContainer.configuration],
-    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ):
     """
     Compile a graph to the configured output directory.
@@ -446,7 +441,7 @@ def compile_graph(
     
     # Create a graph bundle with graph, registry, and version info
     from agentmap.graph.bundle import GraphBundle
-    bundle = GraphBundle(graph, node_registry, csv_content)
+    bundle = GraphBundle(graph, node_registry, logging_service.get_logger("agentmap.graph"), csv_content)
     
     # Save the bundle to .pkl
     output_path = Path(output_dir) / f"{graph_name}.pkl"
@@ -464,7 +459,8 @@ def compile_graph(
 def compile_all(
     csv_path: Optional[str] = None,
     state_schema: str = "dict",
-    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    configuration: Configuration = Provide[ApplicationContainer.configuration],
+    logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ):
     """
     Compile all graphs defined in the CSV.
@@ -477,7 +473,7 @@ def compile_all(
     logger = logging_service.get_logger("agentmap.compiler")
     logger.info(f"[Compiler] Compiling all graphs")
     
-    csv_file = csv_path or get_csv_path(config_path)
+    csv_file = csv_path or configuration.get_csv_path()
     gb = GraphBuilder(csv_file)
     graphs = gb.build()
     

@@ -19,11 +19,10 @@ from agentmap.config import (
     get_prompt_registry_path
 )
 
-logger = get_logger(__name__)
-
 from dependency_injector.wiring import inject, Provide
 from agentmap.di.containers import ApplicationContainer
 from agentmap.config.configuration import Configuration
+from agentmap.logging.service import LoggingService
 
 
 class PromptManager:
@@ -36,8 +35,10 @@ class PromptManager:
     @inject
     def __init__(
             self,
-            configuration: Configuration = Provide[ApplicationContainer.config.configuration]
+            configuration: Configuration = Provide[ApplicationContainer.configuration],
+            logging_service: LoggingService = Provide[ApplicationContainer.logging_service],
     ):
+        self.logger = logging_service.get_class_logger(self)
         prompts_config = configuration.get_section("prompts")
         self.config = prompts_config
         self.prompts_dir = Path(prompts_config.get("directory", "prompts"))
@@ -47,9 +48,9 @@ class PromptManager:
         # Ensure prompts directory exists
         self.prompts_dir.mkdir(parents=True, exist_ok=True)
         
-        logger.debug(f"Initialized PromptManager with directory: {self.prompts_dir}")
-        logger.debug(f"Registry path: {self.registry_path}")
-        logger.debug(f"Cache enabled: {self.enable_cache}")
+        self.logger.debug(f"Initialized PromptManager with directory: {self.prompts_dir}")
+        self.logger.debug(f"Registry path: {self.registry_path}")
+        self.logger.debug(f"Cache enabled: {self.enable_cache}")
     
     def _load_registry(self) -> Dict[str, str]:
         """
@@ -65,10 +66,10 @@ class PromptManager:
             try:
                 with open(self.registry_path, 'r') as f:
                     registry = yaml.safe_load(f) or {}
-                    logger.debug(f"Loaded {len(registry)} prompts from registry at {self.registry_path}")
+                    self.logger.debug(f"Loaded {len(registry)} prompts from registry at {self.registry_path}")
                     return registry
             except Exception as e:
-                logger.error(f"Error loading prompt registry from {self.registry_path}: {e}")
+                self.logger.error(f"Error loading prompt registry from {self.registry_path}: {e}")
         
         # Fall back to system registry
         try:
@@ -76,10 +77,10 @@ class PromptManager:
             if system_registry:
                 with open(system_registry, 'r') as f:
                     registry = yaml.safe_load(f) or {}
-                    logger.debug(f"Loaded {len(registry)} prompts from system registry")
+                    self.logger.debug(f"Loaded {len(registry)} prompts from system registry")
                     return registry
         except Exception as e:
-            logger.error(f"Error loading system registry: {e}")
+            self.logger.error(f"Error loading system registry: {e}")
         
         return registry
     
@@ -172,7 +173,7 @@ class PromptManager:
                 if full_path.exists():
                     return full_path
         except Exception as e:
-            logger.debug(f"Error locating package resource '{resource_path}': {e}")
+            self.logger.debug(f"Error locating package resource '{resource_path}': {e}")
         
         return None
     
@@ -191,7 +192,7 @@ class PromptManager:
         
         # Check cache if enabled
         if self.enable_cache and prompt_ref in self._cache:
-            logger.debug(f"Prompt cache hit: {prompt_ref}")
+            self.logger.debug(f"Prompt cache hit: {prompt_ref}")
             return self._cache[prompt_ref]
         
         # Handle different reference types
@@ -212,7 +213,7 @@ class PromptManager:
                 
             return result
         except Exception as e:
-            logger.error(f"Error resolving prompt reference '{prompt_ref}': {e}")
+            self.logger.error(f"Error resolving prompt reference '{prompt_ref}': {e}")
             return f"[Error resolving prompt: {prompt_ref}]"
     
     def _resolve_registry_prompt(self, prompt_name: str) -> str:
@@ -226,10 +227,10 @@ class PromptManager:
             Prompt text or error message
         """
         if prompt_name in self._registry:
-            logger.debug(f"Found prompt '{prompt_name}' in registry")
+            self.logger.debug(f"Found prompt '{prompt_name}' in registry")
             return self._registry[prompt_name]
         
-        logger.warning(f"Prompt '{prompt_name}' not found in registry")
+        self.logger.warning(f"Prompt '{prompt_name}' not found in registry")
         return f"[Prompt not found: {prompt_name}]"
     
     def _resolve_file_prompt(self, file_path: str) -> str:
@@ -245,17 +246,17 @@ class PromptManager:
         path = self._find_resource(file_path)
         
         if not path:
-            logger.warning(f"Prompt file not found: {file_path}")
+            self.logger.warning(f"Prompt file not found: {file_path}")
             return f"[Prompt file not found: {file_path}]"
         
         # Read the file content
         try:
             with open(path, 'r') as f:
                 content = f.read().strip()
-                logger.debug(f"Loaded prompt from file: {path} ({len(content)} chars)")
+                self.logger.debug(f"Loaded prompt from file: {path} ({len(content)} chars)")
                 return content
         except Exception as e:
-            logger.error(f"Error reading prompt file '{path}': {e}")
+            self.logger.error(f"Error reading prompt file '{path}': {e}")
             return f"[Error reading prompt file: {file_path}]"
     
     def _resolve_yaml_prompt(self, yaml_ref: str) -> str:
@@ -270,14 +271,14 @@ class PromptManager:
         """
         # Parse the reference
         if "#" not in yaml_ref:
-            logger.warning(f"Invalid YAML prompt reference (missing #key): {yaml_ref}")
+            self.logger.warning(f"Invalid YAML prompt reference (missing #key): {yaml_ref}")
             return f"[Invalid YAML reference (missing #key): {yaml_ref}]"
         
         file_path, key_path = yaml_ref.split("#", 1)
         path = self._find_resource(file_path)
         
         if not path:
-            logger.warning(f"YAML prompt file not found: {yaml_ref}")
+            self.logger.warning(f"YAML prompt file not found: {yaml_ref}")
             return f"[YAML prompt file not found: {file_path}]"
         
         # Parse YAML and extract value
@@ -293,20 +294,20 @@ class PromptManager:
                 if isinstance(value, dict) and key in value:
                     value = value[key]
                 else:
-                    logger.warning(f"Key '{key}' not found in YAML prompt path: {key_path}")
+                    self.logger.warning(f"Key '{key}' not found in YAML prompt path: {key_path}")
                     return f"[Key not found in YAML: {key_path}]"
             
             # Ensure the result is a string
             if not isinstance(value, (str, int, float, bool)):
-                logger.warning(f"YAML prompt value is not a scalar type: {type(value)}")
+                self.logger.warning(f"YAML prompt value is not a scalar type: {type(value)}")
                 return f"[Invalid prompt type in YAML: {type(value)}]"
             
             result = str(value)
-            logger.debug(f"Loaded prompt from YAML: {path}#{key_path} ({len(result)} chars)")
+            self.logger.debug(f"Loaded prompt from YAML: {path}#{key_path} ({len(result)} chars)")
             return result
             
         except Exception as e:
-            logger.error(f"Error reading YAML prompt file '{path}': {e}")
+            self.logger.error(f"Error reading YAML prompt file '{path}': {e}")
             return f"[Error reading YAML prompt file: {file_path}]"
     
     def get_registry(self) -> Dict[str, str]:
@@ -321,7 +322,7 @@ class PromptManager:
     def clear_cache(self) -> None:
         """Clear the prompt cache."""
         self._cache.clear()
-        logger.debug("Cleared prompt cache")
+        self.logger.debug("Cleared prompt cache")
 
     def format_prompt(self, prompt_ref_or_text: str, values: Dict[str, Any]) -> str:
         """
@@ -349,12 +350,12 @@ class PromptManager:
             )
             return prompt_template.format(**values)
         except Exception as e:
-            logger.warning(f"Error using LangChain PromptTemplate: {e}, falling back to standard formatting")
+            self.logger.warning(f"Error using LangChain PromptTemplate: {e}, falling back to standard formatting")
             # Fall back to standard formatting
             try:
                 return prompt_text.format(**values)
             except Exception as e2:
-                logger.error(f"Error formatting prompt with standard formatting: {e2}")
+                self.logger.error(f"Error formatting prompt with standard formatting: {e2}")
                 
                 # Last resort: manual string replacement
                 result = prompt_text
@@ -381,10 +382,10 @@ def get_prompt_manager(config_path: Optional[Union[str, Path]] = None) -> Prompt
     """
     global _prompt_manager
     if _prompt_manager is None:
-        _prompt_manager = PromptManager(config_path)
+        _prompt_manager = PromptManager()
     return _prompt_manager
 
-def resolve_prompt(prompt_ref: str, config_path: Optional[Union[str, Path]] = None) -> str:
+def resolve_prompt(prompt_ref: str) -> str:
     """
     Resolve a prompt reference to its actual content.
     
@@ -400,13 +401,12 @@ def resolve_prompt(prompt_ref: str, config_path: Optional[Union[str, Path]] = No
         
     # Check if it's actually a reference
     if any(prompt_ref.startswith(prefix) for prefix in ["prompt:", "file:", "yaml:"]):
-        return get_prompt_manager(config_path).resolve_prompt(prompt_ref)
+        return get_prompt_manager().resolve_prompt(prompt_ref)
     
     # Return as-is if not a reference
     return prompt_ref
 
-def format_prompt(prompt_ref_or_text: str, values: Dict[str, Any], 
-                  config_path: Optional[Union[str, Path]] = None) -> str:
+def format_prompt(prompt_ref_or_text: str, values: Dict[str, Any]) -> str:
     """
     Resolve a prompt reference (if needed) and format it.
     
@@ -418,13 +418,16 @@ def format_prompt(prompt_ref_or_text: str, values: Dict[str, Any],
     Returns:
         Formatted prompt text
     """
-    return get_prompt_manager(config_path).format_prompt(prompt_ref_or_text, values)
+    return get_prompt_manager().format_prompt(prompt_ref_or_text, values)
 
-def get_formatted_prompt(primary_prompt: Optional[str], 
-                         template_file: str, 
-                         default_template: str,
-                         values: Dict[str, Any],
-                         context_name: str = "Agent") -> str:
+def get_formatted_prompt(
+        primary_prompt: Optional[str], 
+        template_file: str, 
+        default_template: str,
+        values: Dict[str, Any],
+        context_name: str = "Agent",
+        logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
+    ) -> str:
     """
     Comprehensive prompt resolution with multi-level fallbacks.
     
@@ -444,6 +447,7 @@ def get_formatted_prompt(primary_prompt: Optional[str],
         Formatted prompt text
     """
     prompt_manager = get_prompt_manager()
+    logger = logging_service.get_logger("agentmap.prompts")
     logger.debug(f"[{context_name}] Getting formatted prompt")
     
     # Try each option in order, moving to next on failure

@@ -4,16 +4,13 @@ Success policy evaluator for execution tracking.
 from typing import Any, Dict, List, Optional, Callable
 import importlib
 
-from dependency_injector.wiring import inject, Provide
-from agentmap.di.containers import ApplicationContainer
 from agentmap.config.configuration import Configuration
-from agentmap.logging.service import LoggingService
+import logging
 
-@inject
 def evaluate_success_policy(
     summary: Dict[str, Any],
-    configuration: Configuration = Provide[ApplicationContainer.configuration],
-    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    execution_config: Dict[str, Any],
+    logger: logging.Logger
 
 ) -> bool:
     """
@@ -27,11 +24,11 @@ def evaluate_success_policy(
         Boolean indicating overall success based on policy
     """
     # Load config
-    execution_config = configuration.get_execution_config()
+    # execution_config = configuration.get_execution_config()
     policy_config = execution_config.get("success_policy", {})
     
     # Get logger
-    logger = logging_service.get_logger("agentmap.tracking")  
+    # logger = logging_service.get_logger("agentmap.tracking")  
     # Get policy type with fallback
     policy_type = policy_config.get("type", "all_nodes")
     
@@ -46,7 +43,7 @@ def evaluate_success_policy(
         # For custom policy, load the specified function
         custom_fn_path = policy_config.get("custom_function", "")
         if custom_fn_path:
-            return _evaluate_custom_policy(summary, custom_fn_path)
+            return _evaluate_custom_policy(summary, custom_fn_path, logger)
         else:
             logger.warning("Custom policy selected but no function specified. Falling back to all_nodes.")
             return _evaluate_all_nodes_policy(summary)
@@ -84,11 +81,11 @@ def _evaluate_critical_nodes_policy(summary: Dict[str, Any], critical_nodes: Lis
     
     return True
 
-@inject
+
 def _evaluate_custom_policy(
     summary: Dict[str, Any], 
     function_path: str,
-    logger: LoggingService = Provide[ApplicationContainer.logging.logging_service].get_logger("agentmap.tracking")
+    logger: None = None
 ) -> bool:
     """Evaluate using a custom policy function."""
     try:

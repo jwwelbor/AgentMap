@@ -41,7 +41,7 @@ class Node:
 class GraphBuilder:
     def __init__(self,
                 csv_path,
-                logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+                logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
         ):
         self.csv_path = Path(csv_path)
         self.logger = logging_service.get_class_logger(self)
