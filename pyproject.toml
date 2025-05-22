@@ -27,23 +27,33 @@ dependencies = [
     "pandas>=2.2.1",
     "dill>=0.3.6",
     "langgraph>=0.4.1",
-    "langchain",
+    "langchain-core>=0.1.0",
+    "langchain>=0.1.0",  # Added version constraint
     "langchain-community>=0.3.23",
-    "langchain-openai (>=0.3.17,<0.4.0)"
+    "langchain-openai>=0.3.17,<0.4.0",
+    "pyyaml",  # Added for configuration handling
+    "packaging",  # Added for version comparison
+    "dependency_injector>=4.41.0"
 ]
+
+# - langchain_anthropic
 
 [project.optional-dependencies]
 llm = [
     "langsmith",
-    "openai>=1.12.0",
-    "anthropic>=0.17.0",
-    "google-generativeai>=0.3.2",
+ #   "openai>=1.12.0",
+ #   "anthropic>=0.17.0",
+ #   "google-generativeai>=0.3.2",
+    "langchain-openai>=0.3.17",
+    "langchain-anthropic>=0.0.1",  # Added for Claude integration
+    "langchain-google-genai>=0.0.1",  # Added for Google integration
 ]
 storage = [
-    "firebase (>=4.0.1,<5.0.0)",
-    "firebase-admin (>=6.8.0,<7.0.0)", 
+    "firebase>=4.0.1,<5.0.0",
+    "firebase-admin>=6.8.0,<7.0.0", 
     "unstructured[md,pdf]>=0.10.0",
     "python-docx>=0.8.11",
+    "chromadb",  # Added for vector storage
 ]
 dev = [
     "pytest>=8.0.0",
@@ -51,12 +61,16 @@ dev = [
 ]
 all = [
     "langsmith",
-    "openai>=1.12.0",
-    "anthropic>=0.17.0",
-    "google-generativeai>=0.3.2",
+#    "openai>=1.12.0",
+#    "anthropic>=0.17.0",
+#    "google-generativeai>=0.3.2",
+    "langchain-openai>=0.3.17",
+    "langchain-anthropic>=0.0.1",  # Added for Claude integration
+    "langchain-google-genai>=0.0.1",  # Added for Google integration 
     "firebase-admin>=6.8.0",
     "unstructured[md,pdf]>=0.10.0",
     "python-docx>=0.8.11",
+    "chromadb",  # Added for vector storage
 ]
 
 [project.urls]

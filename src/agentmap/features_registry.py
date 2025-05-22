@@ -1,4 +1,5 @@
-# agentmap/features_registry.py
+# agentmap/features_registry.py - with additional validation
+
 """
 Feature registry for AgentMap.
 
@@ -32,6 +33,23 @@ class FeatureRegistry:
         
         # Provider availability
         self._providers_available = {
+            "llm": {
+                "openai": False,
+                "anthropic": False,
+                "google": False,
+            },
+            "storage": {
+                "csv": True,  # Always available as core
+                "json": True,  # Always available as core
+                "file": True,  # Always available as core
+                "firebase": False,
+                "vector": False,
+                "blob": False
+            }
+        }
+        
+        # Provider dependency validation
+        self._providers_validated = {
             "llm": {
                 "openai": False,
                 "anthropic": False,
@@ -107,6 +125,27 @@ class FeatureRegistry:
         else:
             logger.warning(f"Unknown category: {category}")
     
+    def set_provider_validated(self, category: str, provider: str, validated: bool = True):
+        """
+        Set validation status for a specific provider.
+        
+        Args:
+            category: Provider category ('llm', 'storage')
+            provider: Provider name
+            validated: Validation status - True if dependencies are confirmed working
+        """
+        category = category.lower()
+        provider = provider.lower()
+        
+        if category in self._providers_validated:
+            if provider in self._providers_validated[category]:
+                self._providers_validated[category][provider] = validated
+                logger.debug(f"Provider '{provider}' in category '{category}' validation set to: {validated}")
+            else:
+                logger.warning(f"Unknown provider '{provider}' in category '{category}'")
+        else:
+            logger.warning(f"Unknown category: {category}")
+    
     def is_provider_available(self, category: str, provider: str) -> bool:
         """
         Check if a specific provider is available.
@@ -130,7 +169,59 @@ class FeatureRegistry:
             elif provider == "gemini":
                 provider = "google"
         
+        # Provider is only truly available if it's both marked available AND validated
+        return (self._providers_available.get(category, {}).get(provider, False) and 
+                self._providers_validated.get(category, {}).get(provider, False))
+    
+    def is_provider_registered(self, category: str, provider: str) -> bool:
+        """
+        Check if a provider is registered (may not be validated).
+        
+        Args:
+            category: Provider category ('llm', 'storage')
+            provider: Provider name
+            
+        Returns:
+            True if provider is registered, False otherwise
+        """
+        category = category.lower()
+        provider = provider.lower()
+        
+        # Handle aliases
+        if category == "llm":
+            if provider == "gpt":
+                provider = "openai"
+            elif provider == "claude":
+                provider = "anthropic"
+            elif provider == "gemini":
+                provider = "google"
+        
         return self._providers_available.get(category, {}).get(provider, False)
+    
+    def is_provider_validated(self, category: str, provider: str) -> bool:
+        """
+        Check if a provider's dependencies are validated.
+        
+        Args:
+            category: Provider category ('llm', 'storage')
+            provider: Provider name
+            
+        Returns:
+            True if provider dependencies are validated, False otherwise
+        """
+        category = category.lower()
+        provider = provider.lower()
+        
+        # Handle aliases
+        if category == "llm":
+            if provider == "gpt":
+                provider = "openai"
+            elif provider == "claude":
+                provider = "anthropic"
+            elif provider == "gemini":
+                provider = "google"
+        
+        return self._providers_validated.get(category, {}).get(provider, False)
     
     def get_available_providers(self, category: str) -> List[str]:
         """
@@ -149,7 +240,7 @@ class FeatureRegistry:
         return [
             provider for provider, available 
             in self._providers_available[category].items() 
-            if available
+            if available and self._providers_validated[category][provider]
         ]
     
     def record_missing_dependencies(self, category: str, missing: List[str]):

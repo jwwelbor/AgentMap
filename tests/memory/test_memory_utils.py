@@ -241,7 +241,7 @@ def verify_memory_persistence(state: Dict[str, Any], memory_key: str = "conversa
         True if memory is valid, False otherwise
     """
     from agentmap.state.adapter import StateAdapter
-    from agentmap.agents.builtins.llm.utils import deserialize_memory
+  
     
     # Get memory from state
     memory = StateAdapter.get_value(state, memory_key)
@@ -251,8 +251,6 @@ def verify_memory_persistence(state: Dict[str, Any], memory_key: str = "conversa
         return False
     
     # Handle serialized memory
-    if isinstance(memory, dict) and memory.get("_type") == "langchain_memory":
-        memory = deserialize_memory(memory)
     
     # Check if memory has chat_memory attribute
     if not hasattr(memory, "chat_memory"):
@@ -276,14 +274,11 @@ def get_memory_messages(state: Dict[str, Any], memory_key: str = "conversation_m
         List of message objects or empty list if memory not found
     """
     from agentmap.state.adapter import StateAdapter
-    from agentmap.agents.builtins.llm.utils import deserialize_memory
+
     
     # Get memory from state
     memory = StateAdapter.get_value(state, memory_key)
     
-    # Handle serialized memory
-    if isinstance(memory, dict) and memory.get("_type") == "langchain_memory":
-        memory = deserialize_memory(memory)
     
     # Handle missing or invalid memory
     if not memory or not hasattr(memory, "chat_memory"):
