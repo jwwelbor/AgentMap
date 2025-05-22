@@ -5,7 +5,9 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-from agentmap.logging import get_logger
+from dependency_injector.wiring import inject, Provide
+from agentmap.di.containers import ApplicationContainer
+from agentmap.logging.service import LoggingService
 from agentmap.state.adapter import StateAdapter
 from agentmap.state.manager import StateManager
 
@@ -13,9 +15,16 @@ class BaseAgent:
     """Base class for all agents in AgentMap."""
     
     # Class-level logger for shared logging configuration
-    _logger = get_logger("agentmap.agents")
+    _logger = None
     
-    def __init__(self, name: str, prompt: str, context: dict = None):
+    @inject
+    def __init__(
+        self, 
+        name: str, 
+        prompt: str, 
+        context: dict = None,
+        logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    ):
         """
         Initialize the agent.
         
@@ -39,6 +48,7 @@ class BaseAgent:
         
         # Initialize logger with instance-specific prefix
         # We use the class-level logger but store the prefix
+        self.logger = logging_service.get_logger(f"agentmap.agents.{self.__class__.__name__}.{name}")
         self._log_prefix = f"[{self.__class__.__name__}:{self.name}]"
         
     def log(self, level: str, message: str, *args, **kwargs):

@@ -10,10 +10,10 @@ from collections import defaultdict
 from pathlib import Path
 
 from agentmap.exceptions.graph_exceptions import InvalidEdgeDefinitionError
-from agentmap.logging import get_logger
 
-logger = get_logger(__name__)
-
+from dependency_injector.wiring import inject, Provide
+from agentmap.di.containers import ApplicationContainer
+from agentmap.logging.service import LoggingService
 
 class Node:
     def __init__(self, name, context=None, agent_type=None, inputs=None, output=None, prompt=None, description=None):
@@ -37,11 +37,15 @@ class Node:
         edge_info = ", ".join([f"{k}->{v}" for k, v in self.edges.items()])
         return f"<Node {self.name} [{self.agent_type}] → {edge_info}>"
 
-
+@inject
 class GraphBuilder:
-    def __init__(self, csv_path):
+    def __init__(self,
+                csv_path,
+                logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+        ):
         self.csv_path = Path(csv_path)
-        logger.info(f"[GraphBuilder] Initialized with CSV: {self.csv_path}")
+        self.logger = logging_service.get_class_logger(self)
+        self.logger.info(f"[GraphBuilder] Initialized with CSV: {self.csv_path}")
         self.graphs = defaultdict(dict)  # GraphName: { node_name: Node }
 
     def get_graph(self, name):
@@ -50,13 +54,13 @@ class GraphBuilder:
     def _create_node(self, graph, node_name, context, agent_type, input_fields, output_field, prompt, description=None):
         """Create a new node with the given properties."""
         agent_type = agent_type or "Default"
-        logger.trace(f"  ➕ Creating Node: graph: {graph}, node_name: {node_name}")
-        logger.trace(f"                    context: {context}")
-        logger.trace(f"                    agent_type: {agent_type}")
-        logger.trace(f"                    input_fields: {input_fields}")
-        logger.trace(f"                    output_field: {output_field}")
-        logger.trace(f"                    prompt: {prompt}")
-        logger.trace(f"                    description: {description}")
+        self.logger.trace(f"  ➕ Creating Node: graph: {graph}, node_name: {node_name}")
+        self.logger.trace(f"                    context: {context}")
+        self.logger.trace(f"                    agent_type: {agent_type}")
+        self.logger.trace(f"                    input_fields: {input_fields}")
+        self.logger.trace(f"                    output_field: {output_field}")
+        self.logger.trace(f"                    prompt: {prompt}")
+        self.logger.trace(f"                    description: {description}")
         # Only create if not already exists
         if node_name not in graph:
             graph[node_name] = Node(
@@ -68,9 +72,9 @@ class GraphBuilder:
                 prompt,
                 description
             )
-            logger.debug(f"  ➕ Created Node: {node_name} with agent_type: {agent_type}, output_field: {output_field}")
+            self.logger.debug(f"  ➕ Created Node: {node_name} with agent_type: {agent_type}, output_field: {output_field}")
         else:
-            logger.debug(f"  ⏩ Node {node_name} already exists, skipping creation")
+            self.logger.debug(f"  ⏩ Node {node_name} already exists, skipping creation")
             
         return graph[node_name]
     
@@ -92,13 +96,13 @@ class GraphBuilder:
                 prompt = row.get("Prompt", "").strip()
                 description = row.get("Description", "").strip()  # New field for node description
                 
-                logger.debug(f"[Row {row_count}] Processing: Graph='{graph_name}', Node='{node_name}', AgentType='{agent_type}'")
+                self.logger.debug(f"[Row {row_count}] Processing: Graph='{graph_name}', Node='{node_name}', AgentType='{agent_type}'")
                 
                 if not graph_name:
-                    logger.warning(f"[Line {row_count}] Missing GraphName. Skipping row.")
+                    self.logger.warning(f"[Line {row_count}] Missing GraphName. Skipping row.")
                     continue
                 if not node_name:
-                    logger.warning(f"[Line {row_count}] Missing Node. Skipping row.")
+                    self.logger.warning(f"[Line {row_count}] Missing Node. Skipping row.")
                     continue
                     
                 # Get or create the graph
@@ -131,7 +135,7 @@ class GraphBuilder:
                 
                 # Check for conflicting edge definitions
                 if edge_name and (success_next or failure_next):
-                    logger.debug(f"  ⚠️ CONFLICT: Node '{node_name}' has both Edge and Success/Failure defined!")
+                    self.logger.debug(f"  ⚠️ CONFLICT: Node '{node_name}' has both Edge and Success/Failure defined!")
                     raise InvalidEdgeDefinitionError(
                         f"Node '{node_name}' has both Edge and Success/Failure defined. "
                         f"Please use either Edge OR Success/Failure_Next, not both."
@@ -153,36 +157,36 @@ class GraphBuilder:
         """Connect nodes with a direct edge."""
         # Verify the edge target exists
         if target_node not in graph:
-            logger.error(f"  ❌ Edge target '{target_node}' not defined in graph '{graph_name}'")
+            self.logger.error(f"  ❌ Edge target '{target_node}' not defined in graph '{graph_name}'")
             raise ValueError(f"Edge target '{target_node}' is not defined as a node in graph '{graph_name}'")
         
         graph[source_node].add_edge("default", target_node)
-        logger.debug(f"  🔗 {source_node} --default--> {target_node}")
+        self.logger.debug(f"  🔗 {source_node} --default--> {target_node}")
     
     def _connect_success_edge(self, graph, source_node, target_node, graph_name):
         """Connect nodes with a success edge."""
         # Verify the success target exists
         if target_node not in graph:
-            logger.error(f"  ❌ Success target '{target_node}' not defined in graph '{graph_name}'")
+            self.logger.error(f"  ❌ Success target '{target_node}' not defined in graph '{graph_name}'")
             raise ValueError(f"Success target '{target_node}' is not defined as a node in graph '{graph_name}'")
         
         graph[source_node].add_edge("success", target_node)
-        logger.debug(f"  🔗 {source_node} --success--> {target_node}")
+        self.logger.debug(f"  🔗 {source_node} --success--> {target_node}")
     
     def _connect_failure_edge(self, graph, source_node, target_node, graph_name):
         """Connect nodes with a failure edge."""
         # Verify the failure target exists
         if target_node not in graph:
-            logger.error(f"  ❌ Failure target '{target_node}' not defined in graph '{graph_name}'")
+            self.logger.error(f"  ❌ Failure target '{target_node}' not defined in graph '{graph_name}'")
             raise ValueError(f"Failure target '{target_node}' is not defined as a node in graph '{graph_name}'")
         
         graph[source_node].add_edge("failure", target_node)
-        logger.debug(f"  🔗 {source_node} --failure--> {target_node}")
+        self.logger.debug(f"  🔗 {source_node} --failure--> {target_node}")
     
     def build(self):
         """Build all graphs from the CSV file."""
         if not self.csv_path.exists():
-            logger.error(f"[GraphBuilder] CSV file not found: {self.csv_path}")
+            self.logger.error(f"[GraphBuilder] CSV file not found: {self.csv_path}")
             raise FileNotFoundError(f"CSV file not found: {self.csv_path}")
 
         # Step 1: Create all nodes first
@@ -191,23 +195,23 @@ class GraphBuilder:
         # Step 2: Connect nodes with edges
         self._connect_nodes_with_edges()
         
-        logger.info(f"[GraphBuilder] Parsed {row_count} rows and built {len(self.graphs)} graph(s)")
-        logger.debug(f"Graphs found: {list(self.graphs.keys())}")
+        self.logger.info(f"[GraphBuilder] Parsed {row_count} rows and built {len(self.graphs)} graph(s)")
+        self.logger.debug(f"Graphs found: {list(self.graphs.keys())}")
         
         return self.graphs
     
     def print_graphs(self):
         for name, nodes in self.graphs.items():
-            logger.debug(f"Graph: {name}")
+            self.logger.debug(f"Graph: {name}")
             for node in nodes.values():
-                logger.debug(f"  {node}")
+                self.logger.debug(f"  {node}")
 
 
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) != 2:
-        logger.debug("Usage: python -m agentmap.graph.builder path/to/your.csv")
-    else:
-        gb = GraphBuilder(sys.argv[1])
-        gb.build()
-        gb.print_graphs()
+# if __name__ == "__main__":
+#     import sys
+#     if len(sys.argv) != 2:
+#         self.logger.debug("Usage: python -m agentmap.graph.builder path/to/your.csv")
+#     else:
+#         gb = GraphBuilder(sys.argv[1])
+#         gb.build()
+#         gb.print_graphs()
