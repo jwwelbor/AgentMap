@@ -15,6 +15,7 @@ from agentmap.agents.builtins.storage.base_storage_agent import (
 )
 from agentmap.agents.builtins.storage.mixins import WriterOperationsMixin, StorageErrorHandlerMixin
 from agentmap.logging import get_logger
+from agentmap.state.adapter import StateAdapter
 
 logger = get_logger(__name__)
 
@@ -42,6 +43,26 @@ class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandl
         context = context or {}
         self.encoding = context.get("encoding", "utf-8")
         self.newline = context.get("newline", None)  # System default
+        self._current_state = None  # Store current state for state key lookups
+    
+    def run(self, state: Any) -> Any:
+        """
+        Override run method to store state for later use in _prepare_content.
+        
+        Args:
+            state: Current state object
+            
+        Returns:
+            Updated state
+        """
+        # Store the state for use in _prepare_content
+        self._current_state = state
+        try:
+            # Call parent run method
+            return super().run(state)
+        finally:
+            # Clear state reference to avoid memory leaks
+            self._current_state = None
     
     def _initialize_client(self) -> None:
         """No client needed for filesystem operations."""
@@ -196,11 +217,23 @@ class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandl
         Convert data to writable text content.
         
         Args:
-            data: Input data in various formats
+            data: Input data in various formats, or string key to look up in state
             
         Returns:
             String content for writing
         """
+        # If data is a string and we have access to state, try to use it as a state key
+        if isinstance(data, str) and self._current_state is not None:
+            # Try to get the value from state using the string as a key
+            state_value = StateAdapter.get_value(self._current_state, data, None)
+            if state_value is not None:
+                # Recursively process the state value
+                return self._prepare_content(state_value)
+            else:
+                # If key not found in state, treat the string as literal content
+                self.log_debug(f"Key '{data}' not found in state, treating as literal content")
+                return str(data)
+        
         if hasattr(data, 'page_content'):
             # Single LangChain document
             return data.page_content
