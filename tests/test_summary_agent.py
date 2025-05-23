@@ -5,6 +5,7 @@ import json
 from agentmap.agents.builtins.summary_agent import SummaryAgent
 from agentmap.agents.builtins.llm.llm_agent import LLMAgent
 
+from agentmap.di import init_for_cli
 
 class MockLLMAgent(LLMAgent):
     """Mock LLM agent for testing."""
@@ -142,6 +143,8 @@ class TestSummaryAgent:
     def test_llm_mode_successful(self, mock_get_formatted_prompt):
         """Test LLM mode with MockLLMAgent."""
         # Setup mock
+        init_for_cli("./agentmap_config.yaml")
+
         mock_get_formatted_prompt.return_value = "Please summarize: content"
         
         # Create agent with LLM mode enabled
