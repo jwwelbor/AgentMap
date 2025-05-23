@@ -9,7 +9,6 @@ from typing import Any, Callable, Dict
 from langgraph.graph import StateGraph
 
 from agentmap.agents.features import HAS_LLM_AGENTS
-from agentmap.config import get_functions_path
 from agentmap.logging import get_logger
 from agentmap.state.adapter import StateAdapter
 from agentmap.utils.common import extract_func_ref, import_function

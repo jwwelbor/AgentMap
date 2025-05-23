@@ -21,6 +21,7 @@ def init_for_cli(config_path: Optional[Union[str, Path]] = None) -> ApplicationC
         Initialized application container
     """
     # Configure the container with the provided config path
+    config_path = config_path or "agentmap_config.yaml"
     application.config_path.override(config_path)
 
     # Initialize logging early - this ensures logging is configured

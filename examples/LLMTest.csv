@@ -2,4 +2,5 @@ GraphName,Node,AgentType,Input_Fields,Output_Field,Edge,Success_Next,Failure_Nex
 SimpleQA,UserInput,input,,"user_query",LLMAnswer,,,Prompts the user for a question,What do you want to know?,
 SimpleQA,LLMAnswer,anthropic,"user_query","answer",LLMFollowup,,,Uses LLM to answer the users question,"You are a helpful AI assistant answering the users question. User question: {user_query} Provide a concise and accurate answer.","{""temperature"": 0.7}"
 SimpleQA,LLMFollowup,openai,"answer","followup",LLMSummary,,,Uses an LLM to add another fact,"Tell me another interesting thing about this {answer}",
-SimpleQA,LLMSummary,summary,"answer,followup","summary",,,,Uses an LLM to summarize the answer and followup,"Summarize the following information: {answer} and {followup}",
+SimpleQA,LLMSummary,summary,"answer|followup","summary",,End,,Uses an LLM to summarize the answer and followup,"Summarize the following information: {answer} and {followup}",
+SimpleQA,End,,,,,,,,,
