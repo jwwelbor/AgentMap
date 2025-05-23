@@ -3,10 +3,9 @@ Adapter for working with different state formats (dict or Pydantic).
 """
 from typing import Any, Dict, TypeVar
 
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 StateType = TypeVar('StateType', Dict[str, Any], object)
+from pydantic import BaseModel
+from agentmap.logging.tracking.execution_tracker import ExecutionTracker
 
 # Add these imports at the top if needed
 import importlib
@@ -89,7 +88,8 @@ class StateAdapter:
                     except Exception:
                         pass
             except Exception as e:
-                logger.debug(f"Error setting execution summary: {e}")
+                raise e
+                # logger.debug(f"Error setting execution summary: {e}")
         
         # Dictionary state (most common case)
         if isinstance(state, dict):
@@ -116,50 +116,11 @@ class StateAdapter:
             setattr(new_state, key, value)
             return new_state
         except Exception as e:
-            logger.debug(f"Error setting value on state: {e}")
+            # logger.debug(f"Error setting value on state: {e}")
             # If all else fails, return original state
-            return state
-                
-    @staticmethod
-    def initialize_execution_tracker(state: Any, config: Optional[Dict[str, Any]] = None) -> Any:
-        """
-        Always initialize execution tracker in state (lightweight by default).
-        
-        Args:
-            state: Current state
-            config: Optional tracker configuration
-            
-        Returns:
-            State with execution tracker initialized
-        """
-        from agentmap.logging.tracking.execution_tracker import ExecutionTracker
-        
-        if StateAdapter.get_value(state, "__execution_tracker") is None:
-            # Default to minimal tracking if no config is provided
-            if config is None:
-                config = {
-                    "tracking": {
-                        "enabled": False,  # Minimal tracking by default
-                        "track_outputs": False,
-                        "track_inputs": False,
-                    }
-                }
-            tracker = ExecutionTracker(config)
-            state = StateAdapter.set_value(state, "__execution_tracker", tracker)
-        return state
+            raise e
+            # return state
 
-    @staticmethod
-    def get_execution_tracker(state: Any):
-        """
-        Get the execution tracker from state.
-        
-        Args:
-            state: Current state
-            
-        Returns:
-            ExecutionTracker instance or None
-        """
-        return StateAdapter.get_value(state, "__execution_tracker")
     
     @staticmethod
     def get_execution_data(state, field, default=None):

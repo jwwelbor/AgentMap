@@ -5,9 +5,7 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-from dependency_injector.wiring import inject, Provide
-from agentmap.di.containers import ApplicationContainer
-from agentmap.logging.service import LoggingService
+import logging
 from agentmap.state.adapter import StateAdapter
 from agentmap.state.manager import StateManager
 
@@ -17,13 +15,13 @@ class BaseAgent:
     # Class-level logger for shared logging configuration
     _logger = None
     
-    @inject
     def __init__(
         self, 
         name: str, 
         prompt: str, 
-        context: dict = None,
-        logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+        context: dict,
+        logger: Optional[logging.Logger],
+        execution_tracker: Optional[Any]
     ):
         """
         Initialize the agent.
@@ -37,6 +35,7 @@ class BaseAgent:
         self.prompt = prompt
         self.context = context or {}
         self.prompt_template = prompt
+        self.tracker = execution_tracker
         
         # Extract input_fields and output_field from context if available
         self.input_fields = self.context.get("input_fields", [])
@@ -48,7 +47,7 @@ class BaseAgent:
         
         # Initialize logger with instance-specific prefix
         # We use the class-level logger but store the prefix
-        self.logger = logging_service.get_logger(f"agentmap.agents.{self.__class__.__name__}.{name}")
+        self._logger = logger
         self._log_prefix = f"[{self.__class__.__name__}:{self.name}]"
         
     def log(self, level: str, message: str, *args, **kwargs):
@@ -114,15 +113,15 @@ class BaseAgent:
 
         self.log_trace(f"\n*** AGENT {self.name} RUN START [{execution_id}] at {start_time} ***")
 
-        # Ensure execution tracker is present
-        state = StateAdapter.initialize_execution_tracker(state)
-        tracker = StateAdapter.get_execution_tracker(state)
+        # # Ensure execution tracker is present
+        # state = StateAdapter.initialize_execution_tracker(state)
+        # tracker = StateAdapter.get_execution_tracker(state)
 
         # Extract inputs
         inputs = self.state_manager.get_inputs(state)
 
         # Record node start
-        tracker.record_node_start(self.name, inputs)
+        self.tracker.record_node_start(self.name, inputs)
 
         try:
             # Pre-processing hook for subclasses
@@ -140,8 +139,8 @@ class BaseAgent:
             state, output = self._post_process(state, output)
 
             # read last_action_success in case it was changed in post_process
-            tracker.record_node_result(self.name, state.get("last_action_success", True), result=output)
-            graph_success = tracker.update_graph_success()
+            self.tracker.record_node_result(self.name, state.get("last_action_success", True), result=output)
+            graph_success = self.tracker.update_graph_success()
             state = StateAdapter.set_value(state, "graph_success", graph_success)
 
             # Now set the final output and success flag
@@ -160,10 +159,10 @@ class BaseAgent:
             self.log_error(error_msg)
 
             # Record failure
-            tracker.record_node_result(self.name, False, error=error_msg)
+            self.tracker.record_node_result(self.name, False, error=error_msg)
 
             # Update graph success based on policy
-            graph_success = tracker.update_graph_success()
+            graph_success = self.tracker.update_graph_success()
 
             # Store graph success in state
             state = StateAdapter.set_value(state, "graph_success", graph_success)

@@ -20,7 +20,7 @@ from agentmap.logging.service import LoggingService
 
 logger = get_logger("AgentMap")
 
-
+@inject
 class GraphAssembler:
     """
     Central class for building LangGraph graphs with consistent interfaces.
@@ -34,8 +34,8 @@ class GraphAssembler:
             self,
             builder: StateGraph,
             enable_logging=True,
-            configuration: Configuration = Provide[ApplicationContainer.config.configuration],
-            logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service],
+            configuration: Configuration = Provide[ApplicationContainer.configuration],
+            logging_service: LoggingService = Provide[ApplicationContainer.logging_service],
     ):
         self.builder = builder
         self.functions_dir = configuration.get_functions_path()

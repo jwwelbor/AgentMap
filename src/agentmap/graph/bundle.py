@@ -6,12 +6,9 @@ Ensures consistency between compiled components.
 """
 import hashlib
 import pickle
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
-
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 class GraphBundle:
     """
@@ -19,7 +16,7 @@ class GraphBundle:
     Ensures consistency between components.
     """
     
-    def __init__(self, graph, node_registry, csv_content=None, version_hash=None):
+    def __init__(self, graph, node_registry, logger: logging.Logger, csv_content=None, version_hash=None):
         """
         Initialize the graph bundle.
         
@@ -31,6 +28,7 @@ class GraphBundle:
         """
         self.graph = graph
         self.node_registry = node_registry
+        self.logger = logger
         
         # Generate version hash if not provided
         if version_hash:
@@ -73,10 +71,10 @@ class GraphBundle:
         """
         with open(path, 'wb') as f:
             pickle.dump(self.to_dict(), f)
-        logger.debug(f"Saved graph bundle to {path} with version hash: {self.version_hash}")
+        self.logger.debug(f"Saved graph bundle to {path} with version hash: {self.version_hash}")
     
     @classmethod
-    def load(cls, path):
+    def load(self, cls, path):
         """
         Load bundle from a pickle file.
         
@@ -99,7 +97,7 @@ class GraphBundle:
                 return cls(graph=data, node_registry=None, version_hash=None)
                 
         except Exception as e:
-            logger.error(f"Error loading graph bundle: {e}")
+            self.logger.error(f"Error loading graph bundle: {e}")
             return None
     
     def verify_csv(self, csv_content):
