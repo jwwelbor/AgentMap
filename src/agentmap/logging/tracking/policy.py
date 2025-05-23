@@ -4,12 +4,18 @@ Success policy evaluator for execution tracking.
 from typing import Any, Dict, List, Optional, Callable
 import importlib
 
-from agentmap.config import load_config
-from agentmap.logging import get_logger
+from dependency_injector.wiring import inject, Provide
+from agentmap.di.containers import ApplicationContainer
+from agentmap.config.configuration import Configuration
+from agentmap.logging.service import LoggingService
 
-logger = get_logger(__name__)
+@inject
+def evaluate_success_policy(
+    summary: Dict[str, Any],
+    configuration: Configuration = Provide[ApplicationContainer.configuration],
+    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
 
-def evaluate_success_policy(summary: Dict[str, Any]) -> bool:
+) -> bool:
     """
     Evaluate the success of a graph execution based on the configured policy.
     
@@ -21,11 +27,11 @@ def evaluate_success_policy(summary: Dict[str, Any]) -> bool:
         Boolean indicating overall success based on policy
     """
     # Load config
-    from agentmap.di import application
-    config = application.config.config()
-    execution_config = config.get("execution", {})
+    execution_config = configuration.get_execution_config()
     policy_config = execution_config.get("success_policy", {})
     
+    # Get logger
+    logger = logging_service.get_logger("agentmap.tracking")  
     # Get policy type with fallback
     policy_type = policy_config.get("type", "all_nodes")
     
@@ -78,7 +84,12 @@ def _evaluate_critical_nodes_policy(summary: Dict[str, Any], critical_nodes: Lis
     
     return True
 
-def _evaluate_custom_policy(summary: Dict[str, Any], function_path: str) -> bool:
+@inject
+def _evaluate_custom_policy(
+    summary: Dict[str, Any], 
+    function_path: str,
+    logger: LoggingService = Provide[ApplicationContainer.logging.logging_service].get_logger("agentmap.tracking")
+) -> bool:
     """Evaluate using a custom policy function."""
     try:
         # Import the custom function (module.path.function_name)

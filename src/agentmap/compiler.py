@@ -17,13 +17,11 @@ from agentmap.config import (
 )
 from agentmap.utils.common import extract_func_ref, import_function
 from agentmap.agents import get_agent_class
-from agentmap.logging import get_logger
+from agentmap.logging.service import LoggingService
 
 from dependency_injector.wiring import inject, Provide
 from agentmap.di.containers import ApplicationContainer
 from agentmap.config.configuration import Configuration
-
-logger = get_logger(__name__)
 
 
 def resolve_state_schema(state_schema: str) -> tuple:
@@ -57,8 +55,13 @@ def resolve_state_schema(state_schema: str) -> tuple:
         # We can't evaluate this directly here, so return None and let the client handle import
         return None, schema_code, schema_imports
 
-
-def get_graph_definition(graph_name: str, csv_path: Optional[str] = None, config_path: Optional[Union[str, Path]] = None) -> Dict:
+@inject
+def get_graph_definition(
+        graph_name: str, 
+        csv_path: Optional[str] = None,
+        configuration: Configuration = Provide[ApplicationContainer.configuration],
+        logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
+    ) -> Dict:
     """
     Get the graph definition from the CSV.
     
@@ -73,7 +76,8 @@ def get_graph_definition(graph_name: str, csv_path: Optional[str] = None, config
     Raises:
         ValueError: If graph not found
     """
-    csv_file = csv_path or get_csv_path(config_path)
+    logger = logging_service.get_logger("agentmap.compiler")
+    csv_file = csv_path or configuration.get_csv_path()
     logger.debug(f"[Compiler] Loading graph definition from CSV: {csv_file}")
     
     gb = GraphBuilder(csv_file)
@@ -86,10 +90,12 @@ def get_graph_definition(graph_name: str, csv_path: Optional[str] = None, config
     return graph_def
 
 
+@inject
 def build_source_lines(
     graph_def: Dict, 
     state_schema: str = "dict", 
-    config_path: Optional[Union[str, Path]] = None
+    configuration: Configuration = Provide[ApplicationContainer.configuration],
+    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
 ) -> List[str]:
     """
     Build the source lines for the graph.
@@ -122,8 +128,10 @@ def build_source_lines(
     src_lines.extend(schema_imports)
     src_lines.append("")  # Blank line
     
+    logger = logging_service.get_logger("agentmap.compiler")
+    
     # Add function imports if needed
-    functions_dir = get_functions_path(config_path)
+    functions_dir = configuration.get_functions_path()
     function_imports = []
     
     for node in graph_def.values():
@@ -157,7 +165,7 @@ def build_source_lines(
     src_lines.append(f'builder.set_entry_point("{entry}")')
     
     # Add edges
-    src_lines.extend(build_edge_lines(graph_def, config_path))
+    src_lines.extend(build_edge_lines(graph_def))
     
     # Add graph compilation and usage example
     src_lines.append("")
@@ -189,8 +197,11 @@ def get_agent_class_name(agent_type: str) -> str:
     # Assume it's a custom agent
     return f"{agent_type.capitalize()}Agent"
 
-
-def build_edge_lines(graph_def: Dict, config_path: Optional[Union[str, Path]] = None) -> List[str]:
+@inject
+def build_edge_lines(
+        graph_def: Dict, 
+        configuration: Configuration = Provide[ApplicationContainer.configuration]
+) -> List[str]:
     """
     Build the edge source lines for the graph.
     
@@ -202,7 +213,7 @@ def build_edge_lines(graph_def: Dict, config_path: Optional[Union[str, Path]] = 
         List of edge source lines
     """
     edge_lines = []
-    functions_dir = get_functions_path(config_path)
+    functions_dir = configuration.get_functions_path()
     
     for node in graph_def.values():
         has_func = False
@@ -243,8 +254,7 @@ def build_edge_lines(graph_def: Dict, config_path: Optional[Union[str, Path]] = 
 
 def create_graph_builder(
     graph_def: Dict, 
-    state_schema: str = "dict", 
-    config_path: Optional[Union[str, Path]] = None
+    state_schema: str = "dict"
 ) -> tuple:
     """
     Create a StateGraph builder for the graph.
@@ -265,25 +275,25 @@ def create_graph_builder(
     builder = StateGraph(schema_obj)
     
     # Build source lines for tracking
-    src_lines = build_source_lines(graph_def, state_schema, config_path)
+    src_lines = build_source_lines(graph_def, state_schema)
     
     # Add nodes to the builder
-    add_nodes_to_builder(builder, graph_def, config_path)
+    add_nodes_to_builder(builder, graph_def)
     
     # Set entry point
     entry = next(iter(graph_def))
     builder.set_entry_point(entry)
     
     # Add edges to the builder
-    add_edges_to_builder(builder, graph_def, config_path)
+    add_edges_to_builder(builder, graph_def)
     
     return builder, src_lines
 
-
+@inject
 def add_nodes_to_builder(
     builder: StateGraph, 
-    graph_def: Dict, 
-    config_path: Optional[Union[str, Path]] = None
+    graph_def: Dict,
+    configuration: Configuration = Provide[ApplicationContainer.configuration] 
 ) -> None:
     """
     Add nodes to the StateGraph builder.
@@ -299,7 +309,7 @@ def add_nodes_to_builder(
             agent_instance = agent_class(name=node.name, prompt=node.prompt or "")
         else:
             # Try to load from custom agents path
-            custom_agents_path = get_custom_agents_path(config_path)
+            custom_agents_path = configuration.get_custom_agents_path()
             module_path = str(custom_agents_path).replace("/", ".").replace("\\", ".")
             if module_path.endswith("."):
                 module_path = module_path[:-1]
@@ -314,11 +324,12 @@ def add_nodes_to_builder(
                 
         builder.add_node(node.name, agent_instance)
 
-
+@inject
 def add_edges_to_builder(
     builder: StateGraph, 
     graph_def: Dict, 
-    config_path: Optional[Union[str, Path]] = None
+    configuration: Configuration = Provide[ApplicationContainer.configuration],
+    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
 ) -> None:
     """
     Add edges to the StateGraph builder.
@@ -331,7 +342,7 @@ def add_edges_to_builder(
     Raises:
         FileNotFoundError: If function file not found
     """
-    functions_dir = get_functions_path(config_path)
+    functions_dir = configuration.get_functions_path()
     
     for node in graph_def.values():
         has_func = False
@@ -382,7 +393,8 @@ def compile_graph(
     output_dir: Optional[str] = None,
     csv_path: Optional[str] = None,
     state_schema: str = "dict",
-    config_path: Optional[Union[str, Path]] = None
+    configuration: Configuration = Provide[ApplicationContainer.configuration],
+    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
 ):
     """
     Compile a graph to the configured output directory.
@@ -401,10 +413,11 @@ def compile_graph(
     # Import node_registry here to avoid circular imports
     from agentmap.graph.node_registry import build_node_registry
     
+    logger = logging_service.get_logger("agentmap.compiler")
     logger.info(f"[Compiler] Compiling graph: {graph_name}")
     
     # Get the graph definition
-    csv_file = csv_path or get_csv_path(config_path)
+    csv_file = csv_path or configuration.get_csv_path()
     
     # Read the CSV content for versioning
     with open(csv_file, 'r') as f:
@@ -422,11 +435,11 @@ def compile_graph(
     node_registry = build_node_registry(graph_def)
     
     # Use configured output directory if not specified
-    output_dir = output_dir or get_compiled_graphs_path(config_path)
+    output_dir = output_dir or configuration.get_compiled_graphs_path()
     os.makedirs(output_dir, exist_ok=True)
     
     # Create the builder and get source lines
-    builder, src_lines = create_graph_builder(graph_def, state_schema, config_path)
+    builder, src_lines = create_graph_builder(graph_def, state_schema)
     
     # Compile the graph
     graph = builder.compile()
@@ -451,7 +464,7 @@ def compile_graph(
 def compile_all(
     csv_path: Optional[str] = None,
     state_schema: str = "dict",
-    config_path: Optional[Union[str, Path]] = None
+    logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service]
 ):
     """
     Compile all graphs defined in the CSV.
@@ -461,6 +474,7 @@ def compile_all(
         state_schema: State schema type ("dict", "pydantic:<ModelName>", etc.)
         config_path: Optional path to a custom config file
     """
+    logger = logging_service.get_logger("agentmap.compiler")
     logger.info(f"[Compiler] Compiling all graphs")
     
     csv_file = csv_path or get_csv_path(config_path)
@@ -470,7 +484,7 @@ def compile_all(
     compiled_paths = []
     for name in graphs.keys():
         try:
-            path = compile_graph(name, csv_path=csv_path, state_schema=state_schema, config_path=config_path)
+            path = compile_graph(name, csv_path=csv_path, state_schema=state_schema)
             compiled_paths.append(path)
         except Exception as e:
             logger.error(f"[Compiler] Error compiling graph {name}: {e}")
@@ -479,28 +493,28 @@ def compile_all(
     return compiled_paths
 
 
-if __name__ == "__main__":
-    import typer
-    app = typer.Typer()
+# if __name__ == "__main__":
+#     import typer
+#     app = typer.Typer()
 
-    @app.command()
-    def graph(
-        graph: str, 
-        output: Optional[str] = None,
-        csv: Optional[str] = None,
-        state: str = "dict",
-        config: Optional[str] = None
-    ):
-        """Compile a single graph."""
-        compile_graph(graph, output_dir=output, csv_path=csv, state_schema=state, config_path=config)
+#     @app.command()
+#     def graph(
+#         graph: str, 
+#         output: Optional[str] = None,
+#         csv: Optional[str] = None,
+#         state: str = "dict",
+#         config: Optional[str] = None
+#     ):
+#         """Compile a single graph."""
+#         compile_graph(graph, output_dir=output, csv_path=csv, state_schema=state, config_path=config)
 
-    @app.command()
-    def all(
-        csv: Optional[str] = None,
-        state: str = "dict",
-        config: Optional[str] = None
-    ):
-        """Compile all graphs."""
-        compile_all(csv_path=csv, state_schema=state, config_path=config)
+#     @app.command()
+#     def all(
+#         csv: Optional[str] = None,
+#         state: str = "dict",
+#         config: Optional[str] = None
+#     ):
+#         """Compile all graphs."""
+#         compile_all(csv_path=csv, state_schema=state, config_path=config)
 
-    app()
+#     app()

@@ -16,6 +16,7 @@ from agentmap.utils.common import extract_func_ref, import_function
 from dependency_injector.wiring import inject, Provide
 from agentmap.di.containers import ApplicationContainer
 from agentmap.config.configuration import Configuration
+from agentmap.logging.service import LoggingService
 
 logger = get_logger("AgentMap")
 
@@ -33,14 +34,17 @@ class GraphAssembler:
             self,
             builder: StateGraph,
             enable_logging=True,
-            configuration: Configuration = Provide[ApplicationContainer.config.configuration]
+            configuration: Configuration = Provide[ApplicationContainer.config.configuration],
+            logging_service: LoggingService = Provide[ApplicationContainer.logging.logging_service],
     ):
         self.builder = builder
         self.functions_dir = configuration.get_functions_path()
         self.enable_logging = enable_logging
 
+        self.logger = logging_service.get_class_logger(self)
+
         if enable_logging:
-            logger.info("Graph assembler initialized")
+            self.logger.info("Graph assembler initialized")
     
     def add_node(self, name: str, agent_instance: Any) -> None:
         """Add a node to the graph."""
@@ -49,8 +53,8 @@ class GraphAssembler:
         
         # Log helpful warnings about potential missing dependencies
         if agent_class_name == "OrchestratorAgent" and not HAS_LLM_AGENTS:
-            logger.warning(f"Orchestrator agent '{name}' may have limited functionality without LLM agents.")
-            logger.warning("Install LLM dependencies with: pip install agentmap[llm]")
+            self.logger.warning(f"Orchestrator agent '{name}' may have limited functionality without LLM agents.")
+            self.logger.warning("Install LLM dependencies with: pip install agentmap[llm]")
 
         
         self.builder.add_node(name, agent_instance.run)
@@ -61,7 +65,7 @@ class GraphAssembler:
             self.orchestrator_nodes.append(name)
             
         if self.enable_logging:
-            logger.info(f"🔹 Added node: '{name}' ({agent_class_name})")
+            self.logger.info(f"🔹 Added node: '{name}' ({agent_class_name})")
     
     def set_entry_point(self, node_name: str) -> None:
         """
@@ -72,7 +76,7 @@ class GraphAssembler:
         """
         self.builder.set_entry_point(node_name)
         if self.enable_logging:
-            logger.info(f"🚪 Set entry point: '{node_name}'")
+            self.logger.info(f"🚪 Set entry point: '{node_name}'")
     
     def add_default_edge(self, source: str, target: str) -> None:
         """
@@ -84,7 +88,7 @@ class GraphAssembler:
         """
         self.builder.add_edge(source, target)
         if self.enable_logging:
-            logger.info(f"➡️ Added edge: '{source}' → '{target}'")
+            self.logger.info(f"➡️ Added edge: '{source}' → '{target}'")
     
     def add_conditional_edge(self, source: str, condition_func: Callable) -> None:
         """
@@ -96,7 +100,7 @@ class GraphAssembler:
         """
         self.builder.add_conditional_edges(source, condition_func)
         if self.enable_logging:
-            logger.info(f"🔀 Added conditional edge from: '{source}'")
+            self.logger.info(f"🔀 Added conditional edge from: '{source}'")
     
     def add_success_failure_edge(self, source: str, success_target: str, failure_target: str) -> None:
         """
@@ -113,7 +117,7 @@ class GraphAssembler:
         
         self.builder.add_conditional_edges(source, branch_function)
         if self.enable_logging:
-            logger.info(f"🔀 Added branch: '{source}' → success: '{success_target}', failure: '{failure_target}'")
+            self.logger.info(f"🔀 Added branch: '{source}' → success: '{success_target}', failure: '{failure_target}'")
     
     def add_function_edge(self, source: str, func_name: str, success_target: str = None, failure_target: str = None) -> None:
         """
@@ -139,7 +143,7 @@ class GraphAssembler:
         self.builder.add_conditional_edges(source, func_wrapper)
         
         if self.enable_logging:
-            logger.info(f"🔀 Added function edge: '{source}' → func:{func_name} " +
+            self.logger.info(f"🔀 Added function edge: '{source}' → func:{func_name} " +
                        f"(success: '{success_target}', failure: '{failure_target}')")
     
     def add_dynamic_router(self, node_name: str) -> None:
@@ -156,14 +160,14 @@ class GraphAssembler:
                 # Clear the field to prevent loops
                 state = StateAdapter.set_value(state, "__next_node", None)
                 if self.enable_logging:
-                    logger.debug(f"[DynamicRouter] Dynamic routing from '{node_name}' to '{next_node}'")
+                    self.logger.debug(f"[DynamicRouter] Dynamic routing from '{node_name}' to '{next_node}'")
                 return next_node
             # Fall back to regular routing if not set
             return None
             
         self.builder.add_conditional_edges(node_name, dynamic_router)
         if self.enable_logging:
-            logger.info(f"🔄 Added dynamic router for orchestrator: '{node_name}'")
+            self.logger.info(f"🔄 Added dynamic router for orchestrator: '{node_name}'")
     
     def process_node_edges(self, node_name: str, edges: Dict[str, str]) -> None:
         """
@@ -175,11 +179,11 @@ class GraphAssembler:
         """
         if not edges:
             if self.enable_logging:
-                logger.info(f"ℹ️ Node '{node_name}' has no outgoing edges")
+                self.logger.info(f"ℹ️ Node '{node_name}' has no outgoing edges")
             return
             
         if self.enable_logging:
-            logger.info(f"🔄 Processing edges for node: '{node_name}'")
+            self.logger.info(f"🔄 Processing edges for node: '{node_name}'")
         
         has_func = False
         
@@ -210,7 +214,7 @@ class GraphAssembler:
                 
                 self.add_conditional_edge(node_name, success_only)
                 if self.enable_logging:
-                    logger.info(f"🟢 Added success-only edge: '{node_name}' → '{success_target}'")
+                    self.logger.info(f"🟢 Added success-only edge: '{node_name}' → '{success_target}'")
             
             # Handle failure-only edge
             elif "failure" in edges:
@@ -224,7 +228,7 @@ class GraphAssembler:
                 
                 self.add_conditional_edge(node_name, failure_only)
                 if self.enable_logging:
-                    logger.info(f"🔴 Added failure-only edge: '{node_name}' → '{failure_target}'")
+                    self.logger.info(f"🔴 Added failure-only edge: '{node_name}' → '{failure_target}'")
             
             # Handle default edge
             elif "default" in edges:
@@ -241,11 +245,11 @@ class GraphAssembler:
         self.finalize()
         
         if self.enable_logging:
-            logger.info("📋 Compiling graph")
+            self.logger.info("📋 Compiling graph")
             
         graph = self.builder.compile()
         
         if self.enable_logging:
-            logger.info("✅ Graph compiled successfully")
+            self.logger.info("✅ Graph compiled successfully")
             
         return graph

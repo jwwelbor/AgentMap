@@ -23,6 +23,11 @@ def init_for_cli(config_path: Optional[Union[str, Path]] = None) -> ApplicationC
     # Configure the container with the provided config path
     application.config.config_path.override(config_path)
 
+    # Initialize logging early - this ensures logging is configured
+    # before any other code that might want to log
+    logging_service = application.logging.logging_service()
+    logging_service.initialize()
+
     # Wire the container to all modules that use injection
     application.wire(modules=[
         "agentmap.graph.assembler",
@@ -42,4 +47,9 @@ def init_for_cli(config_path: Optional[Union[str, Path]] = None) -> ApplicationC
 
 def cleanup():
     """Clean up the DI container (useful for testing or between commands)."""
+    # Reset logging
+    logging_service = application.logging.logging_service()
+    logging_service.reset()
+
+    # Unwire the container
     application.unwire()
