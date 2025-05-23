@@ -14,11 +14,14 @@ try:
 except ImportError:
     HAS_LANGCHAIN = False
 
+from agentmap.di import init_for_cli
+
 from langgraph.graph import StateGraph
 
 from agentmap.state.adapter import StateAdapter
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.graph.assembler import GraphAssembler
+
 
 # Simple test agents
 
@@ -91,6 +94,8 @@ def create_failure_graph():
 def test_tracking_with_various_state_fields():
     """Test that tracking works with various fields in state."""
     # Create various objects to include in state
+    init_for_cli('./agentmap_config.yaml')
+
     if HAS_LANGCHAIN:
         memory = ConversationBufferMemory(return_messages=True, memory_key="history")
     else:
