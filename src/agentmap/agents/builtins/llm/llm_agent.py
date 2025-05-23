@@ -54,8 +54,8 @@ class LLMAgent(BaseAgent):
         # Try to use DI container if available
         try:
             from agentmap.di import application
-            config = application.config.config()
-            config = config.get("llm", {}).get(self.provider_name, {})
+            config = application.configuration()
+            config = config.get_section("llm", {}).get(self.provider_name, {})
         except (ImportError, AttributeError):
             # Fall back to direct config loading
             from agentmap.config import get_llm_config

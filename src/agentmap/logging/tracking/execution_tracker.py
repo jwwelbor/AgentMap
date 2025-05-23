@@ -19,9 +19,6 @@ class ExecutionTracker:
         Args:
             config: Tracking configuration dictionary
         """
-        # self.logging_service = logging_service
-        # self.configuration = configuration.get("execution_tracker", {})
-        # tracking_config = self.configuration.get("tracking", {})
         self.minimal_mode = not tracking_config.get("enabled", True)
         self.execution_config = execution_config
         self.tracking_config = tracking_config

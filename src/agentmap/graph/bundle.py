@@ -59,6 +59,7 @@ class GraphBundle:
         return cls(
             graph=data.get("graph"),
             node_registry=data.get("node_registry"),
+            logger=None,  # Logger will need to be set separately
             version_hash=data.get("version_hash")
         )
     
@@ -71,10 +72,11 @@ class GraphBundle:
         """
         with open(path, 'wb') as f:
             pickle.dump(self.to_dict(), f)
-        self.logger.debug(f"Saved graph bundle to {path} with version hash: {self.version_hash}")
+        if self.logger:
+            self.logger.debug(f"Saved graph bundle to {path} with version hash: {self.version_hash}")
     
     @classmethod
-    def load(self, cls, path):
+    def load(cls, path):
         """
         Load bundle from a pickle file.
         
@@ -94,10 +96,13 @@ class GraphBundle:
                 return cls.from_dict(data)
             else:
                 # Old format with just the graph
-                return cls(graph=data, node_registry=None, version_hash=None)
+                return cls(graph=data, node_registry=None, logger=None, version_hash=None)
                 
         except Exception as e:
-            self.logger.error(f"Error loading graph bundle: {e}")
+            # Can't use self.logger here since it's a classmethod
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error loading graph bundle: {e}")
             return None
     
     def verify_csv(self, csv_content):
