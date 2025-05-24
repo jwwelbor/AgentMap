@@ -28,3 +28,15 @@ class ApplicationContainer(containers.DeclarativeContainer):
             configuration
         )
     )
+    
+    # LLM Service - use lazy factory import to avoid circular dependency
+    def _create_llm_service(config, logger):
+        # Import here to avoid circular dependency
+        from agentmap.services.llm_service import LLMService
+        return LLMService(config, logger)
+    
+    llm_service = providers.Singleton(
+        _create_llm_service,
+        configuration,
+        logging_service
+    )

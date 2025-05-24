@@ -52,6 +52,21 @@ class SummaryAgent(BaseAgent):
             self.log_debug(f"SummaryAgent '{name}' using LLM mode: {self.llm_type}")
         else:
             self.log_debug(f"SummaryAgent '{name}' using basic concatenation mode")
+            
+        # LLM Service (will be injected or created)
+        self.llm_service = None
+
+    def _get_llm_service(self):
+        """Get LLM service via DI or direct creation."""
+        if self.llm_service is None:
+            try:
+                from agentmap.di import application
+                self.llm_service = application.llm_service()
+            except Exception:
+                # Fallback for non-DI usage
+                from agentmap.services.llm_service import LLMService
+                self.llm_service = LLMService()
+        return self.llm_service
 
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
@@ -100,53 +115,23 @@ class SummaryAgent(BaseAgent):
         # Prepare basic concatenation as input for the LLM
         concatenated = self._basic_concatenation(inputs)
 
-        # Get LLM config
-        llm_config = get_llm_config(self.llm_type) if self.llm_type else {}
-
         try:
-            # Create LLM context with our settings
-            llm_context = {
-                "model": self.context.get("model") or llm_config.get("model"),
-                "temperature": self.context.get("temperature") or llm_config.get("temperature"),
-                # Use our input/output fields configuration
-                "input_fields": ["content"],
-                "output_field": "summary"
-            }
-
             llm_prompt = self._get_llm_prompt(concatenated)
-            llm_input = {"content": concatenated}
-
-            # Import and use the appropriate LLM agent
-            if self.llm_type == "openai":
-                from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
-                llm_agent = OpenAIAgent(
-                    name=f"{self.name}_llm",
-                    prompt=llm_prompt,
-                    context=llm_context
-                )
-                result = llm_agent.process(llm_input)
-
-            elif self.llm_type == "anthropic":
-                from agentmap.agents.builtins.llm.anthropic_agent import AnthropicAgent
-                llm_agent = AnthropicAgent(
-                    name=f"{self.name}_llm",
-                    prompt=llm_prompt,
-                    context=llm_context
-                )
-                result = llm_agent.process(llm_input)
-
-            elif self.llm_type == "google":
-                from agentmap.agents.builtins.llm.google_agent import GoogleAgent
-                llm_agent = GoogleAgent(
-                    name=f"{self.name}_llm",
-                    prompt=llm_prompt,
-                    context=llm_context
-                )
-                result = llm_agent.process(llm_input)
-
-            else:
-                self.log_error(f"Unsupported LLM type: {self.llm_type}")
-                return f"ERROR: Unsupported LLM type '{self.llm_type}'"
+            
+            # Build messages for LLM call
+            messages = [
+                {"role": "system", "content": llm_prompt},
+                {"role": "user", "content": concatenated}
+            ]
+            
+            # Use LLM Service
+            llm_service = self._get_llm_service()
+            result = llm_service.call_llm(
+                provider=self.llm_type,
+                messages=messages,
+                model=self.context.get("model"),
+                temperature=self.context.get("temperature")
+            )
 
             return result
 

@@ -26,19 +26,6 @@ class LLMAgent(BaseAgent):
     provider-specific methods.
     """
     
-    def __init__(self, name: str, prompt: str, config_path: Optional[Union[str, Path]] = None, context: Optional[Dict[str, Any]] = None):
-        """
-        Initialize the LLM agent with provider-specific configuration.
-        
-        Args:
-            name: Name of the agent
-            prompt: Prompt text or template (used as system message)
-            context: Optional context configuration including:
-                - model: Override model name
-                - temperature: Override temperature value
-                - memory_key: Key to store memory in state
-                - max_memory_messages: Maximum number of messages to keep in memory
-        """
     def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
         # First, resolve prompt reference if applicable
         from agentmap.prompts import resolve_prompt
@@ -73,6 +60,9 @@ class LLMAgent(BaseAgent):
         # Add memory_key to input_fields if not already present
         if self.memory_key and self.memory_key not in self.input_fields:
             self.input_fields.append(self.memory_key)
+            
+        # LLM Service (will be injected or created)
+        self.llm_service = None
     
     # Required provider-specific methods (to be implemented by subclasses)
     def _get_provider_name(self) -> str:
@@ -101,15 +91,41 @@ class LLMAgent(BaseAgent):
             Default model name
         """
         raise NotImplementedError("Subclasses must implement _get_default_model_name()")
-        
-    def _create_langchain_client(self) -> Any:
-        """
-        Create a LangChain client for this provider if LangChain is available.
-        
-        Returns:
-            LangChain client or None if unavailable
-        """
-        raise NotImplementedError("Subclasses must implement _create_langchain_client()")
+
+    def _get_llm_service(self):
+        """Get LLM service via DI or direct creation."""
+        if self.llm_service is None:
+            try:
+                # Try to get LLM service from DI container
+                from agentmap.di import application
+                self.llm_service = application.llm_service()
+            except (ImportError, AttributeError) as e:
+                self.log_warning(f"Could not get LLMService from DI container: {e}")
+                # try:
+                #     # Fall back to creating a new instance
+                #     from agentmap.services.llm_service import LLMService
+                #     from agentmap.config.configuration import Configuration
+                #     from agentmap.logging.service import LoggingService
+                    
+                #     # Try to load configuration
+                #     try:
+                #         from agentmap.config import get_config
+                #         config = get_config()
+                #     except Exception:
+                #         config = Configuration({})
+                    
+                #     # Create logging service
+                #     logging_service = LoggingService(config.get_section("logging", {}))
+                    
+                #     # Create LLM service
+                #     self.llm_service = LLMService(config, logging_service)
+                # except Exception as e2:
+                #     self.log_error(f"Failed to create LLMService: {e2}")
+                #     # Last resort minimal implementation
+                #     from agentmap.services.llm_service import LLMService
+                #     self.llm_service = LLMService()
+                    
+        return self.llm_service
 
     # Common configuration methods with sensible defaults
     def _get_model_name(self, config: Dict[str, Any]) -> str:
@@ -169,12 +185,12 @@ class LLMAgent(BaseAgent):
             Updated state
         """
         # Initialize memory if needed
-        if self.memory_key not in state:
-            state[self.memory_key] = []
+        if self.memory_key not in inputs:
+            inputs[self.memory_key] = []
             
             # Add system message from prompt if available
             if self.prompt:
-                state = add_system_message(state, self.prompt, self.memory_key)
+                add_system_message(inputs, self.prompt, self.memory_key)
         
         return state
 
@@ -200,40 +216,37 @@ class LLMAgent(BaseAgent):
             if not user_input:
                 self.log_warning("No input found in inputs")
             
-            # Get memory from state
+            # Get memory from inputs
             messages = get_memory(inputs, self.memory_key)
             
-            # Add user message
+            # Add user message to memory
             add_user_message(inputs, user_input, self.memory_key)
             
             # Get updated messages
             messages = get_memory(inputs, self.memory_key)
             
-            # Call LLM API
-            try:
-                # Try LangChain if available
-                langchain_client = self._create_langchain_client()
-                if langchain_client:
-                    response = langchain_client.invoke(messages)
-                    result = response.content if hasattr(response, 'content') else str(response)
-                
-                # Add assistant response to memory
-                add_assistant_message(inputs, result, self.memory_key)
-                
-                # Apply message limit if configured
-                if self.max_memory_messages:
-                    truncate_memory(inputs, self.max_memory_messages, self.memory_key)
-                
-                # Return result with memory included
-                return {
-                    "output": result,
-                    self.memory_key: inputs.get(self.memory_key, [])
-                }
-                
-            except Exception as e:
-                self.log_error(f"Error calling LLM API: {e}")
-                raise
-                
+            # Call LLM via service
+            llm_service = self._get_llm_service()
+            result = llm_service.call_llm(
+                provider=self.provider_name,
+                messages=messages,
+                model=self.model,
+                temperature=self.temperature
+            )
+            
+            # Add assistant response to memory
+            add_assistant_message(inputs, result, self.memory_key)
+            
+            # Apply message limit if configured
+            if self.max_memory_messages:
+                truncate_memory(inputs, self.max_memory_messages, self.memory_key)
+            
+            # Return result with memory included
+            return {
+                "output": result,
+                self.memory_key: inputs.get(self.memory_key, [])
+            }
+            
         except Exception as e:
             self.log_error(f"Error in {self.provider_name} processing: {e}")
             return {

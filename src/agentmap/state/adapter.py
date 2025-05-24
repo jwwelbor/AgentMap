@@ -15,6 +15,37 @@ class StateAdapter:
     """Adapter for working with different state formats (dict or Pydantic)."""
     
     @staticmethod
+    def has_value(state: Any, key: str) -> bool:
+        """
+        Check if a key exists in the state.
+        
+        Args:
+            state: State object (dict, Pydantic model, etc.)
+            key: Key to check
+            
+        Returns:
+            True if key exists, False otherwise
+        """
+        if state is None:
+            return False
+            
+        # Dictionary state
+        if hasattr(state, "get") and callable(state.get):
+            return key in state
+        # Pydantic model or object with attributes
+        elif hasattr(state, key):
+            return True
+        # Support for __getitem__ access
+        elif hasattr(state, "__getitem__"):
+            try:
+                _ = state[key]
+                return True
+            except (KeyError, TypeError, IndexError):
+                return False
+        
+        return False
+    
+    @staticmethod
     def get_value(state: Any, key: str, default: Any = None) -> Any:
         """
         Get a value from the state.
