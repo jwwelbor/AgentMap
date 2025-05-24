@@ -7,4 +7,11 @@ User input: "{input_text}"
 
 Select the SINGLE BEST node to handle this request. 
 Consider the semantics and intent of the user request. 
-First explain your reasoning, then on a new line write just the selected node name prefixed with 'Selected: '.
+First explain your reasoning, then output a JSON object with a 'selectedNode' field containing your selection.
+
+Example output format:
+{
+  "selectedNode": "node_name",
+  "confidence": 0.9,
+  "reasoning": "This node is best because..."
+}

@@ -13,7 +13,7 @@ logger = get_logger(__name__, False)
 class OrchestratorAgent(BaseAgent):
     """
     Agent that orchestrates workflow by selecting the best matching node based on input.
-    Uses existing LLM agents to perform intent matching.
+    Uses LLM Service to perform intent matching.
 
     The OrchestratorAgent has built-in routing capabilities - it will automatically
     navigate to the selected node without requiring an explicit routing function.
@@ -53,6 +53,21 @@ class OrchestratorAgent(BaseAgent):
 
         self.log_debug(f"[OrchestratorAgent] Initialized with: matching_strategy={self.matching_strategy}, "
                      f"node_filter={self.node_filter}, llm_type={self.llm_type}")
+                     
+        # LLM Service (will be injected or created)
+        self.llm_service = None
+
+    def _get_llm_service(self):
+        """Get LLM service via DI or direct creation."""
+        if self.llm_service is None:
+            try:
+                from agentmap.di import application
+                self.llm_service = application.llm_service()
+            except Exception:
+                # Fallback for non-DI usage
+                from agentmap.services.llm_service import LLMService
+                self.llm_service = LLMService()
+        return self.llm_service
 
     def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
         """
@@ -199,7 +214,7 @@ class OrchestratorAgent(BaseAgent):
             return self._llm_match(input_text, available_nodes)
 
     def _llm_match(self, input_text: str, available_nodes: Dict[str, Dict[str, Any]]) -> str:
-        """Use an LLM to match input to the best node."""
+        """Use LLM Service to match input to the best node."""
         # Create a formatted description of available nodes
         node_descriptions = []
         for node_name, node_info in available_nodes.items():
@@ -239,22 +254,18 @@ class OrchestratorAgent(BaseAgent):
             context_name="OrchestratorAgent"
         )
 
-        # Use appropriate LLM agent
-        llm_agent_class = get_agent_class(self.llm_type)
-        if not llm_agent_class:
-            self.log_error(f"[OrchestratorAgent] LLM type '{self.llm_type}' not found in registry.")
-            return next(iter(available_nodes.keys()))
-
-        # Create LLM agent with configured temperature
-        llm_agent = llm_agent_class(
-            name=f"{self.name}_llm",
-            prompt=llm_prompt,
-            context={"temperature": self.temperature}
-        )
-
-        # Process the prompt
         try:
-            llm_response = llm_agent.process({})
+            # Build messages for LLM call
+            messages = [{"role": "user", "content": llm_prompt}]
+            
+            # Use LLM Service
+            llm_service = self._get_llm_service()
+            llm_response = llm_service.call_llm(
+                provider=self.llm_type,
+                messages=messages,
+                temperature=self.temperature
+            )
+            
         except Exception as e:
             self.log_error(f"[OrchestratorAgent] Error from LLM: {e}")
             return next(iter(available_nodes.keys()))

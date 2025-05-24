@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import typer
 import yaml
@@ -17,16 +18,38 @@ app = typer.Typer()
 def scaffold(
     graph: str = typer.Option(None, "--graph", "-g", help="Graph name to scaffold agents for"),
     csv: str = typer.Option(None, "--csv", help="CSV path override"),
+    output_dir: str = typer.Option(None, "--output", "-o", help="Directory for agent output"),
+    func_dir: str = typer.Option(None, "--functions", "-f", help="Directory for function output"),
     config_file: str = typer.Option(None, "--config", "-c", help="Path to custom config file")
 ):
-    init_for_cli(config_file)
-
-    from agentmap.graph.scaffold import scaffold_agents
     """Scaffold agents and routing functions from the configured CSV, optionally for a specific graph."""
+    # Initialize DI with optional config file
+    container = init_for_cli(config_file)
+    
+    # Get configuration from DI container
+    configuration = container.configuration()
+    
+    # Get a logger from the logging service
+    logging_service = container.logging_service()
+    logger = logging_service.get_logger("agentmap.scaffold")
+    
+    # Determine actual paths to use (CLI args override config)
+    csv_path = Path(csv) if csv else configuration.get_csv_path()
+    output_path = Path(output_dir) if output_dir else configuration.get_custom_agents_path()
+    functions_path = Path(func_dir) if func_dir else configuration.get_functions_path()
+    
+    # Import here to avoid circular imports
+    from agentmap.graph.scaffold import scaffold_agents
+    
+    # Call scaffold with explicit paths and logger
     scaffolded = scaffold_agents(
-        csv_path=csv,
-        graph_name=graph
+        csv_path=csv_path,
+        output_path=output_path,
+        func_path=functions_path,
+        graph_name=graph,
+        logger=logger
     )
+    
     if not scaffolded:
         typer.secho(f"No unknown agents or functions found to scaffold{' in graph ' + graph if graph else ''}.", fg=typer.colors.YELLOW)
     else:
@@ -118,29 +141,29 @@ def run(
     print("✅ Output:", output)
 
 
-@app.command()
-def config(
-    config_file: str = typer.Option(None, "--path", "-p", help="Path to config file to display")
-):
-    """Print the current configuration values."""
-    # Initialize the container
-    init_for_cli(config_file)
+# @app.command()
+# def config(
+#     config_file: str = typer.Option(None, "--path", "-p", help="Path to config file to display")
+# ):
+#     """Print the current configuration values."""
+#     # Initialize the container
+#     init_for_cli(config_file)
     
 
-    print("Configuration values:")
-    print("---------------------")
-    for k, v in config_data.items():
-        if isinstance(v, dict):
-            print(f"{k}:")
-            for sub_k, sub_v in v.items():
-                if isinstance(sub_v, dict):
-                    print(f"  {sub_k}:")
-                    for deep_k, deep_v in sub_v.items():
-                        print(f"    {deep_k}: {deep_v}")
-                else:
-                    print(f"  {sub_k}: {sub_v}")
-        else:
-            print(f"{k}: {v}")
+#     print("Configuration values:")
+#     print("---------------------")
+#     for k, v in config_data.items():
+#         if isinstance(v, dict):
+#             print(f"{k}:")
+#             for sub_k, sub_v in v.items():
+#                 if isinstance(sub_v, dict):
+#                     print(f"  {sub_k}:")
+#                     for deep_k, deep_v in sub_v.items():
+#                         print(f"    {deep_k}: {deep_v}")
+#                 else:
+#                     print(f"  {sub_k}: {sub_v}")
+#         else:
+#             print(f"{k}: {v}")
 
 
 @app.command("storage-config")
