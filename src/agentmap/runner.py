@@ -145,7 +145,7 @@ def build_graph_in_memory(
         assembler.process_node_edges(node_name, node.edges)
     
     # Add special handling for orchestrator nodes
-    add_dynamic_routing(builder, graph_def)
+    # add_dynamic_routing(builder, graph_def)
 
     # Compile and return the graph
     return assembler.compile()
@@ -304,16 +304,20 @@ def resolve_agent_class(
         return agent_class
         
     # Try to load from custom agents path
-    custom_agents_path = configuration.get_custom_agents_path
+    custom_agents_path = configuration.get_custom_agents_path()
     logger.debug(f"[AgentInit] Custom agents path: {custom_agents_path}")    
-    # Convert file path to module path
-    module_path = str(custom_agents_path).replace("/", ".").replace("\\", ".")
-    if module_path.endswith("."):
-        module_path = module_path[:-1]
+    
+    # Add custom agents path to sys.path if not already present
+    import sys
+    from pathlib import Path
+    custom_agents_path_str = str(custom_agents_path)
+    if custom_agents_path_str not in sys.path:
+        sys.path.insert(0, custom_agents_path_str)
     
     # Try to import the custom agent
     try:
-        modname = f"{module_path}.{agent_type.lower()}_agent"
+        # The file is expected to be named <agent_type>_agent.py, class is <AgentType>Agent
+        modname = f"{agent_type.lower()}_agent"
         classname = f"{agent_type}Agent"
         module = __import__(modname, fromlist=[classname])
         logger.debug(f"[AgentInit] Imported custom agent module: {modname}")

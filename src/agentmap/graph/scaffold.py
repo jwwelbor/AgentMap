@@ -7,17 +7,17 @@ Creates Python class files for custom agents and function stubs based on CSV inp
 """
 
 import csv
-from logging import getLogger
-
-logger = getLogger(__name__)
-
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 from agentmap.agents import get_agent_class
-from agentmap.config import (get_csv_path, get_custom_agents_path,
-                             get_functions_path)
+from agentmap.config import (get_csv_path, get_custom_agents_path, get_functions_path)
 from agentmap.utils.common import extract_func_ref
+from dependency_injector.wiring import inject, Provide
+from agentmap.di.containers import ApplicationContainer
+from agentmap.config.configuration import Configuration
+from agentmap.logging.service import LoggingService
 
 
 def load_template(template_name: str) -> str:
@@ -172,7 +172,8 @@ def generate_context_fields(input_fields: List[str], output_field: str) -> str:
 def scaffold_agent(
     agent_type: str, 
     info: Dict, 
-    output_path: Path
+    output_path: Path,
+    logger: Optional[logging.Logger] = None
 ) -> bool:
     """
     Create a scaffold file for an agent.
@@ -181,6 +182,7 @@ def scaffold_agent(
         agent_type: Type of agent to scaffold
         info: Information about the agent
         output_path: Directory to create agent class in
+        logger: Optional logger instance
         
     Returns:
         True if agent was scaffolded, False if it already existed
@@ -211,14 +213,16 @@ def scaffold_agent(
             description=info["description"] or ""
         ))
     
-    logger.debug(f"Scaffolded agent: {path}")
+    if logger:
+        logger.debug(f"Scaffolded agent: {path}")
     return True
 
 
 def scaffold_function(
     func_name: str, 
     info: Dict, 
-    func_path: Path
+    func_path: Path,
+    logger: Optional[logging.Logger] = None
 ) -> bool:
     """
     Create a scaffold file for a function.
@@ -227,6 +231,7 @@ def scaffold_function(
         func_name: Name of function to scaffold
         info: Information about the function
         func_path: Directory to create function module in
+        logger: Optional logger instance
         
     Returns:
         True if function was scaffolded, False if it already existed
@@ -255,36 +260,31 @@ def scaffold_function(
             description=info["description"] or ""
         ))
     
-    logger.debug(f"Scaffolded function: {path}")
+    if logger:
+        logger.debug(f"Scaffolded function: {path}")
     return True
 
 
 def scaffold_agents(
-    output_dir: Optional[str] = None, 
-    func_dir: Optional[str] = None,
-    csv_path: Optional[str] = None,
+    csv_path: Path,
+    output_path: Path,
+    func_path: Path, 
     graph_name: Optional[str] = None,
-    config_path: Optional[Union[str, Path]] = None
+    logger: Optional[logging.Logger] = None
 ) -> int:
     """
     Scaffold agents and functions from the CSV.
     
     Args:
-        output_dir: Directory to create agent classes in (overrides config)
-        func_dir: Directory to create function modules in (overrides config)
-        csv_path: Path to CSV file (overrides config)
+        csv_path: Path to CSV file
+        output_path: Directory to create agent classes in
+        func_path: Directory to create function modules in
         graph_name: Optional graph name to filter by
-        config_path: Optional path to a custom config file
+        logger: Optional logger instance
     
     Returns:
         Number of agents or functions scaffolded
     """
-    # Use config system if not explicitly provided
-    csv_file = csv_path or get_csv_path(config_path)
-    csv_path = Path(csv_file)
-    output_path = Path(output_dir) if output_dir else get_custom_agents_path(config_path) 
-    func_path = Path(func_dir) if func_dir else get_functions_path(config_path)
-    
     # Create directories if they don't exist
     output_path.mkdir(parents=True, exist_ok=True)
     func_path.mkdir(parents=True, exist_ok=True)
@@ -296,35 +296,45 @@ def scaffold_agents(
     # Scaffold agents
     scaffolded_count = 0
     for agent_type, info in agent_info.items():
-        if scaffold_agent(agent_type, info, output_path):
+        if scaffold_agent(agent_type, info, output_path, logger):
             scaffolded_count += 1
     
     # Scaffold functions
     for func_name, info in func_info.items():
-        if scaffold_function(func_name, info, func_path):
+        if scaffold_function(func_name, info, func_path, logger):
             scaffolded_count += 1
     
     return scaffolded_count
 
 
-if __name__ == "__main__":
-    import argparse
+# if __name__ == "__main__":
+#     import argparse
     
-    parser = argparse.ArgumentParser(description="Scaffold agents and functions from CSV")
-    parser.add_argument("--csv", help="Path to CSV file")
-    parser.add_argument("--graph", help="Graph name to filter by")
-    parser.add_argument("--output", help="Directory for agent output")
-    parser.add_argument("--functions", help="Directory for function output")
-    parser.add_argument("--config", help="Path to custom config file")
+#     parser = argparse.ArgumentParser(description="Scaffold agents and functions from CSV")
+#     parser.add_argument("--csv", required=True, help="Path to CSV file")
+#     parser.add_argument("--graph", help="Graph name to filter by")
+#     parser.add_argument("--output", required=True, help="Directory for agent output")
+#     parser.add_argument("--functions", required=True, help="Directory for function output")
+#     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     
-    args = parser.parse_args()
+#     args = parser.parse_args()
     
-    scaffolded = scaffold_agents(
-        csv_path=args.csv,
-        graph_name=args.graph,
-        output_dir=args.output,
-        func_dir=args.functions,
-        config_path=args.config
-    )
+#     # Set up basic logging
+#     log_level = logging.DEBUG if args.verbose else logging.INFO
+#     logging.basicConfig(
+#         level=log_level,
+#         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+#     )
+#     logger = logging.getLogger("agentmap.scaffold")
     
-    logger.debug(f"Scaffolded {scaffolded} agents/functions")
+#     # Call with explicit paths and logger
+#     scaffolded = scaffold_agents(
+#         csv_path=Path(args.csv),
+#         output_path=Path(args.output),
+#         func_path=Path(args.functions),
+#         graph_name=args.graph,
+#         logger=logger
+#     )
+    
+#     # Output results
+#     print(f"Scaffolded {scaffolded} agents/functions")
