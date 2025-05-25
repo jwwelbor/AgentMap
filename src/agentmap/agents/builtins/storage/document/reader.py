@@ -9,7 +9,8 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.document.base_agent import (
-    DocumentStorageAgent, DocumentResult, log_operation)
+    DocumentStorageAgent, log_operation)
+from agentmap.services.storage import DocumentResult
 from agentmap.agents.mixins import ReaderOperationsMixin
 from agentmap.logging import get_logger
 
