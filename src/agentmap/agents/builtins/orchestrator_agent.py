@@ -5,7 +5,7 @@ from agentmap.agents import get_agent_class
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.logging import get_logger
 from agentmap.state.adapter import StateAdapter
-from agentmap.agents import HAS_LLM_AGENTS
+from agentmap.agents.features import is_llm_enabled
 
 logger = get_logger(__name__, False)
 
@@ -23,7 +23,10 @@ class OrchestratorAgent(BaseAgent):
         """Initialize the orchestrator agent with configuration."""
         super().__init__(name, prompt, context)
         context = context or {}
-
+        
+        # NEW: Initialize node_registry - will be set by GraphAssembler during pre-compilation injection
+        self.node_registry = None  
+        
         # Core configuration options
         self.llm_type = context.get("llm_type", "openai")
         self.temperature = float(context.get("temperature", 0.2))
@@ -45,13 +48,13 @@ class OrchestratorAgent(BaseAgent):
         else:
             self.node_filter = "all"  # Default to all nodes
 
-        if not HAS_LLM_AGENTS and self.matching_strategy == "llm" or self.matching_strategy == "tiered":
+        if not is_llm_enabled() and (self.matching_strategy == "llm" or self.matching_strategy == "tiered"):
             self.log_warning(f"OrchestratorAgent '{name}' requires LLM dependencies for optimal operation.")
             self.log_warning("Will use simple keyword matching only. Install with: pip install agentmap[llm]")
             # Force algorithm matching if LLMs not available
             self.matching_strategy = "algorithm"
 
-        self.log_debug(f"[OrchestratorAgent] Initialized with: matching_strategy={self.matching_strategy}, "
+        self.log_debug(f"Initialized with: matching_strategy={self.matching_strategy}, "
                      f"node_filter={self.node_filter}, llm_type={self.llm_type}")
                      
         # LLM Service (will be injected or created)
@@ -69,23 +72,50 @@ class OrchestratorAgent(BaseAgent):
                 self.llm_service = LLMService()
         return self.llm_service
 
+        # def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
+    #     """
+    #     Override the post-processing hook to add routing directives.
+        
+    #     Args:
+    #         state: Current state
+    #         output: The output value from the process method (selected node name)
+            
+    #     Returns:
+    #         Tuple of (state, output) with routing directives
+    #     """
+    #     # If we have a valid node name, set the routing directive
+    #     if output:
+    #         self.log_info(f"Setting __next_node to '{output}'")
+    #         state = StateAdapter.set_value(state, "__next_node", output)
+            
+    #     return state, output
     def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
         """
-        Override the post-processing hook to add routing directives.
+        Post-process the output to ensure consistent format.
+        Extracts selectedNode from JSON responses and returns just the node name.
+        Also adds routing directives to the state.
         
         Args:
             state: Current state
-            output: The output value from the process method (selected node name)
+            output: The output value, which could be a dict, string, or other format
             
         Returns:
-            Tuple of (state, output) with routing directives
+            Tuple of (state, output) with output normalized to node name
         """
-        # If we have a valid node name, set the routing directive
-        if output:
+        # If output is a dict with selectedNode, extract it
+        if isinstance(output, dict) and "selectedNode" in output:
+            selected_node = output["selectedNode"]
+            self.log_info(f"[OrchestratorAgent] Extracted selected node '{selected_node}' from result dict")
+            # Update output to be just the node name
+            output = selected_node
+        
+        # Add routing directive if we have a valid node name
+        if output and isinstance(output, str):
             self.log_info(f"[OrchestratorAgent] Setting __next_node to '{output}'")
             state = StateAdapter.set_value(state, "__next_node", output)
-            
+        
         return state, output
+
 
     def process(self, inputs: Dict[str, Any]) -> str:
         """
@@ -99,40 +129,61 @@ class OrchestratorAgent(BaseAgent):
         """
         # Get input text for intent matching
         input_text = self._get_input_text(inputs)
-        self.log_debug(f"[OrchestratorAgent] Input text: '{input_text}'")
+        self.log_debug(f"Input text: '{input_text}'")
 
-        # Get available nodes from input field
-        available_nodes = self._get_nodes(inputs)
+        # NEW: Use the injected node registry as the primary source
+        available_nodes = self.node_registry
+        
+        # Log registry status for debugging
+        if available_nodes:
+            self.log_debug(f"Using injected registry with {len(available_nodes)} nodes: {list(available_nodes.keys())}")
+        else:
+            self.log_warning("No node registry available - orchestrator may not work correctly")
+            # Fallback: try to get nodes from inputs (legacy behavior)
+            available_nodes = self._get_nodes_from_inputs(inputs)
+            if available_nodes:
+                self.log_warning(f"Using fallback registry from inputs with {len(available_nodes)} nodes")
+            else:
+                self.log_error("No available nodes found - cannot perform orchestration")
+                return self.default_target or ""
 
         # Apply filtering based on context options
         filtered_nodes = self._apply_node_filter(available_nodes)
 
-        self.log_debug(f"[OrchestratorAgent] Available nodes after filtering: {list(filtered_nodes.keys())}")
+        self.log_debug(f"Available nodes after filtering: {list(filtered_nodes.keys())}")
 
         # If no nodes are available, return default target
         if not filtered_nodes:
             self.log_warning(
-                f"[OrchestratorAgent] No nodes available for matching after filtering. Using default: {self.default_target}")
+                f"No nodes available for matching after filtering. Using default: {self.default_target}")
             return self.default_target or ""
 
         # Handle case with a single node - no need for matching
         if len(filtered_nodes) == 1:
             node_name = next(iter(filtered_nodes.keys()))
-            self.log_debug(f"[OrchestratorAgent] Only one node available, selecting '{node_name}' without matching")
+            self.log_debug(f"Only one node available, selecting '{node_name}' without matching")
             return node_name
 
         # Select node based on matching strategy
         selected_node = self._match_intent(input_text, filtered_nodes)
-        self.log_info(f"[OrchestratorAgent] Selected node: '{selected_node}'")
+        self.log_info(f"Selected node: '{selected_node}'")
         return selected_node
 
-    def _get_nodes(self, inputs: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-        """Get node dictionary from the specified input field."""
+    def _get_nodes_from_inputs(self, inputs: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """
+        LEGACY: Get node dictionary from inputs (fallback when registry injection fails).
+        
+        Args:
+            inputs: Input dictionary
+            
+        Returns:
+            Node registry dictionary or empty dict
+        """
         if self.input_fields and self.input_fields[0] in inputs:
             nodes = inputs[self.input_fields[0]]
             if isinstance(nodes, dict):
                 return nodes
-            self.log_warning(f"[OrchestratorAgent] Input field '{self.input_fields[0]}' does not contain a dictionary")
+            self.log_warning(f"Input field '{self.input_fields[0]}' does not contain a dictionary")
 
         # Fallback to looking for standard names
         for field_name in ["available_nodes", "nodes", "__node_registry"]:
@@ -140,16 +191,20 @@ class OrchestratorAgent(BaseAgent):
                 return inputs[field_name]
 
         # No nodes found
-        self.log_warning(f"[OrchestratorAgent] No node dictionary found in inputs")
+        self.log_warning("No node dictionary found in inputs")
         return {}
 
     def _get_input_text(self, inputs: Dict[str, Any]) -> str:
         """Extract input text from inputs using the configured input field."""
-        # Check input fields except the first one (which should be nodes)
-        input_fields = self.input_fields[1:] if len(self.input_fields) > 1 else []
-
+        # Check specified input fields (skip the first one if it's used for nodes)
+        input_fields_to_check = self.input_fields
+        
+        # If we have input fields and the first one might be for nodes, skip it
+        if input_fields_to_check and len(input_fields_to_check) > 1:
+            input_fields_to_check = input_fields_to_check[1:]
+        
         # Check specified input fields
-        for field in input_fields:
+        for field in input_fields_to_check:
             if field in inputs:
                 return str(inputs[field])
 
@@ -158,17 +213,26 @@ class OrchestratorAgent(BaseAgent):
             if field in inputs:
                 return str(inputs[field])
 
+        # Last resort: use the first available input that's not the node registry
+        for field, value in inputs.items():
+            if field not in ["available_nodes", "nodes", "__node_registry"] and isinstance(value, str):
+                self.log_debug(f"Using fallback input field '{field}' for input text")
+                return str(value)
+
         # Last resort: empty string
-        self.log_warning(f"[OrchestratorAgent] No input text found in inputs")
+        self.log_warning("No input text found in inputs")
         return ""
 
     def _apply_node_filter(self, nodes: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         """Apply node filtering based on context options."""
+        if not nodes:
+            return {}
+            
         # Handle specific node list option
         if self.node_filter.count("|") > 0:
             node_names = [n.strip() for n in self.node_filter.split("|")]
             filtered = {name: info for name, info in nodes.items() if name in node_names}
-            self.log_debug(f"[OrchestratorAgent] Filtered to specific nodes: {list(filtered.keys())}")
+            self.log_debug(f"Filtered to specific nodes: {list(filtered.keys())}")
             return filtered
 
         # Handle nodeType option
@@ -178,11 +242,11 @@ class OrchestratorAgent(BaseAgent):
                 name: info for name, info in nodes.items()
                 if info.get("type", "").lower() == type_filter.lower()
             }
-            self.log_debug(f"[OrchestratorAgent] Filtered to node type '{type_filter}': {list(filtered.keys())}")
+            self.log_debug(f"Filtered to node type '{type_filter}': {list(filtered.keys())}")
             return filtered
 
         # Handle "all" option (default)
-        self.log_debug(f"[OrchestratorAgent] Using all available nodes: {list(nodes.keys())}")
+        self.log_debug(f"Using all available nodes: {list(nodes.keys())}")
         return nodes
 
     def _match_intent(self, input_text: str, available_nodes: Dict[str, Dict[str, Any]]) -> str:
@@ -191,7 +255,7 @@ class OrchestratorAgent(BaseAgent):
             # Skip LLM entirely, use only algorithmic matching
             node, confidence = self._simple_match(input_text, available_nodes)
             self.log_debug(
-                f"[OrchestratorAgent] Using algorithm matching, selected '{node}' with confidence {confidence:.2f}")
+                f"Using algorithm matching, selected '{node}' with confidence {confidence:.2f}")
             return node
 
         elif self.matching_strategy == "llm":
@@ -205,12 +269,12 @@ class OrchestratorAgent(BaseAgent):
             # If confidence is high enough, skip the LLM call
             if confidence >= self.confidence_threshold:
                 self.log_info(
-                    f"[OrchestratorAgent] Algorithmic match confidence {confidence:.2f} exceeds threshold. Using '{node}'")
+                    f"Algorithmic match confidence {confidence:.2f} exceeds threshold. Using '{node}'")
                 return node
 
             # Otherwise, use LLM for better matching
             self.log_info(
-                f"[OrchestratorAgent] Algorithmic match confidence {confidence:.2f} below threshold. Using LLM.")
+                f"Algorithmic match confidence {confidence:.2f} below threshold. Using LLM.")
             return self._llm_match(input_text, available_nodes)
 
     def _llm_match(self, input_text: str, available_nodes: Dict[str, Dict[str, Any]]) -> str:
@@ -237,12 +301,21 @@ class OrchestratorAgent(BaseAgent):
         
         # Default template as fallback
         default_template = (
-            "You are an intent router that selects the most appropriate node to handle a user request.\n\n"
-            "Available nodes:\n{nodes_text}\n\n"
-            "User input: \"{input_text}\"\n\n"
-            "Select the SINGLE BEST node to handle this request. "
-            "Consider the semantics and intent of the user request. "
-            "First explain your reasoning, then on a new line write just the selected node name prefixed with 'Selected: '."
+            "You are an intent router that selects the most appropriate node to handle a user request."
+            "Available nodes:\n\n"
+            "{nodes_text}\n\n"
+            "User input: '{input_text}'\n\n"
+
+            "Consider the semantics and intent of the user request then \n"
+            "select the SINGLE BEST node to handle this request from the list of available nodes. \n\n"
+            "Output a JSON object with a 'selectedNode' field containing your selection, your confidence level, and the reasoning in the format below:\n\n"
+
+            "Output format:"
+            "{\n"
+            "\"selectedNode\": \"node_name\",\n"
+            "\"confidence\": 0, / a number between 0 and 1 indicating confidence level\n"
+            "\"reasoning\": \"your reasoning goes here\" / put your reasoning here\n"
+            "}"
         )
         
         # Get formatted prompt with all fallbacks handled internally
@@ -251,7 +324,8 @@ class OrchestratorAgent(BaseAgent):
             template_file="file:orchestrator/intent_matching_v1.txt",
             default_template=default_template,
             values=template_values,
-            context_name="OrchestratorAgent"
+            logger=self._logger,
+            context_name="OrchestratorAgent",
         )
 
         try:
@@ -267,7 +341,7 @@ class OrchestratorAgent(BaseAgent):
             )
             
         except Exception as e:
-            self.log_error(f"[OrchestratorAgent] Error from LLM: {e}")
+            self.log_error(f"Error from LLM: {e}")
             return next(iter(available_nodes.keys()))
         
         # Extract the selected node from the response
@@ -286,18 +360,28 @@ class OrchestratorAgent(BaseAgent):
                 return node_name
 
         # Last resort: if no node found, return the first available
-        self.log_warning(f"[OrchestratorAgent] Couldn't extract node from LLM response. Using first available.")
+        self.log_warning("Couldn't extract node from LLM response. Using first available.")
         return next(iter(available_nodes.keys()))
 
     @staticmethod
-    def _simple_match(input_text: str, available_nodes: Dict[str, Dict[str, Any]]) -> Tuple[str, float]:
-        """Fast algorithmic matching for obvious cases."""
+    def _simple_match(input_text: str, available_nodes: Dict[str, Dict[str, Any]]) -> Tuple[Dict[str, Any], float]:
+        """Fast algorithmic matching for obvious cases.
+        
+        Returns:
+            Tuple of (matching_result_dict, confidence_score)
+        """
         input_lower = input_text.lower()
+        result = {}
 
         # 1. Check for exact node name in input
         for node_name in available_nodes:
             if node_name.lower() in input_lower:
-                return node_name, 1.0  # Perfect confidence for exact match
+                result = {
+                    "selectedNode": node_name,
+                    "confidence": 1.0,
+                    "reasoning": f"Exact match found for node name '{node_name}' in input."
+                }
+                return result, 1.0  # Perfect confidence for exact match
 
         # 2. Quick keyword matching
         best_match = None
@@ -317,4 +401,19 @@ class OrchestratorAgent(BaseAgent):
                     best_score = score
                     best_match = node_name
 
-        return best_match or next(iter(available_nodes)), best_score
+        if best_match:
+            result = {
+                "selectedNode": best_match,
+                "confidence": best_score,
+                "reasoning": f"Keyword matching with confidence {best_score:.2f}"
+            }
+        else:
+            default_node = next(iter(available_nodes))
+            result = {
+                "selectedNode": default_node,
+                "confidence": 0.0,
+                "reasoning": "No match found. Using default node."
+            }
+            best_score = 0.0
+
+        return result, best_score
