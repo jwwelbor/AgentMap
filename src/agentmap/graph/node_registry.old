@@ -1,4 +1,4 @@
-# agentmap/utils/node_registry.py
+# agentmap/graph/node_registry.py
 """
 Utilities for building and managing node registries for orchestration.
 
@@ -30,7 +30,7 @@ def build_node_registry(graph_def: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 
         # Extract metadata from node definition
         registry[node_name] = {
-            "description": context_dict.get("description", ""),
+            "description": context_dict.get("description", "") or node.description or "",
             "prompt": node.prompt or "",
             "type": node.agent_type or ""
         }
@@ -98,36 +98,3 @@ def _parse_node_context(context: Any) -> Dict[str, Any]:
 
     # Other types - just return empty dict
     return {}
-
-
-def populate_orchestrator_inputs(initial_state: Dict[str, Any], graph_def: Dict[str, Any],
-                                 node_registry: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Populate input fields for orchestrator nodes in the initial state.
-
-    Args:
-        initial_state: Initial state dictionary
-        graph_def: Graph definition
-        node_registry: Node registry from build_node_registry
-
-    Returns:
-        Updated initial state
-    """
-    # Clone the state to avoid modifying the original
-    state = dict(initial_state)
-
-    # Add node registry to state for universal access
-    state["__node_registry"] = node_registry
-
-    # Find all orchestrator nodes
-    for node_name, node in graph_def.items():
-        if node.agent_type and node.agent_type.lower() == "orchestrator":
-            # Get the first input field for this node
-            if node.inputs and len(node.inputs) > 0 and node.inputs[0]:
-                input_field = node.inputs[0]
-                # Only set if not already present
-                if input_field not in state:
-                    state[input_field] = node_registry
-                    logger.debug(f"Populated orchestrator input field '{input_field}' for node '{node_name}'")
-
-    return state
