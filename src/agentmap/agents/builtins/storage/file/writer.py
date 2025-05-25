@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Union
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, DocumentResult, WriteMode, log_operation
 )
-from agentmap.agents.builtins.storage.mixins import WriterOperationsMixin, StorageErrorHandlerMixin
+from agentmap.agents.mixins import WriterOperationsMixin, StorageErrorHandlerMixin
 from agentmap.logging import get_logger
 from agentmap.state.adapter import StateAdapter
 

@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
     DocumentResult, log_operation)
-from agentmap.agents.builtins.storage.mixins import WriterOperationsMixin
+from agentmap.agents.mixins import WriterOperationsMixin
 from agentmap.agents.builtins.storage.vector.base_agent import VectorAgent
 from agentmap.logging import get_logger
 

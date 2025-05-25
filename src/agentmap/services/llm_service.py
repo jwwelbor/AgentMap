@@ -19,7 +19,24 @@ from agentmap.exceptions import (
 )
 
 
-@inject
+from typing import Protocol, runtime_checkable, Any, Dict, List, Optional
+
+@runtime_checkable
+class LLMServiceUser(Protocol):
+    """
+    Protocol for agents that use LLM services.
+    
+    To use LLM services in your agent, add this to your __init__:
+        self.llm_service = None
+    
+    Then use it in your methods:
+        response = self.llm_service.call_llm(provider="openai", messages=[...])
+    
+    The service will be automatically injected during graph building.
+    """
+    llm_service: 'LLMService'
+
+
 class LLMService:
     """
     Centralized service for making LLM calls across different providers.
@@ -30,42 +47,13 @@ class LLMService:
     
     def __init__(
         self,
-        configuration: Configuration = Provide[ApplicationContainer.configuration],
-        logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
+        configuration: Configuration,
+        logging_service: LoggingService
     ):
-        # Handle case where injection fails
-        self._setup_dependencies(configuration, logging_service)
+        self.configuration = configuration
         self._clients = {}  # Cache for LangChain clients
-        
-    def _setup_dependencies(self, configuration, logging_service):
-        """Set up dependencies with fallbacks for non-DI contexts."""
-        # Handle configuration
-        if configuration is None:
-            # Try to load config directly
-            try:
-                from agentmap.config import get_config
-                self.configuration = get_config()
-            except ImportError:
-                # Create empty configuration
-                from agentmap.config.configuration import Configuration
-                self.configuration = Configuration({})
-        else:
-            self.configuration = configuration
-            
-        # Handle logging service
-        if logging_service is None:
-            # Create basic logging service
-            try:
-                from agentmap.logging.service import LoggingService
-                logging_config = self.configuration.get_section("logging", {})
-                self.logger = LoggingService(logging_config).get_class_logger(self)
-            except ImportError:
-                # Fallback to standard logging
-                import logging
-                self.logger = logging.getLogger("LLMService")
-        else:
-            self.logger = logging_service.get_class_logger(self)
-        
+        self._logger = logging_service.get_class_logger("agentmap.llm")
+                
     def call_llm(
         self,
         provider: str,
@@ -91,7 +79,7 @@ class LLMService:
             LLMServiceError: On various error conditions
         """
         try:
-            self.logger.debug(f"[LLMService] Calling {provider} with {len(messages)} messages")
+            self._logger.debug(f"[LLMService] Calling {provider} with {len(messages)} messages")
             
             # Validate inputs
             if not provider:
@@ -120,12 +108,12 @@ class LLMService:
             # Extract content from response
             result = response.content if hasattr(response, 'content') else str(response)
             
-            self.logger.debug(f"[LLMService] {provider} call successful, response length: {len(result)}")
+            self._logger.debug(f"[LLMService] {provider} call successful, response length: {len(result)}")
             return result
             
         except Exception as e:
             error_msg = f"Error calling {provider} LLM: {str(e)}"
-            self.logger.error(f"[LLMService] {error_msg}")
+            self._logger.error(f"[LLMService] {error_msg}")
             
             # Re-raise as appropriate service exception
             if isinstance(e, LLMServiceError):
@@ -233,7 +221,7 @@ class LLMService:
             # Fall back to legacy import
             try:
                 from langchain.chat_models import ChatOpenAI
-                self.logger.warning("Using deprecated LangChain import. Consider upgrading to langchain-openai.")
+                self._logger.warning("Using deprecated LangChain import. Consider upgrading to langchain-openai.")
             except ImportError:
                 raise LLMDependencyError("OpenAI dependencies not found. Install with: pip install langchain-openai")
                 
@@ -252,12 +240,12 @@ class LLMService:
             try:
                 # Fall back to community package
                 from langchain_community.chat_models import ChatAnthropic
-                self.logger.warning("Using community LangChain import. Consider upgrading to langchain-anthropic.")
+                self._logger.warning("Using community LangChain import. Consider upgrading to langchain-anthropic.")
             except ImportError:
                 try:
                     # Legacy fallback
                     from langchain.chat_models import ChatAnthropic
-                    self.logger.warning("Using legacy LangChain import. Please upgrade your dependencies.")
+                    self._logger.warning("Using legacy LangChain import. Please upgrade your dependencies.")
                 except ImportError:
                     raise LLMDependencyError("Anthropic dependencies not found. Install with: pip install langchain-anthropic")
                     
@@ -276,7 +264,7 @@ class LLMService:
             try:
                 # Fall back to community package
                 from langchain_community.chat_models import ChatGoogleGenerativeAI
-                self.logger.warning("Using community LangChain import. Consider upgrading to langchain-google-genai.")
+                self._logger.warning("Using community LangChain import. Consider upgrading to langchain-google-genai.")
             except ImportError:
                 raise LLMDependencyError("Google dependencies not found. Install with: pip install langchain-google-genai")
                 
@@ -289,4 +277,4 @@ class LLMService:
     def clear_cache(self) -> None:
         """Clear the client cache."""
         self._clients.clear()
-        self.logger.debug("[LLMService] Client cache cleared")
+        self._logger.debug("[LLMService] Client cache cleared")

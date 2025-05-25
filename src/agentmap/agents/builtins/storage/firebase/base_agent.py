@@ -14,7 +14,7 @@ from firebase_admin.exceptions import FirebaseError
 
 from agentmap.agents.builtins.storage.document.base_agent import DocumentStorageAgent, DocumentResult
 from agentmap.agents.builtins.storage.document.path_mixin import DocumentPathMixin
-from agentmap.agents.builtins.storage.mixins import StorageErrorHandlerMixin
+from agentmap.agents.mixins import StorageErrorHandlerMixin
 from agentmap.config import load_storage_config
 from agentmap.exceptions import CollectionNotFoundError, StorageConnectionError, StorageConfigurationError, StorageOperationError
 from agentmap.logging import get_logger

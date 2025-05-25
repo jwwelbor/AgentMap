@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.document.base_agent import (
     DocumentStorageAgent, DocumentResult, log_operation)
-from agentmap.agents.builtins.storage.mixins import ReaderOperationsMixin
+from agentmap.agents.mixins import ReaderOperationsMixin
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)

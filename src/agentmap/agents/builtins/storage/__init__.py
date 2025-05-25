@@ -16,7 +16,7 @@ from agentmap.agents.builtins.storage.document import (
 )
 
 # Import mixins
-from agentmap.agents.builtins.storage.mixins import (
+from agentmap.agents.mixins import (
     StorageErrorHandlerMixin, ReaderOperationsMixin, WriterOperationsMixin
 )
 

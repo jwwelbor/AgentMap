@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Optional
 
 from langgraph.graph import StateGraph
 
-from agentmap.agents.features import HAS_LLM_AGENTS
+from agentmap.agents.features import is_llm_enabled
 from agentmap.logging import get_logger
 from agentmap.state.adapter import StateAdapter
 from agentmap.utils.common import extract_func_ref, import_function
@@ -16,10 +16,10 @@ from dependency_injector.wiring import inject, Provide
 from agentmap.di.containers import ApplicationContainer
 from agentmap.config.configuration import Configuration
 from agentmap.logging.service import LoggingService
+from agentmap.services import NodeRegistryUser
 
 logger = get_logger("AgentMap")
 
-@inject
 class GraphAssembler:
     """
     Central class for building LangGraph graphs with consistent interfaces.
@@ -32,7 +32,7 @@ class GraphAssembler:
     def __init__(
             self,
             builder: StateGraph,
-            node_registry: Optional[Dict[str, Dict[str, Any]]] = None,  # NEW: Accept node registry
+            node_registry: Optional[Dict[str, Dict[str, Any]]] = None, 
             enable_logging=True,
             configuration: Configuration = Provide[ApplicationContainer.configuration],
             logging_service: LoggingService = Provide[ApplicationContainer.logging_service],
@@ -42,8 +42,9 @@ class GraphAssembler:
         self.enable_logging = enable_logging
         self.orchestrator_nodes = []  # Initialize the orchestrator nodes list
         
-        # NEW: Store node registry for pre-compilation injection
+        # Store node registry for pre-compilation injection
         self.node_registry = node_registry
+
         self.injection_stats = {
             "orchestrators_found": 0,
             "orchestrators_injected": 0,
@@ -73,15 +74,15 @@ class GraphAssembler:
         agent_class_name = agent_instance.__class__.__name__
         
         # Log helpful warnings about potential missing dependencies
-        if agent_class_name == "OrchestratorAgent" and not HAS_LLM_AGENTS:
+        if agent_class_name == "OrchestratorAgent" and not is_llm_enabled():
             self.logger.warning(f"Orchestrator agent '{name}' may have limited functionality without LLM agents.")
             self.logger.warning("Install LLM dependencies with: pip install agentmap[llm]")
 
         # Add node to graph
         self.builder.add_node(name, agent_instance.run)
         
-        # NEW: Check if this is an orchestrator agent and inject registry
-        if agent_class_name == "OrchestratorAgent":
+        # Check if this is agent needs NodeRegistry and inject like and orchestrator agent
+        if isinstance(agent_instance, NodeRegistryUser):
             self.orchestrator_nodes.append(name)
             self.injection_stats["orchestrators_found"] += 1
             

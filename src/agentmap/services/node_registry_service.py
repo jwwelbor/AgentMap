@@ -34,6 +34,24 @@ class NodeMetadata:
         }
 
 
+from typing import Protocol, runtime_checkable, Any, Dict, List, Optional
+
+@runtime_checkable
+class NodeRegistryUser(Protocol):
+    """
+    Protocol for agents that need a node registry. NOT the service, but the nodes created by the service
+    
+    To use LLM services in your agent, add this to your __init__:
+        self.node_regsitry = None
+    
+    Then use it in your methods:
+        response = self.node_registry
+    
+    The service will be automatically injected during graph building.
+    """
+    node_registry: Dict[str, Dict[str, Any]]
+
+
 class NodeRegistryService:
     """
     Service for managing node registries and their injection into graphs.
@@ -195,72 +213,72 @@ class NodeRegistryService:
         
         return result
     
-    # SIMPLIFIED: Keep post-compilation injection as fallback for edge cases
-    def inject_post_compilation_fallback(
-        self, 
-        graph: Any, 
-        node_registry: Dict[str, Dict[str, Any]],
-        graph_name: Optional[str] = None
-    ) -> bool:
-        """
-        Fallback method for post-compilation injection.
+    # # SIMPLIFIED: Keep post-compilation injection as fallback for edge cases
+    # def inject_post_compilation_fallback(
+    #     self, 
+    #     graph: Any, 
+    #     node_registry: Dict[str, Dict[str, Any]],
+    #     graph_name: Optional[str] = None
+    # ) -> bool:
+    #     """
+    #     Fallback method for post-compilation injection.
         
-        This is kept as a safety net for edge cases where pre-compilation
-        injection might not work.
+    #     This is kept as a safety net for edge cases where pre-compilation
+    #     injection might not work.
         
-        Args:
-            graph: Compiled LangGraph StateGraph
-            node_registry: Node registry to inject
-            graph_name: Optional graph name for logging
+    #     Args:
+    #         graph: Compiled LangGraph StateGraph
+    #         node_registry: Node registry to inject
+    #         graph_name: Optional graph name for logging
             
-        Returns:
-            True if injection was successful, False otherwise
-        """
-        self.logger.warning(f"[NodeRegistry] Using fallback post-compilation injection for graph: {graph_name}")
-        self.logger.warning("[NodeRegistry] This should not normally be needed - consider investigating why pre-compilation injection failed")
+    #     Returns:
+    #         True if injection was successful, False otherwise
+    #     """
+    #     self.logger.warning(f"[NodeRegistry] Using fallback post-compilation injection for graph: {graph_name}")
+    #     self.logger.warning("[NodeRegistry] This should not normally be needed - consider investigating why pre-compilation injection failed")
         
-        if not node_registry:
-            self.logger.debug("[NodeRegistry] No node registry provided for fallback injection")
-            return True
+    #     if not node_registry:
+    #         self.logger.debug("[NodeRegistry] No node registry provided for fallback injection")
+    #         return True
         
-        if not hasattr(graph, 'nodes'):
-            self.logger.error("[NodeRegistry] Graph has no 'nodes' attribute, cannot perform fallback injection")
-            return False
+    #     if not hasattr(graph, 'nodes'):
+    #         self.logger.error("[NodeRegistry] Graph has no 'nodes' attribute, cannot perform fallback injection")
+    #         return False
         
-        orchestrator_count = 0
-        injection_errors = []
+    #     orchestrator_count = 0
+    #     injection_errors = []
         
-        # Simplified post-compilation injection - just try direct attribute access
-        for node_name, node_func in graph.nodes.items():
-            try:
-                # Try to find agent instance through simple introspection
-                agent = None
+    #     # Simplified post-compilation injection - just try direct attribute access
+    #     for node_name, node_func in graph.nodes.items():
+    #         try:
+    #             # Try to find agent instance through simple introspection
+    #             agent = None
                 
-                # Check if it's a bound method
-                if hasattr(node_func, '__self__') and hasattr(node_func.__self__, 'run'):
-                    agent = node_func.__self__
+    #             # Check if it's a bound method
+    #             if hasattr(node_func, '__self__') and hasattr(node_func.__self__, 'run'):
+    #                 agent = node_func.__self__
                 
-                if agent and agent.__class__.__name__ == "OrchestratorAgent":
-                    orchestrator_count += 1
-                    agent.node_registry = node_registry
-                    self.logger.info(f"[NodeRegistry] ✅ Fallback injection successful for orchestrator '{node_name}'")
+    #             if agent and agent.__class__.__name__ == "OrchestratorAgent":
+    #                 orchestrator_count += 1
+    #                 agent.node_registry = node_registry
+    #                 self.logger.info(f"[NodeRegistry] ✅ Fallback injection successful for orchestrator '{node_name}'")
                     
-            except Exception as e:
-                error_msg = f"Failed fallback injection for node '{node_name}': {e}"
-                self.logger.error(f"[NodeRegistry] {error_msg}")
-                injection_errors.append(error_msg)
+    #         except Exception as e:
+    #             error_msg = f"Failed fallback injection for node '{node_name}': {e}"
+    #             self.logger.error(f"[NodeRegistry] {error_msg}")
+    #             injection_errors.append(error_msg)
         
-        success = len(injection_errors) == 0
+    #     success = len(injection_errors) == 0
         
-        if orchestrator_count == 0:
-            self.logger.debug("[NodeRegistry] No orchestrators found during fallback injection")
-            success = True
-        elif success:
-            self.logger.info(f"[NodeRegistry] ✅ Fallback injection successful for {orchestrator_count} orchestrator(s)")
-        else:
-            self.logger.error(f"[NodeRegistry] ❌ Fallback injection failed with {len(injection_errors)} errors")
+    #     if orchestrator_count == 0:
+    #         self.logger.debug("[NodeRegistry] No orchestrators found during fallback injection")
+    #         success = True
+    #     elif success:
+    #         self.logger.info(f"[NodeRegistry] ✅ Fallback injection successful for {orchestrator_count} orchestrator(s)")
+    #     else:
+    #         self.logger.error(f"[NodeRegistry] ❌ Fallback injection failed with {len(injection_errors)} errors")
         
-        return success
+    #     return success
     
     def get_registry_summary(self, node_registry: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         """
