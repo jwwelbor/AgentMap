@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 import threading
+import logging
 
 from langgraph.graph import StateGraph
 
@@ -15,7 +16,7 @@ from langgraph.graph import StateGraph
 from agentmap.exceptions import AgentInitializationError
 from agentmap.graph import GraphAssembler
 from agentmap.graph.builder import GraphBuilder
-from agentmap.graph.node_registry import build_node_registry, populate_orchestrator_inputs
+from agentmap.services.node_registry_service import NodeRegistryService
 from agentmap.state.adapter import StateAdapter
 from agentmap.agents import get_agent_class
 from dependency_injector.wiring import inject, Provide
@@ -23,6 +24,7 @@ from agentmap.di.containers import ApplicationContainer
 from agentmap.config.configuration import Configuration
 from agentmap.logging.service import LoggingService
 from agentmap.logging.tracking.execution_tracker import ExecutionTracker 
+
 
 _GRAPH_EXECUTION_LOCK = threading.RLock()
 _CURRENT_EXECUTIONS = set()
@@ -94,18 +96,20 @@ def autocompile_and_load(
 def build_graph_in_memory(
     graph_name: str, 
     graph_def: Dict[str, Any], 
-    logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
+    logging_service: LoggingService = Provide[ApplicationContainer.logging_service],
+    node_registry_service: NodeRegistryService = Provide[ApplicationContainer.node_registry_service]  # NEW
 ):
     """
-    Build a graph in memory from pre-loaded graph definition with execution logging.
+    Build a graph in memory from pre-loaded graph definition with registry injection.
     
     Args:
         graph_name: Name of the graph to build
         graph_def: Pre-loaded graph definition from GraphBuilder
-        config_path: Optional path to a custom config file
+        logging_service: Logging service
+        node_registry_service: Node registry service for pre-compilation injection
     
     Returns:
-        Compiled graph with logging wrappers
+        Compiled graph with pre-injected registries
     """
     logger = logging_service.get_logger("agentmap.runner")
     logger.debug(f"[BuildGraph] Building graph in memory: {graph_name}")
@@ -113,13 +117,17 @@ def build_graph_in_memory(
     if not graph_def:
         raise ValueError(f"[BuildGraph] Invalid or empty graph definition for graph: {graph_name}")
 
+    # NEW: Build node registry BEFORE creating assembler
+    logger.debug(f"[BuildGraph] Preparing node registry for: {graph_name}")
+    node_registry = node_registry_service.prepare_for_assembly(graph_def, graph_name)
+
     # Create the StateGraph builder
     builder = StateGraph(dict)
     
-    # Create the graph assembler
-    assembler = GraphAssembler(builder)
+    # NEW: Create assembler WITH node registry for pre-compilation injection
+    assembler = GraphAssembler(builder, node_registry=node_registry)
     
-    # Add all nodes to the graph
+    # Add all nodes to the graph (registry injection happens automatically in add_node)
     for node in graph_def.values():
         logger.debug(f"[AgentInit] resolving agent class for {node.name} with type {node.agent_type}")
         agent_cls = resolve_agent_class(node.agent_type)
@@ -130,11 +138,11 @@ def build_graph_in_memory(
             "output_field": node.output,
             "description": node.description or ""
         }
-        
+
         logger.debug(f"[AgentInit] Instantiating {agent_cls.__name__} as node '{node.name}'")
         agent_instance = agent_cls(name=node.name, prompt=node.prompt or "", context=context)
         
-        # Add node to the graph
+        # Add node to the graph (this triggers automatic registry injection for orchestrators)
         assembler.add_node(node.name, agent_instance)
 
     # Set entry point
@@ -144,11 +152,17 @@ def build_graph_in_memory(
     for node_name, node in graph_def.items():
         assembler.process_node_edges(node_name, node.edges)
     
-    # Add special handling for orchestrator nodes
-    # add_dynamic_routing(builder, graph_def)
+    # NEW: Verify that pre-compilation injection worked
+    verification = node_registry_service.verify_pre_compilation_injection(assembler)
+    if not verification["all_injected"] and verification["has_orchestrators"]:
+        logger.warning(f"[BuildGraph] Pre-compilation injection incomplete for graph '{graph_name}'")
+        logger.warning(f"[BuildGraph] Stats: {verification['stats']}")
 
     # Compile and return the graph
-    return assembler.compile()
+    compiled_graph = assembler.compile()
+    
+    logger.info(f"[BuildGraph] ✅ Successfully built graph '{graph_name}' with pre-compilation registry injection")
+    return compiled_graph
 
 @inject
 def add_dynamic_routing(
@@ -339,7 +353,8 @@ def run_graph(
     csv_path: Optional[str] = None, 
     autocompile_override: Optional[bool] = None,
     configuration: Configuration = Provide[ApplicationContainer.configuration],
-    logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
+    logging_service: LoggingService = Provide[ApplicationContainer.logging_service],
+    node_registry_service: NodeRegistryService = Provide[ApplicationContainer.node_registry_service]
 ) -> Dict[str, Any]:
     """
     Run a graph with the given initial state.
@@ -398,8 +413,6 @@ def run_graph(
         from agentmap.logging.tracing import trace_graph
 
         # Set defaults for optional parameters
-
-
         autocompile = autocompile_override if autocompile_override is not None else configuration.get_value("autocompile", False)
 
         execution_config = configuration.get_section("execution")
@@ -433,7 +446,7 @@ def run_graph(
             if graph_bundle:
                 graph, node_registry = load_from_compiled_graph(graph, graph_bundle, node_registry)
 
-            # If autocompile is enabled, and we don't have a graph, compile and load, graph_name must be specified
+            # If autocompile is enabled, and we don't have a graph, compile and load
             if not graph and autocompile and graph_name:
                 graph, node_registry = compile_and_load(graph, graph_name, node_registry)
 
@@ -442,20 +455,22 @@ def run_graph(
                 # Load the CSV file and parse graph definition only once
                 graph_def, graph_name = read_graph_definition_and_get_graph_name(csv_file, graph_name)
 
-                # Build graph in memory, passing the already loaded graph definition
+                # NEW: Build graph in memory with pre-compilation registry injection
+                # The registry is built and injected during assembly, not after compilation
                 graph = build_graph_in_memory(graph_name, graph_def)
-                node_registry = build_node_registry(graph_def)
+                
+                # Note: No need to call inject_into_orchestrators here since it's done during assembly
+                logger.debug(f"[RUN] Graph built with pre-compilation registry injection")
 
-            # Populate orchestrator inputs if we have a node registry
-            if node_registry and graph_def:
-                state = populate_orchestrator_inputs(state, graph_def, node_registry)
-            
+            # REMOVED: No longer need post-compilation injection for normal cases
+            # The registry injection happens during assembly now
+                        
             # Track overall execution time
             start_time = time.time()
             
             try:
                 logger.trace(f"\n=== BEFORE INVOKING GRAPH: {graph_name or 'unnamed'} ===")
-                result = graph.invoke(state)
+                result = graph.invoke(state)  # Use state directly, no modification needed
                 logger.trace(f"\n=== AFTER INVOKING GRAPH: {graph_name or 'unnamed'} ===")
                 execution_time = time.time() - start_time
                 

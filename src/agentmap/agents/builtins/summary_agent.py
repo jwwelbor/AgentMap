@@ -152,5 +152,6 @@ class SummaryAgent(BaseAgent):
             template_file="file:summary/summarization_v1.txt",
             default_template=default_template,
             values=template_values,
+            logger=self._logger,
             context_name="SummaryAgent"
         )

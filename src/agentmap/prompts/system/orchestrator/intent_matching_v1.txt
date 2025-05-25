@@ -5,13 +5,13 @@ Available nodes:
 
 User input: "{input_text}"
 
-Select the SINGLE BEST node to handle this request. 
-Consider the semantics and intent of the user request. 
-First explain your reasoning, then output a JSON object with a 'selectedNode' field containing your selection.
+Consider the semantics and intent of the user request then 
+select the SINGLE BEST node to handle this request from the list of available nodes. 
+Output a JSON object with a 'selectedNode' field containing your selection, your confidence level, and the reasoning in the format below:
 
 Example output format:
-{
+\{
   "selectedNode": "node_name",
-  "confidence": 0.9,
-  "reasoning": "This node is best because..."
-}
+  "confidence": 0, / a number between 0 and 1 indicating confidence level
+  "reasoning": "your reasoning goes here" / put your reasoning here
+\}

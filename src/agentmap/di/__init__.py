@@ -37,8 +37,8 @@ def init_for_cli(config_path: Optional[Union[str, Path]] = None) -> ApplicationC
         "agentmap.prompts.manager",
         "agentmap.compiler",
         "agentmap.graph.scaffold",
-        "agentmap.services.llm_service",  # Add LLM service
-        # Add other modules that use @inject
+        "agentmap.services.llm_service",
+        "agentmap.services.node_registry_service"
     ])
 
     # Force initialization of configuration to catch any errors early

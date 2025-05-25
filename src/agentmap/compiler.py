@@ -14,6 +14,8 @@ from agentmap.graph.builder import GraphBuilder
 from agentmap.utils.common import extract_func_ref, import_function
 from agentmap.agents import get_agent_class
 from agentmap.logging.service import LoggingService
+from agentmap.services.node_registry_service import NodeRegistryService
+from agentmap.graph import GraphAssembler  # Import GraphAssembler
 
 from dependency_injector.wiring import inject, Provide
 from agentmap.di.containers import ApplicationContainer
@@ -247,17 +249,77 @@ def build_edge_lines(
     return edge_lines
 
 
+# NEW: Enhanced function that uses GraphAssembler with registry
+@inject
+def create_graph_builder_with_registry(
+    graph_def: Dict, 
+    node_registry: Dict[str, Dict[str, Any]],
+    state_schema: str = "dict",
+    configuration: Configuration = Provide[ApplicationContainer.configuration],
+    logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
+) -> tuple:
+    """
+    Create a StateGraph builder for the graph with pre-compilation registry injection.
+    
+    Args:
+        graph_def: Graph definition
+        node_registry: Node registry for orchestrator injection
+        state_schema: State schema type
+        
+    Returns:
+        tuple: (compiled_graph, source lines)
+    """
+    logger = logging_service.get_logger("agentmap.compiler")
+    
+    # Resolve the state schema
+    schema_obj, _, _ = resolve_state_schema(state_schema)
+    schema_obj = schema_obj or dict  # Default to dict if schema can't be resolved
+    
+    # Create the builder
+    builder = StateGraph(schema_obj)
+    
+    # NEW: Create GraphAssembler with node registry for pre-compilation injection
+    assembler = GraphAssembler(builder, node_registry=node_registry, enable_logging=True)
+    
+    # Build source lines for tracking
+    src_lines = build_source_lines(graph_def, state_schema)
+    
+    # Add nodes to the builder (registry injection happens automatically)
+    add_nodes_to_assembler(assembler, graph_def)
+    
+    # Set entry point
+    entry = next(iter(graph_def))
+    assembler.set_entry_point(entry)
+    
+    # Add edges to the builder
+    add_edges_to_assembler(assembler, graph_def)
+    
+    # Compile the graph
+    compiled_graph = assembler.compile()
+    
+    # Verify injection worked
+    stats = assembler.get_injection_summary()
+    if stats["orchestrators_found"] > 0:
+        logger.info(f"[Compiler] Registry injection during compilation:")
+        logger.info(f"   Orchestrators found: {stats['orchestrators_found']}")
+        logger.info(f"   Successfully injected: {stats['orchestrators_injected']}")
+        if stats["injection_failures"] > 0:
+            logger.warning(f"   Injection failures: {stats['injection_failures']}")
+    
+    return compiled_graph, src_lines
+
 def create_graph_builder(
     graph_def: Dict, 
     state_schema: str = "dict"
 ) -> tuple:
     """
-    Create a StateGraph builder for the graph.
+    LEGACY: Create a StateGraph builder for the graph without registry.
+    
+    This is kept for backward compatibility but should use create_graph_builder_with_registry instead.
     
     Args:
         graph_def: Graph definition
         state_schema: State schema type
-        config_path: Optional path to a custom config file
         
     Returns:
         tuple: (builder, source lines)
@@ -284,6 +346,51 @@ def create_graph_builder(
     
     return builder, src_lines
 
+# NEW: Function that uses GraphAssembler
+def add_nodes_to_assembler(
+    assembler: GraphAssembler, 
+    graph_def: Dict
+) -> None:
+    """
+    Add nodes to the GraphAssembler (with automatic registry injection).
+    
+    Args:
+        assembler: GraphAssembler instance with registry
+        graph_def: Graph definition
+    """
+    for node in graph_def.values():
+        agent_class = get_agent_class(node.agent_type)
+        if agent_class:
+            # Create context with input/output field information
+            context = {
+                "input_fields": node.inputs,
+                "output_field": node.output,
+                "description": node.description or ""
+            }
+            agent_instance = agent_class(name=node.name, prompt=node.prompt or "", context=context)
+        else:
+            # Try to load from custom agents path - simplified for now
+            # This could be enhanced to use the same logic as in runner
+            raise ValueError(f"Could not load agent type '{node.agent_type}' during compilation")
+                
+        # Add node to assembler (automatic registry injection happens here)
+        assembler.add_node(node.name, agent_instance)
+
+def add_edges_to_assembler(
+    assembler: GraphAssembler, 
+    graph_def: Dict
+) -> None:
+    """
+    Add edges to the GraphAssembler.
+    
+    Args:
+        assembler: GraphAssembler instance
+        graph_def: Graph definition
+    """
+    # Process edges for all nodes
+    for node_name, node in graph_def.items():
+        assembler.process_node_edges(node_name, node.edges)
+
 @inject
 def add_nodes_to_builder(
     builder: StateGraph, 
@@ -291,7 +398,7 @@ def add_nodes_to_builder(
     configuration: Configuration = Provide[ApplicationContainer.configuration] 
 ) -> None:
     """
-    Add nodes to the StateGraph builder.
+    LEGACY: Add nodes to the StateGraph builder directly.
     
     Args:
         builder: StateGraph builder
@@ -327,7 +434,7 @@ def add_edges_to_builder(
     logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ) -> None:
     """
-    Add edges to the StateGraph builder.
+    LEGACY: Add edges to the StateGraph builder directly.
     
     Args:
         builder: StateGraph builder
@@ -389,10 +496,11 @@ def compile_graph(
     csv_path: Optional[str] = None,
     state_schema: str = "dict",
     configuration: Configuration = Provide[ApplicationContainer.configuration],
-    logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
+    logging_service: LoggingService = Provide[ApplicationContainer.logging_service],
+    node_registry_service: NodeRegistryService = Provide[ApplicationContainer.node_registry_service]  
 ):
     """
-    Compile a graph to the configured output directory.
+    Compile a graph to the configured output directory with pre-compilation registry injection.
     
     Args:
         graph_name: Name of the graph to compile
@@ -405,8 +513,6 @@ def compile_graph(
         ValueError: If graph not found
         FileNotFoundError: If function file not found
     """
-    # Import node_registry here to avoid circular imports
-    from agentmap.graph.node_registry import build_node_registry
     
     logger = logging_service.get_logger("agentmap.compiler")
     logger.info(f"[Compiler] Compiling graph: {graph_name}")
@@ -426,18 +532,16 @@ def compile_graph(
     if not graph_def:
         raise ValueError(f"No graph found with name: {graph_name}")
     
-    # Build node registry from the same graph definition
-    node_registry = build_node_registry(graph_def)
+    # NEW: Build node registry from the graph definition BEFORE compilation
+    logger.debug(f"[Compiler] Building node registry for compilation: {graph_name}")
+    node_registry = node_registry_service.prepare_for_assembly(graph_def, graph_name)
     
     # Use configured output directory if not specified
     output_dir = output_dir or configuration.get_compiled_graphs_path()
     os.makedirs(output_dir, exist_ok=True)
     
-    # Create the builder and get source lines
-    builder, src_lines = create_graph_builder(graph_def, state_schema)
-    
-    # Compile the graph
-    graph = builder.compile()
+    # NEW: Create the graph builder WITH registry for pre-compilation injection
+    graph, src_lines = create_graph_builder_with_registry(graph_def, node_registry, state_schema)
     
     # Create a graph bundle with graph, registry, and version info
     from agentmap.graph.bundle import GraphBundle
@@ -452,7 +556,7 @@ def compile_graph(
     with open(src_path, "w") as f:
         f.write("\n".join(src_lines))
     
-    logger.info(f"[Compiler] ✅ Compiled {graph_name} to {output_path}")
+    logger.info(f"[Compiler] ✅ Compiled {graph_name} to {output_path} with pre-compilation registry injection")
     return output_path
 
 @inject
@@ -487,30 +591,3 @@ def compile_all(
     
     logger.info(f"[Compiler] ✅ Compiled {len(compiled_paths)} graphs")
     return compiled_paths
-
-
-# if __name__ == "__main__":
-#     import typer
-#     app = typer.Typer()
-
-#     @app.command()
-#     def graph(
-#         graph: str, 
-#         output: Optional[str] = None,
-#         csv: Optional[str] = None,
-#         state: str = "dict",
-#         config: Optional[str] = None
-#     ):
-#         """Compile a single graph."""
-#         compile_graph(graph, output_dir=output, csv_path=csv, state_schema=state, config_path=config)
-
-#     @app.command()
-#     def all(
-#         csv: Optional[str] = None,
-#         state: str = "dict",
-#         config: Optional[str] = None
-#     ):
-#         """Compile all graphs."""
-#         compile_all(csv_path=csv, state_schema=state, config_path=config)
-
-#     app()

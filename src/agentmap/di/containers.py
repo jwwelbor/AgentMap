@@ -40,3 +40,15 @@ class ApplicationContainer(containers.DeclarativeContainer):
         configuration,
         logging_service
     )
+    
+    # Node Registry Service - use lazy factory import to avoid circular dependency
+    def _create_node_registry_service(config, logger):
+        # Import here to avoid circular dependency
+        from agentmap.services.node_registry_service import NodeRegistryService
+        return NodeRegistryService(config, logger)
+    
+    node_registry_service = providers.Singleton(
+        _create_node_registry_service,
+        configuration,
+        logging_service
+    )

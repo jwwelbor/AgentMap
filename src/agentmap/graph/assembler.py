@@ -4,7 +4,7 @@ Graph assembler for AgentMap with OrchestratorAgent support.
 Adds dynamic routing capabilities for OrchestratorAgent nodes.
 """
 
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 from langgraph.graph import StateGraph
 
@@ -32,6 +32,7 @@ class GraphAssembler:
     def __init__(
             self,
             builder: StateGraph,
+            node_registry: Optional[Dict[str, Dict[str, Any]]] = None,  # NEW: Accept node registry
             enable_logging=True,
             configuration: Configuration = Provide[ApplicationContainer.configuration],
             logging_service: LoggingService = Provide[ApplicationContainer.logging_service],
@@ -40,14 +41,34 @@ class GraphAssembler:
         self.functions_dir = configuration.get_functions_path()
         self.enable_logging = enable_logging
         self.orchestrator_nodes = []  # Initialize the orchestrator nodes list
+        
+        # NEW: Store node registry for pre-compilation injection
+        self.node_registry = node_registry
+        self.injection_stats = {
+            "orchestrators_found": 0,
+            "orchestrators_injected": 0,
+            "injection_failures": 0
+        }
 
         self.logger = logging_service.get_class_logger(self)
 
         if enable_logging:
             self.logger.info("Graph assembler initialized")
+            if node_registry:
+                self.logger.info(f"Graph assembler initialized with node registry containing {len(node_registry)} nodes")
+    
+    def set_node_registry(self, node_registry: Dict[str, Dict[str, Any]]) -> None:
+        """
+        Set the node registry for orchestrator injection.
+        
+        Args:
+            node_registry: Dictionary mapping node names to metadata
+        """
+        self.node_registry = node_registry
+        self.logger.info(f"Node registry set with {len(node_registry)} nodes")
     
     def add_node(self, name: str, agent_instance: Any) -> None:
-        """Add a node to the graph."""
+        """Add a node to the graph with automatic registry injection for orchestrators."""
         # Handle special case for LLM-based orchestrators
         agent_class_name = agent_instance.__class__.__name__
         
@@ -56,16 +77,41 @@ class GraphAssembler:
             self.logger.warning(f"Orchestrator agent '{name}' may have limited functionality without LLM agents.")
             self.logger.warning("Install LLM dependencies with: pip install agentmap[llm]")
 
-        
+        # Add node to graph
         self.builder.add_node(name, agent_instance.run)
         
-        # Check if this is an orchestrator agent to enable dynamic routing
-        agent_class_name = agent_instance.__class__.__name__
+        # NEW: Check if this is an orchestrator agent and inject registry
         if agent_class_name == "OrchestratorAgent":
             self.orchestrator_nodes.append(name)
+            self.injection_stats["orchestrators_found"] += 1
+            
+            # Inject node registry if available
+            if self.node_registry:
+                try:
+                    agent_instance.node_registry = self.node_registry
+                    self.injection_stats["orchestrators_injected"] += 1
+                    
+                    if self.enable_logging:
+                        self.logger.info(f"✅ Injected registry into orchestrator '{name}' (pre-compilation)")
+                        self.logger.debug(f"Registry contains {len(self.node_registry)} nodes: {list(self.node_registry.keys())}")
+                        
+                except Exception as e:
+                    self.injection_stats["injection_failures"] += 1
+                    self.logger.error(f"❌ Failed to inject registry into orchestrator '{name}': {e}")
+            else:
+                self.logger.warning(f"⚠️ No registry available for orchestrator '{name}' - will need post-compilation injection")
             
         if self.enable_logging:
             self.logger.info(f"🔹 Added node: '{name}' ({agent_class_name})")
+    
+    def get_injection_summary(self) -> Dict[str, int]:
+        """
+        Get summary of registry injection statistics.
+        
+        Returns:
+            Dictionary with injection statistics
+        """
+        return self.injection_stats.copy()
     
     def set_entry_point(self, node_name: str) -> None:
         """
@@ -240,12 +286,21 @@ class GraphAssembler:
             self.add_dynamic_router(node_name)
     
     def compile(self) -> Any:
-        """Compile the graph."""
+        """Compile the graph and report injection statistics."""
         # Add dynamic routing for orchestrator nodes before compiling
         self.finalize()
         
         if self.enable_logging:
             self.logger.info("📋 Compiling graph")
+            
+            # Report injection statistics
+            stats = self.get_injection_summary()
+            if stats["orchestrators_found"] > 0:
+                self.logger.info(f"📊 Registry injection summary:")
+                self.logger.info(f"   Orchestrators found: {stats['orchestrators_found']}")
+                self.logger.info(f"   Orchestrators injected: {stats['orchestrators_injected']}")
+                if stats["injection_failures"] > 0:
+                    self.logger.warning(f"   Injection failures: {stats['injection_failures']}")
             
         graph = self.builder.compile()
         
