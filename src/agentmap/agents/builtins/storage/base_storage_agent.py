@@ -7,91 +7,15 @@ with utilities for accessing data stores and handling operations.
 from __future__ import annotations
 
 import functools
-from dataclasses import asdict, dataclass
-from enum import Enum, auto
-from typing import Any, Callable, Dict, Generic, Optional, TypeVar, Union, cast
+from typing import Any, Callable, Dict, Optional, TypeVar, cast
 
 from agentmap.agents.base_agent import BaseAgent
+from agentmap.services.storage import DocumentResult, WriteMode
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
-T = TypeVar('T')  # Generic type for data storage
 F = TypeVar('F', bound=Callable[..., Any])  # Type for callable functions
-
-
-class WriteMode(str, Enum):
-    """Document write operation modes using string values."""
-    WRITE = "write"    # Create or overwrite document
-    UPDATE = "update"  # Update existing document fields
-    MERGE = "merge"    # Merge with existing document
-    DELETE = "delete"  # Delete document or field
-    APPEND = "append"  # Append to existing document
-    
-    @classmethod
-    def from_string(cls, mode: str) -> "WriteMode":
-        """Convert string to enum value, case-insensitive."""
-        try:
-            return cls(mode.lower())
-        except ValueError:
-            valid_modes = ", ".join(m.value for m in cls)
-            raise ValueError(f"Invalid write mode: {mode}. Valid modes: {valid_modes}")
-
-
-@dataclass
-class DocumentResult(Generic[T]):
-    """
-    Structured result from document operations.
-    
-    This class provides a standardized way to return results from storage operations,
-    with metadata about the operation and its success.
-    """
-    # Required fields
-    success: bool = False
-    
-    # Optional metadata fields
-    document_id: Optional[str] = None
-    mode: Optional[str] = None
-    file_path: Optional[str] = None
-    path: Optional[str] = None
-    count: Optional[int] = None
-    error: Optional[str] = None
-    message: Optional[str] = None
-    data: Optional[T] = None
-    
-    # Operation-specific fields
-    created_new: Optional[bool] = None
-    document_created: Optional[bool] = None
-    file_deleted: Optional[bool] = None
-    rows_written: Optional[int] = None
-    rows_updated: Optional[int] = None
-    rows_added: Optional[int] = None
-    total_affected: Optional[int] = None
-    updated_ids: Optional[list[str]] = None
-    deleted_ids: Optional[list[str]] = None
-    is_collection: Optional[bool] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert the result to a dictionary, filtering out None values."""
-        return {k: v for k, v in asdict(self).items() if v is not None}
-    
-    def __getitem__(self, key: str) -> Any:
-        """
-        Make the DocumentResult subscriptable for backward compatibility.
-        
-        Args:
-            key: The attribute name to access
-            
-        Returns:
-            The value of the attribute
-            
-        Raises:
-            KeyError: If the attribute doesn't exist
-        """
-        try:
-            return getattr(self, key)
-        except AttributeError:
-            raise KeyError(key)
 
 
 def log_operation(func: F) -> F:

@@ -6,7 +6,7 @@ with common behaviors for input processing, error handling, etc.
 """
 from typing import Any, Dict, Optional
 
-from agentmap.agents.builtins.storage.base_storage_agent import DocumentResult, WriteMode
+from agentmap.services.storage import DocumentResult, WriteMode
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
