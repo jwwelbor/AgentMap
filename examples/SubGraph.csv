@@ -1,0 +1,26 @@
+GraphName,Node,AgentType,Context,Prompt,Success_Next,Failure_Next,Description
+MainWorkflow,start,Default,,Initialize the main workflow,validate_data,error_handler,Starting point for the workflow
+MainWorkflow,validate_data,GraphAgent,"subgraph_name:DataValidation",Execute data validation subgraph,process_data,handle_validation_error,Validates input data using dedicated validation workflow
+MainWorkflow,complex_analysis,GraphAgent,"subgraph_name:AnalysisWorkflow,csv_path:analysis.csv",Perform complex analysis,generate_report,handle_analysis_error,Runs complex analysis using external CSV definition
+MainWorkflow,process_data,Default,,Process the validated data,complex_analysis,error_handler,Main data processing logic
+MainWorkflow,generate_report,Default,,Generate final report,finalize,error_handler,Creates the final output report
+MainWorkflow,finalize,SuccessAgent,,Workflow completed successfully,,,Marks successful completion
+MainWorkflow,error_handler,FailureAgent,,Handle general errors,,,General error handling
+MainWorkflow,handle_validation_error,Default,,Handle validation-specific errors,retry_validation,error_handler,Specialized handling for validation failures
+MainWorkflow,handle_analysis_error,Default,,Handle analysis-specific errors,fallback_analysis,error_handler,Specialized handling for analysis failures
+MainWorkflow,retry_validation,GraphAgent,"subgraph_name:DataValidation",Retry data validation,process_data,error_handler,Retry validation with different parameters
+MainWorkflow,fallback_analysis,Default,,Perform simplified analysis,generate_report,error_handler,Simplified analysis when complex analysis fails
+
+DataValidation,check_format,Default,,Validate data format,check_rules,format_error,Checks if data is in correct format
+DataValidation,check_rules,Default,,Validate business rules,validate_complete,rules_error,Validates against business rules
+DataValidation,validate_complete,SuccessAgent,,Validation completed successfully,,,Marks successful validation
+DataValidation,format_error,FailureAgent,,Data format is invalid,,,Handles format validation failures
+DataValidation,rules_error,FailureAgent,,Business rules validation failed,,,Handles business rule violations
+
+AnalysisWorkflow,prepare_analysis,Default,,Prepare data for analysis,run_algorithm,prep_error,Prepares and cleans data
+AnalysisWorkflow,run_algorithm,Default,,Execute analysis algorithm,validate_results,algorithm_error,Runs the main analysis algorithm
+AnalysisWorkflow,validate_results,Default,,Validate analysis results,analysis_complete,validation_error,Ensures results meet quality criteria
+AnalysisWorkflow,analysis_complete,SuccessAgent,,Analysis completed successfully,,,Marks successful analysis completion
+AnalysisWorkflow,prep_error,FailureAgent,,Data preparation failed,,,Handles data preparation failures
+AnalysisWorkflow,algorithm_error,FailureAgent,,Algorithm execution failed,,,Handles algorithm execution failures
+AnalysisWorkflow,validation_error,FailureAgent,,Results validation failed,,,Handles result validation failures
