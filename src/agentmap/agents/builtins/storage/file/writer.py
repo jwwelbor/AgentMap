@@ -13,7 +13,8 @@ from typing import Any, Dict, List, Optional, Union
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, log_operation
 )
-from agentmap.services.storage import DocumentResult, WriteMode
+from agentmap.services.storage import DocumentResult, WriteMode, FileStorageService
+from agentmap.services.storage.protocols import FileServiceUser
 from agentmap.agents.mixins import WriterOperationsMixin, StorageErrorHandlerMixin
 from agentmap.logging import get_logger
 from agentmap.state.adapter import StateAdapter
@@ -21,7 +22,7 @@ from agentmap.state.adapter import StateAdapter
 logger = get_logger(__name__)
 
 
-class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandlerMixin):
+class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandlerMixin, FileServiceUser):
     """
     Enhanced document writer agent for text-based file formats.
     
@@ -45,6 +46,10 @@ class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandl
         self.encoding = context.get("encoding", "utf-8")
         self.newline = context.get("newline", None)  # System default
         self._current_state = None  # Store current state for state key lookups
+        
+        # FileServiceUser protocol requirement - will be set via dependency injection
+        # or initialized in _initialize_client()
+        self.file_service = None
     
     def run(self, state: Any) -> Any:
         """
@@ -66,8 +71,10 @@ class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandl
             self._current_state = None
     
     def _initialize_client(self) -> None:
-        """No client needed for filesystem operations."""
-        pass
+        """Initialize FileStorageService as the client for file operations."""
+        self._client = FileStorageService(self.context)
+        # Set file_service for FileServiceUser protocol compliance
+        self.file_service = self._client
     
     def _log_operation_start(self, collection: str, inputs: Dict[str, Any]) -> None:
         """
@@ -103,38 +110,25 @@ class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandl
     
     def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> DocumentResult:
         """
-        Execute write operation for file.
-        
-        Args:
-            collection: File path
-            inputs: Input dictionary
-            
-        Returns:
-            Write operation result
+        Execute write operation for file using FileStorageService.
         """
-        # Get required data
         data = inputs.get("data")
         mode_str = inputs.get("mode", "write").lower()
-        
-        # Convert string mode to enum
         try:
             mode = WriteMode.from_string(mode_str)
         except ValueError as e:
-            return DocumentResult(
-                success=False,
-                file_path=collection,
-                error=str(e)
-            )
-        
-        # Extract optional parameters
+            return DocumentResult(success=False, file_path=collection, error=str(e))
         document_id = inputs.get("document_id")
         path = inputs.get("path")
-        
-        # Log the write operation
-        self._log_write_operation(collection, mode, document_id, path)
-        
-        # Perform the write operation
-        return self._write_document(collection, data, document_id, mode, path)
+        # Call the FileStorageService write method
+        result = self.file_service.write(
+            collection=collection,
+            data=data,
+            document_id=document_id,
+            mode=mode,
+            path=path
+        )
+        return result
     
     def _handle_operation_error(self, error: Exception, collection: str, inputs: Dict[str, Any]) -> DocumentResult:
         """
@@ -169,184 +163,14 @@ class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandl
             mode=inputs.get("mode", "write")
         )
     
-    def _write_document(
-        self, 
-        file_path: str, 
-        data: Any, 
-        document_id: Optional[str] = None,
-        mode: WriteMode = WriteMode.WRITE, 
-        path: Optional[str] = None
-    ) -> DocumentResult:
-        """
-        Write a document or update an existing one.
-        
-        Args:
-            file_path: Path to the file
-            data: Content to write
-            document_id: Optional document section ID
-            mode: Write mode
-            path: Optional path within document
-            
-        Returns:
-            Operation result
-        """
-        # Validate and normalize file path
-        file_path = os.path.expanduser(file_path)
-        
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
-        
-        # Check if file exists (for later reporting if we created a new file)
-        file_exists = os.path.exists(file_path)
-        
-        # Prepare content
-        content = self._prepare_content(data)
-        
-        # Handle different file types
-        if self._is_text_file(file_path):
-            return self._write_text_file(file_path, content, mode, file_exists)
-        else:
-            return DocumentResult(
-                success=False,
-                file_path=file_path,
-                mode=str(mode),
-                error=f"Unsupported file type: {file_path}"
-            )
+    def _write_document(self, *args, **kwargs):
+        raise NotImplementedError("Direct document writing is now handled by FileStorageService.")
     
-    def _prepare_content(self, data: Any) -> str:
-        """
-        Convert data to writable text content.
-        
-        Args:
-            data: Input data in various formats, or string key to look up in state
-            
-        Returns:
-            String content for writing
-        """
-        # If data is a string and we have access to state, try to use it as a state key
-        if isinstance(data, str) and self._current_state is not None:
-            # Try to get the value from state using the string as a key
-            state_value = StateAdapter.get_value(self._current_state, data, None)
-            if state_value is not None:
-                # Recursively process the state value
-                return self._prepare_content(state_value)
-            else:
-                # If key not found in state, treat the string as literal content
-                self.log_debug(f"Key '{data}' not found in state, treating as literal content")
-                return str(data)
-        
-        if hasattr(data, 'page_content'):
-            # Single LangChain document
-            return data.page_content
-        elif isinstance(data, list) and data and hasattr(data[0], 'page_content'):
-            # List of LangChain documents
-            return "\n\n".join(doc.page_content for doc in data)
-        elif isinstance(data, dict):
-            # Try to extract content from dictionary
-            if "content" in data:
-                return str(data["content"])
-            else:
-                # Convert whole dict to string
-                return str(data)
-        else:
-            # Convert to string directly
-            return str(data)
+    def _prepare_content(self, *args, **kwargs):
+        raise NotImplementedError("Content preparation is now handled by FileStorageService.")
     
-    def _is_text_file(self, file_path: str) -> bool:
-        """
-        Check if the file is a supported text file.
-        
-        Args:
-            file_path: Path to file
-            
-        Returns:
-            True if supported, False otherwise
-        """
-        ext = file_path.lower()
-        text_extensions = ['.txt', '.md', '.html', '.htm', '.csv', '.log', '.py', '.js', '.json', '.yaml', '.yml']
-        return any(ext.endswith(e) for e in text_extensions)
+    def _is_text_file(self, *args, **kwargs):
+        raise NotImplementedError("File type checking is now handled by FileStorageService.")
     
-    def _write_text_file(
-        self, 
-        file_path: str, 
-        content: str, 
-        mode: WriteMode,
-        file_exists: bool
-    ) -> DocumentResult:
-        """
-        Write content to a text file.
-        
-        Args:
-            file_path: Path to file
-            content: Content to write
-            mode: Write mode
-            file_exists: Whether file existed before operation
-            
-        Returns:
-            Operation result
-        """
-        # Handle different write modes
-        if mode == WriteMode.WRITE:
-            # Create or overwrite file
-            with open(file_path, 'w', encoding=self.encoding, newline=self.newline) as f:
-                f.write(content)
-                
-            return DocumentResult(
-                success=True,
-                mode=str(mode),
-                file_path=file_path,
-                created_new=not file_exists
-            )
-            
-        elif mode == WriteMode.APPEND:
-            # Append to existing file or create new
-            with open(file_path, 'a', encoding=self.encoding, newline=self.newline) as f:
-                if file_exists:
-                    # Add a newline before appending if needed
-                    f.write("\n\n")
-                f.write(content)
-                
-            return DocumentResult(
-                success=True,
-                mode=str(mode),
-                file_path=file_path,
-                created_new=not file_exists
-            )
-            
-        elif mode == WriteMode.UPDATE:
-            # For text files, update is the same as write for simplicity
-            with open(file_path, 'w', encoding=self.encoding, newline=self.newline) as f:
-                f.write(content)
-                
-            return DocumentResult(
-                success=True,
-                mode=str(mode),
-                file_path=file_path,
-                created_new=not file_exists
-            )
-            
-        elif mode == WriteMode.DELETE:
-            # Delete the file if it exists
-            if file_exists:
-                os.remove(file_path)
-                return DocumentResult(
-                    success=True,
-                    mode=str(mode),
-                    file_path=file_path,
-                    file_deleted=True
-                )
-            else:
-                return DocumentResult(
-                    success=False,
-                    mode=str(mode),
-                    file_path=file_path,
-                    error="File not found for deletion"
-                )
-        
-        # Merge mode not well-defined for simple text files
-        return DocumentResult(
-            success=False,
-            mode=str(mode),
-            file_path=file_path,
-            error=f"Unsupported mode for text files: {mode}"
-        )
+    def _write_text_file(self, *args, **kwargs):
+        raise NotImplementedError("Text file writing is now handled by FileStorageService.")

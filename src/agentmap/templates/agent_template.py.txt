@@ -1,34 +1,111 @@
 from agentmap.agents.base_agent import BaseAgent
-from typing import Dict, Any
+{imports}
+from typing import Dict, Any, Optional
 
-class {class_name}(BaseAgent):
+{class_definition}
     """
-    description: {description}
-    context:{context}
+    {agent_type} Agent{service_description}
+    
+    {description}
     Node: {node_name}
     Expected input fields: {input_fields}
     Expected output field: {output_field}
-    Prompt: {prompt}
+    {services_doc}
+    {prompt_doc}
     """
+    
+    def __init__(self, name: str, prompt: str = "", context: Dict = None):
+        super().__init__(name, prompt, context)
+        {service_attributes}
+    
+    def pre_process(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Pre-process inputs before main processing.
+        
+        Override this method to add input validation, transformation, 
+        or preparation logic specific to your agent.
+        
+        Args:
+            inputs: Raw input dictionary from the graph state
+            
+        Returns:
+            Processed inputs dictionary ready for main processing
+        """
+        # TODO: Add any input validation, transformation, or preparation logic
+        # Example:
+        # - Validate required fields exist
+        # - Normalize data formats
+        # - Set default values
+        # - Transform input structure
+        
+        return inputs
+    
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
         Process the inputs and return the output value.
+        
+        This is the main processing method where your agent's logic should be implemented.
+        The return value will be stored in the graph state under the output field name.
         
         Args:
             inputs (dict): Contains the input values with keys: {input_fields}
             
         Returns:
-            The value for {output_field}
+            The value for {output_field} (will be stored in graph state)
         """
-        # TODO: Implement logic for {class_name}
-        # description: {description}
-        # Context: {context}
-        
-        # Access input fields directly from inputs dictionary
+        try:
+            # Pre-process inputs
+            processed_inputs = self.pre_process(inputs)
+            
+            # Access input fields directly from inputs dictionary
 {input_field_access}
+            
+            # Example service usage:
+{service_usage_examples}
+            
+            # TODO: Implement your agent logic here
+            # Description: {description}
+            # Context: {context}
+            # 
+            # Use the extracted input fields and available services to process the data.
+            # Return the result that should be stored in the output field.
+            
+            result = f"Processed by {{self.name}}"
+            
+            # Post-process result before returning
+            final_result = self.post_process(result, processed_inputs)
+            return final_result
+            
+        except Exception as e:
+            # Handle errors gracefully - you can customize error handling here
+            self.logger.error(f"Error in {{self.name}}: {{str(e)}}")
+            return {{
+                "success": False,
+                "error": str(e),
+                "agent": self.name
+            }}
+    
+    def post_process(self, result: Any, inputs: Dict[str, Any]) -> Any:
+        """
+        Post-process the result before returning.
         
-        # Implement your agent logic here
-        # ...
+        Override this method to add result validation, formatting, 
+        or cleanup logic specific to your agent.
         
-        # Return just the output value (not the whole state it will be placed into {output_field} in the state object)
-        return "Your {class_name} result here"
+        Args:
+            result: The result from main processing
+            inputs: Original inputs (for context if needed)
+            
+        Returns:
+            Final processed result that will be stored in graph state
+        """
+        # TODO: Add any result validation, formatting, or cleanup logic
+        # Example:
+        # - Validate result structure
+        # - Format output data
+        # - Add metadata
+        # - Clean up temporary resources
+        
+        return result
+
+{usage_examples_section}

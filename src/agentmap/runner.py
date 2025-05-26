@@ -25,6 +25,8 @@ from agentmap.config.configuration import Configuration
 from agentmap.logging.service import LoggingService
 from agentmap.logging.tracking.execution_tracker import ExecutionTracker 
 from agentmap.services import LLMService, LLMServiceUser
+from agentmap.services.storage.manager import StorageServiceManager
+from agentmap.services.storage.injection import inject_storage_services, requires_storage_services
 
 
 _GRAPH_EXECUTION_LOCK = threading.RLock()
@@ -97,21 +99,24 @@ def autocompile_and_load(
 def build_graph_in_memory(
     graph_name: str, 
     graph_def: Dict[str, Any], 
-    logging_service: LoggingService, # = Provide[ApplicationContainer.logging_service],
-    node_registry_service: NodeRegistryService, # = Provide[ApplicationContainer.node_registry_service],
-    llm_service: LLMService #= Provide[ApplicationContainer.llm_service]    # NEW
+    logging_service: LoggingService,
+    node_registry_service: NodeRegistryService,
+    llm_service: LLMService,
+    storage_service_manager: StorageServiceManager
 ):
     """
-    Build a graph in memory from pre-loaded graph definition with registry injection.
+    Build a graph in memory from pre-loaded graph definition with service injection.
     
     Args:
         graph_name: Name of the graph to build
         graph_def: Pre-loaded graph definition from GraphBuilder
         logging_service: Logging service
         node_registry_service: Node registry service for pre-compilation injection
+        llm_service: LLM service for injection into agents
+        storage_service_manager: Storage service manager for injection into agents
     
     Returns:
-        Compiled graph with pre-injected registries
+        Compiled graph with pre-injected services
     """
     logger = logging_service.get_logger("agentmap.runner")
     logger.debug(f"[BuildGraph] Building graph in memory: {graph_name}")
@@ -146,9 +151,14 @@ def build_graph_in_memory(
         
         agent_instance = agent_cls(name=node.name, prompt=node.prompt or "", context=context)
 
+        # Inject LLM service if agent requires it
         if isinstance(agent_instance, LLMServiceUser):
             agent_instance.llm_service = llm_service
             logger.debug(f"[AgentInit] Injected LLM service into {node.name}")
+        
+        # Inject storage services if agent requires them
+        if requires_storage_services(agent_instance):
+            inject_storage_services(agent_instance, storage_service_manager, logger)
         
         # Add node to the graph (this triggers automatic registry injection for orchestrators)
         assembler.add_node(node.name, agent_instance)
@@ -363,7 +373,8 @@ def run_graph(
     configuration: Configuration = Provide[ApplicationContainer.configuration],
     logging_service: LoggingService = Provide[ApplicationContainer.logging_service],
     node_registry_service: NodeRegistryService = Provide[ApplicationContainer.node_registry_service],
-    llm_service: LLMService = Provide[ApplicationContainer.llm_service]
+    llm_service: LLMService = Provide[ApplicationContainer.llm_service],
+    storage_service_manager: StorageServiceManager = Provide[ApplicationContainer.storage_service_manager]
 ) -> Dict[str, Any]:
     """
     Run a graph with the given initial state.
@@ -466,7 +477,7 @@ def run_graph(
 
                 # NEW: Build graph in memory with pre-compilation registry injection
                 # The registry is built and injected during assembly, not after compilation
-                graph = build_graph_in_memory(graph_name, graph_def, logging_service, node_registry_service, llm_service)
+                graph = build_graph_in_memory(graph_name, graph_def, logging_service, node_registry_service, llm_service, storage_service_manager)
                 
                 # Note: No need to call inject_into_orchestrators here since it's done during assembly
                 logger.debug(f"[RUN] Graph built with pre-compilation registry injection")

@@ -7,7 +7,7 @@ from agentmap.di.containers import ApplicationContainer
 application = ApplicationContainer()
 
 
-def init_for_cli(config_path: Optional[Union[str, Path]] = None) -> ApplicationContainer:
+def initialize_di(config_path: Optional[Union[str, Path]] = None) -> ApplicationContainer:
     """
     Initialize the DI container for CLI usage.
 

@@ -1,290 +1,105 @@
 """
 JSON document storage agent implementation.
 
-This module provides JSON-specific implementations of document storage operations,
-supporting reading from and writing to JSON files with path-based access.
+This module provides a simple base class for JSON agents that delegate
+operations to JSONStorageService, keeping agents basic and focused.
 """
 from __future__ import annotations
 
-import contextlib
-import json
-import os
-from collections.abc import Generator
-from pathlib import Path
-from typing import Any, Dict, List, Optional, TextIO, Union
+from typing import Any, Dict, Optional
 
-from agentmap.agents.builtins.storage.document.base_agent import DocumentStorageAgent
-from agentmap.agents.builtins.storage.document.path_mixin import DocumentPathMixin
+from agentmap.agents.builtins.storage.base_storage_agent import (
+    BaseStorageAgent, log_operation)
+from agentmap.services.storage import DocumentResult, JSONStorageService
+from agentmap.services.storage.protocols import JSONServiceUser
+from agentmap.agents.mixins import StorageErrorHandlerMixin
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class JSONDocumentAgent(DocumentStorageAgent, DocumentPathMixin):
+class JSONDocumentAgent(BaseStorageAgent, StorageErrorHandlerMixin, JSONServiceUser):
     """
     Base class for JSON document storage operations.
     
-    Provides shared functionality for reading and writing JSON documents,
-    with support for path-based access and document queries.
+    Delegates JSON operations to JSONStorageService while providing
+    a simple interface for JSON reader and writer agents.
     """
     
+    def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
+        """
+        Initialize the JSON document agent.
+        
+        Args:
+            name: Name of the agent node
+            prompt: Prompt or instruction
+            context: Additional context including JSON configuration
+        """
+        super().__init__(name, prompt, context)
+        
+        # JSONServiceUser protocol requirement - will be set via dependency injection
+        # or initialized in _initialize_client()
+        self.json_service = None
+    
     def _initialize_client(self) -> None:
-        """No client initialization needed for JSON files."""
-        pass
+        """Initialize JSONStorageService as the client for JSON operations."""
+        self._client = JSONStorageService(self.context)
+        # Set json_service for JSONServiceUser protocol compliance
+        self.json_service = self._client
     
-    @contextlib.contextmanager
-    def _open_json_file(self, file_path: str, mode: str = 'r') -> Generator[TextIO, None, None]:
+    def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
         """
-        Context manager for safely opening JSON files.
+        Validate inputs for JSON operations.
         
         Args:
-            file_path: Path to the JSON file
-            mode: File open mode ('r' for reading, 'w' for writing)
-            
-        Yields:
-            File object
-                
-        Raises:
-            FileNotFoundError: If the file doesn't exist (in read mode)
-            PermissionError: If the file can't be accessed
-            IOError: For other file-related errors
-        """
-        try:
-            # Ensure directory exists for write operations
-            if 'w' in mode:
-                directory = os.path.dirname(os.path.abspath(file_path))
-                os.makedirs(directory, exist_ok=True)
-                
-            with open(file_path, mode, encoding='utf-8') as f:
-                yield f
-        except FileNotFoundError:
-            if 'r' in mode:
-                self.log_debug(f"JSON file not found: {file_path}")
-                raise
-            else:
-                # For write mode, create the file
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    yield f
-        except (PermissionError, IOError) as e:
-            self.log_error(f"File access error for {file_path}: {str(e)}")
-            raise
-    
-    def _read_json_file(self, file_path: str) -> Any:
-        """
-        Read and parse a JSON file.
-        
-        Args:
-            file_path: Path to the JSON file
-            
-        Returns:
-            Parsed JSON data
+            inputs: Input dictionary
             
         Raises:
-            FileNotFoundError: If the file doesn't exist
-            ValueError: If the file contains invalid JSON
+            ValueError: If inputs are invalid
         """
-        try:
-            with self._open_json_file(file_path, 'r') as f:
-                return json.load(f)
-        except FileNotFoundError:
-            self.log_debug(f"JSON file not found: {file_path}")
-            raise FileNotFoundError(f"File not found: {file_path}")
-        except json.JSONDecodeError as e:
-            error_msg = f"Invalid JSON in {file_path}: {str(e)}"
-            self.log_error(error_msg)
-            raise ValueError(error_msg)
+        super()._validate_inputs(inputs)
+        
+        collection = self.get_collection(inputs)
+        if not collection:
+            raise ValueError("Missing required 'collection' parameter")
+        
+        # Check if file path has JSON extension (warning only)
+        if not collection.lower().endswith('.json'):
+            self.log_warning(f"Collection path does not end with .json: {collection}")
     
-    def _write_json_file(self, file_path: str, data: Any, indent: int = 2) -> None:
+    def _handle_operation_error(
+        self, 
+        error: Exception, 
+        collection: str, 
+        inputs: Dict[str, Any]
+    ) -> DocumentResult:
         """
-        Write data to a JSON file.
+        Handle JSON operation errors.
         
         Args:
-            file_path: Path to the JSON file
-            data: Data to write
-            indent: JSON indentation level
-            
-        Raises:
-            PermissionError: If the file can't be written
-            TypeError: If the data contains non-serializable objects
-        """
-        try:
-            with self._open_json_file(file_path, 'w') as f:
-                json.dump(data, f, indent=indent)
-            self.log_debug(f"Successfully wrote to {file_path}")
-        except TypeError as e:
-            error_msg = f"Cannot serialize to JSON: {str(e)}"
-            self.log_error(error_msg)
-            raise ValueError(error_msg)
-    
-    def _ensure_document_exists(self, collection: str, document_id: str) -> bool:
-        """
-        Check if a document exists in the JSON file.
-        
-        Args:
-            collection: Path to the JSON file
-            document_id: Document ID to check
+            error: The exception that occurred
+            collection: Collection identifier
+            inputs: Input dictionary
             
         Returns:
-            True if the document exists, False otherwise
+            DocumentResult with error information
         """
-        try:
-            data = self._read_json_file(collection)
-            
-            # Check different JSON structures
-            if isinstance(data, dict):
-                return document_id in data
-            elif isinstance(data, list):
-                return any(
-                    isinstance(item, dict) and 
-                    item.get("id") == document_id 
-                    for item in data
-                )
-            return False
-        except (FileNotFoundError, ValueError):
-            return False
-    
-    def _apply_document_query(self, data: Any, query: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Apply query filtering to document data.
-        
-        Args:
-            data: Document data
-            query: Query parameters
-            
-        Returns:
-            Dict with filtered data and metadata
-        """
-        # Handle empty data or query
-        if data is None or not query:
-            return {"data": data, "count": 0, "is_collection": False}
-            
-        # Handle different data structures
-        if isinstance(data, list):
-            return self._filter_list(data, query)
-        elif isinstance(data, dict):
-            return self._filter_dict(data, query)
-            
-        # Other data types can't be filtered
-        return {"data": data, "count": 0, "is_collection": False}
-    
-    def _filter_list(self, data: List, query: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Filter a list of items based on query parameters.
-        
-        Args:
-            data: List of items
-            query: Query parameters
-            
-        Returns:
-            Dict with filtered data and metadata
-        """
-        # Extract special query parameters
-        limit = query.pop("limit", None)
-        offset = query.pop("offset", 0)
-        sort_field = query.pop("sort", None)
-        sort_order = query.pop("order", "asc").lower()
-        
-        # Apply field filtering
-        result = data
-        if query:  # Only filter if there are query parameters remaining
-            result = [
-                item for item in result 
-                if isinstance(item, dict) and 
-                all(
-                    item.get(field) == value 
-                    for field, value in query.items()
-                )
-            ]
-        
-        # Apply sorting
-        if sort_field and result:
-            reverse = (sort_order == "desc")
-            result.sort(
-                key=lambda x: x.get(sort_field) if isinstance(x, dict) else None,
-                reverse=reverse
+        if isinstance(error, FileNotFoundError):
+            return DocumentResult(
+                success=False,
+                file_path=collection,
+                error=f"JSON file not found: {collection}"
+            )
+        elif isinstance(error, ValueError) and "Invalid JSON" in str(error):
+            return DocumentResult(
+                success=False,
+                file_path=collection,
+                error=f"Invalid JSON in file: {collection}"
             )
         
-        # Apply pagination
-        if offset and isinstance(offset, int) and offset > 0:
-            result = result[offset:]
-            
-        if limit and isinstance(limit, int) and limit > 0:
-            result = result[:limit]
-            
-        return {
-            "data": result,
-            "count": len(result),
-            "is_collection": True
-        }
-    
-    def _filter_dict(self, data: Dict, query: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Filter a dictionary based on query parameters.
-        
-        Args:
-            data: Dictionary
-            query: Query parameters
-            
-        Returns:
-            Dict with filtered data and metadata
-        """
-        # Extract special query parameters
-        limit = query.pop("limit", None)
-        offset = query.pop("offset", 0)
-        
-        # Filter based on field values
-        result = {}
-        for key, value in data.items():
-            if isinstance(value, dict) and all(
-                value.get(field) == query_value 
-                for field, query_value in query.items()
-            ):
-                result[key] = value
-        
-        # Apply pagination to keys
-        keys = list(result.keys())
-        
-        if offset and isinstance(offset, int) and offset > 0:
-            keys = keys[offset:]
-            
-        if limit and isinstance(limit, int) and limit > 0:
-            keys = keys[:limit]
-            
-        # Rebuild filtered dictionary
-        if offset or limit:
-            result = {k: result[k] for k in keys}
-            
-        return {
-            "data": result,
-            "count": len(result),
-            "is_collection": True
-        }
-        
-    def _apply_document_path(self, data: Any, path: str) -> Any:
-        """
-        Apply a path to extract data from a document.
-        
-        Args:
-            data: Document data
-            path: Path to extract
-            
-        Returns:
-            Data at the specified path
-        """
-        # Use the DocumentPathMixin implementation
-        return self._apply_path(data, path)
-    
-    def _update_document_path(self, data: Any, path: str, value: Any) -> Any:
-        """
-        Update data at a specific path.
-        
-        Args:
-            data: Document data
-            path: Path to update
-            value: New value
-            
-        Returns:
-            Updated document
-        """
-        # Use the DocumentPathMixin implementation
-        return self._update_path(data, path, value)
+        return self._handle_storage_error(
+            error,
+            "JSON operation",
+            collection,
+            file_path=collection
+        )

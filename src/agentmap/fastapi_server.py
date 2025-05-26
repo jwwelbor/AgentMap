@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 
-from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
+from agentmap.agents.features import is_llm_enabled, is_storage_enabled
 from agentmap.runner import run_graph
 
 app = FastAPI(title="AgentMap Graph API")
@@ -40,8 +40,8 @@ def list_available_agents():
     """Return information about available agents in this environment."""
     return {
         "core_agents": True,  # Always available
-        "llm_agents": HAS_LLM_AGENTS,
-        "storage_agents": HAS_STORAGE_AGENTS,
+        "llm_agents": is_llm_enabled(),
+        "storage_agents": is_storage_enabled(),
         "install_instructions": {
             "llm": "pip install agentmap[llm]",
             "storage": "pip install agentmap[storage]",

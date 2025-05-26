@@ -1,8 +1,8 @@
 """
 CSV reader agent implementation.
 
-This module provides an agent for reading data from CSV files,
-with support for filtering, querying, and formatting results.
+This module provides a simple agent for reading data from CSV files
+that delegates to CSVStorageService for the actual implementation.
 """
 from __future__ import annotations
 
@@ -18,49 +18,41 @@ logger = get_logger(__name__)
 
 
 class CSVReaderAgent(CSVAgent, ReaderOperationsMixin):
-    """Agent for reading data from CSV files."""
+    """Simple agent for reading data from CSV files via CSVStorageService."""
     
-    def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> Any:
         """
-        Execute read operation for CSV files.
+        Execute read operation for CSV files by delegating to CSVStorageService.
         
         Args:
             collection: CSV file path
             inputs: Input dictionary
             
         Returns:
-            Formatted CSV data
+            CSV data in requested format
         """
         self.log_info(f"Reading from {collection}")
         
-        # Check if file exists
-        if not self._check_file_exists(collection):
-            self._handle_error("File Not Found", f"CSV file not found: {collection}")
+        # Extract parameters for the service
+        document_id = inputs.get("document_id") or inputs.get("id")
+        query = inputs.get("query")
+        path = inputs.get("path")
         
-        try:
-            # Read CSV with pandas
-            df = self._read_csv(collection)
-            
-            # Apply filters
-            df = self._apply_filters(df, inputs)
-            
-            # Handle single record case
-            return_single = (
-                inputs.get("id") is not None and 
-                len(df) == 1 and 
-                not inputs.get("return_list", False)
-            )
-            
-            if return_single:
-                # Return the first (and only) row as a dictionary
-                return df.iloc[0].to_dict()
-            
-            # Format output based on requested format
-            output_format = inputs.get("format", "records")
-            return self._format_data_for_output(df, output_format)
-            
-        except Exception as e:
-            self._handle_error("CSV Processing Error", f"Error processing {collection}", e)
+        # Extract format and other CSV-specific parameters
+        output_format = inputs.get("format", "records")
+        id_field = inputs.get("id_field", "id")
+        
+        # Call the CSV storage service
+        result = self.csv_service.read(
+            collection=collection,
+            document_id=document_id,
+            query=query,
+            path=path,
+            format=output_format,
+            id_field=id_field
+        )
+        
+        return result
     
     def _log_operation_start(self, collection: str, inputs: Dict[str, Any]) -> None:
         """

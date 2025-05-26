@@ -2,7 +2,6 @@
 from dependency_injector import containers, providers
 from agentmap.config.base import load_config
 from agentmap.config.configuration import Configuration
-from agentmap.logging.service import LoggingService
 
 class ApplicationContainer(containers.DeclarativeContainer):
     """Main application container - flat structure."""
@@ -20,13 +19,23 @@ class ApplicationContainer(containers.DeclarativeContainer):
         config_data
     )
     
-    # Logging setup
+    # Logging setup - create logging service directly
+    def _create_logging_service(config):
+        """Create logging service with safe configuration."""
+        try:
+            if config is None:
+                logging_config = {}
+            else:
+                logging_config = config.get_section("logging") or {}
+        except Exception:
+            logging_config = {}
+        
+        from agentmap.logging.service import LoggingService
+        return LoggingService(logging_config)
+    
     logging_service = providers.Singleton(
-        LoggingService,
-        providers.Factory(
-            lambda cfg: cfg.get_section("logging") if cfg else {},
-            configuration
-        )
+        _create_logging_service,
+        configuration
     )
     
     # LLM Service - use lazy factory import to avoid circular dependency
@@ -49,6 +58,18 @@ class ApplicationContainer(containers.DeclarativeContainer):
     
     node_registry_service = providers.Singleton(
         _create_node_registry_service,
+        configuration,
+        logging_service
+    )
+    
+    # Storage Service Manager - use lazy factory import to avoid circular dependency
+    def _create_storage_service_manager(config, logger):
+        # Import here to avoid circular dependency
+        from agentmap.services.storage.manager import StorageServiceManager
+        return StorageServiceManager(config, logger)
+    
+    storage_service_manager = providers.Singleton(
+        _create_storage_service_manager,
         configuration,
         logging_service
     )

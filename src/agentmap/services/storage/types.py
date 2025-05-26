@@ -110,12 +110,25 @@ class StorageConfig:
     options: Optional[Dict[str, Any]] = None
     timeout: Optional[int] = None
     retry_attempts: Optional[int] = None
+    cache_enabled: Optional[bool] = None
     
     def get_option(self, key: str, default: Any = None) -> Any:
         """Get a configuration option with fallback."""
         if self.options:
             return self.options.get(key, default)
         return default
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'StorageConfig':
+        """Create config from dictionary."""
+        return cls(
+            provider=data.get("provider", ""),
+            connection_string=data.get("connection_string"),
+            options=data.get("options"),
+            timeout=data.get("timeout"),
+            retry_attempts=data.get("retry_attempts"),
+            cache_enabled=data.get("cache_enabled")
+        )
 
 
 # Storage-specific exception classes
@@ -149,6 +162,27 @@ class StoragePermissionError(StorageError):
 
 class StorageValidationError(StorageError):
     """Exception raised when storage data validation fails."""
+    pass
+
+
+# Service-specific exceptions
+class StorageServiceError(StorageError):
+    """Base exception for storage service errors."""
+    pass
+
+
+class StorageProviderError(StorageServiceError):
+    """Error from storage provider."""
+    pass
+
+
+class StorageServiceConfigurationError(StorageServiceError):
+    """Storage service configuration error."""
+    pass
+
+
+class StorageServiceNotAvailableError(StorageServiceError):
+    """Storage service is not available or not initialized."""
     pass
 
 
