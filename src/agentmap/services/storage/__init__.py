@@ -65,12 +65,22 @@ if TYPE_CHECKING:
     from agentmap.services.storage.manager import StorageServiceManager
 
 
-# Import implementations for auto-registration
-try:
-    from .implementations import register_all_providers
-except ImportError:
-    # Implementations module not available
-    register_all_providers = None
+def register_all_providers(manager: 'StorageServiceManager') -> None:
+    """
+    Register all available storage service providers.
+    
+    This function auto-registers all concrete storage service implementations
+    with the storage service manager.
+    
+    Args:
+        manager: StorageServiceManager instance to register providers with
+    """
+    # Register services
+    manager.register_provider("csv", CSVStorageService)
+    manager.register_provider("json", JSONStorageService)
+    manager.register_provider("memory", MemoryStorageService)
+    manager.register_provider("file", FileStorageService)
+    #manager.register_provider("firebase", FirebaseStorageService)
 
 __all__ = [
     # Core types
