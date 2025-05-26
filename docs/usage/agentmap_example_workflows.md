@@ -44,9 +44,9 @@ A conversational workflow that maintains memory between interactions:
 
 ```csv
 GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
-ChatFlow,UserInput,,{"memory":{"type":"buffer","memory_key":"chat_memory"}},Input,Process,ErrorHandler,"",user_message,Enter your message:
+ChatFlow,UserInput,,{"memory_key":"chat_memory","max_memory_messages":10},Input,Process,ErrorHandler,"",user_message,Enter your message:
 ChatFlow,Process,,Process user input,Echo,Respond,ErrorHandler,"user_message|chat_memory",processed_input,
-ChatFlow,Respond,,Generate response,OpenAI,Format,ErrorHandler,"processed_input|chat_memory",ai_response,"You are a helpful assistant. User: {processed_input}"
+ChatFlow,Respond,,Generate response,openai,Format,ErrorHandler,"processed_input|chat_memory",ai_response,"You are a helpful assistant. User: {processed_input}"
 ChatFlow,Format,,Format the response,Default,UserInput,ErrorHandler,"ai_response|chat_memory",formatted_response,"Assistant: {ai_response}"
 ChatFlow,ErrorHandler,,Handle errors,Echo,UserInput,,"error",error_message,Error: {error}
 ```
@@ -83,11 +83,11 @@ A workflow for processing and analyzing data:
 
 ```csv
 GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
-DataFlow,LoadData,,Load data from CSV,CSVReader,Validate,ErrorHandler,"collection",data_raw,
+DataFlow,LoadData,,Load data from CSV,csv_reader,Validate,ErrorHandler,"collection",data_raw,
 DataFlow,Validate,,Validate data structure,Branching,Transform,ErrorHandler,"data_raw",validation_result,
 DataFlow,Transform,,Transform data,Default,Analyze,ErrorHandler,"data_raw",data_transformed,"Transform raw data"
-DataFlow,Analyze,,Analyze transformed data,OpenAI,SaveResults,ErrorHandler,"data_transformed",analysis_results,"Analyze this data and provide insights: {data_transformed}"
-DataFlow,SaveResults,,Save results to CSV,CSVWriter,End,ErrorHandler,"analysis_results",save_result,
+DataFlow,Analyze,,Analyze transformed data,openai,SaveResults,ErrorHandler,"data_transformed",analysis_results,"Analyze this data and provide insights: {data_transformed}"
+DataFlow,SaveResults,,Save results to CSV,csv_writer,End,ErrorHandler,"analysis_results",save_result,
 DataFlow,End,,Workflow complete,Echo,,,"save_result",final_message,"Analysis complete and saved"
 DataFlow,ErrorHandler,,Handle processing errors,Echo,End,,"error",error_message,"Error during data processing: {error}"
 ```
@@ -108,14 +108,14 @@ A workflow that interacts with external services:
 GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
 APIFlow,GetRequest,,Get API request details,Input,Prepare,ErrorHandler,"",request_input,"Enter search query:"
 APIFlow,Prepare,,Prepare API request,Default,MakeRequest,ErrorHandler,"request_input",api_params,"Preparing API request"
-APIFlow,MakeRequest,,Make API call,HttpClient,ProcessResponse,ErrorHandler,"api_params",api_response,"https://api.example.com/search"
+APIFlow,MakeRequest,,Make API call,RestClient,ProcessResponse,ErrorHandler,"api_params",api_response,"https://api.example.com/search"
 APIFlow,ProcessResponse,,Process API response,Default,Format,ErrorHandler,"api_response",processed_data,"Extracting relevant data"
 APIFlow,Format,,Format results for display,Default,End,ErrorHandler,"processed_data",formatted_results,"Formatting results"
 APIFlow,End,,Show results,Echo,,,"formatted_results",display_output,
 APIFlow,ErrorHandler,,Handle API errors,Echo,End,,"error",error_message,"API Error: {error}"
 ```
 
-Note: This example assumes an HttpClient agent type, which would be a custom implementation.
+Note: This example assumes a RestClient agent type, which would be a custom implementation for making HTTP requests. You would need to implement this agent to handle REST API calls.
 
 ## Parallel Processing with Join
 
@@ -124,17 +124,52 @@ A workflow demonstrating parallel processing (functional but not explicit in CSV
 ```csv
 GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
 ParallelFlow,Start,,Start the workflow,Echo,Split,,"input",initial_data,
-ParallelFlow,Split,,Split into parallel tasks,func:split_tasks,,,initial_data,tasks,"Split the tasks"
+ParallelFlow,Split,,Split into parallel tasks,Default,ProcessA|ProcessB|ProcessC,ErrorHandler,"initial_data",tasks,"Split the tasks"
 ParallelFlow,ProcessA,,Process first branch,Default,Join,ErrorHandler,"tasks.a",result_a,"Processing branch A"
 ParallelFlow,ProcessB,,Process second branch,Default,Join,ErrorHandler,"tasks.b",result_b,"Processing branch B"
 ParallelFlow,ProcessC,,Process third branch,Default,Join,ErrorHandler,"tasks.c",result_c,"Processing branch C"
-ParallelFlow,Join,,Join results,func:join_results,Summarize,ErrorHandler,"result_a|result_b|result_c",joined_results,"Join the results"
+ParallelFlow,Join,,Join results,Default,Summarize,ErrorHandler,"result_a|result_b|result_c",joined_results,"Join the results"
 ParallelFlow,Summarize,,Summarize all results,Default,End,ErrorHandler,"joined_results",summary,"Summarize the results"
 ParallelFlow,End,,Workflow complete,Echo,,,"summary",final_output,
 ParallelFlow,ErrorHandler,,Handle processing errors,Echo,End,,"error",error_message,"Error during processing: {error}"
 ```
 
-This workflow uses custom functions (`split_tasks` and `join_results`) to implement parallel processing and synchronization.
+This workflow uses a combination of parallel paths through the graph and field references to implement parallel processing and synchronization. Note that the actual implementation is based on the graph structure rather than custom functions.
 
+## Custom Function Integration
+
+For more advanced functionality, you can integrate custom functions with your workflows:
+
+```csv
+GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+FunctionFlow,Start,,Start the workflow,Echo,Process,,"input",initial_data,
+FunctionFlow,Process,,Apply custom function,func:custom_processor,Format,ErrorHandler,"initial_data",processed_data,
+FunctionFlow,Format,,Format results,Default,End,ErrorHandler,"processed_data",formatted_results,"Formatting: {processed_data}"
+FunctionFlow,End,,End workflow,Echo,,,"formatted_results",final_output,
+FunctionFlow,ErrorHandler,,Handle errors,Echo,End,,"error",error_message,"Error: {error}"
+```
+
+This workflow uses a custom function reference (`func:custom_processor`) which should be implemented in your functions directory. To implement this function:
+
+```python
+# In your functions directory (e.g., functions/custom_processor.py)
+def custom_processor(inputs):
+    """
+    Process input data with custom logic.
+    
+    Args:
+        inputs: Dictionary containing input values
+        
+    Returns:
+        Processed data
+    """
+    # Get the input data
+    data = inputs.get("initial_data", {})
+    
+    # Apply custom processing logic
+    result = transform_data(data)  # Your custom transformation
+    
+    return result
+```
 
 ---

@@ -63,7 +63,7 @@ class StorageServiceManager:
         """
         try:
             # Import the auto-registration function
-            from agentmap.services.storage.implementations import register_all_providers
+            from agentmap.services.storage import register_all_providers
             
             # Register all available providers
             register_all_providers(self)
