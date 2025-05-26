@@ -107,8 +107,16 @@ class ConfigManager:
                 logger.debug("[ConfigManager] Returning cached configuration")
                 return self._config
             
+            # Handle None config_path by using defaults only
+            if config_path is None:
+                logger.debug("[ConfigManager] No config path provided, using defaults only")
+                # Get default configuration
+                defaults = get_default_config()
+                self._config = defaults
+                return self._config
+            
             # Otherwise, load the configuration
-            config_file = Path(config_path) #if config_path else DEFAULT_CONFIG_FILE
+            config_file = Path(config_path)
             self._config_path = config_path
             
             # Log detailed info about config loading

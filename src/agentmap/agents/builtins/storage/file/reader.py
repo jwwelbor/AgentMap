@@ -12,11 +12,12 @@ from typing import Any, Dict, List, Optional, Union
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, log_operation)
-from agentmap.services.storage import DocumentResult
+from agentmap.services.storage import DocumentResult, FileStorageService
+from agentmap.services.storage.protocols import FileServiceUser
 from agentmap.agents.mixins import ReaderOperationsMixin, StorageErrorHandlerMixin
 
 
-class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandlerMixin):
+class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandlerMixin, FileServiceUser):
     """
     Enhanced document reader agent using LangChain document loaders.
     
@@ -42,12 +43,18 @@ class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandl
         self.should_split = context.get("should_split", False)
         self.include_metadata = context.get("include_metadata", True)
         
+        # FileServiceUser protocol requirement - will be set via dependency injection
+        # or initialized in _initialize_client()
+        self.file_service = None
+        
         # For testing - allows a test to inject a mock loader
         self._test_loader = None
     
     def _initialize_client(self) -> None:
-        """No client needed for filesystem operations."""
-        pass
+        """Initialize FileStorageService as the client for file operations."""
+        self._client = FileStorageService(self.context)
+        # Set file_service for FileServiceUser protocol compliance
+        self.file_service = self._client
     
     def _log_operation_start(self, collection: str, inputs: Dict[str, Any]) -> None:
         """
@@ -79,42 +86,21 @@ class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandl
     
     def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> Any:
         """
-        Execute read operation for file.
-        
-        Args:
-            collection: File path
-            inputs: Input dictionary
-            
-        Returns:
-            Read operation result
+        Execute read operation for file using FileStorageService.
         """
-        # Extract parameters
         document_id = inputs.get("document_id")
         query = inputs.get("query")
         path = inputs.get("path")
         output_format = inputs.get("format", "default")
-        
-        # Log the read operation
-        self._log_read_operation(collection, document_id, query, path)
-        
-        # Read the document
-        documents = self._read_document(collection, document_id, query, path)
-        
-        # Format the result based on requested format
-        if output_format == "raw":
-            # Just return the raw documents
-            return documents
-        elif output_format == "text":
-            # Return just the text content
-            if isinstance(documents, list):
-                return "\n\n".join(doc.page_content for doc in documents if hasattr(doc, 'page_content'))
-            elif hasattr(documents, 'page_content'):
-                return documents.page_content
-            else:
-                return str(documents)
-        else:
-            # Default format - return structured result
-            return self._format_result(documents, collection)
+        # Call the FileStorageService read method
+        result = self.file_service.read(
+            collection=collection,
+            document_id=document_id,
+            query=query,
+            path=path,
+            format=output_format
+        )
+        return result
     
     def _handle_operation_error(self, error: Exception, collection: str, inputs: Dict[str, Any]) -> DocumentResult:
         """
@@ -140,279 +126,4 @@ class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandl
             "file read",
             collection,
             file_path=collection
-        )
-    
-    def _read_document(
-        self, 
-        file_path: str, 
-        document_id: Optional[str] = None, 
-        query: Optional[Dict[str, Any]] = None, 
-        path: Optional[str] = None
-    ) -> Any:
-        """
-        Read a document using LangChain document loaders.
-        
-        Args:
-            file_path: Path to the file
-            document_id: Optional section ID
-            query: Optional query parameters
-            path: Optional path within document
-            
-        Returns:
-            Document content
-        """
-        # Use test loader if provided (for testing)
-        if self._test_loader:
-            loader = self._test_loader
-        else:
-            # Validate file exists
-            file_path = os.path.expanduser(file_path)
-            if not os.path.exists(file_path):
-                raise FileNotFoundError(f"File not found: {file_path}")
-            
-            # Get appropriate loader
-            loader = self._get_loader(file_path)
-        
-        # Load documents
-        try:
-            documents = loader.load()
-            
-            # Apply document ID filter if provided
-            if document_id:
-                documents = self._filter_by_id(documents, document_id)
-                if not documents:
-                    return None
-            
-            # Apply query filter if provided
-            if query:
-                documents = self._apply_query_filter(documents, query)
-            
-            # Apply path extraction if provided
-            if path:
-                return self._apply_document_path(documents, path)
-            
-            return documents
-        except Exception as e:
-            self.log_error(f"Error loading {file_path}: {str(e)}")
-            raise ValueError(f"Error loading {file_path}: {str(e)}")
-    
-    def _get_loader(self, file_path: str) -> Any:
-        """
-        Select appropriate LangChain document loader based on file extension.
-        
-        Args:
-            file_path: Path to the document file
-            
-        Returns:
-            LangChain document loader instance
-            
-        Raises:
-            ValueError: For unsupported file types
-            ImportError: When dependencies for a file type aren't installed
-        """
-        file_path = file_path.lower()
-        
-        # Try using the new import paths first
-        try:
-           
-            if file_path.endswith('.txt'):
-                from langchain_community.document_loaders import TextLoader
-                return TextLoader(file_path)
-            elif file_path.endswith('.pdf'):
-                from langchain_community.document_loaders import PyPDFLoader
-                return PyPDFLoader(file_path)
-            elif file_path.endswith('.md'):
-                from langchain_community.document_loaders import UnstructuredMarkdownLoader
-                return UnstructuredMarkdownLoader(file_path)
-            elif file_path.endswith('.html') or file_path.endswith('.htm'):
-                from langchain_community.document_loaders import UnstructuredHTMLLoader
-                return UnstructuredHTMLLoader(file_path)
-            elif file_path.endswith('.docx') or file_path.endswith('.doc'):
-                from langchain_community.document_loaders import UnstructuredWordDocumentLoader
-                return UnstructuredWordDocumentLoader(file_path)
-            elif file_path.endswith('.csv'):
-                from langchain_community.document_loaders import CSVLoader
-                return CSVLoader(file_path)
-            else:
-                # Default to text loader for unknown types
-                return TextLoader(file_path)
-        except ImportError as e:
-            # Create a simple loader that returns a document with the file content
-            self.log_warning(f"LangChain document loaders not available ({e})")
-            return self._create_fallback_loader(file_path)
-        except Exception as e:
-            raise ValueError(f"Error creating loader for {file_path}: {e}")
-    
-    def _create_fallback_loader(self, file_path: str) -> Any:
-        """
-        Create a fallback loader when LangChain is not available.
-        
-        Args:
-            file_path: Path to the document file
-            
-        Returns:
-            Simple loader object with a load method
-        """
-        # Define a simple Document class for fallback
-        class SimpleDocument:
-            def __init__(self, content, metadata=None):
-                self.page_content = content
-                self.metadata = metadata or {"source": file_path}
-        
-        # Create a simple loader
-        class FallbackLoader:
-            def __init__(self, file_path):
-                self.file_path = file_path
-                
-            def load(self):
-                with open(self.file_path, 'r') as f:
-                    content = f.read()
-                return [SimpleDocument(content)]
-        
-        return FallbackLoader(file_path)
-    
-    def _filter_by_id(self, documents: List[Any], document_id: str) -> List[Any]:
-        """
-        Filter documents by ID or index.
-        
-        Args:
-            documents: List of documents
-            document_id: Document ID or index
-            
-        Returns:
-            Filtered document list
-        """
-        # Try to filter by metadata ID
-        filtered = [doc for doc in documents if doc.metadata.get('id') == document_id]
-        
-        # If no matches by ID, try as index if it's numeric
-        if not filtered and document_id.isdigit():
-            idx = int(document_id)
-            if 0 <= idx < len(documents):
-                return [documents[idx]]
-        
-        return filtered if filtered else []
-    
-    def _apply_document_path(self, documents: Union[List[Any], Any], path: str) -> Any:
-        """
-        Extract content from document(s) at specified path.
-        
-        Args:
-            documents: Document or list of documents
-            path: Path expression (e.g., "metadata.source" or "0.content")
-            
-        Returns:
-            Content at specified path
-        """
-        if not path:
-            return documents
-            
-        result = []
-        
-        # Handle single document case
-        if not isinstance(documents, list):
-            documents = [documents]
-            
-        for doc in documents:
-            # Check for metadata paths
-            if path.startswith("metadata.") and hasattr(doc, "metadata"):
-                meta_key = path.split(".", 1)[1]
-                if meta_key in doc.metadata:
-                    result.append(doc.metadata[meta_key])
-            # Default to page content
-            elif hasattr(doc, "page_content"):
-                result.append(doc.page_content)
-            else:
-                result.append(doc)
-        
-        return result
-    
-    def _apply_query_filter(self, documents: List[Any], query: Union[Dict[str, Any], str]) -> List[Any]:
-        """
-        Filter documents based on query parameters.
-        
-        Args:
-            documents: List of documents
-            query: Query string or dictionary
-            
-        Returns:
-            Filtered document list
-        """
-        if not documents:
-            return []
-            
-        filtered_docs = []
-        
-        if isinstance(query, dict):
-            # Filter by metadata
-            for doc in documents:
-                if not hasattr(doc, "metadata"):
-                    continue
-                    
-                matches = True
-                for k, v in query.items():
-                    if doc.metadata.get(k) != v:
-                        matches = False
-                        break
-                        
-                if matches:
-                    filtered_docs.append(doc)
-        
-        elif isinstance(query, str):
-            # Simple text search in content
-            for doc in documents:
-                if not hasattr(doc, "page_content"):
-                    continue
-                    
-                if query.lower() in doc.page_content.lower():
-                    filtered_docs.append(doc)
-        
-        return filtered_docs
-    
-    def _format_result(self, documents: Any, file_path: str) -> DocumentResult:
-        """
-        Format the read result as a DocumentResult.
-        
-        Args:
-            documents: Documents read from file
-            file_path: Path to the file
-            
-        Returns:
-            Structured result object
-        """
-        # Convert documents to a serializable format
-        formatted_docs = []
-        
-        if isinstance(documents, list):
-            for i, doc in enumerate(documents):
-                if hasattr(doc, "page_content"):
-                    # LangChain document
-                    item = {
-                        "content": doc.page_content
-                    }
-                    # Include metadata if requested
-                    if self.include_metadata and hasattr(doc, "metadata"):
-                        item["metadata"] = doc.metadata
-                    formatted_docs.append(item)
-                else:
-                    # Other types
-                    formatted_docs.append(str(doc))
-        elif hasattr(documents, "page_content"):
-            # Single LangChain document
-            formatted_docs = {
-                "content": documents.page_content
-            }
-            if self.include_metadata and hasattr(documents, "metadata"):
-                formatted_docs["metadata"] = documents.metadata
-        else:
-            # Other types
-            formatted_docs = documents
-        
-        # Build the result object
-        return DocumentResult(
-            success=True,
-            file_path=file_path,
-            data=formatted_docs,
-            count=len(formatted_docs) if isinstance(formatted_docs, list) else 1,
-            is_collection=isinstance(formatted_docs, list)
         )

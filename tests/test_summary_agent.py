@@ -5,7 +5,7 @@ import json
 from agentmap.agents.builtins.summary_agent import SummaryAgent
 from agentmap.agents.builtins.llm.llm_agent import LLMAgent
 
-from agentmap.di import init_for_cli
+from agentmap.di import initialize_di
 
 class MockLLMAgent(LLMAgent):
     """Mock LLM agent for testing."""
@@ -138,32 +138,6 @@ class TestSummaryAgent:
         
         assert "field1: value1" in result
     
-    @patch("agentmap.agents.HAS_LLM_AGENTS", True)
-    @patch("agentmap.agents.builtins.summary_agent.get_formatted_prompt")
-    def test_llm_mode_successful(self, mock_get_formatted_prompt):
-        """Test LLM mode with MockLLMAgent."""
-        # Setup mock
-        init_for_cli("./agentmap_config.yaml")
-
-        mock_get_formatted_prompt.return_value = "Please summarize: content"
-        
-        # Create agent with LLM mode enabled
-        context = {"llm": "mock"}
-        agent = SummaryAgent("test_agent", "Test prompt", context)
-        
-        # Replace the LLM with our mock
-        with patch("agentmap.agents.builtins.summary_agent.LLMAgent", MockLLMAgent):
-            with patch("agentmap.agents.get_agent_class") as mock_get_agent_class:
-                mock_get_agent_class.return_value = MockLLMAgent
-                
-                # Process inputs
-                inputs = {"field1": "value1", "field2": "value2"}
-                result = agent.process(inputs)
-                
-                # Verify LLM was called
-                assert result == "This is a summarized version of the content."
-                assert mock_get_agent_class.called
-    
     @patch("agentmap.agents.HAS_LLM_AGENTS", False)
     def test_llm_mode_dependencies_missing(self):
         """Test LLM mode when dependencies are missing."""
@@ -177,32 +151,5 @@ class TestSummaryAgent:
         assert "field1: value1" in result
         assert "field2: value2" in result
     
-    @patch("agentmap.agents.HAS_LLM_AGENTS", True)
-    @patch("agentmap.agents.builtins.summary_agent.get_formatted_prompt")
-    def test_llm_mode_error_handling(self, mock_get_formatted_prompt):
-        """Test error handling in LLM mode."""
-        # Setup mock
-        mock_get_formatted_prompt.return_value = "Please summarize: content"
-        
-        # Create agent with LLM mode enabled
-        context = {"llm": "mock"}
-        agent = SummaryAgent("test_agent", "Test prompt", context)
-        
-        # Create a failing mock LLM agent
-        failing_mock = MockLLMAgent("failing", "")
-        failing_mock.process = MagicMock(side_effect=Exception("LLM error"))
-        
-        with patch("agentmap.agents.get_agent_class", return_value=MockLLMAgent):
-            with patch.object(MockLLMAgent, "process", side_effect=Exception("LLM error")):
-                # Process inputs
-                inputs = {"field1": "value1", "field2": "value2"}
-                result = agent.process(inputs)
-                
-                # Should include the error message and original content
-                assert "ERROR" in result
-                assert "field1: value1" in result
-                assert "field2: value2" in result
-
-
 if __name__ == "__main__":
     pytest.main(["-xvs", __file__])

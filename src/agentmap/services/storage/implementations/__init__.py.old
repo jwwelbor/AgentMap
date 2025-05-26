@@ -1,0 +1,41 @@
+"""
+Storage service implementations for AgentMap.
+
+This module provides concrete implementations of storage services
+and auto-registration functionality.
+"""
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agentmap.services.storage.manager import StorageServiceManager
+
+from ..csv_service import CSVStorageService
+from ..json_service import JSONStorageService
+from ..memory_service import MemoryStorageService
+from ..file_service import FileStorageService
+# from ..firebase_service import FirebaseStorageService
+
+# Export all service implementations
+__all__ = [
+    'CSVStorageService',
+    'JSONStorageService',
+    'register_all_providers',
+]
+
+
+def register_all_providers(manager: 'StorageServiceManager') -> None:
+    """
+    Register all available storage service providers.
+    
+    This function auto-registers all concrete storage service implementations
+    with the storage service manager.
+    
+    Args:
+        manager: StorageServiceManager instance to register providers with
+    """
+    # Register services
+    manager.register_provider("csv", CSVStorageService)
+    manager.register_provider("json", JSONStorageService)
+    manager.register_provider("memory", MemoryStorageService)
+    manager.register_provider("file", FileStorageService)
+    #manager.register_provider("firebase", FirebaseStorageService)

@@ -9,7 +9,7 @@ from agentmap.agents.base_agent import BaseAgent
 from agentmap.agents.registry import register_agent, get_agent_class, get_agent_map
 from agentmap.agents.loader import AgentLoader, create_agent
 from agentmap.logging import get_logger
-from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS, enable_llm_agents, enable_storage_agents
+from agentmap.agents.features import enable_llm_agents, enable_storage_agents, is_llm_enabled, is_storage_enabled
 
 _logger = get_logger("agentmap.agents")
 
@@ -178,8 +178,6 @@ __all__ = [
     'register_agent',
     'get_agent_map',
     'REGISTERED_AGENTS',
-    'HAS_LLM_AGENTS',
-    'HAS_STORAGE_AGENTS',
 ]
 
 # Add agent classes to __all__ for convenience
