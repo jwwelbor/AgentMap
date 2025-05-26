@@ -9,7 +9,8 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, TypeVar, Union
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
-    BaseStorageAgent, DocumentResult, WriteMode, log_operation)
+    BaseStorageAgent, log_operation)
+from agentmap.services.storage import DocumentResult, WriteMode
 from agentmap.agents.mixins import StorageErrorHandlerMixin
 from agentmap.logging import get_logger
 

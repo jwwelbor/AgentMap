@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
-    BaseStorageAgent, DocumentResult, log_operation)
+    BaseStorageAgent, log_operation)
+from agentmap.services.storage import DocumentResult
 from agentmap.agents.mixins import ReaderOperationsMixin, StorageErrorHandlerMixin
 
 

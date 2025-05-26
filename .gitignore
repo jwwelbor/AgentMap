@@ -173,6 +173,10 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+custom_agents/
+custom_functions/
+custom/
+functions/
 scripts/
 junk/
 agentmap_local_config.yaml

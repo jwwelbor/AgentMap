@@ -12,8 +12,8 @@ from typing import Any, Dict, List, Optional, Union, cast
 import pandas as pd
 
 from agentmap.agents.builtins.storage.csv.base_agent import CSVAgent
-from agentmap.agents.builtins.storage.base_storage_agent import (
-    DocumentResult, WriteMode, log_operation)
+from agentmap.agents.builtins.storage.base_storage_agent import log_operation
+from agentmap.services.storage import DocumentResult, WriteMode
 from agentmap.agents.mixins import WriterOperationsMixin
 from agentmap.logging import get_logger
 
