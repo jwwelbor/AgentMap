@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, TypeVar, Union
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, DocumentResult, WriteMode, log_operation)
-from agentmap.agents.builtins.storage.mixins import StorageErrorHandlerMixin
+from agentmap.agents.mixins import StorageErrorHandlerMixin
 from agentmap.logging import get_logger
 
 logger = get_logger(__name__)

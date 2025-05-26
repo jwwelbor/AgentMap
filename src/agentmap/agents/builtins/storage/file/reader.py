@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, DocumentResult, log_operation)
-from agentmap.agents.builtins.storage.mixins import ReaderOperationsMixin, StorageErrorHandlerMixin
+from agentmap.agents.mixins import ReaderOperationsMixin, StorageErrorHandlerMixin
 
 
 class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandlerMixin):

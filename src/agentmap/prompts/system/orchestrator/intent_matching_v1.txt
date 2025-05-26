@@ -10,8 +10,8 @@ select the SINGLE BEST node to handle this request from the list of available no
 Output a JSON object with a 'selectedNode' field containing your selection, your confidence level, and the reasoning in the format below:
 
 Example output format:
-\{
+{{
   "selectedNode": "node_name",
   "confidence": 0, / a number between 0 and 1 indicating confidence level
   "reasoning": "your reasoning goes here" / put your reasoning here
-\}
+}}

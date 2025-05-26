@@ -128,3 +128,71 @@ class ExecutionTracker:
             "start_time": self.start_time,
             "end_time": self.end_time or time.time(),
         }
+
+    def record_subgraph_execution(self, subgraph_name: str, subgraph_summary: Dict[str, Any]):
+        """
+        Record execution of a subgraph as a nested execution.
+        
+        Args:
+            subgraph_name: Name of the executed subgraph
+            subgraph_summary: Complete execution summary from the subgraph
+        """
+        self.logger.debug(f"Recording subgraph execution: {subgraph_name}")
+        
+        # Ensure current node exists in results
+        if self.current_node and self.current_node in self.node_results:
+            # Initialize subgraphs dict if not exists
+            if "subgraphs" not in self.node_results[self.current_node]:
+                self.node_results[self.current_node]["subgraphs"] = {}
+            
+            # Store the complete subgraph execution summary
+            self.node_results[self.current_node]["subgraphs"][subgraph_name] = subgraph_summary
+            
+            self.logger.info(f"Recorded subgraph '{subgraph_name}' execution in node '{self.current_node}'")
+        else:
+            self.logger.warning(f"Cannot record subgraph '{subgraph_name}' - no current node context")
+
+    def get_summary(self) -> Dict[str, Any]:
+        """
+        Enhanced summary including subgraph executions.
+        
+        Returns:
+            Dictionary containing execution summary with nested subgraph details
+        """
+        # Get the base summary (call existing method)
+        summary = super().get_summary() if hasattr(super(), 'get_summary') else self._get_base_summary()
+        
+        # Add subgraph execution statistics
+        subgraph_count = 0
+        subgraph_details = {}
+        
+        for node_name, node_result in self.node_results.items():
+            if "subgraphs" in node_result:
+                for subgraph_name, subgraph_summary in node_result["subgraphs"].items():
+                    subgraph_count += 1
+                    if subgraph_name not in subgraph_details:
+                        subgraph_details[subgraph_name] = []
+                    subgraph_details[subgraph_name].append({
+                        "parent_node": node_name,
+                        "success": subgraph_summary.get("overall_success", False),
+                        "node_count": len(subgraph_summary.get("nodes", {}))
+                    })
+        
+        # Add subgraph information to summary
+        summary["subgraph_executions"] = subgraph_count
+        summary["subgraph_details"] = subgraph_details
+        
+        return summary
+
+    def _get_base_summary(self) -> Dict[str, Any]:
+        """
+        Fallback method to get base summary if super().get_summary() doesn't exist.
+        This maintains compatibility with the existing ExecutionTracker implementation.
+        """
+        return {
+            "overall_success": self.overall_success,
+            "graph_success": self.graph_success, 
+            "nodes": dict(self.node_results),
+            "execution_time": getattr(self, 'execution_time', 0),
+            "node_count": len(self.node_results)
+        }

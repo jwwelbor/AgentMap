@@ -24,6 +24,7 @@ from agentmap.di.containers import ApplicationContainer
 from agentmap.config.configuration import Configuration
 from agentmap.logging.service import LoggingService
 from agentmap.logging.tracking.execution_tracker import ExecutionTracker 
+from agentmap.services import LLMService, LLMServiceUser
 
 
 _GRAPH_EXECUTION_LOCK = threading.RLock()
@@ -51,7 +52,7 @@ def load_compiled_graph(
         
         # Use GraphBundle to load
         from agentmap.graph.bundle import GraphBundle
-        bundle = GraphBundle.load(compiled_path)
+        bundle = GraphBundle.load(compiled_path, logger)
         
         if bundle:
             if bundle.graph:
@@ -96,8 +97,9 @@ def autocompile_and_load(
 def build_graph_in_memory(
     graph_name: str, 
     graph_def: Dict[str, Any], 
-    logging_service: LoggingService = Provide[ApplicationContainer.logging_service],
-    node_registry_service: NodeRegistryService = Provide[ApplicationContainer.node_registry_service]  # NEW
+    logging_service: LoggingService, # = Provide[ApplicationContainer.logging_service],
+    node_registry_service: NodeRegistryService, # = Provide[ApplicationContainer.node_registry_service],
+    llm_service: LLMService #= Provide[ApplicationContainer.llm_service]    # NEW
 ):
     """
     Build a graph in memory from pre-loaded graph definition with registry injection.
@@ -117,14 +119,14 @@ def build_graph_in_memory(
     if not graph_def:
         raise ValueError(f"[BuildGraph] Invalid or empty graph definition for graph: {graph_name}")
 
-    # NEW: Build node registry BEFORE creating assembler
+    # Build node registry BEFORE creating assembler
     logger.debug(f"[BuildGraph] Preparing node registry for: {graph_name}")
     node_registry = node_registry_service.prepare_for_assembly(graph_def, graph_name)
 
     # Create the StateGraph builder
     builder = StateGraph(dict)
     
-    # NEW: Create assembler WITH node registry for pre-compilation injection
+    # Create assembler WITH node registry for pre-compilation injection
     assembler = GraphAssembler(builder, node_registry=node_registry)
     
     # Add all nodes to the graph (registry injection happens automatically in add_node)
@@ -140,7 +142,13 @@ def build_graph_in_memory(
         }
 
         logger.debug(f"[AgentInit] Instantiating {agent_cls.__name__} as node '{node.name}'")
+
+        
         agent_instance = agent_cls(name=node.name, prompt=node.prompt or "", context=context)
+
+        if isinstance(agent_instance, LLMServiceUser):
+            agent_instance.llm_service = llm_service
+            logger.debug(f"[AgentInit] Injected LLM service into {node.name}")
         
         # Add node to the graph (this triggers automatic registry injection for orchestrators)
         assembler.add_node(node.name, agent_instance)
@@ -152,7 +160,7 @@ def build_graph_in_memory(
     for node_name, node in graph_def.items():
         assembler.process_node_edges(node_name, node.edges)
     
-    # NEW: Verify that pre-compilation injection worked
+    # Verify that pre-compilation injection worked
     verification = node_registry_service.verify_pre_compilation_injection(assembler)
     if not verification["all_injected"] and verification["has_orchestrators"]:
         logger.warning(f"[BuildGraph] Pre-compilation injection incomplete for graph '{graph_name}'")
@@ -354,7 +362,8 @@ def run_graph(
     autocompile_override: Optional[bool] = None,
     configuration: Configuration = Provide[ApplicationContainer.configuration],
     logging_service: LoggingService = Provide[ApplicationContainer.logging_service],
-    node_registry_service: NodeRegistryService = Provide[ApplicationContainer.node_registry_service]
+    node_registry_service: NodeRegistryService = Provide[ApplicationContainer.node_registry_service],
+    llm_service: LLMService = Provide[ApplicationContainer.llm_service]
 ) -> Dict[str, Any]:
     """
     Run a graph with the given initial state.
@@ -457,7 +466,7 @@ def run_graph(
 
                 # NEW: Build graph in memory with pre-compilation registry injection
                 # The registry is built and injected during assembly, not after compilation
-                graph = build_graph_in_memory(graph_name, graph_def)
+                graph = build_graph_in_memory(graph_name, graph_def, logging_service, node_registry_service, llm_service)
                 
                 # Note: No need to call inject_into_orchestrators here since it's done during assembly
                 logger.debug(f"[RUN] Graph built with pre-compilation registry injection")

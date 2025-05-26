@@ -54,12 +54,12 @@ class GraphBundle:
         }
     
     @classmethod
-    def from_dict(cls, data):
+    def from_dict(cls, data, logger: logging.Logger):
         """Create bundle from dictionary."""
         return cls(
             graph=data.get("graph"),
             node_registry=data.get("node_registry"),
-            logger=None,  # Logger will need to be set separately
+            logger=logger,  # Logger will need to be set separately
             version_hash=data.get("version_hash")
         )
     
@@ -76,7 +76,7 @@ class GraphBundle:
             self.logger.debug(f"Saved graph bundle to {path} with version hash: {self.version_hash}")
     
     @classmethod
-    def load(cls, path):
+    def load(cls, path, logger: logging.Logger):
         """
         Load bundle from a pickle file.
         
@@ -93,15 +93,12 @@ class GraphBundle:
             # Handle different formats
             if isinstance(data, dict) and "graph" in data:
                 # New format with bundled components
-                return cls.from_dict(data)
-            else:
-                # Old format with just the graph
-                return cls(graph=data, node_registry=None, logger=None, version_hash=None)
+                return cls.from_dict(data, logger)
+            # else:
+            #     # Old format with just the graph
+            #     return cls(graph=data, node_registry=None, logger=None, version_hash=None)
                 
         except Exception as e:
-            # Can't use self.logger here since it's a classmethod
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"Error loading graph bundle: {e}")
             return None
     
