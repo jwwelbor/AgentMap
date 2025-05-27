@@ -138,29 +138,32 @@ def run(
     print("✅ Output:", output)
 
 
-# @app.command()
-# def config(
-#     config_file: str = typer.Option(None, "--path", "-p", help="Path to config file to display")
-# ):
-#     """Print the current configuration values."""
-#     # Initialize the container
-#     initialize_di(config_file)
+@app.command()
+def config(
+    config_file: str = typer.Option(None, "--path", "-p", help="Path to config file to display")
+):
+    """Print the current configuration values."""
+    # Initialize the container
+    container = initialize_di(config_file)
     
+    # Get configuration from the container
+    configuration = container.configuration()
+    config_data = configuration.get_all()
 
-#     print("Configuration values:")
-#     print("---------------------")
-#     for k, v in config_data.items():
-#         if isinstance(v, dict):
-#             print(f"{k}:")
-#             for sub_k, sub_v in v.items():
-#                 if isinstance(sub_v, dict):
-#                     print(f"  {sub_k}:")
-#                     for deep_k, deep_v in sub_v.items():
-#                         print(f"    {deep_k}: {deep_v}")
-#                 else:
-#                     print(f"  {sub_k}: {sub_v}")
-#         else:
-#             print(f"{k}: {v}")
+    print("Configuration values:")
+    print("---------------------")
+    for k, v in config_data.items():
+        if isinstance(v, dict):
+            print(f"{k}:")
+            for sub_k, sub_v in v.items():
+                if isinstance(sub_v, dict):
+                    print(f"  {sub_k}:")
+                    for deep_k, deep_v in sub_v.items():
+                        print(f"    {deep_k}: {deep_v}")
+                else:
+                    print(f"  {sub_k}: {sub_v}")
+        else:
+            print(f"{k}: {v}")
 
 
 @app.command("storage-config")

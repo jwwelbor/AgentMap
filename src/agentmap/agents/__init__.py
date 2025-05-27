@@ -58,6 +58,7 @@ else:
                 from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
                 register_agent("openai", OpenAIAgent)
                 register_agent("gpt", OpenAIAgent)  # Add alias for convenience
+                register_agent("chatgpt", OpenAIAgent)  # Add additional alias for convenience
                 features.set_provider_available("llm", "openai", True)
                 features.set_provider_validated("llm", "openai", True)
                 _logger.debug("OpenAI agent validated and registered")
