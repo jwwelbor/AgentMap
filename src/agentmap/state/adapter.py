@@ -169,3 +169,33 @@ class StateAdapter:
         
         # No tracking data available
         return default
+
+
+    @staticmethod
+    def merge_updates(state: StateType, updates: Dict[str, Any]) -> StateType:
+        """
+        Merge multiple updates into the state efficiently.
+        This is useful for applying partial updates from agents.
+        
+        Args:
+            state: Current state object
+            updates: Dictionary of updates to apply
+            
+        Returns:
+            New state object with all updates applied
+        """
+        if not updates:
+            return state
+            
+        # For AgentMapState/TypedDict, merge efficiently
+        if isinstance(state, dict):
+            new_state = state.copy()
+            new_state.update(updates)
+            return new_state
+            
+        # Apply updates one by one for other state types
+        current_state = state
+        for key, value in updates.items():
+            current_state = StateAdapter.set_value(current_state, key, value)
+        
+        return current_state

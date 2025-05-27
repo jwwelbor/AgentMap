@@ -55,16 +55,16 @@ def _evaluate_all_nodes_policy(summary: Dict[str, Any]) -> bool:
     """All nodes must succeed for the graph to be considered successful."""
     return all(
         node_data.get("success", False) 
-        for node_name, node_data in summary["node_results"].items()
+        for node_name, node_data in summary["nodes"].items()
     )
 
 def _evaluate_final_node_policy(summary: Dict[str, Any]) -> bool:
     """Only the final node must succeed for the graph to be considered successful."""
-    if not summary["execution_path"]:
+    if not summary.get("execution_path"):
         return False
     
     final_node = summary["execution_path"][-1]
-    return summary["node_results"].get(final_node, {}).get("success", False)
+    return summary["nodes"].get(final_node, {}).get("success", False)
 
 def _evaluate_critical_nodes_policy(summary: Dict[str, Any], critical_nodes: List[str]) -> bool:
     """Critical nodes must succeed for the graph to be considered successful."""
@@ -74,7 +74,7 @@ def _evaluate_critical_nodes_policy(summary: Dict[str, Any], critical_nodes: Lis
     
     # Check that all critical nodes that were executed succeeded
     for node in critical_nodes:
-        node_data = summary["node_results"].get(node)
+        node_data = summary["nodes"].get(node)
         # If the critical node was executed and failed, graph fails
         if node_data and not node_data.get("success", False):
             return False
