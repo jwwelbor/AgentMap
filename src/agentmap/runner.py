@@ -456,7 +456,7 @@ def run_graph(
         
         # Initialize execution tracking (always active, may be minimal)
         tracker, state = get_execution_tracker(state, configuration.get_tracking_config(), configuration.get_execution_config(), logger)
-        
+
         # Use trace_graph context manager to conditionally enable tracing
         with trace_graph(graph_name):
             # Try to load a compiled graph first - may include bundled node registry
@@ -490,21 +490,25 @@ def run_graph(
             
             try:
                 logger.trace(f"\n=== BEFORE INVOKING GRAPH: {graph_name or 'unnamed'} ===")
-                result = graph.invoke(state)  # Use state directly, no modification needed
+                logger.debug(f"[RUN] Initial state type: {type(state)}")
+                logger.debug(f"[RUN] Initial state keys: {list(state.keys()) if hasattr(state, 'keys') else 'N/A'}")
+                
+                # The key fix: agents now return partial updates, not full state
+                result = graph.invoke(state)
+                
+                logger.trace(f"\n=== AFTER INVOKING GRAPH: {graph_name or 'unnamed'} ===")
+                logger.debug(f"[RUN] Result type: {type(result)}")
+                logger.debug(f"[RUN] Result keys: {list(result.keys()) if hasattr(result, 'keys') else 'N/A'}")                
                 logger.trace(f"\n=== AFTER INVOKING GRAPH: {graph_name or 'unnamed'} ===")
                 execution_time = time.time() - start_time
                 
                 # Process execution results
-                # tracker = StateAdapter.get_execution_tracker(result)
                 tracker.complete_execution()
                 summary = tracker.get_summary()
                 
-                # Store summary in result
+                # Update result with execution summary
                 result = StateAdapter.set_value(result, "__execution_summary", summary)
-                
-                # The graph_success field is already updated during execution
                 graph_success = summary["graph_success"]
-                # For backwards compatibility
                 result = StateAdapter.set_value(result, "__policy_success", graph_success)
                 
                 # Log result with different detail based on tracking mode
@@ -637,6 +641,7 @@ def get_execution_tracker(state: Any, tracker_config, execution_config, logger) 
     """
     execution_tracker = StateAdapter.get_value(state, "__execution_tracker")
     if execution_tracker is None:
+        logger.debug("[RUN] Creating new execution tracker")
         execution_tracker = ExecutionTracker(tracker_config, execution_config, logger)
         state = StateAdapter.set_value(state, "__execution_tracker", execution_tracker)
 

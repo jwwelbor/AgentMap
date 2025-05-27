@@ -8,13 +8,161 @@ from agentmap.agents.builtins.storage import (get_storage_config_path, load_stor
 from agentmap.di import initialize_di
 from agentmap.runner import run_graph
 
+# Import version
+from agentmap import __version__
+
+# Version callback
+def version_callback(value: bool):
+    if value:
+        typer.echo(f"AgentMap {__version__}")
+        raise typer.Exit()
+
 app = typer.Typer()
+
+# Add version option to main app
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        None, 
+        "--version", 
+        "-v",
+        callback=version_callback, 
+        is_eager=True,
+        help="Show version and exit"
+    )
+):
+    """AgentMap: Build and deploy LangGraph workflows from CSV files for fun and profit!"""
+    pass
 
 from agentmap.validation import (
     validate_csv, validate_config, validate_both, print_validation_summary,
     clear_validation_cache, get_validation_cache_stats, cleanup_validation_cache
 )
 
+
+# ============================================================================
+# MAIN WORKFLOW COMMANDS (Most commonly used)
+# ============================================================================
+
+@app.command()
+def run(
+    graph: str = typer.Option(None, "--graph", "-g", help="Graph name to run"),
+    csv: str = typer.Option(None, "--csv", help="CSV path override"),
+    state: str = typer.Option("{}", "--state", "-s", help="Initial state as JSON string"),  
+    autocompile: bool = typer.Option(None, "--autocompile", "-a", help="Autocompile graph if missing"),
+    validate: bool = typer.Option(False, "--validate", help="Validate CSV before running"),
+    config_file: str = typer.Option(None, "--config", "-c", help="Path to custom config file")
+):
+    """Run a graph with optional CSV, initial state, and autocompile support."""
+    container = initialize_di(config_file)
+
+    # Validate if requested
+    if validate:
+        from agentmap.validation import validate_csv_for_compilation
+        
+        configuration = container.configuration()
+        csv_file = Path(csv) if csv else configuration.get_csv_path()
+        
+        typer.echo(f"🔍 Validating CSV file: {csv_file}")
+        try:
+            validate_csv_for_compilation(csv_file)
+            typer.secho("✅ CSV validation passed", fg=typer.colors.GREEN)
+        except Exception as e:
+            typer.secho(f"❌ CSV validation failed: {e}", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+
+    try:
+        data = json.loads(state)  
+    except json.JSONDecodeError:
+        typer.secho("❌ Invalid JSON passed to --state", fg=typer.colors.RED) 
+        raise typer.Exit(code=1)
+
+    output = run_graph(
+        graph_name=graph,  # Can be None
+        initial_state=data, 
+        csv_path=csv, 
+        autocompile_override=autocompile
+    )
+    print("✅ Output:", output)    
+
+
+@app.command()
+def scaffold(
+    graph: str = typer.Option(None, "--graph", "-g", help="Graph name to scaffold agents for"),
+    csv: str = typer.Option(None, "--csv", help="CSV path override"),
+    output_dir: str = typer.Option(None, "--output", "-o", help="Directory for agent output"),
+    func_dir: str = typer.Option(None, "--functions", "-f", help="Directory for function output"),
+    config_file: str = typer.Option(None, "--config", "-c", help="Path to custom config file")
+):
+    """Scaffold agents and routing functions from the configured CSV, optionally for a specific graph."""
+    # Initialize DI with optional config file
+    container = initialize_di(config_file)
+    
+    # Get configuration from DI container
+    configuration = container.configuration()
+    
+    # Get a logger from the logging service
+    logging_service = container.logging_service()
+    logger = logging_service.get_logger("agentmap.scaffold")
+    
+    # Determine actual paths to use (CLI args override config)
+    csv_path = Path(csv) if csv else configuration.get_csv_path()
+    output_path = Path(output_dir) if output_dir else configuration.get_custom_agents_path()
+    functions_path = Path(func_dir) if func_dir else configuration.get_functions_path()
+    
+    # Import here to avoid circular imports
+    from agentmap.graph.scaffold import scaffold_agents
+    
+    # Call scaffold with explicit paths and logger
+    scaffolded = scaffold_agents(
+        csv_path=csv_path,
+        output_path=output_path,
+        func_path=functions_path,
+        graph_name=graph,
+        logger=logger
+    )
+    
+    if not scaffolded:
+        typer.secho(f"No unknown agents or functions found to scaffold{' in graph ' + graph if graph else ''}.", fg=typer.colors.YELLOW)
+    else:
+        typer.secho(f"✅ Scaffolded {scaffolded} agents/functions.", fg=typer.colors.GREEN)
+
+
+# ============================================================================
+# CONFIGURATION COMMANDS
+# ============================================================================
+
+@app.command()
+def config(
+    config_file: str = typer.Option(None, "--path", "-p", help="Path to config file to display")
+):
+    """Print the current configuration values."""
+    # Initialize the container
+    container = initialize_di(config_file)
+    
+    # Get configuration from the container
+    configuration = container.configuration()
+    config_data = configuration.get_all()
+
+    print("Configuration values:")
+    print("---------------------")
+    for k, v in config_data.items():
+        if isinstance(v, dict):
+            print(f"{k}:")
+            for sub_k, sub_v in v.items():
+                if isinstance(sub_v, dict):
+                    print(f"  {sub_k}:")
+                    for deep_k, deep_v in sub_v.items():
+                        print(f"    {deep_k}: {deep_v}")
+                else:
+                    print(f"  {sub_k}: {sub_v}")
+        else:
+            print(f"{k}: {v}")
+
+
+# ============================================================================
+# VALIDATION COMMANDS
+# ============================================================================
 
 @app.command("validate-csv")
 def validate_csv_command(
@@ -151,111 +299,9 @@ def validate_all_command(
         raise typer.Exit(code=1)
 
 
-@app.command("validate-cache")
-def validate_cache_command(
-    clear: bool = typer.Option(False, "--clear", help="Clear all validation cache"),
-    cleanup: bool = typer.Option(False, "--cleanup", help="Remove expired cache entries"),
-    stats: bool = typer.Option(False, "--stats", help="Show cache statistics"),
-    file_path: str = typer.Option(None, "--file", help="Clear cache for specific file only")
-):
-    """Manage validation result cache."""
-    
-    if clear:
-        if file_path:
-            removed = clear_validation_cache(file_path)
-            typer.secho(f"✅ Cleared {removed} cache entries for {file_path}", fg=typer.colors.GREEN)
-        else:
-            removed = clear_validation_cache()
-            typer.secho(f"✅ Cleared {removed} cache entries", fg=typer.colors.GREEN)
-    
-    elif cleanup:
-        removed = cleanup_validation_cache()
-        typer.secho(f"✅ Removed {removed} expired cache entries", fg=typer.colors.GREEN)
-    
-    elif stats or not (clear or cleanup):
-        # Show stats by default if no other action specified
-        cache_stats = get_validation_cache_stats()
-        
-        typer.echo("Validation Cache Statistics:")
-        typer.echo("=" * 30)
-        typer.echo(f"Total files: {cache_stats['total_files']}")
-        typer.echo(f"Valid files: {cache_stats['valid_files']}")
-        typer.echo(f"Expired files: {cache_stats['expired_files']}")
-        typer.echo(f"Corrupted files: {cache_stats['corrupted_files']}")
-        
-        if cache_stats['expired_files'] > 0:
-            typer.echo(f"\n💡 Run 'agentmap validate-cache --cleanup' to remove expired entries")
-        
-        if cache_stats['corrupted_files'] > 0:
-            typer.echo(f"⚠️  Found {cache_stats['corrupted_files']} corrupted cache files")
-
-
-
-@app.command()
-def scaffold(
-    graph: str = typer.Option(None, "--graph", "-g", help="Graph name to scaffold agents for"),
-    csv: str = typer.Option(None, "--csv", help="CSV path override"),
-    output_dir: str = typer.Option(None, "--output", "-o", help="Directory for agent output"),
-    func_dir: str = typer.Option(None, "--functions", "-f", help="Directory for function output"),
-    config_file: str = typer.Option(None, "--config", "-c", help="Path to custom config file")
-):
-    """Scaffold agents and routing functions from the configured CSV, optionally for a specific graph."""
-    # Initialize DI with optional config file
-    container = initialize_di(config_file)
-    
-    # Get configuration from DI container
-    configuration = container.configuration()
-    
-    # Get a logger from the logging service
-    logging_service = container.logging_service()
-    logger = logging_service.get_logger("agentmap.scaffold")
-    
-    # Determine actual paths to use (CLI args override config)
-    csv_path = Path(csv) if csv else configuration.get_csv_path()
-    output_path = Path(output_dir) if output_dir else configuration.get_custom_agents_path()
-    functions_path = Path(func_dir) if func_dir else configuration.get_functions_path()
-    
-    # Import here to avoid circular imports
-    from agentmap.graph.scaffold import scaffold_agents
-    
-    # Call scaffold with explicit paths and logger
-    scaffolded = scaffold_agents(
-        csv_path=csv_path,
-        output_path=output_path,
-        func_path=functions_path,
-        graph_name=graph,
-        logger=logger
-    )
-    
-    if not scaffolded:
-        typer.secho(f"No unknown agents or functions found to scaffold{' in graph ' + graph if graph else ''}.", fg=typer.colors.YELLOW)
-    else:
-        typer.secho(f"✅ Scaffolded {scaffolded} agents/functions.", fg=typer.colors.GREEN)
-
-
-@app.command()
-def export(
-    graph: str = typer.Option(..., "--graph", "-g", help="Graph name to export"),
-    output: str = typer.Option("generated_graph.py", "--output", "-o", help="Output Python file"),
-    format: str = typer.Option("python", "--format", "-f", help="Export format (python, pickle, source)"),
-    csv: str = typer.Option(None, "--csv", help="CSV path override"),
-    state_schema: str = typer.Option("dict", "--state-schema", "-s", 
-                                    help="State schema type (dict, pydantic:<ModelName>, or custom)"),
-    config_file: str = typer.Option(None, "--config", "-c", help="Path to custom config file")
-):
-    initialize_di(config_file)
-
-    from agentmap.graph.serialization import export_graph as export_graph_func
-
-    """Export the specified graph in the chosen format."""
-    export_graph_func(
-        graph, 
-        format=format, 
-        output_path=output, 
-        csv_path=csv,
-        state_schema=state_schema
-    )
-
+# ============================================================================
+# ADVANCED WORKFLOW COMMANDS
+# ============================================================================
 
 @app.command("compile")
 def compile_cmd(
@@ -308,75 +354,34 @@ def compile_cmd(
             state_schema=state_schema
         )
 
+
 @app.command()
-def run(
-    graph: str = typer.Option(None, "--graph", "-g", help="Graph name to run"),
+def export(
+    graph: str = typer.Option(..., "--graph", "-g", help="Graph name to export"),
+    output: str = typer.Option("generated_graph.py", "--output", "-o", help="Output Python file"),
+    format: str = typer.Option("python", "--format", "-f", help="Export format (python, pickle, source)"),
     csv: str = typer.Option(None, "--csv", help="CSV path override"),
-    state: str = typer.Option("{}", "--state", "-s", help="Initial state as JSON string"),  
-    autocompile: bool = typer.Option(None, "--autocompile", "-a", help="Autocompile graph if missing"),
-    validate: bool = typer.Option(False, "--validate", help="Validate CSV before running"),
+    state_schema: str = typer.Option("dict", "--state-schema", "-s", 
+                                    help="State schema type (dict, pydantic:<ModelName>, or custom)"),
     config_file: str = typer.Option(None, "--config", "-c", help="Path to custom config file")
 ):
-    """Run a graph with optional CSV, initial state, and autocompile support."""
-    container = initialize_di(config_file)
+    """Export the specified graph in the chosen format."""
+    initialize_di(config_file)
 
-    # Validate if requested
-    if validate:
-        from agentmap.validation import validate_csv_for_compilation
-        
-        configuration = container.configuration()
-        csv_file = Path(csv) if csv else configuration.get_csv_path()
-        
-        typer.echo(f"🔍 Validating CSV file: {csv_file}")
-        try:
-            validate_csv_for_compilation(csv_file)
-            typer.secho("✅ CSV validation passed", fg=typer.colors.GREEN)
-        except Exception as e:
-            typer.secho(f"❌ CSV validation failed: {e}", fg=typer.colors.RED)
-            raise typer.Exit(code=1)
+    from agentmap.graph.serialization import export_graph as export_graph_func
 
-    try:
-        data = json.loads(state)  
-    except json.JSONDecodeError:
-        typer.secho("❌ Invalid JSON passed to --state", fg=typer.colors.RED) 
-        raise typer.Exit(code=1)
-
-    output = run_graph(
-        graph_name=graph,  # Can be None
-        initial_state=data, 
-        csv_path=csv, 
-        autocompile_override=autocompile
+    export_graph_func(
+        graph, 
+        format=format, 
+        output_path=output, 
+        csv_path=csv,
+        state_schema=state_schema
     )
-    print("✅ Output:", output)    
 
 
-@app.command()
-def config(
-    config_file: str = typer.Option(None, "--path", "-p", help="Path to config file to display")
-):
-    """Print the current configuration values."""
-    # Initialize the container
-    container = initialize_di(config_file)
-    
-    # Get configuration from the container
-    configuration = container.configuration()
-    config_data = configuration.get_all()
-
-    print("Configuration values:")
-    print("---------------------")
-    for k, v in config_data.items():
-        if isinstance(v, dict):
-            print(f"{k}:")
-            for sub_k, sub_v in v.items():
-                if isinstance(sub_v, dict):
-                    print(f"  {sub_k}:")
-                    for deep_k, deep_v in sub_v.items():
-                        print(f"    {deep_k}: {deep_v}")
-                else:
-                    print(f"  {sub_k}: {sub_v}")
-        else:
-            print(f"{k}: {v}")
-
+# ============================================================================
+# CONFIGURATION MANAGEMENT COMMANDS
+# ============================================================================
 
 @app.command("storage-config")
 def storage_config_cmd(
@@ -455,63 +460,48 @@ def storage_config_cmd(
                     typer.echo(f"  {key}: {value}")
 
 
-# Should be refactored to list capabilities... or maybe read custom agents?
-#
-# @app.command()
-# def list_agents():
-#     """List all available agent types in the current environment."""
-#     agents = get_agent_map()
-#
-#     typer.echo("Available Agent Types:")
-#     typer.echo("=====================")
-#
-#     # Core agents
-#     typer.echo("\nCore Agents:")
-#     for agent_type in ["default", "echo", "branching", "success", "failure", "input", "graph"]:
-#         typer.echo(f"  - {agent_type}")
-#
-#     # LLM agents
-#     if HAS_LLM_AGENTS:
-#         typer.echo("\nLLM Agents:")
-#         for agent_type in ["openai", "anthropic", "google", "llm"]:
-#             typer.echo(f"  - {agent_type}")
-#     else:
-#         typer.echo("\nLLM Agents: [Not Available] - Install with: pip install agentmap[llm]")
-#
-#     # Storage agents
-#     if HAS_STORAGE_AGENTS:
-#         typer.echo("\nStorage Agents:")
-#         for agent_type in ["csv_reader", "csv_writer", "json_reader", "json_writer",
-#                           "file_reader", "file_writer", "vector_reader", "vector_writer"]:
-#             typer.echo(f"  - {agent_type}")
-#     else:
-#         typer.echo("\nStorage Agents: [Not Available] - Install with: pip install agentmap[storage]")
+# ============================================================================
+# CACHE AND DIAGNOSTIC COMMANDS  
+# ============================================================================
 
-#@app.command()
-# def inspect_logging():
-#     """Inspect the current logging configuration."""
-#     from agentmap.logging.logger import inspect_loggers
-#
-#     loggers_info = inspect_loggers()
-#     typer.echo("Current Logger Configuration:")
-#     typer.echo("----------------------------")
-#
-#     # Print root logger first
-#     if "root" in loggers_info:
-#         root_info = loggers_info.pop("root")
-#         typer.echo("ROOT LOGGER:")
-#         typer.echo(f"  Level: {root_info['level']}")
-#         typer.echo(f"  Handlers: {', '.join(root_info['handlers'])}")
-#         typer.echo(f"  Disabled: {root_info['disabled']}")
-#         typer.echo(f"  Propagate: {root_info['propagate']}")
-#
-#     # Then print all other loggers
-#     for name, info in sorted(loggers_info.items()):
-#         typer.echo(f"\n{name}:")
-#         typer.echo(f"  Level: {info['level']}")
-#         typer.echo(f"  Handlers: {', '.join(info['handlers'])}")
-#         typer.echo(f"  Disabled: {info['disabled']}")
-#         typer.echo(f"  Propagate: {info['propagate']}")
+@app.command("validate-cache")
+def validate_cache_command(
+    clear: bool = typer.Option(False, "--clear", help="Clear all validation cache"),
+    cleanup: bool = typer.Option(False, "--cleanup", help="Remove expired cache entries"),
+    stats: bool = typer.Option(False, "--stats", help="Show cache statistics"),
+    file_path: str = typer.Option(None, "--file", help="Clear cache for specific file only")
+):
+    """Manage validation result cache."""
+    
+    if clear:
+        if file_path:
+            removed = clear_validation_cache(file_path)
+            typer.secho(f"✅ Cleared {removed} cache entries for {file_path}", fg=typer.colors.GREEN)
+        else:
+            removed = clear_validation_cache()
+            typer.secho(f"✅ Cleared {removed} cache entries", fg=typer.colors.GREEN)
+    
+    elif cleanup:
+        removed = cleanup_validation_cache()
+        typer.secho(f"✅ Removed {removed} expired cache entries", fg=typer.colors.GREEN)
+    
+    elif stats or not (clear or cleanup):
+        # Show stats by default if no other action specified
+        cache_stats = get_validation_cache_stats()
+        
+        typer.echo("Validation Cache Statistics:")
+        typer.echo("=" * 30)
+        typer.echo(f"Total files: {cache_stats['total_files']}")
+        typer.echo(f"Valid files: {cache_stats['valid_files']}")
+        typer.echo(f"Expired files: {cache_stats['expired_files']}")
+        typer.echo(f"Corrupted files: {cache_stats['corrupted_files']}")
+        
+        if cache_stats['expired_files'] > 0:
+            typer.echo(f"\n💡 Run 'agentmap validate-cache --cleanup' to remove expired entries")
+        
+        if cache_stats['corrupted_files'] > 0:
+            typer.echo(f"⚠️  Found {cache_stats['corrupted_files']} corrupted cache files")
+
 
 @app.command("diagnose")
 def diagnose_command():
@@ -613,6 +603,68 @@ def diagnose_command():
         except ImportError:
             typer.echo(f"  {package}: Not installed")
 
+
+# ============================================================================
+# COMMENTED OUT COMMANDS (Future development)
+# ============================================================================
+
+# Should be refactored to list capabilities... or maybe read custom agents?
+#
+# @app.command()
+# def list_agents():
+#     """List all available agent types in the current environment."""
+#     agents = get_agent_map()
+#
+#     typer.echo("Available Agent Types:")
+#     typer.echo("=====================")
+#
+#     # Core agents
+#     typer.echo("\nCore Agents:")
+#     for agent_type in ["default", "echo", "branching", "success", "failure", "input", "graph"]:
+#         typer.echo(f"  - {agent_type}")
+#
+#     # LLM agents
+#     if HAS_LLM_AGENTS:
+#         typer.echo("\nLLM Agents:")
+#         for agent_type in ["openai", "anthropic", "google", "llm"]:
+#             typer.echo(f"  - {agent_type}")
+#     else:
+#         typer.echo("\nLLM Agents: [Not Available] - Install with: pip install agentmap[llm]")
+#
+#     # Storage agents
+#     if HAS_STORAGE_AGENTS:
+#         typer.echo("\nStorage Agents:")
+#         for agent_type in ["csv_reader", "csv_writer", "json_reader", "json_writer",
+#                           "file_reader", "file_writer", "vector_reader", "vector_writer"]:
+#             typer.echo(f"  - {agent_type}")
+#     else:
+#         typer.echo("\nStorage Agents: [Not Available] - Install with: pip install agentmap[storage]")
+
+#@app.command()
+# def inspect_logging():
+#     """Inspect the current logging configuration."""
+#     from agentmap.logging.logger import inspect_loggers
+#
+#     loggers_info = inspect_loggers()
+#     typer.echo("Current Logger Configuration:")
+#     typer.echo("----------------------------")
+#
+#     # Print root logger first
+#     if "root" in loggers_info:
+#         root_info = loggers_info.pop("root")
+#         typer.echo("ROOT LOGGER:")
+#         typer.echo(f"  Level: {root_info['level']}")
+#         typer.echo(f"  Handlers: {', '.join(root_info['handlers'])}")
+#         typer.echo(f"  Disabled: {root_info['disabled']}")
+#         typer.echo(f"  Propagate: {root_info['propagate']}")
+#
+#     # Then print all other loggers
+#     for name, info in sorted(loggers_info.items()):
+#         typer.echo(f"\n{name}:")
+#         typer.echo(f"  Level: {info['level']}")
+#         typer.echo(f"  Handlers: {', '.join(info['handlers'])}")
+#         typer.echo(f"  Disabled: {info['disabled']}")
+#         typer.echo(f"  Propagate: {info['propagate']}")
 
 
 if __name__ == "__main__":    

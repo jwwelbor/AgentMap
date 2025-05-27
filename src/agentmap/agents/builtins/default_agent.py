@@ -2,7 +2,6 @@
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.logging import get_logger
 import uuid
-logger = get_logger(__name__, propagate = False)
 from typing import Any, Dict
 
 

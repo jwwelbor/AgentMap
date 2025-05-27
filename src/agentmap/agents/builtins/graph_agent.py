@@ -2,12 +2,9 @@
 from typing import Any, Dict, Optional, Tuple
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.logging import get_logger
 from agentmap.runner import run_graph
 from agentmap.state.adapter import StateAdapter
 from agentmap.utils.common import extract_func_ref, import_function
-
-logger = get_logger(__name__, False)
 
 class GraphAgent(BaseAgent):
     """

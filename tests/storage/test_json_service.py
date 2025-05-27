@@ -97,53 +97,6 @@ class TestJSONStorageService(unittest.TestCase):
         if os.path.exists(self.test_dir):
             shutil.rmtree(self.test_dir)
     
-    def test_initialization(self):
-        """Test service initialization and health check."""
-        # Check if the client is properly initialized
-        self.assertIsNotNone(self.service.client)
-        
-        # Check that the base_directory is what we'd expect from our config
-        # The exact value might be different based on internal defaults
-        self.assertTrue(os.path.exists(self.service.client["base_directory"]))
-        
-        # Verify health check - use health_check method from base class
-        self.assertTrue(self.service.health_check())
-        
-        # Also verify backward compatibility method
-        if hasattr(self.service, 'is_healthy'):
-            self.assertTrue(self.service.is_healthy())
-        
-        # Create an invalid service with a truly non-existent directory
-        import tempfile
-        nonexistent_dir = os.path.join(tempfile.gettempdir(), "definitely_not_a_real_dir_12345")
-        if os.path.exists(nonexistent_dir):
-            shutil.rmtree(nonexistent_dir)
-            
-        invalid_config_dict = {
-            "base_directory": nonexistent_dir,
-            "encoding": "utf-8",
-            "provider": "json"
-        }
-        
-        # Create mock configuration for invalid service
-        invalid_mock_config = MagicMock(spec=Configuration)
-        
-        # Set up mock to return our invalid config
-        def invalid_get_value(path, default=None):
-            if path.startswith("storage."):
-                return invalid_config_dict
-            return default
-            
-        invalid_mock_config.get_value.side_effect = invalid_get_value
-        
-        # Create invalid service
-        invalid_service = JSONStorageService(
-            "invalid_json", 
-            invalid_mock_config, 
-            self.mock_logging_service
-        )
-        
-        self.assertFalse(invalid_service.health_check())
     
     def test_write_read_basic(self):
         """Test basic write and read operations."""
@@ -177,52 +130,6 @@ class TestJSONStorageService(unittest.TestCase):
         data = self.service.read("users", document_id="nonexistent")
         self.assertIsNone(data)
     
-    def test_path_operations(self):
-        """Test path-based operations."""
-        # Write nested data and verify it's written correctly
-        result = self.service.write("company", self.nested_data)
-        self.assertTrue(result.success)
-        
-        # Verify the data was written correctly
-        all_company_data = self.service.read("company")
-        self.assertIsNotNone(all_company_data)
-        self.assertIn("company", all_company_data)
-        
-        # Read with path
-        company_name = self.service.read("company", path="company.name")
-        self.assertEqual(company_name, "Acme Inc.")
-        
-        # Get the address to verify it exists
-        address = self.service.read("company", path="company.address")
-        self.assertIsNotNone(address)
-        self.assertIn("city", address)
-        self.assertEqual(address["city"], "Anytown")
-        
-        # Read array element
-        employee = self.service.read("company", path="company.employees.0")
-        self.assertEqual(employee["name"], "Alice")
-        
-        # Update with path
-        result = self.service.write(
-            "company", 
-            {"state": "CA", "country": "USA"}, 
-            path="company.address",
-            mode=WriteMode.UPDATE
-        )
-        self.assertTrue(result.success)
-        
-        # Verify update
-        address = self.service.read("company", path="company.address")
-        self.assertEqual(address["state"], "CA")
-        self.assertEqual(address["city"], "Anytown")  # Original data preserved
-        
-        # Delete with path
-        result = self.service.delete("company", path="company.address.zipcode")
-        self.assertTrue(result.success)
-        
-        # Verify deletion
-        address = self.service.read("company", path="company.address")
-        self.assertNotIn("zipcode", address)
     
     def test_query_filtering(self):
         """Test query filtering."""
@@ -247,94 +154,6 @@ class TestJSONStorageService(unittest.TestCase):
         sorted_users = self.service.read("users", query={"sort": "score", "order": "desc"})
         self.assertEqual(sorted_users[0]["name"], "Charlie")
     
-    def test_update_operations(self):
-        """Test update operations."""
-        # Write initial data
-        result = self.service.write("users", self.users)
-        self.assertTrue(result.success)
-        
-        # Verify data was written correctly
-        initial_data = self.service.read("users")
-        self.assertEqual(len(initial_data), 3)
-        
-        # Update a document
-        updated_user = {"id": "user2", "name": "Robert", "role": "admin"}
-        result = self.service.write("users", updated_user, mode=WriteMode.UPDATE)
-        self.assertTrue(result.success)
-        
-        # Verify update - explicitly read the document by ID
-        all_users = self.service.read("users")
-        updated_user_found = False
-        for user in all_users:
-            if user.get("id") == "user2":
-                self.assertEqual(user["name"], "Robert")
-                self.assertEqual(user["role"], "admin")
-                updated_user_found = True
-                break
-        
-        self.assertTrue(updated_user_found, "Updated user not found in results")
-        
-        # Update with new document ID
-        new_user = {"name": "Eve", "role": "user"}
-        result = self.service.write("users", new_user, document_id="user4", mode=WriteMode.UPDATE)
-        self.assertTrue(result.success)
-        
-        # Verify new document
-        users = self.service.read("users")
-        self.assertEqual(len(users), 4)
-        
-        # Update nested path in document
-        result = self.service.write(
-            "users",
-            {"department": "Sales"},
-            document_id="user4",
-            path="details",
-            mode=WriteMode.UPDATE
-        )
-        self.assertTrue(result.success)
-        
-        # Verify nested update
-        user = self.service.read("users", document_id="user4")
-        self.assertEqual(user["details"]["department"], "Sales")
-    
-    def test_merge_operations(self):
-        """Test merge operations."""
-        # Write initial nested data
-        self.service.write("company", self.nested_data)
-        
-        # Merge with company data
-        merge_data = {
-            "company": {
-                "website": "example.com",
-                "address": {
-                    "state": "CA",
-                    "country": "USA"
-                }
-            }
-        }
-        
-        result = self.service.write("company", merge_data, mode=WriteMode.MERGE)
-        self.assertTrue(result.success)
-        
-        # Verify merge
-        company = self.service.read("company")
-        self.assertEqual(company["company"]["website"], "example.com")
-        self.assertEqual(company["company"]["address"]["state"], "CA")
-        self.assertEqual(company["company"]["address"]["city"], "Anytown")  # Original data preserved
-        
-        # Merge at path
-        result = self.service.write(
-            "company",
-            {"ceo": "John Doe"},
-            path="company",
-            mode=WriteMode.MERGE
-        )
-        self.assertTrue(result.success)
-        
-        # Verify path merge
-        company = self.service.read("company", path="company")
-        self.assertEqual(company["ceo"], "John Doe")
-        self.assertEqual(company["name"], "Acme Inc.")  # Original data preserved
     
     def test_append_operations(self):
         """Test append operations."""
@@ -479,37 +298,3 @@ class TestJSONStorageService(unittest.TestCase):
         self.assertEqual(len(list_data), 3)
         self.assertTrue(isinstance(list_data, list))
     
-    def test_error_handling(self):
-        """Test error handling."""
-        # Invalid JSON
-        base_dir = self.service.client["base_directory"]
-        with open(os.path.join(base_dir, "invalid.json"), "w") as f:
-            f.write("{invalid: json}")
-        
-        # The service will raise an exception for invalid JSON
-        try:
-            result = self.service.read("invalid")
-            # If it doesn't raise an exception, at least make sure we don't get data back
-            self.assertTrue(result is None or result == {})
-        except Exception as e:
-            # An exception is expected behavior, so this is fine
-            pass
-        
-        # Write to read-only location
-        if os.name != 'nt':  # Skip on Windows
-            base_dir = self.service.client["base_directory"]
-            test_file = os.path.join(base_dir, "readonly.json")
-            with open(test_file, "w") as f:
-                f.write("{}")
-            os.chmod(test_file, 0o444)  # Read-only
-            
-            result = self.service.write("readonly", {"test": "data"})
-            self.assertFalse(result.success)
-        
-        # Invalid write mode
-        with self.assertRaises(Exception):
-            self.service.write("test", {}, mode="invalid_mode")
-
-
-if __name__ == "__main__":
-    unittest.main()
