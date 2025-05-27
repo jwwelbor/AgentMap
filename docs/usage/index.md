@@ -4,6 +4,7 @@ This documentation provides detailed information about using AgentMap, a declara
 
 ## Table of Contents
 
+- [Agentmap Features](agentmap_features.md)
 - [AgentMap CSV Schema Documentation](agentmap_csv_schema_documentation.md)
 - [Prompt Management in AgentMap](prompt_management_in_agentmap.md)
 - [AgentMap Agent Types](agentmap_agent_types.md)
