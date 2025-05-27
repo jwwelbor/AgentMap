@@ -7,12 +7,44 @@ Provides centralized services for common functionality like LLM calling and stor
 from agentmap.services.llm_service import LLMService, LLMServiceUser
 from agentmap.services.node_registry_service import NodeRegistryService, NodeRegistryUser
 
-# Storage types for convenience
+# Storage services and types
 from agentmap.services.storage import (
+    # Services
+    BaseStorageService,
+    StorageServiceManager,
+    
+    # Protocols
+    StorageService,
+    StorageServiceUser,
+    StorageReader,
+    StorageWriter,
+    
+    # Specific service user protocols
+    CSVServiceUser,
+    JSONServiceUser,
+    FileServiceUser,
+    VectorServiceUser,
+    MemoryServiceUser,
+    
+    # Types
     WriteMode,
     StorageResult,
+    StorageConfig,
+    
+    # Exceptions
     StorageError,
-    DocumentResult,  # Backward compatibility
+    StorageServiceError,
+    
+    # Backward compatibility
+    DocumentResult,
+)
+
+# Storage service injection
+from agentmap.services.storage.injection import (
+    inject_storage_services,
+    requires_storage_services,
+    get_required_service_types,
+    StorageServiceInjectionError
 )
 
 from agentmap.exceptions import (
@@ -23,21 +55,42 @@ from agentmap.exceptions import (
 )
 
 __all__ = [
-    #services
+    # Services
     'LLMService',
     'NodeRegistryService',
+    'BaseStorageService',
+    'StorageServiceManager',
 
-    #Protocols
+    # Protocols
     'LLMServiceUser',
     'NodeRegistryUser',
+    'StorageServiceUser',
+    'StorageService',
+    'StorageReader',
+    'StorageWriter',
+    
+    # Specific service user protocols
+    'CSVServiceUser',
+    'JSONServiceUser',
+    'FileServiceUser',
+    'VectorServiceUser',
+    'MemoryServiceUser',
+    
+    # Service injection
+    'inject_storage_services',
+    'requires_storage_services',
+    'get_required_service_types',
+    'StorageServiceInjectionError',
 
     # Storage types (convenience exports)
     'WriteMode',
     'StorageResult',
+    'StorageConfig',
     'DocumentResult',
     'StorageError',
+    'StorageServiceError',
 
-    #Errors
+    # LLM Errors
     'LLMServiceError',
     'LLMProviderError',
     'LLMConfigurationError', 

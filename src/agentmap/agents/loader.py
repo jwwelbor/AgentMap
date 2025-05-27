@@ -7,7 +7,7 @@ and creating agent instances based on type strings.
 """
 from typing import Dict, Any
 
-from agentmap.agents.features import HAS_LLM_AGENTS, HAS_STORAGE_AGENTS
+from agentmap.agents.features import is_llm_enabled, is_storage_enabled
 from agentmap.agents.registry import get_agent_class
 
 
@@ -33,11 +33,11 @@ class AgentLoader:
         agent_type_lower = agent_type.lower()
         
         # Provide helpful error messages for missing dependencies
-        if not HAS_LLM_AGENTS and agent_type_lower in ("openai", "anthropic", "google", "gpt", "claude", "gemini", "llm"):
+        if not is_llm_enabled() and agent_type_lower in ("openai", "anthropic", "google", "gpt", "claude", "gemini", "llm"):
             raise ValueError(f"LLM agent '{agent_type}' requires additional dependencies. "
                             "Install with: pip install agentmap[llm]")
         
-        if not HAS_STORAGE_AGENTS and agent_type_lower in ("csv_reader", "csv_writer", "json_reader", "json_writer", 
+        if not is_storage_enabled() and agent_type_lower in ("csv_reader", "csv_writer", "json_reader", "json_writer", 
                                                           "file_reader", "file_writer", "vector_reader", "vector_writer"):
             raise ValueError(f"Storage agent '{agent_type}' requires additional dependencies. "
                             "Install with: pip install agentmap[storage]")

@@ -5,12 +5,9 @@ import typer
 import yaml
 
 from agentmap.agents.builtins.storage import (get_storage_config_path, load_storage_config)
-from agentmap.config import load_config
-
+from agentmap.di import initialize_di
 from agentmap.runner import run_graph
-from agentmap.agents import get_agent_map
-from agentmap.agents.features import (HAS_LLM_AGENTS, HAS_STORAGE_AGENTS)
-from agentmap.di import init_for_cli
+
 app = typer.Typer()
 
 
@@ -24,7 +21,7 @@ def scaffold(
 ):
     """Scaffold agents and routing functions from the configured CSV, optionally for a specific graph."""
     # Initialize DI with optional config file
-    container = init_for_cli(config_file)
+    container = initialize_di(config_file)
     
     # Get configuration from DI container
     configuration = container.configuration()
@@ -66,7 +63,7 @@ def export(
                                     help="State schema type (dict, pydantic:<ModelName>, or custom)"),
     config_file: str = typer.Option(None, "--config", "-c", help="Path to custom config file")
 ):
-    init_for_cli(config_file)
+    initialize_di(config_file)
 
     from agentmap.graph.serialization import export_graph as export_graph_func
 
@@ -91,7 +88,7 @@ def compile_cmd(
 ):
     """Compile a graph or all graphs from the CSV to pickle files."""
     
-    init_for_cli(config_file)
+    initialize_di(config_file)
 
     from agentmap.graph.serialization import (compile_all, export_as_pickle, export_as_source)
 
@@ -124,7 +121,7 @@ def run(
     config_file: str = typer.Option(None, "--config", "-c", help="Path to custom config file")
 ):
     """Run a graph with optional CSV, initial state, and autocompile support."""
-    init_for_cli(config_file)
+    initialize_di(config_file)
 
     try:
         data = json.loads(state)  
@@ -147,7 +144,7 @@ def run(
 # ):
 #     """Print the current configuration values."""
 #     # Initialize the container
-#     init_for_cli(config_file)
+#     initialize_di(config_file)
     
 
 #     print("Configuration values:")
@@ -173,7 +170,7 @@ def storage_config_cmd(
     storage_config_file: str = typer.Option(None, "--config", "-c", help="Path to custom config file")
 ):
     """Display or initialize storage configuration."""
-    #init_for_cli_storage(storage_config_file)
+    #initialize_di_storage(storage_config_file)
     if init:
         # Get the storage config path
         storage_path = get_storage_config_path(storage_config_file)

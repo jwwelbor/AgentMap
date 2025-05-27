@@ -4,12 +4,15 @@
 """
 Agent scaffolding utility for AgentMap.
 Creates Python class files for custom agents and function stubs based on CSV input.
+Enhanced with service-aware scaffolding for automatic service integration.
 """
 
 import csv
+import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, NamedTuple, Any
+from dataclasses import dataclass
 
 from agentmap.agents import get_agent_class
 from agentmap.config import (get_csv_path, get_custom_agents_path, get_functions_path)
@@ -19,6 +22,224 @@ from agentmap.di.containers import ApplicationContainer
 from agentmap.config.configuration import Configuration
 from agentmap.logging.service import LoggingService
 
+# ===== SERVICE-AWARE SCAFFOLDING COMPONENTS =====
+
+@dataclass
+class ServiceAttribute:
+    """Represents a service attribute to be added to an agent."""
+    name: str
+    type_hint: str
+    documentation: str
+
+class ServiceRequirements(NamedTuple):
+    """Container for parsed service requirements."""
+    services: List[str]
+    protocols: List[str]
+    imports: List[str]
+    attributes: List[ServiceAttribute]
+    usage_examples: Dict[str, str]
+
+class ServiceRequirementParser:
+    """Parses service requirements from CSV context and maps to protocols."""
+    
+    def __init__(self):
+        """Initialize with service-to-protocol mappings."""
+        self.service_protocol_map = {
+            "llm": {
+                "protocol": "LLMServiceUser",
+                "import": "from agentmap.services import LLMServiceUser",
+                "attribute": "llm_service",
+                "type_hint": "'LLMService'",
+                "doc": "LLM service for calling language models"
+            },
+            "csv": {
+                "protocol": "CSVServiceUser", 
+                "import": "from agentmap.services import CSVServiceUser",
+                "attribute": "csv_service",
+                "type_hint": "'CSVStorageService'",
+                "doc": "CSV storage service for CSV file operations"
+            },
+            "json": {
+                "protocol": "JSONServiceUser",
+                "import": "from agentmap.services import JSONServiceUser", 
+                "attribute": "json_service",
+                "type_hint": "'JSONStorageService'",
+                "doc": "JSON storage service for JSON file operations"
+            },
+            "file": {
+                "protocol": "FileServiceUser",
+                "import": "from agentmap.services import FileServiceUser",
+                "attribute": "file_service", 
+                "type_hint": "'FileStorageService'",
+                "doc": "File storage service for general file operations"
+            },
+            "vector": {
+                "protocol": "VectorServiceUser",
+                "import": "from agentmap.services import VectorServiceUser",
+                "attribute": "vector_service",
+                "type_hint": "'VectorStorageService'", 
+                "doc": "Vector storage service for similarity search and embeddings"
+            },
+            "memory": {
+                "protocol": "MemoryServiceUser",
+                "import": "from agentmap.services import MemoryServiceUser",
+                "attribute": "memory_service",
+                "type_hint": "'MemoryStorageService'",
+                "doc": "Memory storage service for in-memory data operations"
+            },
+            "node_registry": {
+                "protocol": "NodeRegistryUser",
+                "import": "from agentmap.services import NodeRegistryUser",
+                "attribute": "node_registry",
+                "type_hint": "Dict[str, Dict[str, Any]]",
+                "doc": "Node registry for orchestrator agents to route between nodes"
+            },
+            "storage": {
+                "protocol": "StorageServiceUser", 
+                "import": "from agentmap.services import StorageServiceUser",
+                "attribute": "storage_service",
+                "type_hint": "Optional[StorageService]",
+                "doc": "Generic storage service (backward compatibility)"
+            }
+        }
+    
+    def parse_services(self, context: Any) -> ServiceRequirements:
+        """
+        Parse service requirements from context.
+        
+        Args:
+            context: Context from CSV (string, dict, or None)
+            
+        Returns:
+            ServiceRequirements with parsed service information
+        """
+        services = self._extract_services_list(context)
+        
+        if not services:
+            return ServiceRequirements([], [], [], [], {})
+        
+        # Validate services
+        invalid_services = [s for s in services if s not in self.service_protocol_map]
+        if invalid_services:
+            raise ValueError(f"Unknown services: {invalid_services}. Available: {list(self.service_protocol_map.keys())}")
+        
+        protocols = []
+        imports = []
+        attributes = []
+        usage_examples = {}
+        
+        for service in services:
+            service_info = self.service_protocol_map[service]
+            protocols.append(service_info["protocol"])
+            imports.append(service_info["import"])
+            
+            attributes.append(ServiceAttribute(
+                name=service_info["attribute"],
+                type_hint=service_info["type_hint"], 
+                documentation=service_info["doc"]
+            ))
+            
+            usage_examples[service] = self._get_usage_example(service)
+        
+        return ServiceRequirements(
+            services=services,
+            protocols=protocols,
+            imports=list(set(imports)),  # Remove duplicates
+            attributes=attributes,
+            usage_examples=usage_examples
+        )
+    
+    def _extract_services_list(self, context: Any) -> List[str]:
+        """Extract services list from various context formats."""
+        if not context:
+            return []
+        
+        # Handle dict context
+        if isinstance(context, dict):
+            return context.get("services", [])
+        
+        # Handle string context
+        if isinstance(context, str):
+            # Try parsing as JSON
+            if context.strip().startswith("{"):
+                try:
+                    parsed = json.loads(context)
+                    return parsed.get("services", [])
+                except json.JSONDecodeError:
+                    pass
+            
+            # Handle comma-separated services in string
+            if "services:" in context:
+                # Extract services from key:value format
+                for part in context.split(","):
+                    if part.strip().startswith("services:"):
+                        services_str = part.split(":", 1)[1].strip()
+                        return [s.strip() for s in services_str.split("|")]
+        
+        return []
+    
+    def _get_usage_example(self, service: str) -> str:
+        """Get usage example for a service."""
+        examples = {
+            "llm": """# Call language model
+            if hasattr(self, 'llm_service') and self.llm_service:
+                response = self.llm_service.call_llm(
+                    provider="openai",
+                    messages=[{"role": "user", "content": query}]
+                )""",
+            "csv": """# Read CSV data
+            if hasattr(self, 'csv_service') and self.csv_service:
+                data = self.csv_service.read("data.csv")
+                
+                # Write CSV data  
+                result = self.csv_service.write("output.csv", processed_data)""",
+            "json": """# Read JSON data
+            if hasattr(self, 'json_service') and self.json_service:
+                data = self.json_service.read("data.json")
+                
+                # Write JSON data
+                result = self.json_service.write("output.json", processed_data)""",
+            "file": """# Read file
+            if hasattr(self, 'file_service') and self.file_service:
+                content = self.file_service.read("document.txt")
+                
+                # Write file
+                result = self.file_service.write("output.txt", processed_content)""",
+            "vector": """# Search for similar documents
+            if hasattr(self, 'vector_service') and self.vector_service:
+                similar_docs = self.vector_service.read(
+                    collection="documents",
+                    query="search query"
+                )
+                
+                # Add documents to vector store
+                result = self.vector_service.write(
+                    collection="documents", 
+                    data=[{"content": "text", "metadata": {...}}]
+                )""",
+            "memory": """# Store data in memory
+            if hasattr(self, 'memory_service') and self.memory_service:
+                self.memory_service.write("session", {"key": "value"})
+                
+                # Retrieve data from memory  
+                data = self.memory_service.read("session")""",
+            "node_registry": """# Get available nodes (for orchestrator agents)
+            if hasattr(self, 'node_registry') and self.node_registry:
+                available_nodes = self.node_registry
+                
+                # Example usage in routing logic
+                for node_name, metadata in available_nodes.items():
+                    if "data_processing" in metadata.get("description", ""):
+                        return node_name""",
+            "storage": """# Generic storage operations
+            if hasattr(self, 'storage_service') and self.storage_service:
+                data = self.storage_service.read("collection_name")
+                result = self.storage_service.write("collection_name", data)"""
+        }
+        
+        return examples.get(service, f"            # Use {service} service\n            # TODO: Add usage example")
+
+# ===== TEMPLATE MANAGEMENT =====
 
 def load_template(template_name: str) -> str:
     """Load a template file from the templates directory."""
@@ -28,6 +249,113 @@ def load_template(template_name: str) -> str:
         raise FileNotFoundError(f"Template {template_name} not found at {template_path}")
     return template_path.read_text()
 
+def prepare_template_variables(agent_type: str, info: Dict, service_reqs: ServiceRequirements) -> Dict[str, str]:
+    """Prepare all template variables for formatting."""
+    
+    # Basic info
+    class_name = agent_type + "Agent"
+    input_fields = ", ".join(info["input_fields"]) if info["input_fields"] else "None specified"
+    output_field = info["output_field"] or "None specified"
+    
+    # Service-related variables
+    if service_reqs.protocols:
+        protocols_str = ", " + ", ".join(service_reqs.protocols)
+        class_definition = f"class {class_name}(BaseAgent{protocols_str}):"
+        service_description = f" with {', '.join(service_reqs.services)} capabilities"
+    else:
+        class_definition = f"class {class_name}(BaseAgent):"
+        service_description = ""
+    
+    # Imports
+    if service_reqs.imports:
+        imports = "\n" + "\n".join(service_reqs.imports)
+    else:
+        imports = ""
+    
+    # Service attributes
+    if service_reqs.attributes:
+        service_attrs = ["\n        # Service attributes (automatically injected during graph building)"]
+        for attr in service_reqs.attributes:
+            service_attrs.append(f"        self.{attr.name}: {attr.type_hint} = None")
+        service_attributes = "\n".join(service_attrs)
+    else:
+        service_attributes = ""
+    
+    # Services documentation
+    if service_reqs.services:
+        services_doc_lines = ["", "    Available Services:"]
+        for attr in service_reqs.attributes:
+            services_doc_lines.append(f"    - self.{attr.name}: {attr.documentation}")
+        services_doc = "\n".join(services_doc_lines)
+    else:
+        services_doc = ""
+    
+    # Input field access
+    if info["input_fields"]:
+        access_lines = []
+        for field in info["input_fields"]:
+            access_lines.append(f"            {field} = processed_inputs.get(\"{field}\")")
+        input_field_access = "\n".join(access_lines)
+    else:
+        input_field_access = "            # No specific input fields defined in the CSV"
+    
+    # Service usage examples
+    if service_reqs.services:
+        usage_lines = []
+        for service in service_reqs.services:
+            if service in service_reqs.usage_examples:
+                usage_lines.append(f"            # {service.upper()} SERVICE:")
+                example_lines = service_reqs.usage_examples[service].split('\n')
+                for example_line in example_lines:
+                    if example_line.strip():
+                        usage_lines.append(f"            {example_line}")
+                usage_lines.append("")
+        service_usage_examples = "\n".join(usage_lines)
+    else:
+        service_usage_examples = "            # No services configured"
+    
+    # Usage examples section
+    if service_reqs.services:
+        usage_section_lines = [
+            "",
+            "# ===== SERVICE USAGE EXAMPLES =====",
+            "#",
+            "# This agent has access to the following services:",
+            "#"
+        ]
+        
+        for service in service_reqs.services:
+            usage_section_lines.append(f"# {service.upper()} SERVICE:")
+            if service in service_reqs.usage_examples:
+                example_lines = service_reqs.usage_examples[service].split('\n')
+                for example_line in example_lines:
+                    usage_section_lines.append(f"# {example_line}")
+            usage_section_lines.append("#")
+        
+        usage_examples_section = "\n".join(usage_section_lines)
+    else:
+        usage_examples_section = ""
+    
+    return {
+        "agent_type": agent_type,
+        "class_name": class_name,
+        "class_definition": class_definition,
+        "service_description": service_description,
+        "imports": imports,
+        "description": info.get("description", "") or "No description provided",
+        "node_name": info["node_name"],
+        "input_fields": input_fields,
+        "output_field": output_field,
+        "services_doc": services_doc,
+        "prompt_doc": f"\n    Default prompt: {info['prompt']}" if info.get("prompt") else "",
+        "service_attributes": service_attributes,
+        "input_field_access": input_field_access,
+        "service_usage_examples": service_usage_examples,
+        "context": info.get("context", "") or "No context provided",
+        "usage_examples_section": usage_examples_section
+    }
+
+# ===== DATA COLLECTION FUNCTIONS =====
 
 def collect_agent_info(
     csv_path: Path, 
@@ -64,6 +392,7 @@ def collect_agent_info(
                 
                 if agent_type not in agent_info:
                     agent_info[agent_type] = {
+                        "agent_type": agent_type,
                         "node_name": node_name,
                         "context": context,
                         "prompt": prompt,
@@ -73,7 +402,6 @@ def collect_agent_info(
                     }
     
     return agent_info
-
 
 def collect_function_info(
     csv_path: Path, 
@@ -123,6 +451,7 @@ def collect_function_info(
     
     return func_info
 
+# ===== LEGACY SUPPORT FUNCTIONS =====
 
 def generate_field_access(input_fields: List[str]) -> str:
     """
@@ -136,13 +465,12 @@ def generate_field_access(input_fields: List[str]) -> str:
     """
     access_lines = []
     for field in input_fields:
-        access_lines.append(f"        {field} = inputs.get(\"{field}\")")
+        access_lines.append(f"            {field} = processed_inputs.get(\"{field}\")")
     
     if not access_lines:
-        access_lines = ["        # No specific input fields defined in the CSV"]
+        access_lines = ["            # No specific input fields defined in the CSV"]
     
     return "\n".join(access_lines)
-
 
 def generate_context_fields(input_fields: List[str], output_field: str) -> str:
     """
@@ -168,6 +496,7 @@ def generate_context_fields(input_fields: List[str], output_field: str) -> str:
     
     return "\n".join(context_fields)
 
+# ===== ENHANCED SCAFFOLDING FUNCTIONS =====
 
 def scaffold_agent(
     agent_type: str, 
@@ -176,7 +505,7 @@ def scaffold_agent(
     logger: Optional[logging.Logger] = None
 ) -> bool:
     """
-    Create a scaffold file for an agent.
+    Enhanced scaffold_agent function with automatic service detection.
     
     Args:
         agent_type: Type of agent to scaffold
@@ -194,29 +523,37 @@ def scaffold_agent(
     if path.exists():
         return False
     
-    # Generate input field access code
-    input_field_access = generate_field_access(info["input_fields"])
-    
-    # Load template
-    template = load_template("agent_template")
-    
-    # Create agent file
-    with path.open("w") as out:
-        out.write(template.format(
-            class_name=class_name,
-            context=info["context"] or "No context provided",
-            input_fields=", ".join(info["input_fields"]) or "None specified",
-            output_field=info["output_field"] or "None specified",
-            input_field_access=input_field_access,
-            node_name=info["node_name"],
-            prompt=info["prompt"] or "No default prompt provided",
-            description=info["description"] or ""
-        ))
-    
-    if logger:
-        logger.debug(f"Scaffolded agent: {path}")
-    return True
-
+    try:
+        # Parse service requirements from context
+        parser = ServiceRequirementParser()
+        service_reqs = parser.parse_services(info.get("context"))
+        
+        if logger and service_reqs.services:
+            logger.debug(f"Scaffolding {agent_type} with services: {', '.join(service_reqs.services)}")
+        
+        # Load and format template
+        template = load_template("agent_template")
+        
+        # Prepare template variables
+        template_vars = prepare_template_variables(agent_type, info, service_reqs)
+        
+        # Format template
+        formatted_template = template.format(**template_vars)
+        
+        # Write enhanced template
+        with path.open("w") as out:
+            out.write(formatted_template)
+        
+        if logger:
+            services_info = f" with services: {', '.join(service_reqs.services)}" if service_reqs.services else ""
+            logger.debug(f"Scaffolded agent: {path}{services_info}")
+        
+        return True
+        
+    except Exception as e:
+        if logger:
+            logger.error(f"Failed to scaffold agent {agent_type}: {e}")
+        raise
 
 def scaffold_function(
     func_name: str, 
@@ -264,7 +601,6 @@ def scaffold_function(
         logger.debug(f"Scaffolded function: {path}")
     return True
 
-
 def scaffold_agents(
     csv_path: Path,
     output_path: Path,
@@ -273,7 +609,7 @@ def scaffold_agents(
     logger: Optional[logging.Logger] = None
 ) -> int:
     """
-    Scaffold agents and functions from the CSV.
+    Scaffold agents and functions from the CSV with service awareness.
     
     Args:
         csv_path: Path to CSV file
@@ -295,46 +631,68 @@ def scaffold_agents(
     
     # Scaffold agents
     scaffolded_count = 0
+    service_stats = {"with_services": 0, "without_services": 0}
+    
     for agent_type, info in agent_info.items():
-        if scaffold_agent(agent_type, info, output_path, logger):
-            scaffolded_count += 1
+        try:
+            # Check if agent has services
+            parser = ServiceRequirementParser()
+            service_reqs = parser.parse_services(info.get("context"))
+            
+            if service_reqs.services:
+                service_stats["with_services"] += 1
+            else:
+                service_stats["without_services"] += 1
+            
+            if scaffold_agent(agent_type, info, output_path, logger):
+                scaffolded_count += 1
+                
+        except Exception as e:
+            if logger:
+                logger.error(f"Failed to scaffold agent {agent_type}: {e}")
     
     # Scaffold functions
     for func_name, info in func_info.items():
         if scaffold_function(func_name, info, func_path, logger):
             scaffolded_count += 1
     
+    # Log service statistics
+    if logger and (service_stats["with_services"] > 0 or service_stats["without_services"] > 0):
+        logger.info(f"Scaffolded agents: {service_stats['with_services']} with services, "
+                   f"{service_stats['without_services']} without services")
+    
     return scaffolded_count
 
-
-# if __name__ == "__main__":
-#     import argparse
+def validate_service_availability(services: List[str], logger: Optional[logging.Logger] = None) -> Dict[str, bool]:
+    """
+    Validate that requested services are available in the current environment.
     
-#     parser = argparse.ArgumentParser(description="Scaffold agents and functions from CSV")
-#     parser.add_argument("--csv", required=True, help="Path to CSV file")
-#     parser.add_argument("--graph", help="Graph name to filter by")
-#     parser.add_argument("--output", required=True, help="Directory for agent output")
-#     parser.add_argument("--functions", required=True, help="Directory for function output")
-#     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
+    Args:
+        services: List of service names to validate
+        logger: Optional logger for warnings
+        
+    Returns:
+        Dictionary mapping service names to availability status
+    """
+    availability = {}
     
-#     args = parser.parse_args()
+    for service in services:
+        try:
+            if service == "llm":
+                from agentmap.services import LLMService
+                availability[service] = True
+            elif service in ["csv", "json", "file", "vector", "memory"]:
+                from agentmap.services.storage import StorageServiceManager
+                availability[service] = True
+            elif service == "node_registry":
+                from agentmap.services import NodeRegistryService
+                availability[service] = True
+            else:
+                availability[service] = False
+                
+        except ImportError as e:
+            availability[service] = False
+            if logger:
+                logger.warning(f"Service '{service}' not available: {e}")
     
-#     # Set up basic logging
-#     log_level = logging.DEBUG if args.verbose else logging.INFO
-#     logging.basicConfig(
-#         level=log_level,
-#         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-#     )
-#     logger = logging.getLogger("agentmap.scaffold")
-    
-#     # Call with explicit paths and logger
-#     scaffolded = scaffold_agents(
-#         csv_path=Path(args.csv),
-#         output_path=Path(args.output),
-#         func_path=Path(args.functions),
-#         graph_name=args.graph,
-#         logger=logger
-#     )
-    
-#     # Output results
-#     print(f"Scaffolded {scaffolded} agents/functions")
+    return availability
