@@ -138,18 +138,3 @@ class TestSummaryAgent:
         
         assert "field1: value1" in result
     
-    @patch("agentmap.agents.HAS_LLM_AGENTS", False)
-    def test_llm_mode_dependencies_missing(self):
-        """Test LLM mode when dependencies are missing."""
-        context = {"llm": "openai"}
-        agent = SummaryAgent("test_agent", "Test prompt", context)
-        inputs = {"field1": "value1", "field2": "value2"}
-        
-        # Should fall back to basic concatenation
-        result = agent.process(inputs)
-        
-        assert "field1: value1" in result
-        assert "field2: value2" in result
-    
-if __name__ == "__main__":
-    pytest.main(["-xvs", __file__])

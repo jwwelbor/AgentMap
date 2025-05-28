@@ -2,10 +2,8 @@
 from typing import Any, Dict, Tuple
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.logging import get_logger
 from agentmap.state.adapter import StateAdapter
 
-logger = get_logger(__name__, False)
 
 class BranchingAgent(BaseAgent):
     """
@@ -71,7 +69,7 @@ class BranchingAgent(BaseAgent):
         # Default to True if no relevant fields found
         return True
     
-    def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
+    def _post_process(self, state: Any, output: Any, current_updates: Dict[str, Any]) -> Tuple[Any, Any]:
         """
         Override the post-processing hook to set the success flag based on inputs.
         

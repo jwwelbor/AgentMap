@@ -11,14 +11,11 @@ from typing import Any, Dict, Optional
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, log_operation)
 from agentmap.services.storage import VectorStorageService
-from agentmap.services.storage.protocols import VectorServiceUser
+from agentmap.services.storage.protocols import VectorServiceUser, StorageServiceUser
 from agentmap.agents.mixins import StorageErrorHandlerMixin
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
-class VectorAgent(BaseStorageAgent, StorageErrorHandlerMixin, VectorServiceUser):
+class VectorAgent(BaseStorageAgent, StorageErrorHandlerMixin, VectorServiceUser, StorageServiceUser):
     """
     Base class for vector storage operations.
     
@@ -44,14 +41,16 @@ class VectorAgent(BaseStorageAgent, StorageErrorHandlerMixin, VectorServiceUser)
         self.input_fields = context.get("input_fields", ["query"])
         self.output_field = context.get("output_field", "result")
         
-        # VectorServiceUser protocol requirement
-        self.vector_service = None
+        # Protocol requirements
+        self.vector_service = None     # VectorServiceUser protocol
+        self.storage_service = None    # StorageServiceUser protocol
     
     def _initialize_client(self) -> None:
         """Initialize VectorStorageService as the client for vector operations."""
         self._client = VectorStorageService(self.context)
-        # Set vector_service for VectorServiceUser protocol compliance
-        self.vector_service = self._client
+        # Set both protocol attributes to the same service instance
+        self.vector_service = self._client     # VectorServiceUser protocol
+        self.storage_service = self._client    # StorageServiceUser protocol
     
     def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
         """

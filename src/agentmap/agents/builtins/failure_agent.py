@@ -2,10 +2,7 @@
 from typing import Any, Dict, Tuple
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.logging import get_logger
 from agentmap.state.adapter import StateAdapter
-
-logger = get_logger(__name__, False)
 
 class FailureAgent(BaseAgent):
     """

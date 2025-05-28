@@ -2,9 +2,7 @@
 from typing import Any, Dict
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.logging import get_logger
 
-logger = get_logger(__name__, False)
 
 class SuccessAgent(BaseAgent):
     """

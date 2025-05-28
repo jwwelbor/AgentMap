@@ -20,7 +20,10 @@ TestBranching,FailurePath,,Failure Path,Default,,,startOutput,finalOutput,Failur
     temp_csv = Path("temp_test_branching.csv")
     with open(temp_csv, "w") as f:
         f.write(csv_content)
-    
+
+    from agentmap.di import initialize_di    
+    initialize_di();
+
     try:
         # Test with a success agent
         result = run_graph(
@@ -52,6 +55,9 @@ TestBranching,FailurePath,,Failure Path,Default,,,startOutput,finalOutput,Failur
     temp_csv = Path("temp_test_branching.csv")
     with open(temp_csv, "w") as f:
         f.write(csv_content_2)
+
+    from agentmap.di import initialize_di    
+    initialize_di();
 
     try:
         # Write the second CSV to a temporary file
