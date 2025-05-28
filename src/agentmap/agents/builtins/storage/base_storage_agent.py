@@ -11,9 +11,7 @@ from typing import Any, Callable, Dict, Optional, TypeVar, cast
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.storage import DocumentResult, WriteMode
-from agentmap.logging import get_logger
 
-logger = get_logger(__name__)
 
 F = TypeVar('F', bound=Callable[..., Any])  # Type for callable functions
 

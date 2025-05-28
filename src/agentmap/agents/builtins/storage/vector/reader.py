@@ -10,9 +10,6 @@ from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.vector.base_agent import VectorAgent
 from agentmap.agents.mixins import ReaderOperationsMixin
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class VectorReaderAgent(VectorAgent, ReaderOperationsMixin):
