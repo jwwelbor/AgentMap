@@ -5,7 +5,6 @@ from typing import Any, Dict, Tuple, Optional
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.agents.mixins import PromptResolutionMixin
-from agentmap.state.adapter import StateAdapter
 from agentmap.agents.features import is_llm_enabled
 
 

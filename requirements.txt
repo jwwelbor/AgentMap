@@ -1,18 +1,17 @@
-# Core dependencies
-typer>=0.12.3
-fastapi>=0.111.0
-python-multipart>=0.0.9
-httpx>=0.27.0
-pydantic>=2.6.3
-pandas>=2.2.1
-dill>=0.3.6
-langgraph>=0.4.1
-
-# LLM integrations (optional)
-openai>=1.12.0
-anthropic>=0.17.0
-google-generativeai>=0.3.2
-
-# Dev dependencies
-pytest>=8.0.0
-uvicorn>=0.15.0
+# AgentMap now uses Poetry for dependency management
+# 
+# To install AgentMap:
+#   pip install agentmap
+#   pip install "agentmap[llm]"     # With LLM providers
+#   pip install "agentmap[storage]" # With storage backends  
+#   pip install "agentmap[all]"     # With all optional dependencies
+#
+# For development:
+#   1. Install Poetry: curl -sSL https://install.python-poetry.org | python3 -
+#   2. Clone repository: git clone https://github.com/jwwelbor/AgentMap.git
+#   3. Install dependencies: poetry install --with dev
+#   4. Activate environment: poetry shell
+#
+# To generate a traditional requirements.txt from Poetry:
+#   poetry export -f requirements.txt --output requirements.txt
+#   poetry export -f requirements.txt --with dev --output requirements-dev.txt

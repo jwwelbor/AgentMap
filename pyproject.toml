@@ -1,98 +1,137 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
-[project]
+[tool.poetry]
 name = "agentmap"
-version = "0.2.0"
+version = "0.3.0"
 description = "AgentMap: Build and deploy LangGraph workflows from CSV files for fun and profit!"
-authors = [
-    {name = "John Welborn", email = "jwwelbor@gmail.com"}
-]
+authors = ["John Welborn <jwwelbor@gmail.com>"]
 readme = "README.md"
-requires-python = ">=3.11,<4.0"
+license = "MIT"
+homepage = "https://jwwelbor.github.io/AgentMap"
+repository = "https://github.com/jwwelbor/AgentMap"
+documentation = "https://jwwelbor.github.io/AgentMap"
+keywords = ["ai", "agents", "workflows", "langgraph", "csv", "automation"]
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-license = {text = "MIT"}
+packages = [{include = "agentmap", from = "src"}]
 
-dependencies = [
-    "python-multipart>=0.0.9",
-    "typer>=0.12.3",
-    "fastapi>=0.111.0",
-    "httpx>=0.27.0",
-    "pydantic>=2.6.3",
-    "pandas>=2.2.1",
-    "dill>=0.3.6",
-    "langgraph>=0.4.1",
-    "langchain-core>=0.1.0",
-    "langchain>=0.1.0",  # Added version constraint
-    "langchain-community>=0.3.23",
-    "langchain-openai>=0.3.17",
-    "pyyaml",  # Added for configuration handling
-    "packaging",  # Added for version comparison
-    "dependency_injector>=4.41.0"
-]
+[tool.poetry.dependencies]
+python = ">=3.11,<4.0"
+python-multipart = ">=0.0.9"
+typer = ">=0.12.3"
+fastapi = ">=0.111.0"
+httpx = ">=0.27.0"
+pydantic = ">=2.6.3"
+pandas = ">=2.2.1"
+dill = ">=0.3.6"
+langgraph = ">=0.4.1"
+langchain-core = ">=0.1.0"
+langchain = ">=0.1.0"
+langchain-community = ">=0.3.23"
+langchain-openai = ">=0.3.17"
+pyyaml = "*"
+packaging = "*"
+dependency_injector = ">=4.41.0"
+langchain-anthropic = ">=0.3.13,<0.4.0"
 
-# - langchain_anthropic
-
-[project.optional-dependencies]
+[tool.poetry.extras]
 llm = [
     "langsmith",
- #   "openai>=1.12.0",
- #   "anthropic>=0.17.0",
- #   "google-generativeai>=0.3.2",
-    "langchain-openai>=0.3.17",
-    "langchain-anthropic>=0.0.1",  # Added for Claude integration
-    "langchain-google-genai>=0.0.1",  # Added for Google integration
+    "langchain-openai",
+    "langchain-anthropic",
+    "langchain-google-genai",
 ]
 storage = [
-    "firebase>=4.0.1,<5.0.0",
-    "firebase-admin>=6.8.0,<7.0.0", 
-    "unstructured[md,pdf]>=0.10.0",
-    "python-docx>=0.8.11",
-    "chromadb",  # Added for vector storage
+    "firebase",
+    "firebase-admin",
+    "unstructured",
+    "python-docx",
+    "chromadb",
 ]
 dev = [
-    "pytest>=8.0.0",
-    "pytest-mock>=3.12.0",
+    "pytest",
+    "pytest-mock",
+    "pytest-cov",
+    "black",
+    "isort",
+    "flake8",
 ]
 all = [
     "langsmith",
-#    "openai>=1.12.0",
-#    "anthropic>=0.17.0",
-#    "google-generativeai>=0.3.2",
-    "langchain-openai>=0.3.17",
-    "langchain-anthropic>=0.0.1",  # Added for Claude integration
-    "langchain-google-genai>=0.0.1",  # Added for Google integration 
-    "firebase-admin>=6.8.0",
-    "unstructured[md,pdf]>=0.10.0",
-    "python-docx>=0.8.11",
-    "chromadb",  # Added for vector storage
+    "langchain-openai",
+    "langchain-anthropic", 
+    "langchain-google-genai",
+    "firebase",
+    "firebase-admin",
+    "unstructured",
+    "python-docx",
+    "chromadb",
 ]
 
-[project.urls]
-Homepage = "https://jwwelbor.github.io/AgentMap"
-BugTracker = "https://github.com/jwwelbor/AgentMap"
-Source = "https://github.com/jwwelbor/AgentMap"
-Tracker = "https://github.com/jwwelbor/AgentMap/issues"
-
-[project.scripts]
+[tool.poetry.scripts]
 agentmap = "agentmap.cli:app"
 agentmap-server = "agentmap.server_cli:main"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-packages = ["agentmap"]
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0.0"
+pytest-mock = ">=3.12.0"
+pytest-cov = ">=4.0.0"
+black = ">=23.0.0"
+isort = ">=5.12.0"
+flake8 = ">=6.0.0"
 
-[tool.setuptools.package-data]
-"agentmap.prompts.system" = ["**/*.yaml", "**/*.txt", "**/*.json"]
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
 
+[tool.poetry.urls]
+"Bug Tracker" = "https://github.com/jwwelbor/AgentMap/issues"
+"Changelog" = "https://github.com/jwwelbor/AgentMap/blob/main/CHANGELOG.md"
+
+# Package data inclusion
+[tool.poetry.plugins."agentmap.prompts"]
+system = "agentmap.prompts.system"
+
+# Testing configuration
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
+addopts = "--cov=agentmap --cov-report=term-missing --cov-report=html"
+
+# Code formatting
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
