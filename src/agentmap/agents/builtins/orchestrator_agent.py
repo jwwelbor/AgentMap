@@ -1,7 +1,7 @@
 """
 Standardized OrchestratorAgent with consistent prompt resolution.
 """
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.agents.mixins import PromptResolutionMixin
@@ -114,20 +114,18 @@ class OrchestratorAgent(BaseAgent, PromptResolutionMixin):
         
         return "\n".join(descriptions)
 
-    def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
+    def _post_process(self, state: Any, output: Any, current_updates: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Any]:
         """Post-process output to extract node name and set routing directive."""
-        # Extract selectedNode from JSON responses if needed
+        
+        # Extract selectedNode from output if needed
+        # does this ever happen?
         if isinstance(output, dict) and "selectedNode" in output:
             selected_node = output["selectedNode"]
             self.log_info(f"[OrchestratorAgent] Extracted selected node '{selected_node}' from result dict")
             output = selected_node
-        
-        # Set routing directive if we have a valid node name
-        if output and isinstance(output, str):
             self.log_info(f"[OrchestratorAgent] Setting __next_node to '{output}'")
-            state = StateAdapter.set_value(state, "__next_node", output)
         
-        return state, output
+        return {"__next_node": output}, output
 
     def process(self, inputs: Dict[str, Any]) -> str:
         """Process inputs and select the best matching node."""

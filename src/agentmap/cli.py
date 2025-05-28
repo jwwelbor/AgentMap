@@ -10,6 +10,186 @@ from agentmap.runner import run_graph
 
 app = typer.Typer()
 
+from agentmap.validation import (
+    validate_csv, validate_config, validate_both, print_validation_summary,
+    clear_validation_cache, get_validation_cache_stats, cleanup_validation_cache
+)
+
+
+@app.command("validate-csv")
+def validate_csv_command(
+    csv_path: str = typer.Option(None, "--csv", "-c", help="Path to CSV file to validate"),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Skip cache and force re-validation"),
+    config_file: str = typer.Option(None, "--config", help="Path to custom config file")
+):
+    """Validate a CSV workflow definition file."""
+    # Initialize DI with optional config file
+    container = initialize_di(config_file)
+    configuration = container.configuration()
+    
+    # Determine CSV path
+    csv_file = Path(csv_path) if csv_path else configuration.get_csv_path()
+    
+    if not csv_file.exists():
+        typer.secho(f"❌ CSV file not found: {csv_file}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    
+    typer.echo(f"Validating CSV file: {csv_file}")
+    
+    try:
+        result = validate_csv(csv_file, use_cache=not no_cache)
+        
+        # Print results
+        print_validation_summary(result)
+        
+        # Exit with appropriate code
+        if result.has_errors:
+            raise typer.Exit(code=1)
+        elif result.has_warnings:
+            typer.echo("\n⚠️  Validation completed with warnings")
+            raise typer.Exit(code=0)
+        else:
+            typer.secho("\n✅ CSV validation passed!", fg=typer.colors.GREEN)
+            
+    except Exception as e:
+        typer.secho(f"❌ Validation failed: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+
+@app.command("validate-config")
+def validate_config_command(
+    config_path: str = typer.Option("agentmap_config.yaml", "--config", "-c", help="Path to config file to validate"),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Skip cache and force re-validation")
+):
+    """Validate a YAML configuration file."""
+    config_file = Path(config_path)
+    
+    if not config_file.exists():
+        typer.secho(f"❌ Config file not found: {config_file}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    
+    typer.echo(f"Validating config file: {config_file}")
+    
+    try:
+        result = validate_config(config_file, use_cache=not no_cache)
+        
+        # Print results
+        print_validation_summary(None, result)
+        
+        # Exit with appropriate code
+        if result.has_errors:
+            raise typer.Exit(code=1)
+        elif result.has_warnings:
+            typer.echo("\n⚠️  Validation completed with warnings")
+            raise typer.Exit(code=0)
+        else:
+            typer.secho("\n✅ Config validation passed!", fg=typer.colors.GREEN)
+            
+    except Exception as e:
+        typer.secho(f"❌ Validation failed: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+
+@app.command("validate-all")
+def validate_all_command(
+    csv_path: str = typer.Option(None, "--csv", help="Path to CSV file to validate"),
+    config_path: str = typer.Option("agentmap_config.yaml", "--config", "-c", help="Path to config file to validate"),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Skip cache and force re-validation"),
+    fail_on_warnings: bool = typer.Option(False, "--fail-on-warnings", help="Treat warnings as errors")
+):
+    """Validate both CSV and configuration files."""
+    # Initialize DI with config file
+    container = initialize_di(config_file)
+    configuration = container.configuration()
+    
+    # Determine paths
+    csv_file = Path(csv_path) if csv_path else configuration.get_csv_path()
+    config_file = Path(config_path)
+    
+    # Check files exist
+    missing_files = []
+    if not csv_file.exists():
+        missing_files.append(f"CSV: {csv_file}")
+    if not config_file.exists():
+        missing_files.append(f"Config: {config_file}")
+    
+    if missing_files:
+        typer.secho(f"❌ Files not found: {', '.join(missing_files)}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    
+    typer.echo(f"Validating files:")
+    typer.echo(f"  CSV: {csv_file}")
+    typer.echo(f"  Config: {config_file}")
+    
+    try:
+        csv_result, config_result = validate_both(
+            csv_file, 
+            config_file, 
+            use_cache=not no_cache
+        )
+        
+        # Print results
+        print_validation_summary(csv_result, config_result)
+        
+        # Determine exit code
+        has_errors = csv_result.has_errors or (config_result.has_errors if config_result else False)
+        has_warnings = csv_result.has_warnings or (config_result.has_warnings if config_result else False)
+        
+        if has_errors:
+            raise typer.Exit(code=1)
+        elif has_warnings and fail_on_warnings:
+            typer.echo("\n❌ Failing due to warnings (--fail-on-warnings enabled)")
+            raise typer.Exit(code=1)
+        elif has_warnings:
+            typer.echo("\n⚠️  Validation completed with warnings")
+            raise typer.Exit(code=0)
+        else:
+            typer.secho("\n✅ All validation passed!", fg=typer.colors.GREEN)
+            
+    except Exception as e:
+        typer.secho(f"❌ Validation failed: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+
+@app.command("validate-cache")
+def validate_cache_command(
+    clear: bool = typer.Option(False, "--clear", help="Clear all validation cache"),
+    cleanup: bool = typer.Option(False, "--cleanup", help="Remove expired cache entries"),
+    stats: bool = typer.Option(False, "--stats", help="Show cache statistics"),
+    file_path: str = typer.Option(None, "--file", help="Clear cache for specific file only")
+):
+    """Manage validation result cache."""
+    
+    if clear:
+        if file_path:
+            removed = clear_validation_cache(file_path)
+            typer.secho(f"✅ Cleared {removed} cache entries for {file_path}", fg=typer.colors.GREEN)
+        else:
+            removed = clear_validation_cache()
+            typer.secho(f"✅ Cleared {removed} cache entries", fg=typer.colors.GREEN)
+    
+    elif cleanup:
+        removed = cleanup_validation_cache()
+        typer.secho(f"✅ Removed {removed} expired cache entries", fg=typer.colors.GREEN)
+    
+    elif stats or not (clear or cleanup):
+        # Show stats by default if no other action specified
+        cache_stats = get_validation_cache_stats()
+        
+        typer.echo("Validation Cache Statistics:")
+        typer.echo("=" * 30)
+        typer.echo(f"Total files: {cache_stats['total_files']}")
+        typer.echo(f"Valid files: {cache_stats['valid_files']}")
+        typer.echo(f"Expired files: {cache_stats['expired_files']}")
+        typer.echo(f"Corrupted files: {cache_stats['corrupted_files']}")
+        
+        if cache_stats['expired_files'] > 0:
+            typer.echo(f"\n💡 Run 'agentmap validate-cache --cleanup' to remove expired entries")
+        
+        if cache_stats['corrupted_files'] > 0:
+            typer.echo(f"⚠️  Found {cache_stats['corrupted_files']} corrupted cache files")
+
+
 
 @app.command()
 def scaffold(
@@ -84,11 +264,27 @@ def compile_cmd(
     csv: str = typer.Option(None, "--csv", help="CSV path override"),
     state_schema: str = typer.Option("dict", "--state-schema", "-s", 
                                     help="State schema type (dict, pydantic:<ModelName>, or custom)"),
+    validate: bool = typer.Option(True, "--validate/--no-validate", help="Validate CSV before compiling"),
     config_file: str = typer.Option(None, "--config", "-c", help="Path to custom config file")
 ):
     """Compile a graph or all graphs from the CSV to pickle files."""
     
-    initialize_di(config_file)
+    container = initialize_di(config_file)
+
+    # Validate if requested (default: True)
+    if validate:
+        from agentmap.validation import validate_csv_for_compilation
+        
+        configuration = container.configuration()
+        csv_file = Path(csv) if csv else configuration.get_csv_path()
+        
+        typer.echo(f"🔍 Validating CSV file: {csv_file}")
+        try:
+            validate_csv_for_compilation(csv_file)
+            typer.secho("✅ CSV validation passed", fg=typer.colors.GREEN)
+        except Exception as e:
+            typer.secho(f"❌ CSV validation failed: {e}", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
 
     from agentmap.graph.serialization import (compile_all, export_as_pickle, export_as_source)
 
@@ -118,10 +314,26 @@ def run(
     csv: str = typer.Option(None, "--csv", help="CSV path override"),
     state: str = typer.Option("{}", "--state", "-s", help="Initial state as JSON string"),  
     autocompile: bool = typer.Option(None, "--autocompile", "-a", help="Autocompile graph if missing"),
+    validate: bool = typer.Option(False, "--validate", help="Validate CSV before running"),
     config_file: str = typer.Option(None, "--config", "-c", help="Path to custom config file")
 ):
     """Run a graph with optional CSV, initial state, and autocompile support."""
-    initialize_di(config_file)
+    container = initialize_di(config_file)
+
+    # Validate if requested
+    if validate:
+        from agentmap.validation import validate_csv_for_compilation
+        
+        configuration = container.configuration()
+        csv_file = Path(csv) if csv else configuration.get_csv_path()
+        
+        typer.echo(f"🔍 Validating CSV file: {csv_file}")
+        try:
+            validate_csv_for_compilation(csv_file)
+            typer.secho("✅ CSV validation passed", fg=typer.colors.GREEN)
+        except Exception as e:
+            typer.secho(f"❌ CSV validation failed: {e}", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
 
     try:
         data = json.loads(state)  
@@ -135,7 +347,7 @@ def run(
         csv_path=csv, 
         autocompile_override=autocompile
     )
-    print("✅ Output:", output)
+    print("✅ Output:", output)    
 
 
 @app.command()
