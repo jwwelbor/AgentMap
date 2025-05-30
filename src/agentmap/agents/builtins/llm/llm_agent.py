@@ -18,12 +18,13 @@ from agentmap.agents.builtins.llm.memory import (
 
 class LLMAgent(BaseAgent):
     """
-    Base class for LLM agents with consistent configuration and memory management.
+    Unified LLM agent with intelligent routing and backward compatibility.
     
-    This class provides a unified interface for working with different LLM providers
-    (OpenAI, Anthropic, Google, etc.) with consistent configuration loading,
-    memory management, and state handling. Subclasses need only implement
-    provider-specific methods.
+    This agent can work in two modes:
+    1. Legacy mode: Direct provider specification (backward compatible)
+    2. Routing mode: Intelligent provider/model selection based on task complexity
+    
+    The mode is determined by the 'routing_enabled' context parameter.
     """
     
     def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
@@ -34,24 +35,33 @@ class LLMAgent(BaseAgent):
         # Then initialize with the resolved prompt
         super().__init__(name, resolved_prompt, context or {})
         
-        # Provider-specific configuration (to be set by subclasses)
-        self.provider_name = self._get_provider_name()
-        self.api_key_env_var = self._get_api_key_env_var()
+        # Determine operation mode
+        self.routing_enabled = self.context.get("routing_enabled", False)
         
-        # Try to use DI container if available
-        try:
-            from agentmap.di import application
-            config = application.configuration()
-            config = config.get_section("llm", {}).get(self.provider_name, {})
-        except (ImportError, AttributeError):
-            # Fall back to direct config loading
-            from agentmap.config import get_llm_config
-            config = get_llm_config(self.provider_name)
-        
-        # Use configuration
-        self.model = self._get_model_name(config)
-        self.temperature = self._get_temperature(config)
-        self.api_key = self._get_api_key(config)
+        if self.routing_enabled:
+            # Routing mode: Provider will be determined dynamically
+            self.provider_name = "auto"  # Placeholder for routing
+            self.model = None  # Will be determined by routing
+            self.temperature = self.context.get("temperature", 0.7)
+            self.api_key = None  # Not needed in routing mode
+        else:
+            # Legacy mode: Use specified provider or default to anthropic
+            self.provider_name = self.context.get("provider", "anthropic") 
+            
+            # Try to use DI container if available
+            try:
+                from agentmap.di import application
+                config = application.configuration()
+                config = config.get_section("llm", {}).get(self.provider_name, {})
+            except (ImportError, AttributeError):
+                # Fall back to direct config loading
+                from agentmap.config import get_llm_config
+                config = get_llm_config(self.provider_name)
+            
+            # Use configuration for legacy mode
+            self.model = self._get_model_name(config)
+            self.temperature = self._get_temperature(config)
+            self.api_key = self._get_api_key(config)
         
         # Memory configuration
         self.memory_key = self.context.get("memory_key", "memory")
@@ -64,7 +74,6 @@ class LLMAgent(BaseAgent):
         # LLM Service (will be injected or created)
         self.llm_service = None
     
-    # Required provider-specific methods (to be implemented by subclasses)
     def _get_provider_name(self) -> str:
         """
         Get the provider name for configuration loading.
@@ -72,25 +81,49 @@ class LLMAgent(BaseAgent):
         Returns:
             Provider name string (e.g., "openai", "anthropic", "google")
         """
-        raise NotImplementedError("Subclasses must implement _get_provider_name()")
+        if self.routing_enabled:
+            return "auto"  # Will be determined by routing
+        return self.context.get("provider", "anthropic")
         
-    def _get_api_key_env_var(self) -> str:
+    def _get_api_key_env_var(self, provider: Optional[str] = None) -> str:
         """
         Get the environment variable name for the API key.
         
+        Args:
+            provider: Optional provider name (uses self.provider_name if not provided)
+            
         Returns:
-            Environment variable name (e.g., "OPENAI_API_KEY")
+            Environment variable name (e.g., "ANTHROPIC_API_KEY")
         """
-        raise NotImplementedError("Subclasses must implement _get_api_key_env_var()")
+        if not provider:
+            provider = self.provider_name
+            
+        env_vars = {
+            "anthropic": "ANTHROPIC_API_KEY",
+            "openai": "OPENAI_API_KEY", 
+            "google": "GOOGLE_API_KEY"
+        }
+        return env_vars.get(provider, f"{provider.upper()}_API_KEY")
         
-    def _get_default_model_name(self) -> str:
+    def _get_default_model_name(self, provider: Optional[str] = None) -> str:
         """
         Get default model name for this provider.
         
+        Args:
+            provider: Optional provider name (uses self.provider_name if not provided)
+            
         Returns:
             Default model name
         """
-        raise NotImplementedError("Subclasses must implement _get_default_model_name()")
+        if not provider:
+            provider = self.provider_name
+            
+        defaults = {
+            "anthropic": "claude-3-sonnet-20240229",
+            "openai": "gpt-3.5-turbo",
+            "google": "gemini-1.0-pro"
+        }
+        return defaults.get(provider, "claude-3-sonnet-20240229")
 
     def _get_llm_service(self):
         """Get LLM service via DI or direct creation."""
@@ -126,6 +159,24 @@ class LLMAgent(BaseAgent):
                 #     self.llm_service = LLMService()
                     
         return self.llm_service
+    
+    def is_routing_enabled(self) -> bool:
+        """
+        Check if routing is enabled for this agent.
+        
+        Returns:
+            True if routing is enabled
+        """
+        return self.routing_enabled
+    
+    def get_effective_provider(self) -> str:
+        """
+        Get the effective provider name (for logging/debugging).
+        
+        Returns:
+            Provider name or "routing" if routing is enabled
+        """
+        return "routing" if self.routing_enabled else self.provider_name
 
     # Common configuration methods with sensible defaults
     def _get_model_name(self, config: Dict[str, Any]) -> str:
@@ -171,7 +222,56 @@ class LLMAgent(BaseAgent):
         Returns:
             API key string
         """
-        return config.get("api_key") or os.environ.get(self.api_key_env_var, "")
+        provider = self.provider_name
+        return config.get("api_key") or os.environ.get(self._get_api_key_env_var(provider), "")
+    
+    def _prepare_routing_context(self, inputs: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Prepare routing context based on agent configuration and inputs.
+        
+        Args:
+            inputs: Input values for this node
+            
+        Returns:
+            Routing context dictionary or None for legacy mode
+        """
+        if not self.routing_enabled:
+            # Legacy mode: return None to use direct calling
+            return None
+        
+        # Extract prompt content for complexity analysis
+        input_parts = []
+        for field in self.input_fields:
+            if field != self.memory_key and inputs.get(field):
+                input_parts.append(str(inputs.get(field)))
+        
+        user_input = " ".join(input_parts) if input_parts else ""
+        
+        # Build routing context
+        routing_context = {
+            "routing_enabled": True,
+            "task_type": self.context.get("task_type", "general"),
+            "complexity_override": self.context.get("complexity_override"),
+            "auto_detect_complexity": self.context.get("auto_detect_complexity", True),
+            "provider_preference": self.context.get("provider_preference", []),
+            "excluded_providers": self.context.get("excluded_providers", []),
+            "model_override": self.context.get("model_override"),
+            "max_cost_tier": self.context.get("max_cost_tier"),
+            "cost_optimization": self.context.get("cost_optimization", True),
+            "prefer_speed": self.context.get("prefer_speed", False),
+            "prefer_quality": self.context.get("prefer_quality", False),
+            "fallback_provider": self.context.get("fallback_provider", "anthropic"),
+            "fallback_model": self.context.get("fallback_model"),
+            "retry_with_lower_complexity": self.context.get("retry_with_lower_complexity", True),
+            "input_context": {
+                "user_input": user_input,
+                "input_field_count": len([f for f in self.input_fields if f != self.memory_key]),
+                "memory_size": len(inputs.get(self.memory_key, [])),
+                **self.context.get("input_context", {})
+            }
+        }
+        
+        return routing_context
 
     def _pre_process(self, state: Any, inputs: Dict[str, Any]) -> Any:
         """
@@ -196,7 +296,7 @@ class LLMAgent(BaseAgent):
 
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
-        Process inputs with LLM, including memory management.
+        Process inputs with LLM, supporting both routing and legacy modes.
         
         Args:
             inputs: Dictionary of input values
@@ -225,14 +325,29 @@ class LLMAgent(BaseAgent):
             # Get updated messages
             messages = get_memory(inputs, self.memory_key)
             
+            # Prepare routing context
+            routing_context = self._prepare_routing_context(inputs)
+            
             # Call LLM via service
             llm_service = self._get_llm_service()
-            result = llm_service.call_llm(
-                provider=self.provider_name,
-                messages=messages,
-                model=self.model,
-                temperature=self.temperature
-            )
+            
+            if routing_context:
+                # Routing mode: Let the routing service decide provider/model
+                self.log_debug(f"Using routing mode for task_type: {routing_context.get('task_type')}")
+                result = llm_service.call_llm(
+                    provider="auto",  # Will be determined by routing
+                    messages=messages,
+                    routing_context=routing_context
+                )
+            else:
+                # Legacy mode: Use specified provider and model
+                self.log_debug(f"Using legacy mode with provider: {self.provider_name}")
+                result = llm_service.call_llm(
+                    provider=self.provider_name,
+                    messages=messages,
+                    model=self.model,
+                    temperature=self.temperature
+                )
             
             # Add assistant response to memory
             add_assistant_message(inputs, result, self.memory_key)
@@ -248,7 +363,8 @@ class LLMAgent(BaseAgent):
             }
             
         except Exception as e:
-            self.log_error(f"Error in {self.provider_name} processing: {e}")
+            provider_name = self.provider_name if not self.routing_enabled else "routing"
+            self.log_error(f"Error in {provider_name} processing: {e}")
             return {
                 "error": str(e),
                 "last_action_success": False

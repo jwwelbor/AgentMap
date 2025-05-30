@@ -12,6 +12,14 @@ from agentmap.config.sections.paths import (
 
 from agentmap.config.sections.llm import get_llm_config
 
+from agentmap.config.sections.routing import (
+    get_routing_config,
+    get_routing_matrix,
+    get_task_types_config,
+    is_routing_enabled,
+    RoutingConfigSection
+)
+
 from agentmap.config.sections.storage import (
     get_storage_config_path,
     load_storage_config
@@ -30,6 +38,11 @@ __all__ = [
     'get_compiled_graphs_path',
     'get_csv_path',
     'get_llm_config',
+    'get_routing_config',
+    'get_routing_matrix',
+    'get_task_types_config',
+    'is_routing_enabled',
+    'RoutingConfigSection',
     'get_storage_config_path',
     'load_storage_config',
     'get_prompts_config',
