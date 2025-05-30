@@ -12,9 +12,7 @@ from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, log_operation)
 from agentmap.services.storage import DocumentResult, WriteMode
 from agentmap.agents.mixins import StorageErrorHandlerMixin
-from agentmap.logging import get_logger
 
-logger = get_logger(__name__)
 
 T = TypeVar('T')  # Generic type for document data
 

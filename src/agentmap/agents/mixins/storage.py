@@ -7,9 +7,6 @@ with common behaviors for input processing, error handling, etc.
 from typing import Any, Dict, Optional
 
 from agentmap.services.storage import DocumentResult, WriteMode
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class StorageInputProcessorMixin:

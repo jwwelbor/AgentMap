@@ -11,11 +11,8 @@ Examples:
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional
 
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class DocumentPathMixin:
@@ -186,8 +183,8 @@ class DocumentPathMixin:
         elif isinstance(container, list) and part.isdigit():
             index = int(part)
             # Ensure list is long enough
-            while len(current) <= index:
-                current.append(None)
+            while len(container) <= index:
+                container.append(None)
             container[index] = value
             return container
         else:

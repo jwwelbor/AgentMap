@@ -6,6 +6,9 @@ from typing import Any, Dict, Tuple, Optional
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.agents.mixins import PromptResolutionMixin
 from agentmap.agents.features import is_llm_enabled
+from agentmap.logging.tracking.execution_tracker import ExecutionTracker
+from agentmap.state.adapter import StateAdapter
+import logging
 
 
 class OrchestratorAgent(BaseAgent, PromptResolutionMixin):
@@ -14,9 +17,9 @@ class OrchestratorAgent(BaseAgent, PromptResolutionMixin):
     Uses LLM Service to perform intent matching with standardized prompt resolution.
     """
 
-    def __init__(self, name: str, prompt: str, context: dict = None):
+    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: dict = None):
         """Initialize the orchestrator agent with configuration."""
-        super().__init__(name, prompt, context)
+        super().__init__(name, prompt, context, logger=logger, execution_tracker=execution_tracker)
         context = context or {}
         
         # LLM Service - implements LLMServiceUser protocol
@@ -113,18 +116,21 @@ class OrchestratorAgent(BaseAgent, PromptResolutionMixin):
         
         return "\n".join(descriptions)
 
-    def _post_process(self, state: Any, output: Any, current_updates: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Any]:
+    def _post_process(self, state: Any, inputs: Dict[str, Any], output: Any) -> Tuple[Any, Any]:
         """Post-process output to extract node name and set routing directive."""
         
         # Extract selectedNode from output if needed
         # does this ever happen?
         if isinstance(output, dict) and "selectedNode" in output:
             selected_node = output["selectedNode"]
-            self.log_info(f"[OrchestratorAgent] Extracted selected node '{selected_node}' from result dict")
-            output = selected_node
-            self.log_info(f"[OrchestratorAgent] Setting __next_node to '{output}'")
+            self.log_info(f"Extracted selected node '{selected_node}' from result dict")
+        else:
+            selected_node = output
+
+        state = StateAdapter.set_value(state, "__next_node", selected_node)
+        self.log_info(f"Setting __next_node to '{selected_node}'")
         
-        return {"__next_node": output}, output
+        return state, output
 
     def process(self, inputs: Dict[str, Any]) -> str:
         """Process inputs and select the best matching node."""

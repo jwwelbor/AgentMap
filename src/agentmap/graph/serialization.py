@@ -14,10 +14,7 @@ from agentmap.agents import get_agent_class
 from agentmap.config import (get_compiled_graphs_path, get_csv_path,
                              get_custom_agents_path, get_functions_path)
 from agentmap.graph import GraphAssembler, GraphBuilder
-from agentmap.logging import get_logger
 from agentmap.utils.common import extract_func_ref
-
-logger = get_logger(__name__)
 
 from langgraph.graph import StateGraph
 

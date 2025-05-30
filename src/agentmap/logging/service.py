@@ -1,9 +1,9 @@
 # agentmap/logging/service.py
 from typing import Any, Dict, Optional
 import logging
-from pathlib import Path
 
-from agentmap.logging.logger import get_logger, configure_logging, TRACE
+
+from agentmap.logging.logger import  configure_logging, TRACE
 from agentmap.logging.manager import LoggerManager
 
 

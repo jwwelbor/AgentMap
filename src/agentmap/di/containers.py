@@ -26,7 +26,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
             if config is None:
                 logging_config = {}
             else:
-                logging_config = config.get_section("logging") or {}
+                logging_config = config.get_logging_config() or {}
         except Exception:
             logging_config = {}
         
@@ -70,6 +70,30 @@ class ApplicationContainer(containers.DeclarativeContainer):
     
     storage_service_manager = providers.Singleton(
         _create_storage_service_manager,
+        configuration,
+        logging_service
+    )
+    
+    # Execution Tracker - use lazy factory import to avoid circular dependency
+    def _create_execution_tracker(config, logger):
+        # Import here to avoid circular dependency
+        from agentmap.logging.tracking.execution_tracker import ExecutionTracker
+        
+        # Get tracking and execution config safely
+        try:
+            execution_config = config.get_execution_config() or {}
+            tracking_config = config.get_tracking_config() or {}
+        except Exception:
+            tracking_config = {}
+            execution_config = {}
+        
+        # Get logger for tracking
+        tracking_logger = logger.get_logger("agentmap.tracking")
+        
+        return ExecutionTracker(tracking_config, execution_config, tracking_logger)
+    
+    execution_tracker = providers.Singleton(
+        _create_execution_tracker,
         configuration,
         logging_service
     )

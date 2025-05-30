@@ -9,7 +9,6 @@ from typing import Any, Callable, Dict, Optional
 from langgraph.graph import StateGraph
 
 from agentmap.agents.features import is_llm_enabled
-from agentmap.logging import get_logger
 from agentmap.state.adapter import StateAdapter
 from agentmap.utils.common import extract_func_ref, import_function
 from dependency_injector.wiring import inject, Provide
@@ -18,7 +17,6 @@ from agentmap.config.configuration import Configuration
 from agentmap.logging.service import LoggingService
 from agentmap.services import NodeRegistryUser
 
-logger = get_logger("AgentMap")
 
 class GraphAssembler:
     """

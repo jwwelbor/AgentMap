@@ -5,8 +5,6 @@ import os
 import logging
 from contextlib import contextmanager
 
-from agentmap.logging import get_logger
-logger = get_logger(__name__)
 
 def get_tracing_config():
     """Get LangSmith tracing configuration."""

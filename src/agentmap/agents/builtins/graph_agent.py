@@ -1,10 +1,11 @@
 # agentmap/agents/builtins/graph_agent.py
 from typing import Any, Dict, Optional, Tuple
-
+import logging
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.runner import run_graph
 from agentmap.state.adapter import StateAdapter
 from agentmap.utils.common import extract_func_ref, import_function
+from agentmap.logging.tracking.execution_tracker import ExecutionTracker
 
 class GraphAgent(BaseAgent):
     """
@@ -16,7 +17,7 @@ class GraphAgent(BaseAgent):
     Supports flexible input/output mapping and nested execution tracking.
     """
     
-    def __init__(self, name: str, prompt: str, context: dict = None):
+    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: dict = None):
         """
         Initialize the graph agent.
         
@@ -25,10 +26,11 @@ class GraphAgent(BaseAgent):
             prompt: Name of the subgraph to execute
             context: Additional context (CSV path string or config dict)
         """
-        super().__init__(name, prompt, context or {})
+        super().__init__(name, prompt, context, logger=logger, execution_tracker=execution_tracker)
         
         # The subgraph name comes from the prompt field
         self.subgraph_name = prompt
+        self._execution_tracker = execution_tracker
         
         # Handle context as either string (CSV path) or dict (config)
         if isinstance(context, str) and context.strip():
@@ -91,7 +93,7 @@ class GraphAgent(BaseAgent):
             Tuple of (updated_state, processed_output)
         """
         # Get parent execution tracker
-        parent_tracker = StateAdapter.get_value(state, "__execution_tracker")
+        parent_tracker = self._execution_tracker
         
         # If output contains execution summary from subgraph, record it
         if isinstance(output, dict) and "__execution_summary" in output:

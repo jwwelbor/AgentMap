@@ -6,7 +6,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from pathlib import Path
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.config import get_llm_config
+from agentmap.exceptions import ConfigurationException
+
+# from agentmap.config import get_llm_config
 from agentmap.state.adapter import StateAdapter
 
 # Import memory utilities
@@ -54,9 +56,10 @@ class LLMAgent(BaseAgent):
                 config = application.configuration()
                 config = config.get_section("llm", {}).get(self.provider_name, {})
             except (ImportError, AttributeError):
-                # Fall back to direct config loading
-                from agentmap.config import get_llm_config
-                config = get_llm_config(self.provider_name)
+                raise ConfigurationException( f"Could not get configuration from DI container for provider {self.provider_name}")
+                # # Fall back to direct config loading
+                # from agentmap.config import get_llm_config
+                # config = get_llm_config(self.provider_name)
             
             # Use configuration for legacy mode
             self.model = self._get_model_name(config)

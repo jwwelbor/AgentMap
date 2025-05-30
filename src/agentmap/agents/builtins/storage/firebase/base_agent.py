@@ -17,9 +17,6 @@ from agentmap.agents.builtins.storage.document.path_mixin import DocumentPathMix
 from agentmap.agents.mixins import StorageErrorHandlerMixin
 from agentmap.config import load_storage_config
 from agentmap.exceptions import CollectionNotFoundError, StorageConnectionError, StorageConfigurationError, StorageOperationError
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class FirebaseDocumentAgent(DocumentStorageAgent, DocumentPathMixin):

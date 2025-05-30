@@ -13,9 +13,6 @@ from agentmap.agents.builtins.storage.document.path_mixin import DocumentPathMix
 from agentmap.agents.builtins.storage.json.utils import (
     add_document_to_structure, create_initial_structure, ensure_id_in_document,
     find_document_by_id, read_json_file, write_json_file)
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class JSONDocumentOperations(DocumentPathMixin):

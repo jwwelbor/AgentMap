@@ -9,10 +9,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.blob.base_connector import BlobStorageConnector
-from agentmap.exceptions import StorageOperationError
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class LocalFileConnector(BlobStorageConnector):

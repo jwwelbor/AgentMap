@@ -13,9 +13,6 @@ from agentmap.agents.builtins.storage.base_storage_agent import (
 from agentmap.services.storage import DocumentResult, CSVStorageService
 from agentmap.services.storage.protocols import CSVServiceUser
 from agentmap.agents.mixins import StorageErrorHandlerMixin
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class CSVAgent(BaseStorageAgent, StorageErrorHandlerMixin, CSVServiceUser):

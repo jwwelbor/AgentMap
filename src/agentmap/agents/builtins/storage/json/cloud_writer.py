@@ -10,9 +10,6 @@ from agentmap.agents.builtins.storage.document.writer import DocumentWriterAgent
 from agentmap.agents.builtins.storage.document.reader import DocumentReaderAgent
 from agentmap.agents.builtins.storage.json.cloud_agent import JSONCloudDocumentAgent
 from agentmap.agents.registry import register_agent
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class JSONCloudDocumentWriterAgent(JSONCloudDocumentAgent, DocumentWriterAgent):

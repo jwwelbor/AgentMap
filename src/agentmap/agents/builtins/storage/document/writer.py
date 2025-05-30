@@ -12,9 +12,6 @@ from agentmap.agents.builtins.storage.document.base_agent import (
     DocumentStorageAgent, log_operation)
 from agentmap.services.storage import DocumentResult, WriteMode
 from agentmap.agents.mixins import WriterOperationsMixin
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class DocumentWriterAgent(DocumentStorageAgent, WriterOperationsMixin):

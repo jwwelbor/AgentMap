@@ -1,14 +1,13 @@
 # agentmap/agents/builtins/default_agent.py
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.logging import get_logger
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 
 class DefaultAgent(BaseAgent):
     """Default agent implementation that simply logs its execution."""
 
-    def process(self, inputs: Dict[str, Any]) -> str:
+    def process(self, inputs: Dict[str, Any]) -> Any:
         """
         Process inputs and return a message that includes the prompt.
 
