@@ -201,6 +201,261 @@ GraphName,Node,Context,AgentType,Input_Fields,Output_Field,Prompt
 Advanced,Analyze,"{\"memory_key\":\"analysis_history\",\"max_memory_messages\":10,\"model\":\"gpt-4\",\"temperature\":0.2}",openai,data|analysis_history,insights,"Analyze this data: {data}"
 ```
 
+### LLM Routing & Unified Agent
+
+AgentMap provides intelligent LLM routing capabilities through a unified `llm` agent that automatically selects the best provider and model based on task complexity, cost optimization, and availability. This modern approach simplifies workflow design while maintaining backward compatibility with provider-specific agents.
+
+#### Unified LLM Agent
+
+| Agent Type | Features | Routing Strategy | Configuration |
+|------------|----------|------------------|---------------|
+| `llm` | Multi-provider routing, cost optimization, automatic fallback | Content analysis, task complexity, provider availability | Routing rules, provider priorities, cost thresholds |
+
+**Basic Unified Agent Usage:**
+```csv
+GraphName,Node,AgentType,Input_Fields,Output_Field,Prompt
+SmartFlow,Process,llm,user_input,response,"You are a helpful assistant: {user_input}"
+SmartFlow,Analyze,llm,data,analysis,"Analyze this data: {data}"
+```
+
+**Advanced Routing Configuration:**
+```csv
+GraphName,Node,Context,AgentType,Input_Fields,Output_Field,Prompt
+OptimizedFlow,ComplexTask,"{\"routing_strategy\":\"cost_optimized\",\"max_cost_per_request\":0.05,\"fallback_providers\":[\"openai\",\"claude\"],\"memory_key\":\"conversation\"}",llm,complex_input|conversation,detailed_output,"Provide detailed analysis: {complex_input}"
+OptimizedFlow,SimpleTask,"{\"routing_strategy\":\"speed_first\",\"preferred_providers\":[\"openai\",\"gemini\"]}",llm,simple_input,quick_response,"Quick response to: {simple_input}"
+```
+
+#### Routing Strategies
+
+**1. Cost-Optimized Routing**
+```yaml
+# In agentmap_config.yaml
+llm:
+  routing:
+    default_strategy: "cost_optimized"
+    cost_thresholds:
+      simple_task: 0.01      # Max cost for simple tasks
+      complex_task: 0.10     # Max cost for complex tasks
+      reasoning_task: 0.25   # Max cost for reasoning tasks
+    
+    provider_costs:          # Cost per 1K tokens
+      openai:
+        gpt-3.5-turbo: 0.002
+        gpt-4: 0.06
+      anthropic:
+        claude-3-haiku: 0.0015
+        claude-3-sonnet: 0.015
+      google:
+        gemini-pro: 0.001
+```
+
+**2. Quality-First Routing**
+```yaml
+llm:
+  routing:
+    default_strategy: "quality_first"
+    task_assignments:
+      creative_writing: ["claude-3-sonnet", "gpt-4"]
+      data_analysis: ["gpt-4", "claude-3-sonnet"]
+      simple_qa: ["gpt-3.5-turbo", "gemini-pro"]
+      reasoning: ["gpt-4", "claude-3-opus"]
+    
+    quality_thresholds:
+      minimum_model_tier: "mid"  # low, mid, high
+      require_reasoning: true    # For complex tasks
+```
+
+**3. Speed-Optimized Routing**
+```yaml
+llm:
+  routing:
+    default_strategy: "speed_first"
+    latency_targets:
+      realtime: 1.0          # Max 1 second response
+      interactive: 3.0       # Max 3 second response
+      batch: 10.0           # Max 10 second response
+    
+    provider_priorities:     # Ordered by typical response speed
+      - "gemini-pro"
+      - "gpt-3.5-turbo"
+      - "claude-3-haiku"
+```
+
+#### Task Complexity Analysis
+
+The routing system automatically analyzes task complexity to select appropriate models:
+
+**Complexity Indicators:**
+```yaml
+llm:
+  complexity_analysis:
+    simple_indicators:
+      - "short prompt (< 100 chars)"
+      - "single question"
+      - "factual lookup"
+      - "basic formatting"
+    
+    complex_indicators:
+      - "multi-step reasoning"
+      - "code generation"
+      - "creative writing"
+      - "analysis of large data"
+      - "prompt length > 1000 chars"
+    
+    reasoning_indicators:
+      - "mathematical problems"
+      - "logical deduction"
+      - "multi-document synthesis"
+      - "strategic planning"
+```
+
+**Automatic Task Classification:**
+```csv
+# Tasks are automatically classified and routed appropriately
+Workflow,QuickAnswer,llm,question,answer,"What is the capital of France?"     # → Routes to fast, cheap model
+Workflow,DeepAnalysis,llm,research_data,insights,"Analyze market trends across 50 data points and provide strategic recommendations"  # → Routes to high-capability model
+Workflow,CodeReview,llm,code_snippet,review,"Review this Python function for bugs and optimization opportunities"  # → Routes to code-capable model
+```
+
+#### Provider Fallback & Reliability
+
+**Automatic Fallback Configuration:**
+```yaml
+llm:
+  reliability:
+    enable_fallback: true
+    max_retries: 3
+    retry_delay: 1.0        # Seconds between retries
+    
+    fallback_chains:
+      primary: ["openai/gpt-4", "anthropic/claude-3-sonnet", "google/gemini-pro"]
+      cost_optimized: ["google/gemini-pro", "openai/gpt-3.5-turbo", "anthropic/claude-3-haiku"]
+      speed_first: ["openai/gpt-3.5-turbo", "google/gemini-pro", "anthropic/claude-3-haiku"]
+    
+    health_checks:
+      enabled: true
+      check_interval: 300     # Check provider health every 5 minutes
+      failure_threshold: 3    # Mark as unhealthy after 3 failures
+```
+
+**Error Handling in Workflows:**
+```csv
+GraphName,Node,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+RobustFlow,MainProcess,"{\"fallback_providers\":[\"openai\",\"claude\",\"gemini\"],\"max_retries\":2}",llm,Success,HandleLLMFailure,user_input,response,"Process: {user_input}"
+RobustFlow,HandleLLMFailure,echo,FallbackProcess,,error,fallback_message,"LLM service temporarily unavailable"
+RobustFlow,FallbackProcess,default,Success,,user_input,response,"Fallback processing for: {user_input}"
+```
+
+#### Cost Monitoring & Budget Management
+
+**Budget Controls:**
+```yaml
+llm:
+  budget:
+    enabled: true
+    daily_limit: 50.00      # $50 daily limit
+    monthly_limit: 1000.00  # $1000 monthly limit
+    
+    cost_tracking:
+      log_requests: true
+      alert_thresholds:
+        warning: 0.80         # Alert at 80% of budget
+        critical: 0.95       # Critical alert at 95%
+    
+    emergency_fallback:
+      enabled: true
+      fallback_to: "local"   # Use local models when budget exceeded
+```
+
+**Cost-Aware Routing in CSV:**
+```csv
+GraphName,Node,Context,AgentType,Input_Fields,Output_Field,Prompt
+BudgetFlow,ExpensiveTask,"{\"max_cost\":0.05,\"budget_category\":\"analysis\"}",llm,complex_data,results,"Detailed analysis: {complex_data}"
+BudgetFlow,CheapTask,"{\"max_cost\":0.01,\"prefer_free\":true}",llm,simple_query,answer,"Quick answer: {simple_query}"
+```
+
+#### Integration with Existing Workflows
+
+**Backward Compatibility:**
+```csv
+# Legacy approach - still supported
+LegacyFlow,OldStyle,openai,user_input,response,"You are helpful: {user_input}"
+LegacyFlow,OldStyle2,claude,user_input,response,"You are helpful: {user_input}"
+
+# Modern approach - automatic routing
+ModernFlow,NewStyle,llm,user_input,response,"You are helpful: {user_input}"
+```
+
+**Gradual Migration Pattern:**
+```csv
+# Phase 1: Keep existing agents, add routing for new nodes
+MigrationFlow,ExistingProcess,openai,data,result1,"Process with OpenAI: {data}"
+MigrationFlow,NewProcess,llm,data,result2,"Process with auto-routing: {data}"
+
+# Phase 2: Replace existing agents one by one
+MigrationFlow,UpdatedProcess,llm,data,result1,"Process with OpenAI: {data}"  # Same prompt, but now auto-routed
+```
+
+#### Advanced Routing Examples
+
+**Multi-Model Workflow:**
+```csv
+GraphName,Node,Context,AgentType,Input_Fields,Output_Field,Prompt
+MultiModel,QuickFilter,"{\"routing_strategy\":\"speed_first\",\"task_type\":\"simple\"}",llm,user_query,filtered_query,"Extract key intent from: {user_query}"
+MultiModel,DeepAnalysis,"{\"routing_strategy\":\"quality_first\",\"task_type\":\"complex\",\"min_model_tier\":\"high\"}",llm,filtered_query|context,detailed_analysis,"Provide comprehensive analysis: {filtered_query}"
+MultiModel,Summary,"{\"routing_strategy\":\"cost_optimized\",\"task_type\":\"simple\"}",llm,detailed_analysis,summary,"Summarize: {detailed_analysis}"
+```
+
+**Context-Aware Routing:**
+```csv
+GraphName,Node,Context,AgentType,Input_Fields,Output_Field,Prompt
+ContextAware,Router,"{\"context_aware\":true,\"routing_factors\":[\"content_length\",\"complexity\",\"urgency\"]}",llm,user_input|context_metadata,routed_response,"Respond appropriately: {user_input}"
+```
+
+**A/B Testing Integration:**
+```csv
+GraphName,Node,Context,AgentType,Input_Fields,Output_Field,Prompt
+ABTest,VariantA,"{\"routing_strategy\":\"quality_first\",\"ab_test_group\":\"A\"}",llm,user_input,response_a,"High-quality response: {user_input}"
+ABTest,VariantB,"{\"routing_strategy\":\"cost_optimized\",\"ab_test_group\":\"B\"}",llm,user_input,response_b,"Cost-optimized response: {user_input}"
+```
+
+#### Monitoring & Analytics
+
+**Routing Decision Tracking:**
+```python
+# Access routing decisions in results
+result = run_graph("SmartFlow", initial_state)
+
+# View routing decisions
+for step in result.get("execution_steps", []):
+    if step.get("routing_info"):
+        routing = step["routing_info"]
+        print(f"Node {step['node']}:")
+        print(f"  Chosen Provider: {routing['provider']}")
+        print(f"  Model: {routing['model']}")
+        print(f"  Strategy: {routing['strategy']}")
+        print(f"  Cost: ${routing['cost']:.4f}")
+        print(f"  Latency: {routing['latency']:.2f}s")
+```
+
+**Performance Analytics:**
+```yaml
+llm:
+  analytics:
+    enabled: true
+    metrics:
+      - "provider_usage"
+      - "cost_per_request"
+      - "latency_distribution"
+      - "error_rates"
+      - "routing_decisions"
+    
+    export:
+      format: "json"          # json, csv, prometheus
+      interval: "daily"       # hourly, daily, weekly
+      destination: "logs/llm_analytics.json"
+```
+
 ### Storage Agents
 
 #### File Operations
