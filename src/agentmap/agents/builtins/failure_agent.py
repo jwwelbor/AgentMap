@@ -10,7 +10,7 @@ class FailureAgent(BaseAgent):
     Useful for testing failure branches in workflows.
     """
     
-    def process(self, inputs: Dict[str, Any]) -> str:
+    def process(self, inputs: Dict[str, Any]) -> Any:
         """
         Process the inputs and deliberately fail.
         
@@ -21,7 +21,7 @@ class FailureAgent(BaseAgent):
             String confirming the failure path was taken
         """        
         # Include identifying information in the output
-        message = f"FAILURE: {self.name} executed (will set last_action_success=False)"
+        message = f"{self.name} executed (will set last_action_success=False)"
         
         # If we have any inputs, include them in the output
         if inputs:
@@ -32,12 +32,6 @@ class FailureAgent(BaseAgent):
         if self.prompt:
             message += f" with prompt: '{self.prompt}'"
 
-        # Log the execution with additional details for debugging
-        self.log_info(f"[FailureAgent] {self.name} executed with success")
-        self.log_debug(f"[FailureAgent] Full output: {message}")
-        self.log_debug(f"[FailureAgent] Input fields: {self.input_fields}")
-        self.log_debug(f"[FailureAgent] Output field: {self.output_field}")
-            
         return message
     
     def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:

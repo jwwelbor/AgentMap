@@ -1,5 +1,5 @@
 from agentmap.agents.base_agent import BaseAgent
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 
 class EchoAgent(BaseAgent):
@@ -15,12 +15,12 @@ class EchoAgent(BaseAgent):
         Returns:
             The input data unchanged
         """
-        self.log_info(f"[EchoAgent] '{self.name}' received inputs: {inputs} and prompt: '{self.prompt}'")
+        self.log_info(f"received inputs: {inputs} and prompt: '{self.prompt}'")
         
         # If there are inputs, return the first one
         if inputs:
             # Return all inputs as a dictionary to maintain structure
-            return inputs
+            return inputs, True
         
         # Default return if no inputs
         return "No input provided to echo"

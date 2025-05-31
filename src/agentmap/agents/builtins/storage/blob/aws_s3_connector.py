@@ -8,9 +8,6 @@ from typing import Any, Dict, Optional, Tuple
 
 from agentmap.agents.builtins.storage.blob.base_connector import BlobStorageConnector
 from agentmap.exceptions import StorageConnectionError, StorageOperationError
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class AWSS3Connector(BlobStorageConnector):

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import logging
 from agentmap.state.adapter import StateAdapter
-from agentmap.state.manager import StateManager
+from agentmap.logging.tracking.execution_tracker import ExecutionTracker
 
 class BaseAgent:
     """Base class for all agents in AgentMap."""
@@ -18,7 +18,7 @@ class BaseAgent:
         prompt: str, 
         context: dict = None,
         logger: Optional[logging.Logger] = None,
-        execution_tracker: Optional[Any] = None
+        execution_tracker: Optional[ExecutionTracker] = None
     ):
         """
         Initialize the agent.
@@ -40,9 +40,6 @@ class BaseAgent:
         self.output_field = self.context.get("output_field", "output")
         self.description = self.context.get("description", "")
         
-        # Create state manager
-        self.state_manager = StateManager(self.input_fields, self.output_field)
-        
         # Store logger and tracker - these can be None initially
         self._logger = logger
         self._execution_tracker = execution_tracker
@@ -61,9 +58,14 @@ class BaseAgent:
                 self._logger = logging.getLogger("agentmap.agents")
         return self._logger
         
-    def _get_execution_tracker(self, state):
+    def _get_execution_tracker(self):
         """Get the execution tracker from state."""
-        return StateAdapter.get_value(state, "__execution_tracker")
+        try:
+            from agentmap.di import application
+            self._execution_tracker = application.execution_tracker()
+        except Exception:
+            pass
+        return self._execution_tracker
         
     def log(self, level: str, message: str, *args, **kwargs):
         """
@@ -74,7 +76,7 @@ class BaseAgent:
             message: Log message
             *args, **kwargs: Additional arguments passed to the logger
         """
-        logger = self._get_logger()
+        logger = self._logger # or self._get_logger()
         logger_method = getattr(logger, level, logger.info)
         logger_method(f"{self._log_prefix} {message}", *args, **kwargs)
     
@@ -107,7 +109,8 @@ class BaseAgent:
             inputs: Dictionary of input values
             
         Returns:
-            Output value for the output_field
+            Tuple of (output_value, success)
+            Output value for the output_field, was the action successful
         """
         raise NotImplementedError("Subclasses must implement process()")
 
@@ -130,59 +133,37 @@ class BaseAgent:
         self.log_trace(f"\n*** AGENT {self.name} RUN START [{execution_id}] at {start_time} ***")
 
         # Get execution tracker from state
-        tracker = self._get_execution_tracker(state)
-        if tracker is None:
-            self.log_warning(f"No execution tracker found in state for agent {self.name}")
-            # Create a minimal tracker if needed
-            from agentmap.logging.tracking.execution_tracker import ExecutionTracker
-            logger = self._get_logger()
-            tracker = ExecutionTracker({}, {}, logger)
+        tracker = self._execution_tracker or self._get_execution_tracker()
 
         # Extract inputs
-        inputs = self.state_manager.get_inputs(state)
+        inputs = StateAdapter.get_inputs(state, self.input_fields)
 
         # Record node start
         tracker.record_node_start(self.name, inputs)
 
-        # Prepare the partial update dictionary
-        updates = {}
-
         try:
             # Pre-processing hook for subclasses
-            pre_process_updates = self._pre_process(state, inputs)
-            if pre_process_updates:
-                updates.update(pre_process_updates)
-
+            state, inputs = self._pre_process(state, inputs)
+            
             # Process inputs to get output
-            self.log_trace(f"*** AGENT {self.name} CALLING PROCESS [{execution_id}] ***")
             output = self.process(inputs)
-            self.log_trace(f"*** AGENT {self.name} PROCESS COMPLETE [{execution_id}] ***")
-
-            # Set action success flag
-            updates["last_action_success"] = True
 
             # Post-processing hook for subclasses
-            post_updates, output = self._post_process(state, output, updates)
-            if post_updates:
-                updates.update(post_updates)
+            state, output = self._post_process(state, inputs, output)
 
             # Get final success status
-            last_action_success = updates.get("last_action_success", True)
-            tracker.record_node_result(self.name, last_action_success, result=output)
-            graph_success = tracker.update_graph_success()
-            updates["graph_success"] = graph_success
+            tracker.record_node_result(self.name, success=True, result=output)
 
             # Set the final output if we have an output field
             if self.output_field and output is not None:
-                self.log_debug(f"[{self.name}] Setting output in field '{self.output_field}' with value: {output}")
-                updates[self.output_field] = output
+                state = StateAdapter.set_value(state, self.output_field, output)
+                self.log_debug(f"Set output field '{self.output_field}' = {output}")
 
             end_time = time.time()
             duration = end_time - start_time
             self.log_trace(f"\n*** AGENT {self.name} RUN COMPLETED [{execution_id}] in {duration:.4f}s ***")
             
-            # CRITICAL: Return only the updates, not the full state
-            return updates
+            return state
 
         except Exception as e:
             # Handle errors
@@ -202,9 +183,8 @@ class BaseAgent:
 
             # Try to run post-process
             try:
-                post_updates, _ = self._post_process(state, None, error_updates)
-                if post_updates:
-                    error_updates.update(post_updates)
+                state, output = self._post_process(state, inputs, error_updates)
+
             except Exception as post_error:
                 self.log_error(f"Error in post-processing: {str(post_error)}")
 
@@ -212,10 +192,10 @@ class BaseAgent:
             duration = end_time - start_time
             self.log_trace(f"\n*** AGENT {self.name} RUN FAILED [{execution_id}] in {duration:.4f}s ***")
             
-            # CRITICAL: Return only the updates, not the full state
-            return error_updates
+            # Return the updated state
+            return state
     
-    def _pre_process(self, state: Any, inputs: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _pre_process(self, state: Any, inputs: Dict[str, Any]) -> Tuple[Any, Any]:
         """
         Pre-processing hook that can be overridden by subclasses.
         
@@ -224,14 +204,13 @@ class BaseAgent:
             inputs: Extracted input values
             
         Returns:
-            Optional dictionary of state updates to apply
+            Tuple of (state, processed_inputs)
         """
-        return None
+        return state, inputs
     
-    def _post_process(self, state: Any, output: Any, current_updates: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Any]:
+    def _post_process(self, state: Any, inputs: Dict[str, Any], output) -> Tuple[Any, Any]:
         """
         Post-processing hook that can be overridden by subclasses.
-        Allows modification of both the state updates and output.
         
         Args:
             state: The current state
@@ -239,9 +218,9 @@ class BaseAgent:
             current_updates: The current set of updates being applied
             
         Returns:
-            Tuple of (additional_updates, modified_output)
+            Tuple of (state, modified_output)
         """
-        return None, output
+        return state, output
     
     def invoke(self, state: Any) -> Dict[str, Any]:
         """Alias for run() to maintain compatibility with LangGraph."""

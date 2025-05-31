@@ -12,9 +12,6 @@ from agentmap.agents.builtins.storage.json.base_agent import JSONDocumentAgent
 from agentmap.agents.builtins.storage.base_storage_agent import log_operation
 from agentmap.services.storage import DocumentResult
 from agentmap.agents.mixins import ReaderOperationsMixin
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class JSONDocumentReaderAgent(JSONDocumentAgent, ReaderOperationsMixin):

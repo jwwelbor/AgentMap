@@ -37,17 +37,16 @@ class LoggerManager:
             root_logger.addHandler(null_handler)
 
         # Fix existing loggers
-        self._fix_existing_loggers()
+        self._fix_existing_loggers(root_logger)
 
-    def _fix_existing_loggers(self):
+    def _fix_existing_loggers(self, root_logger: logging.Logger):
         """Fix any loggers that already exist."""
-        root = logging.getLogger()
 
         # Fix root logger
-        self._remove_duplicate_handlers(root)
+        self._remove_duplicate_handlers(root_logger)
 
         # Fix all other existing loggers
-        for name in list(root.manager.loggerDict.keys()):
+        for name in list(root_logger.manager.loggerDict.keys()):
             logger = logging.getLogger(name)
             self._remove_duplicate_handlers(logger)
 

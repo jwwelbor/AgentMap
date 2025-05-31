@@ -19,21 +19,22 @@ class ExecutionTracker:
         Args:
             config: Tracking configuration dictionary
         """
-        self.minimal_mode = not tracking_config.get("enabled", True)
         self.execution_config = execution_config
         self.tracking_config = tracking_config
         self.logger = logger
         
-        self.node_results = {}  # node_name -> {success, result, error, time}
-        self.execution_path = []  # List of nodes in execution order
+        # Enhanced data structures for execution tracking
+        self.execution_path = []  # List of execution records (dicts) in chronological order
+        self.node_execution_counts = {}  # Track execution count per node
         self.start_time = time.time()
         self.end_time = None
         self.overall_success = True  # Default to success until a failure occurs
         self.graph_success = True    # Success according to policy, updated after each node
         
         # Only track these in full mode
-        self.track_outputs = tracking_config.get("track_outputs", False) and not self.minimal_mode
-        self.track_inputs = tracking_config.get("track_inputs", False) and not self.minimal_mode
+        self.minimal_mode = not self.tracking_config.get("enabled", True)
+        self.track_outputs = self.tracking_config.get("track_outputs", False) and not self.minimal_mode
+        self.track_inputs = self.tracking_config.get("track_inputs", False) and not self.minimal_mode
         
     def record_node_start(self, node_name: str, inputs: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -43,25 +44,35 @@ class ExecutionTracker:
             node_name: Name of the node being executed
             inputs: Optional inputs to the node (if track_inputs is True)
         """
-        self.execution_path.append(node_name)
+        # Increment execution counter for this node
+        self.node_execution_counts[node_name] = self.node_execution_counts.get(node_name, 0) + 1
         
-        node_info = {
+        # Create rich execution record
+        execution_record = {
+            "node_name": node_name,
+            "execution_index": len(self.execution_path),
+            "node_execution_number": self.node_execution_counts[node_name],
             "start_time": time.time(),
-            "success": None,
-            "result": None,
-            "error": None,
             "end_time": None,
             "duration": None,
+            "success": None,
+            "result": None,
+            "error": None
         }
         
         # Add inputs if tracking is enabled
         if self.track_inputs and inputs:
-            node_info["inputs"] = inputs
-            
-        self.node_results[node_name] = node_info
+            execution_record["inputs"] = inputs
         
-    def record_node_result(self, node_name: str, success: bool, 
-                          result: Any = None, error: Optional[str] = None) -> None:
+        # Append complete record to execution path
+        self.execution_path.append(execution_record)
+        
+    def record_node_result(
+            self, 
+            node_name: str, 
+            success: bool, 
+            result: Any = None, 
+            error: Optional[str] = None) -> None:
         """
         Record the result of a node execution.
         
@@ -72,19 +83,24 @@ class ExecutionTracker:
             error: Optional error message if failed
         """
         end_time = time.time()
-        if node_name in self.node_results:
-            update_dict = {
-                "success": success,
-                "error": error,
-                "end_time": end_time,
-                "duration": end_time - self.node_results[node_name]["start_time"]
-            }
-            
-            # Only store result if tracking outputs is enabled
-            if self.track_outputs and result is not None:
-                update_dict["result"] = result
+        
+        # Find the most recent execution record for this node (iterate backwards)
+        for i in range(len(self.execution_path) - 1, -1, -1):
+            record = self.execution_path[i]
+            if record["node_name"] == node_name and record["success"] is None:
+                # Update the execution record with completion details
+                record.update({
+                    "success": success,
+                    "error": error,
+                    "end_time": end_time,
+                    "duration": end_time - record["start_time"]
+                })
                 
-            self.node_results[node_name].update(update_dict)
+                # Only store result if tracking outputs is enabled
+                if self.track_outputs and result is not None:
+                    record["result"] = result
+                
+                break
         
         # Update overall success if this node failed
         if not success:
@@ -112,23 +128,6 @@ class ExecutionTracker:
         # Final update of graph success
         self.update_graph_success()
         
-    def get_summary(self) -> Dict[str, Any]:
-        """
-        Get a summary of the execution.
-        
-        Returns:
-            Dictionary containing execution summary
-        """
-        return {
-            "overall_success": self.overall_success,  # Raw success (all nodes succeeded)
-            "graph_success": self.graph_success,      # Policy-based success
-            "execution_path": self.execution_path,
-            "node_results": self.node_results,
-            "total_duration": (self.end_time or time.time()) - self.start_time,
-            "start_time": self.start_time,
-            "end_time": self.end_time or time.time(),
-        }
-
     def record_subgraph_execution(self, subgraph_name: str, subgraph_summary: Dict[str, Any]):
         """
         Record execution of a subgraph as a nested execution.
@@ -139,60 +138,57 @@ class ExecutionTracker:
         """
         self.logger.debug(f"Recording subgraph execution: {subgraph_name}")
         
-        # Ensure current node exists in results
-        if self.current_node and self.current_node in self.node_results:
+        # Find the most recent incomplete execution record (currently executing node)
+        current_execution = None
+        for i in range(len(self.execution_path) - 1, -1, -1):
+            record = self.execution_path[i]
+            if record["success"] is None:  # Incomplete execution
+                current_execution = record
+                break
+        
+        if current_execution:
             # Initialize subgraphs dict if not exists
-            if "subgraphs" not in self.node_results[self.current_node]:
-                self.node_results[self.current_node]["subgraphs"] = {}
+            if "subgraphs" not in current_execution:
+                current_execution["subgraphs"] = {}
             
             # Store the complete subgraph execution summary
-            self.node_results[self.current_node]["subgraphs"][subgraph_name] = subgraph_summary
+            current_execution["subgraphs"][subgraph_name] = subgraph_summary
             
-            self.logger.info(f"Recorded subgraph '{subgraph_name}' execution in node '{self.current_node}'")
+            self.logger.info(f"Recorded subgraph '{subgraph_name}' execution in node '{current_execution['node_name']}'")
         else:
             self.logger.warning(f"Cannot record subgraph '{subgraph_name}' - no current node context")
-
+        
     def get_summary(self) -> Dict[str, Any]:
         """
-        Enhanced summary including subgraph executions.
+        Get a comprehensive summary of the execution including subgraph details.
         
         Returns:
             Dictionary containing execution summary with nested subgraph details
-        """
-        # Get the base summary (call existing method)
-        summary = super().get_summary() if hasattr(super(), 'get_summary') else self._get_base_summary()
+        """ 
         
         # Add subgraph execution statistics
         subgraph_count = 0
         subgraph_details = {}
         
-        for node_name, node_result in self.node_results.items():
-            if "subgraphs" in node_result:
-                for subgraph_name, subgraph_summary in node_result["subgraphs"].items():
+        for record in self.execution_path:
+            if "subgraphs" in record:
+                for subgraph_name, subgraph_summary in record["subgraphs"].items():
                     subgraph_count += 1
                     if subgraph_name not in subgraph_details:
                         subgraph_details[subgraph_name] = []
                     subgraph_details[subgraph_name].append({
-                        "parent_node": node_name,
+                        "parent_node": record["node_name"],
                         "success": subgraph_summary.get("overall_success", False),
                         "node_count": len(subgraph_summary.get("nodes", {}))
                     })
         
-        # Add subgraph information to summary
-        summary["subgraph_executions"] = subgraph_count
-        summary["subgraph_details"] = subgraph_details
-        
-        return summary
-
-    def _get_base_summary(self) -> Dict[str, Any]:
-        """
-        Fallback method to get base summary if super().get_summary() doesn't exist.
-        This maintains compatibility with the existing ExecutionTracker implementation.
-        """
         return {
-            "overall_success": self.overall_success,
-            "graph_success": self.graph_success, 
-            "nodes": dict(self.node_results),
-            "execution_time": getattr(self, 'execution_time', 0),
-            "node_count": len(self.node_results)
+            "overall_success": self.overall_success,  # Raw success (all nodes succeeded)
+            "graph_success": self.graph_success,      # Policy-based success
+            "execution_path": self.execution_path,    # Enhanced execution records
+            "subgraph_executions": subgraph_count,
+            "subgraph_details": subgraph_details,
+            "total_duration": (self.end_time or time.time()) - self.start_time,
+            "start_time": self.start_time,
+            "end_time": self.end_time or time.time(),
         }

@@ -1,6 +1,7 @@
 """
 Common exceptions for the AgentMap module.
 """
+from agentmap.exceptions.base_exceptions import ConfigurationException
 
 from agentmap.exceptions.agent_exceptions import (
     AgentError,
@@ -35,10 +36,11 @@ __all__ = [
     'AgentError',
     'AgentNotFoundError', 
     'AgentInitializationError',
+    'CollectionNotFoundError',
+    'ConfigurationException',
+    'DocumentNotFoundError',
     'GraphBuildingError',
     'InvalidEdgeDefinitionError',
-    'CollectionNotFoundError',
-    'DocumentNotFoundError',
     'LLMServiceError', 
     'LLMProviderError', 
     'LLMConfigurationError',

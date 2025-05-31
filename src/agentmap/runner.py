@@ -102,7 +102,8 @@ def build_graph_in_memory(
     logging_service: LoggingService,
     node_registry_service: NodeRegistryService,
     llm_service: LLMService,
-    storage_service_manager: StorageServiceManager
+    storage_service_manager: StorageServiceManager,
+    tracker: ExecutionTracker
 ):
     """
     Build a graph in memory from pre-loaded graph definition with service injection.
@@ -149,7 +150,7 @@ def build_graph_in_memory(
         logger.debug(f"[AgentInit] Instantiating {agent_cls.__name__} as node '{node.name}'")
 
         
-        agent_instance = agent_cls(name=node.name, prompt=node.prompt or "", context=context)
+        agent_instance = agent_cls(name=node.name, prompt=node.prompt or "", context=context, logger=logger, execution_tracker=tracker)
 
         # Inject LLM service if agent requires it
         if isinstance(agent_instance, LLMServiceUser):
@@ -374,7 +375,8 @@ def run_graph(
     logging_service: LoggingService = Provide[ApplicationContainer.logging_service],
     node_registry_service: NodeRegistryService = Provide[ApplicationContainer.node_registry_service],
     llm_service: LLMService = Provide[ApplicationContainer.llm_service],
-    storage_service_manager: StorageServiceManager = Provide[ApplicationContainer.storage_service_manager]
+    storage_service_manager: StorageServiceManager = Provide[ApplicationContainer.storage_service_manager],
+    execution_tracker: ExecutionTracker = Provide[ApplicationContainer.execution_tracker]
 ) -> Dict[str, Any]:
     """
     Run a graph with the given initial state.
@@ -455,7 +457,8 @@ def run_graph(
         logger.info(f"⭐ STARTING GRAPH: '{graph_name}'")
         
         # Initialize execution tracking (always active, may be minimal)
-        tracker, state = get_execution_tracker(state, configuration.get_tracking_config(), configuration.get_execution_config(), logger)
+        #tracker, state = get_execution_tracker(state, configuration.get_tracking_config(), configuration.get_execution_config(), logger)
+        tracker = execution_tracker
 
         # Use trace_graph context manager to conditionally enable tracing
         with trace_graph(graph_name):
@@ -474,17 +477,10 @@ def run_graph(
             if not graph:
                 # Load the CSV file and parse graph definition only once
                 graph_def, graph_name = read_graph_definition_and_get_graph_name(csv_file, graph_name)
-
-                # NEW: Build graph in memory with pre-compilation registry injection
-                # The registry is built and injected during assembly, not after compilation
-                graph = build_graph_in_memory(graph_name, graph_def, logging_service, node_registry_service, llm_service, storage_service_manager)
+                graph = build_graph_in_memory(graph_name, graph_def, logging_service, node_registry_service, llm_service, storage_service_manager, tracker)
                 
-                # Note: No need to call inject_into_orchestrators here since it's done during assembly
                 logger.debug(f"[RUN] Graph built with pre-compilation registry injection")
 
-            # REMOVED: No longer need post-compilation injection for normal cases
-            # The registry injection happens during assembly now
-                        
             # Track overall execution time
             start_time = time.time()
             
@@ -494,11 +490,11 @@ def run_graph(
                 logger.debug(f"[RUN] Initial state keys: {list(state.keys()) if hasattr(state, 'keys') else 'N/A'}")
                 
                 # The key fix: agents now return partial updates, not full state
-                result = graph.invoke(state)
+                state = graph.invoke(state)
                 
                 logger.trace(f"\n=== AFTER INVOKING GRAPH: {graph_name or 'unnamed'} ===")
-                logger.debug(f"[RUN] Result type: {type(result)}")
-                logger.debug(f"[RUN] Result keys: {list(result.keys()) if hasattr(result, 'keys') else 'N/A'}")                
+                logger.debug(f"[RUN] Result type: {type(state)}")
+                logger.debug(f"[RUN] Result keys: {list(state.keys()) if hasattr(state, 'keys') else 'N/A'}")                
                 logger.trace(f"\n=== AFTER INVOKING GRAPH: {graph_name or 'unnamed'} ===")
                 execution_time = time.time() - start_time
                 
@@ -507,9 +503,9 @@ def run_graph(
                 summary = tracker.get_summary()
                 
                 # Update result with execution summary
-                result = StateAdapter.set_value(result, "__execution_summary", summary)
+                state = StateAdapter.set_value(state, "__execution_summary", summary)
                 graph_success = summary["graph_success"]
-                result = StateAdapter.set_value(result, "__policy_success", graph_success)
+                state = StateAdapter.set_value(state, "__policy_success", graph_success)
                 
                 # Log result with different detail based on tracking mode
                 if tracking_enabled:
@@ -522,7 +518,10 @@ def run_graph(
                 logger.trace("\n=== EXITING run_graph ===")
                 logger.trace(f"Parameters: graph_name={graph_name}, csv_path={csv_path}")
                 logger.trace("=====\n")
-                return result
+
+                state = StateAdapter.set_value(state, "__execution_summary", summary)
+                state = StateAdapter.set_value(state, "__policy_success", graph_success)
+                return state
             except Exception as e:
                 execution_time = time.time() - start_time
                 logger.error(f"❌ GRAPH EXECUTION FAILED: '{graph_name}' after {execution_time:.2f}s")
@@ -629,7 +628,7 @@ def create_serializable_result(result):
     
     return serializable
 
-def get_execution_tracker(state: Any, tracker_config, execution_config, logger) -> Tuple[ExecutionTracker, Any]:
+def get_execution_tracker(state: Any, tracker_config, execution_config, logger) -> ExecutionTracker:
     """
     Get the execution tracker from state.
     
@@ -639,10 +638,10 @@ def get_execution_tracker(state: Any, tracker_config, execution_config, logger) 
     Returns:
         ExecutionTracker instance or None
     """
-    execution_tracker = StateAdapter.get_value(state, "__execution_tracker")
+    #execution_tracker = StateAdapter.get_value(state, "__execution_tracker")
     if execution_tracker is None:
         logger.debug("[RUN] Creating new execution tracker")
         execution_tracker = ExecutionTracker(tracker_config, execution_config, logger)
-        state = StateAdapter.set_value(state, "__execution_tracker", execution_tracker)
+        #state = StateAdapter.set_value(state, "__execution_tracker", execution_tracker)
 
-    return execution_tracker, state
+    return execution_tracker

@@ -1,7 +1,8 @@
 """
 Adapter for working with different state formats (dict or Pydantic).
 """
-from typing import Any, Dict, TypeVar
+from typing import Any, Dict, TypeVar, List
+
 
 StateType = TypeVar('StateType', Dict[str, Any], object)
 from pydantic import BaseModel
@@ -95,32 +96,35 @@ class StateAdapter:
             New state object with updated value
         """
         
+        #execution tracker should not be in state
+        if key == "__execution_tracker":
+            raise Exception("Execution tracker should not be in state")
         # Handle special case for execution tracker
-        if key == "__execution_tracker" and hasattr(value, "get_summary"):
-            # Also set the __execution_summary field with the dictionary
-            try:
-                summary = value.get_summary()
+        # if key == "__execution_tracker" and hasattr(value, "get_summary"):
+        #     # Also set the __execution_summary field with the dictionary
+        #     try:
+        #         summary = value.get_summary()
                 
-                # Dictionary state
-                if isinstance(state, dict):
-                    new_state = state.copy()
-                    new_state[key] = value
-                    new_state["__execution_summary"] = summary
-                    return new_state
+        #         # Dictionary state
+        #         if isinstance(state, dict):
+        #             new_state = state.copy()
+        #             new_state[key] = value
+        #             new_state["__execution_summary"] = summary
+        #             return new_state
                     
-                # Non-dictionary state with copy method (e.g. Pydantic)
-                if hasattr(state, "copy") and callable(getattr(state, "copy")):
-                    try:
-                        # First set the tracker
-                        temp_state = state.copy(update={key: value})
-                        # Then set the summary
-                        new_state = temp_state.copy(update={"__execution_summary": summary})
-                        return new_state
-                    except Exception:
-                        pass
-            except Exception as e:
-                raise e
-                # logger.debug(f"Error setting execution summary: {e}")
+        #         # Non-dictionary state with copy method (e.g. Pydantic)
+        #         if hasattr(state, "copy") and callable(getattr(state, "copy")):
+        #             try:
+        #                 # First set the tracker
+        #                 temp_state = state.copy(update={key: value})
+        #                 # Then set the summary
+        #                 new_state = temp_state.copy(update={"__execution_summary": summary})
+        #                 return new_state
+        #             except Exception:
+        #                 pass
+        #     except Exception as e:
+        #         raise e
+        #         # logger.debug(f"Error setting execution summary: {e}")
         
         # Dictionary state (most common case)
         if isinstance(state, dict):
@@ -152,50 +156,57 @@ class StateAdapter:
             raise e
             # return state
 
+    @staticmethod
+    def get_inputs(state: Any, input_fields: List[str]) -> Dict[str, Any]:
+        """Extract all input fields from state."""
+        inputs = {}
+        for field in input_fields:
+            inputs[field] = StateAdapter.get_value(state, field)
+        return inputs
     
-    @staticmethod
-    def get_execution_data(state, field, default=None):
-        """Get execution tracking data safely."""
-        # Try the documented approach first
-        if "__execution_summary" in state:
-            summary = StateAdapter.get_value(state, "__execution_summary", {})
-            return summary.get(field, default)
+    # @staticmethod
+    # def get_execution_data(state, field, default=None):
+    #     """Get execution tracking data safely."""
+    #     # Try the documented approach first
+    #     if "__execution_summary" in state:
+    #         summary = StateAdapter.get_value(state, "__execution_summary", {})
+    #         return summary.get(field, default)
         
-        # Fall back to the tracker if needed
-        tracker = StateAdapter.get_value(state, "__execution_tracker")
-        if tracker and hasattr(tracker, "get_summary"):
-            summary = tracker.get_summary()
-            return summary.get(field, default)
+    #     # Fall back to the tracker if needed
+    #     tracker = StateAdapter.get_value(state, "__execution_tracker")
+    #     if tracker and hasattr(tracker, "get_summary"):
+    #         summary = tracker.get_summary()
+    #         return summary.get(field, default)
         
-        # No tracking data available
-        return default
+    #     # No tracking data available
+    #     return default
 
 
-    @staticmethod
-    def merge_updates(state: StateType, updates: Dict[str, Any]) -> StateType:
-        """
-        Merge multiple updates into the state efficiently.
-        This is useful for applying partial updates from agents.
+    # @staticmethod
+    # def merge_updates(state: StateType, updates: Dict[str, Any]) -> StateType:
+    #     """
+    #     Merge multiple updates into the state efficiently.
+    #     This is useful for applying partial updates from agents.
         
-        Args:
-            state: Current state object
-            updates: Dictionary of updates to apply
+    #     Args:
+    #         state: Current state object
+    #         updates: Dictionary of updates to apply
             
-        Returns:
-            New state object with all updates applied
-        """
-        if not updates:
-            return state
+    #     Returns:
+    #         New state object with all updates applied
+    #     """
+    #     if not updates:
+    #         return state
             
-        # For AgentMapState/TypedDict, merge efficiently
-        if isinstance(state, dict):
-            new_state = state.copy()
-            new_state.update(updates)
-            return new_state
+    #     # For AgentMapState/TypedDict, merge efficiently
+    #     if isinstance(state, dict):
+    #         new_state = state.copy()
+    #         new_state.update(updates)
+    #         return new_state
             
-        # Apply updates one by one for other state types
-        current_state = state
-        for key, value in updates.items():
-            current_state = StateAdapter.set_value(current_state, key, value)
+    #     # Apply updates one by one for other state types
+    #     current_state = state
+    #     for key, value in updates.items():
+    #         current_state = StateAdapter.set_value(current_state, key, value)
         
-        return current_state
+    #     return current_state

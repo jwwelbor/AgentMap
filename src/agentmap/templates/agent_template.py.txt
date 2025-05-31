@@ -1,6 +1,8 @@
 from agentmap.agents.base_agent import BaseAgent
 {imports}
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
+from agentmap.logging.tracking.execution_tracker import ExecutionTracker
+import logging.Logger
 
 {class_definition}
     """
@@ -9,16 +11,17 @@ from typing import Dict, Any, Optional
     {description}
     Node: {node_name}
     Expected input fields: {input_fields}
-    Expected output field: {output_field}
+    Return value from processing will be paired in the graph state with key:{output_field}
     {services_doc}
     {prompt_doc}
     """
     
-    def __init__(self, name: str, prompt: str = "", context: Dict = None):
-        super().__init__(name, prompt, context)
+    def __init__(self, name: str, prompt: str = "", logger: logging.Logger, execution_tracker: ExecutionTracker, context: Dict = None):
+        super().__init__(name, prompt, logger, execution_tracker, context)
         {service_attributes}
     
-    def pre_process(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    # uncomment to add pre-process hook
+    # def pre_process(self, inputs: Dict[str, Any]) -> Tuple[Any, Any]:
         """
         Pre-process inputs before main processing.
         
@@ -29,7 +32,7 @@ from typing import Dict, Any, Optional
             inputs: Raw input dictionary from the graph state
             
         Returns:
-            Processed inputs dictionary ready for main processing
+            Tuple of the state, Processed inputs dictionary ready for main processing
         """
         # TODO: Add any input validation, transformation, or preparation logic
         # Example:
@@ -37,10 +40,11 @@ from typing import Dict, Any, Optional
         # - Normalize data formats
         # - Set default values
         # - Transform input structure
-        
-        return inputs
+
+        # should return the state, Dict[str, any] of inputs that have been processed and will be passed to "process" method 
+        # return state, inputs
     
-    def process(self, inputs: Dict[str, Any]) -> Any:
+    def process(self, inputs: Dict[str, Any]) -> Any, Any:
         """
         Process the inputs and return the output value.
         
@@ -51,12 +55,10 @@ from typing import Dict, Any, Optional
             inputs (dict): Contains the input values with keys: {input_fields}
             
         Returns:
-            The value for {output_field} (will be stored in graph state)
+            Tuple of (output_value, last_action_success): {output_field} (will be stored in graph state), boolean indicating success
+
         """
         try:
-            # Pre-process inputs
-            processed_inputs = self.pre_process(inputs)
-            
             # Access input fields directly from inputs dictionary
 {input_field_access}
             
@@ -70,11 +72,7 @@ from typing import Dict, Any, Optional
             # Use the extracted input fields and available services to process the data.
             # Return the result that should be stored in the output field.
             
-            result = f"Processed by {{self.name}}"
-            
-            # Post-process result before returning
-            final_result = self.post_process(result, processed_inputs)
-            return final_result
+            return f"Processed by {{self.name}}", True
             
         except Exception as e:
             # Handle errors gracefully - you can customize error handling here
@@ -83,9 +81,10 @@ from typing import Dict, Any, Optional
                 "success": False,
                 "error": str(e),
                 "agent": self.name
-            }}
+            }}, False
     
-    def post_process(self, result: Any, inputs: Dict[str, Any]) -> Any:
+    # uncomment to add post-process hook
+    # def post_process(self, state: Any, inputs: Dict[str, Any], output) -> Tuple[Any, Any]:
         """
         Post-process the result before returning.
         
@@ -93,11 +92,12 @@ from typing import Dict, Any, Optional
         or cleanup logic specific to your agent.
         
         Args:
-            result: The result from main processing
-            inputs: Original inputs (for context if needed)
+            state: The full state object
+            inputs: Original inputs (for context if needed),
+            output: output from the process method
             
         Returns:
-            Final processed result that will be stored in graph state
+            Tuple of addtional updates for the state (dict or pydantic), processed result that will be paired in the graph state with key:{output_field}
         """
         # TODO: Add any result validation, formatting, or cleanup logic
         # Example:
@@ -106,6 +106,6 @@ from typing import Dict, Any, Optional
         # - Add metadata
         # - Clean up temporary resources
         
-        return result
+        # return state, result
 
 {usage_examples_section}

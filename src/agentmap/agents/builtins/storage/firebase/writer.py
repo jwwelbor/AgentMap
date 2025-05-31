@@ -16,10 +16,6 @@ from agentmap.agents.builtins.storage.document.base_agent import (
     DocumentResult,  WriteMode, log_operation)
 from agentmap.agents.builtins.storage.firebase.base_agent import FirebaseDocumentAgent
 from agentmap.agents.mixins import WriterOperationsMixin
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
-
 
 class FirebaseDocumentWriterAgent(DocumentWriterAgent, FirebaseDocumentAgent, WriterOperationsMixin):
     """

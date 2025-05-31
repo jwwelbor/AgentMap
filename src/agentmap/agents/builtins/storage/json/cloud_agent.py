@@ -16,9 +16,6 @@ from agentmap.agents.builtins.storage.blob import (
 )
 from agentmap.config import load_storage_config
 from agentmap.exceptions import StorageConnectionError, StorageOperationError
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class JSONCloudDocumentAgent(JSONDocumentAgent):

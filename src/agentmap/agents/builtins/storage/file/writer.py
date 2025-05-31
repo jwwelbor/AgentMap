@@ -11,15 +11,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
-    BaseStorageAgent, log_operation
+    BaseStorageAgent
 )
 from agentmap.services.storage import DocumentResult, WriteMode, FileStorageService
 from agentmap.services.storage.protocols import FileServiceUser
 from agentmap.agents.mixins import WriterOperationsMixin, StorageErrorHandlerMixin
-from agentmap.logging import get_logger
-from agentmap.state.adapter import StateAdapter
 
-logger = get_logger(__name__)
 
 
 class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandlerMixin, FileServiceUser):

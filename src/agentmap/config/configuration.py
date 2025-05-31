@@ -11,7 +11,7 @@ class Configuration:
     def __init__(self, config_data: Dict[str, Any]):
         self._config = config_data
 
-    # Core access methods
+    # # Core access methods
     def get_section(self, section: str, default: T = None) -> Dict[str, Any]:
         """Get a configuration section."""
         return self._config.get(section, default)
@@ -45,6 +45,10 @@ class Configuration:
     def get_csv_path(self) -> Path:
         """Get the path for the workflow CSV file."""
         return Path(self.get_value("csv_path", "examples/SingleNodeGraph.csv"))
+
+    def get_logging_config(self) -> Dict[str, Any]:
+        """Get the prompt configuration."""
+        return self.get_section("logging")
 
     # LLM accessors (replacing agentmap.config.sections.llm)
     def get_llm_config(self, provider: str) -> Dict[str, Any]:

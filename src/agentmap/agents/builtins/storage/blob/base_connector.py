@@ -13,9 +13,6 @@ from typing import Any, Dict, Optional, Tuple, Union
 from urllib.parse import urlparse, unquote
 
 from agentmap.exceptions import StorageConnectionError, StorageOperationError
-from agentmap.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class BlobStorageConnector(ABC):

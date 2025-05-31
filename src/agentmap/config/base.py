@@ -29,7 +29,7 @@ def _setup_config_logging():
 
 
 # Create logger for this module
-logger = _setup_config_logging()
+# logger = _setup_config_logging()
 
 # Default config file location
 #DEFAULT_CONFIG_FILE = Path("agentmap_config.yaml")

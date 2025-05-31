@@ -13,9 +13,7 @@ from firebase_admin import credentials, initialize_app, delete_app, get_app
 from firebase_admin.exceptions import FirebaseError
 
 from agentmap.config import load_storage_config
-from agentmap.logging import get_logger
 
-logger = get_logger(__name__)
 
 
 def get_firebase_config(config_path: Optional[str] = None) -> Dict[str, Any]:
