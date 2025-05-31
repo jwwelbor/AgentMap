@@ -1,10 +1,9 @@
 """
 Success policy evaluator for execution tracking.
 """
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Dict, List
 import importlib
 
-from agentmap.config.configuration import Configuration
 import logging
 
 def evaluate_success_policy(
@@ -54,8 +53,8 @@ def evaluate_success_policy(
 def _evaluate_all_nodes_policy(summary: Dict[str, Any]) -> bool:
     """All nodes must succeed for the graph to be considered successful."""
     return all(
-        node_data.get("success", False) 
-        for node_name, node_data in summary["nodes"].items()
+        executed_node["success"]
+        for executed_node in summary["execution_path"]
     )
 
 def _evaluate_final_node_policy(summary: Dict[str, Any]) -> bool:

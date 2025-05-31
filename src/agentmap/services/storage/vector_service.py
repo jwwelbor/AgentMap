@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional, Union
 
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.types import StorageResult, WriteMode
+from agentmap.services.logging_service import LoggingService
+
 
 
 class VectorStorageService(BaseStorageService):
@@ -21,7 +23,11 @@ class VectorStorageService(BaseStorageService):
     document storage, and support for multiple vector store backends.
     """
     
-    def __init__(self, context: Dict[str, Any]):
+    def __init__(
+            self, 
+            name: str, 
+            context: Dict[str, Any],
+            logging_service: Optional[LoggingService] = None):
         """Initialize VectorStorageService with context (following CSV service pattern)."""
         # Create a mock configuration from context
         class ContextConfig:
@@ -34,14 +40,8 @@ class VectorStorageService(BaseStorageService):
             def get_option(self, key, default=None):
                 return self.ctx.get(key, default)
         
-        # Create mock logging service
-        class MockLoggingService:
-            def get_class_logger(self, obj):
-                from agentmap.logging import get_logger
-                return get_logger(__name__)
-        
         # Initialize parent with mocked services
-        super().__init__("vector", ContextConfig(context), MockLoggingService())
+        super().__init__("vector", ContextConfig(context), logging_service())
     
     def _initialize_client(self) -> Dict[str, Any]:
         """

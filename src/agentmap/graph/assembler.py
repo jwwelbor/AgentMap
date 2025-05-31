@@ -13,8 +13,8 @@ from agentmap.state.adapter import StateAdapter
 from agentmap.utils.common import extract_func_ref, import_function
 from dependency_injector.wiring import inject, Provide
 from agentmap.di.containers import ApplicationContainer
-from agentmap.config.configuration import Configuration
-from agentmap.logging.service import LoggingService
+from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.logging_service import LoggingService
 from agentmap.services import NodeRegistryUser
 
 
@@ -32,7 +32,7 @@ class GraphAssembler:
             builder: StateGraph,
             node_registry: Optional[Dict[str, Dict[str, Any]]] = None, 
             enable_logging=True,
-            configuration: Configuration = Provide[ApplicationContainer.configuration],
+            configuration: AppConfigService = Provide[ApplicationContainer.app_config_service],
             logging_service: LoggingService = Provide[ApplicationContainer.logging_service],
     ):
         self.builder = builder

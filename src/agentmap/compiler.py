@@ -4,22 +4,21 @@ Compiles LangGraph workflows to .pkl and exports flattened .src files.
 """
 
 import os
-import pickle
 from pathlib import Path
-from typing import Optional, Union, Any, Dict, List
+from typing import Optional, Any, Dict, List
 
 from langgraph.graph import StateGraph
 
 from agentmap.graph.builder import GraphBuilder
 from agentmap.utils.common import extract_func_ref, import_function
 from agentmap.agents import get_agent_class
-from agentmap.logging.service import LoggingService
+from agentmap.services.logging_service import LoggingService
 from agentmap.services.node_registry_service import NodeRegistryService
 from agentmap.graph import GraphAssembler  # Import GraphAssembler
 
 from dependency_injector.wiring import inject, Provide
 from agentmap.di.containers import ApplicationContainer
-from agentmap.config.configuration import Configuration
+from agentmap.services.config.app_config_service import AppConfigService
 
 def resolve_state_schema(state_schema: str) -> tuple:
     """
@@ -56,7 +55,7 @@ def resolve_state_schema(state_schema: str) -> tuple:
 def get_graph_definition(
         graph_name: str, 
         csv_path: Optional[str] = None,
-        configuration: Configuration = Provide[ApplicationContainer.configuration],
+        configuration: AppConfigService = Provide[ApplicationContainer.app_config_service],
         logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
     ) -> Dict:
     """
@@ -91,7 +90,7 @@ def get_graph_definition(
 def build_source_lines(
     graph_def: Dict, 
     state_schema: str = "dict", 
-    configuration: Configuration = Provide[ApplicationContainer.configuration],
+    configuration: AppConfigService = Provide[ApplicationContainer.app_config_service],
     logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ) -> List[str]:
     """
@@ -197,7 +196,7 @@ def get_agent_class_name(agent_type: str) -> str:
 @inject
 def build_edge_lines(
         graph_def: Dict, 
-        configuration: Configuration = Provide[ApplicationContainer.configuration]
+        configuration: AppConfigService = Provide[ApplicationContainer.app_config_service]
 ) -> List[str]:
     """
     Build the edge source lines for the graph.
@@ -255,7 +254,7 @@ def create_graph_builder_with_registry(
     graph_def: Dict, 
     node_registry: Dict[str, Dict[str, Any]],
     state_schema: str = "dict",
-    configuration: Configuration = Provide[ApplicationContainer.configuration],
+    configuration: AppConfigService = Provide[ApplicationContainer.app_config_service],
     logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ) -> tuple:
     """
@@ -395,7 +394,7 @@ def add_edges_to_assembler(
 def add_nodes_to_builder(
     builder: StateGraph, 
     graph_def: Dict,
-    configuration: Configuration = Provide[ApplicationContainer.configuration] 
+    configuration: AppConfigService = Provide[ApplicationContainer.app_config_service] 
 ) -> None:
     """
     LEGACY: Add nodes to the StateGraph builder directly.
@@ -430,7 +429,7 @@ def add_nodes_to_builder(
 def add_edges_to_builder(
     builder: StateGraph, 
     graph_def: Dict, 
-    configuration: Configuration = Provide[ApplicationContainer.configuration],
+    configuration: AppConfigService = Provide[ApplicationContainer.app_config_service],
     logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ) -> None:
     """
@@ -495,7 +494,7 @@ def compile_graph(
     output_dir: Optional[str] = None,
     csv_path: Optional[str] = None,
     state_schema: str = "dict",
-    configuration: Configuration = Provide[ApplicationContainer.configuration],
+    configuration: AppConfigService = Provide[ApplicationContainer.app_config_service],
     logging_service: LoggingService = Provide[ApplicationContainer.logging_service],
     node_registry_service: NodeRegistryService = Provide[ApplicationContainer.node_registry_service]  
 ):
@@ -563,7 +562,7 @@ def compile_graph(
 def compile_all(
     csv_path: Optional[str] = None,
     state_schema: str = "dict",
-    configuration: Configuration = Provide[ApplicationContainer.configuration],
+    configuration: AppConfigService = Provide[ApplicationContainer.app_config_service],
     logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ):
     """

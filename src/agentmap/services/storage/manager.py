@@ -9,12 +9,11 @@ from typing import Dict, Optional, Type, List, Any
 from agentmap.services.storage.protocols import StorageService, StorageServiceFactory
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.types import (
-    StorageServiceError, 
     StorageServiceConfigurationError,
     StorageServiceNotAvailableError
 )
-from agentmap.config.configuration import Configuration
-from agentmap.logging.service import LoggingService
+from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.logging_service import LoggingService
 
 
 class StorageServiceManager:
@@ -27,14 +26,14 @@ class StorageServiceManager:
     
     def __init__(
         self,
-        configuration: Configuration,
+        configuration: AppConfigService,
         logging_service: LoggingService
     ):
         """
         Initialize the storage service manager.
         
         Args:
-            configuration: Application configuration
+            configuration: Application configuration service
             logging_service: Logging service for creating loggers
         """
         self.configuration = configuration

@@ -5,10 +5,8 @@ Graph runner for executing AgentMap workflows from compiled graphs or CSV.
 import json
 import pickle
 import time
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 import threading
-import logging
 
 from langgraph.graph import StateGraph
 
@@ -21,8 +19,8 @@ from agentmap.state.adapter import StateAdapter
 from agentmap.agents import get_agent_class
 from dependency_injector.wiring import inject, Provide
 from agentmap.di.containers import ApplicationContainer
-from agentmap.config.configuration import Configuration
-from agentmap.logging.service import LoggingService
+from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.logging_service import LoggingService
 from agentmap.logging.tracking.execution_tracker import ExecutionTracker 
 from agentmap.services import LLMService, LLMServiceUser
 from agentmap.services.storage.manager import StorageServiceManager
@@ -35,7 +33,7 @@ _CURRENT_EXECUTIONS = set()
 @inject
 def load_compiled_graph(
         graph_name: str,
-        configuration: Configuration = Provide[ApplicationContainer.configuration],
+        configuration: AppConfigService = Provide[ApplicationContainer.app_config_service],
         logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
 ):
     """
@@ -232,7 +230,7 @@ def add_dynamic_routing(
 @inject
 def resolve_agent_class(
         agent_type: str, 
-        configuration: Configuration = Provide[ApplicationContainer.configuration],
+        configuration: AppConfigService = Provide[ApplicationContainer.app_config_service],
         logging_service: LoggingService = Provide[ApplicationContainer.logging_service]
     ):
     """
@@ -342,7 +340,6 @@ def resolve_agent_class(
     
     # Add custom agents path to sys.path if not already present
     import sys
-    from pathlib import Path
     custom_agents_path_str = str(custom_agents_path)
     if custom_agents_path_str not in sys.path:
         sys.path.insert(0, custom_agents_path_str)
@@ -371,7 +368,7 @@ def run_graph(
     initial_state: Optional[dict] = {}, 
     csv_path: Optional[str] = None, 
     autocompile_override: Optional[bool] = None,
-    configuration: Configuration = Provide[ApplicationContainer.configuration],
+    configuration: AppConfigService = Provide[ApplicationContainer.app_config_service],
     logging_service: LoggingService = Provide[ApplicationContainer.logging_service],
     node_registry_service: NodeRegistryService = Provide[ApplicationContainer.node_registry_service],
     llm_service: LLMService = Provide[ApplicationContainer.llm_service],
@@ -628,20 +625,20 @@ def create_serializable_result(result):
     
     return serializable
 
-def get_execution_tracker(state: Any, tracker_config, execution_config, logger) -> ExecutionTracker:
-    """
-    Get the execution tracker from state.
+# def get_execution_tracker(state: Any, tracker_config, execution_config, logger) -> ExecutionTracker:
+#     """
+#     Get the execution tracker from state.
     
-    Args:
-        state: Current state
+#     Args:
+#         state: Current state
         
-    Returns:
-        ExecutionTracker instance or None
-    """
-    #execution_tracker = StateAdapter.get_value(state, "__execution_tracker")
-    if execution_tracker is None:
-        logger.debug("[RUN] Creating new execution tracker")
-        execution_tracker = ExecutionTracker(tracker_config, execution_config, logger)
-        #state = StateAdapter.set_value(state, "__execution_tracker", execution_tracker)
+#     Returns:
+#         ExecutionTracker instance or None
+#     """
+#     #execution_tracker = StateAdapter.get_value(state, "__execution_tracker")
+#     if execution_tracker is None:
+#         logger.debug("[RUN] Creating new execution tracker")
+#         execution_tracker = ExecutionTracker(tracker_config, execution_config, logger)
+#         #state = StateAdapter.set_value(state, "__execution_tracker", execution_tracker)
 
-    return execution_tracker
+#     return execution_tracker

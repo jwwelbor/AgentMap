@@ -16,8 +16,7 @@ from agentmap.services.routing.types import (
 )
 
 from agentmap.services.routing.complexity_analyzer import (
-    PromptComplexityAnalyzer,
-    create_complexity_analyzer
+    PromptComplexityAnalyzer
 )
 
 from agentmap.services.routing.cache import (
@@ -26,8 +25,7 @@ from agentmap.services.routing.cache import (
 )
 
 from agentmap.services.routing.routing_service import (
-    LLMRoutingService,
-    create_routing_service
+    LLMRoutingService
 )
 
 __all__ = [
@@ -39,9 +37,7 @@ __all__ = [
     'LLMRouter',
     'ComplexityAnalyzer',
     'PromptComplexityAnalyzer',
-    'create_complexity_analyzer',
     'RoutingCache',
     'CacheEntry',
     'LLMRoutingService',
-    'create_routing_service'
 ]

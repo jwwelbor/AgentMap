@@ -6,6 +6,8 @@ Provides centralized services for common functionality like LLM calling and stor
 
 from agentmap.services.llm_service import LLMService, LLMServiceUser
 from agentmap.services.node_registry_service import NodeRegistryService, NodeRegistryUser
+from agentmap.services.logging_service import LoggingService
+from agentmap.services.config import AppConfigService, StorageConfigService, ConfigService
 
 # Storage services and types
 from agentmap.services.storage import (
@@ -56,9 +58,12 @@ from agentmap.exceptions import (
 
 __all__ = [
     # Services
-    'LLMService',
-    'NodeRegistryService',
+    'AppConfigService',
     'BaseStorageService',
+    'LLMService',
+    'LoggingService',
+    'NodeRegistryService',
+    'StorageConfigService',
     'StorageServiceManager',
 
     # Protocols

@@ -10,11 +10,10 @@ import logging
 
 from agentmap.config.base import load_config
 from agentmap.services.routing.types import TaskComplexity, TaskType, get_valid_complexity_levels
+from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.logging_service import LoggingService
 
-logger = logging.getLogger(__name__)
-
-
-class RoutingConfigSection:
+class LLMRoutingConfigService:
     """
     Configuration section for LLM routing.
     
@@ -22,25 +21,31 @@ class RoutingConfigSection:
     the provider × complexity matrix and task type definitions.
     """
     
-    def __init__(self, config_dict: Dict[str, Any]):
+    def __init__(
+            self, 
+            app_config_service: AppConfigService,
+            logging_service: LoggingService
+    ):
         """
         Initialize routing configuration from dictionary.
         
         Args:
             config_dict: Configuration dictionary from YAML or defaults
         """
-        self.enabled = config_dict.get("enabled", False)
-        self.routing_matrix = self._load_routing_matrix(config_dict)
-        self.task_types = self._load_task_types(config_dict)
-        self.complexity_analysis = config_dict.get("complexity_analysis", {})
-        self.cost_optimization = config_dict.get("cost_optimization", {})
-        self.fallback = config_dict.get("fallback", {})
-        self.performance = config_dict.get("performance", {})
+        self._logger = logging_service.get_class_logger(self)
+        self.config_dict = app_config_service.get_routing_config()
+        self.enabled = self.config_dict.get("enabled", False)
+        self.routing_matrix = self._load_routing_matrix(self.config_dict)
+        self.task_types = self._load_task_types(self.config_dict)
+        self.complexity_analysis = self.config_dict.get("complexity_analysis", {})
+        self.cost_optimization = self.config_dict.get("cost_optimization", {})
+        self.fallback = self.config_dict.get("fallback", {})
+        self.performance = self.config_dict.get("performance", {})
         
         # Validate configuration on load
-        validation_errors = self.validate_configuration()
+        validation_errors = self.validate_AppConfigService()
         if validation_errors:
-            logger.warning(f"Routing configuration validation errors: {validation_errors}")
+            self._logger.warning(f"Routing configuration validation errors: {validation_errors}")
     
     def _load_routing_matrix(self, config: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
         """
@@ -63,7 +68,7 @@ class RoutingConfigSection:
                     normalized_complexity_map[complexity.lower()] = model
                 normalized_matrix[provider.lower()] = normalized_complexity_map
             else:
-                logger.warning(f"Invalid routing matrix entry for provider {provider}")
+                self._logger.warning(f"Invalid routing matrix entry for provider {provider}")
         
         return normalized_matrix
     
@@ -121,24 +126,24 @@ class RoutingConfigSection:
         
         for field in required_fields:
             if field not in task_config:
-                logger.error(f"Task type '{task_name}' missing required field '{field}'")
+                self._logger.error(f"Task type '{task_name}' missing required field '{field}'")
                 return False
         
         # Validate default complexity
         default_complexity = task_config.get("default_complexity", "medium")
         if default_complexity.lower() not in get_valid_complexity_levels():
-            logger.error(f"Task type '{task_name}' has invalid default_complexity: {default_complexity}")
+            self._logger.error(f"Task type '{task_name}' has invalid default_complexity: {default_complexity}")
             return False
         
         # Validate provider preference is a list
         provider_preference = task_config.get("provider_preference", [])
         if not isinstance(provider_preference, list):
-            logger.error(f"Task type '{task_name}' provider_preference must be a list")
+            self._logger.error(f"Task type '{task_name}' provider_preference must be a list")
             return False
         
         return True
     
-    def validate_configuration(self) -> List[str]:
+    def validate_AppConfigService(self) -> List[str]:
         """
         Validate the complete routing configuration.
         
@@ -338,58 +343,43 @@ class RoutingConfigSection:
         return self.performance.get("cache_ttl", 300)
 
 
-def get_routing_config(config_path: Optional[Union[str, Path]] = None) -> RoutingConfigSection:
-    """
-    Get routing configuration section.
+# def get_routing_matrix(config_path: Optional[Union[str, Path]] = None) -> Dict[str, Dict[str, str]]:
+#     """
+#     Get the routing matrix configuration.
     
-    Args:
-        config_path: Optional path to a custom config file
+#     Args:
+#         config_path: Optional path to a custom config file
         
-    Returns:
-        RoutingConfigSection instance
-    """
-    config = load_config(config_path)
-    routing_config = config.get("routing", {})
-    return RoutingConfigSection(routing_config)
+#     Returns:
+#         Dictionary containing the provider × complexity matrix
+#     """
+#     routing_config = get_routing_config(config_path)
+#     return routing_config.routing_matrix
 
 
-def get_routing_matrix(config_path: Optional[Union[str, Path]] = None) -> Dict[str, Dict[str, str]]:
-    """
-    Get the routing matrix configuration.
+# def get_task_types_config(config_path: Optional[Union[str, Path]] = None) -> Dict[str, Dict[str, Any]]:
+#     """
+#     Get task types configuration.
     
-    Args:
-        config_path: Optional path to a custom config file
+#     Args:
+#         config_path: Optional path to a custom config file
         
-    Returns:
-        Dictionary containing the provider × complexity matrix
-    """
-    routing_config = get_routing_config(config_path)
-    return routing_config.routing_matrix
+#     Returns:
+#         Dictionary containing task type definitions
+#     """
+#     routing_config = get_routing_config(config_path)
+#     return routing_config.task_types
 
 
-def get_task_types_config(config_path: Optional[Union[str, Path]] = None) -> Dict[str, Dict[str, Any]]:
-    """
-    Get task types configuration.
+# def is_routing_enabled(config_path: Optional[Union[str, Path]] = None) -> bool:
+#     """
+#     Check if routing is globally enabled.
     
-    Args:
-        config_path: Optional path to a custom config file
+#     Args:
+#         config_path: Optional path to a custom config file
         
-    Returns:
-        Dictionary containing task type definitions
-    """
-    routing_config = get_routing_config(config_path)
-    return routing_config.task_types
-
-
-def is_routing_enabled(config_path: Optional[Union[str, Path]] = None) -> bool:
-    """
-    Check if routing is globally enabled.
-    
-    Args:
-        config_path: Optional path to a custom config file
-        
-    Returns:
-        True if routing is enabled
-    """
-    routing_config = get_routing_config(config_path)
-    return routing_config.enabled
+#     Returns:
+#         True if routing is enabled
+#     """
+#     routing_config = get_routing_config(config_path)
+#     return routing_config.enabled

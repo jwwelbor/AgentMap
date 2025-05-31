@@ -13,7 +13,7 @@ from agentmap.exceptions.graph_exceptions import InvalidEdgeDefinitionError
 
 from dependency_injector.wiring import inject, Provide
 from agentmap.di.containers import ApplicationContainer
-from agentmap.logging.service import LoggingService
+from agentmap.services.logging_service import LoggingService
 
 class Node:
     def __init__(self, name, context=None, agent_type=None, inputs=None, output=None, prompt=None, description=None):

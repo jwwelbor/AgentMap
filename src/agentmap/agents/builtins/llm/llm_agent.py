@@ -53,7 +53,7 @@ class LLMAgent(BaseAgent):
             # Try to use DI container if available
             try:
                 from agentmap.di import application
-                config = application.configuration()
+                config = application.AppConfigService()
                 config = config.get_section("llm", {}).get(self.provider_name, {})
             except (ImportError, AttributeError):
                 raise ConfigurationException( f"Could not get configuration from DI container for provider {self.provider_name}")
@@ -140,7 +140,7 @@ class LLMAgent(BaseAgent):
                 # try:
                 #     # Fall back to creating a new instance
                 #     from agentmap.services.llm_service import LLMService
-                #     from agentmap.config.configuration import Configuration
+                #     from agentmap.config.app_config import AppConfigService
                 #     from agentmap.logging.service import LoggingService
                     
                 #     # Try to load configuration
@@ -148,7 +148,7 @@ class LLMAgent(BaseAgent):
                 #         from agentmap.config import get_config
                 #         config = get_config()
                 #     except Exception:
-                #         config = Configuration({})
+                #         config = AppConfigService({})
                     
                 #     # Create logging service
                 #     logging_service = LoggingService(config.get_section("logging", {}))

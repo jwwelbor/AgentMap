@@ -2,7 +2,6 @@
 from typing import Any, Dict, Optional, Tuple
 import logging
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.runner import run_graph
 from agentmap.state.adapter import StateAdapter
 from agentmap.utils.common import extract_func_ref, import_function
 from agentmap.logging.tracking.execution_tracker import ExecutionTracker
@@ -17,7 +16,14 @@ class GraphAgent(BaseAgent):
     Supports flexible input/output mapping and nested execution tracking.
     """
     
-    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: dict = None):
+    def __init__(
+            self, 
+            name: str, 
+            prompt: str, 
+            logger: logging.Logger, 
+            execution_tracker: ExecutionTracker, 
+            context: dict = None
+        ):
         """
         Initialize the graph agent.
         
@@ -59,6 +65,8 @@ class GraphAgent(BaseAgent):
         subgraph_state = self._prepare_subgraph_state(inputs)
         
         try:
+            from agentmap.runner import run_graph
+
             # Execute the subgraph using run_graph (maintains your current approach)
             result = run_graph(
                 graph_name=self.subgraph_name, 
