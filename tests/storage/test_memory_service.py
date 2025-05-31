@@ -22,7 +22,7 @@ def test_memory_service():
         # Import required classes
         from agentmap.services.storage.memory_service import MemoryStorageService
         from agentmap.services.storage.types import WriteMode, StorageConfig
-        from agentmap.logging.service import LoggingService
+        from agentmap.services.logging_service import LoggingService
         
         # Create a simple mock configuration
         class MockConfig:

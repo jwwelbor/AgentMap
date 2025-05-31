@@ -142,8 +142,8 @@ def test_base_service():
     try:
         from agentmap.services.storage.base import BaseStorageService
         from agentmap.services.storage.types import StorageResult, WriteMode
-        from agentmap.config.configuration import Configuration
-        from agentmap.logging.service import LoggingService
+        from agentmap.services.config.app_config_service import AppConfigService
+        from agentmap.services.logging_service import LoggingService
         
         # Create mock configuration and logging service
         config = Configuration({})
@@ -210,8 +210,8 @@ def test_service_manager():
         from agentmap.services.storage.manager import StorageServiceManager
         from agentmap.services.storage.base import BaseStorageService
         from agentmap.services.storage.types import StorageResult
-        from agentmap.config.configuration import Configuration
-        from agentmap.logging.service import LoggingService
+        from agentmap.services.config.app_config_service import AppConfigService
+        from agentmap.services.logging_service import LoggingService
         
         # Create mock configuration and logging service
         config = Configuration({

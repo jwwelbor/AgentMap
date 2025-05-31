@@ -5,7 +5,6 @@ Simple test script for FileStorageService functionality.
 This script demonstrates basic file operations using the FileStorageService
 without complex mocking or dependencies.
 """
-import os
 import sys
 from pathlib import Path
 
@@ -23,7 +22,7 @@ def test_file_service():
         # Import required classes
         from agentmap.services.storage.file_service import FileStorageService
         from agentmap.services.storage.types import WriteMode, StorageConfig
-        from agentmap.logging.service import LoggingService
+        from agentmap.services.logging_service import LoggingService
         
         # Create a simple mock configuration
         class MockConfig:
