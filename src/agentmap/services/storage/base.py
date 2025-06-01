@@ -13,8 +13,8 @@ from agentmap.services.storage.types import (
     StorageServiceConfigurationError
 )
 from agentmap.services.storage.protocols import StorageService
-from agentmap.config.configuration import Configuration
-from agentmap.logging.service import LoggingService
+from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.logging_service import LoggingService
 
 
 class BaseStorageService(StorageService, ABC):
@@ -29,7 +29,7 @@ class BaseStorageService(StorageService, ABC):
     def __init__(
         self,
         provider_name: str,
-        configuration: Configuration,
+        configuration: AppConfigService,
         logging_service: LoggingService
     ):
         """
@@ -37,7 +37,7 @@ class BaseStorageService(StorageService, ABC):
         
         Args:
             provider_name: Name of the storage provider
-            configuration: Application configuration
+            configuration: Application configuration service
             logging_service: Logging service for creating loggers
         """
         self.provider_name = provider_name

@@ -9,6 +9,8 @@ import logging
 from typing import Dict, List, Any, Optional, Set, TYPE_CHECKING
 from collections import Counter
 from dataclasses import dataclass, field
+from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.logging_service import LoggingService
 
 from agentmap.services.routing.types import (
     TaskComplexity, 
@@ -17,11 +19,6 @@ from agentmap.services.routing.types import (
     RoutingContext,
     get_complexity_order
 )
-
-if TYPE_CHECKING:
-    from agentmap.config.sections.routing import RoutingConfigSection
-
-logger = logging.getLogger(__name__)
 
 
 class PromptComplexityAnalyzer:
@@ -32,21 +29,26 @@ class PromptComplexityAnalyzer:
     context, and memory to determine appropriate task complexity.
     """
     
-    def __init__(self, config: "RoutingConfigSection"):
+    def __init__(
+        self, 
+        configuration: AppConfigService,
+        logging_service: LoggingService
+    ):
         """
         Initialize the complexity analyzer with configuration.
         
         Args:
             config: Routing configuration section
         """
-        self.config = config
-        self.complexity_config = config.complexity_analysis
+        self.config = configuration.get_routing_config()
+        self.complexity_config = self.config["complexity_analysis"]
         
         # Load configuration settings
         self.length_thresholds = self._load_length_thresholds()
         self.analysis_methods = self._load_analysis_methods()
         self.keyword_weights = self._load_keyword_weights()
         self.context_thresholds = self._load_context_thresholds()
+        self._logger = logging_service.get_class_logger(self)
         
         # Compile regex patterns for efficiency
         self._compile_patterns()
@@ -426,7 +428,7 @@ class PromptComplexityAnalyzer:
             try:
                 return TaskComplexity.from_string(routing_context.complexity_override)
             except ValueError:
-                logger.warning(f"Invalid complexity override: {routing_context.complexity_override}")
+                self._logger.warning(f"Invalid complexity override: {routing_context.complexity_override}")
         
         # Skip analysis if auto-detect is disabled
         if not routing_context.auto_detect_complexity:
@@ -457,11 +459,6 @@ class PromptComplexityAnalyzer:
         # Combine all signals
         final_complexity = self.combine_complexity_signals(signals)
         
-        logger.debug(f"Complexity analysis for {task_type}: {[str(s) for s in signals]} -> {final_complexity}")
+        self._logger.debug(f"Complexity analysis for {task_type}: {[str(s) for s in signals]} -> {final_complexity}")
         
         return final_complexity
-
-
-def create_complexity_analyzer(config: "RoutingConfigSection") -> ComplexityAnalyzer:
-    """Create a complexity analyzer instance with the given configuration."""
-    return PromptComplexityAnalyzer(config)

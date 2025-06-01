@@ -7,25 +7,25 @@ import os
 import threading
 from typing import Any, Dict, List, Optional, Union
 
-from agentmap.logging.logger_utils import get_clean_logger, configure_basic_logger
+# from agentmap.logging.logger_utils import get_clean_logger, configure_basic_logger
 
-# Set up basic logging for the config module
-def _setup_config_logging():
-    """Set up basic logging for the config module."""
-    logger = get_clean_logger("agentmap.config")
+# # Set up basic logging for the config module
+# def _setup_config_logging():
+#     """Set up basic logging for the config module."""
+#     logger = get_clean_logger("agentmap.config")
     
-    # Only configure if no handlers exist
-    if not logger.handlers:
-        # Get level from environment with fallback
-        level_name = os.environ.get("AGENTMAP_CONFIG_LOG_LEVEL", "INFO").upper()
-        try:
-            level = getattr(logging, level_name)
-        except AttributeError:
-            level = logging.INFO
+#     # Only configure if no handlers exist
+#     if not logger.handlers:
+#         # Get level from environment with fallback
+#         level_name = os.environ.get("AGENTMAP_CONFIG_LOG_LEVEL", "INFO").upper()
+#         try:
+#             level = getattr(logging, level_name)
+#         except AttributeError:
+#             level = logging.INFO
             
-        configure_basic_logger(logger, level=level)
+#         configure_basic_logger(logger, level=level)
     
-    return logger
+#     return logger
 
 
 # Create logger for this module
@@ -37,6 +37,8 @@ def _setup_config_logging():
 # Import defaults
 from agentmap.config.defaults import get_default_config
 
+import logging
+logger = logging.getLogger("agentmap.config")
 
 # Keep the original merge function for backward compatibility
 def _merge_with_defaults(config: Dict[str, Any], defaults: Dict[str, Any]) -> Dict[str, Any]:

@@ -5,25 +5,21 @@ This module provides the main routing service that orchestrates complexity analy
 matrix lookups, provider selection, and fallback strategies for optimal LLM routing.
 """
 import logging
-from typing import Dict, List, Any, Optional, Tuple, Set, TYPE_CHECKING
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 import time
 
 from agentmap.services.routing.types import (
     TaskComplexity, 
     RoutingContext, 
-    RoutingDecision,
-    LLMRouter
+    RoutingDecision
 )
 from agentmap.services.routing.complexity_analyzer import PromptComplexityAnalyzer
 from agentmap.services.routing.cache import RoutingCache
-from agentmap.config.configuration import Configuration
-from agentmap.logging.service import LoggingService
+from agentmap.services.logging_service import LoggingService
+from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 
-if TYPE_CHECKING:
-    from agentmap.config.sections.routing import RoutingConfigSection
-
-logger = logging.getLogger(__name__)
-
+# if TYPE_CHECKING:
+#     from agentmap.config.sections.routing import RoutingConfigSection
 
 class LLMRoutingService:
     """
@@ -33,7 +29,13 @@ class LLMRoutingService:
     preferences, cost optimization, and availability constraints.
     """
     
-    def __init__(self, routing_config: "RoutingConfigSection", logging_service: LoggingService):
+    def __init__(
+        self, 
+        llm_routing_config_service: LLMRoutingConfigService,
+        logging_service: LoggingService,
+        routing_cache: RoutingCache,
+        prompt_complexity_analyzer: PromptComplexityAnalyzer
+    ):
         """
         Initialize the LLM routing service.
         
@@ -41,17 +43,17 @@ class LLMRoutingService:
             routing_config: Routing configuration section
             logging_service: Logging service for structured logging
         """
-        self.routing_config = routing_config
-        self.logger = logging_service.get_class_logger("agentmap.routing")
+        self.routing_config = llm_routing_config_service
+        self._logger = logging_service.get_class_logger(self)
         
         # Initialize components
-        self.complexity_analyzer = PromptComplexityAnalyzer(self.routing_config)
+        self.complexity_analyzer = prompt_complexity_analyzer
         
         # Initialize cache if enabled
         if self.routing_config.is_routing_cache_enabled():
             cache_size = self.routing_config.performance.get("max_cache_size", 1000)
             cache_ttl = self.routing_config.get_cache_ttl()
-            self.cache = RoutingCache(max_size=cache_size, default_ttl=cache_ttl)
+            self.cache = routing_cache.update_cache_parameters(max_size=cache_size, default_ttl=cache_ttl)
         else:
             self.cache = None
         
@@ -63,7 +65,7 @@ class LLMRoutingService:
             "complexity_overrides": 0
         }
         
-        self.logger.info("LLM Routing Service initialized")
+        self._logger.info("LLM Routing Service initialized")
     
     def route_request(
         self,
@@ -88,7 +90,7 @@ class LLMRoutingService:
         self._routing_stats["total_requests"] += 1
         
         try:
-            self.logger.debug(f"Routing request for task_type='{task_type}', providers={available_providers}")
+            self._logger.debug(f"Routing request for task_type='{task_type}', providers={available_providers}")
             
             # 1. Determine complexity
             complexity = self.determine_complexity(task_type, prompt, routing_context)
@@ -100,7 +102,7 @@ class LLMRoutingService:
                 )
                 if cached_decision:
                     self._routing_stats["cache_hits"] += 1
-                    self.logger.debug(f"Cache hit for {task_type}({complexity})")
+                    self._logger.debug(f"Cache hit for {task_type}({complexity})")
                     return cached_decision
             
             # 3. Select optimal model
@@ -124,7 +126,7 @@ class LLMRoutingService:
             
             # 6. Log the decision
             elapsed_time = time.time() - start_time
-            self.logger.info(
+            self._logger.info(
                 f"Routed {task_type}({complexity}) to {decision.provider}:{decision.model} "
                 f"(confidence: {decision.confidence:.2f}, time: {elapsed_time:.3f}s)"
             )
@@ -132,7 +134,7 @@ class LLMRoutingService:
             return decision
             
         except Exception as e:
-            self.logger.error(f"Error in route_request: {e}")
+            self._logger.error(f"Error in route_request: {e}")
             # Return emergency fallback
             return self._create_emergency_fallback(available_providers, str(e))
     
@@ -176,7 +178,7 @@ class LLMRoutingService:
         Returns:
             Routing decision with selected provider and model
         """
-        self.logger.debug(f"Selecting model for {task_type}({complexity}) from {available_providers}")
+        self._logger.debug(f"Selecting model for {task_type}({complexity}) from {available_providers}")
         
         # 1. Check for model override first
         if routing_context.model_override:
@@ -216,7 +218,7 @@ class LLMRoutingService:
             return decision
         
         # 6. Fallback to any available provider
-        self.logger.warning(f"No preferred providers available, using fallback")
+        self._logger.warning(f"No preferred providers available, using fallback")
         return self._apply_fallback_strategy(
             available_providers, task_type, complexity, routing_context
         )
@@ -286,7 +288,7 @@ class LLMRoutingService:
                 )
         
         # Model not found in available providers
-        self.logger.warning(f"Model override '{model_override}' not available in providers {available_providers}")
+        self._logger.warning(f"Model override '{model_override}' not available in providers {available_providers}")
         return self._create_emergency_fallback(available_providers, f"Model override '{model_override}' not available")
     
     def _filter_available_providers(
@@ -366,7 +368,7 @@ class LLMRoutingService:
         routing_context: RoutingContext
     ) -> RoutingDecision:
         """Apply fallback strategy when preferred providers unavailable."""
-        self.logger.warning(f"Applying fallback strategy for {task_type}({complexity})")
+        self._logger.warning(f"Applying fallback strategy for {task_type}({complexity})")
         
         # Strategy 1: Try lower complexity if enabled
         if routing_context.retry_with_lower_complexity and complexity != TaskComplexity.LOW:
@@ -473,36 +475,12 @@ class LLMRoutingService:
         """Clear the routing cache."""
         if self.cache:
             self.cache.clear()
-            self.logger.info("Routing cache cleared")
+            self._logger.info("Routing cache cleared")
     
     def cleanup_cache(self) -> None:
         """Clean up expired cache entries."""
         if self.cache:
             expired_count = self.cache.cleanup_expired()
             if expired_count > 0:
-                self.logger.info(f"Cleaned up {expired_count} expired cache entries")
+                self._logger.info(f"Cleaned up {expired_count} expired cache entries")
 
-
-def create_routing_service(
-    configuration: Configuration, 
-    logging_service: LoggingService
-) -> LLMRoutingService:
-    """
-    Factory function to create an LLM routing service.
-    
-    Args:
-        configuration: Configuration object
-        logging_service: Logging service
-        
-    Returns:
-        Configured LLM routing service
-    """
-    # Import here to avoid circular dependency
-    from agentmap.config.sections.routing import RoutingConfigSection
-    
-    # Create routing configuration from main configuration
-    routing_config = RoutingConfigSection(
-        configuration.get_section("routing", {})
-    )
-    
-    return LLMRoutingService(routing_config, logging_service)

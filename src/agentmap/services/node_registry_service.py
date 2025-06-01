@@ -6,12 +6,11 @@ This service consolidates all node registry operations including building regist
 from graph definitions and injecting them into orchestrator agents.
 """
 import json
-import inspect
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict
 from dataclasses import dataclass
 
-from agentmap.logging.service import LoggingService
-from agentmap.config.configuration import Configuration
+from agentmap.services.logging_service import LoggingService
+from agentmap.services.config.app_config_service import AppConfigService
 
 
 @dataclass
@@ -34,7 +33,7 @@ class NodeMetadata:
         }
 
 
-from typing import Protocol, runtime_checkable, Any, Dict, List, Optional
+from typing import Protocol, runtime_checkable, Any, Dict, Optional
 
 @runtime_checkable
 class NodeRegistryUser(Protocol):
@@ -60,12 +59,12 @@ class NodeRegistryService:
     and injecting them into orchestrator agents during graph assembly.
     """
     
-    def __init__(self, configuration: Configuration, logging_service: LoggingService):
+    def __init__(self, configuration: AppConfigService, logging_service: LoggingService):
         """
         Initialize the NodeRegistryService.
         
         Args:
-            configuration: Application configuration
+            configuration: Application configuration service
             logging_service: Logging service for creating loggers
         """
         self.configuration = configuration

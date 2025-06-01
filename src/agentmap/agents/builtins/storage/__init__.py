@@ -47,32 +47,32 @@ except ImportError:
     VectorWriterAgent = None
     _vector_available = False
 
-# Conditionally import Firebase agents if firebase-admin is available
-try:
-    from agentmap.agents.builtins.storage.firebase import (
-        FirebaseDocumentAgent, FirebaseDocumentReaderAgent, FirebaseDocumentWriterAgent
-    )
-    _firebase_available = True
-except ImportError:
-    FirebaseDocumentAgent = None
-    FirebaseDocumentReaderAgent = None
-    FirebaseDocumentWriterAgent = None
-    _firebase_available = False
+# # Conditionally import Firebase agents if firebase-admin is available
+# try:
+#     from agentmap.agents.builtins.storage.firebase import (
+#         FirebaseDocumentAgent, FirebaseDocumentReaderAgent, FirebaseDocumentWriterAgent
+#     )
+#     _firebase_available = True
+# except ImportError:
+#     FirebaseDocumentAgent = None
+#     FirebaseDocumentReaderAgent = None
+#     FirebaseDocumentWriterAgent = None
+#     _firebase_available = False
 
 # Conditionally import Cloud JSON agents
-try:
-    from agentmap.agents.builtins.storage.json import (
-        JSONCloudDocumentAgent, JSONCloudDocumentReaderAgent, JSONCloudDocumentWriterAgent
-    )
-    _json_cloud_available = True
-except ImportError:
-    JSONCloudDocumentAgent = None
-    JSONCloudDocumentReaderAgent = None
-    JSONCloudDocumentWriterAgent = None
-    _json_cloud_available = False
+# try:
+#     from agentmap.agents.builtins.storage.json import (
+#         JSONCloudDocumentAgent, JSONCloudDocumentReaderAgent, JSONCloudDocumentWriterAgent
+#     )
+#     _json_cloud_available = True
+# except ImportError:
+#     JSONCloudDocumentAgent = None
+#     JSONCloudDocumentReaderAgent = None
+#     JSONCloudDocumentWriterAgent = None
+#     _json_cloud_available = False
 
 # Import config utilities
-from agentmap.config import get_storage_config_path, load_storage_config
+#from agentmap.config import get_storage_config_path, load_storage_config
 
 __all__ = [
     # Base classes
@@ -108,7 +108,6 @@ __all__ = [
     
     # Config utilities
     'get_storage_config_path',
-    'load_storage_config',
 ]
 
 # Add Vector agents if available
@@ -119,18 +118,18 @@ if _vector_available:
         'VectorWriterAgent',
     ])
 
-# Add Firebase agents if available
-if _firebase_available:
-    __all__.extend([
-        'FirebaseDocumentAgent',
-        'FirebaseDocumentReaderAgent',
-        'FirebaseDocumentWriterAgent',
-    ])
+# # Add Firebase agents if available
+# if _firebase_available:
+#     __all__.extend([
+#         'FirebaseDocumentAgent',
+#         'FirebaseDocumentReaderAgent',
+#         'FirebaseDocumentWriterAgent',
+#     ])
 
-# Add Cloud JSON agents if available
-if _json_cloud_available:
-    __all__.extend([
-        'JSONCloudDocumentAgent',
-        'JSONCloudDocumentReaderAgent',
-        'JSONCloudDocumentWriterAgent',
-    ])
+# # Add Cloud JSON agents if available
+# if _json_cloud_available:
+#     __all__.extend([
+#         'JSONCloudDocumentAgent',
+#         'JSONCloudDocumentReaderAgent',
+#         'JSONCloudDocumentWriterAgent',
+#     ])

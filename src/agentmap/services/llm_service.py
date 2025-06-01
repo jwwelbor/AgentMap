@@ -5,12 +5,9 @@ Provides a unified interface for calling different LLM providers while
 handling configuration, error handling, and provider abstraction.
 """
 import os
-from typing import Any, Dict, List, Optional
 
-from dependency_injector.wiring import inject, Provide
-from agentmap.di.containers import ApplicationContainer
-from agentmap.config.configuration import Configuration
-from agentmap.logging.service import LoggingService
+from agentmap.services.config import AppConfigService
+from agentmap.services.logging_service import LoggingService
 from agentmap.exceptions import (
     LLMServiceError, 
     LLMProviderError, 
@@ -19,15 +16,8 @@ from agentmap.exceptions import (
 )
 
 # Import routing types
-from agentmap.services.routing.types import RoutingContext, RoutingDecision
-
-# Import routing service with fallback
-try:
-    from agentmap.services.routing.routing_service import LLMRoutingService
-except ImportError:
-    # Routing service not available
-    LLMRoutingService = None
-
+from agentmap.services.routing.types import RoutingContext
+from agentmap.services.routing.routing_service import LLMRoutingService
 
 from typing import Protocol, runtime_checkable, Any, Dict, List, Optional
 
@@ -57,9 +47,9 @@ class LLMService:
     
     def __init__(
         self,
-        configuration: Configuration,
+        configuration: AppConfigService,
         logging_service: LoggingService,
-        routing_service: Optional['LLMRoutingService'] = None
+        routing_service: LLMRoutingService
     ):
         self.configuration = configuration
         self._clients = {}  # Cache for LangChain clients

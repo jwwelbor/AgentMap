@@ -8,10 +8,10 @@ agent-related functionality to the rest of the application.
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.agents.registry import register_agent, get_agent_class, get_agent_map
 from agentmap.agents.loader import AgentLoader, create_agent
-from agentmap.logging import get_logger
 from agentmap.agents.features import enable_llm_agents, enable_storage_agents, is_llm_enabled, is_storage_enabled
+from agentmap.services.logging_service import _get_bootstrap_logger
 
-_logger = get_logger("agentmap.agents")
+_logger = _get_bootstrap_logger(__name__)
 
 # ----- CORE AGENTS (always available) -----
 from agentmap.agents.builtins.default_agent import DefaultAgent

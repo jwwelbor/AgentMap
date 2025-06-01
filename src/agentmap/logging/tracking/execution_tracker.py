@@ -3,15 +3,16 @@ Execution tracker for monitoring graph execution flow and results.
 """
 import time
 from typing import Any, Dict, List, Optional
-from dependency_injector.wiring import inject, Provide
-import logging
+from agentmap.services.logging_service import LoggingService
+from agentmap.services.config.app_config_service import AppConfigService
+
+
 class ExecutionTracker:
     """Track execution status and history through a graph execution."""
     def __init__(
         self, 
-        tracking_config: Dict[str, Any],
-        execution_config: Dict[str, Any],
-        logger: logging.Logger
+        app_config_service: AppConfigService,
+        logging_service: LoggingService,
     ):
         """
         Initialize the execution tracker with optional configuration.
@@ -19,9 +20,9 @@ class ExecutionTracker:
         Args:
             config: Tracking configuration dictionary
         """
-        self.execution_config = execution_config
-        self.tracking_config = tracking_config
-        self.logger = logger
+        self.execution_config = app_config_service.get_execution_config() 
+        self.tracking_config = app_config_service.get_tracking_config()
+        self._logger = logging_service.get_class_logger(self)
         
         # Enhanced data structures for execution tracking
         self.execution_path = []  # List of execution records (dicts) in chronological order
@@ -117,7 +118,7 @@ class ExecutionTracker:
         
         # Get current summary and evaluate policy
         summary = self.get_summary()
-        self.graph_success = evaluate_success_policy(summary, self.execution_config, self.logger)
+        self.graph_success = evaluate_success_policy(summary, self.execution_config, self._logger)
         
         return self.graph_success
         
@@ -136,7 +137,7 @@ class ExecutionTracker:
             subgraph_name: Name of the executed subgraph
             subgraph_summary: Complete execution summary from the subgraph
         """
-        self.logger.debug(f"Recording subgraph execution: {subgraph_name}")
+        self._logger.debug(f"Recording subgraph execution: {subgraph_name}")
         
         # Find the most recent incomplete execution record (currently executing node)
         current_execution = None
@@ -154,9 +155,9 @@ class ExecutionTracker:
             # Store the complete subgraph execution summary
             current_execution["subgraphs"][subgraph_name] = subgraph_summary
             
-            self.logger.info(f"Recorded subgraph '{subgraph_name}' execution in node '{current_execution['node_name']}'")
+            self._logger.info(f"Recorded subgraph '{subgraph_name}' execution in node '{current_execution['node_name']}'")
         else:
-            self.logger.warning(f"Cannot record subgraph '{subgraph_name}' - no current node context")
+            self._logger.warning(f"Cannot record subgraph '{subgraph_name}' - no current node context")
         
     def get_summary(self) -> Dict[str, Any]:
         """

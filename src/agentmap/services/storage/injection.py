@@ -18,7 +18,7 @@ from agentmap.exceptions import AgentInitializationError
 
 if TYPE_CHECKING:
     from agentmap.services.storage.manager import StorageServiceManager
-    from agentmap.logging.service import LoggingService
+    from agentmap.services.logging_service import LoggingService
 
 
 class StorageServiceInjectionError(AgentInitializationError):

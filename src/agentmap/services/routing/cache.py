@@ -11,9 +11,9 @@ from typing import Dict, Optional, Any, Tuple, List
 from dataclasses import dataclass, asdict
 
 from agentmap.services.routing.types import RoutingDecision, TaskComplexity
+from agentmap.services.logging_service import LoggingService
 
-logger = logging.getLogger(__name__)
-
+from dependency_injector.wiring import Provide, inject
 
 @dataclass
 class CacheEntry:
@@ -41,8 +41,13 @@ class RoutingCache:
     Caches routing decisions based on a hash of the routing parameters,
     with configurable TTL and maximum cache size.
     """
-    
-    def __init__(self, max_size: int = 1000, default_ttl: int = 300):
+    @inject
+    def __init__(
+            self, 
+            logging_service: LoggingService, #injected
+            max_size: int = 1000, 
+            default_ttl: int = 300,
+        ):
         """
         Initialize the routing cache.
         
@@ -54,12 +59,24 @@ class RoutingCache:
         self.default_ttl = default_ttl
         self._cache: Dict[str, CacheEntry] = {}
         self._access_order: List[str] = []  # For LRU eviction
+        self._logger = logging_service.get_class_logger(self)
         
         # Statistics
         self._hits = 0
         self._misses = 0
         self._evictions = 0
     
+    def update_cache_parameters(self, max_size: int, default_ttl: int) -> None:
+        """
+        Update the cache parameters.
+        
+        Args:
+            max_size: Maximum number of entries to cache
+            default_ttl: Default time-to-live in seconds
+        """
+        self.max_size = max_size
+        self.default_ttl = default_ttl
+
     def _generate_cache_key(
         self,
         task_type: str,
@@ -168,7 +185,7 @@ class RoutingCache:
         decision = entry.decision
         decision.cache_hit = True
         
-        logger.debug(f"Cache hit for key: {cache_key[:8]}...")
+        self._logger.debug(f"Cache hit for key: {cache_key[:8]}...")
         return decision
     
     def put(
@@ -219,7 +236,7 @@ class RoutingCache:
             self._access_order.remove(cache_key)
         self._access_order.append(cache_key)
         
-        logger.debug(f"Cached decision for key: {cache_key[:8]}...")
+        self._logger.debug(f"Cached decision for key: {cache_key[:8]}...")
     
     def _evict_lru(self) -> None:
         """Evict the least recently used cache entry."""
@@ -230,7 +247,7 @@ class RoutingCache:
         self._remove_entry(lru_key)
         self._evictions += 1
         
-        logger.debug(f"Evicted LRU entry: {lru_key[:8]}...")
+        self._logger.debug(f"Evicted LRU entry: {lru_key[:8]}...")
     
     def _remove_entry(self, cache_key: str) -> None:
         """Remove an entry from the cache."""
@@ -243,7 +260,7 @@ class RoutingCache:
         """Clear all cached entries."""
         self._cache.clear()
         self._access_order.clear()
-        logger.debug("Cache cleared")
+        self._logger.debug("Cache cleared")
     
     def cleanup_expired(self, ttl: Optional[int] = None) -> int:
         """
@@ -266,7 +283,7 @@ class RoutingCache:
             self._remove_entry(key)
         
         if expired_keys:
-            logger.debug(f"Cleaned up {len(expired_keys)} expired cache entries")
+            self._logger.debug(f"Cleaned up {len(expired_keys)} expired cache entries")
         
         return len(expired_keys)
     
