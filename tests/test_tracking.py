@@ -62,7 +62,7 @@ def run_sample_workflow():
         print(f"- Execution path: {summary['execution_path']}")
         
         print("\nNode Results:")
-        for node, data in summary["node_results"].items():
+        for node, data in summary["execution_path"].items():
             status = "✅ Success" if data["success"] else "❌ Failed"
             duration = data["duration"] * 1000 if data["duration"] else 0  # Convert to ms
             print(f"- {node}: {status} ({duration:.2f}ms)")

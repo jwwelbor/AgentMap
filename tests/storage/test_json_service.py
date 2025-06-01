@@ -6,7 +6,6 @@ verifying all CRUD operations, path-based access, and query filtering.
 """
 import os
 import sys
-import json
 import shutil
 import unittest
 from pathlib import Path
@@ -15,9 +14,9 @@ from unittest.mock import MagicMock
 # Add the project root to the Python path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from src.agentmap.services.storage.types import WriteMode, StorageResult, StorageConfig
+from src.agentmap.services.storage.types import WriteMode, StorageConfig
 from agentmap.services.storage.json_service import JSONStorageService
-from src.agentmap.logging.service import LoggingService
+from agentmap.services.logging_service import LoggingService
 from src.agentmap.config.configuration import Configuration
 
 

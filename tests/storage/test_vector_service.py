@@ -84,8 +84,8 @@ def test_service_instantiation():
     """Test that VectorStorageService can be instantiated (basic check)."""
     try:
         from agentmap.services.storage.vector_service import VectorStorageService
-        from agentmap.config.configuration import Configuration
-        from agentmap.logging.service import LoggingService
+        from agentmap.services.config.app_config_service import AppConfigService
+        from agentmap.services.logging_service import LoggingService
         
         # Mock configuration and logging service
         class MockConfig:

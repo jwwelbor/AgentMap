@@ -27,8 +27,8 @@ class BaseAgent:
             name: Name of the agent node
             prompt: Prompt or instruction for LLM-based agents
             context: Additional context including configuration
-            logger: Optional logger instance (can be None, will be obtained from DI)
-            execution_tracker: Optional execution tracker (can be None, will be obtained from state)
+            logger: Logger instance (required for proper operation)
+            execution_tracker: ExecutionTracker instance (required for proper operation)
         """
         self.name = name
         self.prompt = prompt
@@ -45,27 +45,7 @@ class BaseAgent:
         self._execution_tracker = execution_tracker
         self._log_prefix = f"[{self.__class__.__name__}:{self.name}]"
         
-    def _get_logger(self):
-        """Get the logger, using DI if needed."""
-        if self._logger is None:
-            # Get logger from DI container
-            try:
-                from agentmap.di import application
-                logging_service = application.logging_service()
-                self._logger = logging_service.get_logger("agentmap.agents")
-            except Exception:
-                # Fallback to basic logger
-                self._logger = logging.getLogger("agentmap.agents")
-        return self._logger
-        
-    def _get_execution_tracker(self):
-        """Get the execution tracker from state."""
-        try:
-            from agentmap.di import application
-            self._execution_tracker = application.execution_tracker()
-        except Exception:
-            pass
-        return self._execution_tracker
+
         
     def log(self, level: str, message: str, *args, **kwargs):
         """
@@ -75,9 +55,16 @@ class BaseAgent:
             level: Log level ('debug', 'info', 'warning', 'error', 'trace')
             message: Log message
             *args, **kwargs: Additional arguments passed to the logger
+            
+        Raises:
+            ValueError: When logger is not provided to agent
         """
-        logger = self._logger # or self._get_logger()
-        logger_method = getattr(logger, level, logger.info)
+        if self._logger is None:
+            raise ValueError(
+                f"Logger not provided to agent '{self.name}'. "
+                "Please inject logger dependency using DI fixtures in tests or provide logger in constructor."
+            )
+        logger_method = getattr(self._logger, level, self._logger.info)
         logger_method(f"{self._log_prefix} {message}", *args, **kwargs)
     
     def log_debug(self, message: str, *args, **kwargs):
@@ -125,6 +112,9 @@ class BaseAgent:
 
         Returns:
             Dictionary with only the fields that need to be updated
+            
+        Raises:
+            ValueError: When execution_tracker is not provided to agent
         """
         # Generate a unique execution ID
         execution_id = str(uuid.uuid4())[:8]
@@ -132,8 +122,13 @@ class BaseAgent:
 
         self.log_trace(f"\n*** AGENT {self.name} RUN START [{execution_id}] at {start_time} ***")
 
-        # Get execution tracker from state
-        tracker = self._execution_tracker or self._get_execution_tracker()
+        # Get execution tracker - must be provided via DI
+        if self._execution_tracker is None:
+            raise ValueError(
+                f"ExecutionTracker not provided to agent '{self.name}'. "
+                "Please inject execution_tracker dependency using DI fixtures in tests or provide execution_tracker in constructor."
+            )
+        tracker = self._execution_tracker
 
         # Extract inputs
         inputs = StateAdapter.get_inputs(state, self.input_fields)

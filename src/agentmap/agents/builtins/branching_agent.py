@@ -69,7 +69,8 @@ class BranchingAgent(BaseAgent):
         # Default to True if no relevant fields found
         return True
     
-    def _post_process(self, state: Any, output: Any, current_updates: Dict[str, Any]) -> Tuple[Any, Any]:
+    #def _post_process(self, state: Any, output: Any, current_updates: Dict[str, Any]) -> Tuple[Any, Any]:
+    def _post_process(self, state: Any, inputs: Dict[str, Any], output) -> Tuple[Any, Any]:
         """
         Override the post-processing hook to set the success flag based on inputs.
         
@@ -81,7 +82,7 @@ class BranchingAgent(BaseAgent):
             Tuple of (state, output) with success flag set
         """
         # Get inputs
-        inputs = self.state_manager.get_inputs(state)
+        #inputs = self.state_manager.get_inputs(state)
         
         # Determine success based on inputs
         success = self._determine_success(inputs)
