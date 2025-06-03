@@ -6,10 +6,12 @@ operations to JSONStorageService, keeping agents basic and focused.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, log_operation)
+from agentmap.logging.tracking.execution_tracker import ExecutionTracker
 from agentmap.services.storage import DocumentResult, JSONStorageService
 from agentmap.services.storage.protocols import JSONServiceUser
 from agentmap.agents.mixins import StorageErrorHandlerMixin
@@ -22,16 +24,18 @@ class JSONDocumentAgent(BaseStorageAgent, StorageErrorHandlerMixin, JSONServiceU
     a simple interface for JSON reader and writer agents.
     """
     
-    def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
+    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: Optional[Dict[str, Any]] = None):
         """
         Initialize the JSON document agent.
         
         Args:
             name: Name of the agent node
             prompt: Prompt or instruction
+            logger: Logger instance for logging operations
+            execution_tracker: ExecutionTracker instance for tracking
             context: Additional context including JSON configuration
         """
-        super().__init__(name, prompt, context)
+        super().__init__(name, prompt, logger, execution_tracker, context)
         
         # JSONServiceUser protocol requirement - will be set via dependency injection
         # or initialized in _initialize_client()

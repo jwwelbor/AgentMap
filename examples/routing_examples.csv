@@ -1,0 +1,23 @@
+GraphName,Node,AgentType,Context,Input_Fields,Output_Field,Success_Next,Failure_Next,Prompt
+RoutingExample,UserInput,input,,,"user_query",LLMResponse,,,What would you like to know?
+
+# Legacy mode - works exactly as before
+RoutingExample,LLMResponse,anthropic,"{""model"":""claude-3-sonnet-20240229"",""temperature"":0.7}","user_query","response",RoutingResponse,,You are a helpful AI assistant. User question: {user_query}
+
+# Modern routing mode - intelligent provider/model selection
+RoutingExample,RoutingResponse,llm,"{""routing_enabled"":true,""task_type"":""general"",""provider_preference"":[""anthropic"",""openai""]}","response","final_response",End,,Please provide a follow-up question based on this response: {response}
+
+# Advanced routing with complexity override
+RoutingExample,AdvancedRouting,llm,"{""routing_enabled"":true,""task_type"":""creative_writing"",""complexity_override"":""high"",""prefer_quality"":true}","user_query","creative_response",End,,Write a creative story based on: {user_query}
+
+RoutingExample,End,success,,,,,,,Task completed successfully
+
+# Task-specific routing examples
+CreativeWriting,UserPrompt,input,,,"story_prompt",CreativeAgent,,,What story would you like me to write?
+CreativeWriting,CreativeAgent,llm,"{""routing_enabled"":true,""task_type"":""creative_writing"",""complexity_override"":""high"",""provider_preference"":[""anthropic""]}","story_prompt","story",End,,Write an engaging story based on: {story_prompt}
+CreativeWriting,End,success,,,,,,,Story completed
+
+# Data analysis routing
+DataAnalysis,DataInput,input,,,"data_request",AnalysisAgent,,,What data would you like me to analyze?
+DataAnalysis,AnalysisAgent,llm,"{""routing_enabled"":true,""task_type"":""data_analysis"",""complexity_override"":""medium"",""provider_preference"":[""openai"",""anthropic""]}","data_request","analysis",End,,Analyze the following data request: {data_request}
+DataAnalysis,End,success,,,,,,,Analysis completed

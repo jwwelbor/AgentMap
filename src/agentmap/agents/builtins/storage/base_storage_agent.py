@@ -7,9 +7,11 @@ with utilities for accessing data stores and handling operations.
 from __future__ import annotations
 
 import functools
+import logging
 from typing import Any, Callable, Dict, Optional, TypeVar, cast
 
 from agentmap.agents.base_agent import BaseAgent
+from agentmap.logging.tracking.execution_tracker import ExecutionTracker
 from agentmap.services.storage import DocumentResult, WriteMode
 
 
@@ -49,16 +51,18 @@ class BaseStorageAgent(BaseAgent):
     error handling and connection management.
     """
     
-    def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
+    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: Optional[Dict[str, Any]] = None):
         """
         Initialize the storage agent.
         
         Args:
             name: Name of the agent node
             prompt: Prompt or instruction
+            logger: Logger instance for logging operations
+            execution_tracker: ExecutionTracker instance for tracking
             context: Additional context including input/output field configuration
         """
-        super().__init__(name, prompt, context or {})
+        super().__init__(name, prompt, context or {}, logger=logger, execution_tracker=execution_tracker)
         self._client: Any = None
     
     @property

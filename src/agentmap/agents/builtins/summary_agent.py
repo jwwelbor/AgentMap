@@ -6,7 +6,8 @@ from typing import Any, Dict, Optional
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.agents.mixins import PromptResolutionMixin
 from agentmap.agents.features import is_llm_enabled
-
+from agentmap.logging.tracking.execution_tracker import ExecutionTracker
+import logging
 
 class SummaryAgent(BaseAgent, PromptResolutionMixin):
     """
@@ -17,9 +18,9 @@ class SummaryAgent(BaseAgent, PromptResolutionMixin):
     2. LLM mode (optional): Uses LLM to create an intelligent summary
     """
 
-    def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
-        """Initialize the summary agent with configuration."""
-        super().__init__(name, prompt, context or {})
+    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: dict = None):
+        """Initialize the success agent with the required dependencies."""
+        super().__init__(name, prompt, context, logger=logger, execution_tracker=execution_tracker)
 
         # LLM Service - implements LLMServiceUser protocol
         self.llm_service = None

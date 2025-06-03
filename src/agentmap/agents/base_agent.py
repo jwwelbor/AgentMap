@@ -6,8 +6,8 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 import logging
-from agentmap.state.adapter import StateAdapter
-from agentmap.logging.tracking.execution_tracker import ExecutionTracker
+from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.models.execution_tracker import ExecutionTracker
 
 class BaseAgent:
     """Base class for all agents in AgentMap."""
@@ -131,7 +131,7 @@ class BaseAgent:
         tracker = self._execution_tracker
 
         # Extract inputs
-        inputs = StateAdapter.get_inputs(state, self.input_fields)
+        inputs = StateAdapterService.get_inputs(state, self.input_fields)
 
         # Record node start
         tracker.record_node_start(self.name, inputs)
@@ -151,7 +151,7 @@ class BaseAgent:
 
             # Set the final output if we have an output field
             if self.output_field and output is not None:
-                state = StateAdapter.set_value(state, self.output_field, output)
+                state = StateAdapterService.set_value(state, self.output_field, output)
                 self.log_debug(f"Set output field '{self.output_field}' = {output}")
 
             end_time = time.time()

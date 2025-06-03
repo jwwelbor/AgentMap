@@ -1,11 +1,18 @@
 # agentmap/agents/builtins/default_agent.py
 from agentmap.agents.base_agent import BaseAgent
 import uuid
+import logging
 from typing import Any, Dict, Tuple
+
+from agentmap.models.execution_tracker import ExecutionTracker
 
 
 class DefaultAgent(BaseAgent):
     """Default agent implementation that simply logs its execution."""
+
+    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: dict = None):
+        """Initialize the default agent with the required dependencies."""
+        super().__init__(name, prompt, context, logger=logger, execution_tracker=execution_tracker)
 
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
