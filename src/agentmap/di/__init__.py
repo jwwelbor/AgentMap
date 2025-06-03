@@ -1,151 +1,153 @@
 # agentmap/di/__init__.py
-from typing import Optional, Union
+"""
+Dependency injection and service wiring.
+
+This module manages:
+- Service dependencies and lifecycle
+- Configuration of DI container
+- Service wiring and initialization
+- Graceful degradation for optional services
+"""
+
 from pathlib import Path
-from agentmap.di.containers import ApplicationContainer
+from typing import Optional
 
-# Global container instance
-application = ApplicationContainer()
+from .containers import ApplicationContainer, create_optional_service, safe_get_service
 
 
-def _replace_bootstrap_loggers(app_config_service, logging_service):
+def initialize_di(config_file: Optional[str] = None) -> ApplicationContainer:
     """
-    Replace bootstrap loggers with real loggers after LoggingService is online.
+    Initialize dependency injection container for AgentMap application.
+    
+    This is the main bootstrap function used by all entry points (CLI, FastAPI, 
+    serverless handlers, etc.) to create and configure the DI container with
+    all necessary services.
     
     Args:
-        app_config_service: AppConfigService instance
-        logging_service: LoggingService instance
-    """
-    # Get the ConfigService instance from AppConfigService
-    config_service = app_config_service._config_service
-    
-    # Create real loggers with appropriate names
-    config_logger = logging_service.get_logger("agentmap.config")
-    app_config_logger = logging_service.get_logger("agentmap.app_config")
-    
-    # Replace bootstrap loggers in config services
-    try:
-        config_service.replace_logger(config_logger)
-        app_config_service.replace_logger(app_config_logger)
+        config_file: Optional path to custom config file override
         
-        # Log successful replacements
-        config_logger.debug("Bootstrap logger replaced with real logger for ConfigService")
-        app_config_logger.debug("Bootstrap logger replaced with real logger for AppConfigService")
-        
-    except Exception as e:
-        # If replacement fails, log the error but continue
-        logging_service.get_logger("agentmap.di").warning(
-            f"Failed to replace bootstrap loggers for config services: {e}"
-        )
-    
-    # Try to replace logger for storage config service (may not exist)
-    try:
-        storage_config_service = application.storage_config_service()
-        if storage_config_service:
-            storage_config_logger = logging_service.get_logger("agentmap.storage_config")
-            storage_config_service.replace_logger(storage_config_logger)
-            storage_config_logger.debug("Bootstrap logger replaced with real logger for StorageConfigService")
-    except Exception:
-        # Storage config service is optional and may not be available
-        # This is expected behavior, so we don't log it as an error
-        pass
-
-
-def initialize_di(config_path: Optional[Union[str, Path]] = None) -> ApplicationContainer:
-    """
-    Initialize the DI container for CLI usage.
-
-    This should be called at the start of every CLI command before
-    any code that uses @inject decorators.
-
-    Args:
-        config_path: Path to the configuration file
-
     Returns:
-        Initialized application container
-    """
-    # Configure the container with the provided config path
-    config_path = config_path or "agentmap_config.yaml"
-    application.config_path.override(config_path)
-
-    # Initialize configuration services first
-    # This will load the main config and validate it
-    app_config_service = application.app_config_service()
-    
-    # Initialize logging service early - this ensures logging is configured
-    # before any other code that might want to log
-    logging_service = application.logging_service()
-    logging_service.initialize()
-    
-    # Replace bootstrap loggers with real loggers now that LoggingService is online
-    _replace_bootstrap_loggers(app_config_service, logging_service)
-
-    # Try to initialize storage config service (may fail gracefully)
-    try:
-        storage_config_service = application.storage_config_service()
-    except Exception as e:
-        # Storage config failure is expected and handled gracefully
-        from agentmap.exceptions.service_exceptions import StorageConfigurationNotAvailableException
-        if isinstance(e, StorageConfigurationNotAvailableException):
-            # This is expected - storage is optional
-            pass
-        else:
-            # Re-raise unexpected errors
-            raise
-
-    # Wire the container to all modules that use injection
-    application.wire(modules=[
-        "agentmap.compiler",
-        "agentmap.graph.assembler",
-        "agentmap.graph.builder",
-        "agentmap.graph.scaffold",
-        "agentmap.prompts.manager",
-        "agentmap.services.llm_service",
-        "agentmap.services.node_registry_service",
-        "agentmap.services.routing.cache",
-        "agentmap.services.routing.complexity_analyzer",
-        "agentmap.services.routing.routing_service",
-        "agentmap.runner",
-    ])
-
-    # Force initialization of core services to catch any errors early
-    _ = application.llm_service()
-    
-    # Check if storage services are available
-    storage_manager = application.storage_service_manager()
-    if storage_manager is None:
-        # Log that storage is unavailable but continue
-        logger = logging_service.get_logger("agentmap.di")
-        logger.info("Storage services are not available - running without storage features")
-
-    return application
-
-
-def cleanup():
-    """Clean up the DI container (useful for testing or between commands)."""
-    try:
-        # Reset logging if available
-        logging_service = application.logging_service()
-        if logging_service and logging_service.is_initialized():
-            logging_service.reset()
-    except Exception:
-        # If logging service is not available, continue cleanup
-        pass
-    
-    # Reset any bootstrap loggers in config services
-    try:
-        app_config_service = application.app_config_service()
-        if hasattr(app_config_service, '_logger'):
-            app_config_service._logger = None
+        ApplicationContainer: Fully configured DI container ready for use
         
-        config_service = app_config_service._config_service
-        if hasattr(config_service, '_bootstrap_logger'):
-            config_service._bootstrap_logger = None
-    except Exception:
-        # Config services may not be available
-        pass
-
-    # Unwire the container
-    application.unwire()
+    Example:
+        # CLI usage
+        container = initialize_di("/path/to/config.yaml")
+        graph_runner = container.graph_runner_service()
+        
+        # FastAPI usage
+        container = initialize_di()
+        dependency_checker = container.dependency_checker_service()
+    """
+    # Create the main DI container
+    container = ApplicationContainer()
     
-    # Reset any cached providers
-    application.reset_last_provided()
+    # Override config path if provided
+    if config_file:
+        config_path = Path(config_file)
+        if not config_path.exists():
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+        container.config_path.override(str(config_path))
+    
+    # Optional: Wire the container for faster service resolution
+    # This pre-resolves dependencies but can be skipped for lazy initialization
+    try:
+        container.wire(modules=[])
+    except Exception:
+        # If wiring fails, continue - services will be resolved lazily
+        pass
+    
+    return container
+
+
+def initialize_di_for_testing(
+    config_overrides: Optional[dict] = None,
+    mock_services: Optional[dict] = None
+) -> ApplicationContainer:
+    """
+    Initialize DI container specifically for testing with mocks and overrides.
+    
+    Args:
+        config_overrides: Dict of config values to override
+        mock_services: Dict of service_name -> mock_instance mappings
+        
+    Returns:
+        ApplicationContainer: Test-configured DI container
+        
+    Example:
+        container = initialize_di_for_testing(
+            config_overrides={"csv_path": "/test/data.csv"},
+            mock_services={"llm_service": MockLLMService()}
+        )
+    """
+    container = ApplicationContainer()
+    
+    # Apply config overrides
+    if config_overrides:
+        for key, value in config_overrides.items():
+            if hasattr(container, key):
+                getattr(container, key).override(value)
+    
+    # Apply service mocks
+    if mock_services:
+        for service_name, mock_instance in mock_services.items():
+            if hasattr(container, service_name):
+                getattr(container, service_name).override(mock_instance)
+    
+    return container
+
+
+def get_service_status(container: ApplicationContainer) -> dict:
+    """
+    Get comprehensive status of all services in the DI container.
+    
+    Useful for debugging and health checks.
+    
+    Args:
+        container: DI container to check
+        
+    Returns:
+        Dict with service availability and status information
+    """
+    status = {
+        "container_initialized": True,
+        "services": {},
+        "errors": []
+    }
+    
+    # List of key services to check
+    key_services = [
+        "app_config_service",
+        "logging_service", 
+        "features_registry_service",
+        "dependency_checker_service",
+        "graph_builder_service",
+        "graph_runner_service",
+        "llm_service",
+        "storage_service_manager"
+    ]
+    
+    for service_name in key_services:
+        try:
+            service = getattr(container, service_name)()
+            status["services"][service_name] = {
+                "available": True,
+                "type": type(service).__name__
+            }
+        except Exception as e:
+            status["services"][service_name] = {
+                "available": False,
+                "error": str(e)
+            }
+            status["errors"].append(f"{service_name}: {e}")
+    
+    return status
+
+
+__all__ = [
+    'ApplicationContainer',
+    'initialize_di',
+    'initialize_di_for_testing', 
+    'get_service_status',
+    'create_optional_service',
+    'safe_get_service'
+]

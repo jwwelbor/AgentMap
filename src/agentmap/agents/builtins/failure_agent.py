@@ -1,14 +1,20 @@
 # agentmap/agents/builtins/failure_agent.py
 from typing import Any, Dict, Tuple
+import logging
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.state.adapter import StateAdapter
+from agentmap.models.execution_tracker import ExecutionTracker
+from agentmap.services.state_adapter_service import StateAdapterService
 
 class FailureAgent(BaseAgent):
     """
     Test agent that always fails by setting last_action_success to False.
     Useful for testing failure branches in workflows.
     """
+    
+    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: dict = None):
+        """Initialize the failure agent with the required dependencies."""
+        super().__init__(name, prompt, context, logger=logger, execution_tracker=execution_tracker)
     
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
@@ -34,7 +40,7 @@ class FailureAgent(BaseAgent):
 
         return message
     
-    def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
+    def _post_process(self, state: Any, inputs: Dict[str, Any], output: Any) -> Tuple[Any, Any]:
         """
         Override the post-processing hook to always set success flag to False.
         
@@ -46,7 +52,7 @@ class FailureAgent(BaseAgent):
             Tuple of (state, output) with success flag set to False
         """
         # We'll set this flag now to make it available in the state, but BaseAgent will set it again
-        state = StateAdapter.set_value(state, "last_action_success", False)
+        state = StateAdapterService.set_value(state, "last_action_success", False)
         
         # We can modify the output if needed
         if output:

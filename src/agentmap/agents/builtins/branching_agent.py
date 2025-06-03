@@ -1,8 +1,10 @@
 # agentmap/agents/builtins/branching_agent.py
 from typing import Any, Dict, Tuple
+import logging
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.state.adapter import StateAdapter
+from agentmap.models.execution_tracker import ExecutionTracker
+from agentmap.services.state_adapter_service import StateAdapterService
 
 
 class BranchingAgent(BaseAgent):
@@ -11,6 +13,10 @@ class BranchingAgent(BaseAgent):
     The agent checks for a field named 'success' or 'should_succeed' in the inputs
     and uses it to determine whether to succeed or fail.
     """
+    
+    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: dict = None):
+        """Initialize the branching agent with the required dependencies."""
+        super().__init__(name, prompt, context, logger=logger, execution_tracker=execution_tracker)
     
     def process(self, inputs: Dict[str, Any]) -> str:
         """
@@ -89,7 +95,7 @@ class BranchingAgent(BaseAgent):
         
         # Set the last_action_success flag based on inputs
         # We'll set this flag now to make it available in the state, but BaseAgent will set it again
-        state = StateAdapter.set_value(state, "last_action_success", success)
+        state = StateAdapterService.set_value(state, "last_action_success", success)
         
         # We can modify the output here if needed
         if not success:

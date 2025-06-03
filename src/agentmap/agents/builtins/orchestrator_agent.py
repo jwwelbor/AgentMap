@@ -6,8 +6,8 @@ from typing import Any, Dict, Tuple, Optional
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.agents.mixins import PromptResolutionMixin
 from agentmap.agents.features import is_llm_enabled
-from agentmap.logging.tracking.execution_tracker import ExecutionTracker
-from agentmap.state.adapter import StateAdapter
+from agentmap.models.execution_tracker import ExecutionTracker
+from agentmap.services.state_adapter_service import StateAdapterService
 import logging
 
 
@@ -127,7 +127,7 @@ class OrchestratorAgent(BaseAgent, PromptResolutionMixin):
         else:
             selected_node = output
 
-        state = StateAdapter.set_value(state, "__next_node", selected_node)
+        state = StateAdapterService.set_value(state, "__next_node", selected_node)
         self.log_info(f"Setting __next_node to '{selected_node}'")
         
         return state, output

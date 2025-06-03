@@ -7,8 +7,6 @@ system, including provider × complexity matrix, task types, and routing policie
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Set
 import logging
-
-from agentmap.config.base import load_config
 from agentmap.services.routing.types import TaskComplexity, TaskType, get_valid_complexity_levels
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
@@ -22,9 +20,9 @@ class LLMRoutingConfigService:
     """
     
     def __init__(
-            self, 
-            app_config_service: AppConfigService,
-            logging_service: LoggingService
+        self, 
+        app_config_service: AppConfigService,
+        logging_service: LoggingService
     ):
         """
         Initialize routing configuration from dictionary.

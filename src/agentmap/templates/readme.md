@@ -1,1 +1,0 @@
-These files are used to create the scaffolding for the agents and functions.

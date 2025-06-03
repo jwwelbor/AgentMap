@@ -1,9 +1,16 @@
 from agentmap.agents.base_agent import BaseAgent
+import logging
 from typing import Any, Dict
+
+from agentmap.models.execution_tracker import ExecutionTracker
 
 
 class InputAgent(BaseAgent):
     """Agent that prompts the user for input during execution."""
+    
+    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: dict = None):
+        """Initialize the input agent with the required dependencies."""
+        super().__init__(name, prompt, context, logger=logger, execution_tracker=execution_tracker)
     
     def process(self, inputs: Dict[str, Any]) -> Any:
         """

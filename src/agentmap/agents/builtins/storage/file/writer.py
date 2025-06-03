@@ -7,12 +7,14 @@ focusing on text documents, Markdown, and simple text-based formats.
 from __future__ import annotations
 
 import os
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent
 )
+from agentmap.logging.tracking.execution_tracker import ExecutionTracker
 from agentmap.services.storage import DocumentResult, WriteMode, FileStorageService
 from agentmap.services.storage.protocols import FileServiceUser
 from agentmap.agents.mixins import WriterOperationsMixin, StorageErrorHandlerMixin
@@ -27,16 +29,18 @@ class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandl
     with support for different write modes including append and update.
     """
     
-    def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
+    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: Optional[Dict[str, Any]] = None):
         """
         Initialize the file writer agent.
         
         Args:
             name: Name of the agent node
             prompt: File path or prompt with path
+            logger: Logger instance for logging operations
+            execution_tracker: ExecutionTracker instance for tracking
             context: Additional configuration including encoding and newline settings
         """
-        super().__init__(name, prompt, context)
+        super().__init__(name, prompt, logger, execution_tracker, context)
         
         # Extract file writing configuration from context
         context = context or {}

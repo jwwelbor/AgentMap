@@ -35,7 +35,8 @@ All agents must inherit from `BaseAgent` which defines the common interface:
 
 ```python
 class BaseAgent:
-    def __init__(self, name: str, prompt: str, context: dict = None):
+    def __init__(self, name: str, prompt: str, context: dict = None, 
+                 logger: logging.Logger = None, execution_tracker: ExecutionTracker = None):
         self.name = name
         self.prompt = prompt
         self.context = context or {}
@@ -44,28 +45,42 @@ class BaseAgent:
         # Extract input_fields and output_field from context if available
         self.input_fields = self.context.get("input_fields", [])
         self.output_field = self.context.get("output_field", "output")
+        self.description = self.context.get("description", "")
         
-        # Create state manager
-        self.state_manager = StateManager(self.input_fields, self.output_field)
+        # Store logger and tracker - these can be None initially
+        self._logger = logger
+        self._execution_tracker = execution_tracker
+        self._log_prefix = f"[{self.__class__.__name__}:{self.name}]"
         
-        # Initialize logging
-        self.logger = get_logger(f"agentmap.agent.{self.name}")
+    def log(self, level: str, message: str, *args, **kwargs):
+        """Log a message with the specified level and proper agent context."""
+        if self._logger is None:
+            raise ValueError(
+                f"Logger not provided to agent '{self.name}'. "
+                "Please inject logger dependency using DI fixtures in tests or provide logger in constructor."
+            )
+        logger_method = getattr(self._logger, level, self._logger.info)
+        logger_method(f"{self._log_prefix} {message}", *args, **kwargs)
     
-    def log_debug(self, message: str) -> None:
-        """Log a debug message."""
-        self.logger.debug(message)
-    
-    def log_info(self, message: str) -> None:
-        """Log an info message."""
-        self.logger.info(message)
-    
-    def log_warning(self, message: str) -> None:
-        """Log a warning message."""
-        self.logger.warning(message)
-    
-    def log_error(self, message: str) -> None:
-        """Log an error message."""
-        self.logger.error(message)
+    def log_debug(self, message: str, *args, **kwargs):
+        """Log a debug message with agent context."""
+        self.log("debug", message, *args, **kwargs)
+        
+    def log_info(self, message: str, *args, **kwargs):
+        """Log an info message with agent context."""
+        self.log("info", message, *args, **kwargs)
+        
+    def log_warning(self, message: str, *args, **kwargs):
+        """Log a warning message with agent context."""
+        self.log("warning", message, *args, **kwargs)
+        
+    def log_error(self, message: str, *args, **kwargs):
+        """Log an error message with agent context."""
+        self.log("error", message, *args, **kwargs)
+        
+    def log_trace(self, message: str, *args, **kwargs):
+        """Log a trace message with agent context."""
+        self.log("trace", message, *args, **kwargs)
  
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
@@ -80,76 +95,125 @@ class BaseAgent:
         """
         raise NotImplementedError("Subclasses must implement process()")
     
-    def _pre_process(self, state: Any, inputs: Dict[str, Any]) -> Any:
+    def _pre_process(self, state: Any, inputs: Dict[str, Any]) -> Tuple[Any, Any]:
         """
-        Pre-processing hook called before process().
-        Override this method to implement custom pre-processing.
+        Pre-processing hook that can be overridden by subclasses.
         
         Args:
             state: Current state
-            inputs: Input values for this node
+            inputs: Extracted input values
             
         Returns:
-            Updated state
+            Tuple of (state, processed_inputs)
         """
-        return state
+        return state, inputs
     
-    def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
+    def _post_process(self, state: Any, inputs: Dict[str, Any], output: Any) -> Tuple[Any, Any]:
         """
-        Post-processing hook called after process().
-        Override this method to implement custom post-processing.
+        Post-processing hook that can be overridden by subclasses.
         
         Args:
-            state: Current state
-            output: Output from process method
+            state: The current state
+            inputs: The input values
+            output: The output value from the process method
             
         Returns:
-            Tuple of (updated_state, updated_output)
+            Tuple of (state, modified_output)
         """
         return state, output
  
     def run(self, state: Any) -> Any:
         """
-        Run the agent on the state, extracting inputs and setting outputs.
-        
+        Run the agent and return only the fields that need updating.
+        This method returns a partial state update instead of the full state.
+        Works with dynamic state schemas.
+
         Args:
-            state: Current state object (can be dict, Pydantic model, etc.)
-            
+            state: Current state object
+
         Returns:
-            Updated state with output field and success flag
+            Dictionary with only the fields that need to be updated
+            
+        Raises:
+            ValueError: When execution_tracker is not provided to agent
         """
+        # Generate a unique execution ID
+        execution_id = str(uuid.uuid4())[:8]
+        start_time = time.time()
+
+        self.log_trace(f"\n*** AGENT {self.name} RUN START [{execution_id}] at {start_time} ***")
+
+        # Get execution tracker - must be provided via DI
+        if self._execution_tracker is None:
+            raise ValueError(
+                f"ExecutionTracker not provided to agent '{self.name}'. "
+                "Please inject execution_tracker dependency using DI fixtures in tests or provide execution_tracker in constructor."
+            )
+        tracker = self._execution_tracker
+
         # Extract inputs
-        inputs = self.state_manager.get_inputs(state)
-        
-        # Add execution UUID if tracking enabled
-        execution_id = str(uuid.uuid4())
-        self.log_debug(f"Starting execution {execution_id}")
-        
-        # Apply pre-processing hook
-        state = self._pre_process(state, inputs)
-        
+        inputs = StateAdapter.get_inputs(state, self.input_fields)
+
+        # Record node start
+        tracker.record_node_start(self.name, inputs)
+
         try:
+            # Pre-processing hook for subclasses
+            state, inputs = self._pre_process(state, inputs)
+            
             # Process inputs to get output
             output = self.process(inputs)
+
+            # Post-processing hook for subclasses
+            state, output = self._post_process(state, inputs, output)
+
+            # Get final success status
+            tracker.record_node_result(self.name, success=True, result=output)
+
+            # Set the final output if we have an output field
+            if self.output_field and output is not None:
+                state = StateAdapter.set_value(state, self.output_field, output)
+                self.log_debug(f"Set output field '{self.output_field}' = {output}")
+
+            end_time = time.time()
+            duration = end_time - start_time
+            self.log_trace(f"\n*** AGENT {self.name} RUN COMPLETED [{execution_id}] in {duration:.4f}s ***")
             
-            # Apply post-processing hook
-            state, output = self._post_process(state, output)
-            
-            # Update state with output
-            result = self.state_manager.set_output(state, output, success=True)
-            
-            # Log execution result
-            self.log_debug(f"Execution {execution_id} completed successfully")
-            
-            return result
+            return state
+
         except Exception as e:
             # Handle errors
             error_msg = f"Error in {self.name}: {str(e)}"
-            self.log_error(f"{error_msg} (execution_id: {execution_id})")
+            self.log_error(error_msg)
+
+            # Record failure
+            tracker.record_node_result(self.name, False, error=error_msg)
+            graph_success = tracker.update_graph_success()
+
+            # Prepare error updates - only the fields that changed
+            error_updates = {
+                "graph_success": graph_success,
+                "last_action_success": False,
+                "errors": [error_msg]  # This will be added to existing errors
+            }
+
+            # Try to run post-process
+            try:
+                state, output = self._post_process(state, inputs, error_updates)
+
+            except Exception as post_error:
+                self.log_error(f"Error in post-processing: {str(post_error)}")
+
+            end_time = time.time()
+            duration = end_time - start_time
+            self.log_trace(f"\n*** AGENT {self.name} RUN FAILED [{execution_id}] in {duration:.4f}s ***")
             
-            # Set error in state
-            error_state = StateAdapter.set_value(state, "error", error_msg)
-            return self.state_manager.set_output(error_state, None, success=False)
+            # Return the updated state
+            return state
+    
+    def invoke(self, state: Any) -> Dict[str, Any]:
+        """Alias for run() to maintain compatibility with LangGraph."""
+        return self.run(state)
 ```
 
 ### Required Implementation

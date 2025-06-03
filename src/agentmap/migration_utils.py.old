@@ -1,0 +1,250 @@
+"""
+Migration-safe imports and dependencies for AgentMap services.
+
+This module provides stubs and imports that work during the migration phase
+when we have a mix of old and new architecture components.
+"""
+
+from typing import Protocol, runtime_checkable, Any, Dict, Optional, List, Tuple
+from pathlib import Path
+from unittest.mock import Mock
+
+# Import services from old architecture for compatibility
+try:
+    from agentmap.services import LLMService
+except ImportError:
+    # Fallback for when services aren't available
+    LLMService = Mock
+
+try:
+    from agentmap.services.storage.manager import StorageServiceManager
+except ImportError:
+    StorageServiceManager = Mock
+
+try:
+    from agentmap.logging.tracking.execution_tracker import ExecutionTracker
+except ImportError:
+    ExecutionTracker = Mock
+
+try:
+    from agentmap.services.logging_service import LoggingService as RealLoggingService
+except ImportError:
+    try:
+        from agentmap.services.logging import LoggingService as RealLoggingService
+    except ImportError:
+        RealLoggingService = Mock
+
+
+@runtime_checkable  
+class LoggingService(Protocol):
+    """Protocol for logging service during migration."""
+    def get_class_logger(self, instance: object): ...
+    def get_logger(self, name: str): ...
+    def get_module_logger(self, module_name: str): ...
+    
+
+@runtime_checkable
+class AppConfigService(Protocol):
+    """Protocol for config service during migration."""
+    def get_compiled_graphs_path(self) -> Path: ...
+    def get_csv_path(self) -> Path: ...
+    def get_functions_path(self) -> Path: ...
+    def get_custom_agents_path(self) -> Path: ...
+    def get_execution_config(self) -> Dict[str, Any]: ...
+    def get_tracking_config(self) -> Dict[str, Any]: ...
+
+
+@runtime_checkable
+class NodeRegistryService(Protocol):
+    """Protocol for node registry service during migration."""
+    def prepare_for_assembly(self, graph_def: Dict, graph_name: str) -> Dict[str, Dict[str, Any]]: ...
+
+
+# Exception classes for migration compatibility
+class InvalidEdgeDefinitionError(Exception):
+    """Raised when a graph edge is defined incorrectly in the CSV."""
+    pass
+
+
+class AgentMapException(Exception):
+    """Base exception for AgentMap."""
+    pass
+
+
+class GraphBuildingError(AgentMapException):
+    """Base class for graph building related exceptions."""
+    pass
+
+
+# Export services for migration compatibility
+__all__ = [
+    "LoggingService",
+    "AppConfigService", 
+    "NodeRegistryService",
+    "LLMService",
+    "StorageServiceManager",
+    "ExecutionTracker",
+    "RealLoggingService",
+    "InvalidEdgeDefinitionError",
+    "AgentMapException",
+    "GraphBuildingError",
+    "MockLoggingService",
+    "MockAppConfigService",
+    "MockNodeRegistryService",
+    "MockLogger"
+]
+
+class MockGraphBundle:
+    """Mock GraphBundle for migration testing."""
+    
+    def __init__(self, graph, node_registry, logger, csv_content):
+        self.graph = graph
+        self.node_registry = node_registry
+        self.logger = logger
+        self.csv_content = csv_content
+    
+    def save(self, output_path: Path):
+        """Mock save method."""
+        # Create empty file to simulate saving
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.touch()
+
+
+def mock_create_graph_builder_with_registry(graph_def: Dict, node_registry: Dict, state_schema: str = "dict") -> Tuple[Mock, List[str]]:
+    """Mock function for create_graph_builder_with_registry."""
+    compiled_graph = Mock()
+    src_lines = [
+        "from langgraph.graph import StateGraph",
+        f"builder = StateGraph({state_schema})",
+        "# Mock generated code",
+        "graph = builder.compile()"
+    ]
+    return compiled_graph, src_lines
+
+
+def mock_resolve_state_schema(state_schema: str) -> Tuple[Any, str, List[str]]:
+    """Mock function for resolve_state_schema."""
+    if state_schema == "dict":
+        return dict, "dict", []
+    elif state_schema.startswith("pydantic:"):
+        model_name = state_schema.split(":", 1)[1]
+        return None, model_name, [f"from agentmap.models.{model_name.lower()} import {model_name}"]
+    else:
+        return None, state_schema, []
+
+
+def mock_build_source_lines(graph_def: Dict, state_schema: str = "dict") -> List[str]:
+    """Mock function for build_source_lines."""
+    return [
+        "from langgraph.graph import StateGraph",
+        f"builder = StateGraph({state_schema})",
+        "# Mock generated source code",
+        "graph = builder.compile()"
+    ]
+
+
+# Mock implementations for testing
+class MockLoggingService:
+    """Mock logging service for testing."""
+    
+    def __init__(self):
+        self.loggers = {}
+    
+    def get_class_logger(self, instance: object):
+        """Get mock logger for class instance."""
+        class_name = instance.__class__.__name__
+        if class_name not in self.loggers:
+            self.loggers[class_name] = MockLogger(class_name)
+        return self.loggers[class_name]
+    
+    def get_logger(self, name: str):
+        """Get mock logger by name."""
+        if name not in self.loggers:
+            self.loggers[name] = MockLogger(name)
+        return self.loggers[name]
+    
+    def get_module_logger(self, module_name: str):
+        """Get mock logger for module."""
+        if module_name not in self.loggers:
+            self.loggers[module_name] = MockLogger(module_name)
+        return self.loggers[module_name]
+
+
+class MockLogger:
+    """Mock logger for testing."""
+    
+    def __init__(self, name: str):
+        self.name = name
+        self.calls = []
+    
+    def info(self, message: str):
+        self.calls.append(("info", message))
+    
+    def debug(self, message: str):
+        self.calls.append(("debug", message))
+    
+    def warning(self, message: str):
+        self.calls.append(("warning", message))
+    
+    def error(self, message: str):
+        self.calls.append(("error", message))
+    
+    def trace(self, message: str):
+        self.calls.append(("trace", message))
+
+
+class MockAppConfigService:
+    """Mock config service for testing."""
+    
+    def __init__(self):
+        self.compiled_graphs_path = Path("/test/compiled")
+        self.csv_path = Path("/test/graph.csv")
+        self.functions_path = Path("/test/functions")
+        self.custom_agents_path = Path("/test/agents")
+    
+    # Properties for direct access
+    def get_compiled_graphs_path(self) -> Path:
+        return self.compiled_graphs_path
+    
+    def get_csv_path(self) -> Path:
+        return self.csv_path
+    
+    def get_functions_path(self) -> Path:
+        return self.functions_path
+    
+    def get_custom_agents_path(self) -> Path:
+        return self.custom_agents_path
+    
+    # Execution configuration for ExecutionPolicyService
+    def get_execution_config(self) -> Dict[str, Any]:
+        return {
+            "timeout": 300,
+            "max_retries": 3,
+            "success_policy": {
+                "type": "all_nodes"
+            }
+        }
+    
+    # Tracking configuration for ExecutionTrackingService
+    def get_tracking_config(self) -> Dict[str, Any]:
+        return {
+            "enabled": True,
+            "track_outputs": True,
+            "track_inputs": True,
+            "track_timing": True
+        }
+
+
+class MockNodeRegistryService:
+    """Mock node registry service for testing."""
+    
+    def prepare_for_assembly(self, graph_def: Dict, graph_name: str) -> Dict[str, Dict[str, Any]]:
+        """Mock registry preparation."""
+        registry = {}
+        for node_name in graph_def.keys():
+            registry[node_name] = {
+                "type": "default",
+                "config": {},
+                "mock": True
+            }
+        return registry

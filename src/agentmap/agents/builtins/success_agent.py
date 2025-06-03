@@ -1,7 +1,9 @@
 # agentmap/agents/builtins/success_agent.py
+import logging
 from typing import Any, Dict
 
 from agentmap.agents.base_agent import BaseAgent
+from agentmap.models.execution_tracker import ExecutionTracker
 
 
 class SuccessAgent(BaseAgent):
@@ -9,6 +11,10 @@ class SuccessAgent(BaseAgent):
     Test agent that always succeeds and includes identifying information in the output.
     Useful for testing branching logic in workflows.
     """
+    
+    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: dict = None):
+        """Initialize the success agent with the required dependencies."""
+        super().__init__(name, prompt, context, logger=logger, execution_tracker=execution_tracker)
     
     def process(self, inputs: Dict[str, Any]) -> str:
         """

@@ -2,14 +2,16 @@
 Base LLM Agent with unified configuration and memory management.
 """
 import os
+import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 from pathlib import Path
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.exceptions import ConfigurationException
+from agentmap.models.execution_tracker import ExecutionTracker
 
 # from agentmap.config import get_llm_config
-from agentmap.state.adapter import StateAdapter
+from agentmap.services.state_adapter_service import StateAdapterService
 
 # Import memory utilities
 from agentmap.agents.builtins.llm.memory import (
@@ -29,13 +31,13 @@ class LLMAgent(BaseAgent):
     The mode is determined by the 'routing_enabled' context parameter.
     """
     
-    def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
+    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: Optional[Dict[str, Any]] = None):
         # First, resolve prompt reference if applicable
         from agentmap.prompts import resolve_prompt
         resolved_prompt = resolve_prompt(prompt)
         
         # Then initialize with the resolved prompt
-        super().__init__(name, resolved_prompt, context or {})
+        super().__init__(name, resolved_prompt, context or {}, logger=logger, execution_tracker=execution_tracker)
         
         # Determine operation mode
         self.routing_enabled = self.context.get("routing_enabled", False)
@@ -373,7 +375,7 @@ class LLMAgent(BaseAgent):
                 "last_action_success": False
             }
 
-    def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
+    def _post_process(self, state: Any, inputs: Dict[str, Any], output: Any) -> Tuple[Any, Any]:
         """
         Post-processing hook to ensure memory is in the state.
         
@@ -390,7 +392,7 @@ class LLMAgent(BaseAgent):
             
             # Update memory in state
             if memory is not None:
-                state = StateAdapter.set_value(state, self.memory_key, memory)
+                state = StateAdapterService.set_value(state, self.memory_key, memory)
             
             # Extract output value if available
             if self.output_field and self.output_field in output:
