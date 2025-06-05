@@ -2,14 +2,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from agentmap.models.execution_tracker import ExecutionTracker, NodeExecution
-
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from agentmap.models.execution_tracker import ExecutionTracker, NodeExecution
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
+from agentmap.models.execution_tracker import ExecutionTracker, NodeExecution
 
 
 class ExecutionTrackingService:
@@ -21,10 +19,19 @@ class ExecutionTrackingService:
 
     def create_tracker(self) -> ExecutionTracker:
         tracking_config = self.config.get_tracking_config()
+
+        track_inputs=tracking_config.get("track_inputs", False)
+        track_outputs=tracking_config.get("track_outputs", False)
+        minimal_mode=not tracking_config.get("enabled", False)
+
+        if minimal_mode:
+            track_inputs = False
+            track_outputs = False
+
         return ExecutionTracker(
-            track_inputs=tracking_config.get("track_inputs", False),
-            track_outputs=tracking_config.get("track_outputs", False),
-            minimal_mode=not tracking_config.get("enabled", True)
+            track_inputs=track_inputs,
+            track_outputs=track_outputs,
+            minimal_mode=minimal_mode
         )
 
     def record_node_start(self, tracker: ExecutionTracker, node_name: str, inputs: Optional[Dict[str, Any]] = None):

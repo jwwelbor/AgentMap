@@ -9,11 +9,10 @@ import unittest
 from unittest.mock import Mock, patch
 from datetime import datetime, timedelta
 from typing import Dict, Any
-
-from agentmap.services.execution_tracking_service import ExecutionTrackingService
+from agentmap.models.execution_tracker import ExecutionTracker
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
-from agentmap.models.execution_tracker import ExecutionTracker, NodeExecution
+from agentmap.services.execution_tracking_service import ExecutionTrackingService, NodeExecution
 from agentmap.models.execution_summary import ExecutionSummary
 from agentmap.migration_utils import MockLoggingService
 from tests.utils.mock_factory import MockServiceFactory
@@ -332,6 +331,13 @@ class TestExecutionTrackingService(unittest.TestCase):
     def test_record_node_result_handles_multiple_nodes(self):
         """Test that record_node_result() finds correct node in multiple executions."""
         # Arrange
+                # Arrange
+        tracking_config = {
+            "enabled": True,
+            "track_inputs": True,
+            "track_outputs": True
+        }
+        self.mock_app_config_service.get_tracking_config.return_value = tracking_config
         tracker = self.service.create_tracker()
         
         # Start multiple nodes
