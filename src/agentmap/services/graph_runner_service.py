@@ -189,8 +189,8 @@ class GraphRunnerService:
                 success=False,
                 final_state=state,  # Return original state on error
                 execution_summary=None,
-                execution_time=0.0,
-                source_info=None,
+                total_duration=0.0,
+                compiled_from=None,
                 error=str(e)
             )
             
@@ -220,13 +220,33 @@ class GraphRunnerService:
         # Initialize state
         state = options.initial_state or {}
         
+        # Extract graph name from path for logging and error handling
+        graph_name = graph_path.stem
+        
         self.logger.info(f"[GraphRunnerService] Running from compiled graph: {graph_path}")
         
-        # Delegate directly to GraphExecutionService
-        return self.graph_execution.execute_compiled_graph(
-            bundle_path=graph_path,
-            state=state
-        )
+        try:
+            # Delegate directly to GraphExecutionService
+            return self.graph_execution.execute_compiled_graph(
+                bundle_path=graph_path,
+                state=state
+            )
+        except Exception as e:
+            self.logger.error(f"❌ COMPILED GRAPH EXECUTION FAILED: '{graph_name}'")
+            self.logger.error(f"[GraphRunnerService] Error: {str(e)}")
+            
+            # Create error result using same pattern as other methods
+            execution_result = ExecutionResult(
+                graph_name=graph_name,
+                success=False,
+                final_state=state,  # Return original state on error
+                execution_summary=None,
+                total_duration=0.0,
+                compiled_from=None,
+                error=str(e)
+            )
+            
+            return execution_result
     
     def run_from_csv_direct(
         self, 
@@ -253,7 +273,7 @@ class GraphRunnerService:
         
         # Override options to force CSV path and disable autocompile
         options.csv_path = csv_path
-        options.autocompile = False
+        #options.autocompile = False
         
         # Initialize state
         state = options.initial_state or {}
@@ -280,8 +300,8 @@ class GraphRunnerService:
                 success=False,
                 final_state=state,
                 execution_summary=None,
-                execution_time=0.0,
-                source_info="memory",
+                total_duration=0.0,
+                compiled_from="memory",
                 error=str(e)
             )
             

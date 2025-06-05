@@ -485,7 +485,7 @@ class EnhancedServiceInterfaceAuditor:
         elif 'ExecutionTracker' in return_type:
             assertions.extend([
                 '        # Verify ExecutionTracker return type and basic structure',
-                '        from agentmap.models.execution_tracker import ExecutionTracker',
+                '        from agentmap.services.execution_tracking_service import ExecutionTrackingService',
                 '        self.assertIsInstance(result, ExecutionTracker)',
                 '        self.assertIsNotNone(result.start_time)',
                 '        self.assertIsInstance(result.node_executions, list)'
