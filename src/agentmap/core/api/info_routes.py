@@ -50,6 +50,16 @@ def get_adapter(container: ApplicationContainer = Depends(get_container)):
     return create_service_adapter(container)
 
 
+def get_features_service(container: ApplicationContainer = Depends(get_container)):
+    """Get FeaturesRegistryService through DI container."""
+    return container.features_registry_service()
+
+
+def get_dependency_checker_service(container: ApplicationContainer = Depends(get_container)):
+    """Get DependencyCheckerService through DI container."""
+    return container.dependency_checker_service()
+
+
 # Create router
 router = APIRouter(prefix="/info", tags=["Information & Diagnostics"])
 
@@ -71,12 +81,21 @@ async def get_configuration(adapter = Depends(get_adapter)):
 
 
 @router.get("/diagnose", response_model=DiagnosticResponse)
-async def diagnose_system():
+async def diagnose_system(
+    features_service = Depends(get_features_service),
+    dependency_checker = Depends(get_dependency_checker_service)
+):
     """Run system diagnostics and dependency checks."""
     try:
-        from agentmap.core.cli.diagnostic_commands import diagnose_command
+        # Build diagnostic information using services
+        diagnostic_info = {
+            "llm": _build_llm_diagnostic(features_service, dependency_checker),
+            "storage": _build_storage_diagnostic(features_service, dependency_checker),
+            "environment": _build_environment_diagnostic(),
+            "package_versions": _get_package_versions(),
+            "installation_suggestions": _build_installation_suggestions(features_service, dependency_checker)
+        }
         
-        diagnostic_info = diagnose_command()
         return DiagnosticResponse(**diagnostic_info)
         
     except Exception as e:
@@ -84,12 +103,23 @@ async def diagnose_system():
 
 
 @router.get("/cache", response_model=CacheInfoResponse)
-async def get_cache_info():
+async def get_cache_info(container: ApplicationContainer = Depends(get_container)):
     """Get validation cache information and statistics."""
     try:
-        from agentmap.core.cli.diagnostic_commands import cache_info_command
+        validation_cache_service = container.validation_cache_service()
+        cache_stats = validation_cache_service.get_validation_cache_stats()
         
-        cache_info = cache_info_command()
+        suggestions = []
+        if cache_stats['expired_files'] > 0:
+            suggestions.append("Run 'agentmap validate-cache --cleanup' to remove expired entries")
+        if cache_stats['corrupted_files'] > 0:
+            suggestions.append(f"Found {cache_stats['corrupted_files']} corrupted cache files")
+        
+        cache_info = {
+            "cache_statistics": cache_stats,
+            "suggestions": suggestions
+        }
+        
         return CacheInfoResponse(**cache_info)
         
     except Exception as e:
@@ -99,16 +129,29 @@ async def get_cache_info():
 @router.delete("/cache", response_model=CacheOperationResponse)
 async def clear_cache(
     file_path: Optional[str] = None,
-    cleanup_expired: bool = False
+    cleanup_expired: bool = False,
+    container: ApplicationContainer = Depends(get_container)
 ):
     """Clear validation cache entries."""
     try:
-        from agentmap.core.cli.diagnostic_commands import clear_cache_command
+        validation_cache_service = container.validation_cache_service()
         
-        result = clear_cache_command(
-            file_path=file_path,
-            cleanup_expired=cleanup_expired
-        )
+        if file_path:
+            removed = validation_cache_service.clear_validation_cache(file_path)
+            operation = f"clear_file:{file_path}"
+        elif cleanup_expired:
+            removed = validation_cache_service.cleanup_validation_cache()
+            operation = "cleanup_expired"
+        else:
+            removed = validation_cache_service.clear_validation_cache()
+            operation = "clear_all"
+        
+        result = {
+            "success": True,
+            "operation": operation,
+            "removed_count": removed,
+            "file_path": file_path
+        }
         
         return CacheOperationResponse(**result)
         
@@ -145,20 +188,17 @@ async def get_system_paths(adapter = Depends(get_adapter)):
 
 
 @router.get("/features")
-async def get_feature_status():
+async def get_feature_status(features_service = Depends(get_features_service)):
     """Get status of optional features and dependencies."""
     try:
-        from agentmap.agents.features import is_llm_enabled, is_storage_enabled
-        from agentmap.features_registry import features
-        
-        # Check feature status
+        # Build feature status using FeaturesRegistryService
         feature_status = {
             "llm": {
-                "enabled": is_llm_enabled(),
+                "enabled": features_service.is_feature_enabled("llm"),
                 "providers": {}
             },
             "storage": {
-                "enabled": is_storage_enabled(),
+                "enabled": features_service.is_feature_enabled("storage"),
                 "providers": {}
             }
         }
@@ -166,15 +206,17 @@ async def get_feature_status():
         # Check LLM providers
         for provider in ["openai", "anthropic", "google"]:
             feature_status["llm"]["providers"][provider] = {
-                "available": features.is_provider_available("llm", provider),
-                "registered": features.is_provider_registered("llm", provider),
-                "validated": features.is_provider_validated("llm", provider)
+                "available": features_service.is_provider_available("llm", provider),
+                "registered": features_service.is_provider_registered("llm", provider),
+                "validated": features_service.is_provider_validated("llm", provider)
             }
         
-        # Check storage providers
-        for storage_type in ["csv", "vector", "firebase", "azure_blob", "aws_s3", "gcp_storage"]:
+        # Check storage providers  
+        for storage_type in ["csv", "json", "file", "vector", "firebase", "blob"]:
             feature_status["storage"]["providers"][storage_type] = {
-                "available": features.is_provider_available("storage", storage_type)
+                "available": features_service.is_provider_available("storage", storage_type),
+                "registered": features_service.is_provider_registered("storage", storage_type),
+                "validated": features_service.is_provider_validated("storage", storage_type)
             }
         
         return feature_status
@@ -221,3 +263,144 @@ async def detailed_health_check(adapter = Depends(get_adapter)):
         
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Health check failed: {e}")
+
+
+# Helper functions for diagnostic information
+def _build_llm_diagnostic(features_service, dependency_checker) -> Dict[str, Any]:
+    """Build LLM diagnostic information."""
+    llm_info = {
+        "enabled": features_service.is_feature_enabled("llm"),
+        "providers": {},
+        "available_count": 0
+    }
+    
+    for provider in ["openai", "anthropic", "google"]:
+        # Get fresh dependency check
+        has_deps, missing = dependency_checker.check_llm_dependencies(provider)
+        
+        # Get registry status
+        registered = features_service.is_provider_registered("llm", provider)
+        validated = features_service.is_provider_validated("llm", provider)
+        available = features_service.is_provider_available("llm", provider)
+        
+        provider_info = {
+            "available": available,
+            "registered": registered,
+            "validated": validated,
+            "has_dependencies": has_deps,
+            "missing_dependencies": missing
+        }
+        
+        if available:
+            llm_info["available_count"] += 1
+            
+        llm_info["providers"][provider] = provider_info
+    
+    return llm_info
+
+
+def _build_storage_diagnostic(features_service, dependency_checker) -> Dict[str, Any]:
+    """Build storage diagnostic information."""
+    storage_info = {
+        "enabled": features_service.is_feature_enabled("storage"),
+        "providers": {},
+        "available_count": 0
+    }
+    
+    for storage_type in ["csv", "json", "file", "vector", "firebase", "blob"]:
+        # Get fresh dependency check
+        has_deps, missing = dependency_checker.check_storage_dependencies(storage_type)
+        
+        # Get registry status
+        available = features_service.is_provider_available("storage", storage_type)
+        registered = features_service.is_provider_registered("storage", storage_type)
+        validated = features_service.is_provider_validated("storage", storage_type)
+        
+        provider_info = {
+            "available": available,
+            "registered": registered,
+            "validated": validated,
+            "has_dependencies": has_deps,
+            "missing_dependencies": missing
+        }
+        
+        if available:
+            storage_info["available_count"] += 1
+            
+        storage_info["providers"][storage_type] = provider_info
+    
+    return storage_info
+
+
+def _build_environment_diagnostic() -> Dict[str, Any]:
+    """Build environment diagnostic information."""
+    import sys
+    import os
+    
+    return {
+        "python_version": sys.version,
+        "python_executable": sys.executable,
+        "current_directory": os.getcwd(),
+        "platform": sys.platform
+    }
+
+
+def _get_package_versions() -> Dict[str, str]:
+    """Get versions of relevant packages."""
+    packages = {
+        "openai": "openai",
+        "anthropic": "anthropic", 
+        "google.generativeai": "google-generativeai",
+        "langchain": "langchain",
+        "langchain_google_genai": "langchain-google-genai",
+        "chromadb": "chromadb"
+    }
+    
+    versions = {}
+    for display_name, package_name in packages.items():
+        try:
+            if "." in package_name:
+                base_pkg = package_name.split(".")[0]
+                module = __import__(base_pkg)
+                versions[display_name] = f"Installed (base package {base_pkg})"
+            else:
+                module = __import__(package_name)
+                version = getattr(module, "__version__", "unknown")
+                versions[display_name] = version
+        except ImportError:
+            versions[display_name] = "Not installed"
+    
+    return versions
+
+
+def _build_installation_suggestions(features_service, dependency_checker) -> list:
+    """Build installation suggestions based on missing dependencies."""
+    suggestions = []
+    
+    # Check if LLM feature is enabled
+    if not features_service.is_feature_enabled("llm"):
+        suggestions.append("To enable LLM agents: pip install agentmap[llm]")
+    
+    # Check if storage feature is enabled
+    if not features_service.is_feature_enabled("storage"):
+        suggestions.append("To enable storage agents: pip install agentmap[storage]")
+    
+    # Check individual LLM providers
+    has_openai, _ = dependency_checker.check_llm_dependencies("openai")
+    if not has_openai:
+        suggestions.append("For OpenAI support: pip install agentmap[openai] or pip install openai>=1.0.0")
+    
+    has_anthropic, _ = dependency_checker.check_llm_dependencies("anthropic")
+    if not has_anthropic:
+        suggestions.append("For Anthropic support: pip install agentmap[anthropic] or pip install anthropic")
+    
+    has_google, _ = dependency_checker.check_llm_dependencies("google")
+    if not has_google:
+        suggestions.append("For Google support: pip install agentmap[google] or pip install google-generativeai langchain-google-genai")
+    
+    # Check vector storage
+    has_vector, _ = dependency_checker.check_storage_dependencies("vector")
+    if not has_vector:
+        suggestions.append("For vector storage: pip install chromadb")
+    
+    return suggestions

@@ -2,8 +2,9 @@
 from pathlib import Path
 from typing import Optional
 
-from agentmap.models.validation.errors import ValidationResult, ValidationException
-from agentmap.migration_utils import RealLoggingService as LoggingService
+from agentmap.models.validation.validation_models import ValidationResult 
+from agentmap.exceptions.validation_exceptions import ValidationException
+from agentmap.services.logging_service import LoggingService
 from agentmap.services.config import AppConfigService
 from agentmap.services.validation.csv_validation_service import CSVValidationService
 from agentmap.services.validation.config_validation_service import ConfigValidationService

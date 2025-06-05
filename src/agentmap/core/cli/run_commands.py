@@ -11,7 +11,7 @@ from typing import Optional
 
 import typer
 
-from agentmap.di import initialize_di
+from agentmap.di import initialize_di, initialize_application
 from agentmap.core.adapters import create_service_adapter, validate_run_parameters
 
 
@@ -28,10 +28,11 @@ def run_command(
         # Validate parameters early
         validate_run_parameters(csv=csv, state=state)
         
-        # Initialize DI container
-        container = initialize_di(config_file)
+        # Initialize DI container with agent bootstrap (agents needed for graph execution)
+        container = initialize_application(config_file)
         adapter = create_service_adapter(container)
-        
+        validation_service = container.validation_service
+
         # Get services
         graph_runner_service, app_config_service, logging_service = adapter.initialize_services()
         logger = logging_service.get_logger("agentmap.cli.run")
@@ -39,13 +40,12 @@ def run_command(
         # Validate CSV if requested
         if validate:
             logger.info("Validating CSV file before execution")
-            from agentmap.validation import validate_csv_for_compilation
             
             csv_path = Path(csv) if csv else app_config_service.get_csv_path()
             typer.echo(f"🔍 Validating CSV file: {csv_path}")
             
             try:
-                validate_csv_for_compilation(csv_path)
+                validation_service.validate_csv_for_compilation(csv_path)
                 typer.secho("✅ CSV validation passed", fg=typer.colors.GREEN)
             except Exception as e:
                 typer.secho(f"❌ CSV validation failed: {e}", fg=typer.colors.RED)
@@ -75,10 +75,10 @@ def run_command(
             
     except Exception as e:
         # Use adapter for consistent error handling
+        # Note: Using initialize_di() here for error handling to avoid double bootstrap
         error_info = create_service_adapter(initialize_di()).handle_execution_error(e)
         typer.secho(f"❌ Error: {error_info['error']}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
-
 
 def compile_command(
     graph: Optional[str] = typer.Option(None, "--graph", "-g", help="Compile a single graph"),
@@ -86,48 +86,63 @@ def compile_command(
     csv: Optional[str] = typer.Option(None, "--csv", help="CSV path override"),
     state_schema: str = typer.Option("dict", "--state-schema", "-s", help="State schema type (dict, pydantic:<ModelName>, or custom)"),
     validate: bool = typer.Option(True, "--validate/--no-validate", help="Validate CSV before compiling"),
-    config_file: Optional[str] = typer.Option(None, "--config", "-c", help="Path to custom config file")
+    config_file: Optional[str] = typer.Option(None, "--config", "-c", help="Path to custom config file"),
+    include_source: bool = typer.Option(True, "--include-source", help="Generate source code with compiled graph"),
 ):
     """Compile a graph or all graphs from the CSV to pickle files."""
     container = initialize_di(config_file)
+    validation_service = container.validation_service
+    compilation_service = container.graph_compilation_service()
 
     # Validate if requested (default: True)
     if validate:
-        from agentmap.validation import validate_csv_for_compilation
-        
         configuration = container.app_config_service()
         csv_file = Path(csv) if csv else configuration.get_csv_path()
         
         typer.echo(f"🔍 Validating CSV file: {csv_file}")
         try:
-            validate_csv_for_compilation(csv_file)
+            validation_service.validate_csv_for_compilation(csv_file)
             typer.secho("✅ CSV validation passed", fg=typer.colors.GREEN)
         except Exception as e:
             typer.secho(f"❌ CSV validation failed: {e}", fg=typer.colors.RED)
             raise typer.Exit(code=1)
 
-    from agentmap.graph.serialization import (compile_all, export_as_pickle, export_as_source)
+
+    from agentmap.services.compilation_service import CompilationOptions
+    compilation_options = CompilationOptions()
+    compilation_options.output_dir = output_dir
+    compilation_options.include_source = include_source
+    compilation_options.state_schema = state_schema
 
     if graph:
-        export_as_pickle(
+
+
+        compilation_result = compilation_service.compile_graph(
             graph, 
-            output_path=output_dir, 
             csv_path=csv,
-            state_schema=state_schema
+            options=compilation_options
         )
-        export_as_source(
-            graph, 
-            output_path=output_dir, 
-            csv_path=csv,
-            state_schema=state_schema
-        )
+        # this is handled by compile_graph
+        # serialization_service.export_as_pickle(
+        #     graph, 
+        #     output_path=output_dir, 
+        #     csv_path=csv,
+        #     state_schema=state_schema
+        # )
+        # serialization_service.export_as_source(
+        #     graph, 
+        #     output_path=output_dir, 
+        #     csv_path=csv,
+        #     state_schema=state_schema
+        # )
 
     else:
-        compile_all(
+        compilation_result = compilation_service.compile_all_graphs(
             csv_path=csv,
-            state_schema=state_schema
+            options=compilation_options
         )
 
+    print(compilation_result)
 
 def scaffold_command(
     graph: Optional[str] = typer.Option(None, "--graph", "-g", help="Graph name to scaffold agents for"),
@@ -138,8 +153,8 @@ def scaffold_command(
 ):
     """Scaffold agents and routing functions from the configured CSV, optionally for a specific graph."""
     try:
-        # Initialize DI container with optional config file
-        container = initialize_di(config_file)
+        # Initialize DI container with agent bootstrap (scaffolding needs agent discovery)
+        container = initialize_application(config_file)
         
         # Get services through DI container
         graph_scaffold_service = container.graph_scaffold_service()
@@ -218,7 +233,6 @@ def scaffold_command(
         typer.secho(f"❌ Error: {error_message}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
-
 def export_command(
     graph: str = typer.Option(..., "--graph", "-g", help="Graph name to export"),
     output: str = typer.Option("generated_graph.py", "--output", "-o", help="Output Python file"),
@@ -228,14 +242,13 @@ def export_command(
     config_file: Optional[str] = typer.Option(None, "--config", "-c", help="Path to custom config file")
 ):
     """Export the specified graph in the chosen format."""
-    initialize_di(config_file)
+    container = initialize_di(config_file)
+    container.graph_serialization_service().export_graph(graph, format, output, state_schema)
 
-    from agentmap.graph.serialization import export_graph as export_graph_func
-
-    export_graph_func(
-        graph, 
-        format=format, 
-        output_path=output, 
-        csv_path=csv,
-        state_schema=state_schema
-    )
+    # export_graph_func(
+    #     graph, 
+    #     format=format, 
+    #     output_path=output, 
+    #     csv_path=csv,
+    #     state_schema=state_schema
+    # )

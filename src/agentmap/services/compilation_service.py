@@ -13,14 +13,13 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 
 from agentmap.models.graph import Graph
-from agentmap.services.graph_builder_service import GraphBuilderService
+from agentmap.services.graph_definition_service import GraphDefinitionService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.node_registry_service import NodeRegistryService
-from agentmap.graph.bundle import GraphBundle
-from agentmap.graph.assembler import GraphAssembler
-from agentmap.graph.compiler import compile_graph_from_definition
-
+from agentmap.services.graph_bundle_service import GraphBundleService
+from agentmap.services.graph_assembly_service import GraphAssemblyService
+from agentmap.services.function_resolution_service import FunctionResolutionService
 
 @dataclass
 class CompilationOptions:
@@ -54,16 +53,22 @@ class CompilationService:
     
     def __init__(
         self,
-        graph_builder_service: GraphBuilderService,
+        graph_definition_service: GraphDefinitionService,
         logging_service: LoggingService,
         app_config_service: AppConfigService,
-        node_registry_service: NodeRegistryService
+        node_registry_service: NodeRegistryService,
+        graph_bundle_service: GraphBundleService,
+        assembly_service: GraphAssemblyService,
+        function_resolution_service: FunctionResolutionService
     ):
         """Initialize service with dependency injection."""
-        self.graph_builder = graph_builder_service
+        self.graph_definition = graph_definition_service
         self.logger = logging_service.get_class_logger(self)
         self.config = app_config_service
         self.node_registry = node_registry_service
+        self.assembly_service = assembly_service
+        self.bundle_service = graph_bundle_service
+        self.function_resolution_service = function_resolution_service
         self.logger.info("[CompilationService] Initialized")
     
     def compile_graph(
@@ -82,8 +87,20 @@ class CompilationService:
             CompilationResult with compilation details
         """
         start_time = time.time()
+        # class CompilationOptions:
+        #     """Options for graph compilation."""
+        #     output_dir: Optional[Path] = None
+        #     state_schema: str = "dict"
+        #     force_recompile: bool = False
+        #     include_source: bool = True
+        #     csv_path: Optional[Path] = None
+
+        if options is None:
+            options = CompilationOptions()
+            options.csv_path = self.config.get_csv_path()
+            options.output_dir = self.config.get_compiled_graphs_path()
         
-        options = options or CompilationOptions()
+
         self.logger.info(f"[CompilationService] Compiling graph: {graph_name}")
         
         try:
@@ -104,8 +121,8 @@ class CompilationService:
                     compilation_time=compilation_time
                 )
             
-            # Build graph using GraphBuilderService
-            graph = self.graph_builder.build_from_csv(csv_path, graph_name)
+            # Build graph using GraphDefinitionService
+            graph = self.graph_definition.build_from_csv(csv_path, graph_name)
             
             # Convert Graph domain model to old format for compatibility
             graph_def = self._convert_graph_to_old_format(graph)
@@ -114,12 +131,14 @@ class CompilationService:
             node_registry = self.node_registry.prepare_for_assembly(graph_def, graph_name)
             
             # Create compiled graph with registry injection
-            compiled_graph = compile_graph_from_definition(
-                graph_def, 
-                node_registry,
-                state_schema=options.state_schema
+            compiled_graph = self.assembly_service.assemble_graph(
+                graph_def=graph_def,
+                node_registry=node_registry,
+                enable_logging=True
             )
             
+            # Compile graph            
+            # Prepare source code            
             # Generate source lines for debugging (simplified)
             src_lines = [f"# Generated graph: {graph_name}", "# Compiled with AgentMap"]
             
@@ -132,7 +151,7 @@ class CompilationService:
                 csv_content = f.read()
             
             # Create bundle and save
-            bundle = GraphBundle.create(
+            bundle = self.bundle_service.create(
                 compiled_graph, 
                 node_registry, 
                 csv_content,
@@ -207,7 +226,7 @@ class CompilationService:
         
         try:
             # Get all graphs from CSV
-            all_graphs = self.graph_builder.build_all_from_csv(csv_path)
+            all_graphs = self.graph_definition.build_all_from_csv(csv_path)
             
             results = []
             for graph_name in all_graphs.keys():
@@ -280,7 +299,7 @@ class CompilationService:
             List of validation errors (empty if valid)
         """
         self.logger.debug(f"[CompilationService] Validating CSV before compilation: {csv_path}")
-        return self.graph_builder.validate_csv_before_building(csv_path)
+        return self.graph_definition.validate_csv_before_building(csv_path)
     
     def get_compilation_status(self, graph_name: str, csv_path: Optional[Path] = None) -> Dict[str, Any]:
         """
@@ -387,7 +406,7 @@ class CompilationService:
         """
         return {
             "service": "CompilationService",
-            "graph_builder_available": self.graph_builder is not None,
+            "graph_definition_available": self.graph_definition is not None,
             "config_available": self.config is not None,
             "node_registry_available": self.node_registry is not None,
             "compiled_graphs_path": str(self.config.compiled_graphs_path),

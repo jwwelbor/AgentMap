@@ -1,9 +1,13 @@
 """
 GraphRunnerService for AgentMap.
 
-Service that orchestrates complete graph execution by coordinating all other services
-(GraphBuilderService, CompilationService, LLMService, etc.) to provide comprehensive
-graph execution capabilities with tracking, error handling, and multiple execution modes.
+Simplified facade service that coordinates graph execution by delegating to specialized services:
+- GraphDefinitionService for graph loading and building
+- GraphExecutionService for execution orchestration  
+- CompilationService for graph compilation management
+- Other specialized services as needed
+
+Maintains backward compatibility while dramatically reducing internal complexity.
 """
 
 from dataclasses import dataclass
@@ -12,7 +16,8 @@ from typing import Any, Dict, Optional
 
 from agentmap.models.execution_result import ExecutionResult
 from agentmap.models.graph_bundle import GraphBundle
-from agentmap.services.graph_builder_service import GraphBuilderService
+from agentmap.services.graph_definition_service import GraphDefinitionService
+from agentmap.services.graph_execution_service import GraphExecutionService
 from agentmap.services.compilation_service import CompilationService
 from agentmap.services.graph_bundle_service import GraphBundleService
 from agentmap.services.dependency_checker_service import DependencyCheckerService
@@ -25,12 +30,13 @@ from agentmap.services.storage.manager import StorageServiceManager
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.execution_policy_service import ExecutionPolicyService
 from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.services.graph_assembly_service import GraphAssemblyService
 
 
 @dataclass
 class RunOptions:
     """Options for graph execution."""
-    initial_state: Optional[Dict[str, Any]] = None
+    initial_state: Optional[Any] = None # could by pydantic or dict
     autocompile: Optional[bool] = None
     csv_path: Optional[Path] = None
     validate_before_run: bool = False
@@ -41,22 +47,22 @@ class RunOptions:
 
 class GraphRunnerService:
     """
-    Service for graph execution orchestration.
+    Simplified facade service for graph execution orchestration.
     
-    Coordinates all services to provide complete graph execution capabilities:
-    - Graph loading/building via GraphBuilderService  
-    - Compilation management via CompilationService
-    - Agent resolution and service injection
-    - Execution tracking and result processing
-    - Error handling and recovery
+    Provides high-level coordination by delegating to specialized services:
+    - GraphDefinitionService: Graph loading and building from CSV
+    - GraphExecutionService: Clean execution orchestration
+    - CompilationService: Compilation management
+    - Other services: Agent resolution, dependency checking, etc.
     
-    This service extracts and orchestrates the complex logic from runner.py
-    while maintaining all existing functionality and performance.
+    This service maintains all existing public APIs while dramatically reducing
+    internal complexity through clean delegation patterns.
     """
     
     def __init__(
         self,
-        graph_builder_service: GraphBuilderService,
+        graph_definition_service: GraphDefinitionService,
+        graph_execution_service: GraphExecutionService,
         compilation_service: CompilationService,
         graph_bundle_service: GraphBundleService,
         llm_service: LLMService,
@@ -67,12 +73,14 @@ class GraphRunnerService:
         execution_tracking_service: ExecutionTrackingService,
         execution_policy_service: ExecutionPolicyService,
         state_adapter_service: StateAdapterService,
-        dependency_checker_service: DependencyCheckerService
+        dependency_checker_service: DependencyCheckerService,
+        graph_assembly_service: GraphAssemblyService
     ):
-        """Initialize service with dependency injection.
+        """Initialize facade service with specialized service dependencies.
         
         Args:
-            graph_builder_service: Service for building graphs from CSV
+            graph_definition_service: Service for building graphs from CSV
+            graph_execution_service: Service for execution orchestration
             compilation_service: Service for graph compilation
             graph_bundle_service: Service for graph bundle operations
             llm_service: Service for LLM operations and injection
@@ -84,36 +92,54 @@ class GraphRunnerService:
             execution_policy_service: Service for policy evaluation
             state_adapter_service: Service for state management
             dependency_checker_service: Service for dependency validation
+            graph_assembly_service: Service for graph assembly
         """
-        self.graph_builder = graph_builder_service
+        # Core specialized services
+        self.graph_definition = graph_definition_service
+        self.graph_execution = graph_execution_service
         self.compilation = compilation_service
         self.graph_bundle_service = graph_bundle_service
+        
+        # Supporting services for agent resolution and injection
         self.llm_service = llm_service
         self.storage_service_manager = storage_service_manager
         self.node_registry = node_registry_service
+        self.dependency_checker = dependency_checker_service
+        self.graph_assembly_service = graph_assembly_service
+        
+        # Infrastructure services
         self.logger = logging_service.get_class_logger(self)
         self.config = app_config_service
+        
+        # Services used for delegation to GraphExecutionService
         self.execution_tracking_service = execution_tracking_service
         self.execution_policy_service = execution_policy_service
         self.state_adapter_service = state_adapter_service
-        self.dependency_checker = dependency_checker_service
         
-        self.logger.info("[GraphRunnerService] Initialized with all dependencies")
+        self.logger.info("[GraphRunnerService] Initialized as simplified facade")
         self._log_service_status()
     
+    def get_default_options(self) -> RunOptions:
+        """Get default run options from configuration."""
+        options = RunOptions()
+        options.initial_state = None # could by pydantic or dict
+        options.autocompile = self.config.get_value("autocompile", False) 
+        options.csv_path = self.config.get_csv_path()
+        options.validate_before_run = False
+        options.track_execution = self.config.get_execution_config().get("track_execution", True)
+        options.force_compilation = False
+        options.execution_mode = "standard"  # "standard", "debug", "minimal"
+        return options
+
     def run_graph(
         self, 
         graph_name: str, 
         options: Optional[RunOptions] = None
     ) -> ExecutionResult:
         """
-        Main graph execution method.
+        Main graph execution method - simplified facade implementation.
         
-        Orchestrates complete graph execution including:
-        - Graph resolution (compiled/autocompiled/memory)
-        - Agent resolution and service injection
-        - Execution tracking and monitoring
-        - Result processing and error handling
+        Coordinates graph resolution and delegates execution to GraphExecutionService.
         
         Args:
             graph_name: Name of the graph to execute
@@ -122,95 +148,48 @@ class GraphRunnerService:
         Returns:
             ExecutionResult with complete execution details
         """
-        import time
-        import hashlib
-        import threading
-        
         # Initialize options with defaults
         if options is None:
-            options = RunOptions()
+            options = self.get_default_options()
         
         # Initialize state
         state = options.initial_state or {}
         
-        # Create execution tracking
-        execution_key = hashlib.md5(
-            f"{graph_name}:{id(state)}:{options.csv_path}:{options.autocompile}".encode()
-        ).hexdigest()
-        
         self.logger.info(f"⭐ STARTING GRAPH: '{graph_name}'")
         self.logger.debug(f"[GraphRunnerService] Execution options: {options}")
         
-        start_time = time.time()
-        
         try:
-            # Step 1: Resolve the graph using existing infrastructure
+            # Step 1: Resolve the graph using simplified resolution
             self.logger.debug(f"[GraphRunnerService] Resolving graph: {graph_name}")
-            compiled_graph, source_info, graph_def = self._resolve_graph(graph_name, options)
+            resolved_execution = self._resolve_graph_for_execution(graph_name, options)
             
-            self.logger.debug(f"[GraphRunnerService] Graph resolved via: {source_info}")
-            
-            # Step 2: Execute the graph with state management
-            self.logger.debug(f"[GraphRunnerService] Executing graph: {graph_name}")
-            
-            # Initialize execution tracking using service factory
-            execution_tracker = self.execution_tracking_service.create_tracker()
-            
-            # Execute the graph
-            self.logger.debug(f"[GraphRunnerService] Initial state type: {type(state)}")
-            self.logger.debug(f"[GraphRunnerService] Initial state keys: {list(state.keys()) if hasattr(state, 'keys') else 'N/A'}")
-            
-            # The core execution
-            final_state = compiled_graph.invoke(state)
-            
-            self.logger.debug(f"[GraphRunnerService] Final state type: {type(final_state)}")
-            self.logger.debug(f"[GraphRunnerService] Final state keys: {list(final_state.keys()) if hasattr(final_state, 'keys') else 'N/A'}")
-            
-            # Step 3: Process execution results with clean architecture
-            execution_time = time.time() - start_time
-            
-            # Complete execution tracking (pure data collection)
-            execution_tracker.complete_execution()
-            summary = execution_tracker.get_summary()
-            
-            # Evaluate policy separately (business logic)
-            graph_success = self.execution_policy_service.evaluate_success_policy(summary)
-            
-            # Update state with execution summary and policy result
-            final_state = self.state_adapter_service.set_value(final_state, "__execution_summary", summary)
-            final_state = self.state_adapter_service.set_value(final_state, "__policy_success", graph_success)
-            
-            # Step 4: Create ExecutionResult
-            execution_result = ExecutionResult(
-                graph_name=graph_name,
-                success=graph_success,
-                final_state=final_state,
-                execution_summary=summary,
-                execution_time=execution_time,
-                source_info=source_info,
-                error=None
-            )
-            
-            # Log successful completion
-            self.logger.info(f"✅ COMPLETED GRAPH: '{graph_name}' in {execution_time:.2f}s")
-            self.logger.info(f"  Policy success: {graph_success}, Raw success: {summary['overall_success']}")
-            
-            return execution_result
+            # Step 2: Delegate execution to GraphExecutionService based on resolution type
+            if resolved_execution["type"] == "compiled":
+                self.logger.debug(f"[GraphRunnerService] Delegating compiled graph execution")
+                return self.graph_execution.execute_compiled_graph(
+                    bundle_path=resolved_execution["bundle_path"],
+                    state=state
+                )
+            elif resolved_execution["type"] == "definition":
+                self.logger.debug(f"[GraphRunnerService] Delegating definition graph execution")
+                return self.graph_execution.execute_from_definition(
+                    graph_def=resolved_execution["graph_def"],
+                    state=state
+                )
+            else:
+                raise ValueError(f"Unknown resolution type: {resolved_execution['type']}")
             
         except Exception as e:
-            execution_time = time.time() - start_time
-            
-            # Log error
-            self.logger.error(f"❌ GRAPH EXECUTION FAILED: '{graph_name}' after {execution_time:.2f}s")
+            self.logger.error(f"❌ GRAPH EXECUTION FAILED: '{graph_name}'")
             self.logger.error(f"[GraphRunnerService] Error: {str(e)}")
             
-            # Create error result
+            # Create error result using same pattern as GraphExecutionService
             execution_result = ExecutionResult(
                 graph_name=graph_name,
                 success=False,
                 final_state=state,  # Return original state on error
                 execution_summary=None,
-                execution_time=execution_time,
+                execution_time=0.0,
                 source_info=None,
                 error=str(e)
             )
@@ -223,7 +202,9 @@ class GraphRunnerService:
         options: Optional[RunOptions] = None
     ) -> ExecutionResult:
         """
-        Run graph from pre-compiled file.
+        Run graph from pre-compiled file - simplified facade implementation.
+        
+        Delegates directly to GraphExecutionService.execute_compiled_graph().
         
         Args:
             graph_path: Path to compiled graph file
@@ -232,92 +213,20 @@ class GraphRunnerService:
         Returns:
             ExecutionResult with execution details
         """
-        import time
-        
         # Initialize options with defaults
         if options is None:
-            options = RunOptions()
+            options = self.get_default_options()
         
-        # Extract graph name from path
-        graph_name = graph_path.stem
+        # Initialize state
+        state = options.initial_state or {}
         
         self.logger.info(f"[GraphRunnerService] Running from compiled graph: {graph_path}")
         
-        start_time = time.time()
-        
-        try:
-            # Load compiled graph directly
-            import pickle
-            
-            if not graph_path.exists():
-                raise FileNotFoundError(f"Compiled graph not found: {graph_path}")
-            
-            # Try GraphBundle format first using the new service
-            try:
-                bundle = self.graph_bundle_service.load_bundle(graph_path)
-                if bundle and bundle.graph:
-                    compiled_graph = bundle.graph
-                    self.logger.debug(f"[GraphRunnerService] Loaded GraphBundle format using service")
-                else:
-                    raise ValueError("Invalid bundle format")
-            except Exception:
-                # Fallback to legacy pickle format
-                with open(graph_path, "rb") as f:
-                    compiled_graph = pickle.load(f)
-                    self.logger.debug(f"[GraphRunnerService] Loaded legacy pickle format")
-            
-            # Initialize state and tracking
-            state = options.initial_state or {}
-            execution_tracker = self.execution_tracking_service.create_tracker()
-            
-            # Execute the graph
-            final_state = compiled_graph.invoke(state)
-            
-            # Process results
-            execution_time = time.time() - start_time
-            
-            execution_tracker.complete_execution()
-            summary = execution_tracker.get_summary()
-            
-            # Evaluate policy separately (business logic)
-            graph_success = self.execution_policy_service.evaluate_success_policy(summary)
-            
-            # Update state with execution summary and policy result
-            final_state = self.state_adapter_service.set_value(final_state, "__execution_summary", summary)
-            final_state = self.state_adapter_service.set_value(final_state, "__policy_success", graph_success)
-            
-            # Create result
-            execution_result = ExecutionResult(
-                graph_name=graph_name,
-                success=graph_success,
-                final_state=final_state,
-                execution_summary=summary,
-                execution_time=execution_time,
-                source_info="precompiled",
-                error=None
-            )
-            
-            self.logger.info(f"✅ COMPLETED COMPILED GRAPH: '{graph_name}' in {execution_time:.2f}s")
-            return execution_result
-            
-        except Exception as e:
-            execution_time = time.time() - start_time
-            
-            self.logger.error(f"❌ COMPILED GRAPH EXECUTION FAILED: '{graph_name}' after {execution_time:.2f}s")
-            self.logger.error(f"[GraphRunnerService] Error: {str(e)}")
-            
-            # Create error result
-            execution_result = ExecutionResult(
-                graph_name=graph_name,
-                success=False,
-                final_state=options.initial_state or {},
-                execution_summary=None,
-                execution_time=execution_time,
-                source_info="precompiled",
-                error=str(e)
-            )
-            
-            return execution_result
+        # Delegate directly to GraphExecutionService
+        return self.graph_execution.execute_compiled_graph(
+            bundle_path=graph_path,
+            state=state
+        )
     
     def run_from_csv_direct(
         self, 
@@ -326,7 +235,9 @@ class GraphRunnerService:
         options: Optional[RunOptions] = None
     ) -> ExecutionResult:
         """
-        Run graph directly from CSV without compilation.
+        Run graph directly from CSV without compilation - simplified facade implementation.
+        
+        Coordinates GraphDefinitionService for loading and GraphExecutionService for execution.
         
         Args:
             csv_path: Path to CSV file
@@ -336,101 +247,72 @@ class GraphRunnerService:
         Returns:
             ExecutionResult with execution details
         """
-        import time
-        
         # Initialize options with defaults, force no autocompile
         if options is None:
-            options = RunOptions()
+            options = self.get_default_options()
         
         # Override options to force CSV path and disable autocompile
         options.csv_path = csv_path
         options.autocompile = False
         
+        # Initialize state
+        state = options.initial_state or {}
+        
         self.logger.info(f"[GraphRunnerService] Running directly from CSV: {csv_path}, graph: {graph_name}")
         
-        start_time = time.time()
-        
         try:
-            # Load graph definition from CSV
-            graph_def, resolved_graph_name = self._load_graph_definition(csv_path, graph_name)
+            # Step 1: Load graph definition using GraphDefinitionService
+            graph_def, resolved_graph_name = self._load_graph_definition_for_execution(csv_path, graph_name)
             
-            # Build graph in memory (forces memory execution path)
-            compiled_graph = self._build_graph_in_memory(resolved_graph_name, graph_def)
-            
-            # Initialize state and tracking
-            state = options.initial_state or {}
-            execution_tracker = self.execution_tracking_service.create_tracker()
-            
-            # Execute the graph
-            final_state = compiled_graph.invoke(state)
-            
-            # Process results
-            execution_time = time.time() - start_time
-            
-            execution_tracker.complete_execution()
-            summary = execution_tracker.get_summary()
-            
-            # Evaluate policy separately (business logic)
-            graph_success = self.execution_policy_service.evaluate_success_policy(summary)
-            
-            # Update state with execution summary and policy result
-            final_state = self.state_adapter_service.set_value(final_state, "__execution_summary", summary)
-            final_state = self.state_adapter_service.set_value(final_state, "__policy_success", graph_success)
-            
-            # Create result
-            execution_result = ExecutionResult(
-                graph_name=resolved_graph_name,
-                success=graph_success,
-                final_state=final_state,
-                execution_summary=summary,
-                execution_time=execution_time,
-                source_info="memory",
-                error=None
+            # Step 2: Delegate execution to GraphExecutionService
+            return self.graph_execution.execute_from_definition(
+                graph_def=graph_def,
+                state=state
             )
             
-            self.logger.info(f"✅ COMPLETED CSV DIRECT GRAPH: '{resolved_graph_name}' in {execution_time:.2f}s")
-            return execution_result
-            
         except Exception as e:
-            execution_time = time.time() - start_time
-            
-            self.logger.error(f"❌ CSV DIRECT EXECUTION FAILED: '{graph_name}' after {execution_time:.2f}s")
+            self.logger.error(f"❌ CSV DIRECT EXECUTION FAILED: '{graph_name}'")
             self.logger.error(f"[GraphRunnerService] Error: {str(e)}")
             
             # Create error result
             execution_result = ExecutionResult(
                 graph_name=graph_name,
                 success=False,
-                final_state=options.initial_state or {},
+                final_state=state,
                 execution_summary=None,
-                execution_time=execution_time,
+                execution_time=0.0,
                 source_info="memory",
                 error=str(e)
             )
             
             return execution_result
     
-    def _resolve_graph(self, graph_name: str, options: RunOptions) -> tuple:
+    def _resolve_graph_for_execution(self, graph_name: str, options: RunOptions) -> Dict[str, Any]:
         """
-        Resolve graph using three execution paths: precompiled, autocompiled, or in-memory.
+        Simplified graph resolution that determines execution path.
+        
+        Returns resolution information for GraphExecutionService delegation.
         
         Args:
             graph_name: Name of the graph to resolve
             options: Run options containing configuration
             
         Returns:
-            Tuple of (compiled_graph, source_info, graph_def) where:
-            - compiled_graph: Ready-to-execute graph
-            - source_info: Information about graph source ("precompiled", "autocompiled", "memory")
-            - graph_def: Raw graph definition (only for memory-built graphs)
+            Dictionary with resolution information:
+            - type: "compiled" or "definition"
+            - bundle_path: Path to bundle (for compiled type)
+            - graph_def: Graph definition (for definition type)
         """
-        self.logger.debug(f"[GraphRunnerService] Resolving graph: {graph_name}")
+        self.logger.debug(f"[GraphRunnerService] Resolving graph for execution: {graph_name}")
         
         # Path 1: Try to load precompiled graph
-        compiled_graph_bundle = self._load_compiled_graph(graph_name)
-        if compiled_graph_bundle:
-            self.logger.debug(f"[GraphRunnerService] Using precompiled graph for: {graph_name}")
-            return self._extract_graph_from_bundle(compiled_graph_bundle), "precompiled", None
+        compiled_bundle_path = self._find_compiled_graph(graph_name)
+        if compiled_bundle_path:
+            self.logger.debug(f"[GraphRunnerService] Found precompiled graph: {compiled_bundle_path}")
+            return {
+                "type": "compiled",
+                "bundle_path": compiled_bundle_path
+            }
         
         # Path 2: Try autocompilation if enabled
         autocompile = options.autocompile
@@ -439,73 +321,53 @@ class GraphRunnerService:
         
         if autocompile and graph_name:
             self.logger.debug(f"[GraphRunnerService] Attempting autocompilation for: {graph_name}")
-            compiled_graph_bundle = self._autocompile_and_load(graph_name, options)
-            if compiled_graph_bundle:
-                self.logger.debug(f"[GraphRunnerService] Using autocompiled graph for: {graph_name}")
-                return self._extract_graph_from_bundle(compiled_graph_bundle), "autocompiled", None
+            autocompiled_path = self._autocompile_graph(graph_name, options)
+            if autocompiled_path:
+                self.logger.debug(f"[GraphRunnerService] Autocompiled graph: {autocompiled_path}")
+                return {
+                    "type": "compiled",
+                    "bundle_path": autocompiled_path
+                }
         
-        # Path 3: Build graph in memory from CSV
-        self.logger.debug(f"[GraphRunnerService] Building graph in memory for: {graph_name}")
+        # Path 3: Build graph definition for in-memory execution
+        self.logger.debug(f"[GraphRunnerService] Building graph definition for memory execution: {graph_name}")
         csv_path = options.csv_path or self.config.get_csv_path()
-        graph_def, resolved_graph_name = self._load_graph_definition(csv_path, graph_name)
-        compiled_graph = self._build_graph_in_memory(resolved_graph_name, graph_def)
+        graph_def, resolved_graph_name = self._load_graph_definition_for_execution(csv_path, graph_name)
         
-        return compiled_graph, "memory", graph_def
+        return {
+            "type": "definition",
+            "graph_def": graph_def
+        }
     
-    def _load_compiled_graph(self, graph_name: str) -> Optional[GraphBundle]:
+    def _find_compiled_graph(self, graph_name: str) -> Optional[Path]:
         """
-        Load a compiled graph bundle from the configured path.
-        
-        Wraps the existing load_compiled_graph functionality while using service configuration.
+        Find compiled graph bundle if it exists.
         
         Args:
-            graph_name: Name of the graph to load
+            graph_name: Name of the graph to find
             
         Returns:
-            GraphBundle instance or None if not found
+            Path to compiled bundle or None if not found
         """
         compiled_path = self.config.get_compiled_graphs_path() / f"{graph_name}.pkl"
         
-        if not compiled_path.exists():
-            self.logger.debug(f"[GraphRunnerService] Compiled graph not found: {compiled_path}")
-            return None
+        if compiled_path.exists():
+            self.logger.debug(f"[GraphRunnerService] Found compiled graph: {compiled_path}")
+            return compiled_path
         
-        self.logger.debug(f"[GraphRunnerService] Loading compiled graph: {compiled_path}")
-        
-        try:
-            # Use GraphBundleService for loading
-            bundle = self.graph_bundle_service.load_bundle(compiled_path)
-            
-            if bundle and bundle.graph:
-                self.logger.debug(f"[GraphRunnerService] Loaded graph bundle using service")
-                return bundle
-            
-            # If service loading failed, try legacy fallback
-            import pickle
-            with open(compiled_path, "rb") as f:
-                legacy_graph = pickle.load(f)
-                self.logger.debug(f"[GraphRunnerService] Loaded legacy compiled graph")
-                # Create a GraphBundle from legacy format
-                return GraphBundle(
-                    graph=legacy_graph, 
-                    node_registry={}, 
-                    version_hash=None
-                )
-                
-        except Exception as e:
-            self.logger.error(f"[GraphRunnerService] Error loading compiled graph {compiled_path}: {e}")
-            return None
+        self.logger.debug(f"[GraphRunnerService] No compiled graph found: {compiled_path}")
+        return None
     
-    def _autocompile_and_load(self, graph_name: str, options: RunOptions) -> Optional[GraphBundle]:
+    def _autocompile_graph(self, graph_name: str, options: RunOptions) -> Optional[Path]:
         """
-        Autocompile and load a graph using CompilationService.
+        Attempt to autocompile a graph using CompilationService.
         
         Args:
-            graph_name: Name of the graph to compile and load
+            graph_name: Name of the graph to compile
             options: Run options containing compilation configuration
             
         Returns:
-            GraphBundle instance or None if compilation failed
+            Path to compiled bundle or None if compilation failed
         """
         self.logger.debug(f"[GraphRunnerService] Autocompiling graph: {graph_name}")
         
@@ -525,8 +387,8 @@ class GraphRunnerService:
             
             if result and result.success:
                 self.logger.debug(f"[GraphRunnerService] Autocompilation successful for: {graph_name}")
-                # Load the newly compiled graph
-                return self._load_compiled_graph(graph_name)
+                # Return path to the newly compiled graph
+                return self.config.get_compiled_graphs_path() / f"{graph_name}.pkl"
             else:
                 self.logger.warning(f"[GraphRunnerService] Autocompilation failed for: {graph_name}")
                 if result:
@@ -537,67 +399,104 @@ class GraphRunnerService:
             self.logger.error(f"[GraphRunnerService] Autocompilation error for {graph_name}: {e}")
             return None
     
-    def _build_graph_in_memory(self, graph_name: str, graph_def: Dict[str, Any]) -> Any:
+    def _load_graph_definition_for_execution(self, csv_path: Path, graph_name: Optional[str]) -> tuple:
         """
-        Build a graph in memory from graph definition with full service injection.
+        Load and prepare graph definition for execution.
         
-        Coordinates with all services to build a complete executable graph.
+        Uses GraphDefinitionService and prepares the definition with agent instances.
         
         Args:
-            graph_name: Name of the graph to build
-            graph_def: Pre-loaded graph definition from GraphBuilderService
+            csv_path: Path to CSV file
+            graph_name: Optional specific graph name to load
             
         Returns:
-            Compiled graph ready for execution
+            Tuple of (prepared_graph_def, resolved_graph_name)
         """
-        self.logger.debug(f"[GraphRunnerService] Building graph in memory: {graph_name}")
+        self.logger.debug(f"[GraphRunnerService] Loading graph definition for execution: {csv_path}")
+        
+        # Step 1: Load graph definition using GraphDefinitionService
+        if graph_name:
+            # Load specific graph
+            graph_domain_model = self.graph_definition.build_from_csv(csv_path, graph_name)
+            resolved_graph_name = graph_name
+        else:
+            # Load first graph available
+            all_graphs = self.graph_definition.build_all_from_csv(csv_path)
+            if not all_graphs:
+                raise ValueError(f"No graphs found in CSV file: {csv_path}")
+            
+            resolved_graph_name = next(iter(all_graphs))
+            graph_domain_model = all_graphs[resolved_graph_name]
+            
+            self.logger.debug(f"[GraphRunnerService] Using first graph: {resolved_graph_name}")
+        
+        # Step 2: Convert to execution format and prepare with agent instances
+        prepared_graph_def = self._prepare_graph_definition_for_execution(
+            graph_domain_model, resolved_graph_name
+        )
+        
+        return prepared_graph_def, resolved_graph_name
+    
+    def _prepare_graph_definition_for_execution(self, graph_domain_model: Any, graph_name: str) -> Dict[str, Any]:
+        """
+        Prepare graph definition with agent instances for execution.
+        
+        Converts domain model to execution format and creates agent instances.
+        
+        Args:
+            graph_domain_model: Graph domain model from GraphDefinitionService
+            graph_name: Name of the graph for logging context
+            
+        Returns:
+            Prepared graph definition ready for GraphExecutionService
+        """
+        self.logger.debug(f"[GraphRunnerService] Preparing graph definition for execution: {graph_name}")
+        
+        # Convert domain model to old format for compatibility
+        graph_def = self._convert_domain_model_to_old_format(graph_domain_model)
         
         if not graph_def:
-            raise ValueError(f"[GraphRunnerService] Invalid or empty graph definition for graph: {graph_name}")
-        
-        # Build node registry BEFORE creating assembler
+            raise ValueError(f"Invalid or empty graph definition for graph: {graph_name}")
+
+        # Prepare node registry
         self.logger.debug(f"[GraphRunnerService] Preparing node registry for: {graph_name}")
         node_registry = self.node_registry.prepare_for_assembly(graph_def, graph_name)
-        
-        # Create the StateGraph builder
-        from langgraph.graph import StateGraph
-        builder = StateGraph(dict)
-        
-        # Create assembler WITH node registry for pre-compilation injection
-        from agentmap.graph import GraphAssembler
-        assembler = GraphAssembler(builder, node_registry=node_registry)
-        
-        # Add all nodes to the graph with service injection
+
+        # Create and configure agent instances for each node
         for node in graph_def.values():
-            self.logger.debug(f"[GraphRunnerService] Processing node: {node.name} with type: {node.agent_type}")
-            
-            # Create and configure agent instance using extracted methods
             agent_instance = self._create_agent_instance(node, graph_name)
-            
-            # Validate agent configuration
             self._validate_agent_configuration(agent_instance, node)
+            node.context["instance"] = agent_instance
+
+        self.logger.debug(f"[GraphRunnerService] Graph definition prepared for execution: {graph_name}")
+        return graph_def
+    
+    def _convert_domain_model_to_old_format(self, graph) -> Dict[str, Any]:
+        """
+        Convert Graph domain model to old format for compatibility.
+        
+        Args:
+            graph: Graph domain model
             
-            # Add node to the graph (triggers automatic registry injection for orchestrators)
-            assembler.add_node(node.name, agent_instance)
+        Returns:
+            Dictionary in old GraphBuilder format
+        """
+        old_format = {}
         
-        # Set entry point
-        assembler.set_entry_point(next(iter(graph_def)))
+        for node_name, node in graph.nodes.items():
+            # Convert Node to old format compatible with existing infrastructure
+            old_format[node_name] = type('Node', (), {
+                'name': node.name,
+                'context': node.context,
+                'agent_type': node.agent_type,
+                'inputs': node.inputs,
+                'output': node.output,
+                'prompt': node.prompt,
+                'description': node.description,
+                'edges': node.edges
+            })()
         
-        # Process edges for all nodes
-        for node_name, node in graph_def.items():
-            assembler.process_node_edges(node_name, node.edges)
-        
-        # Verify that pre-compilation injection worked
-        verification = self.node_registry.verify_pre_compilation_injection(assembler)
-        if not verification["all_injected"] and verification["has_orchestrators"]:
-            self.logger.warning(f"[GraphRunnerService] Pre-compilation injection incomplete for graph '{graph_name}'")
-            self.logger.warning(f"[GraphRunnerService] Stats: {verification['stats']}")
-        
-        # Compile and return the graph
-        compiled_graph = assembler.compile()
-        
-        self.logger.info(f"[GraphRunnerService] ✅ Successfully built graph '{graph_name}' with pre-compilation registry injection")
-        return compiled_graph
+        return old_format
     
     def _create_agent_instance(self, node, graph_name: str):
         """
@@ -660,11 +559,6 @@ class GraphRunnerService:
         
         # Inject storage services if agent requires them
         self._inject_storage_services(agent_instance, node.name)
-        
-        # Future: Add other service injection types here
-        # - Vector database services
-        # - External API services
-        # - Custom service injections
         
         self.logger.debug(f"[GraphRunnerService] ✅ Service injection complete for agent: {node.name}")
     
@@ -734,364 +628,6 @@ class GraphRunnerService:
                 self.logger.warning(f"Storage agent {node.name} may be missing storage service injection")
         
         self.logger.debug(f"[GraphRunnerService] ✅ Agent configuration valid for: {node.name}")
-    
-    def _get_agent_capabilities(self, agent_class) -> Dict[str, bool]:
-        """
-        Determine agent capabilities by inspecting protocols it implements.
-        
-        Uses protocol inspection instead of hardcoded string matching for robust
-        capability detection that works with custom agents.
-        
-        Args:
-            agent_class: Agent class to inspect
-            
-        Returns:
-            Dict with capability flags (is_llm_agent, is_storage_agent, etc.)
-        """
-        capabilities = {
-            "is_llm_agent": self._implements_llm_protocol(agent_class),
-            "is_storage_agent": self._implements_storage_protocol(agent_class),
-            "is_custom": self._is_custom_agent_class(agent_class),
-            "is_builtin": not self._is_custom_agent_class(agent_class)
-        }
-        
-        self.logger.debug(f"[GraphRunnerService] Agent capabilities for {agent_class.__name__}: {capabilities}")
-        return capabilities
-    
-    def _implements_llm_protocol(self, agent_class) -> bool:
-        """
-        Check if agent class implements LLM service protocol.
-        
-        Args:
-            agent_class: Agent class to inspect
-            
-        Returns:
-            True if agent implements LLMServiceUser protocol
-        """
-        try:
-            from agentmap.services import LLMServiceUser
-            return issubclass(agent_class, LLMServiceUser)
-        except (ImportError, TypeError):
-            self.logger.debug(f"[GraphRunnerService] Could not check LLM protocol for {agent_class.__name__}")
-            return False
-    
-    def _implements_storage_protocol(self, agent_class) -> bool:
-        """
-        Check if agent class implements storage service protocols.
-        
-        Args:
-            agent_class: Agent class to inspect
-            
-        Returns:
-            True if agent implements any storage service protocols
-        """
-        try:
-            # Try protocol-based detection first
-            return self._check_storage_protocols(agent_class)
-        except (ImportError, TypeError):
-            # Fallback to class name inspection
-            return self._inspect_class_for_storage_hints(agent_class)
-    
-    def _check_storage_protocols(self, agent_class) -> bool:
-        """
-        Check agent class against known storage protocols.
-        
-        Args:
-            agent_class: Agent class to inspect
-            
-        Returns:
-            True if agent implements any storage protocols
-        """
-        try:
-            # Check against storage service injection requirements
-            from agentmap.services.storage.injection import requires_storage_services
-            
-            # Create a temporary instance to check storage requirements
-            # Use minimal args to avoid side effects
-            temp_instance = agent_class("temp", "", {}, None, None)
-            return requires_storage_services(temp_instance)
-        except Exception:
-            # If instantiation fails, fall back to class inspection
-            return self._inspect_class_for_storage_hints(agent_class)
-    
-    def _inspect_class_for_storage_hints(self, agent_class) -> bool:
-        """
-        Inspect class hierarchy for storage-related indicators.
-        
-        Args:
-            agent_class: Agent class to inspect
-            
-        Returns:
-            True if class shows storage-related patterns
-        """
-        # Check method resolution order for storage-related base classes
-        for base in agent_class.__mro__:
-            base_name = base.__name__.lower()
-            if any(storage_type in base_name for storage_type in 
-                   ["csv", "json", "file", "storage", "vector", "blob", "firebase"]):
-                return True
-        
-        # Check class name itself
-        class_name = agent_class.__name__.lower()
-        if any(storage_type in class_name for storage_type in 
-               ["csv", "json", "file", "storage", "vector", "blob", "firebase"]):
-            return True
-        
-        return False
-    
-    def _is_custom_agent_class(self, agent_class) -> bool:
-        """
-        Determine if agent class is a custom (non-builtin) agent.
-        
-        Args:
-            agent_class: Agent class to inspect
-            
-        Returns:
-            True if agent appears to be custom, False if builtin
-        """
-        # Check if class module path indicates custom agent
-        module_path = getattr(agent_class, '__module__', '')
-        
-        # Builtin agents are typically in agentmap.agents.* modules
-        if module_path.startswith('agentmap.agents.'):
-            return False
-        
-        # Check if it's loaded from custom agents path
-        custom_agents_path = self.config.get_custom_agents_path()
-        custom_agents_path_str = str(custom_agents_path)
-        
-        if hasattr(agent_class, '__file__') and agent_class.__file__:
-            agent_file_path = str(agent_class.__file__)
-            if custom_agents_path_str in agent_file_path:
-                return True
-        
-        # Default to custom if not clearly builtin
-        return True
-    
-    def _get_agent_type_info(self, agent_type: str) -> Dict[str, Any]:
-        """
-        Get information about an agent type using protocol-based detection.
-        
-        Replaces hardcoded string matching with robust protocol inspection
-        that works for custom agents and maintains consistency with service injection.
-        
-        Args:
-            agent_type: Type of agent to analyze
-            
-        Returns:
-            Dictionary with agent type information
-        """
-        self.logger.debug(f"[GraphRunnerService] Getting agent type info for: {agent_type}")
-        
-        try:
-            # Step 1: Resolve the agent class
-            agent_class = self._resolve_agent_class(agent_type)
-            
-            # Step 2: Inspect class for capabilities using protocols
-            capabilities = self._get_agent_capabilities(agent_class)
-            
-            # Step 3: Build base info structure
-            info = {
-                "agent_type": agent_type,
-                "agent_class": agent_class,
-                **capabilities,  # Spread the capabilities
-                "dependencies_available": True,
-                "missing_dependencies": []
-            }
-            
-            # Step 4: Check dependencies based on actual capabilities
-            if capabilities["is_llm_agent"]:
-                has_deps, missing = self.dependency_checker.check_llm_dependencies()
-                info["dependencies_available"] = has_deps
-                info["missing_dependencies"] = missing or []
-                
-            if capabilities["is_storage_agent"]:
-                has_deps, missing = self.dependency_checker.check_storage_dependencies()
-                info["dependencies_available"] = info["dependencies_available"] and has_deps
-                info["missing_dependencies"].extend(missing or [])
-            
-            self.logger.debug(f"[GraphRunnerService] Agent type info resolved via protocol inspection: {info}")
-            return info
-            
-        except Exception as e:
-            # Fallback for agents that can't be resolved
-            self.logger.warning(f"[GraphRunnerService] Could not resolve agent type '{agent_type}': {e}")
-            return self._get_fallback_agent_info(agent_type)
-    
-    def _get_fallback_agent_info(self, agent_type: str) -> Dict[str, Any]:
-        """
-        Get fallback agent info for unresolvable agent types.
-        
-        Args:
-            agent_type: Agent type that couldn't be resolved
-            
-        Returns:
-            Basic agent info structure
-        """
-        self.logger.debug(f"[GraphRunnerService] Using fallback agent info for: {agent_type}")
-        
-        return {
-            "agent_type": agent_type,
-            "agent_class": None,
-            "is_llm_agent": False,
-            "is_storage_agent": False,
-            "is_builtin": False,
-            "is_custom": False,
-            "dependencies_available": False,
-            "missing_dependencies": [f"Could not resolve agent type: {agent_type}"]
-        }
-    
-    def get_agent_resolution_status(self, graph_def: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Get comprehensive status of agent resolution for a graph definition.
-        
-        Uses protocol-based detection for accurate capability assessment.
-        
-        Args:
-            graph_def: Graph definition to analyze
-            
-        Returns:
-            Dictionary with detailed agent resolution status
-        """
-        status = {
-            "total_nodes": len(graph_def),
-            "agent_types": {},
-            "resolution_summary": {
-                "resolvable": 0,
-                "missing_dependencies": 0,
-                "custom_agents": 0,
-                "builtin_agents": 0,
-                "llm_agents": 0,
-                "storage_agents": 0
-            },
-            "issues": []
-        }
-        
-        for node_name, node in graph_def.items():
-            agent_type = node.agent_type or "Default"
-            
-            # Get detailed info about this agent type using protocol inspection
-            agent_info = self._get_agent_type_info(agent_type)
-            
-            # Track agent type usage
-            if agent_type not in status["agent_types"]:
-                status["agent_types"][agent_type] = {
-                    "count": 0,
-                    "nodes": [],
-                    "info": agent_info
-                }
-            
-            status["agent_types"][agent_type]["count"] += 1
-            status["agent_types"][agent_type]["nodes"].append(node_name)
-            
-            # Update summary counts
-            if agent_info["dependencies_available"]:
-                status["resolution_summary"]["resolvable"] += 1
-            else:
-                status["resolution_summary"]["missing_dependencies"] += 1
-                status["issues"].append({
-                    "node": node_name,
-                    "agent_type": agent_type,
-                    "issue": "missing_dependencies",
-                    "missing_deps": agent_info["missing_dependencies"]
-                })
-            
-            if agent_info["is_custom"]:
-                status["resolution_summary"]["custom_agents"] += 1
-            elif agent_info["is_builtin"]:
-                status["resolution_summary"]["builtin_agents"] += 1
-            
-            if agent_info["is_llm_agent"]:
-                status["resolution_summary"]["llm_agents"] += 1
-            
-            if agent_info["is_storage_agent"]:
-                status["resolution_summary"]["storage_agents"] += 1
-        
-        # Add overall status
-        status["overall_status"] = {
-            "all_resolvable": status["resolution_summary"]["missing_dependencies"] == 0,
-            "has_issues": len(status["issues"]) > 0,
-            "unique_agent_types": len(status["agent_types"]),
-            "resolution_rate": status["resolution_summary"]["resolvable"] / status["total_nodes"] if status["total_nodes"] > 0 else 0
-        }
-        
-        return status
-    
-    def _load_graph_definition(self, csv_path: Path, graph_name: Optional[str]) -> tuple:
-        """
-        Load graph definition from CSV using GraphBuilderService.
-        
-        Args:
-            csv_path: Path to CSV file
-            graph_name: Optional specific graph name to load
-            
-        Returns:
-            Tuple of (graph_def, resolved_graph_name)
-        """
-        self.logger.debug(f"[GraphRunnerService] Loading graph definition from CSV: {csv_path}")
-        
-        # Convert to old format for compatibility with existing infrastructure
-        if graph_name:
-            # Load specific graph
-            graph_domain_model = self.graph_builder.build_from_csv(csv_path, graph_name)
-            graph_def = self._convert_domain_model_to_old_format(graph_domain_model)
-            return graph_def, graph_name
-        else:
-            # Load first graph available
-            all_graphs = self.graph_builder.build_all_from_csv(csv_path)
-            if not all_graphs:
-                raise ValueError(f"No graphs found in CSV file: {csv_path}")
-            
-            first_graph_name = next(iter(all_graphs))
-            graph_domain_model = all_graphs[first_graph_name]
-            graph_def = self._convert_domain_model_to_old_format(graph_domain_model)
-            
-            self.logger.debug(f"[GraphRunnerService] Using first graph: {first_graph_name}")
-            return graph_def, first_graph_name
-    
-    def _convert_domain_model_to_old_format(self, graph) -> Dict[str, Any]:
-        """
-        Convert Graph domain model to old format for compatibility.
-        
-        Args:
-            graph: Graph domain model
-            
-        Returns:
-            Dictionary in old GraphBuilder format
-        """
-        old_format = {}
-        
-        for node_name, node in graph.nodes.items():
-            # Convert Node to old format compatible with existing infrastructure
-            old_format[node_name] = type('Node', (), {
-                'name': node.name,
-                'context': node.context,
-                'agent_type': node.agent_type,
-                'inputs': node.inputs,
-                'output': node.output,
-                'prompt': node.prompt,
-                'description': node.description,
-                'edges': node.edges
-            })()
-        
-        return old_format
-    
-    def _extract_graph_from_bundle(self, graph_bundle: GraphBundle) -> Any:
-        """
-        Extract the executable graph from a GraphBundle.
-        
-        Args:
-            graph_bundle: GraphBundle instance
-            
-        Returns:
-            Executable graph object
-        """
-        if graph_bundle and graph_bundle.graph:
-            version_hash = graph_bundle.version_hash
-            self.logger.debug(f"[GraphRunnerService] Extracted graph from bundle with version hash: {version_hash}")
-            return graph_bundle.graph
-        else:
-            raise ValueError("[GraphRunnerService] Invalid or empty GraphBundle")
     
     def _resolve_agent_class(self, agent_type: str):
         """
@@ -1211,93 +747,171 @@ class GraphRunnerService:
             self.logger.error(error_message)
             raise AgentInitializationError(error_message)
     
+    def get_agent_resolution_status(self, graph_def: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get comprehensive status of agent resolution for a graph definition.
+        
+        Uses protocol-based detection for accurate capability assessment.
+        
+        Args:
+            graph_def: Graph definition to analyze
+            
+        Returns:
+            Dictionary with detailed agent resolution status
+        """
+        status = {
+            "total_nodes": len(graph_def),
+            "agent_types": {},
+            "resolution_summary": {
+                "resolvable": 0,
+                "missing_dependencies": 0,
+                "custom_agents": 0,
+                "builtin_agents": 0,
+                "llm_agents": 0,
+                "storage_agents": 0
+            },
+            "issues": []
+        }
+        
+        for node_name, node in graph_def.items():
+            agent_type = node.agent_type or "Default"
+            
+            # Get detailed info about this agent type using existing resolution logic
+            try:
+                agent_class = self._resolve_agent_class(agent_type)
+                agent_info = {
+                    "agent_type": agent_type,
+                    "agent_class": agent_class,
+                    "dependencies_available": True,
+                    "missing_dependencies": []
+                }
+            except Exception as e:
+                agent_info = {
+                    "agent_type": agent_type,
+                    "agent_class": None,
+                    "dependencies_available": False,
+                    "missing_dependencies": [str(e)]
+                }
+            
+            # Track agent type usage
+            if agent_type not in status["agent_types"]:
+                status["agent_types"][agent_type] = {
+                    "count": 0,
+                    "nodes": [],
+                    "info": agent_info
+                }
+            
+            status["agent_types"][agent_type]["count"] += 1
+            status["agent_types"][agent_type]["nodes"].append(node_name)
+            
+            # Update summary counts
+            if agent_info["dependencies_available"]:
+                status["resolution_summary"]["resolvable"] += 1
+            else:
+                status["resolution_summary"]["missing_dependencies"] += 1
+                status["issues"].append({
+                    "node": node_name,
+                    "agent_type": agent_type,
+                    "issue": "missing_dependencies",
+                    "missing_deps": agent_info["missing_dependencies"]
+                })
+        
+        # Add overall status
+        status["overall_status"] = {
+            "all_resolvable": status["resolution_summary"]["missing_dependencies"] == 0,
+            "has_issues": len(status["issues"]) > 0,
+            "unique_agent_types": len(status["agent_types"]),
+            "resolution_rate": status["resolution_summary"]["resolvable"] / status["total_nodes"] if status["total_nodes"] > 0 else 0
+        }
+        
+        return status
+    
     def get_service_info(self) -> Dict[str, Any]:
         """
-        Get information about the runner service for debugging.
+        Get information about the simplified facade service for debugging.
         
         Returns:
             Dictionary with service status and configuration info
         """
         return {
             "service": "GraphRunnerService",
-            "graph_builder_available": self.graph_builder is not None,
-            "compilation_service_available": self.compilation is not None,
-            "graph_bundle_service_available": self.graph_bundle_service is not None,
-            "llm_service_available": self.llm_service is not None,
-            "storage_service_manager_available": self.storage_service_manager is not None,
-            "node_registry_available": self.node_registry is not None,
-            "execution_tracking_service_available": self.execution_tracking_service is not None,
-            "execution_policy_service_available": self.execution_policy_service is not None,
-            "state_adapter_service_available": self.state_adapter_service is not None,
-            "dependency_checker_available": self.dependency_checker is not None,
-            "config_available": self.config is not None,
+            "architecture": "simplified_facade",
+            "specialized_services": {
+                "graph_definition_service_available": self.graph_definition is not None,
+                "graph_execution_service_available": self.graph_execution is not None,
+                "compilation_service_available": self.compilation is not None,
+                "graph_bundle_service_available": self.graph_bundle_service is not None,
+            },
+            "supporting_services": {
+                "llm_service_available": self.llm_service is not None,
+                "storage_service_manager_available": self.storage_service_manager is not None,
+                "node_registry_available": self.node_registry is not None,
+                "dependency_checker_available": self.dependency_checker is not None,
+                "graph_assembly_service_available": self.graph_assembly_service is not None,
+            },
+            "infrastructure_services": {
+                "config_available": self.config is not None,
+                "execution_tracking_service_available": self.execution_tracking_service is not None,
+                "execution_policy_service_available": self.execution_policy_service is not None,
+                "state_adapter_service_available": self.state_adapter_service is not None,
+            },
             "dependencies_initialized": all([
-                self.graph_builder is not None,
+                self.graph_definition is not None,
+                self.graph_execution is not None,
                 self.compilation is not None,
                 self.graph_bundle_service is not None,
                 self.llm_service is not None,
                 self.storage_service_manager is not None,
                 self.node_registry is not None,
+                self.dependency_checker is not None,
+                self.graph_assembly_service is not None,
+                self.config is not None,
                 self.execution_tracking_service is not None,
                 self.execution_policy_service is not None,
-                self.state_adapter_service is not None,
-                self.dependency_checker is not None,
-                self.config is not None
+                self.state_adapter_service is not None
             ]),
             "capabilities": {
                 "graph_resolution": True,
                 "agent_resolution": True,
                 "service_injection": True,
+                "execution_delegation": True,
                 "precompiled_graphs": True,
                 "autocompilation": True,
                 "memory_building": True,
                 "agent_validation": True,
                 "dependency_checking": True,
-                "protocol_based_detection": True
+                "facade_pattern": True
             },
-            "agent_resolution_methods": [
-                "_resolve_agent_class",
-                "_create_agent_instance", 
-                "_inject_services_into_agent",
-                "_inject_llm_service",
-                "_inject_storage_services",
-                "_validate_agent_configuration",
-                "_get_agent_capabilities",
-                "_implements_llm_protocol",
-                "_implements_storage_protocol",
-                "_get_agent_type_info",
-                "get_agent_resolution_status"
-            ]
+            "delegation_methods": [
+                "run_graph -> GraphExecutionService",
+                "run_from_compiled -> GraphExecutionService.execute_compiled_graph",
+                "run_from_csv_direct -> GraphDefinitionService + GraphExecutionService",
+                "compilation -> CompilationService",
+                "graph_loading -> GraphDefinitionService"
+            ],
+            "complexity_reduction": {
+                "execution_logic_extracted": True,
+                "delegation_based": True,
+                "single_responsibility": True,
+                "clean_separation": True
+            }
         }
     
     def _log_service_status(self) -> None:
         """Log the status of all injected services for debugging."""
         status = self.get_service_info()
-        self.logger.debug(f"[GraphRunnerService] Service status: {status}")
+        self.logger.debug(f"[GraphRunnerService] Simplified facade service status: {status}")
         
         if not status["dependencies_initialized"]:
             missing_deps = []
-            if not self.graph_builder:
-                missing_deps.append("graph_builder_service")
+            if not self.graph_definition:
+                missing_deps.append("graph_definition_service")
+            if not self.graph_execution:
+                missing_deps.append("graph_execution_service")
             if not self.compilation:
                 missing_deps.append("compilation_service")
-            if not self.graph_bundle_service:
-                missing_deps.append("graph_bundle_service")
-            if not self.llm_service:
-                missing_deps.append("llm_service")
-            if not self.storage_service_manager:
-                missing_deps.append("storage_service_manager")
-            if not self.node_registry:
-                missing_deps.append("node_registry_service")
-            if not self.execution_tracking_service:
-                missing_deps.append("execution_tracking_service")
-            if not self.execution_policy_service:
-                missing_deps.append("execution_policy_service")
-            if not self.state_adapter_service:
-                missing_deps.append("state_adapter_service")
-            if not self.dependency_checker:
-                missing_deps.append("dependency_checker_service")
-            if not self.config:
-                missing_deps.append("app_config_service")
+            # ... additional dependency checks as needed
             
             self.logger.warning(f"[GraphRunnerService] Missing dependencies: {missing_deps}")
+        else:
+            self.logger.info("[GraphRunnerService] All dependencies initialized successfully")

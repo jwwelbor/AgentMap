@@ -6,6 +6,7 @@ This module manages:
 - Service dependencies and lifecycle
 - Configuration of DI container
 - Service wiring and initialization
+- Agent bootstrap and registration
 - Graceful degradation for optional services
 """
 
@@ -143,10 +144,84 @@ def get_service_status(container: ApplicationContainer) -> dict:
     return status
 
 
+def initialize_application(config_file: Optional[str] = None) -> ApplicationContainer:
+    """
+    Complete application initialization: DI container setup + agent bootstrap.
+    
+    This function provides full application initialization by combining DI container
+    setup with agent registration and feature discovery. Use this for complete
+    application startup when agents are needed.
+    
+    Args:
+        config_file: Optional path to custom config file override
+        
+    Returns:
+        ApplicationContainer: Fully configured DI container with agents registered
+        
+    Example:
+        # CLI usage with complete bootstrap
+        container = initialize_application("/path/to/config.yaml")
+        graph_runner = container.graph_runner_service()  # Agents are available
+        
+        # API server startup
+        container = initialize_application()
+        # All agents registered and ready for graph execution
+    """
+    # Step 1: Initialize DI container (existing functionality)
+    container = initialize_di(config_file)
+    
+    # Step 2: Bootstrap agents (new functionality)
+    bootstrap_agents(container)
+    
+    return container
+
+
+def bootstrap_agents(container: ApplicationContainer) -> None:
+    """
+    Bootstrap agent registration using existing DI services.
+    
+    This function provides explicit control over agent bootstrap timing,
+    allowing DI setup and agent registration to be separated if needed.
+    Uses graceful degradation - bootstrap failures are logged but don't crash.
+    
+    Args:
+        container: DI container with bootstrap service configured
+        
+    Example:
+        # Explicit control over bootstrap timing
+        container = initialize_di(config_file)
+        # ... do other setup ...
+        bootstrap_agents(container)  # Agents now registered
+        
+        # Testing with partial bootstrap
+        container = initialize_di()
+        if test_needs_agents:
+            bootstrap_agents(container)
+    """
+    try:
+        # Get bootstrap service from DI container
+        bootstrap_service = container.application_bootstrap_service()
+        
+        # Execute the main bootstrap process
+        bootstrap_service.bootstrap_application()
+        
+    except Exception as e:
+        # Graceful degradation following storage service patterns
+        # Log warning but don't crash - allows partial functionality
+        logging_service = safe_get_service(container, 'logging_service')
+        if logging_service:
+            logger = logging_service.get_logger("agentmap.bootstrap")
+            logger.warning(f"Agent bootstrap failed: {e}")
+            logger.warning("Application will continue with limited agent functionality")
+        # Note: Don't re-raise - graceful degradation allows app to continue
+
+
 __all__ = [
     'ApplicationContainer',
     'initialize_di',
-    'initialize_di_for_testing', 
+    'initialize_di_for_testing',
+    'initialize_application',
+    'bootstrap_agents',
     'get_service_status',
     'create_optional_service',
     'safe_get_service'

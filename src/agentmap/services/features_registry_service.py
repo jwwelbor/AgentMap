@@ -8,7 +8,7 @@ This extracts and wraps the core functionality from the original FeatureRegistry
 from typing import Dict, List, Optional
 
 from agentmap.models.features_registry import FeaturesRegistry
-from agentmap.migration_utils import LoggingService
+from agentmap.services.logging_service import LoggingService
 
 
 class FeaturesRegistryService:

@@ -174,7 +174,7 @@ class MockGraphBundle:
 def mock_create_graph_builder_with_registry(csv_path: Path, node_registry_service: Any = None):
     """Mock function to create graph builder with registry."""
     # This is a mock implementation that returns appropriate test objects
-    from agentmap.graph.builder import GraphBuilder
+    from agentmap.services.graph_builder_service import GraphBuilder
     
     # Create a mock builder that won't actually try to read the CSV
     builder = Mock(spec=GraphBuilder)

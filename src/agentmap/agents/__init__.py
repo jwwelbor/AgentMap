@@ -1,188 +1,259 @@
-# agentmap/agents/__init__.py
 """
-Agent registration and discovery module for AgentMap.
+AgentMap Agents Module
 
-This module registers all available agents with the central registry and provides
-agent-related functionality to the rest of the application.
+This module provides clean imports for AgentMap agent classes. Agent registration and 
+discovery is now handled by ApplicationBootstrapService through the dependency injection 
+container, eliminating the previous import-time side effects.
+
+## New Architecture (Service-Based Approach)
+
+Agent registration and feature discovery now happens through ApplicationBootstrapService:
+
+```python
+from agentmap.di import initialize_application
+
+# Initialize DI container and bootstrap agents
+container = initialize_application()
+
+# Access agents through the container
+agent_registry = container.agent_registry_service()
+agent_factory = container.agent_factory_service()
+
+# Create agents using the factory
+agent = agent_factory.create_agent("openai", {"model": "gpt-4"})
+```
+
+## Legacy Compatibility
+
+Agent classes remain importable for backward compatibility:
+
+```python
+from agentmap.agents import DefaultAgent, EchoAgent
+# This still works, but registration is handled by ApplicationBootstrapService
+```
+
+## Migration Guide
+
+If your code previously relied on import-time agent registration:
+
+**Old approach (deprecated):**
+```python
+import agentmap.agents  # Side effect: registered all agents
+from agentmap.agents import get_agent_class
+agent_class = get_agent_class("openai")
+```
+
+**New approach (recommended):**
+```python
+from agentmap.di import initialize_application
+container = initialize_application()
+agent_factory = container.agent_factory_service()
+agent = agent_factory.create_agent("openai", {"model": "gpt-4"})
+```
+
+## Available Agent Classes
+
+Core agents (always available):
+- DefaultAgent: Default processing agent
+- EchoAgent: Simple echo/passthrough agent  
+- BranchingAgent: Conditional routing agent
+- FailureAgent: Explicit failure handling
+- SuccessAgent: Explicit success handling
+- InputAgent: User input collection
+- GraphAgent: Sub-graph execution
+
+LLM agents (requires LLM dependencies):
+- LLMAgent: Base LLM agent
+- OpenAIAgent: OpenAI/GPT integration
+- AnthropicAgent: Anthropic/Claude integration
+- GoogleAgent: Google/Gemini integration
+
+Storage agents (requires storage dependencies):
+- CSVReaderAgent, CSVWriterAgent: CSV file operations
+- JSONDocumentReaderAgent, JSONDocumentWriterAgent: JSON operations
+- FileReaderAgent, FileWriterAgent: General file operations
+- VectorReaderAgent, VectorWriterAgent: Vector storage operations
+
+Mixed dependency agents:
+- SummaryAgent: Content summarization
+- OrchestratorAgent: Complex workflow orchestration
+
+Note: Agent availability depends on installed dependencies. Use ApplicationBootstrapService 
+for runtime discovery of available agents.
 """
+
+# Base agent classes (always available)
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.agents.registry import register_agent, get_agent_class, get_agent_map
-from agentmap.agents.loader import AgentLoader, create_agent
-from agentmap.agents.features import enable_llm_agents, enable_storage_agents, is_llm_enabled, is_storage_enabled
-from agentmap.services.logging_service import _get_bootstrap_logger
 
-_logger = _get_bootstrap_logger(__name__)
-
-# ----- CORE AGENTS (always available) -----
+# Core agent classes (always available - no external dependencies)
 from agentmap.agents.builtins.default_agent import DefaultAgent
 from agentmap.agents.builtins.echo_agent import EchoAgent
 from agentmap.agents.builtins.branching_agent import BranchingAgent
 from agentmap.agents.builtins.failure_agent import FailureAgent
 from agentmap.agents.builtins.success_agent import SuccessAgent
 from agentmap.agents.builtins.input_agent import InputAgent
-from agentmap.agents.builtins.graph_agent import GraphAgent
+# from agentmap.agents.builtins.graph_agent import GraphAgent
 
-# Register core agents
-register_agent("default", DefaultAgent)
-register_agent("echo", EchoAgent)
-register_agent("branching", BranchingAgent)
-register_agent("failure", FailureAgent)
-register_agent("success", SuccessAgent)
-register_agent("input", InputAgent)
-register_agent("graph", GraphAgent)
-
-# agentmap/agents/__init__.py - Modified section for LLM agent imports
-
-# ----- LLM AGENTS (requires 'llm' extras) -----
-from agentmap.features_registry import features
-from agentmap.agents.dependency_checker import check_llm_dependencies
-
-# Global check for basic LLM capabilities
-has_basic_llm, missing_basic = check_llm_dependencies()
-if not has_basic_llm:
-    _logger.debug(f"LLM dependencies not available: {missing_basic}")
-    features.record_missing_dependencies("llm", missing_basic)
-else:
-    # Try to register LLM base classes
-    try:
-        # Import and register base LLM agent
-        from agentmap.agents.builtins.llm.llm_agent import LLMAgent
-        register_agent("llm", LLMAgent)
-        
-        # Register individual providers if their dependencies are available
-        
-        # OpenAI provider
-        has_openai, missing_openai = check_llm_dependencies("openai")
-        if has_openai:
-            try:
-                from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
-                register_agent("openai", OpenAIAgent)
-                register_agent("gpt", OpenAIAgent)  # Add alias for convenience
-                register_agent("chatgpt", OpenAIAgent)  # Add additional alias for convenience
-                features.set_provider_available("llm", "openai", True)
-                features.set_provider_validated("llm", "openai", True)
-                _logger.debug("OpenAI agent validated and registered")
-            except ImportError as e:
-                _logger.debug(f"OpenAI agent import failed: {e}")
-                features.set_provider_validated("llm", "openai", False)
-        else:
-            _logger.debug(f"OpenAI dependencies not available: {missing_openai}")
-            features.record_missing_dependencies("openai", missing_openai)
-            features.set_provider_available("llm", "openai", False)
-            features.set_provider_validated("llm", "openai", False)
-        
-        # Anthropic provider
-        has_anthropic, missing_anthropic = check_llm_dependencies("anthropic")
-        if has_anthropic:
-            try:
-                from agentmap.agents.builtins.llm.anthropic_agent import AnthropicAgent
-                register_agent("anthropic", AnthropicAgent)
-                register_agent("claude", AnthropicAgent)  # Add alias for convenience
-                features.set_provider_available("llm", "anthropic", True)
-                features.set_provider_validated("llm", "anthropic", True)
-                _logger.debug("Anthropic agent validated and registered")
-            except ImportError as e:
-                _logger.debug(f"Anthropic agent import failed: {e}")
-                features.set_provider_validated("llm", "anthropic", False)
-        else:
-            _logger.debug(f"Anthropic dependencies not available: {missing_anthropic}")
-            features.record_missing_dependencies("anthropic", missing_anthropic)
-            features.set_provider_available("llm", "anthropic", False)
-            features.set_provider_validated("llm", "anthropic", False)
-        
-        # Google provider
-        has_google, missing_google = check_llm_dependencies("google")
-        if has_google:
-            try:
-                from agentmap.agents.builtins.llm.google_agent import GoogleAgent
-                register_agent("google", GoogleAgent)
-                register_agent("gemini", GoogleAgent)  # Add alias for convenience
-                features.set_provider_available("llm", "google", True)
-                features.set_provider_validated("llm", "google", True)
-                _logger.debug("Google agent validated and registered")
-            except ImportError as e:
-                _logger.debug(f"Google agent import failed: {e}")
-                features.set_provider_validated("llm", "google", False)
-        else:
-            _logger.debug(f"Google dependencies not available: {missing_google}")
-            features.record_missing_dependencies("google", missing_google)
-            features.set_provider_available("llm", "google", False)
-            features.set_provider_validated("llm", "google", False)
-        
-        # Enable LLM feature if at least one provider is validated
-        if (features.is_provider_validated("llm", "openai") or 
-            features.is_provider_validated("llm", "anthropic") or 
-            features.is_provider_validated("llm", "google")):
-            features.enable_feature("llm")
-            _logger.info("LLM agents registered successfully with validated providers")
-        else:
-            _logger.warning("No validated LLM providers available")
-            
-    except ImportError as e:
-        _logger.debug(f"Base LLM agent import failed: {e}")
-
-# ----- STORAGE AGENTS (requires 'storage' extras) -----
+# LLM agent classes (may not be available depending on dependencies)
 try:
-    # Import all storage agents at once
+    from agentmap.agents.builtins.llm.llm_agent import LLMAgent
+    _llm_base_available = True
+except ImportError:
+    _llm_base_available = False
+
+try:
+    from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
+    _openai_available = True
+except ImportError:
+    _openai_available = False
+
+try:
+    from agentmap.agents.builtins.llm.anthropic_agent import AnthropicAgent
+    _anthropic_available = True
+except ImportError:
+    _anthropic_available = False
+
+try:
+    from agentmap.agents.builtins.llm.google_agent import GoogleAgent
+    _google_available = True
+except ImportError:
+    _google_available = False
+
+# Storage agent classes (may not be available depending on dependencies)
+try:
     from agentmap.agents.builtins.storage import (
         CSVReaderAgent, CSVWriterAgent,
         JSONDocumentReaderAgent, JSONDocumentWriterAgent,
         FileReaderAgent, FileWriterAgent,
-        VectorReaderAgent, VectorWriterAgent,
-        DocumentReaderAgent, DocumentWriterAgent
+        VectorReaderAgent, VectorWriterAgent
     )
-    
-    # Register all storage agents
-    register_agent("csv_reader", CSVReaderAgent)
-    register_agent("csv_writer", CSVWriterAgent)
-    register_agent("json_reader", JSONDocumentReaderAgent)
-    register_agent("json_writer", JSONDocumentWriterAgent)
-    register_agent("file_reader", FileReaderAgent)
-    register_agent("file_writer", FileWriterAgent)
-    register_agent("vector_reader", VectorReaderAgent)
-    register_agent("vector_writer", VectorWriterAgent)
-    
-    # Log successful loading
-    _logger.info("Storage agents registered successfully")
-    
-    # Flag indicating storage agents are available
-    enable_storage_agents()
-    
-except ImportError as e:
-     _logger.debug(f"Storage agents not available: {e}. Install with: pip install agentmap[storage]")
+    _storage_available = True
+except ImportError:
+    _storage_available = False
 
-# ----- SUMMARY AGENT (mixed dependency) -----
+# Mixed dependency agents
 try:
     from agentmap.agents.builtins.summary_agent import SummaryAgent
-    register_agent("summary", SummaryAgent)
-    _logger.info("Summary agent registered successfully")
-except ImportError as e:
-    _logger.debug(f"Summary agent not available: {e}")
+    _summary_available = True
+except ImportError:
+    _summary_available = False
 
-# ----- ORCHESTRATOR AGENT -----
 try:
     from agentmap.agents.builtins.orchestrator_agent import OrchestratorAgent
-    register_agent("orchestrator", OrchestratorAgent)
-    _logger.info("Orchestrator agent registered successfully")
-except ImportError as e:
-    _logger.debug(f"Orchestrator agent not available: {e}")
+    _orchestrator_available = True
+except ImportError:
+    _orchestrator_available = False
 
-# Dynamic registry access
-REGISTERED_AGENTS = get_agent_map()
-
-# Export public API
+# Build __all__ exports for backward compatibility
 __all__ = [
+    # Base classes
     'BaseAgent',
-    'AgentLoader',
-    'create_agent',
-    'get_agent_class',
-    'register_agent',
-    'get_agent_map',
-    'REGISTERED_AGENTS',
+    
+    # Core agents (always available)
+    'DefaultAgent',
+    'EchoAgent',
+    'BranchingAgent',
+    'FailureAgent',
+    'SuccessAgent',
+    'InputAgent',
+    'GraphAgent',
 ]
 
-# Add agent classes to __all__ for convenience
-_agent_classes = set(cls.__name__ for cls in get_agent_map().values())
-for class_name in _agent_classes:
-    if class_name and class_name not in __all__:
-        __all__.append(class_name)
+# Add LLM agents if available
+if _llm_base_available:
+    __all__.append('LLMAgent')
+if _openai_available:
+    __all__.append('OpenAIAgent')
+if _anthropic_available:
+    __all__.append('AnthropicAgent')
+if _google_available:
+    __all__.append('GoogleAgent')
+
+# Add storage agents if available
+if _storage_available:
+    __all__.extend([
+        'CSVReaderAgent', 'CSVWriterAgent',
+        'JSONDocumentReaderAgent', 'JSONDocumentWriterAgent', 
+        'FileReaderAgent', 'FileWriterAgent',
+        'VectorReaderAgent', 'VectorWriterAgent'
+    ])
+
+# Add mixed dependency agents if available
+if _summary_available:
+    __all__.append('SummaryAgent')
+if _orchestrator_available:
+    __all__.append('OrchestratorAgent')
+
+# Deprecation notice for legacy registration functions
+def register_agent(*args, **kwargs):
+    """
+    DEPRECATED: Agent registration now handled by ApplicationBootstrapService.
+    
+    This function is no longer functional. Agent registration happens automatically
+    during application initialization via ApplicationBootstrapService.
+    
+    Use the new service-based approach:
+    ```python
+    from agentmap.di import initialize_application
+    container = initialize_application()
+    agent_factory = container.agent_factory_service()
+    ```
+    """
+    import warnings
+    warnings.warn(
+        "register_agent() is deprecated. Use ApplicationBootstrapService via "
+        "initialize_application() for agent registration.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+
+def get_agent_class(*args, **kwargs):
+    """
+    DEPRECATED: Agent access now handled through AgentFactoryService.
+    
+    This function is no longer functional. Use AgentFactoryService for agent creation:
+    
+    ```python
+    from agentmap.di import initialize_application
+    container = initialize_application()
+    agent_factory = container.agent_factory_service()
+    agent = agent_factory.create_agent("openai", {"model": "gpt-4"})
+    ```
+    """
+    import warnings
+    warnings.warn(
+        "get_agent_class() is deprecated. Use AgentFactoryService via "
+        "initialize_application() for agent access.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return None
+
+def get_agent_map(*args, **kwargs):
+    """
+    DEPRECATED: Agent registry access now handled through AgentRegistryService.
+    
+    This function is no longer functional. Use AgentRegistryService for registry access:
+    
+    ```python
+    from agentmap.di import initialize_application
+    container = initialize_application()
+    agent_registry = container.agent_registry_service()
+    available_agents = agent_registry.list_agents()
+    ```
+    """
+    import warnings
+    warnings.warn(
+        "get_agent_map() is deprecated. Use AgentRegistryService via "
+        "initialize_application() for agent registry access.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return {}
+
+# Add deprecated functions to __all__ for backward compatibility (but with warnings)
+__all__.extend([
+    'register_agent',
+    'get_agent_class', 
+    'get_agent_map'
+])

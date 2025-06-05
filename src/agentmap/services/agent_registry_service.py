@@ -8,7 +8,7 @@ This extracts and wraps the core functionality from the original Registry class.
 from typing import Dict, Type, Optional, List
 
 from agentmap.models.agent_registry import AgentRegistry
-from agentmap.migration_utils import LoggingService
+from agentmap.services.logging_service import LoggingService
 
 
 class AgentRegistryService:

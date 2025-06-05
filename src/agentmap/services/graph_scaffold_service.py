@@ -12,8 +12,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Any, NamedTuple
 
-from agentmap.migration_utils import LoggingService, AppConfigService
 from agentmap.services.prompt_manager_service import PromptManagerService
+from agentmap.services.logging_service import LoggingService
+from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.function_resolution_service import FunctionResolutionService
 
 
 @dataclass
@@ -265,13 +267,15 @@ class GraphScaffoldService:
         self,
         app_config_service: AppConfigService,
         logging_service: LoggingService,
-        prompt_manager: PromptManagerService
+        prompt_manager: PromptManagerService,
+        function_resolution_service: FunctionResolutionService
     ):
         """Initialize service with dependency injection."""
         self.config = app_config_service
         self.logger = logging_service.get_class_logger(self)
         self.prompt_manager = prompt_manager
         self.service_parser = ServiceRequirementParser()
+        self.function_service = function_resolution_service
         self.logger.info("[GraphScaffoldService] Initialized")
     
     def scaffold_agents_from_csv(
@@ -492,8 +496,6 @@ class GraphScaffoldService:
         Returns:
             Dictionary mapping function names to their information
         """
-        # Import here to avoid circular dependencies
-        from agentmap.utils.common import extract_func_ref
         
         func_info: Dict[str, Dict] = {}
         
@@ -506,7 +508,7 @@ class GraphScaffoldService:
                     
                 # Collect function information
                 for col in ["Edge", "Success_Next", "Failure_Next"]:
-                    func = extract_func_ref(row.get(col, ""))
+                    func = self.function_service.extract_func_ref(row.get(col, ""))
                     if func:
                         node_name = row.get("Node", "").strip()
                         context = row.get("Context", "").strip()

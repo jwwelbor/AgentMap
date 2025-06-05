@@ -62,13 +62,24 @@ class ApplicationContainer(containers.DeclarativeContainer):
         app_config_service
     )
     
-    # Logging service with configuration transformation
+    # Logging service factory that creates AND initializes the service
+    @staticmethod
+    def _create_and_initialize_logging_service(app_config_service):
+        """
+        Create and initialize LoggingService.
+        
+        This factory ensures the LoggingService is properly initialized
+        after creation, which is required before other services can use it.
+        """
+        from agentmap.services.logging_service import LoggingService
+        logging_config = app_config_service.get_logging_config()
+        service = LoggingService(logging_config)
+        service.initialize()  # Critical: initialize before returning
+        return service
+    
     logging_service = providers.Singleton(
-        "agentmap.services.logging_service.LoggingService",
-        providers.Callable(
-            lambda app_config: app_config.get_logging_config(),
-            app_config_service
-        )
+        _create_and_initialize_logging_service,
+        app_config_service
     )
 
     # Domain layer: AppConfigService (main application configuration)
@@ -156,13 +167,103 @@ class ApplicationContainer(containers.DeclarativeContainer):
     
     # NEW SERVICES - Clean Architecture Migration
     
-    # Graph Builder Service for CSV parsing and domain model conversion
-    graph_builder_service = providers.Singleton(
-        "agentmap.services.graph_builder_service.GraphBuilderService",
-        app_config_service,
+    # LEVEL 1: Utility Services (no business logic dependencies)
+    
+    # Function Resolution Service for dynamic function loading
+    function_resolution_service = providers.Singleton(
+        "agentmap.services.function_resolution_service.FunctionResolutionService",
+        providers.Callable(
+            lambda app_config: app_config.get_functions_path(),
+            app_config_service
+        )
+    )
+    
+    # Validation Cache Service for caching validation results
+    validation_cache_service = providers.Singleton(
+        "agentmap.services.validation.validation_cache_service.ValidationCacheService"
+    )
+    
+    # LEVEL 2: Validation Services (depend on Level 1 + basic services)
+    
+    # CSV Validation Service for validating CSV structure and content
+    csv_validation_service = providers.Singleton(
+        "agentmap.services.validation.csv_validation_service.CSVValidationService",
+        logging_service,
+        function_resolution_service
+    )
+    
+    # Config Validation Service for validating configuration files
+    config_validation_service = providers.Singleton(
+        "agentmap.services.validation.config_validation_service.ConfigValidationService",
         logging_service
     )
     
+    # Main Validation Service (orchestrates all validation)
+    validation_service = providers.Singleton(
+        "agentmap.services.validation.validation_service.ValidationService",
+        app_config_service,
+        logging_service,
+        csv_validation_service,
+        config_validation_service,
+        validation_cache_service
+    )
+    
+    # LEVEL 3: Core Services (depend on Level 1 & 2)
+    
+    # StateAdapterService for state management (no dependencies)
+    state_adapter_service = providers.Singleton(
+        "agentmap.services.state_adapter_service.StateAdapterService"
+    )
+    
+    # Global model instances for shared state
+    features_registry_model = providers.Singleton(
+        "agentmap.models.features_registry.FeaturesRegistry"
+    )
+    
+    agent_registry_model = providers.Singleton(
+        "agentmap.models.agent_registry.AgentRegistry"
+    )
+    
+    # Features registry service (operates on global features model)
+    features_registry_service = providers.Singleton(
+        "agentmap.services.features_registry_service.FeaturesRegistryService",
+        features_registry_model,
+        logging_service
+    )
+    
+    # Agent registry service (operates on global agent model)
+    agent_registry_service = providers.Singleton(
+        "agentmap.services.agent_registry_service.AgentRegistryService",
+        agent_registry_model,
+        logging_service
+    )
+    
+    # LEVEL 4: Advanced Services (depend on Level 1, 2 & 3)
+    
+    # Graph Assembly Service for assembling StateGraph instances
+    graph_assembly_service = providers.Singleton(
+        "agentmap.services.graph_assembly_service.GraphAssemblyService",
+        app_config_service,
+        logging_service,
+        state_adapter_service,
+        features_registry_service,
+        function_resolution_service
+    )
+    
+    # CSV Graph Parser Service for pure CSV parsing functionality
+    csv_graph_parser_service = providers.Singleton(
+        "agentmap.services.csv_graph_parser_service.CSVGraphParserService",
+        logging_service
+    )
+    
+    # Graph Definition Service (renamed from GraphBuilderService) for graph building with CSV parsing delegation
+    graph_definition_service = providers.Singleton(
+        "agentmap.services.graph_definition_service.GraphDefinitionService",
+        logging_service,                # 1st: logging_service (correct order)
+        app_config_service,             # 2nd: app_config_service 
+        csv_graph_parser_service        # 3rd: csv_parser
+    )
+
     # Graph Bundle Service for graph bundle operations
     graph_bundle_service = providers.Singleton(
         "agentmap.services.graph_bundle_service.GraphBundleService",
@@ -171,13 +272,29 @@ class ApplicationContainer(containers.DeclarativeContainer):
             logging_service
         )
     )
+
+    # Graph Export Service for exporting graphs in various formats
+    # Note: CompilationService dependency temporarily removed to avoid circular dependency
+    graph_export_service = providers.Singleton(
+        "agentmap.services.graph_export_service.GraphExportService",
+        app_config_service,
+        logging_service,
+        function_resolution_service,
+        graph_bundle_service,
+        # compilation_service,  # TODO: Add back after resolving circular dependency
+    )
+    
     
     # Compilation Service for graph compilation and auto-compile capabilities
     compilation_service = providers.Singleton(
         "agentmap.services.compilation_service.CompilationService",
-        graph_builder_service,
+        graph_definition_service,
+        logging_service,
         app_config_service,
-        logging_service
+        node_registry_service,
+        graph_bundle_service,
+        graph_assembly_service,
+        function_resolution_service
     )
     
     # ExecutionTrackingService for creating clean ExecutionTracker instances
@@ -194,10 +311,14 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service
     )
     
-    # StateAdapterService for state management
-    state_adapter_service = providers.Singleton(
-        "agentmap.services.state_adapter_service.StateAdapterService",
-        app_config_service,
+    # Graph Execution Service for clean execution orchestration
+    graph_execution_service = providers.Singleton(
+        "agentmap.services.graph_execution_service.GraphExecutionService",
+        execution_tracking_service,
+        execution_policy_service,
+        state_adapter_service,
+        graph_assembly_service,
+        graph_bundle_service,
         logging_service
     )
 
@@ -223,31 +344,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     
     # Additional utility providers for common transformations
     
-    # NEW AGENT-RELATED SERVICES - Clean Architecture Migration
-    
-    # Global model instances for shared state
-    features_registry_model = providers.Singleton(
-        "agentmap.models.features_registry.FeaturesRegistry"
-    )
-    
-    agent_registry_model = providers.Singleton(
-        "agentmap.models.agent_registry.AgentRegistry"
-    )
-    
-   
-    # Features registry service (operates on global features model)
-    features_registry_service = providers.Singleton(
-        "agentmap.services.features_registry_service.FeaturesRegistryService",
-        features_registry_model,
-        logging_service
-    )
-    
-    # Agent registry service (operates on global agent model)
-    agent_registry_service = providers.Singleton(
-        "agentmap.services.agent_registry_service.AgentRegistryService",
-        agent_registry_model,
-        logging_service
-    )
+    # LEVEL 5: Higher-level Services (depend on previous levels)
     
     # Agent factory service (coordinates between registry and features)
     agent_factory_service = providers.Singleton(
@@ -262,6 +359,15 @@ class ApplicationContainer(containers.DeclarativeContainer):
         "agentmap.services.dependency_checker_service.DependencyCheckerService",
         logging_service,
         features_registry_service
+    )
+
+    # Application bootstrap service (coordinates agent registration and feature discovery)
+    application_bootstrap_service = providers.Singleton(
+        "agentmap.services.application_bootstrap_service.ApplicationBootstrapService",
+        agent_registry_service,
+        features_registry_service,
+        dependency_checker_service,
+        logging_service
     )
  
     
@@ -285,10 +391,11 @@ class ApplicationContainer(containers.DeclarativeContainer):
         app_config_service
     )
 
-     # Graph Runner Service - Main orchestration service for complete graph execution
+     # Graph Runner Service - Simplified facade service for complete graph execution
     graph_runner_service = providers.Singleton(
         "agentmap.services.graph_runner_service.GraphRunnerService",
-        graph_builder_service,
+        graph_definition_service,
+        graph_execution_service,
         compilation_service,
         graph_bundle_service,
         llm_service,
@@ -299,7 +406,8 @@ class ApplicationContainer(containers.DeclarativeContainer):
         execution_tracking_service,
         execution_policy_service,
         state_adapter_service,
-        dependency_checker_service
+        dependency_checker_service,
+        graph_assembly_service
     )
     
 

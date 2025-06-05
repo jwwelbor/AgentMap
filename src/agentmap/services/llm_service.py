@@ -555,6 +555,22 @@ class LLMService:
         """
         return self._routing_enabled
     
+    def generate(self, prompt: str, provider: Optional[str] = None, **kwargs) -> str:
+        """
+        Generate text using LLM with simplified interface.
+        
+        Args:
+            prompt: The prompt text to generate from
+            provider: Optional provider name (defaults to 'anthropic')
+            **kwargs: Additional LLM parameters
+            
+        Returns:
+            Generated text response
+        """
+        provider = provider or 'anthropic'
+        messages = [{"role": "user", "content": prompt}]
+        return self.call_llm(provider=provider, messages=messages, **kwargs)
+    
     def get_available_providers(self) -> List[str]:
         """
         Public method to get available providers.

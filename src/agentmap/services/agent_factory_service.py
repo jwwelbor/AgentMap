@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional, Type, Tuple, List
 
 from agentmap.services.agent_registry_service import AgentRegistryService
 from agentmap.services.features_registry_service import FeaturesRegistryService
-from agentmap.migration_utils import LoggingService
+from agentmap.services.logging_service import LoggingService
 
 
 class AgentFactoryService:
