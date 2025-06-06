@@ -1,6 +1,6 @@
 # Core configuration
 csv_path: "examples/SingleNodeGraph.csv"
-autocompile: false
+autocompile: true
 storage_config_path: "agentmap_config_storage.yaml"
 
 # Directory paths
