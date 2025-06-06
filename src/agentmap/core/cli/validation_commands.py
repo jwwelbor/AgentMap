@@ -23,6 +23,8 @@ def validate_csv_cmd(
     # Initialize DI with optional config file
     container = initialize_di(config_file)
     configuration = container.app_config_service()
+    logger = container.logging_service().get_logger("agentmap.cli.validate_csv")
+    validation_service = container.validation_service()
     
     # Determine CSV path
     csv_file = Path(csv_path) if csv_path else configuration.get_csv_path()
@@ -34,11 +36,11 @@ def validate_csv_cmd(
     typer.echo(f"Validating CSV file: {csv_file}")
     
     try:
-        from agentmap.validation import validate_csv, print_validation_summary
-        result = validate_csv(csv_file, use_cache=not no_cache)
+        #from agentmap.validation import validate_csv, print_validation_summary
+        result = validation_service.validate_csv(csv_file, use_cache=not no_cache)
         
         # Print results
-        print_validation_summary(result)
+        validation_service.print_validation_summary(result)
         
         # Exit with appropriate code
         if result.has_errors:
@@ -61,6 +63,12 @@ def validate_config_cmd(
     """Validate a YAML configuration file."""
     config_file = Path(config_path)
     
+    container = initialize_di(config_file)
+    # configuration = container.app_config_service()
+    # logger = container.logging_service().get_logger("agentmap.cli.validate_config")
+    validation_service = container.validation_service()
+
+
     if not config_file.exists():
         typer.secho(f"❌ Config file not found: {config_file}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
@@ -68,11 +76,10 @@ def validate_config_cmd(
     typer.echo(f"Validating config file: {config_file}")
     
     try:
-        from agentmap.validation import validate_config, print_validation_summary
-        result = validate_config(config_file, use_cache=not no_cache)
+        result = validation_service.validate_config(config_file, use_cache=not no_cache)
         
         # Print results
-        print_validation_summary(None, result)
+        validation_service.print_validation_summary(None, result)
         
         # Exit with appropriate code
         if result.has_errors:
@@ -99,6 +106,8 @@ def validate_all_cmd(
     # Initialize DI with config file
     container = initialize_di(config_file)
     configuration = container.app_config_service()
+    # logger = container.logging_service().get_logger("agentmap.cli.validate_config")
+    validation_service = container.validation_service()
     
     # Determine paths
     csv_file = Path(csv_path) if csv_path else configuration.get_csv_path()
@@ -120,15 +129,14 @@ def validate_all_cmd(
     typer.echo(f"  Config: {config_file_path}")
     
     try:
-        from agentmap.validation import validate_both, print_validation_summary
-        csv_result, config_result = validate_both(
+        csv_result, config_result = validation_service.validate_both(
             csv_file, 
             config_file_path, 
             use_cache=not no_cache
         )
         
         # Print results
-        print_validation_summary(csv_result, config_result)
+        validation_service.print_validation_summary(csv_result, config_result)
         
         # Determine exit code
         has_errors = csv_result.has_errors or (config_result.has_errors if config_result else False)
@@ -170,9 +178,10 @@ def validate_csv_for_compilation_command(
     """
     # Initialize services
     container = initialize_di(config_file)
-    adapter = create_service_adapter(container)
+    validation_service = container.validation_service()
+    logging_service = container.logging_service()
+    app_config_service = container.app_config_service()
     
-    _, app_config_service, logging_service = adapter.initialize_services()
     logger = logging_service.get_logger("agentmap.cli.validate_compilation")
     
     # Determine CSV path
@@ -184,10 +193,8 @@ def validate_csv_for_compilation_command(
     logger.info(f"Validating CSV for compilation: {csv_file}")
     
     # Use existing compilation validation
-    from agentmap.validation import validate_csv_for_compilation
-    
     try:
-        validate_csv_for_compilation(csv_file)
+        validation_service.validate_csv_for_compilation(csv_file)
         return {
             "success": True,
             "file_path": str(csv_file),

@@ -151,11 +151,11 @@ class FastAPIServer:
         @app.get("/agents/available", response_model=AgentsInfoResponse)
         async def list_available_agents():
             """Return information about available agents in this environment."""
-            from agentmap.agents.features import is_llm_enabled, is_storage_enabled
+            from agentmap.services.features_registry_service import FeaturesRegistryService, is_storage_enabled
             
             return AgentsInfoResponse(
                 core_agents=True,  # Always available
-                llm_agents=is_llm_enabled(),
+                llm_agents=self.features_registry.is_feature_enabled("llm")(),
                 storage_agents=is_storage_enabled(),
                 install_instructions={
                     "llm": "pip install agentmap[llm]",

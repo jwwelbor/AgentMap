@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.agents.mixins import PromptResolutionMixin
-from agentmap.agents.features import is_llm_enabled
+from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.logging.tracking.execution_tracker import ExecutionTracker
 import logging
 
@@ -35,7 +35,7 @@ class SummaryAgent(BaseAgent, PromptResolutionMixin):
         self.include_keys = self.context.get("include_keys", True)
 
         # Validate LLM availability
-        if self.use_llm and not is_llm_enabled() and not self.llm_service:
+        if self.use_llm and not self.features_registry.is_feature_enabled("llm")() and not self.llm_service:
             self.log_warning(f"SummaryAgent '{name}' requested LLM mode but LLM dependencies are not installed.")
             self.log_warning("Falling back to basic concatenation mode. Install with: pip install agentmap[llm]")
             self.use_llm = False

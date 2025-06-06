@@ -5,7 +5,7 @@ from typing import Any, Dict, Tuple, Optional
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.agents.mixins import PromptResolutionMixin
-from agentmap.agents.features import is_llm_enabled
+from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.models.execution_tracker import ExecutionTracker
 from agentmap.services.state_adapter_service import StateAdapterService
 import logging
@@ -40,7 +40,7 @@ class OrchestratorAgent(BaseAgent, PromptResolutionMixin):
         self.node_filter = self._parse_node_filter(context)
 
         # Validate LLM availability
-        if not is_llm_enabled() and (self.matching_strategy in ["llm", "tiered"]):
+        if not self.features_registry.is_feature_enabled("llm")() and (self.matching_strategy in ["llm", "tiered"]):
             self.log_warning(f"OrchestratorAgent '{name}' requires LLM dependencies for optimal operation.")
             self.log_warning("Will use simple keyword matching only. Install with: pip install agentmap[llm]")
             self.matching_strategy = "algorithm"

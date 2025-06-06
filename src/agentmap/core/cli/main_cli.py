@@ -10,7 +10,6 @@ from typing import Optional
 
 import typer
 
-from agentmap import __version__
 from agentmap.core.cli.run_commands import (
     run_command, compile_command, export_command, scaffold_command
 )
@@ -21,6 +20,7 @@ from agentmap.core.cli.diagnostic_commands import (
     diagnose_cmd, config_cmd, validate_cache_cmd
 )
 
+from agentmap._version import __version__ 
 
 # Version callback
 def version_callback(value: bool):

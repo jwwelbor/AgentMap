@@ -27,8 +27,11 @@ from agentmap.exceptions.service_exceptions import (
     LLMServiceError, 
     LLMProviderError, 
     LLMConfigurationError,
-    LLMDependencyError
+    LLMDependencyError,
+    FunctionResolutionException
 )
+
+from agentmap.exceptions.validation_exceptions import ValidationException
 
 
 # Re-export at module level
@@ -39,6 +42,7 @@ __all__ = [
     'CollectionNotFoundError',
     'ConfigurationException',
     'DocumentNotFoundError',
+    'FunctionResolutionException',
     'GraphBuildingError',
     'InvalidEdgeDefinitionError',
     'LLMServiceError', 
@@ -49,4 +53,5 @@ __all__ = [
     'StorageConnectionError',
     'StorageConfigurationError',
     'StorageOperationError',
+    'ValidationException' #for backwards compatibility and consistency
 ]   

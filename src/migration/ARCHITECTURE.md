@@ -30,9 +30,10 @@ Each layer has a single, well-defined responsibility:
 - Clients should not depend on interfaces they don't use
 - Keep interfaces focused and cohesive
 
-### 5. **Don't Repeat Yourself (DRY)**
-- Reuse existing proven implementations
-- Extract common patterns into shared utilities
+### 5. **Refactor, Don't Rebuild**
+- Refactor existing proven implementations into clean architecture
+- Move existing logic to appropriate service layers
+- Preserve proven algorithms while improving structure
 - Avoid code duplication across layers
 
 ## Layer Definitions
@@ -88,7 +89,8 @@ class GraphService:
 **Guidelines**:
 - Use dependency injection for all dependencies
 - Follow existing service patterns (like NodeRegistryService)
-- Wrap existing implementations rather than rebuilding
+- Refactor existing implementations into clean services with data-only models
+- Move business logic to services, keep models as pure data containers
 - Maintain backward compatibility during migration
 
 **Service Types**:
@@ -105,10 +107,16 @@ class GraphBuilderService:
         self.logger = logging_service.get_class_logger(self)
     
     def build_from_csv(self, csv_path: Path, graph_name: str = None) -> Graph:
-        # Wrap existing GraphBuilder implementation
-        builder = GraphBuilder(csv_path)  # Reuse existing
-        graphs_dict = builder.build()
-        return self._convert_to_domain_model(graphs_dict, graph_name)
+        # Refactor existing GraphBuilder logic into this service
+        # Move the business logic here, create clean data-only models
+        nodes = self._parse_csv_to_nodes(csv_path)
+        graph = Graph(name=graph_name, nodes=nodes)
+        return graph
+    
+    def _parse_csv_to_nodes(self, csv_path: Path) -> Dict[str, Node]:
+        # Existing parsing logic refactored into service
+        # Returns clean data-only Node models
+        pass
 ```
 
 ### Agents Layer (`/agents/`)
@@ -290,8 +298,8 @@ Integration (Level 4)
 - **Documentation Updates**: Keep dependency graph documentation current
 
 ### Phase-Based Approach
-1. **Models**: Move and create pure data models
-2. **Services**: Extract service wrappers around existing implementations
+1. **Models**: Move and create pure data-only models
+2. **Services**: Refactor existing business logic into clean services
 3. **Core**: Create clean entry points
 4. **Integration**: Wire everything through DI
 5. **Validation**: Comprehensive testing and comparison
@@ -304,30 +312,35 @@ Integration (Level 4)
 - Exception hierarchy
 - Configuration management
 
-**Reuse These Implementations**:
-- GraphBuilder (wrap, don't rebuild)
-- GraphAssembler (keep as service - it's business logic)
-- Compiler functions (wrap in service)
-- NodeRegistryService (keep unchanged)
-- LLMService (keep unchanged)
+**Refactor These Implementations**:
+- GraphBuilder → Refactor logic into GraphBuilderService with data-only models
+- GraphAssembler → Refactor into GraphAssemblerService
+- Compiler functions → Refactor into CompilationService
+- NodeRegistryService (keep unchanged - already follows clean architecture)
+- LLMService (keep unchanged - already follows clean architecture)
 
-### Service Extraction Pattern
+### Service Refactoring Pattern
 ```python
-# Pattern: Wrap existing implementations
+# Pattern: Refactor existing implementations into clean services
 class GraphBuilderService:
     def __init__(self, ...):
         # Initialize dependencies
         
     def build_from_csv(self, csv_path: Path) -> Graph:
-        # 1. Use existing implementation
-        builder = GraphBuilder(csv_path)  # Existing proven code
-        raw_graphs = builder.build()
-        
-        # 2. Convert to domain models
-        return self._convert_to_domain_models(raw_graphs)
+        # 1. Refactor existing GraphBuilder logic directly into service
+        # 2. Create clean data-only models
+        nodes = self._parse_csv_rows(csv_path)
+        edges = self._build_edges(nodes)
+        return Graph(name=graph_name, nodes=nodes, edges=edges)
     
-    def _convert_to_domain_models(self, raw_graphs: Dict) -> Graph:
-        # New logic for domain model conversion
+    def _parse_csv_rows(self, csv_path: Path) -> Dict[str, Node]:
+        # Existing CSV parsing logic moved here and cleaned up
+        # Returns data-only Node models
+        pass
+    
+    def _build_edges(self, nodes: Dict[str, Node]) -> Dict:
+        # Existing edge building logic moved here
+        # Works with clean data-only models
         pass
 ```
 
@@ -387,13 +400,13 @@ class TestGraphBuilderServiceIntegration(ServiceIntegrationTest):
 
 ### Backward Compatibility
 - Preserve existing API contracts during migration
-- Use wrapper pattern to maintain compatibility
+- Refactor internal implementation while maintaining external interfaces
 - Gradual migration with comparison testing
 
 ### Performance Considerations
 - No performance degradation from refactoring
-- Wrapper pattern should add minimal overhead
-- Reuse existing efficient implementations
+- Clean architecture should maintain or improve performance
+- Preserve existing efficient algorithms in refactored services
 
 ## Future Extensibility
 

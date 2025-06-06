@@ -33,3 +33,7 @@ class StorageConfigurationNotAvailableException(ConfigurationException):
 class LoggingNotConfiguredException(AgentMapException):
     """Exception raised when trying to use logging service before initialization."""
     pass
+
+class FunctionResolutionException(AgentMapException):
+    """Exception raised when a function cannot be resolved."""
+    pass

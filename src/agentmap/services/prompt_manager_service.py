@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Dict, Optional, Union, Any
 import logging
 
-from agentmap.migration_utils import AppConfigService, LoggingService
+from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.logging_service import LoggingService
 
 
 class PromptManagerService:

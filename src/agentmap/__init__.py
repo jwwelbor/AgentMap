@@ -21,11 +21,11 @@ from agentmap.core.handlers import (
     azure_http_handler
 )
 
-__version__ = "0.3.0"
+
 __author__ = "John Welborn" 
 __license__ = "MIT"
 __copyright__ = "Copyright 2025 John Welborn"
-__description__ = "A Python package for creating LangGraph agent maps from CSV files."
+__description__ = "A Python package for creating LangGraph maps from CSV files for agentic ai workflows."
 
 __all__ = [
     "ServiceAdapter",

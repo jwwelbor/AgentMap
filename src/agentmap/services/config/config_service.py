@@ -70,26 +70,25 @@ class ConfigService:
     
     def load_config(self, config_path: Optional[Union[str, Path]]) -> Dict[str, Any]:
         """
-        Load configuration from YAML file with defaults merging.
+        Load configuration from YAML file.
         
         Args:
-            config_path: Path to config file or None for defaults only
+            config_path: Path to config file or None for empty config
             
         Returns:
-            Merged configuration dictionary
+            Configuration dictionary (empty if no path provided)
             
         Raises:
             ConfigurationException: If file exists but can't be parsed
         """
         if config_path is None:
-            self._bootstrap_logger.debug("No config path provided, using defaults only")
-            return self._get_default_config()
+            self._bootstrap_logger.debug("No config path provided, returning empty config")
+            return {}
         
         config_file = Path(config_path)
         self._bootstrap_logger.info(f"Loading configuration from: {config_file}")
         
         # Load user config if file exists
-        user_config = {}
         if config_file.exists():
             try:
                 with config_file.open() as f:
@@ -100,45 +99,15 @@ class ConfigService:
                 sections = list(user_config.keys())
                 self._bootstrap_logger.info(f"Loaded configuration sections: {sections}")
                 
+                return user_config
+                
             except Exception as e:
                 error_msg = f"Failed to parse config file {config_file}: {e}"
                 self._bootstrap_logger.error(error_msg)
                 raise ConfigurationException(error_msg) from e
         else:
-            self._bootstrap_logger.warning(f"Config file not found at {config_file}. Using defaults.")
-        
-        # Merge with defaults
-        self._bootstrap_logger.debug("Merging user configuration with defaults")
-        defaults = self._get_default_config()
-        merged_config = self._merge_with_defaults(user_config, defaults)
-        
-        return merged_config
-    
-    def _get_default_config(self) -> Dict[str, Any]:
-        """Get default configuration."""
-        from agentmap.config.defaults import get_default_config
-        return get_default_config()
-    
-    def _merge_with_defaults(self, config: Dict[str, Any], defaults: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Recursively merge configuration with defaults.
-        
-        Args:
-            config: User configuration
-            defaults: Default configuration
-            
-        Returns:
-            Merged configuration
-        """
-        result = defaults.copy()
-        
-        for key, value in config.items():
-            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-                result[key] = self._merge_with_defaults(value, result[key])
-            else:
-                result[key] = value
-        
-        return result
+            self._bootstrap_logger.warning(f"Config file not found at {config_file}. Returning empty config.")
+            return {}
     
     def get_value_from_config(self, config_data: Dict[str, Any], path: str, default: Any = None) -> Any:
         """
