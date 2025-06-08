@@ -33,34 +33,27 @@ class AgentFactoryService:
         self.logger = logging_service.get_class_logger(self)
         self.logger.debug("[AgentFactoryService] Initialized")
     
-    def create_agent(
+    def resolve_agent_class(
         self, 
-        agent_type: str, 
-        name: str, 
-        prompt: str, 
-        context: Optional[Dict[str, Any]] = None
-    ) -> Any:
+        agent_type: str
+    ) -> Type:
         """
-        Create an agent instance with the given parameters.
+        Resolve an agent class by type with dependency validation.
         
         Args:
             agent_type: The type identifier for the agent
-            name: Name of the agent node
-            prompt: Prompt or instruction for the agent
-            context: Context dictionary to pass to the agent
             
         Returns:
-            Agent instance
+            Agent class ready for instantiation
             
         Raises:
             ValueError: If agent type is not found or dependencies are missing
         """
-        context = context or {}
         agent_type_lower = agent_type.lower()
         
-        self.logger.debug(f"[AgentFactoryService] Creating agent: type='{agent_type}', name='{name}'")
+        self.logger.debug(f"[AgentFactoryService] Resolving agent class: type='{agent_type}'")
         
-        # Validate dependencies before creating agent
+        # Validate dependencies before resolving class
         dependencies_valid, missing_deps = self.validate_agent_dependencies(agent_type)
         if not dependencies_valid:
             error_msg = self._get_dependency_error_message(agent_type, missing_deps)
@@ -73,25 +66,17 @@ class AgentFactoryService:
             self.logger.error(f"[AgentFactoryService] Agent type '{agent_type}' not found")
             raise ValueError(f"Agent type '{agent_type}' not found.")
         
-        # Create the agent instance
-        try:
-            agent_instance = agent_class(name=name, prompt=prompt, context=context)
-            self.logger.debug(
-                f"[AgentFactoryService] Successfully created agent '{name}' "
-                f"of type '{agent_type}' using class {agent_class.__name__}"
-            )
-            return agent_instance
-            
-        except Exception as e:
-            self.logger.error(
-                f"[AgentFactoryService] Failed to create agent '{name}' "
-                f"of type '{agent_type}': {str(e)}"
-            )
-            raise ValueError(f"Failed to create agent '{agent_type}': {str(e)}")
+        self.logger.debug(
+            f"[AgentFactoryService] Successfully resolved agent class '{agent_type}' "
+            f"to {agent_class.__name__}"
+        )
+        return agent_class
     
     def get_agent_class(self, agent_type: str) -> Optional[Type]:
         """
-        Get an agent class by type.
+        Get an agent class by type without dependency validation.
+        
+        Use resolve_agent_class() instead for full validation.
         
         Args:
             agent_type: Type identifier to look up
@@ -100,6 +85,22 @@ class AgentFactoryService:
             The agent class or None if not found
         """
         return self.agent_registry.get_agent_class(agent_type)
+    
+    def can_resolve_agent_type(self, agent_type: str) -> bool:
+        """
+        Check if an agent type can be resolved (has valid dependencies).
+        
+        Args:
+            agent_type: The agent type to check
+            
+        Returns:
+            True if agent type can be resolved
+        """
+        try:
+            self.resolve_agent_class(agent_type)
+            return True
+        except ValueError:
+            return False
     
     def validate_agent_dependencies(self, agent_type: str) -> Tuple[bool, List[str]]:
         """
@@ -135,7 +136,7 @@ class AgentFactoryService:
     
     def list_available_agent_types(self) -> List[str]:
         """
-        Get a list of all available agent types that can be created.
+        Get a list of all available agent types that can be resolved.
         
         Returns:
             List of agent type names that have valid dependencies
@@ -144,33 +145,49 @@ class AgentFactoryService:
         available_types = []
         
         for agent_type in all_types:
-            is_valid, _ = self.validate_agent_dependencies(agent_type)
-            if is_valid:
+            if self.can_resolve_agent_type(agent_type):
                 available_types.append(agent_type)
         
         self.logger.debug(f"[AgentFactoryService] Available agent types: {available_types}")
         return available_types
     
-    def get_agent_creation_context(self, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def get_agent_resolution_context(self, agent_type: str) -> Dict[str, Any]:
         """
-        Prepare a complete context dictionary for agent creation.
+        Get comprehensive context for agent class resolution.
         
         Args:
-            context: Base context dictionary
+            agent_type: Agent type to get context for
             
         Returns:
-            Enhanced context with additional metadata
+            Dictionary with resolution context and metadata
         """
-        base_context = context or {}
-        
-        # Add factory metadata
-        enhanced_context = {
-            **base_context,
-            "_factory_version": "1.0",
-            "_created_by": "AgentFactoryService"
-        }
-        
-        return enhanced_context
+        try:
+            agent_class = self.resolve_agent_class(agent_type)
+            dependencies_valid, missing_deps = self.validate_agent_dependencies(agent_type)
+            
+            return {
+                "agent_type": agent_type,
+                "agent_class": agent_class,
+                "class_name": agent_class.__name__,
+                "resolvable": True,
+                "dependencies_valid": dependencies_valid,
+                "missing_dependencies": missing_deps,
+                "_factory_version": "2.0",
+                "_resolution_method": "AgentFactoryService.resolve_agent_class"
+            }
+        except ValueError as e:
+            dependencies_valid, missing_deps = self.validate_agent_dependencies(agent_type)
+            return {
+                "agent_type": agent_type,
+                "agent_class": None,
+                "class_name": None,
+                "resolvable": False,
+                "dependencies_valid": dependencies_valid,
+                "missing_dependencies": missing_deps,
+                "resolution_error": str(e),
+                "_factory_version": "2.0",
+                "_resolution_method": "AgentFactoryService.resolve_agent_class"
+            }
     
     def _is_llm_agent(self, agent_type: str) -> bool:
         """Check if an agent type requires LLM dependencies."""

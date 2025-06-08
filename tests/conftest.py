@@ -261,7 +261,7 @@ def agent_factory(request):
             name=name,
             prompt=prompt,
             logger=logger,
-            execution_tracker=execution_tracker,
+            execution_tracker_service=execution_tracker_service,
             context=context,
             **kwargs
         )

@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, log_operation)
-from agentmap.logging.tracking.execution_tracker import ExecutionTracker
+from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.storage import DocumentResult, FileStorageService
 from agentmap.services.storage.protocols import FileServiceUser
 from agentmap.agents.mixins import ReaderOperationsMixin, StorageErrorHandlerMixin
@@ -27,7 +27,7 @@ class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandl
     with options for chunking and filtering.
     """
     
-    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: Optional[Dict[str, Any]] = None):
+    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTrackingService, context: Optional[Dict[str, Any]] = None):
         """
         Initialize the file reader agent.
         
@@ -35,7 +35,7 @@ class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandl
             name: Name of the agent node
             prompt: Prompt or instruction
             logger: Logger instance for logging operations
-            execution_tracker: ExecutionTracker instance for tracking
+            execution_tracker: ExecutionTrackingService instance for tracking
             context: Additional context including chunking and format configuration
         """
         super().__init__(name, prompt, logger, execution_tracker, context)

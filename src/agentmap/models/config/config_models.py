@@ -5,9 +5,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # --- ConfigModel Definitions ---
 
 class PathsConfigModel(BaseModel):
-    custom_agents: Optional[str] = "agentmap/agents/custom"
-    functions: Optional[str] = "agentmap/functions"
-    compiled_graphs: Optional[str] = "compiled_graphs"
+    custom_agents: Optional[str] = "agentmap/custom_agents"
+    functions: Optional[str] = "agentmap/custom_functions"
+    compiled_graphs: Optional[str] = "agentmap/compiled_graphs"
 
 
 class LLMProviderConfigModel(BaseModel):

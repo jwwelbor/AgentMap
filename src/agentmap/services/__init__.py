@@ -57,6 +57,18 @@ from .storage import StorageServiceManager
 # Application Services
 from .application_bootstrap_service import ApplicationBootstrapService
 
+# Service Protocols
+from .protocols import (
+    LLMServiceProtocol,
+    StorageServiceProtocol,
+    StateAdapterServiceProtocol,
+    ExecutionTrackingServiceProtocol,
+    LLMCapableAgent,
+    StorageCapableAgent,
+    LLMServiceUser,  # Legacy compatibility
+    StorageServiceUser  # Legacy compatibility
+)
+
 __all__ = [
     # Core Graph Services
     "GraphBuilderService",
@@ -106,4 +118,14 @@ __all__ = [
     
     # Application Services
     "ApplicationBootstrapService",
+    
+    # Service Protocols
+    "LLMServiceProtocol",
+    "StorageServiceProtocol",
+    "StateAdapterServiceProtocol",
+    "ExecutionTrackingServiceProtocol",
+    "LLMCapableAgent",
+    "StorageCapableAgent",
+    "LLMServiceUser",
+    "StorageServiceUser",
 ]

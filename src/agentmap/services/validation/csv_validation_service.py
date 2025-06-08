@@ -12,7 +12,15 @@ from agentmap.exceptions.validation_exceptions import ValidationException
 from agentmap.models.validation.csv_row_model import CSVRowModel
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.function_resolution_service import FunctionResolutionService
-from agentmap.agents import get_agent_class
+
+# Gracefully handle missing agent registry
+try:
+    from agentmap.agents import get_agent_class
+except ImportError:
+    # Fallback function if agent registry not available
+    def get_agent_class(agent_type: str):
+        """Fallback function when agent registry is not available."""
+        return None
 
 
 class CSVValidationService:
@@ -150,7 +158,7 @@ class CSVValidationService:
                     result.add_error(
                         message=f"Row validation error: {message}",
                         line_number=line_number,
-                        field=str(field) if field else None,
+                        field_name=str(field) if field else None,
                         value=str(value) if value is not None else None
                     )
             except Exception as e:
@@ -171,11 +179,11 @@ class CSVValidationService:
                 node_name = str(row['Node']).strip() if pd.notna(row['Node']) else ''
                 
                 if not graph_name:
-                    result.add_error("Empty GraphName", line_number=line_number, field="GraphName")
+                    result.add_error("Empty GraphName", line_number=line_number, field_name="GraphName")
                     continue
                 
                 if not node_name:
-                    result.add_error("Empty Node name", line_number=line_number, field="Node")
+                    result.add_error("Empty Node name", line_number=line_number, field_name="Node")
                     continue
                 
                 # Check for duplicate nodes within a graph
@@ -183,7 +191,7 @@ class CSVValidationService:
                     result.add_error(
                         f"Duplicate node '{node_name}' in graph '{graph_name}'",
                         line_number=line_number,
-                        field="Node"
+                        field_name="Node"
                     )
                     continue
                 
@@ -296,7 +304,7 @@ class CSVValidationService:
                             result.add_error(
                                 f"Node '{node_name}' references non-existent target '{target}' in {field_name}",
                                 line_number=line_number,
-                                field=field_name,
+                                field_name=field_name,
                                 value=target,
                                 suggestion=f"Valid targets: {', '.join(sorted(valid_nodes))}"
                             )
@@ -332,7 +340,7 @@ class CSVValidationService:
                     result.add_warning(
                         f"Unknown agent type: '{agent_type}'",
                         line_number=line_number,
-                        field="AgentType",
+                        field_name="AgentType",
                         value=agent_type,
                         suggestion="Check spelling or ensure agent is properly registered/available"
                     )

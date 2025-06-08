@@ -1,5 +1,5 @@
 """
-Base LLM Agent with unified configuration and memory management.
+Modernized LLM Agent with protocol-based dependency injection.
 """
 import os
 import logging
@@ -8,10 +8,11 @@ from pathlib import Path
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.exceptions import ConfigurationException
-from agentmap.models.execution_tracker import ExecutionTracker
-
-# from agentmap.config import get_llm_config
+from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.services.protocols import LLMServiceProtocol, LLMCapableAgent
+
+from agentmap.config import get_llm_config
 
 # Import memory utilities
 from agentmap.agents.builtins.llm.memory import (
@@ -20,9 +21,14 @@ from agentmap.agents.builtins.llm.memory import (
 )
 
 
-class LLMAgent(BaseAgent):
+class LLMAgent(BaseAgent, LLMCapableAgent):
     """
-    Unified LLM agent with intelligent routing and backward compatibility.
+    Modernized LLM agent with protocol-based dependency injection.
+    
+    Follows the new DI pattern where:
+    - Infrastructure services are injected via constructor
+    - Business services (LLM) are configured post-construction via protocols
+    - Implements LLMCapableAgent protocol for service configuration
     
     This agent can work in two modes:
     1. Legacy mode: Direct provider specification (backward compatible)
@@ -31,15 +37,42 @@ class LLMAgent(BaseAgent):
     The mode is determined by the 'routing_enabled' context parameter.
     """
     
-    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, 
+        name: str, 
+        prompt: str,
+        context: Optional[Dict[str, Any]] = None,
+        # Infrastructure services only
+        logger: Optional[logging.Logger] = None,
+        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        state_adapter_service: Optional[StateAdapterService] = None
+    ):
+        """
+        Initialize LLM agent with new protocol-based pattern.
+        
+        Args:
+            name: Name of the agent node
+            prompt: Prompt or instruction (can be a template reference)
+            context: Additional context including input/output configuration
+            logger: Logger instance for logging operations
+            execution_tracker: ExecutionTrackingService instance for tracking
+            state_adapter: StateAdapterService instance for state operations
+        """
         # First, resolve prompt reference if applicable
         from agentmap.prompts import resolve_prompt
         resolved_prompt = resolve_prompt(prompt)
         
-        # Then initialize with the resolved prompt
-        super().__init__(name, resolved_prompt, context or {}, logger=logger, execution_tracker=execution_tracker)
+        # Call new BaseAgent constructor (infrastructure services only)
+        super().__init__(
+            name=name,
+            prompt=resolved_prompt,
+            context=context,
+            logger=logger,
+            execution_tracker_service=execution_tracker_service,
+            state_adapter_service=state_adapter_service
+        )
         
-        # Determine operation mode
+        # Configuration from context
         self.routing_enabled = self.context.get("routing_enabled", False)
         
         if self.routing_enabled:
@@ -52,16 +85,8 @@ class LLMAgent(BaseAgent):
             # Legacy mode: Use specified provider or default to anthropic
             self.provider_name = self.context.get("provider", "anthropic") 
             
-            # Try to use DI container if available
-            try:
-                from agentmap.di import application
-                config = application.AppConfigService()
-                config = config.get_section("llm", {}).get(self.provider_name, {})
-            except (ImportError, AttributeError):
-                raise ConfigurationException( f"Could not get configuration from DI container for provider {self.provider_name}")
-                # # Fall back to direct config loading
-                # from agentmap.config import get_llm_config
-                # config = get_llm_config(self.provider_name)
+            # Try to get configuration from DI container
+            config = self._get_provider_config()
             
             # Use configuration for legacy mode
             self.model = self._get_model_name(config)
@@ -72,12 +97,53 @@ class LLMAgent(BaseAgent):
         self.memory_key = self.context.get("memory_key", "memory")
         self.max_memory_messages = self.context.get("max_memory_messages", None)
         
+        # Additional configuration properties for backward compatibility
+        self.max_tokens = self.context.get("max_tokens")
+        
         # Add memory_key to input_fields if not already present
         if self.memory_key and self.memory_key not in self.input_fields:
             self.input_fields.append(self.memory_key)
-            
-        # LLM Service (will be injected or created)
-        self.llm_service = None
+    
+    # Properties for backward compatibility
+    @property
+    def provider(self) -> str:
+        """Get provider name for backward compatibility."""
+        return self.provider_name
+    
+    # Protocol Implementation (Required by LLMCapableAgent)
+    def configure_llm_service(self, llm_service: LLMServiceProtocol) -> None:
+        """
+        Configure LLM service for this agent.
+        
+        This method is called by GraphRunnerService during agent setup.
+        
+        Args:
+            llm_service: LLM service instance to configure
+        """
+        self._llm_service = llm_service
+        self.log_debug("LLM service configured")
+    
+    # Configuration helpers
+    def _get_provider_config(self) -> Dict[str, Any]:
+        """
+        Get provider configuration from DI container or fallback.
+        
+        Returns:
+            Provider configuration dictionary
+        """
+        try:
+            # Try to use DI container if available
+            from agentmap.di import application
+            app_config = application.app_config_service()
+            config = app_config.get_section("llm", {}).get(self.provider_name, {})
+            return config
+        except (ImportError, AttributeError):
+            try:
+                # Fall back to direct config loading
+                return get_llm_config(self.provider_name)
+            except Exception:
+                self.log_warning(f"Could not get configuration for provider {self.provider_name}, using defaults")
+                return {}
     
     def _get_provider_name(self) -> str:
         """
@@ -130,41 +196,6 @@ class LLMAgent(BaseAgent):
         }
         return defaults.get(provider, "claude-3-sonnet-20240229")
 
-    def _get_llm_service(self):
-        """Get LLM service via DI or direct creation."""
-        if self.llm_service is None:
-            try:
-                # Try to get LLM service from DI container
-                from agentmap.di import application
-                self.llm_service = application.llm_service()
-            except (ImportError, AttributeError) as e:
-                self.log_warning(f"Could not get LLMService from DI container: {e}")
-                # try:
-                #     # Fall back to creating a new instance
-                #     from agentmap.services.llm_service import LLMService
-                #     from agentmap.config.app_config import AppConfigService
-                #     from agentmap.logging.service import LoggingService
-                    
-                #     # Try to load configuration
-                #     try:
-                #         from agentmap.config import get_config
-                #         config = get_config()
-                #     except Exception:
-                #         config = AppConfigService({})
-                    
-                #     # Create logging service
-                #     logging_service = LoggingService(config.get_section("logging", {}))
-                    
-                #     # Create LLM service
-                #     self.llm_service = LLMService(config, logging_service)
-                # except Exception as e2:
-                #     self.log_error(f"Failed to create LLMService: {e2}")
-                #     # Last resort minimal implementation
-                #     from agentmap.services.llm_service import LLMService
-                #     self.llm_service = LLMService()
-                    
-        return self.llm_service
-    
     def is_routing_enabled(self) -> bool:
         """
         Check if routing is enabled for this agent.
@@ -278,26 +309,19 @@ class LLMAgent(BaseAgent):
         
         return routing_context
 
-    def _pre_process(self, state: Any, inputs: Dict[str, Any]) -> Any:
+    def _pre_process(self, state: Any, inputs: Dict[str, Any]) -> Tuple[Any, Dict[str, Any]]:
         """
-        Pre-process hook to initialize and prepare memory.
+        Pre-process hook - memory initialization is now handled in process().
         
         Args:
             state: Current state
             inputs: Input values for this node
             
         Returns:
-            Updated state
+            Tuple of (updated_state, updated_inputs)
         """
-        # Initialize memory if needed
-        if self.memory_key not in inputs:
-            inputs[self.memory_key] = []
-            
-            # Add system message from prompt if available
-            if self.prompt:
-                add_system_message(inputs, self.prompt, self.memory_key)
-        
-        return state
+        # Memory initialization is now handled in process() for better encapsulation
+        return state, inputs
 
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
@@ -309,7 +333,18 @@ class LLMAgent(BaseAgent):
         Returns:
             Response from LLM including updated memory
         """
+        # Check service configuration first (let configuration errors bubble up)
+        llm_service = self.llm_service
+        
         try:
+            # Initialize memory if needed (handle both direct process() calls and run() calls)
+            if self.memory_key not in inputs:
+                inputs[self.memory_key] = []
+                
+                # Add system message from prompt if available
+                if self.prompt:
+                    add_system_message(inputs, self.prompt, self.memory_key)
+            
             # Get the primary input field (typically "input")
             input_parts = []
             for field in self.input_fields:
@@ -320,21 +355,21 @@ class LLMAgent(BaseAgent):
 
             if not user_input:
                 self.log_warning("No input found in inputs")
+            else:
+                self.log_info(f"Processing LLM request with input: {user_input}")
             
             # Get memory from inputs
             messages = get_memory(inputs, self.memory_key)
             
-            # Add user message to memory
-            add_user_message(inputs, user_input, self.memory_key)
-            
-            # Get updated messages
-            messages = get_memory(inputs, self.memory_key)
+            # Add user message to memory (only if we have input)
+            if user_input:
+                add_user_message(inputs, user_input, self.memory_key)
+                
+                # Get updated messages
+                messages = get_memory(inputs, self.memory_key)
             
             # Prepare routing context
             routing_context = self._prepare_routing_context(inputs)
-            
-            # Call LLM via service
-            llm_service = self._get_llm_service()
             
             if routing_context:
                 # Routing mode: Let the routing service decide provider/model
@@ -347,12 +382,20 @@ class LLMAgent(BaseAgent):
             else:
                 # Legacy mode: Use specified provider and model
                 self.log_debug(f"Using legacy mode with provider: {self.provider_name}")
-                result = llm_service.call_llm(
-                    provider=self.provider_name,
-                    messages=messages,
-                    model=self.model,
-                    temperature=self.temperature
-                )
+                
+                # Build call parameters
+                call_params = {
+                    "provider": self.provider_name,
+                    "messages": messages,
+                    "model": self.model,
+                    "temperature": self.temperature
+                }
+                
+                # Add max_tokens if specified
+                if self.max_tokens is not None:
+                    call_params["max_tokens"] = self.max_tokens
+                
+                result = llm_service.call_llm(**call_params)
             
             # Add assistant response to memory
             add_assistant_message(inputs, result, self.memory_key)
@@ -360,6 +403,9 @@ class LLMAgent(BaseAgent):
             # Apply message limit if configured
             if self.max_memory_messages:
                 truncate_memory(inputs, self.max_memory_messages, self.memory_key)
+            
+            # Log successful completion
+            self.log_info(f"LLM processing completed successfully")
             
             # Return result with memory included
             return {
@@ -381,6 +427,7 @@ class LLMAgent(BaseAgent):
         
         Args:
             state: Current state
+            inputs: Input values used for processing
             output: Output from process method
             
         Returns:
@@ -392,7 +439,7 @@ class LLMAgent(BaseAgent):
             
             # Update memory in state
             if memory is not None:
-                state = StateAdapterService.set_value(state, self.memory_key, memory)
+                state = self.state_adapter_service.set_value(state, self.memory_key, memory)
             
             # Extract output value if available
             if self.output_field and self.output_field in output:

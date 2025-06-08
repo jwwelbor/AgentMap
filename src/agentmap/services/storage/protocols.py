@@ -215,36 +215,51 @@ class StorageService(StorageReader, StorageWriter, Protocol):
         ...
 
 
-# ===== SPECIFIC SERVICE USER PROTOCOLS =====
+# ===== AGENT CAPABILITY PROTOCOLS =====
 
 @runtime_checkable
-class CSVServiceUser(Protocol):
-    """Protocol for agents that specifically use CSV storage services."""
-    csv_service: 'CSVStorageService'
-
-
-@runtime_checkable
-class JSONServiceUser(Protocol):
-    """Protocol for agents that specifically use JSON storage services."""
-    json_service: 'JSONStorageService'
+class CSVCapableAgent(Protocol):
+    """Protocol for agents that can use CSV storage services."""
+    
+    def configure_csv_service(self, csv_service: 'CSVStorageService') -> None:
+        """Configure CSV storage service for this agent."""
+        ...
 
 
 @runtime_checkable
-class FileServiceUser(Protocol):
-    """Protocol for agents that specifically use file storage services."""
-    file_service: 'FileStorageService'
+class JSONCapableAgent(Protocol):
+    """Protocol for agents that can use JSON storage services."""
+    
+    def configure_json_service(self, json_service: 'JSONStorageService') -> None:
+        """Configure JSON storage service for this agent."""
+        ...
 
 
 @runtime_checkable
-class VectorServiceUser(Protocol):
-    """Protocol for agents that specifically use vector storage services."""
-    vector_service: 'VectorStorageService'
+class FileCapableAgent(Protocol):
+    """Protocol for agents that can use file storage services."""
+    
+    def configure_file_service(self, file_service: 'FileStorageService') -> None:
+        """Configure file storage service for this agent."""
+        ...
 
 
 @runtime_checkable
-class MemoryServiceUser(Protocol):
-    """Protocol for agents that specifically use memory storage services."""
-    memory_service: 'MemoryStorageService'
+class VectorCapableAgent(Protocol):
+    """Protocol for agents that can use vector storage services."""
+    
+    def configure_vector_service(self, vector_service: 'VectorStorageService') -> None:
+        """Configure vector storage service for this agent."""
+        ...
+
+
+@runtime_checkable
+class MemoryCapableAgent(Protocol):
+    """Protocol for agents that can use memory storage services."""
+    
+    def configure_memory_service(self, memory_service: 'MemoryStorageService') -> None:
+        """Configure memory storage service for this agent."""
+        ...
 
 
 # ===== GENERIC PROTOCOL (kept for backward compatibility if needed) =====
@@ -258,6 +273,14 @@ class StorageServiceUser(Protocol):
     protocols should be preferred for new implementations.
     """
     storage_service: Optional[StorageService] = None
+
+
+# Legacy compatibility - these might be referenced in existing code
+CSVServiceUser = CSVCapableAgent
+JSONServiceUser = JSONCapableAgent
+FileServiceUser = FileCapableAgent
+VectorServiceUser = VectorCapableAgent
+MemoryServiceUser = MemoryCapableAgent
 
 
 @runtime_checkable

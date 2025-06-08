@@ -4,10 +4,11 @@ OpenAI LLM agent implementation.
 Backward compatibility wrapper for the unified LLMAgent.
 """
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.llm.llm_agent import LLMAgent
-from agentmap.models.execution_tracker import ExecutionTracker
+from agentmap.services.execution_tracking_service import ExecutionTrackingService
+from agentmap.services.state_adapter_service import StateAdapterService
 
 
 class OpenAIAgent(LLMAgent):
@@ -18,7 +19,17 @@ class OpenAIAgent(LLMAgent):
     while leveraging the unified LLMAgent implementation.
     """
     
-    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, 
+        name: str, 
+        prompt: str, 
+        context: Optional[Dict[str, Any]] = None,
+        # Infrastructure services only
+        logger: Optional[logging.Logger] = None,
+        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        state_adapter_service: Optional[StateAdapterService] = None
+    ):
+        """Initialize the OpenAI agent with new protocol-based pattern."""
         # Ensure openai provider is set for legacy mode
         if context is None:
             context = {}
@@ -26,5 +37,12 @@ class OpenAIAgent(LLMAgent):
         # Force provider to openai for backward compatibility
         context["provider"] = "openai"
         
-        # Initialize unified LLMAgent
-        super().__init__(name, prompt, logger, execution_tracker, context)
+        # Initialize unified LLMAgent with new constructor pattern
+        super().__init__(
+            name=name,
+            prompt=prompt,
+            context=context,
+            logger=logger,
+            execution_tracker_service=execution_tracker_service,
+            state_adapter_service=state_adapter_service
+        )

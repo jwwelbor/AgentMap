@@ -1,0 +1,90 @@
+"""
+Template for adding new CLI command tests.
+
+Copy this template and modify it for testing additional CLI commands.
+Follow the simple, direct approach that works.
+"""
+
+import unittest
+import tempfile
+from pathlib import Path
+from unittest.mock import Mock, patch
+from typer.testing import CliRunner
+
+from agentmap.core.cli.main_cli import app
+
+
+class SimpleCLITestBase(unittest.TestCase):
+    """Simplified base class for CLI testing."""
+    
+    def setUp(self):
+        """Set up CLI test environment."""
+        self.runner = CliRunner()
+        
+        # Create temporary directory
+        self.temp_dir = tempfile.mkdtemp()
+        self.temp_path = Path(self.temp_dir)
+        
+        # Create mock services with realistic defaults
+        self.mock_service = Mock()
+        self.setup_service_defaults()
+    
+    def setup_service_defaults(self):
+        """Configure realistic service defaults."""
+        # Configure your service mock here
+        self.mock_service.some_method.return_value = "success"
+    
+    def run_command(self, args):
+        """Run CLI command with proper mocking."""
+        mock_container = Mock()
+        mock_container.your_service.return_value = self.mock_service
+        
+        with patch('agentmap.core.cli.your_commands.initialize_di', return_value=mock_container):
+            return self.runner.invoke(app, args, catch_exceptions=True)
+    
+    def assert_success(self, result, expected_text=None):
+        """Assert command succeeded."""
+        self.assertEqual(result.exit_code, 0, f"Command failed: {result.stdout}")
+        if expected_text:
+            self.assertIn(expected_text, result.stdout)
+    
+    def assert_failure(self, result, expected_text=None):
+        """Assert command failed."""
+        self.assertNotEqual(result.exit_code, 0, f"Command should have failed: {result.stdout}")
+        if expected_text:
+            self.assertIn(expected_text, result.stdout)
+    
+    def tearDown(self):
+        """Clean up."""
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+
+class TestYourCommand(SimpleCLITestBase):
+    """Test your-command CLI command."""
+    
+    def test_help_output(self):
+        """Test --help shows usage information."""
+        result = self.run_command(["your-command", "--help"])
+        self.assert_success(result)
+        self.assertIn("your-command", result.stdout)
+    
+    def test_basic_functionality(self):
+        """Test basic command functionality."""
+        result = self.run_command(["your-command", "--option", "value"])
+        self.assert_success(result)
+        
+        # Verify service was called
+        self.mock_service.some_method.assert_called_once()
+    
+    def test_error_handling(self):
+        """Test command error handling."""
+        # Configure service to fail
+        self.mock_service.some_method.side_effect = Exception("Service error")
+        
+        result = self.run_command(["your-command"])
+        self.assert_failure(result)
+
+
+if __name__ == '__main__':
+    unittest.main()

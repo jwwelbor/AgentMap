@@ -17,7 +17,8 @@ class ApplicationContainer(containers.DeclarativeContainer):
     """
     
     # Configuration path injection (for CLI and testing)
-    config_path = providers.Configuration("config_path")
+    # Use a simple provider that can be overridden with a string value
+    config_path = providers.Object(None)
     
     # Infrastructure layer: ConfigService (singleton for efficiency)
     config_service = providers.Singleton(
@@ -335,7 +336,8 @@ class ApplicationContainer(containers.DeclarativeContainer):
         "agentmap.services.graph_scaffold_service.GraphScaffoldService",
         app_config_service,
         logging_service,
-        prompt_manager_service
+        prompt_manager_service,
+        function_resolution_service
     )
     
 
@@ -398,6 +400,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         graph_execution_service,
         compilation_service,
         graph_bundle_service,
+        agent_factory_service,
         llm_service,
         storage_service_manager,
         node_registry_service,

@@ -140,7 +140,8 @@ class MockServiceFactory:
             },
             "prompts": {
                 "directory": "prompts",
-                "registry_file": "prompts/registry.yaml"
+                "registry_file": "prompts/registry.yaml",
+                "enable_cache": True
             }
         }
         
@@ -165,6 +166,13 @@ class MockServiceFactory:
             return defaults.get(key, default)
         
         mock_service.get_value.side_effect = get_value
+        
+        # CRITICAL FIX: Add get_section method that PromptManagerService requires
+        def get_section(section_name: str) -> Dict[str, Any]:
+            """Get configuration section by name."""
+            return defaults.get(section_name, {})
+        
+        mock_service.get_section.side_effect = get_section
         
         return mock_service
     
@@ -835,6 +843,57 @@ class MockServiceFactory:
         return mock_service
     
     @staticmethod
+    def create_mock_agent_registry_service() -> Mock:
+        """
+        Create a pure Mock object for AgentRegistryService.
+        
+        This Mock provides agent registration checking capabilities
+        for determining if an agent type is already registered.
+        
+        Returns:
+            Mock object with has_agent, get_agent_class, and list_agents methods
+            
+        Example:
+            mock_registry = MockServiceFactory.create_mock_agent_registry_service()
+            has_agent = mock_registry.has_agent("input")  # True for builtin agents
+        """
+        mock_service = Mock()
+        
+        # Default builtin agent types (can be overridden in tests)
+        builtin_agents = {
+            "input", "orchestrator", "default", "echo", "branching", 
+            "failure", "success", "graph", "llm", "openai", "anthropic", 
+            "google", "summary", "csv_reader", "csv_writer", "json_reader", 
+            "json_writer", "file_reader", "file_writer", "vector_reader", "vector_writer"
+        }
+        
+        def has_agent(agent_type: str) -> bool:
+            """Check if agent type is registered (builtin or custom)."""
+            return agent_type.lower() in builtin_agents
+        
+        def get_agent_class(agent_type: str, default=None):
+            """Mock get agent class."""
+            if has_agent(agent_type):
+                return Mock()  # Return a mock class
+            return default
+        
+        def list_agents() -> Dict[str, Any]:
+            """List all registered agents."""
+            return {agent: Mock() for agent in builtin_agents}
+        
+        def get_registered_agent_types() -> List[str]:
+            """Get list of registered agent type names."""
+            return list(builtin_agents)
+        
+        # Configure methods
+        mock_service.has_agent.side_effect = has_agent
+        mock_service.get_agent_class.side_effect = get_agent_class
+        mock_service.list_agents.side_effect = list_agents
+        mock_service.get_registered_agent_types.side_effect = get_registered_agent_types
+        
+        return mock_service
+    
+    @staticmethod
     def create_mock_execution_tracking_service() -> Mock:
         """
         Create a pure Mock object for ExecutionTrackingService.
@@ -969,6 +1028,11 @@ def create_csv_graph_parser_service_mock() -> Mock:
 def create_execution_tracking_service_mock() -> Mock:
     """Quick function to create an execution tracking service mock."""
     return MockServiceFactory.create_mock_execution_tracking_service()
+
+
+def create_agent_registry_service_mock() -> Mock:
+    """Quick function to create an agent registry service mock."""
+    return MockServiceFactory.create_mock_agent_registry_service()
 
 
 # Usage examples and documentation

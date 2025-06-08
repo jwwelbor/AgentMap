@@ -1,5 +1,5 @@
 """
-Base CSV storage agent implementation.
+Base CSV storage agent implementation using modernized protocol-based pattern.
 
 This module provides common functionality for CSV agents that delegate
 operations to CSVStorageService, keeping agents simple and focused.
@@ -11,42 +11,95 @@ from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, log_operation)
-from agentmap.logging.tracking.execution_tracker import ExecutionTracker
-from agentmap.services.storage import DocumentResult, CSVStorageService
-from agentmap.services.storage.protocols import CSVServiceUser
+from agentmap.services.execution_tracking_service import ExecutionTrackingService
+from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.services.storage import DocumentResult
+from agentmap.services.storage.protocols import CSVCapableAgent
 from agentmap.agents.mixins import StorageErrorHandlerMixin
 
 
-class CSVAgent(BaseStorageAgent, StorageErrorHandlerMixin, CSVServiceUser):
+class CSVAgent(BaseStorageAgent, StorageErrorHandlerMixin, CSVCapableAgent):
     """
     Base class for CSV storage agents with shared functionality.
+    
+    Follows the modernized protocol-based pattern where:
+    - Infrastructure services are injected via constructor
+    - Business services (CSV storage) are configured post-construction via protocols
+    - Implements CSVCapableAgent protocol for service configuration
     
     Delegates CSV operations to CSVStorageService while providing
     a simple interface for CSV reader and writer agents.
     """
     
-    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, 
+        name: str, 
+        prompt: str, 
+        context: Optional[Dict[str, Any]] = None,
+        # Infrastructure services only
+        logger: Optional[logging.Logger] = None,
+        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        state_adapter_service: Optional[StateAdapterService] = None
+    ):
         """
-        Initialize the CSV agent.
+        Initialize CSV agent with new protocol-based pattern.
         
         Args:
             name: Name of the agent node
             prompt: Prompt or instruction
-            logger: Logger instance for logging operations
-            execution_tracker: ExecutionTracker instance for tracking
             context: Additional context including CSV configuration
+            logger: Logger instance for logging operations
+            execution_tracker: ExecutionTrackingService instance for tracking
+            state_adapter: StateAdapterService instance for state operations
         """
-        super().__init__(name, prompt, logger, execution_tracker, context)
+        # Call new BaseStorageAgent constructor (infrastructure services only)
+        super().__init__(
+            name=name,
+            prompt=prompt,
+            context=context,
+            logger=logger,
+            execution_tracker_service=execution_tracker_service,
+            state_adapter_service=state_adapter_service
+        )
         
-        # CSVServiceUser protocol requirement - will be set via dependency injection
-        # or initialized in _initialize_client()
-        self.csv_service = None
+        # CSV service will be configured via protocol
+        self._csv_service = None
+    
+    # Protocol Implementation (Required by CSVCapableAgent)
+    def configure_csv_service(self, csv_service) -> None:
+        """
+        Configure CSV storage service for this agent.
+        
+        This method is called by GraphRunnerService during agent setup.
+        
+        Args:
+            csv_service: CSV storage service instance to configure
+        """
+        self._csv_service = csv_service
+        # Also set as the main client for BaseStorageAgent
+        self._client = csv_service
+        self.log_debug("CSV service configured")
+    
+    @property
+    def csv_service(self):
+        """Get CSV service, raising clear error if not configured."""
+        if self._csv_service is None:
+            raise ValueError(f"CSV service not configured for agent '{self.name}'")
+        return self._csv_service
     
     def _initialize_client(self) -> None:
-        """Initialize CSVStorageService as the client for CSV operations."""
-        self._client = CSVStorageService(self.context)
-        # Set csv_service for CSVServiceUser protocol compliance
-        self.csv_service = self._client
+        """
+        Initialize client - in the new pattern, this should not be needed
+        as services are injected via protocols.
+        """
+        # In the new pattern, services are injected via configure_* methods
+        # This method is kept for compatibility but should not be used
+        if self._csv_service is None:
+            self.log_warning("CSV service not configured - using fallback initialization")
+            # Fallback to create service directly (not recommended)
+            from agentmap.services.storage.csv_service import CSVStorageService
+            self._csv_service = CSVStorageService(self.context)
+            self._client = self._csv_service
     
     def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
         """

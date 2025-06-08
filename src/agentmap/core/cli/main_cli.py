@@ -55,17 +55,17 @@ def main(
 # MAIN WORKFLOW COMMANDS (Most commonly used)
 # ============================================================================
 
-app.command()(run_command)
+app.command("run")(run_command)
 app.command("scaffold")(scaffold_command)
 app.command("compile")(compile_command) 
-app.command()(export_command)
+app.command("export")(export_command)
 
 
 # ============================================================================
 # CONFIGURATION COMMANDS
 # ============================================================================
 
-app.command()(config_cmd)
+app.command("config")(config_cmd)
 
 # ============================================================================
 # VALIDATION COMMANDS

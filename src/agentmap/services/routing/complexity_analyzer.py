@@ -344,7 +344,8 @@ class PromptComplexityAnalyzer:
     
     def analyze_task_type_complexity(self, task_type: str, prompt: str) -> ComplexitySignal:
         """Analyze complexity based on task type and its keywords."""
-        task_config = self.config.get_task_type_config(task_type)
+        task_types = self.config.get("task_types", {})
+        task_config = task_types.get(task_type, {})
         complexity_keywords = task_config.get("complexity_keywords", {})
         default_complexity = task_config.get("default_complexity", "medium")
         
@@ -432,7 +433,8 @@ class PromptComplexityAnalyzer:
         
         # Skip analysis if auto-detect is disabled
         if not routing_context.auto_detect_complexity:
-            task_config = self.config.get_task_type_config(task_type)
+            task_types = self.config.get("task_types", {})
+            task_config = task_types.get(task_type, {})
             default_complexity = task_config.get("default_complexity", "medium")
             return TaskComplexity.from_string(default_complexity)
         

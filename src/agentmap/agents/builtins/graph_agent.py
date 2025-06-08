@@ -4,8 +4,9 @@ import logging
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.state_adapter_service import StateAdapterService
 from agentmap.services.function_resolution_service import FunctionResolutionService
-from agentmap.services.execution_tracking_service import ExecutionTracker
+from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.graph_runner_service import GraphRunnerService
+#from agentmap.utils.function_utils import import_function
 
 
 class GraphAgent(BaseAgent):
@@ -16,31 +17,45 @@ class GraphAgent(BaseAgent):
     by running a subgraph as part of a parent graph's execution.
     
     Supports flexible input/output mapping and nested execution tracking.
+    
+    Note: This agent currently requires direct service injection as there
+    are no established protocols for GraphRunnerService yet.
     """
     
     def __init__(
-            self, 
-            name: str, 
-            prompt: str, 
-            logger: logging.Logger, 
-            execution_tracker: ExecutionTracker,
-            graph_runner_service: GraphRunnerService,
-            context: dict = None
-        ):
+        self, 
+        name: str, 
+        prompt: str, 
+        context: Optional[Dict[str, Any]] = None,
+        # Infrastructure services only
+        logger: Optional[logging.Logger] = None,
+        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        state_adapter_service: Optional[StateAdapterService] = None
+    ):
         """
-        Initialize the graph agent.
+        Initialize the graph agent with new protocol-based pattern.
         
         Args:
             name: Name of the agent node
             prompt: Name of the subgraph to execute
             context: Additional context (CSV path string or config dict)
         """
-        super().__init__(name, prompt, context, logger=logger, execution_tracker=execution_tracker)
+        super().__init__(
+            name=name,
+            prompt=prompt,
+            context=context,
+            logger=logger,
+            execution_tracker_service=execution_tracker_service,
+            state_adapter_service=state_adapter_service
+        )
         
         # The subgraph name comes from the prompt field
         self.subgraph_name = prompt
-        self._execution_tracker = execution_tracker
-        self._graph_runner_service = graph_runner_service
+        
+        # Business services - these will need to be injected via DI
+        # TODO: Consider creating protocols for these services in future
+        self._graph_runner_service = None
+        self._function_resolution_service = None
         
         # Handle context as either string (CSV path) or dict (config)
         if isinstance(context, str) and context.strip():
@@ -52,6 +67,31 @@ class GraphAgent(BaseAgent):
         else:
             self.csv_path = None
             self.execution_mode = "separate"
+    
+    # Business service configuration (TODO: Replace with protocols)
+    def configure_graph_runner_service(self, graph_runner_service: GraphRunnerService) -> None:
+        """Configure graph runner service for this agent."""
+        self._graph_runner_service = graph_runner_service
+        self.log_debug("Graph runner service configured")
+    
+    def configure_function_resolution_service(self, function_resolution_service: FunctionResolutionService) -> None:
+        """Configure function resolution service for this agent."""
+        self._function_resolution_service = function_resolution_service
+        self.log_debug("Function resolution service configured")
+    
+    @property
+    def graph_runner_service(self) -> GraphRunnerService:
+        """Get graph runner service, raising clear error if not configured."""
+        if self._graph_runner_service is None:
+            raise ValueError(f"Graph runner service not configured for agent '{self.name}'")
+        return self._graph_runner_service
+    
+    @property
+    def function_resolution_service(self) -> FunctionResolutionService:
+        """Get function resolution service, raising clear error if not configured."""
+        if self._function_resolution_service is None:
+            raise ValueError(f"Function resolution service not configured for agent '{self.name}'")
+        return self._function_resolution_service
     
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
@@ -70,7 +110,7 @@ class GraphAgent(BaseAgent):
         
         try:
             # Execute the subgraph using run_graph (maintains your current approach)
-            result = self._graph_runner_service.run_graph(
+            result = self.graph_runner_service.run_graph(
                 graph_name=self.subgraph_name, 
                 initial_state=subgraph_state,
                 csv_path=self.csv_path,
@@ -103,7 +143,7 @@ class GraphAgent(BaseAgent):
             Tuple of (updated_state, processed_output)
         """
         # Get parent execution tracker
-        parent_tracker = self._execution_tracker
+        parent_tracker = self.execution_tracker_service
         
         # If output contains execution summary from subgraph, record it
         if isinstance(output, dict) and "__execution_summary" in output:
@@ -123,7 +163,7 @@ class GraphAgent(BaseAgent):
         # Set success based on subgraph result
         if isinstance(output, dict):
             graph_success = output.get("graph_success", output.get("last_action_success", True))
-            state = StateAdapter.set_value(state, "last_action_success", graph_success)
+            state = StateAdapterService.set_value(state, "last_action_success", graph_success)
         
         return state, output
     
@@ -174,14 +214,14 @@ class GraphAgent(BaseAgent):
     
     def _apply_function_mapping(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Apply function-based mapping."""
-        func_ref = extract_func_ref(self.input_fields[0])
+        func_ref = self.function_resolution_service.extract_func_ref(self.input_fields[0])
         if not func_ref:
             self.log_warning(f"[GraphAgent] Invalid function reference: {self.input_fields[0]}")
             return inputs.copy()
         
         try:
             # Import the mapping function
-            mapping_func = import_function(func_ref)
+            mapping_func = self.function_resolution_serviceimport_function(func_ref)
             
             # Execute the function to transform the state
             mapped_state = mapping_func(inputs)

@@ -45,7 +45,13 @@ from .protocols import (
     StorageService,
     StorageServiceUser,
     StorageServiceFactory,
-    # Specific service user protocols
+    # New capability protocols
+    CSVCapableAgent,
+    JSONCapableAgent,
+    FileCapableAgent,
+    VectorCapableAgent,
+    MemoryCapableAgent,
+    # Legacy service user protocols (for backward compatibility)
     CSVServiceUser,
     JSONServiceUser,
     FileServiceUser,
@@ -110,7 +116,14 @@ __all__ = [
     'StorageServiceUser',
     'StorageServiceFactory',
     
-    # Specific service user protocols
+    # New capability protocols
+    'CSVCapableAgent',
+    'JSONCapableAgent',
+    'FileCapableAgent',
+    'VectorCapableAgent',
+    'MemoryCapableAgent',
+    
+    # Legacy service user protocols (for backward compatibility)
     'CSVServiceUser',
     'JSONServiceUser',
     'FileServiceUser',

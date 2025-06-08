@@ -478,6 +478,343 @@ class TestGraphDefinitionService(unittest.TestCase):
                 
                 # Verify CSV parser was still called
                 self.mock_csv_parser_service.parse_csv_to_graph_spec.assert_called_with(Path('nonexistent.csv'))
+    
+    # =============================================================================
+    # 4. Error Handling and Edge Case Tests
+    # =============================================================================
+    
+    def test_build_from_csv_invalid_graph_name(self):
+        """Test build_from_csv() raises ValueError for invalid graph name."""
+        import unittest.mock
+        from agentmap.models.graph_spec import GraphSpec, NodeSpec
+        
+        # Configure mock to return spec without requested graph
+        node_spec_1 = Mock(spec=NodeSpec)
+        node_spec_1.name = 'node1'
+        node_spec_1.graph_name = 'existing_graph'
+        
+        mock_graph_spec = Mock(spec=GraphSpec)
+        mock_graph_spec.get_graph_names.return_value = ['existing_graph']
+        mock_graph_spec.get_nodes_for_graph.return_value = [node_spec_1]
+        
+        # Reset side_effect and set return_value
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.side_effect = None
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.return_value = mock_graph_spec
+        
+        # Mock internal methods to reach the validation logic
+        with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value={'node1': Mock()}), \
+             unittest.mock.patch.object(self.service, '_connect_nodes_from_specs'), \
+             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model', return_value=Mock()):
+            
+            # Execute and verify ValueError with proper message
+            with self.assertRaises(ValueError) as context:
+                self.service.build_from_csv(Path('test.csv'), 'nonexistent_graph')
+            
+            error_message = str(context.exception)
+            self.assertIn('nonexistent_graph', error_message)
+            self.assertIn('existing_graph', error_message)
+            self.assertIn('not found in CSV', error_message)
+    
+    def test_build_from_csv_empty_graphs(self):
+        """Test build_from_csv() handles empty GraphSpec gracefully."""
+        import unittest.mock
+        from agentmap.models.graph_spec import GraphSpec
+        
+        # Configure mock to return empty spec
+        mock_graph_spec = Mock(spec=GraphSpec)
+        mock_graph_spec.get_graph_names.return_value = []
+        
+        # Reset side_effect and set return_value
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.side_effect = None
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.return_value = mock_graph_spec
+        
+        # Mock internal methods to reach the validation logic
+        with unittest.mock.patch.object(self.service, '_create_nodes_from_specs'), \
+             unittest.mock.patch.object(self.service, '_connect_nodes_from_specs'), \
+             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model'):
+            
+            # Execute and verify ValueError
+            with self.assertRaises(ValueError) as context:
+                self.service.build_from_csv(Path('empty.csv'))
+            
+            self.assertIn('No graphs found', str(context.exception))
+            self.assertIn('empty.csv', str(context.exception))
+    
+    def test_edge_connection_conflict_error(self):
+        """Test InvalidEdgeDefinitionError for conflicting edge definitions."""
+        import unittest.mock
+        from agentmap.models.graph_spec import GraphSpec, NodeSpec
+        from agentmap.exceptions.graph_exceptions import InvalidEdgeDefinitionError
+        
+        # Create a NodeSpec with conflicting edge definitions
+        conflicting_node_spec = Mock(spec=NodeSpec)
+        conflicting_node_spec.name = 'conflicting_node'
+        conflicting_node_spec.graph_name = 'test_graph'
+        conflicting_node_spec.edge = 'next_node'  # Direct edge
+        conflicting_node_spec.success_next = 'success_node'  # AND success edge (conflict!)
+        conflicting_node_spec.failure_next = None
+        
+        mock_graph_spec = Mock(spec=GraphSpec)
+        mock_graph_spec.get_graph_names.return_value = ['test_graph']
+        mock_graph_spec.get_nodes_for_graph.return_value = [conflicting_node_spec]
+        
+        # Reset side_effect and set return_value
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.side_effect = None
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.return_value = mock_graph_spec
+        
+        # Mock nodes creation but let connect_nodes_from_specs run real logic
+        nodes_dict = {'conflicting_node': Mock(), 'next_node': Mock(), 'success_node': Mock()}
+        
+        with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value=nodes_dict), \
+             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model'):
+            
+            # Execute and verify InvalidEdgeDefinitionError
+            with self.assertRaises(InvalidEdgeDefinitionError) as context:
+                self.service.build_from_graph_spec(mock_graph_spec)
+            
+            error_message = str(context.exception)
+            self.assertIn('conflicting_node', error_message)
+            self.assertIn('both Edge and Success/Failure defined', error_message)
+    
+    def test_edge_connection_target_not_found_error(self):
+        """Test ValueError when edge target node doesn't exist."""
+        import unittest.mock
+        from agentmap.models.graph_spec import GraphSpec, NodeSpec
+        
+        # Create a NodeSpec with edge pointing to non-existent node
+        node_spec_with_invalid_edge = Mock(spec=NodeSpec)
+        node_spec_with_invalid_edge.name = 'source_node'
+        node_spec_with_invalid_edge.graph_name = 'test_graph'
+        node_spec_with_invalid_edge.edge = 'nonexistent_target'  # Points to non-existent node
+        node_spec_with_invalid_edge.success_next = None
+        node_spec_with_invalid_edge.failure_next = None
+        
+        mock_graph_spec = Mock(spec=GraphSpec)
+        mock_graph_spec.get_graph_names.return_value = ['test_graph']
+        mock_graph_spec.get_nodes_for_graph.return_value = [node_spec_with_invalid_edge]
+        
+        # Reset side_effect and set return_value
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.side_effect = None
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.return_value = mock_graph_spec
+        
+        # Mock nodes creation but target node doesn't exist in nodes_dict
+        nodes_dict = {'source_node': Mock()}  # Missing 'nonexistent_target'
+        
+        with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value=nodes_dict), \
+             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model'):
+            
+            # Execute and verify ValueError for missing edge target
+            with self.assertRaises(ValueError) as context:
+                self.service.build_from_graph_spec(mock_graph_spec)
+            
+            error_message = str(context.exception)
+            self.assertIn('nonexistent_target', error_message)
+            self.assertIn('not defined as a node', error_message)
+            self.assertIn('test_graph', error_message)
+    
+    def test_build_from_config_not_implemented(self):
+        """Test build_from_config() raises NotImplementedError."""
+        with self.assertRaises(NotImplementedError) as context:
+            self.service.build_from_config({'test': 'config'})
+        
+        self.assertIn('build_from_config not yet implemented', str(context.exception))
+    
+    def test_service_initialization_with_missing_dependencies(self):
+        """Test service handles missing dependencies gracefully."""
+        from agentmap.services.graph_definition_service import GraphDefinitionService
+        
+        # Test missing logging service - will raise AttributeError when trying to call get_class_logger on None
+        with self.assertRaises(AttributeError) as context:
+            GraphDefinitionService(
+                logging_service=None,
+                app_config_service=self.mock_app_config_service,
+                csv_parser=self.mock_csv_parser_service
+            )
+        self.assertIn("'NoneType' object has no attribute 'get_class_logger'", str(context.exception))
+        
+        # Test missing config service - initialization succeeds since config is not used in current implementation
+        service_with_none_config = GraphDefinitionService(
+            logging_service=self.mock_logging_service,
+            app_config_service=None,
+            csv_parser=self.mock_csv_parser_service
+        )
+        # Verify service was created successfully (config is stored but not used)
+        self.assertIsNone(service_with_none_config.config)
+        self.assertIsNotNone(service_with_none_config.logger)
+        self.assertIsNotNone(service_with_none_config.csv_parser)
+        
+        # Test missing CSV parser service - initialization succeeds but methods will fail when parser is used
+        service_with_none_parser = GraphDefinitionService(
+            logging_service=self.mock_logging_service,
+            app_config_service=self.mock_app_config_service,
+            csv_parser=None
+        )
+        # Verify service was created but csv_parser is None
+        self.assertIsNone(service_with_none_parser.csv_parser)
+        
+        # Test that CSV methods fail when csv_parser is None
+        with self.assertRaises(AttributeError) as context:
+            service_with_none_parser.build_from_csv(Path('test.csv'))
+        self.assertIn("'NoneType' object has no attribute", str(context.exception))
+        
+        with self.assertRaises(AttributeError) as context:
+            service_with_none_parser.validate_csv_before_building(Path('test.csv'))
+        self.assertIn("'NoneType' object has no attribute", str(context.exception))
+    
+    def test_service_initialization_with_completely_missing_arguments(self):
+        """Test service handles completely missing arguments (TypeError)."""
+        from agentmap.services.graph_definition_service import GraphDefinitionService
+        
+        # Test with no arguments at all - should raise TypeError for missing required arguments
+        with self.assertRaises(TypeError) as context:
+            GraphDefinitionService()
+        
+        # Should mention missing required positional arguments
+        error_msg = str(context.exception)
+        self.assertTrue(
+            "missing" in error_msg and "required" in error_msg,
+            f"Expected error about missing required arguments, got: {error_msg}"
+        )
+    
+    def test_build_all_from_csv_empty_graphs(self):
+        """Test build_all_from_csv() handles empty GraphSpec."""
+        import unittest.mock
+        from agentmap.models.graph_spec import GraphSpec
+        
+        # Configure mock to return empty spec
+        mock_graph_spec = Mock(spec=GraphSpec)
+        mock_graph_spec.get_graph_names.return_value = []
+        
+        # Reset side_effect and set return_value
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.side_effect = None
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.return_value = mock_graph_spec
+        
+        # Execute test
+        result = self.service.build_all_from_csv(Path('empty.csv'))
+        
+        # Should return empty dictionary for empty GraphSpec
+        self.assertEqual(result, {})
+        
+        # Verify CSV parser was called
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.assert_called_once_with(Path('empty.csv'))
+    
+    def test_build_from_csv_malformed_graph_spec(self):
+        """Test build_from_csv() handles malformed GraphSpec objects."""
+        import unittest.mock
+        
+        # Configure CSV parser to return malformed spec (missing required methods)
+        malformed_spec = Mock()
+        # Deliberately missing get_graph_names method to simulate malformed object
+        malformed_spec.get_graph_names.side_effect = AttributeError('Malformed GraphSpec')
+        
+        # Reset side_effect and set return_value
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.side_effect = None
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.return_value = malformed_spec
+        
+        # Execute and verify AttributeError propagation
+        with self.assertRaises(AttributeError) as context:
+            self.service.build_from_csv(Path('malformed.csv'))
+        
+        self.assertIn('Malformed GraphSpec', str(context.exception))
+    
+    def test_validate_csv_before_building_malformed_validation_result(self):
+        """Test validate_csv_before_building() handles malformed ValidationResult."""
+        # Test scenario 1: errors is None but is_valid is False (so it tries to iterate over None)
+        malformed_result_errors_none = Mock()
+        malformed_result_errors_none.is_valid = False  # This will make it try to iterate over errors
+        malformed_result_errors_none.errors = None  # Should be list, will cause TypeError
+        malformed_result_errors_none.warnings = []
+        
+        # Reset side_effect and set return_value
+        self.mock_csv_parser_service.validate_csv_structure.side_effect = None
+        self.mock_csv_parser_service.validate_csv_structure.return_value = malformed_result_errors_none
+        
+        # Execute and verify it handles None errors list gracefully
+        with self.assertRaises(TypeError):  # Should fail when trying to iterate None
+            self.service.validate_csv_before_building(Path('malformed.csv'))
+        
+        # Test scenario 2: warnings is None (always gets iterated)
+        malformed_result_warnings_none = Mock()
+        malformed_result_warnings_none.is_valid = True  # Valid, so no errors iteration
+        malformed_result_warnings_none.errors = []
+        malformed_result_warnings_none.warnings = None  # Should be list, will cause TypeError
+        
+        # Reset and set new return value
+        self.mock_csv_parser_service.validate_csv_structure.return_value = malformed_result_warnings_none
+        
+        # Execute and verify it handles None warnings list
+        with self.assertRaises(TypeError):  # Should fail when trying to iterate None warnings
+            self.service.validate_csv_before_building(Path('malformed2.csv'))
+    
+    def test_build_from_csv_success_edge_target_not_found(self):
+        """Test ValueError when success_next target node doesn't exist."""
+        import unittest.mock
+        from agentmap.models.graph_spec import GraphSpec, NodeSpec
+        
+        # Create a NodeSpec with success_next pointing to non-existent node
+        node_spec_with_invalid_success = Mock(spec=NodeSpec)
+        node_spec_with_invalid_success.name = 'source_node'
+        node_spec_with_invalid_success.graph_name = 'test_graph'
+        node_spec_with_invalid_success.edge = None
+        node_spec_with_invalid_success.success_next = 'nonexistent_success_target'
+        node_spec_with_invalid_success.failure_next = None
+        
+        mock_graph_spec = Mock(spec=GraphSpec)
+        mock_graph_spec.get_graph_names.return_value = ['test_graph']
+        mock_graph_spec.get_nodes_for_graph.return_value = [node_spec_with_invalid_success]
+        
+        # Reset side_effect and set return_value
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.side_effect = None
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.return_value = mock_graph_spec
+        
+        # Mock nodes creation but success target doesn't exist
+        nodes_dict = {'source_node': Mock()}  # Missing 'nonexistent_success_target'
+        
+        with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value=nodes_dict), \
+             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model'):
+            
+            # Execute and verify ValueError for missing success target
+            with self.assertRaises(ValueError) as context:
+                self.service.build_from_graph_spec(mock_graph_spec)
+            
+            error_message = str(context.exception)
+            self.assertIn('nonexistent_success_target', error_message)
+            self.assertIn('not defined as a node', error_message)
+    
+    def test_build_from_csv_failure_edge_target_not_found(self):
+        """Test ValueError when failure_next target node doesn't exist."""
+        import unittest.mock
+        from agentmap.models.graph_spec import GraphSpec, NodeSpec
+        
+        # Create a NodeSpec with failure_next pointing to non-existent node
+        node_spec_with_invalid_failure = Mock(spec=NodeSpec)
+        node_spec_with_invalid_failure.name = 'source_node'
+        node_spec_with_invalid_failure.graph_name = 'test_graph'
+        node_spec_with_invalid_failure.edge = None
+        node_spec_with_invalid_failure.success_next = None
+        node_spec_with_invalid_failure.failure_next = 'nonexistent_failure_target'
+        
+        mock_graph_spec = Mock(spec=GraphSpec)
+        mock_graph_spec.get_graph_names.return_value = ['test_graph']
+        mock_graph_spec.get_nodes_for_graph.return_value = [node_spec_with_invalid_failure]
+        
+        # Reset side_effect and set return_value
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.side_effect = None
+        self.mock_csv_parser_service.parse_csv_to_graph_spec.return_value = mock_graph_spec
+        
+        # Mock nodes creation but failure target doesn't exist
+        nodes_dict = {'source_node': Mock()}  # Missing 'nonexistent_failure_target'
+        
+        with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value=nodes_dict), \
+             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model'):
+            
+            # Execute and verify ValueError for missing failure target
+            with self.assertRaises(ValueError) as context:
+                self.service.build_from_graph_spec(mock_graph_spec)
+            
+            error_message = str(context.exception)
+            self.assertIn('nonexistent_failure_target', error_message)
+            self.assertIn('not defined as a node', error_message)
 
 
 if __name__ == '__main__':

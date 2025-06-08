@@ -388,33 +388,30 @@ class GraphBuilderService:
         for node in graph.nodes.values():
             target_nodes.update(node.edges.values())
         
-        #set entry point to first node
-        graph.entry_point = next(iter(graph.nodes))
-        # # Find nodes with no incoming edges
-        # I don't know why this would be needed
-        # entry_candidates = []
-        # for node_name in graph.nodes:
-        #     if node_name not in target_nodes:
-        #         entry_candidates.append(node_name)
+        # Find nodes with no incoming edges
+        entry_candidates = []
+        for node_name in graph.nodes:
+            if node_name not in target_nodes:
+                entry_candidates.append(node_name)
         
-        # # Set entry point
-        # if len(entry_candidates) == 1:
-        #     graph.entry_point = entry_candidates[0]
-        #     self.logger.debug(f"Detected entry point: {graph.entry_point}")
-        # elif len(entry_candidates) > 1:
-        #     # Multiple possible entry points - use first alphabetically for consistency
-        #     graph.entry_point = sorted(entry_candidates)[0]
-        #     self.logger.warning(
-        #         f"Multiple entry point candidates: {entry_candidates}. "
-        #         f"Using: {graph.entry_point}"
-        #     )
-        # else:
-        #     # No clear entry point (possibly circular) - use first node
-        #     if graph.nodes:
-        #         graph.entry_point = next(iter(graph.nodes))
-        #         self.logger.warning(
-        #             f"No clear entry point found. Using first node: {graph.entry_point}"
-        #         )
+        # Set entry point
+        if len(entry_candidates) == 1:
+            graph.entry_point = entry_candidates[0]
+            self.logger.debug(f"Detected entry point: {graph.entry_point}")
+        elif len(entry_candidates) > 1:
+            # Multiple possible entry points - use first alphabetically for consistency
+            graph.entry_point = sorted(entry_candidates)[0]
+            self.logger.warning(
+                f"Multiple entry point candidates: {entry_candidates}. "
+                f"Using: {graph.entry_point}"
+            )
+        else:
+            # No clear entry point (possibly circular) - use first node
+            if graph.nodes:
+                graph.entry_point = next(iter(graph.nodes))
+                self.logger.warning(
+                    f"No clear entry point found. Using first node: {graph.entry_point}"
+                )
 
     def _safe_get_csv_field(self, row: Dict, field_name: str, default: str = "") -> str:
         """

@@ -130,12 +130,26 @@ class CompilationService:
             # Prepare node registry
             node_registry = self.node_registry.prepare_for_assembly(graph_def, graph_name)
             
-            # Create compiled graph with registry injection
+            # Create agent instances for each node (CompilationService needs this)
+            for node in graph_def.values():
+                agent_instance = self._create_agent_instance(node, graph_name)
+                # Ensure node.context is a dictionary and add the agent instance
+                if not hasattr(node, 'context') or node.context is None:
+                    node.context = {}
+                elif not isinstance(node.context, dict):
+                    node.context = {"context": node.context}
+                node.context["instance"] = agent_instance
+            
+            # Create fresh compiled graph with registry injection (avoid LangGraph reuse issues)
             compiled_graph = self.assembly_service.assemble_graph(
                 graph_def=graph_def,
                 node_registry=node_registry,
                 enable_logging=True
             )
+            
+            # Check if assembly was successful
+            if compiled_graph is None:
+                raise ValueError(f"Graph assembly failed for '{graph_name}' - assemble_graph returned None")
             
             # Compile graph            
             # Prepare source code            
@@ -151,15 +165,14 @@ class CompilationService:
                 csv_content = f.read()
             
             # Create bundle and save
-            bundle = self.bundle_service.create(
-                compiled_graph, 
-                node_registry, 
-                csv_content,
-                self.logger
+            bundle = self.bundle_service.create_bundle(
+                graph=compiled_graph, 
+                node_registry=node_registry, 
+                csv_content=csv_content
             )
             
             output_path = Path(output_dir) / f"{graph_name}.pkl"
-            bundle.save(output_path)
+            self.bundle_service.save_bundle(bundle, output_path)
             
             # Save source file if requested
             source_path = None
@@ -356,6 +369,42 @@ class CompilationService:
             })()
         
         return old_format
+    
+    def _create_agent_instance(self, node, graph_name: str):
+        """Create agent instance for compilation."""
+        # For compilation, we just need a minimal agent that can be assembled
+        # We'll use DefaultAgent with minimal setup
+        from agentmap.agents.builtins.default_agent import DefaultAgent
+        from agentmap.services.state_adapter_service import StateAdapterService
+        
+        # Create context with input/output field information
+        context = {
+            "input_fields": node.inputs,
+            "output_field": node.output,
+            "description": node.description or ""
+        }
+        
+        # For compilation, create a minimal functional agent using existing services
+        agent_instance = DefaultAgent(
+            name=node.name,
+            prompt=node.prompt or "",
+            logger=self.logger,
+            execution_tracker_service=self._get_execution_tracker(),
+            context=context,
+            state_adapter_service=StateAdapterService()
+        )
+        
+        return agent_instance
+    
+    def _get_execution_tracker(self):
+        """Get an execution tracker for compilation."""
+        # For compilation, create a minimal tracker
+        from agentmap.models.execution_tracker import ExecutionTracker
+        return ExecutionTracker(
+            track_inputs=False,
+            track_outputs=False,
+            minimal_mode=True
+        )
     
     def _is_compilation_current(
         self, 

@@ -5,9 +5,9 @@ storage_config_path: "agentmap_config_storage.yaml"
 
 # Directory paths
 paths:
-  custom_agents: "agentmap/agents/custom"
-  functions: "agentmap/functions"
-  compiled_graphs: "compiled_graphs"
+  custom_agents: "agentmap/custom_agents"
+  functions: "agentmap/custom_functions"
+  compiled_graphs: "agentmap/compiled_graphs"
 
 # Memory configuration
 memory:

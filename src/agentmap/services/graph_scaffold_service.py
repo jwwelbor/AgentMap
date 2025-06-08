@@ -16,6 +16,7 @@ from agentmap.services.prompt_manager_service import PromptManagerService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.function_resolution_service import FunctionResolutionService
+from agentmap.services.agent_registry_service import AgentRegistryService
 
 
 @dataclass
@@ -268,7 +269,8 @@ class GraphScaffoldService:
         app_config_service: AppConfigService,
         logging_service: LoggingService,
         prompt_manager: PromptManagerService,
-        function_resolution_service: FunctionResolutionService
+        function_resolution_service: FunctionResolutionService,
+        agent_registry_service: AgentRegistryService
     ):
         """Initialize service with dependency injection."""
         self.config = app_config_service
@@ -276,6 +278,7 @@ class GraphScaffoldService:
         self.prompt_manager = prompt_manager
         self.service_parser = ServiceRequirementParser()
         self.function_service = function_resolution_service
+        self.agent_registry = agent_registry_service
         self.logger.info("[GraphScaffoldService] Initialized")
     
     def scaffold_agents_from_csv(
@@ -298,8 +301,8 @@ class GraphScaffoldService:
         
         try:
             # Get scaffold paths from app config
-            agents_path = options.output_path or self.config.custom_agents_path
-            functions_path = options.function_path or self.config.functions_path
+            agents_path = options.output_path or self.config.get_custom_agents_path()
+            functions_path = options.function_path or self.config.get_functions_path()
             
             # Create directories if they don't exist
             agents_path.mkdir(parents=True, exist_ok=True)
@@ -434,8 +437,8 @@ class GraphScaffoldService:
             Dictionary with scaffold paths
         """
         return {
-            "agents_path": self.config.custom_agents_path,
-            "functions_path": self.config.functions_path,
+            "agents_path": self.config.get_custom_agents_path(),
+            "functions_path": self.config.get_functions_path(),
             "csv_path": self.config.csv_path
         }
     
@@ -450,9 +453,6 @@ class GraphScaffoldService:
         Returns:
             Dictionary mapping agent types to their information
         """
-        # Import here to avoid circular dependencies
-        from agentmap.agents import get_agent_class
-        
         agent_info: Dict[str, Dict] = {}
         
         with open(csv_path) as f:
@@ -464,7 +464,13 @@ class GraphScaffoldService:
                     
                 # Collect agent information
                 agent_type = row.get("AgentType", "").strip()
-                if agent_type and not get_agent_class(agent_type):
+                
+                # FIXED: Check agent registry to see if agent is already registered
+                # If agent is already in registry (builtin or custom), don't scaffold it
+                if agent_type and not self.agent_registry.has_agent(agent_type):
+                    self.logger.debug(
+                        f"[GraphScaffoldService] Found unregistered agent type '{agent_type}' - will scaffold"
+                    )
                     node_name = row.get("Node", "").strip()
                     context = row.get("Context", "").strip()
                     prompt = row.get("Prompt", "").strip()
@@ -482,6 +488,11 @@ class GraphScaffoldService:
                             "output_field": output_field,
                             "description": description
                         }
+                elif agent_type:
+                    # Agent is already registered, skip scaffolding
+                    self.logger.debug(
+                        f"[GraphScaffoldService] Skipping registered agent type '{agent_type}' - already available"
+                    )
         
         return agent_info
     
@@ -665,6 +676,41 @@ class GraphScaffoldService:
         
         return "\n".join(context_fields)
     
+    def _generate_agent_class_name(self, agent_type: str) -> str:
+        """
+        Generate proper PascalCase class name for agent.
+        
+        Handles cases where agent_type might already be PascalCase (e.g. "TestAgent")
+        and ensures the final class name is properly formatted (e.g. "TestAgentAgent").
+        
+        Args:
+            agent_type: Agent type from CSV (may be any case)
+            
+        Returns:
+            Properly formatted agent class name
+        """
+        # If agent_type already ends with "Agent", preserve the existing casing
+        # and add another "Agent" suffix
+        if agent_type.lower().endswith("agent"):
+            # Extract the base part without "agent" suffix
+            base_part = agent_type[:-5]  # Remove "agent" suffix
+            # Ensure first letter is capitalized, preserve rest of the casing
+            if base_part:
+                base_part = base_part[0].upper() + base_part[1:]
+                return f"{base_part}AgentAgent"
+            else:
+                # Edge case: agent_type is just "agent"
+                return "AgentAgent"
+        else:
+            # agent_type doesn't end with "Agent", so add "Agent" suffix
+            # Preserve existing casing but ensure first letter is capitalized
+            if agent_type:
+                capitalized_type = agent_type[0].upper() + agent_type[1:]
+                return f"{capitalized_type}Agent"
+            else:
+                # Edge case: empty agent_type
+                return "Agent"
+    
     def _prepare_agent_template_variables(
         self, 
         agent_type: str, 
@@ -673,8 +719,8 @@ class GraphScaffoldService:
     ) -> Dict[str, str]:
         """Prepare all template variables for agent formatting."""
         
-        # Basic info
-        class_name = agent_type + "Agent"
+        # Basic info - properly handle PascalCase agent types
+        class_name = self._generate_agent_class_name(agent_type)
         input_fields = ", ".join(info["input_fields"]) if info["input_fields"] else "None specified"
         output_field = info["output_field"] or "None specified"
         
@@ -787,8 +833,8 @@ class GraphScaffoldService:
             "service": "GraphScaffoldService",
             "config_available": self.config is not None,
             "prompt_manager_available": self.prompt_manager is not None,
-            "custom_agents_path": str(self.config.custom_agents_path),
-            "functions_path": str(self.config.functions_path),
+            "custom_agents_path": str(self.config.get_custom_agents_path()),
+            "functions_path": str(self.config.get_functions_path()),
             "csv_path": str(self.config.csv_path),
             "service_parser_available": self.service_parser is not None,
             "supported_services": list(self.service_parser.service_protocol_map.keys()),

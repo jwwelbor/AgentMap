@@ -6,11 +6,15 @@ that delegates to VectorStorageService for the actual implementation.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.vector.base_agent import VectorAgent
 from agentmap.agents.mixins import WriterOperationsMixin
+from agentmap.services.execution_tracking_service import ExecutionTrackingService
+from agentmap.services.state_adapter_service import StateAdapterService
 from agentmap.services.storage import WriteMode
+
 
 class VectorWriterAgent(VectorAgent, WriterOperationsMixin):
     """
@@ -19,18 +23,40 @@ class VectorWriterAgent(VectorAgent, WriterOperationsMixin):
     Delegates all vector operations to the service layer for clean separation of concerns.
     """
     
-    def __init__(self, name: str, prompt: str, context: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, 
+        name: str, 
+        prompt: str, 
+        context: Optional[Dict[str, Any]] = None,
+        # Infrastructure services only
+        logger: Optional[logging.Logger] = None,
+        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        state_adapter_service: Optional[StateAdapterService] = None
+    ):
         """
-        Initialize the vector writer agent.
+        Initialize the vector writer agent with new protocol-based pattern.
         
         Args:
             name: Name of the agent node
             prompt: Prompt or instruction
             context: Additional context including should_persist, input_fields, etc.
+            logger: Logger instance for logging operations
+            execution_tracker: ExecutionTrackingService instance for tracking
+            state_adapter: StateAdapterService instance for state operations
         """
-        super().__init__(name, prompt, context)
+        super().__init__(
+            name=name,
+            prompt=prompt,
+            context=context,
+            logger=logger,
+            execution_tracker_service=execution_tracker_service,
+            state_adapter_service=state_adapter_service
+        )
+        
+        # Extract vector writer-specific configuration
         context = context or {}
         self.should_persist = context.get("should_persist", True)
+        # Override input_fields from base class if needed
         self.input_fields = context.get("input_fields", ["docs"])
     
     def _log_operation_start(self, collection: str, inputs: Dict[str, Any]) -> None:

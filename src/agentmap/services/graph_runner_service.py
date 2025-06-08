@@ -30,6 +30,7 @@ from agentmap.services.storage.manager import StorageServiceManager
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.execution_policy_service import ExecutionPolicyService
 from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.services.agent_factory_service import AgentFactoryService
 from agentmap.services.graph_assembly_service import GraphAssemblyService
 
 
@@ -65,6 +66,7 @@ class GraphRunnerService:
         graph_execution_service: GraphExecutionService,
         compilation_service: CompilationService,
         graph_bundle_service: GraphBundleService,
+        agent_factory_service: AgentFactoryService,
         llm_service: LLMService,
         storage_service_manager: StorageServiceManager,
         node_registry_service: NodeRegistryService,
@@ -83,6 +85,7 @@ class GraphRunnerService:
             graph_execution_service: Service for execution orchestration
             compilation_service: Service for graph compilation
             graph_bundle_service: Service for graph bundle operations
+            agent_factory_service: Service for agent class resolution and validation
             llm_service: Service for LLM operations and injection
             storage_service_manager: Manager for storage service injection
             node_registry_service: Service for node registry management
@@ -99,6 +102,9 @@ class GraphRunnerService:
         self.graph_execution = graph_execution_service
         self.compilation = compilation_service
         self.graph_bundle_service = graph_bundle_service
+        
+        # Agent creation and management
+        self.agent_factory = agent_factory_service
         
         # Supporting services for agent resolution and injection
         self.llm_service = llm_service
@@ -461,7 +467,7 @@ class GraphRunnerService:
         """
         Prepare graph definition with agent instances for execution.
         
-        Converts domain model to execution format and creates agent instances.
+        Works directly with Graph domain model without unnecessary conversion.
         
         Args:
             graph_domain_model: Graph domain model from GraphDefinitionService
@@ -472,57 +478,30 @@ class GraphRunnerService:
         """
         self.logger.debug(f"[GraphRunnerService] Preparing graph definition for execution: {graph_name}")
         
-        # Convert domain model to old format for compatibility
-        graph_def = self._convert_domain_model_to_old_format(graph_domain_model)
+        # Work directly with the domain model nodes
+        graph_nodes = graph_domain_model.nodes
         
-        if not graph_def:
+        if not graph_nodes:
             raise ValueError(f"Invalid or empty graph definition for graph: {graph_name}")
 
         # Prepare node registry
         self.logger.debug(f"[GraphRunnerService] Preparing node registry for: {graph_name}")
-        node_registry = self.node_registry.prepare_for_assembly(graph_def, graph_name)
+        node_registry = self.node_registry.prepare_for_assembly(graph_nodes, graph_name)
 
         # Create and configure agent instances for each node
-        for node in graph_def.values():
-            agent_instance = self._create_agent_instance(node, graph_name)
+        for node_name, node in graph_nodes.items():
+            agent_instance = self._create_agent_instance(node, graph_name, node_registry)
             self._validate_agent_configuration(agent_instance, node)
+            if not node.context:
+                node.context = {}
             node.context["instance"] = agent_instance
 
         self.logger.debug(f"[GraphRunnerService] Graph definition prepared for execution: {graph_name}")
-        return graph_def
+        return graph_nodes
     
-    def _convert_domain_model_to_old_format(self, graph) -> Dict[str, Any]:
+    def _create_agent_instance(self, node, graph_name: str, node_registry: Optional[Dict[str, Dict[str, Any]]] = None):
         """
-        Convert Graph domain model to old format for compatibility.
-        
-        Args:
-            graph: Graph domain model
-            
-        Returns:
-            Dictionary in old GraphBuilder format
-        """
-        old_format = {}
-        
-        for node_name, node in graph.nodes.items():
-            # Convert Node to old format compatible with existing infrastructure
-            old_format[node_name] = type('Node', (), {
-                'name': node.name,
-                'context': node.context,
-                'agent_type': node.agent_type,
-                'inputs': node.inputs,
-                'output': node.output,
-                'prompt': node.prompt,
-                'description': node.description,
-                'edges': node.edges
-            })()
-        
-        return old_format
-    
-    def _create_agent_instance(self, node, graph_name: str):
-        """
-        Create and configure an agent instance for a node.
-        
-        Handles agent class resolution, instantiation, and service injection.
+        Simplified agent creation with protocol-based injection.
         
         Args:
             node: Node definition with agent configuration
@@ -533,7 +512,7 @@ class GraphRunnerService:
         """
         self.logger.debug(f"[GraphRunnerService] Creating agent instance for node: {node.name} (type: {node.agent_type})")
         
-        # Step 1: Resolve agent class
+        # Step 1: Resolve agent class using AgentFactory
         agent_cls = self._resolve_agent_class(node.agent_type)
         
         # Step 2: Create context with input/output field information
@@ -545,74 +524,61 @@ class GraphRunnerService:
         
         self.logger.debug(f"[GraphRunnerService] Instantiating {agent_cls.__name__} as node '{node.name}'")
         
-        # Step 3: Create agent instance
+        # Step 3: Create agent with infrastructure services only
         agent_instance = agent_cls(
-            name=node.name, 
-            prompt=node.prompt or "", 
-            context=context, 
-            logger=self.logger, 
-            execution_tracker=None  # Execution tracking will be provided at runtime
+            name=node.name,
+            prompt=node.prompt or "",
+            logger=self.logger,
+            execution_tracker_service=self.execution_tracking_service.create_tracker(),
+            context=context,
+            state_adapter_service=self.state_adapter_service
         )
         
-        # Step 4: Inject all required services
-        self._inject_services_into_agent(agent_instance, node, graph_name)
+        # Step 4: Configure business services based on protocols
+        self._configure_agent_services(agent_instance)
+        
+        # Step 5: Special handling for OrchestratorAgent - inject node registry
+        if agent_cls.__name__ == 'OrchestratorAgent':
+            self.logger.debug(f"[GraphRunnerService] Injecting node registry for OrchestratorAgent: {node.name}")
+            if node_registry:
+                agent_instance.node_registry = node_registry
+                self.logger.debug(f"[GraphRunnerService] ✅ Node registry injected with {len(node_registry)} nodes")
+            else:
+                self.logger.warning(f"[GraphRunnerService] No node registry available for OrchestratorAgent: {node.name}")
         
         self.logger.debug(f"[GraphRunnerService] ✅ Successfully created and configured agent: {node.name}")
         return agent_instance
     
-    def _inject_services_into_agent(self, agent_instance, node, graph_name: str) -> None:
+    def _configure_agent_services(self, agent: Any) -> None:
         """
-        Inject all required services into an agent instance.
-        
-        Handles LLM service injection, storage service injection, and any other
-        service injection requirements based on agent capabilities.
+        Configure services using clean protocol checking.
         
         Args:
-            agent_instance: Agent instance to inject services into
-            node: Node definition for context
-            graph_name: Name of the graph for logging context
+            agent: Agent instance to configure services for
         """
-        self.logger.debug(f"[GraphRunnerService] Injecting services into agent: {node.name}")
+        from agentmap.services.protocols import (
+            LLMCapableAgent, 
+            StorageCapableAgent, 
+            VectorCapableAgent,
+            DatabaseCapableAgent
+        )
         
-        # Inject LLM service if agent requires it
-        self._inject_llm_service(agent_instance, node.name)
+        if isinstance(agent, LLMCapableAgent):
+            agent.configure_llm_service(self.llm_service)
+            self.logger.debug(f"[GraphRunnerService] ✅ Configured LLM service for {agent.name}")
         
-        # Inject storage services if agent requires them
-        self._inject_storage_services(agent_instance, node.name)
+        if isinstance(agent, StorageCapableAgent):
+            agent.configure_storage_service(self.storage_service_manager)
+            self.logger.debug(f"[GraphRunnerService] ✅ Configured storage service for {agent.name}")
         
-        self.logger.debug(f"[GraphRunnerService] ✅ Service injection complete for agent: {node.name}")
-    
-    def _inject_llm_service(self, agent_instance, node_name: str) -> None:
-        """
-        Inject LLM service if the agent requires it.
-        
-        Args:
-            agent_instance: Agent instance to potentially inject LLM service into
-            node_name: Name of the node for logging
-        """
-        from agentmap.services import LLMServiceUser
-        
-        if isinstance(agent_instance, LLMServiceUser):
-            agent_instance.llm_service = self.llm_service
-            self.logger.debug(f"[GraphRunnerService] ✅ Injected LLM service into {node_name}")
-        else:
-            self.logger.debug(f"[GraphRunnerService] Agent {node_name} does not require LLM service")
-    
-    def _inject_storage_services(self, agent_instance, node_name: str) -> None:
-        """
-        Inject storage services if the agent requires them.
-        
-        Args:
-            agent_instance: Agent instance to potentially inject storage services into
-            node_name: Name of the node for logging
-        """
-        from agentmap.services.storage.injection import inject_storage_services, requires_storage_services
-        
-        if requires_storage_services(agent_instance):
-            inject_storage_services(agent_instance, self.storage_service_manager, self.logger)
-            self.logger.debug(f"[GraphRunnerService] ✅ Injected storage services into {node_name}")
-        else:
-            self.logger.debug(f"[GraphRunnerService] Agent {node_name} does not require storage services")
+        # Future services - ready for when these services are available:
+        # if isinstance(agent, VectorCapableAgent):
+        #     agent.configure_vector_service(self.vector_service)
+        #     self.logger.debug(f"[GraphRunnerService] ✅ Configured vector service for {agent.name}")
+        # 
+        # if isinstance(agent, DatabaseCapableAgent):
+        #     agent.configure_database_service(self.database_service)
+        #     self.logger.debug(f"[GraphRunnerService] ✅ Configured database service for {agent.name}")
     
     def _validate_agent_configuration(self, agent_instance, node) -> None:
         """
@@ -634,36 +600,44 @@ class GraphRunnerService:
         if not hasattr(agent_instance, 'run'):
             raise ValueError(f"Agent {node.name} missing required 'run' method")
         
-        # Validate service injection requirements are met
-        from agentmap.services import LLMServiceUser
-        if isinstance(agent_instance, LLMServiceUser):
-            if not hasattr(agent_instance, 'llm_service') or agent_instance.llm_service is None:
-                raise ValueError(f"LLM agent {node.name} missing required LLM service injection")
+        # Validate service configuration using new protocol pattern
+        from agentmap.services.protocols import LLMCapableAgent, StorageCapableAgent
         
-        from agentmap.services.storage.injection import requires_storage_services
-        if requires_storage_services(agent_instance):
-            # Check that storage services were properly injected
-            # This is a simplified check - full validation would inspect specific services
-            if not hasattr(agent_instance, '_storage_services_injected'):
-                self.logger.warning(f"Storage agent {node.name} may be missing storage service injection")
+        if isinstance(agent_instance, LLMCapableAgent):
+            # Check that LLM service was properly configured
+            try:
+                # This will raise if service not configured
+                _ = agent_instance.llm_service
+                self.logger.debug(f"[GraphRunnerService] LLM service properly configured for {node.name}")
+            except ValueError:
+                raise ValueError(f"LLM agent {node.name} missing required LLM service configuration")
+        
+        if isinstance(agent_instance, StorageCapableAgent):
+            # Check that storage service was properly configured
+            try:
+                # This will raise if service not configured
+                _ = agent_instance.storage_service
+                self.logger.debug(f"[GraphRunnerService] Storage service properly configured for {node.name}")
+            except ValueError:
+                raise ValueError(f"Storage agent {node.name} missing required storage service configuration")
         
         self.logger.debug(f"[GraphRunnerService] ✅ Agent configuration valid for: {node.name}")
     
     def _resolve_agent_class(self, agent_type: str):
         """
-        Resolve agent class by type with fallback to custom agents.
-        
-        Wraps the existing resolve_agent_class functionality while using DependencyCheckerService.
+        Resolve agent class by type using AgentFactory.
         
         Args:
             agent_type: Type of agent to resolve
             
         Returns:
             Agent class
+            
+        Raises:
+            AgentInitializationError: If agent cannot be resolved
         """
         self.logger.debug(f"[GraphRunnerService] Resolving agent class for type: {agent_type}")
         
-        from agentmap.agents import get_agent_class
         from agentmap.exceptions import AgentInitializationError
         
         agent_type_lower = agent_type.lower() if agent_type else ""
@@ -674,77 +648,44 @@ class GraphRunnerService:
             from agentmap.agents.builtins.default_agent import DefaultAgent
             return DefaultAgent
         
-        # Check LLM agent types using DependencyCheckerService
-        if agent_type_lower in ("openai", "anthropic", "google", "gpt", "claude", "gemini", "llm"):
-            # Use dependency checker to validate LLM dependencies
-            has_deps, missing = self.dependency_checker.check_llm_dependencies()
-            
-            if not has_deps:
-                missing_str = ", ".join(missing) if missing else "required dependencies"
-                installation_guide = self.dependency_checker.get_installation_guide("llm", "llm")
-                raise ImportError(
-                    f"LLM agent '{agent_type}' requested but LLM dependencies are not available. "
-                    f"Missing: {missing_str}. Install with: {installation_guide}"
-                )
-            
-            # Handle base LLM case
-            if agent_type_lower == "llm":
-                agent_class = get_agent_class("llm")
-                if agent_class:
-                    return agent_class
-                raise ImportError(
-                    "Base LLM agent requested but not available. "
-                    "Install with: pip install agentmap[llm]"
-                )
-            
-            # Check specific provider using DependencyCheckerService
-            provider = agent_type_lower
-            if provider in ("gpt", "claude", "gemini"):
-                provider = {"gpt": "openai", "claude": "anthropic", "gemini": "google"}[provider]
-            
-            # Validate specific provider
-            has_provider_deps, missing_provider = self.dependency_checker.check_llm_dependencies(provider)
-            
-            if not has_provider_deps:
-                installation_guide = self.dependency_checker.get_installation_guide(provider, "llm")
-                raise ImportError(
-                    f"LLM agent '{agent_type}' requested but dependencies are not available. "
-                    f"Missing: {', '.join(missing_provider)}. Install with: {installation_guide}"
-                )
-            
-            # Get the agent class
-            agent_class = get_agent_class(agent_type)
-            if agent_class:
-                return agent_class
-            
-            raise ImportError(
-                f"LLM agent '{agent_type}' requested. Dependencies are available "
-                f"but agent class could not be loaded. This might be a registration issue."
-            )
-        
-        # Check storage agent types using DependencyCheckerService
-        if agent_type_lower in ("csv_reader", "csv_writer", "json_reader", "json_writer", 
-                                "file_reader", "file_writer", "vector_reader", "vector_writer"):
-            # Use dependency checker to validate storage dependencies
-            has_deps, missing = self.dependency_checker.check_storage_dependencies()
-            
-            if not has_deps:
-                missing_str = ", ".join(missing) if missing else "required dependencies"
-                installation_guide = self.dependency_checker.get_installation_guide("storage", "storage")
-                raise ImportError(
-                    f"Storage agent '{agent_type}' requested but storage dependencies are not installed. "
-                    f"Missing: {missing_str}. Install with: {installation_guide}"
-                )
-        
-        # Get agent class from registry
-        agent_class = get_agent_class(agent_type)
-        if agent_class:
-            self.logger.debug(f"[GraphRunnerService] Using built-in agent class: {agent_class.__name__}")
+        try:
+            # Use AgentFactory for resolution with full dependency validation
+            agent_class = self.agent_factory.resolve_agent_class(agent_type)
+            self.logger.debug(f"[GraphRunnerService] Successfully resolved {agent_type} to {agent_class.__name__}")
             return agent_class
+            
+        except ValueError as e:
+            # AgentFactory handles all dependency checking, so we just need to handle resolution failures
+            self.logger.error(f"[GraphRunnerService] Failed to resolve agent '{agent_type}': {e}")
+            
+            # Try to load custom agent as fallback
+            try:
+                custom_agent_class = self._try_load_custom_agent(agent_type)
+                if custom_agent_class:
+                    self.logger.debug(f"[GraphRunnerService] Resolved to custom agent: {custom_agent_class.__name__}")
+                    return custom_agent_class
+            except Exception as custom_error:
+                self.logger.debug(f"[GraphRunnerService] Custom agent fallback failed: {custom_error}")
+            
+            # Final fallback - raise the original error from AgentFactory
+            raise AgentInitializationError(f"Cannot resolve agent type '{agent_type}': {str(e)}")
+    
+    def _try_load_custom_agent(self, agent_type: str):
+        """
+        Try to load a custom agent as fallback.
         
+        Args:
+            agent_type: Type of agent to load
+            
+        Returns:
+            Agent class or None if not found
+            
+        Raises:
+            ImportError: If custom agent loading fails
+        """
         # Try to load from custom agents path
         custom_agents_path = self.config.get_custom_agents_path()
-        self.logger.debug(f"[GraphRunnerService] Custom agents path: {custom_agents_path}")
+        self.logger.debug(f"[GraphRunnerService] Trying custom agent path: {custom_agents_path}")
         
         # Add custom agents path to sys.path if not already present
         import sys
@@ -753,25 +694,18 @@ class GraphRunnerService:
             sys.path.insert(0, custom_agents_path_str)
         
         # Try to import the custom agent
-        try:
-            modname = f"{agent_type.lower()}_agent"
-            classname = f"{agent_type}Agent"
-            module = __import__(modname, fromlist=[classname])
-            self.logger.debug(f"[GraphRunnerService] Imported custom agent module: {modname}")
-            self.logger.debug(f"[GraphRunnerService] Using custom agent class: {classname}")
-            agent_class = getattr(module, classname)
-            return agent_class
-        
-        except (ImportError, AttributeError) as e:
-            error_message = f"[GraphRunnerService] Failed to import custom agent '{agent_type}': {e}"
-            self.logger.error(error_message)
-            raise AgentInitializationError(error_message)
+        modname = f"{agent_type.lower()}_agent"
+        classname = f"{agent_type}Agent"
+        module = __import__(modname, fromlist=[classname])
+        self.logger.debug(f"[GraphRunnerService] Imported custom agent module: {modname}")
+        agent_class = getattr(module, classname)
+        return agent_class
     
     def get_agent_resolution_status(self, graph_def: Dict[str, Any]) -> Dict[str, Any]:
         """
         Get comprehensive status of agent resolution for a graph definition.
         
-        Uses protocol-based detection for accurate capability assessment.
+        Uses AgentFactory for accurate capability assessment.
         
         Args:
             graph_def: Graph definition to analyze
@@ -796,22 +730,8 @@ class GraphRunnerService:
         for node_name, node in graph_def.items():
             agent_type = node.agent_type or "Default"
             
-            # Get detailed info about this agent type using existing resolution logic
-            try:
-                agent_class = self._resolve_agent_class(agent_type)
-                agent_info = {
-                    "agent_type": agent_type,
-                    "agent_class": agent_class,
-                    "dependencies_available": True,
-                    "missing_dependencies": []
-                }
-            except Exception as e:
-                agent_info = {
-                    "agent_type": agent_type,
-                    "agent_class": None,
-                    "dependencies_available": False,
-                    "missing_dependencies": [str(e)]
-                }
+            # Get detailed info using AgentFactory
+            agent_info = self.agent_factory.get_agent_resolution_context(agent_type)
             
             # Track agent type usage
             if agent_type not in status["agent_types"]:
@@ -825,7 +745,7 @@ class GraphRunnerService:
             status["agent_types"][agent_type]["nodes"].append(node_name)
             
             # Update summary counts
-            if agent_info["dependencies_available"]:
+            if agent_info["resolvable"]:
                 status["resolution_summary"]["resolvable"] += 1
             else:
                 status["resolution_summary"]["missing_dependencies"] += 1
@@ -833,7 +753,8 @@ class GraphRunnerService:
                     "node": node_name,
                     "agent_type": agent_type,
                     "issue": "missing_dependencies",
-                    "missing_deps": agent_info["missing_dependencies"]
+                    "missing_deps": agent_info.get("missing_dependencies", []),
+                    "resolution_error": agent_info.get("resolution_error")
                 })
         
         # Add overall status
@@ -863,6 +784,7 @@ class GraphRunnerService:
                 "graph_bundle_service_available": self.graph_bundle_service is not None,
             },
             "supporting_services": {
+                "agent_factory_available": self.agent_factory is not None,
                 "llm_service_available": self.llm_service is not None,
                 "storage_service_manager_available": self.storage_service_manager is not None,
                 "node_registry_available": self.node_registry is not None,
@@ -880,6 +802,7 @@ class GraphRunnerService:
                 self.graph_execution is not None,
                 self.compilation is not None,
                 self.graph_bundle_service is not None,
+                self.agent_factory is not None,
                 self.llm_service is not None,
                 self.storage_service_manager is not None,
                 self.node_registry is not None,
@@ -907,7 +830,9 @@ class GraphRunnerService:
                 "run_from_compiled -> GraphExecutionService.execute_compiled_graph",
                 "run_from_csv_direct -> GraphDefinitionService + GraphExecutionService",
                 "compilation -> CompilationService",
-                "graph_loading -> GraphDefinitionService"
+                "graph_loading -> GraphDefinitionService",
+                "agent_resolution -> AgentFactoryService.resolve_agent_class",
+                "service_injection -> protocol-based in _configure_agent_services"
             ],
             "complexity_reduction": {
                 "execution_logic_extracted": True,
@@ -930,6 +855,8 @@ class GraphRunnerService:
                 missing_deps.append("graph_execution_service")
             if not self.compilation:
                 missing_deps.append("compilation_service")
+            if not self.agent_factory:
+                missing_deps.append("agent_factory_service")
             # ... additional dependency checks as needed
             
             self.logger.warning(f"[GraphRunnerService] Missing dependencies: {missing_deps}")
