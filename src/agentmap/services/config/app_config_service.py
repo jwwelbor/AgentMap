@@ -107,15 +107,15 @@ class AppConfigService:
     # Path accessors 
     def get_custom_agents_path(self) -> Path:
         """Get the path for custom agents."""
-        return Path(self.get_value("paths.custom_agents", "agentmap/agents/custom"))
+        return Path(self.get_value("paths.custom_agents", "agentmap/custom_agents"))
 
     def get_functions_path(self) -> Path:
         """Get the path for functions."""
-        return Path(self.get_value("paths.functions", "agentmap/functions"))
+        return Path(self.get_value("paths.functions", "agentmap/custom_functions"))
 
     def get_compiled_graphs_path(self) -> Path:
         """Get the path for compiled graphs."""
-        return Path(self.get_value("paths.compiled_graphs", "compiled_graphs"))
+        return Path(self.get_value("paths.compiled_graphs", "agentmap/compiled_graphs"))
 
     def get_csv_path(self) -> Path:
         """Get the path for the workflow CSV file."""
@@ -133,8 +133,55 @@ class AppConfigService:
 
     # Routing accessors 
     def get_routing_config(self) -> Dict[str, Any]:
-        """Get the logging configuration."""
-        return self.get_section("routing", {})
+        """Get the routing configuration with default values."""
+        routing_config = self.get_section("routing", {})
+        
+        # Default routing configuration
+        defaults = {
+            "enabled": True,
+            "complexity_analysis": {
+                "prompt_length_thresholds": {
+                    "low": 100,
+                    "medium": 300,
+                    "high": 800
+                },
+                "methods": {
+                    "prompt_length": True,
+                    "keyword_analysis": True,
+                    "context_analysis": True,
+                    "memory_analysis": True,
+                    "structure_analysis": True
+                },
+                "keyword_weights": {
+                    "complexity_keywords": 0.4,
+                    "task_specific_keywords": 0.3,
+                    "prompt_structure": 0.3
+                },
+                "context_analysis": {
+                    "memory_size_threshold": 10,
+                    "input_field_count_threshold": 5
+                }
+            },
+            "task_types": {
+                "general": {
+                    "description": "General purpose tasks",
+                    "provider_preference": ["anthropic", "openai", "google"],
+                    "default_complexity": "medium",
+                    "complexity_keywords": {
+                        "high": ["analyze", "complex", "detailed", "comprehensive"],
+                        "critical": ["urgent", "critical", "important", "decision"]
+                    }
+                }
+            },
+            "fallback": {
+                "default_provider": "anthropic",
+                "default_model": "claude-3-haiku-20240307",
+                "retry_with_lower_complexity": True
+            }
+        }
+        
+        # Merge with defaults
+        return self._merge_with_defaults(routing_config, defaults)
 
     # Prompts accessors 
     def get_prompts_config(self) -> Dict[str, Any]:
@@ -257,3 +304,14 @@ class AppConfigService:
             "llm_providers": list(self._config_data.get("llm", {}).keys()),
             "has_storage_config": "storage_config_path" in self._config_data
         }
+    
+    def get_all(self) -> Dict[str, Any]:
+        """
+        Get all configuration data.
+        
+        Returns:
+            Complete configuration dictionary
+        """
+        if self._config_data is None:
+            raise ConfigurationException("Configuration not loaded")
+        return self._config_data.copy()

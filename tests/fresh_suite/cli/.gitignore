@@ -1,0 +1,12 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test artifacts
+.pytest_cache/
+.coverage
+
+# Temporary files
+*.tmp
+temp_*

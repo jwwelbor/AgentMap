@@ -21,8 +21,35 @@ class ValidationError(BaseModel):
     value: Optional[str] = None
     suggestion: Optional[str] = None
     
+    def __init__(self, **data):
+        # Handle case where level is passed as a string
+        if 'level' in data and isinstance(data['level'], str):
+            try:
+                data['level'] = ValidationLevel(data['level'])
+            except ValueError:
+                # If string doesn't match enum values, try to find matching enum
+                level_str = data['level'].lower()
+                for enum_val in ValidationLevel:
+                    if enum_val.value == level_str:
+                        data['level'] = enum_val
+                        break
+                else:
+                    # Default to ERROR if no match found
+                    data['level'] = ValidationLevel.ERROR
+        super().__init__(**data)
+    
+    class Config:
+        """Pydantic configuration for proper enum serialization."""
+        use_enum_values = True  # Serialize enums by their values
+    
     def __str__(self) -> str:
-        parts = [f"[{self.level.value.upper()}]"]
+        # Handle case where level might be a string instead of enum
+        if isinstance(self.level, str):
+            level_str = self.level.upper()
+        else:
+            level_str = self.level.value.upper()
+        
+        parts = [f"[{level_str}]"]
         
         if self.line_number:
             parts.append(f"Line {self.line_number}")
@@ -51,6 +78,13 @@ class ValidationResult(BaseModel):
     info: List[ValidationError] = Field(default_factory=list)
     file_hash: Optional[str] = None
     validation_time: datetime = Field(default_factory=datetime.now)
+    
+    class Config:
+        """Pydantic configuration for proper serialization."""
+        use_enum_values = True  # Serialize enums by their values
+        json_encoders = {
+            datetime: lambda v: v.isoformat()  # Ensure datetime is properly serialized
+        }
     
     def add_error(self, message: str, line_number: Optional[int] = None, field_name: Optional[str] = None, value: Optional[str] = None, suggestion: Optional[str] = None):
         """Add an error to the validation result."""

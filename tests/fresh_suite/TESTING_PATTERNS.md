@@ -704,6 +704,201 @@ class TestServiceIntegration(unittest.TestCase):
 
 ---
 
+## 13. CLI Testing Patterns
+
+### 13.1 CLI Test Suite Overview
+
+The CLI test suite provides comprehensive testing for all AgentMap CLI commands using `typer.testing.CliRunner` and established mock patterns.
+
+**Test Structure:**
+```
+tests/fresh_suite/cli/
+├── base_cli_test.py              # Base classes and utilities
+├── test_main_workflow_commands.py # run, compile, scaffold, export
+├── test_validation_commands.py    # validate-csv, validate-config, validate-all
+├── test_diagnostic_commands.py    # diagnose, config, validate-cache
+├── test_cli_integration.py        # Cross-command workflows
+├── test_cli_error_handling.py     # Error handling and edge cases
+└── cli_test_runner.py             # Test runner with categories
+```
+
+### 13.2 CLI Test Base Class Pattern
+
+```python
+from tests.fresh_suite.cli.base_cli_test import BaseCLITest
+from typer.testing import CliRunner
+from agentmap.core.cli.main_cli import app
+
+class TestMyCommand(BaseCLITest):
+    """Test CLI command using established patterns."""
+    
+    def test_command_success(self):
+        """Test successful command execution."""
+        # Create test files
+        csv_file = self.create_test_csv_file()
+        
+        # Create mock container
+        mock_container = self.create_mock_container()
+        
+        # Execute CLI command with mocked services
+        with self.patch_container_creation(mock_container):
+            result = self.run_cli_command(["my-command", "--option", "value"])
+        
+        # Verify success
+        self.assert_cli_success(result, ["✅", "Success message"])
+        
+        # Verify service delegation
+        self.assert_service_called(self.mock_service, "method_name")
+```
+
+### 13.3 CLI Service Integration Testing
+
+```python
+def test_cli_service_integration(self):
+    """Test CLI command properly integrates with services."""
+    csv_file = self.create_test_csv_file()
+    
+    # Configure service behavior
+    mock_result = Mock(success=True, data="output")
+    self.mock_graph_runner_service.run_graph.return_value = mock_result
+    
+    mock_container = self.create_mock_container()
+    mock_adapter = self.create_adapter_mock()
+    
+    # Execute with proper service mocking
+    with self.patch_container_creation(mock_container), \
+         patch('agentmap.core.cli.run_commands.create_service_adapter', return_value=mock_adapter):
+        
+        result = self.run_cli_command(["run", "--graph", "test_graph"])
+    
+    # Verify proper delegation chain
+    self.assert_cli_success(result)
+    mock_adapter.initialize_services.assert_called_once()
+    self.mock_graph_runner_service.run_graph.assert_called_once()
+```
+
+### 13.4 CLI Error Handling Testing
+
+```python
+def test_cli_error_handling(self):
+    """Test CLI graceful error handling."""
+    # Configure service to fail
+    self.configure_service_failure(
+        self.mock_validation_service,
+        "validate_csv",
+        "Validation error"
+    )
+    
+    mock_container = self.create_mock_container()
+    
+    with self.patch_container_creation(mock_container):
+        result = self.run_cli_command(["validate-csv", "--csv", "test.csv"])
+    
+    # Verify graceful failure
+    self.assert_cli_failure(result, expected_error_contains=["❌", "Validation error"])
+    
+    # Ensure no stack traces in user output
+    self.assertNotIn("Traceback", result.stdout)
+```
+
+### 13.5 CLI Workflow Integration Testing
+
+```python
+def test_complete_cli_workflow(self):
+    """Test end-to-end CLI workflow."""
+    csv_file = self.create_test_csv_file()
+    mock_container = self.create_mock_container()
+    
+    # Step 1: Validate
+    with self.patch_container_creation(mock_container):
+        validate_result = self.run_cli_command(["validate-csv", "--csv", str(csv_file)])
+    self.assert_cli_success(validate_result)
+    
+    # Step 2: Compile
+    with self.patch_container_creation(mock_container):
+        compile_result = self.run_cli_command(["compile", "--graph", "test_graph"])
+    self.assert_cli_success(compile_result)
+    
+    # Step 3: Run
+    mock_adapter = self.create_adapter_mock()
+    with self.patch_container_creation(mock_container), \
+         patch('agentmap.core.cli.run_commands.create_service_adapter', return_value=mock_adapter):
+        run_result = self.run_cli_command(["run", "--graph", "test_graph"])
+    self.assert_cli_success(run_result)
+    
+    # Verify complete workflow executed
+    self.mock_validation_service.validate_csv.assert_called()
+    self.mock_graph_compilation_service.compile_graph.assert_called()
+    self.mock_graph_runner_service.run_graph.assert_called()
+```
+
+### 13.6 CLI Test Utilities and Helpers
+
+```python
+# Available utility methods from BaseCLITest:
+
+# File creation
+csv_file = self.create_test_csv_file("custom.csv", custom_content)
+config_file = self.create_test_config_file("config.yaml", config_data)
+
+# Command execution
+result = self.run_cli_command(["command", "--option", "value"])
+
+# Assertions
+self.assert_cli_success(result, ["expected", "strings"])
+self.assert_cli_failure(result, expected_exit_code=1)
+self.assert_service_called(mock_service, "method", call_count=2)
+self.assert_output_contains_success_marker(result.stdout)
+
+# Container and adapter mocking
+mock_container = self.create_mock_container()
+mock_adapter = self.create_adapter_mock()
+with self.patch_container_creation(mock_container):
+    # CLI commands use mocked services
+```
+
+### 13.7 CLI Test Categories
+
+**Run CLI tests by category:**
+```bash
+# All CLI tests
+python -m pytest tests/fresh_suite/cli/ -v
+
+# Specific categories
+python tests/fresh_suite/cli/cli_test_runner.py workflow
+python tests/fresh_suite/cli/cli_test_runner.py validation  
+python tests/fresh_suite/cli/cli_test_runner.py integration
+python tests/fresh_suite/cli/cli_test_runner.py error
+```
+
+**Coverage Areas:**
+- ✅ All 10+ CLI commands (run, compile, scaffold, export, validate-*, diagnose, config, cache)
+- ✅ Success and failure scenarios for each command
+- ✅ Option parsing and argument validation
+- ✅ File system operations and error handling
+- ✅ Service integration and proper delegation
+- ✅ Cross-command workflows and data consistency
+- ✅ User experience and output formatting
+- ✅ Error recovery and graceful degradation
+
+### 13.8 CLI Testing Best Practices
+
+1. **Use BaseCLITest**: Always inherit from `BaseCLITest` for consistent patterns
+2. **Mock Services, Not CLI**: Mock the underlying services, not the CLI framework
+3. **Test User Experience**: Verify output formatting, error messages, and exit codes
+4. **Real File Operations**: Use real temporary files for realistic testing
+5. **Service Integration**: Test that CLI properly delegates to services
+6. **Error Scenarios**: Test graceful handling of various error conditions
+7. **Workflow Testing**: Test complete multi-command workflows
+
+**Key Pattern**: CLI tests focus on the integration between the CLI interface and the service layer, ensuring commands properly delegate to services and provide good user experience.
+
+---
+
+*This guide represents the established patterns for AgentMap's fresh test suite. Follow these patterns for consistency and maintainability across all service and CLI tests.*
+
+---
+
 ## 12. Path and File System Mocking Patterns
 
 ### 12.1 Path.exists() Mocking (CRITICAL)

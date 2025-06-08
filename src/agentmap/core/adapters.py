@@ -88,10 +88,10 @@ class ServiceAdapter:
             "final_state": result.final_state,
             "success": result.success,
             "error": result.error,
-            "execution_time": result.execution_time,
+            "execution_time": result.total_duration,
             "metadata": {
                 "graph_name": result.graph_name,
-                "source_info": result.source_info,
+                "source_info": getattr(result, 'source_info', result.compiled_from),
                 "execution_summary": result.execution_summary
             }
         }

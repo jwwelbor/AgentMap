@@ -3,6 +3,9 @@ JSON document storage agents for AgentMap.
 
 This module provides agents for reading from and writing to JSON files,
 with support for local files and cloud storage providers.
+
+Agent registration is handled by ApplicationBootstrapService during application
+bootstrap, not at import time. This provides clean separation of concerns.
 """
 
 from agentmap.agents.builtins.storage.json.base_agent import JSONDocumentAgent
@@ -31,23 +34,6 @@ from agentmap.agents.builtins.storage.json.writer import JSONDocumentWriterAgent
 #     _utils_available = True
 # except ImportError:
 #     _utils_available = False
-
-# Register agents with the registry when available
-try:
-    from agentmap.agents.registry import register_agent
-    
-    # Register the JSON agents
-    register_agent("json_reader", JSONDocumentReaderAgent)
-    register_agent("json_writer", JSONDocumentWriterAgent)
-    
-    # # Register cloud JSON agents if available
-    # if _json_cloud_available:
-    #     register_agent("json_cloudreader", JSONCloudDocumentReaderAgent)
-    #     register_agent("json_cloud_writer", JSONCloudDocumentWriterAgent)
-    
-    _registry_available = True
-except ImportError:
-    _registry_available = False
 
 __all__ = [
     'JSONDocumentAgent',

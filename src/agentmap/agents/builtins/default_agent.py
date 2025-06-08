@@ -1,18 +1,54 @@
-# agentmap/agents/builtins/default_agent.py
-from agentmap.agents.base_agent import BaseAgent
+"""
+Default agent implementation using the modernized protocol-based pattern.
+"""
 import uuid
 import logging
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional
 
-from agentmap.models.execution_tracker import ExecutionTracker
+from agentmap.agents.base_agent import BaseAgent
+from agentmap.services.execution_tracking_service import ExecutionTrackingService
+from agentmap.services.state_adapter_service import StateAdapterService
 
 
 class DefaultAgent(BaseAgent):
-    """Default agent implementation that simply logs its execution."""
+    """
+    Default agent that simply logs execution and returns basic information.
+    
+    Demonstrates the modernized protocol-based pattern where:
+    - Infrastructure services are injected via constructor
+    - No business services needed, so no protocol implementation required
+    """
 
-    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: dict = None):
-        """Initialize the default agent with the required dependencies."""
-        super().__init__(name, prompt, context, logger=logger, execution_tracker=execution_tracker)
+    def __init__(
+        self, 
+        name: str, 
+        prompt: str, 
+        context: Optional[Dict[str, Any]] = None,
+        # Infrastructure services only
+        logger: Optional[logging.Logger] = None,
+        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        state_adapter_service: Optional[StateAdapterService] = None
+    ):
+        """
+        Initialize default agent with new protocol-based pattern.
+        
+        Args:
+            name: Name of the agent node
+            prompt: Prompt or instruction
+            context: Additional context including input/output configuration
+            logger: Logger instance for logging operations
+            execution_tracker: ExecutionTrackingService instance for tracking
+            state_adapter: StateAdapterService instance for state operations
+        """
+        # Call new BaseAgent constructor (infrastructure services only)
+        super().__init__(
+            name=name,
+            prompt=prompt,
+            context=context,
+            logger=logger,
+            execution_tracker_service=execution_tracker_service,
+            state_adapter_service=state_adapter_service
+        )
 
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
@@ -27,7 +63,7 @@ class DefaultAgent(BaseAgent):
         # Generate unique process ID
         process_id = str(uuid.uuid4())[:8]
 
-        print(f"DefaultAgent.process [{process_id}] START with inputs: {inputs}")
+        self.log_debug(f"DefaultAgent.process [{process_id}] START with inputs: {inputs}")
 
         # Return a message that includes the prompt
         base_message = f"[{self.name}] DefaultAgent executed"
@@ -38,6 +74,6 @@ class DefaultAgent(BaseAgent):
         # Log with process ID
         self.log_info(f"[{self.name}] [{process_id}] output: {base_message}")
 
-        print(f"DefaultAgent.process [{process_id}] COMPLETE")
+        self.log_debug(f"DefaultAgent.process [{process_id}] COMPLETE")
 
         return base_message

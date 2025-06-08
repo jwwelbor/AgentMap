@@ -50,7 +50,11 @@ def validate_csv_cmd(
             raise typer.Exit(code=0)
         else:
             typer.secho("\n✅ CSV validation passed!", fg=typer.colors.GREEN)
+            # Typer will automatically exit with code 0
             
+    except typer.Exit:
+        # Re-raise typer.Exit exceptions (these are intentional exits)
+        raise
     except Exception as e:
         typer.secho(f"❌ Validation failed: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
@@ -89,7 +93,11 @@ def validate_config_cmd(
             raise typer.Exit(code=0)
         else:
             typer.secho("\n✅ Config validation passed!", fg=typer.colors.GREEN)
+            # Typer will automatically exit with code 0
             
+    except typer.Exit:
+        # Re-raise typer.Exit exceptions (these are intentional exits)
+        raise
     except Exception as e:
         typer.secho(f"❌ Validation failed: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
@@ -152,7 +160,11 @@ def validate_all_cmd(
             raise typer.Exit(code=0)
         else:
             typer.secho("\n✅ All validation passed!", fg=typer.colors.GREEN)
+            # Typer will automatically exit with code 0
             
+    except typer.Exit:
+        # Re-raise typer.Exit exceptions (these are intentional exits)
+        raise
     except Exception as e:
         typer.secho(f"❌ Validation failed: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)

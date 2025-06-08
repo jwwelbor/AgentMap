@@ -1,5 +1,5 @@
 """
-Base storage agent implementation.
+Base storage agent implementation using modernized protocol-based pattern.
 
 This module provides the foundation for all storage agents in AgentMap,
 with utilities for accessing data stores and handling operations.
@@ -11,7 +11,9 @@ import logging
 from typing import Any, Callable, Dict, Optional, TypeVar, cast
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.logging.tracking.execution_tracker import ExecutionTracker
+from agentmap.services.execution_tracking_service import ExecutionTrackingService
+from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.services.protocols import StorageServiceProtocol, StorageCapableAgent
 from agentmap.services.storage import DocumentResult, WriteMode
 
 
@@ -42,28 +44,66 @@ def log_operation(func: F) -> F:
     return cast(F, wrapper)
 
 
-class BaseStorageAgent(BaseAgent):
+class BaseStorageAgent(BaseAgent, StorageCapableAgent):
     """
     Base class for all storage agents in AgentMap.
+    
+    Follows the modernized protocol-based pattern where:
+    - Infrastructure services are injected via constructor
+    - Business services (Storage) are configured post-construction via protocols
+    - Implements StorageCapableAgent protocol for service configuration
     
     This abstract class defines the contract that all storage
     implementations must follow, with common utilities for
     error handling and connection management.
     """
     
-    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, 
+        name: str, 
+        prompt: str, 
+        context: Optional[Dict[str, Any]] = None,
+        # Infrastructure services only
+        logger: Optional[logging.Logger] = None,
+        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        state_adapter_service: Optional[StateAdapterService] = None
+    ):
         """
-        Initialize the storage agent.
+        Initialize storage agent with new protocol-based pattern.
         
         Args:
             name: Name of the agent node
             prompt: Prompt or instruction
+            context: Additional context including input/output configuration
             logger: Logger instance for logging operations
-            execution_tracker: ExecutionTracker instance for tracking
-            context: Additional context including input/output field configuration
+            execution_tracker: ExecutionTrackingService instance for tracking
+            state_adapter: StateAdapterService instance for state operations
         """
-        super().__init__(name, prompt, context or {}, logger=logger, execution_tracker=execution_tracker)
+        # Call new BaseAgent constructor (infrastructure services only)
+        super().__init__(
+            name=name,
+            prompt=prompt,
+            context=context,
+            logger=logger,
+            execution_tracker_service=execution_tracker_service,
+            state_adapter_service=state_adapter_service
+        )
+        
+        # Storage-specific initialization
         self._client: Any = None
+    
+    # Protocol Implementation (Required by StorageCapableAgent)
+    def configure_storage_service(self, storage_service: StorageServiceProtocol) -> None:
+        """
+        Configure storage service for this agent.
+        
+        This method is called by GraphRunnerService during agent setup.
+        
+        Args:
+            storage_service: Storage service instance to configure
+        """
+        self._storage_service = storage_service
+        self.log_debug("Storage service configured")
     
     @property
     def client(self) -> Any:

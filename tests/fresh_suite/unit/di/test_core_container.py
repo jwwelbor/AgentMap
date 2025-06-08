@@ -53,6 +53,7 @@ class TestDIContainerCore(unittest.TestCase):
         csv_data_path_str = f"{self.temp_dir}/csv_data".replace('\\', '/')
         
         config_content = f"""logging:
+  version: 1
   level: DEBUG
   format: "[%(levelname)s] %(name)s: %(message)s"
 

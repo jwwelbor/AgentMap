@@ -1,16 +1,54 @@
-from agentmap.agents.base_agent import BaseAgent
+"""
+Modernized Echo Agent demonstrating the new protocol-based pattern.
+"""
 import logging
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional
 
-from agentmap.models.execution_tracker import ExecutionTracker
+from agentmap.agents.base_agent import BaseAgent
+from agentmap.services.execution_tracking_service import ExecutionTrackingService
+from agentmap.services.state_adapter_service import StateAdapterService
 
 
 class EchoAgent(BaseAgent):
-    """Echo agent that simply returns input data unchanged."""
+    """
+    Echo agent that simply returns input data unchanged.
     
-    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: dict = None):
-        """Initialize the echo agent with the required dependencies."""
-        super().__init__(name, prompt, context, logger=logger, execution_tracker=execution_tracker)
+    Demonstrates the modernized protocol-based pattern where:
+    - Infrastructure services are injected via constructor
+    - Business services are configured post-construction via protocols
+    - EchoAgent needs no business services, so implements no protocols
+    """
+    
+    def __init__(
+        self, 
+        name: str, 
+        prompt: str,
+        context: Optional[Dict[str, Any]] = None,
+        # Infrastructure services only
+        logger: Optional[logging.Logger] = None,
+        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        state_adapter_service: Optional[StateAdapterService] = None
+    ):
+        """
+        Initialize echo agent with new protocol-based pattern.
+        
+        Args:
+            name: Name of the agent node
+            prompt: Prompt or instruction
+            context: Additional context including input/output configuration
+            logger: Logger instance for logging operations
+            execution_tracker: ExecutionTrackingService instance for tracking
+            state_adapter: StateAdapterService instance for state operations
+        """
+        # Call new BaseAgent constructor (infrastructure services only)
+        super().__init__(
+            name=name,
+            prompt=prompt, 
+            context=context,
+            logger=logger,
+            execution_tracker_service=execution_tracker_service,
+            state_adapter_service=state_adapter_service
+        )
     
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
@@ -24,11 +62,14 @@ class EchoAgent(BaseAgent):
         """
         self.log_info(f"received inputs: {inputs} and prompt: '{self.prompt}'")
         
-        # If there are inputs, return the first one
+        # If there are inputs, return the first input value
         if inputs:
-            # Return all inputs as a dictionary to maintain structure
-            return inputs
+            # For multiple inputs, return all as a dictionary to maintain structure
+            if len(inputs) > 1:
+                return inputs
+            # For single input, return just the value
+            else:
+                return next(iter(inputs.values()))
         
         # Default return if no inputs
         return "No input provided to echo"
-    

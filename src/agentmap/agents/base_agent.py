@@ -1,5 +1,8 @@
 """
-Base agent class for all AgentMap agents.
+Modernized Base agent class for all AgentMap agents.
+
+Updated to use protocol-based dependency injection following clean architecture patterns.
+Infrastructure services are injected via constructor, business services via post-construction configuration.
 """
 import time
 import uuid
@@ -7,64 +10,127 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import logging
 from agentmap.services.state_adapter_service import StateAdapterService
-from agentmap.models.execution_tracker import ExecutionTracker
+from agentmap.services.execution_tracking_service import ExecutionTrackingService
+from agentmap.services.protocols import (
+    LLMServiceProtocol,
+    StorageServiceProtocol,
+    StateAdapterServiceProtocol,
+    ExecutionTrackingServiceProtocol,
+    LLMCapableAgent,
+    StorageCapableAgent
+)
+
 
 class BaseAgent:
-    """Base class for all agents in AgentMap."""
+    """
+    Modernized base class for all agents in AgentMap.
+    
+    Uses protocol-based dependency injection for clean service management.
+    Infrastructure services are injected via constructor, business services
+    are configured post-construction via configure_*_service() methods.
+    """
     
     def __init__(
         self, 
         name: str, 
         prompt: str, 
-        context: dict = None,
+        context: Optional[Dict[str, Any]] = None,
+        # Infrastructure services only
         logger: Optional[logging.Logger] = None,
-        execution_tracker: Optional[ExecutionTracker] = None
+        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        state_adapter_service: Optional[StateAdapterService] = None
     ):
         """
-        Initialize the agent.
+        Initialize the agent with infrastructure dependency injection.
+        
+        Business services (LLM, storage) are configured post-construction
+        via configure_*_service() methods using protocol-based injection.
         
         Args:
             name: Name of the agent node
-            prompt: Prompt or instruction for LLM-based agents
-            context: Additional context including configuration
+            prompt: Prompt or instruction for the agent
+            context: Additional context including input/output configuration
             logger: Logger instance (required for proper operation)
-            execution_tracker: ExecutionTracker instance (required for proper operation)
+            execution_tracker: ExecutionTrackingService instance (required for proper operation)
+            state_adapter: StateAdapterService instance
         """
+        # Core agent configuration
         self.name = name
         self.prompt = prompt
         self.context = context or {}
         self.prompt_template = prompt
         
-        # Extract input_fields and output_field from context if available
+        # Extract input_fields and output_field from context
         self.input_fields = self.context.get("input_fields", [])
-        self.output_field = self.context.get("output_field", "output")
+        self.output_field = self.context.get("output_field", None)
         self.description = self.context.get("description", "")
         
-        # Store logger and tracker - these can be None initially
+        # Infrastructure services (required)
         self._logger = logger
-        self._execution_tracker = execution_tracker
+        self._execution_tracker_service = execution_tracker_service
+        self._state_adapter_service = state_adapter_service
         self._log_prefix = f"[{self.__class__.__name__}:{self.name}]"
         
-
+        # Business services (configured post-construction)
+        self._llm_service: Optional[LLMServiceProtocol] = None
+        self._storage_service: Optional[StorageServiceProtocol] = None
         
-    def log(self, level: str, message: str, *args, **kwargs):
-        """
-        Log a message with the specified level and proper agent context.
-        
-        Args:
-            level: Log level ('debug', 'info', 'warning', 'error', 'trace')
-            message: Log message
-            *args, **kwargs: Additional arguments passed to the logger
-            
-        Raises:
-            ValueError: When logger is not provided to agent
-        """
+        # Log initialization
+        if logger:
+            self.log_debug("Agent initialized with infrastructure services")
+    
+    # Service Access Properties
+    @property
+    def logger(self) -> logging.Logger:
+        """Get logger instance, raising if not available."""
         if self._logger is None:
             raise ValueError(
                 f"Logger not provided to agent '{self.name}'. "
-                "Please inject logger dependency using DI fixtures in tests or provide logger in constructor."
+                "Please inject logger dependency via constructor."
             )
-        logger_method = getattr(self._logger, level, self._logger.info)
+        return self._logger
+    
+    @property
+    def execution_tracker_service(self) -> ExecutionTrackingService:
+        """Get execution tracker instance, raising if not available."""
+        if self._execution_tracker_service is None:
+            raise ValueError(
+                f"ExecutionTracker not provided to agent '{self.name}'. "
+                "Please inject execution_tracker dependency via constructor."
+            )
+        return self._execution_tracker_service
+    
+    @property
+    def state_adapter_service(self) -> StateAdapterService:
+        """Get state adapter service."""
+        return self._state_adapter_service
+    
+    @property
+    def llm_service(self) -> LLMServiceProtocol:
+        """Get LLM service, raising clear error if not configured."""
+        if self._llm_service is None:
+            raise ValueError(f"LLM service not configured for agent '{self.name}'")
+        return self._llm_service
+    
+    @property
+    def storage_service(self) -> StorageServiceProtocol:
+        """Get storage service, raising clear error if not configured."""
+        if self._storage_service is None:
+            raise ValueError(f"Storage service not configured for agent '{self.name}'")
+        return self._storage_service
+    
+    # Logging Methods (updated for better unknown level handling)
+    def log(self, level: str, message: str, *args, **kwargs):
+        """Log a message with the specified level and proper agent context."""
+        # Define valid logging levels
+        valid_levels = ['debug', 'info', 'warning', 'error', 'trace']
+        
+        # Use the specified level if valid, otherwise default to info
+        if level in valid_levels:
+            logger_method = getattr(self.logger, level)
+        else:
+            logger_method = self.logger.info
+            
         logger_method(f"{self._log_prefix} {message}", *args, **kwargs)
     
     def log_debug(self, message: str, *args, **kwargs):
@@ -90,48 +156,39 @@ class BaseAgent:
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
         Process the inputs and return an output value.
-        Subclasses should implement this method.
+        Subclasses must implement this method.
         
         Args:
             inputs: Dictionary of input values
             
         Returns:
-            Tuple of (output_value, success)
-            Output value for the output_field, was the action successful
+            Output value for the output_field
         """
         raise NotImplementedError("Subclasses must implement process()")
 
     def run(self, state: Any) -> Dict[str, Any]:
         """
-        FIXED: Run the agent and return only the fields that need updating.
-        This method now returns a partial state update instead of the full state.
-        Works with dynamic state schemas.
-
+        Run the agent and return the updated state.
+        
+        Uses dependency-injected services for clean execution flow.
+        
         Args:
             state: Current state object
 
         Returns:
-            Dictionary with only the fields that need to be updated
-            
-        Raises:
-            ValueError: When execution_tracker is not provided to agent
+            Updated state dictionary
         """
-        # Generate a unique execution ID
+        # Generate execution ID for tracking
         execution_id = str(uuid.uuid4())[:8]
         start_time = time.time()
 
-        self.log_trace(f"\n*** AGENT {self.name} RUN START [{execution_id}] at {start_time} ***")
+        self.log_trace(f"\n*** AGENT {self.name} RUN START [{execution_id}] ***")
 
-        # Get execution tracker - must be provided via DI
-        if self._execution_tracker is None:
-            raise ValueError(
-                f"ExecutionTracker not provided to agent '{self.name}'. "
-                "Please inject execution_tracker dependency using DI fixtures in tests or provide execution_tracker in constructor."
-            )
-        tracker = self._execution_tracker
+        # Get required services (will raise if not available)
+        tracker = self.execution_tracker_service
 
-        # Extract inputs
-        inputs = StateAdapterService.get_inputs(state, self.input_fields)
+        # Extract inputs using state adapter
+        inputs = self.state_adapter_service.get_inputs(state, self.input_fields)
 
         # Record node start
         tracker.record_node_start(self.name, inputs)
@@ -146,12 +203,12 @@ class BaseAgent:
             # Post-processing hook for subclasses
             state, output = self._post_process(state, inputs, output)
 
-            # Get final success status
-            tracker.record_node_result(self.name, success=True, result=output)
+            # Record success
+            tracker.record_node_result(self.name, True, result=output)
 
             # Set the final output if we have an output field
             if self.output_field and output is not None:
-                state = StateAdapterService.set_value(state, self.output_field, output)
+                state = self.state_adapter_service.set_value(state, self.output_field, output)
                 self.log_debug(f"Set output field '{self.output_field}' = {output}")
 
             end_time = time.time()
@@ -169,17 +226,16 @@ class BaseAgent:
             tracker.record_node_result(self.name, False, error=error_msg)
             graph_success = tracker.update_graph_success()
 
-            # Prepare error updates - only the fields that changed
+            # Prepare error updates
             error_updates = {
                 "graph_success": graph_success,
                 "last_action_success": False,
-                "errors": [error_msg]  # This will be added to existing errors
+                "errors": [error_msg]
             }
 
-            # Try to run post-process
+            # Try to run post-process for error handling
             try:
                 state, output = self._post_process(state, inputs, error_updates)
-
             except Exception as post_error:
                 self.log_error(f"Error in post-processing: {str(post_error)}")
 
@@ -187,10 +243,9 @@ class BaseAgent:
             duration = end_time - start_time
             self.log_trace(f"\n*** AGENT {self.name} RUN FAILED [{execution_id}] in {duration:.4f}s ***")
             
-            # Return the updated state
             return state
     
-    def _pre_process(self, state: Any, inputs: Dict[str, Any]) -> Tuple[Any, Any]:
+    def _pre_process(self, state: Any, inputs: Dict[str, Any]) -> Tuple[Any, Dict[str, Any]]:
         """
         Pre-processing hook that can be overridden by subclasses.
         
@@ -203,14 +258,14 @@ class BaseAgent:
         """
         return state, inputs
     
-    def _post_process(self, state: Any, inputs: Dict[str, Any], output) -> Tuple[Any, Any]:
+    def _post_process(self, state: Any, inputs: Dict[str, Any], output: Any) -> Tuple[Any, Any]:
         """
         Post-processing hook that can be overridden by subclasses.
         
         Args:
-            state: The current state
-            output: The output value from the process method
-            current_updates: The current set of updates being applied
+            state: Current state
+            inputs: Input values used for processing
+            output: Output value from the process method
             
         Returns:
             Tuple of (state, modified_output)
@@ -218,5 +273,40 @@ class BaseAgent:
         return state, output
     
     def invoke(self, state: Any) -> Dict[str, Any]:
-        """Alias for run() to maintain compatibility with LangGraph."""
+        """
+        LangGraph compatibility method.
+        
+        Args:
+            state: Current state object
+            
+        Returns:
+            Updated state dictionary
+        """
         return self.run(state)
+    
+    def get_service_info(self) -> Dict[str, Any]:
+        """
+        Get information about injected services for debugging.
+        
+        Returns:
+            Dictionary with service availability and configuration
+        """
+        return {"agent_name": self.name,
+            "agent_type": self.__class__.__name__,
+            "services": {
+                "logger_available": self._logger is not None,
+                "execution_tracker_available": self._execution_tracker_service is not None,
+                "state_adapter_available": self._state_adapter_service is not None,
+                "llm_service_configured": self._llm_service is not None,
+                "storage_service_configured": self._storage_service is not None
+            },
+            "protocols": {
+                "implements_llm_capable": isinstance(self, LLMCapableAgent),
+                "implements_storage_capable": isinstance(self, StorageCapableAgent)
+            },
+            "configuration": {
+                "input_fields": self.input_fields,
+                "output_field": self.output_field,
+                "description": self.description
+            }
+        }

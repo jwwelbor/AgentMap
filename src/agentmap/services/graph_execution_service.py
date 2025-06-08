@@ -127,8 +127,8 @@ class GraphExecutionService:
                 success=graph_success,
                 final_state=final_state,
                 execution_summary=execution_summary,
-                execution_time=execution_time,
-                source_info="precompiled",
+                total_duration=execution_time,
+                compiled_from="precompiled",
                 error=None
             )
             
@@ -151,8 +151,8 @@ class GraphExecutionService:
                 success=False,
                 final_state=state,  # Return original state on error
                 execution_summary=None,
-                execution_time=execution_time,
-                source_info="precompiled",
+                total_duration=execution_time,
+                compiled_from="precompiled",
                 error=str(e)
             )
             
@@ -203,8 +203,8 @@ class GraphExecutionService:
                 success=graph_success,
                 final_state=final_state,
                 execution_summary=execution_summary,
-                execution_time=execution_time,
-                source_info="memory",
+                total_duration=execution_time,
+                compiled_from="memory",
                 error=None
             )
             
@@ -227,8 +227,8 @@ class GraphExecutionService:
                 success=False,
                 final_state=state,  # Return original state on error
                 execution_summary=None,
-                execution_time=execution_time,
-                source_info="memory",
+                total_duration=execution_time,
+                compiled_from="memory",
                 error=str(e)
             )
             

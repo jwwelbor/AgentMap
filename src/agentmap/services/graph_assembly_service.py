@@ -76,12 +76,49 @@ class GraphAssemblyService:
         node_registry: Optional[Dict[str, Any]] = None,
         enable_logging: bool = True,
     ) -> Any:
+        # Create fresh StateGraph builder for each compilation to avoid LangGraph conflicts
+        state_schema = self._get_state_schema_from_config()
+        self.builder = StateGraph(state_schema=state_schema)
+        self.orchestrator_nodes = []
+        self.injection_stats = {"orchestrators_found": 0, "orchestrators_injected": 0, "injection_failures": 0}
+        
         self.node_registry = node_registry
+        
+        # Add all nodes and process their edges
+        node_names = list(graph_def.keys())
+        entry_point = None
+        
+        # First, check if graph-level entry point is available
+        if hasattr(graph_def, '_graph_entry_point') and graph_def._graph_entry_point:
+            entry_point = graph_def._graph_entry_point
+            if enable_logging:
+                self.logger.info(f"🚪 Using graph-level entry point: '{entry_point}'")
+        
         for node_name, node in graph_def.items():
             self.add_node(node_name, node.context.get("instance"), enable_logging)
             self.process_node_edges(node_name, node.edges, enable_logging)
+            
+            # Check if this node has entry point information from Graph domain model
+            if not entry_point and hasattr(node, '_is_entry_point') and node._is_entry_point:
+                entry_point = node_name
+                if enable_logging:
+                    self.logger.info(f"🚪 Using node-level entry point: '{entry_point}'")
+        
+        # Set entry point - use detected entry point or fall back to first node
+        if not entry_point and node_names:
+            entry_point = node_names[0]  # Fallback to first node
+            if enable_logging:
+                self.logger.warning(f"🚪 No entry point detected, using first node: '{entry_point}'")
+            
+        if entry_point:
+            self.set_entry_point(entry_point)
+            if enable_logging:
+                self.logger.info(f"🚪 Set entry point: '{entry_point}'")
+        
+        # Add dynamic routers for orchestrator nodes
         for node_name in self.orchestrator_nodes:
             self._add_dynamic_router(node_name, enable_logging)
+        
         return self.compile(enable_logging)
 
     def add_node(self, name: str, agent_instance: Any, enable_logging: bool = True) -> None:
@@ -168,3 +205,7 @@ class GraphAssemblyService:
             if stats["orchestrators_found"] > 0:
                 self.logger.info(f"📊 Registry injection summary: {stats}")
         return self.builder.compile()
+    
+    def get_injection_summary(self) -> Dict[str, int]:
+        """Get summary of registry injection statistics."""
+        return self.injection_stats.copy()

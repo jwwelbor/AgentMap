@@ -1,9 +1,9 @@
 # agentmap/agents/builtins/failure_agent.py
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional
 import logging
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.models.execution_tracker import ExecutionTracker
+from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.state_adapter_service import StateAdapterService
 
 class FailureAgent(BaseAgent):
@@ -12,9 +12,25 @@ class FailureAgent(BaseAgent):
     Useful for testing failure branches in workflows.
     """
     
-    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTracker, context: dict = None):
-        """Initialize the failure agent with the required dependencies."""
-        super().__init__(name, prompt, context, logger=logger, execution_tracker=execution_tracker)
+    def __init__(
+        self, 
+        name: str, 
+        prompt: str, 
+        context: Optional[Dict[str, Any]] = None,
+        # Infrastructure services only
+        logger: Optional[logging.Logger] = None,
+        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        state_adapter_service: Optional[StateAdapterService] = None
+    ):
+        """Initialize the failure agent with new protocol-based pattern."""
+        super().__init__(
+            name=name,
+            prompt=prompt,
+            context=context,
+            logger=logger,
+            execution_tracker_service=execution_tracker_service,
+            state_adapter_service=state_adapter_service
+        )
     
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
@@ -46,6 +62,7 @@ class FailureAgent(BaseAgent):
         
         Args:
             state: Current state
+            inputs: Input dictionary
             output: The output value from the process method
             
         Returns:

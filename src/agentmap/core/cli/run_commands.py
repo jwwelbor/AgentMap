@@ -115,34 +115,28 @@ def compile_command(
     compilation_options.state_schema = state_schema
 
     if graph:
-
-
         compilation_result = compilation_service.compile_graph(
             graph, 
             csv_path=csv,
             options=compilation_options
         )
-        # this is handled by compile_graph
-        # serialization_service.export_as_pickle(
-        #     graph, 
-        #     output_path=output_dir, 
-        #     csv_path=csv,
-        #     state_schema=state_schema
-        # )
-        # serialization_service.export_as_source(
-        #     graph, 
-        #     output_path=output_dir, 
-        #     csv_path=csv,
-        #     state_schema=state_schema
-        # )
-
     else:
         compilation_result = compilation_service.compile_all_graphs(
             csv_path=csv,
             options=compilation_options
         )
 
-    print(compilation_result)
+    # Check compilation result and handle errors
+    if hasattr(compilation_result, 'success') and not compilation_result.success:
+        if hasattr(compilation_result, 'errors') and compilation_result.errors:
+            for error in compilation_result.errors:
+                typer.secho(f"❌ Compilation error: {error}", fg=typer.colors.RED)
+        else:
+            typer.secho("❌ Compilation failed", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    else:
+        typer.secho("✅ Compilation completed successfully", fg=typer.colors.GREEN)
+        print(compilation_result)
 
 def scaffold_command(
     graph: Optional[str] = typer.Option(None, "--graph", "-g", help="Graph name to scaffold agents for"),
@@ -242,13 +236,22 @@ def export_command(
     config_file: Optional[str] = typer.Option(None, "--config", "-c", help="Path to custom config file")
 ):
     """Export the specified graph in the chosen format."""
-    container = initialize_di(config_file)
-    container.graph_serialization_service().export_graph(graph, format, output, state_schema)
-
-    # export_graph_func(
-    #     graph, 
-    #     format=format, 
-    #     output_path=output, 
-    #     csv_path=csv,
-    #     state_schema=state_schema
-    # )
+    try:
+        container = initialize_di(config_file)
+        serialization_service = container.graph_serialization_service()
+        
+        # Export the graph
+        result = serialization_service.export_graph(graph, format, output, state_schema)
+        
+        # Display success message
+        typer.secho(f"✅ Graph '{graph}' exported successfully to {output}", fg=typer.colors.GREEN)
+        
+        # Show export details if result contains them
+        if hasattr(result, 'export_path'):
+            typer.secho(f"   📁 Export path: {result.export_path}", fg=typer.colors.CYAN)
+        if hasattr(result, 'format'):
+            typer.secho(f"   📋 Format: {result.format}", fg=typer.colors.CYAN)
+            
+    except Exception as e:
+        typer.secho(f"❌ Export failed: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
