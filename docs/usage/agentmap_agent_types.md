@@ -1,6 +1,19 @@
 # AgentMap Agent Types
 
-AgentMap includes several built-in agent types for different purposes. Each agent type processes inputs and produces outputs differently.
+> **Related Documentation**: 
+> - [Agent Development Contract](agent_contract.md) - Agent interface requirements and implementation patterns
+> - [Service Injection](service_injection.md) - Protocol-based dependency injection system
+> - [Advanced Agent Types](advanced_agent_types.md) - Context configuration and advanced features
+
+AgentMap includes several built-in agent types for different purposes. Each agent type uses the modern protocol-based dependency injection pattern with infrastructure services injected via constructor and business services configured post-construction.
+
+## Modern Agent Architecture
+
+All AgentMap agents follow the clean architecture pattern:
+
+- **Infrastructure Services**: Core services injected via constructor (logger, execution_tracker_service, state_adapter_service)
+- **Business Services**: Specialized services configured via protocols (LLM, storage, prompt management)
+- **Context Configuration**: Service settings and agent behavior configured via context
 
 ## Core Agent Types
 
@@ -11,10 +24,26 @@ The simplest agent that logs its execution and returns a message with the prompt
 - **Input Fields**: Any (unused)
 - **Output Field**: Returns a message including the agent's prompt
 - **Prompt Usage**: Included in output message
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: None required
 
-Example:
+**Modern Constructor Pattern:**
+```python
+from agentmap.agents.builtins.default_agent import DefaultAgent
+
+agent = DefaultAgent(
+    name="Start",
+    prompt="Hello World",
+    context={"input_fields": ["input"], "output_field": "output"},
+    logger=logger,
+    execution_tracker_service=execution_tracker_service,
+    state_adapter_service=state_adapter_service
+)
+```
+
+**CSV Example:**
 ```csv
-TestGraph,Start,,Basic node,Default,Next,,input,output,Hello World
+TestGraph,Start,,Basic node,default,Next,,input,output,Hello World
 ```
 
 ### EchoAgent
@@ -24,10 +53,26 @@ Simply returns the input data unchanged.
 - **Input Fields**: Returns the first input field it finds
 - **Output Field**: The input data unchanged
 - **Prompt Usage**: Ignored
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: None required
 
-Example:
+**Modern Constructor Pattern:**
+```python
+from agentmap.agents.builtins.echo_agent import EchoAgent
+
+agent = EchoAgent(
+    name="Echo",
+    prompt="",
+    context={"input_fields": ["message"], "output_field": "response"},
+    logger=logger,
+    execution_tracker_service=execution_tracker_service,
+    state_adapter_service=state_adapter_service
+)
+```
+
+**CSV Example:**
 ```csv
-TestGraph,Echo,,Echo node,Echo,Next,,message,response,
+TestGraph,Echo,,Echo node,echo,Next,,message,response,
 ```
 
 ### BranchingAgent
@@ -37,10 +82,12 @@ Used for testing conditional routing. Checks for success/failure indicators in i
 - **Input Fields**: Looks for `success`, `should_succeed`, `succeed`, or `branch` fields
 - **Output Field**: Message describing the branching decision
 - **Prompt Usage**: Included in output message
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: None required
 
-Example:
+**CSV Example:**
 ```csv
-TestGraph,Branch,,Decision point,Branching,SuccessPath,FailurePath,input,decision,Make a choice
+TestGraph,Branch,,Decision point,branching,SuccessPath,FailurePath,input,decision,Make a choice
 ```
 
 ### SuccessAgent and FailureAgent
@@ -50,15 +97,17 @@ Testing agents that always succeed or fail.
 - **Input Fields**: Any (unused)
 - **Output Field**: Confirmation message
 - **Prompt Usage**: Included in output message
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: None required
 
-SuccessAgent example:
+**SuccessAgent Example:**
 ```csv
-TestGraph,AlwaysSucceed,,Success node,Success,Next,,input,result,I always succeed
+TestGraph,AlwaysSucceed,,Success node,success,Next,,input,result,I always succeed
 ```
 
-FailureAgent example:
+**FailureAgent Example:**
 ```csv
-TestGraph,AlwaysFail,,Failure node,Failure,Next,,input,result,I always fail
+TestGraph,AlwaysFail,,Failure node,failure,Next,,input,result,I always fail
 ```
 
 ### InputAgent
@@ -68,223 +117,491 @@ Prompts for user input during execution.
 - **Input Fields**: Any (unused)
 - **Output Field**: User's input response
 - **Prompt Usage**: Shown to user as input prompt
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: None required
 
-Example:
+**CSV Example:**
 ```csv
-TestGraph,GetInput,,User input node,Input,Process,,message,user_input,Please enter your name:
+TestGraph,GetInput,,User input node,input,Process,,message,user_input,Please enter your name:
 ```
 
 ## LLM Agent Types
 
+All LLM agents implement the `LLMCapableAgent` protocol and require LLM service configuration.
+
+### LLMAgent (Base LLM Agent)
+
+Uses configurable LLM providers for text generation with intelligent routing support.
+
+- **Input Fields**: Used to format the prompt template
+- **Output Field**: LLM response
+- **Prompt Usage**: Used as prompt template or system message
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter, PromptManager (optional)
+- **Business Services**: LLMService (configured via LLMCapableAgent protocol)
+- **Protocol Implementation**: LLMCapableAgent, PromptCapableAgent
+
+**Modern Constructor Pattern:**
+```python
+from agentmap.agents.builtins.llm.llm_agent import LLMAgent
+
+agent = LLMAgent(
+    name="Question",
+    prompt="Answer this question: {question}",
+    context={
+        "input_fields": ["question"], 
+        "output_field": "response",
+        "routing_enabled": True,
+        "task_type": "analysis",
+        "provider": "anthropic",
+        "model": "claude-3-sonnet-20240229",
+        "temperature": 0.7,
+        "memory_key": "chat_history",
+        "max_memory_messages": 10
+    },
+    logger=logger,
+    execution_tracker_service=execution_tracker_service,
+    state_adapter_service=state_adapter_service,
+    prompt_manager_service=prompt_manager_service  # Optional
+)
+
+# Configure LLM service (done by GraphRunnerService automatically)
+agent.configure_llm_service(llm_service)
+```
+
+**Context Configuration Options:**
+```python
+context = {
+    # Core configuration
+    "input_fields": ["question"], 
+    "output_field": "response",
+    
+    # LLM Routing (Modern approach)
+    "routing_enabled": True,
+    "task_type": "analysis",  # analysis, generation, conversation, etc.
+    "complexity_override": "high",  # low, medium, high
+    "provider_preference": ["anthropic", "openai"],
+    "excluded_providers": ["google"],
+    "cost_optimization": True,
+    "prefer_quality": True,
+    
+    # Legacy mode (Direct provider specification)
+    "provider": "anthropic",
+    "model": "claude-3-sonnet-20240229", 
+    "temperature": 0.7,
+    "max_tokens": 1000,
+    
+    # Memory configuration
+    "memory_key": "chat_history",
+    "max_memory_messages": 10,
+    
+    # Prompt management
+    "prompt_template": "prompt:analysis_template"
+}
+```
+
+**CSV Examples:**
+
+**Modern Routing Mode:**
+```csv
+QAGraph,Question,{"routing_enabled": true, "task_type": "analysis"},Ask a question,llm,Answer,,question,response,Answer this question: {question}
+```
+
+**Legacy Provider Mode:**
+```csv
+QAGraph,Question,{"provider": "anthropic", "model": "claude-3-sonnet-20240229"},Ask a question,llm,Answer,,question,response,Answer this question: {question}
+```
+
 ### OpenAIAgent (aliases: gpt, chatgpt)
 
-Uses OpenAI's models for text generation.
+Backward compatibility wrapper for LLMAgent with OpenAI provider.
 
 - **Input Fields**: Used to format the prompt template
 - **Output Field**: LLM response
 - **Prompt Usage**: Used as prompt template
-- **Context**: Can contain model, temperature, memory settings
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: LLMService (configured automatically to use OpenAI)
+- **Protocol Implementation**: LLMCapableAgent
 
-Example:
+**Modern Constructor Pattern:**
+```python
+from agentmap.agents.builtins.llm.openai_agent import OpenAIAgent
+
+agent = OpenAIAgent(
+    name="Question",
+    prompt="Answer this question: {question}",
+    context={
+        "input_fields": ["question"], 
+        "output_field": "response",
+        "model": "gpt-4",
+        "temperature": 0.7
+    },
+    logger=logger,
+    execution_tracker_service=execution_tracker_service,
+    state_adapter_service=state_adapter_service
+)
+```
+
+**CSV Example:**
 ```csv
-QAGraph,Question,,Ask a question,openai,Answer,,question,response,Answer this question: {question}
+QAGraph,Question,{"model": "gpt-4", "temperature": 0.7},Ask a question,openai,Answer,,question,response,Answer this question: {question}
 ```
 
 ### AnthropicAgent (alias: claude)
 
-Uses Anthropic's Claude models for text generation.
+Backward compatibility wrapper for LLMAgent with Anthropic provider.
 
 - **Input Fields**: Used to format the prompt template
 - **Output Field**: LLM response
 - **Prompt Usage**: Used as prompt template
-- **Context**: Can contain model, temperature, memory settings
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: LLMService (configured automatically to use Anthropic)
+- **Protocol Implementation**: LLMCapableAgent
 
-Example:
+**CSV Example:**
 ```csv
-QAGraph,Summarize,,Summarize text,claude,Next,,text,summary,Summarize this text in 3 bullet points: {text}
+QAGraph,Summarize,{"model": "claude-3-sonnet-20240229"},Summarize text,claude,Next,,text,summary,Summarize this text in 3 bullet points: {text}
 ```
 
 ### GoogleAgent (alias: gemini)
 
-Uses Google's Gemini models for text generation.
+Backward compatibility wrapper for LLMAgent with Google provider.
 
 - **Input Fields**: Used to format the prompt template
 - **Output Field**: LLM response
 - **Prompt Usage**: Used as prompt template
-- **Context**: Can contain model, temperature, memory settings
----
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: LLMService (configured automatically to use Google)
+- **Protocol Implementation**: LLMCapableAgent
+
+**CSV Example:**
+```csv
+QAGraph,Generate,{"model": "gemini-1.0-pro"},Generate content,gemini,Next,,prompt,content,Generate content based on: {prompt}
+```
+
 ## Storage Agent Types
+
+All storage agents implement the `StorageCapableAgent` protocol and require storage service configuration.
 
 ### CSVReaderAgent and CSVWriterAgent
 
-Read from and write to CSV files.
+Read from and write to CSV files using the unified storage system.
 
-- **Input Fields**: Must contain `collection` (file path)
+- **Input Fields**: Must contain `collection` (file path), optional `document_id`, `query`, `path`
 - **Output Field**: For reader: CSV data, For writer: Operation result
-- **Prompt Usage**: Optional CSV path
+- **Prompt Usage**: Optional CSV path override
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: StorageService (configured via StorageCapableAgent protocol)
+- **Protocol Implementation**: StorageCapableAgent, CSVCapableAgent
+
+**Modern Constructor Pattern:**
+```python
+from agentmap.agents.builtins.storage.csv.reader import CSVReaderAgent
+
+agent = CSVReaderAgent(
+    name="ReadData",
+    prompt="data/customers.csv",
+    context={
+        "input_fields": ["collection", "query"], 
+        "output_field": "data",
+        "format": "records",
+        "id_field": "customer_id"
+    },
+    logger=logger,
+    execution_tracker_service=execution_tracker_service,
+    state_adapter_service=state_adapter_service
+)
+
+# Configure storage services (done by GraphRunnerService automatically)
+agent.configure_storage_service(storage_service_manager)
+agent.configure_csv_service(csv_storage_service)
+```
+
+**Context Configuration Options:**
+```python
+context = {
+    "input_fields": ["collection", "document_id", "query"],
+    "output_field": "data",
+    "format": "records",  # records, list, dict, raw
+    "id_field": "id",
+    "encoding": "utf-8",
+    "delimiter": ",",
+    "quotechar": '"'
+}
+```
+
+**CSV Examples:**
+```csv
+DataGraph,ReadCustomers,{"format": "records", "id_field": "customer_id"},Read customer data,csv_reader,Process,,collection,customers,data/customers.csv
+DataGraph,WriteResults,{"format": "records", "mode": "write"},Write processed data,csv_writer,End,,data,result,data/output.csv
+```
 
 ### JSONDocumentReaderAgent and JSONDocumentWriterAgent
 
-Read from and write to JSON files.
+Read from and write to JSON files using the unified storage system.
 
-- **Input Fields**: Must contain `collection` (file path)
+- **Input Fields**: Must contain `collection` (file path), optional `document_id`, `path`
 - **Output Field**: For reader: JSON data, For writer: Operation result
-- **Prompt Usage**: Optional JSON path
+- **Prompt Usage**: Optional JSON path override
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: StorageService (configured via StorageCapableAgent protocol)
+- **Protocol Implementation**: StorageCapableAgent, JSONCapableAgent
 
-### FirebaseDocumentReaderAgent and FirebaseDocumentWriterAgent
-
-Read from and write to Firebase databases.
-
-- **Input Fields**: Must contain `collection` (defined in storage config)
-- **Output Field**: For reader: Firebase data, For writer: Operation result
-- **Prompt Usage**: Optional collection override
+**CSV Examples:**
+```csv
+ConfigGraph,ReadConfig,{"format": "dict", "encoding": "utf-8"},Read configuration,json_reader,Process,,collection,config,config/app.json
+ConfigGraph,SaveState,{"format": "dict", "indent": 2},Save application state,json_writer,End,,state,result,data/state.json
+```
 
 ### VectorReaderAgent and VectorWriterAgent
 
-Work with vector databases and embeddings for semantic search and document retrieval using LangChain.
+Work with vector databases and embeddings for semantic search and document retrieval.
 
 - **Input Fields**: For reader: `query` for similarity search, For writer: document data
 - **Output Field**: For reader: Retrieved documents, For writer: Operation status
-- **Prompt Usage**: Optional configuration  
+- **Prompt Usage**: Optional configuration override
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: StorageService (configured via StorageCapableAgent protocol)
+- **Protocol Implementation**: StorageCapableAgent, VectorCapableAgent
 - **Context**: Can contain vector store configuration like `store_key`, `persist_directory`, `provider`, and `embedding_model`
 
-Example:
-```csv
-VectorGraph,LoadDocs,,Load documents into vector store,VectorWriter,Search,,documents,load_result,
-VectorGraph,Search,,Search for similar documents,VectorReader,Process,,query,search_results,
+**Context Configuration Options:**
+```python
+context = {
+    "input_fields": ["query", "documents"],
+    "output_field": "search_results",
+    "provider": "chroma",
+    "embedding_model": "text-embedding-ada-002",
+    "persist_directory": "./vector_db",
+    "collection_name": "documents",
+    "similarity_threshold": 0.8,
+    "max_results": 10
+}
 ```
 
-The `VectorReaderAgent` allows you to perform similarity searches against vector databases, while the `VectorWriterAgent` handles adding documents and embeddings to the database. These agents integrate with LangChain's vector stores like Chroma and FAISS for semantic search capabilities.
+**CSV Examples:**
+```csv
+VectorGraph,LoadDocs,{"provider": "chroma", "embedding_model": "text-embedding-ada-002"},Load documents into vector store,vector_writer,Search,,documents,load_result,
+VectorGraph,Search,{"similarity_threshold": 0.8, "max_results": 5},Search for similar documents,vector_reader,Process,,query,search_results,
+```
+
 ## File Agents in AgentMap
 
-AgentMap provides specialized agents for working with files and documents. These agents leverage LangChain document loaders to support a wide range of document formats, making it easy to incorporate file operations into your workflows.
+AgentMap provides specialized agents for working with files and documents using LangChain document loaders.
 
 ### FileReaderAgent
 
-The FileReaderAgent reads and processes various document types, with optional chunking and filtering capabilities.
+The FileReaderAgent reads and processes various document types with optional chunking and filtering.
 
-#### Supported File Formats
+- **Supported File Formats**: Text, PDF, Markdown, HTML, Word documents
+- **Input Fields**: `collection` (file path), optional `document_id`, `query`, `path`, `format`
+- **Output Field**: Document data with metadata
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: StorageService (configured via StorageCapableAgent protocol)
+- **Protocol Implementation**: StorageCapableAgent, FileCapableAgent
 
-- Text files (.txt)
-- PDF files (.pdf)
-- Markdown (.md)
-- HTML (.html, .htm)
-- Word documents (.docx, .doc)
-
-#### Configuration Options
-
-The FileReaderAgent can be configured via the Context field or in code:
-
-```csv
-GraphName,ReadDocs,{"chunk_size": 1000, "chunk_overlap": 200, "should_split": true},Read documents,file_reader,Process,,collection,documents,
-```
-
-Available configurations:
-- `chunk_size`: Size of text chunks when splitting (default: 1000)
-- `chunk_overlap`: Overlap between chunks (default: 200)
-- `should_split`: Whether to split documents (default: false)
-- `include_metadata`: Include document metadata (default: true)
-
-#### Using FileReaderAgent
-
-Basic usage in a workflow:
-
-```csv
-GraphName,ReadFile,,Read document,file_reader,Process,,collection,document,path/to/file.pdf
-```
-
-The agent requires:
-- `collection`: Path to the file to read
-- `document_id`: Optional specific section to extract
-- `query`: Optional filtering criteria
-- `path`: Optional path within document
-- `format`: Optional output format (default, raw, text)
-
-Example state output:
+**Modern Constructor Pattern:**
 ```python
-{
-    "document": {
-        "success": true,
-        "file_path": "path/to/file.pdf",
-        "data": [
-            {"content": "Document text here", "metadata": {...}}
-        ],
-        "count": 1
-    }
+from agentmap.agents.builtins.storage.file.reader import FileReaderAgent
+
+agent = FileReaderAgent(
+    name="ReadDocs",
+    prompt="",
+    context={
+        "input_fields": ["collection"], 
+        "output_field": "documents",
+        "chunk_size": 1000,
+        "chunk_overlap": 200,
+        "should_split": True,
+        "include_metadata": True
+    },
+    logger=logger,
+    execution_tracker_service=execution_tracker_service,
+    state_adapter_service=state_adapter_service
+)
+```
+
+**Context Configuration Options:**
+```python
+context = {
+    "input_fields": ["collection"],
+    "output_field": "documents",
+    "chunk_size": 1000,
+    "chunk_overlap": 200,
+    "should_split": True,
+    "include_metadata": True,
+    "format": "default"  # default, raw, text
 }
+```
+
+**CSV Example:**
+```csv
+DocGraph,ReadDocs,{"chunk_size": 1000, "chunk_overlap": 200, "should_split": true},Read documents,file_reader,Process,,collection,documents,
 ```
 
 ### FileWriterAgent
 
-The FileWriterAgent writes content to various text-based formats with support for different write modes.
+The FileWriterAgent writes content to various text-based formats with different write modes.
 
-#### Supported File Formats
+- **Supported File Formats**: Text, Markdown, HTML, CSV, Log files, Code files
+- **Input Fields**: `collection` (file path), `data` (content), optional `mode`
+- **Output Field**: Write operation result
+- **Write Modes**: write, append, update, delete
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: StorageService (configured via StorageCapableAgent protocol)
+- **Protocol Implementation**: StorageCapableAgent, FileCapableAgent
 
-Text-based formats including:
-- Text files (.txt)
-- Markdown (.md)
-- HTML (.html, .htm)
-- CSV (.csv)
-- Log files (.log)
-- Code files (.py, .js, etc.)
+**CSV Example:**
+```csv
+DocGraph,WriteFile,{"mode": "write", "encoding": "utf-8"},Write document,file_writer,Next,,data,result,path/to/output.txt
+```
 
-#### Write Modes
+## Advanced Service Configuration Examples
 
-- `write`: Create or overwrite file (default)
-- `append`: Add to existing file
-- `update`: Similar to write for text files
-- `delete`: Delete the file
+### Multi-Service Agent Implementation
 
-#### Using FileWriterAgent
+```python
+from agentmap.agents.base_agent import BaseAgent
+from agentmap.services.protocols import LLMCapableAgent, StorageCapableAgent, PromptCapableAgent
 
-Basic usage in a workflow:
+class AdvancedProcessorAgent(BaseAgent, LLMCapableAgent, StorageCapableAgent, PromptCapableAgent):
+    """Advanced agent using multiple services."""
+    
+    def __init__(
+        self, 
+        name: str, 
+        prompt: str, 
+        context: Optional[Dict[str, Any]] = None,
+        # Infrastructure services
+        logger: Optional[logging.Logger] = None,
+        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        state_adapter_service: Optional[StateAdapterService] = None,
+        prompt_manager_service: Optional[Any] = None
+    ):
+        super().__init__(
+            name=name,
+            prompt=prompt,
+            context=context,
+            logger=logger,
+            execution_tracker_service=execution_tracker_service,
+            state_adapter_service=state_adapter_service
+        )
+        self._prompt_manager_service = prompt_manager_service
+    
+    # Protocol implementations
+    def configure_llm_service(self, llm_service):
+        self._llm_service = llm_service
+        self.log_debug("LLM service configured")
+    
+    def configure_storage_service(self, storage_service):
+        self._storage_service = storage_service
+        self.log_debug("Storage service configured")
+    
+    def configure_prompt_service(self, prompt_service):
+        self._prompt_manager_service = prompt_service
+        self.log_debug("Prompt service configured")
+    
+    def process(self, inputs: Dict[str, Any]) -> Any:
+        # Use all configured services
+        data = self._storage_service.read(inputs["collection"])
+        prompt = self._prompt_manager_service.resolve_prompt(self.prompt)
+        response = self._llm_service.call_llm(
+            provider="auto",
+            messages=[{"role": "user", "content": f"{prompt}: {data}"}]
+        )
+        return response
+```
+
+### Context-Based Service Configuration
 
 ```csv
-GraphName,WriteFile,,Write document,file_writer,Next,,data,result,path/to/output.txt
+GraphName,ProcessData,{"routing_enabled": true, "task_type": "analysis", "storage_type": "csv", "format": "records"},Advanced data processing,advanced_processor,Next,,collection|query,result,process:data_analysis
 ```
 
-The agent requires:
-- `collection`: Path to the file to write
-- `data`: Content to write
-- `mode`: Write mode (write, append, update, delete)
-
-Example input:
-```python
-{
-    "collection": "output/report.md",
-    "data": "## Report\n\nThis is the content of the report.",
-    "mode": "write"
-}
-```
-
-Example output:
-```python
-{
-    "result": {
-        "success": true,
-        "mode": "write",
-        "file_path": "output/report.md",
-        "created_new": true
-    }
-}
-```
-
-### Integration with LangChain
-
-Both file agents integrate with LangChain's document loaders, providing advanced document handling capabilities. The integration brings several benefits:
-
-1. **Standard document format**: Documents are represented with content and metadata
-2. **Text splitting**: Split long documents into manageable chunks
-3. **Metadata extraction**: Extract and utilize document metadata
-4. **Format conversion**: Handle various document formats with a unified API
-
-Example of a document processing workflow:
+### Memory and State Management
 
 ```csv
-GraphName,ReadDocs,{"should_split": true},Read documents,file_reader,Summarize,,collection,documents,reports/*.pdf
-GraphName,Summarize,,Generate summary,openai,Save,,documents,summary,"Summarize these documents: {documents}"
-GraphName,Save,,Save the summary,file_writer,End,,summary,result,output/summary.md
-GraphName,End,,Workflow complete,echo,,,result,message,
+ChatGraph,ChatAgent,{"memory_key": "conversation", "max_memory_messages": 20, "routing_enabled": true},Chat with user,llm,Continue,,user_input,response,You are a helpful assistant
 ```
 
----
+## Testing Agent Types
+
+### Testing Infrastructure Services
+
+```python
+def test_modern_agent():
+    from unittest.mock import Mock
+    
+    # Mock infrastructure services
+    mock_logger = Mock()
+    mock_tracker = Mock()
+    mock_state_adapter = Mock()
+    
+    # Create agent with modern constructor
+    agent = DefaultAgent(
+        name="test",
+        prompt="test prompt",
+        context={"input_fields": ["input"], "output_field": "output"},
+        logger=mock_logger,
+        execution_tracker_service=mock_tracker,
+        state_adapter_service=mock_state_adapter
+    )
+    
+    # Verify infrastructure services
+    assert agent.logger == mock_logger
+    assert agent.execution_tracker_service == mock_tracker
+    assert agent.state_adapter_service == mock_state_adapter
+```
+
+### Testing Business Services
+
+```python
+def test_llm_agent_service_configuration():
+    from unittest.mock import Mock
+    from agentmap.services.protocols import LLMCapableAgent
+    
+    # Create agent
+    agent = LLMAgent(name="test", prompt="test", context={})
+    
+    # Verify protocol implementation
+    assert isinstance(agent, LLMCapableAgent)
+    
+    # Configure business service
+    mock_llm_service = Mock()
+    agent.configure_llm_service(mock_llm_service)
+    
+    # Verify service configuration
+    assert agent.llm_service == mock_llm_service
+```
+
+## Migration from Legacy Patterns
+
+### Old Pattern (Deprecated)
+```python
+# OLD: Simple constructor
+agent = EchoAgent("Echo", "prompt", {"input_fields": ["input"]})
+```
+
+### Modern Pattern (Recommended)
+```python
+# NEW: Infrastructure services via constructor, business services via protocols
+agent = EchoAgent(
+    name="Echo",
+    prompt="prompt", 
+    context={"input_fields": ["input"]},
+    logger=logger,
+    execution_tracker_service=tracker_service,
+    state_adapter_service=state_adapter_service
+)
+# Business services configured automatically by GraphRunnerService
+```
+
+All agent types now follow this modern pattern, providing clean separation of concerns, type-safe dependency injection, and comprehensive debugging capabilities while maintaining backward compatibility for CSV-based workflows.
+
+## Next Steps
+
+After understanding built-in agent types:
+
+1. **Learn Agent Architecture**: Read [Agent Development Contract](agent_contract.md) for implementation requirements and patterns
+2. **Understand Service Injection**: Study [Service Injection](service_injection.md) for detailed dependency injection examples
+3. **Explore Advanced Configuration**: Check [Advanced Agent Types](advanced_agent_types.md) for comprehensive context configuration options
+4. **Build Custom Agents**: See `custom_agents/README.md` for complete custom agent development examples

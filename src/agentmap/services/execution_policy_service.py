@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
+from agentmap.models.execution_summary import ExecutionSummary
 
 
 class ExecutionPolicyService:
@@ -34,14 +35,14 @@ class ExecutionPolicyService:
 
     def _evaluate_success_policy(
         self,
-        summary: Dict[str, Any],
+        summary: ExecutionSummary,
         execution_config: Dict[str, Any],
     ) -> bool:
         """
         Evaluate the success of a graph execution based on the configured policy.
         
         Args:
-            summary: Execution summary from ExecutionTracker
+            summary: ExecutionSummary object from ExecutionTrackingService
             execution_config: Execution-specific configuration
             
         Returns:
@@ -68,36 +69,40 @@ class ExecutionPolicyService:
             self.logger.warning(f"Unknown success policy type: {policy_type}. Falling back to all_nodes.")
             return self._evaluate_all_nodes_policy(summary)
 
-    def _evaluate_all_nodes_policy(self, summary: Dict[str, Any]) -> bool:
+    def _evaluate_all_nodes_policy(self, summary: ExecutionSummary) -> bool:
         """All nodes must succeed for the graph to be considered successful."""
         return all(
-            executed_node.get("success", False)
-            for executed_node in summary.get("execution_path", [])
+            executed_node.success
+            for executed_node in summary.node_executions
         )
 
-    def _evaluate_final_node_policy(self, summary: Dict[str, Any]) -> bool:
+    def _evaluate_final_node_policy(self, summary: ExecutionSummary) -> bool:
         """Only the final node must succeed for the graph to be considered successful."""
-        if not summary.get("execution_path"):
+        if not summary.node_executions:
             return False
 
-        final_node = summary["execution_path"][-1]["node_name"]
-        return summary.get("nodes", {}).get(final_node, {}).get("success", False)
+        # Get the last executed node
+        final_node = summary.node_executions[-1]
+        return final_node.success
 
-    def _evaluate_critical_nodes_policy(self, summary: Dict[str, Any], critical_nodes: List[str]) -> bool:
+    def _evaluate_critical_nodes_policy(self, summary: ExecutionSummary, critical_nodes: List[str]) -> bool:
         """Critical nodes must succeed for the graph to be considered successful."""
         if not critical_nodes:
             return True
 
-        for node in critical_nodes:
-            node_data = summary.get("nodes", {}).get(node)
-            if node_data and not node_data.get("success", False):
+        # Create a map of node names to their execution results
+        node_results = {node.node_name: node.success for node in summary.node_executions}
+        
+        # Check that all critical nodes succeeded
+        for critical_node_name in critical_nodes:
+            if critical_node_name not in node_results or not node_results[critical_node_name]:
                 return False
 
         return True
 
     def _evaluate_custom_policy(
         self,
-        summary: Dict[str, Any],
+        summary: ExecutionSummary,
         function_path: str
     ) -> bool:
         """Evaluate using a custom policy function."""
@@ -113,13 +118,13 @@ class ExecutionPolicyService:
             self.logger.error(f"Error executing custom policy function: {e}")
             return False
 
-    def evaluate_success_policy(self, summary: Dict[str, Any]) -> bool:
+    def evaluate_success_policy(self, summary: ExecutionSummary) -> bool:
         """
         Evaluate the success of a graph execution based on the configured policy.
         
         Args:
-            summary: Execution summary from ExecutionTracker containing execution path
-                     and node execution details
+            summary: ExecutionSummary object from ExecutionTrackingService containing
+                     node execution details and overall execution status
             
         Returns:
             Boolean indicating overall success based on configured policy

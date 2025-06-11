@@ -13,6 +13,7 @@ from .execution_summary import ExecutionSummary, NodeExecution
 from .execution_result import ExecutionResult
 from .features_registry import FeaturesRegistry
 from .agent_registry import AgentRegistry
+from .scaffold_types import ServiceRequirements, ServiceAttribute, ScaffoldOptions, ScaffoldResult
 from .validation import *
 
 __all__ = [
@@ -25,6 +26,12 @@ __all__ = [
     "ExecutionResult",
     "FeaturesRegistry",
     "AgentRegistry",
+    
+    # Scaffolding models
+    "ServiceRequirements",
+    "ServiceAttribute", 
+    "ScaffoldOptions",
+    "ScaffoldResult",
     
     "ValidationResult",
     "ValidationError", 

@@ -1,0 +1,7 @@
+# Storage Service Usage Example
+if hasattr(self, 'storage_service') and self.storage_service:
+    data = self.storage_service.read("data_key")
+    
+    # Write storage data  
+    result = self.storage_service.write("output_key", processed_data)
+    return result

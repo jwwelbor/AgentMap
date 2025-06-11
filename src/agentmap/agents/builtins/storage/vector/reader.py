@@ -10,12 +10,11 @@ import logging
 from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.vector.base_agent import VectorAgent
-from agentmap.agents.mixins import ReaderOperationsMixin
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.state_adapter_service import StateAdapterService
 
 
-class VectorReaderAgent(VectorAgent, ReaderOperationsMixin):
+class VectorReaderAgent(VectorAgent):
     """
     Simple agent for vector similarity search via VectorStorageService.
     

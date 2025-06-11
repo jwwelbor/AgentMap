@@ -73,3 +73,27 @@ class EchoAgent(BaseAgent):
         
         # Default return if no inputs
         return "No input provided to echo"
+    
+    def _get_child_service_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Provide EchoAgent-specific service information for debugging.
+        
+        Returns:
+            Dictionary with echo agent capabilities and configuration
+        """
+        return {
+            "services": {
+                "supports_input_echoing": True,
+                "handles_multiple_inputs": True
+            },
+            "capabilities": {
+                "data_passthrough": True,
+                "input_preservation": True,
+                "structure_maintenance": True
+            },
+            "agent_behavior": {
+                "execution_type": "echo_passthrough",
+                "output_format": "unchanged_input_data",
+                "data_transformation": "none"
+            }
+        }

@@ -261,26 +261,33 @@ class MemoryCapableAgent(Protocol):
         """Configure memory storage service for this agent."""
         ...
 
+@runtime_checkable
+class StorageCapableAgent(Protocol):
+    """Protocol for agents that can use memory storage services."""
+    
+    def configure_storage_service(self, storage_service: 'StorageService') -> None:
+        """Configure storage service for this agent."""
+        ...
 
 # ===== GENERIC PROTOCOL (kept for backward compatibility if needed) =====
 
-@runtime_checkable
-class StorageServiceUser(Protocol):
-    """
-    Generic protocol for agents that use storage services.
+# @runtime_checkable
+# class StorageServiceUser(Protocol):
+#     """
+#     Generic protocol for agents that use storage services.
     
-    This is kept for backward compatibility, but specific service user
-    protocols should be preferred for new implementations.
-    """
-    storage_service: Optional[StorageService] = None
+#     This is kept for backward compatibility, but specific service user
+#     protocols should be preferred for new implementations.
+#     """
+#     storage_service: Optional[StorageService] = None
 
 
 # Legacy compatibility - these might be referenced in existing code
-CSVServiceUser = CSVCapableAgent
-JSONServiceUser = JSONCapableAgent
-FileServiceUser = FileCapableAgent
-VectorServiceUser = VectorCapableAgent
-MemoryServiceUser = MemoryCapableAgent
+# CSVServiceUser = CSVCapableAgent
+# JSONServiceUser = JSONCapableAgent
+# FileServiceUser = FileCapableAgent
+# VectorServiceUser = VectorCapableAgent
+# MemoryServiceUser = MemoryCapableAgent
 
 
 @runtime_checkable

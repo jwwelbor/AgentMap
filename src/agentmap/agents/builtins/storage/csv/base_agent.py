@@ -15,10 +15,9 @@ from agentmap.services.execution_tracking_service import ExecutionTrackingServic
 from agentmap.services.state_adapter_service import StateAdapterService
 from agentmap.services.storage import DocumentResult
 from agentmap.services.storage.protocols import CSVCapableAgent
-from agentmap.agents.mixins import StorageErrorHandlerMixin
 
 
-class CSVAgent(BaseStorageAgent, StorageErrorHandlerMixin, CSVCapableAgent):
+class CSVAgent(BaseStorageAgent, CSVCapableAgent):
     """
     Base class for CSV storage agents with shared functionality.
     
@@ -145,9 +144,5 @@ class CSVAgent(BaseStorageAgent, StorageErrorHandlerMixin, CSVCapableAgent):
                 error=f"CSV file not found: {collection}"
             )
         
-        return self._handle_storage_error(
-            error,
-            "CSV operation",
-            collection,
-            file_path=collection
-        )
+        # For all other errors, delegate to base class
+        return super()._handle_operation_error(error, collection, inputs)

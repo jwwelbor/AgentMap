@@ -22,7 +22,8 @@ from .compilation_service import CompilationService
 from .graph_runner_service import GraphRunnerService, RunOptions
 from .graph_assembly_service import GraphAssemblyService
 from .graph_serialization_service import GraphSerializationService
-from .graph_scaffold_service import GraphScaffoldService, ScaffoldOptions, ScaffoldResult
+from .graph_scaffold_service import GraphScaffoldService
+from agentmap.models.scaffold_types import ScaffoldOptions, ScaffoldResult, ServiceRequirements, ServiceAttribute
 from .graph_bundle_service import GraphBundleService
 
 # Utility Services
@@ -65,8 +66,6 @@ from .protocols import (
     ExecutionTrackingServiceProtocol,
     LLMCapableAgent,
     StorageCapableAgent,
-    LLMServiceUser,  # Legacy compatibility
-    StorageServiceUser  # Legacy compatibility
 )
 
 __all__ = [
@@ -81,6 +80,8 @@ __all__ = [
     "RunOptions",
     "ScaffoldOptions", 
     "ScaffoldResult",
+    "ServiceRequirements",
+    "ServiceAttribute",
     
     # Utility Services
     "FunctionResolutionService",
@@ -126,6 +127,4 @@ __all__ = [
     "ExecutionTrackingServiceProtocol",
     "LLMCapableAgent",
     "StorageCapableAgent",
-    "LLMServiceUser",
-    "StorageServiceUser",
 ]

@@ -273,3 +273,33 @@ class BranchingAgent(BaseAgent):
             "default_result": self.default_result,
             "fallback_fields": self.fallback_fields
         }
+    
+    def _get_child_service_info(self) -> Dict[str, Any]:
+        """
+        Provide BranchingAgent-specific service information.
+        
+        Returns:
+            Dictionary with branching agent-specific service info
+        """
+        return {
+            "services": {
+                "branching_logic_configured": True,
+                "has_success_criteria": len(self.success_values) > 0,
+                "has_failure_criteria": len(self.failure_values) > 0,
+                "has_fallback_fields": len(self.fallback_fields) > 0
+            },
+            "configuration": {
+                "success_field": self.success_field,
+                "success_values_count": len(self.success_values),
+                "failure_values_count": len(self.failure_values),
+                "default_result": self.default_result,
+                "fallback_fields_count": len(self.fallback_fields)
+            },
+            "capabilities": {
+                "supports_boolean_logic": True,
+                "supports_string_matching": True,
+                "supports_numeric_evaluation": True,
+                "supports_custom_criteria": True,
+                "supports_fallback_logic": True
+            }
+        }

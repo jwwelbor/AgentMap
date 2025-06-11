@@ -1,0 +1,3 @@
+    def __init__(self, name, prompt, context=None, logger=None, execution_tracker_service=None, state_adapter_service=None):
+        """Initialize {class_name}."""
+        super().__init__(name, prompt, context, logger, execution_tracker_service, state_adapter_service){service_attributes}

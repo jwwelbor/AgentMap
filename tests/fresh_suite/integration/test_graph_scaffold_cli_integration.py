@@ -108,11 +108,12 @@ storage:
         mock_app_config.get_functions_path.return_value = self.functions_dir
         
         mock_logging = MockServiceFactory.create_mock_logging_service()
-        mock_prompt_manager = Mock()
+        mock_template_composer = Mock()
         mock_function_resolution = Mock()
         
-        # Configure prompt manager
-        mock_prompt_manager.format_prompt.return_value = "# Generated content"
+        # Configure template composer
+        mock_template_composer.compose_template.return_value = "# Generated agent content"
+        mock_template_composer.compose_function_template.return_value = "# Generated function content"
         
         # Configure function resolution
         mock_function_resolution.extract_func_ref.return_value = None
@@ -123,9 +124,9 @@ storage:
         mock_scaffold_service = GraphScaffoldService(
             app_config_service=mock_app_config,
             logging_service=mock_logging,
-            prompt_manager=mock_prompt_manager,
             function_resolution_service=mock_function_resolution,
-            agent_registry_service=mock_agent_registry
+            agent_registry_service=mock_agent_registry,
+            template_composer=mock_template_composer
         )
         
         # Configure container to return services
@@ -231,14 +232,16 @@ storage:
         mock_app_config.get_functions_path.return_value = self.functions_dir
         
         mock_logging = MockServiceFactory.create_mock_logging_service()
-        mock_prompt_manager = Mock()
+        mock_template_composer = Mock()
         mock_function_resolution = Mock()
         
         # Configure realistic template responses
-        def mock_format_prompt(template_path, variables):
-            agent_type = variables.get("agent_type", "unknown")
-            class_name = variables.get("class_name", f"{agent_type.title()}Agent")  # Use proper PascalCase
-            services = variables.get("service_description", "")
+        def mock_compose_template(agent_type, info, service_reqs):
+            class_name = f"{agent_type.title()}Agent"
+            description = info.get('description', '')
+            node_name = info.get('node_name', '')
+            input_fields = ', '.join(info.get('input_fields', []))
+            output_field = info.get('output_field', '')
             
             return f"""# Auto-generated agent class for {agent_type}
 from typing import Dict, Any, Optional
@@ -246,33 +249,30 @@ from agentmap.agents.base_agent import BaseAgent
 
 class {class_name}(BaseAgent):
     \"\"\"
-    {variables.get('description', '')} {services}
+    {description}
     
-    Node: {variables.get('node_name', '')}
-    Input Fields: {variables.get('input_fields', '')}
-    Output Field: {variables.get('output_field', '')}
+    Node: {node_name}
+    Input Fields: {input_fields}
+    Output Field: {output_field}
     \"\"\"
     
     def __init__(self):
         super().__init__()
         # Service attributes will be injected during graph building
-        {variables.get('service_attributes', '')}
     
     def run(self, state: Dict[str, Any]) -> Dict[str, Any]:
         try:
             processed_inputs = self.process_inputs(state)
             
-            {variables.get('input_field_access', '')}
-            
             # Business logic implementation
             result = {{
                 "processed": True,
                 "agent_type": "{agent_type}",
-                "node": "{variables.get('node_name', '')}"
+                "node": "{node_name}"
             }}
             
-            if "{variables.get('output_field', '')}":
-                result["{variables.get('output_field', '')}"] = "processed_value"
+            if "{output_field}":
+                result["{output_field}"] = "processed_value"
             
             return result
             
@@ -281,7 +281,7 @@ class {class_name}(BaseAgent):
             return {{"error": str(e)}}
 """
         
-        mock_prompt_manager.format_prompt.side_effect = mock_format_prompt
+        mock_template_composer.compose_template.side_effect = mock_compose_template
         mock_function_resolution.extract_func_ref.return_value = None
         
         # Create service
@@ -290,9 +290,9 @@ class {class_name}(BaseAgent):
         service = GraphScaffoldService(
             app_config_service=mock_app_config,
             logging_service=mock_logging,
-            prompt_manager=mock_prompt_manager,
             function_resolution_service=mock_function_resolution,
-            agent_registry_service=mock_agent_registry
+            agent_registry_service=mock_agent_registry,
+            template_composer=mock_template_composer
         )
         
         with patch('agentmap.agents.get_agent_class', return_value=None):
@@ -341,8 +341,12 @@ class {class_name}(BaseAgent):
         mock_app_config.get_functions_path.return_value = self.functions_dir
         
         mock_logging = MockServiceFactory.create_mock_logging_service()
-        mock_prompt_manager = Mock()
+        mock_template_composer = Mock()
         mock_function_resolution = Mock()
+        
+        # Configure template composer for error test
+        mock_template_composer.compose_template.return_value = "# Generated agent content"
+        mock_template_composer.compose_function_template.return_value = "# Generated function content"
         
         mock_function_resolution.extract_func_ref.return_value = None
         
@@ -351,9 +355,9 @@ class {class_name}(BaseAgent):
         service = GraphScaffoldService(
             app_config_service=mock_app_config,
             logging_service=mock_logging,
-            prompt_manager=mock_prompt_manager,
             function_resolution_service=mock_function_resolution,
-            agent_registry_service=mock_agent_registry
+            agent_registry_service=mock_agent_registry,
+            template_composer=mock_template_composer
         )
         
         with patch('agentmap.agents.get_agent_class', return_value=None):
@@ -399,7 +403,7 @@ class {class_name}(BaseAgent):
         mock_app_config.get_functions_path.return_value = self.functions_dir
         
         mock_logging = MockServiceFactory.create_mock_logging_service()
-        mock_prompt_manager = Mock()
+        mock_template_composer = Mock()
         mock_function_resolution = Mock()
         
         # Configure function resolution
@@ -411,31 +415,29 @@ class {class_name}(BaseAgent):
         mock_function_resolution.extract_func_ref.side_effect = mock_extract_func_ref
         
         # Configure template responses
-        def mock_format_prompt(template_path, variables):
-            if "agent_template" in template_path:
-                agent_type = variables.get("agent_type", "unknown")
-                return f"""# Agent: {agent_type}
+        def mock_compose_template(agent_type, info, service_reqs):
+            return f"""# Agent: {agent_type}
 class {agent_type.title()}Agent(BaseAgent):
     def run(self, state): return {{"result": "processed"}}
 """
-            elif "function_template" in template_path:
-                func_name = variables.get("func_name", "unknown")
-                return f"""# Function: {func_name}
+        
+        def mock_compose_function_template(func_name, info):
+            return f"""# Function: {func_name}
 def {func_name}(state):
     return "success" if state else "failure"
 """
-            return "# Unknown template"
         
-        mock_prompt_manager.format_prompt.side_effect = mock_format_prompt
+        mock_template_composer.compose_template.side_effect = mock_compose_template
+        mock_template_composer.compose_function_template.side_effect = mock_compose_function_template
         
         from agentmap.services.graph_scaffold_service import GraphScaffoldService
         mock_agent_registry = MockServiceFactory.create_mock_agent_registry_service()
         service = GraphScaffoldService(
             app_config_service=mock_app_config,
             logging_service=mock_logging,
-            prompt_manager=mock_prompt_manager,
             function_resolution_service=mock_function_resolution,
-            agent_registry_service=mock_agent_registry
+            agent_registry_service=mock_agent_registry,
+            template_composer=mock_template_composer
         )
         
         with patch('agentmap.agents.get_agent_class', return_value=None):
@@ -545,30 +547,29 @@ def {func_name}(state):
         mock_app_config.get_functions_path.return_value = self.functions_dir
         
         mock_logging = MockServiceFactory.create_mock_logging_service()
-        mock_prompt_manager = Mock()
+        mock_template_composer = Mock()
         mock_function_resolution = Mock()
         
         mock_function_resolution.extract_func_ref.return_value = None
         
         # Efficient template generation
-        def mock_format_prompt(template_path, variables):
-            agent_type = variables.get("agent_type", "unknown")
-            services = variables.get("service_description", "")
+        def mock_compose_template(agent_type, info, service_reqs):
+            services = f" with {', '.join(service_reqs.services)}" if service_reqs.services else ""
             return f"""# Generated {agent_type} agent{services}
 class {agent_type.title()}Agent(BaseAgent):
     def run(self, state): return {{"result": "success"}}
 """
         
-        mock_prompt_manager.format_prompt.side_effect = mock_format_prompt
+        mock_template_composer.compose_template.side_effect = mock_compose_template
         
         from agentmap.services.graph_scaffold_service import GraphScaffoldService
         mock_agent_registry = MockServiceFactory.create_mock_agent_registry_service()
         service = GraphScaffoldService(
             app_config_service=mock_app_config,
             logging_service=mock_logging,
-            prompt_manager=mock_prompt_manager,
             function_resolution_service=mock_function_resolution,
-            agent_registry_service=mock_agent_registry
+            agent_registry_service=mock_agent_registry,
+            template_composer=mock_template_composer
         )
         
         import time

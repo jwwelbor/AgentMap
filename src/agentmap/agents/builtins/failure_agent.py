@@ -76,3 +76,30 @@ class FailureAgent(BaseAgent):
             output = f"{output} (Will force FAILURE branch)"
             
         return state, output
+    
+    def _get_child_service_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Provide FailureAgent-specific service information for debugging.
+        
+        Returns:
+            Dictionary with failure agent capabilities and configuration
+        """
+        return {
+            "services": {
+                "supports_failure_simulation": True,
+                "manipulates_success_flags": True,
+                "modifies_post_processing": True
+            },
+            "capabilities": {
+                "failure_path_testing": True,
+                "state_modification": True,
+                "success_flag_override": True,
+                "output_message_modification": True
+            },
+            "agent_behavior": {
+                "execution_type": "failure_simulation",
+                "post_process_behavior": "sets_last_action_success_false",
+                "testing_purpose": "validates_failure_branches",
+                "state_manipulation": "forces_failure_state"
+            }
+        }

@@ -331,13 +331,21 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service
     )
     
+    # IndentedTemplateComposer for clean template composition with internal template loading
+    indented_template_composer = providers.Singleton(
+        "agentmap.services.indented_template_composer.IndentedTemplateComposer",
+        app_config_service,
+        logging_service
+    )
+    
     # GraphScaffoldService for service-aware scaffolding
     graph_scaffold_service = providers.Singleton(
         "agentmap.services.graph_scaffold_service.GraphScaffoldService",
         app_config_service,
         logging_service,
-        prompt_manager_service,
-        function_resolution_service
+        function_resolution_service,
+        agent_registry_service,
+        indented_template_composer
     )
     
 
@@ -369,6 +377,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         agent_registry_service,
         features_registry_service,
         dependency_checker_service,
+        app_config_service,
         logging_service
     )
  
@@ -410,7 +419,8 @@ class ApplicationContainer(containers.DeclarativeContainer):
         execution_policy_service,
         state_adapter_service,
         dependency_checker_service,
-        graph_assembly_service
+        graph_assembly_service,
+        prompt_manager_service
     )
     
 

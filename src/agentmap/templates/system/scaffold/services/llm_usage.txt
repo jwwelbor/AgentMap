@@ -1,0 +1,9 @@
+# LLM Service Usage Example
+if hasattr(self, 'llm_service') and self.llm_service:
+    message = {"role": "user", "content": inputs.get("query")}
+    response = self.llm_service.call_llm(
+        provider="openai",  # or "anthropic", "google"
+        messages=[message],
+        model="gpt-4"  # optional
+    )
+    return response.get("content")

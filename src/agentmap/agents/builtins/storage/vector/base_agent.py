@@ -13,11 +13,12 @@ from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, log_operation)
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.services.storage import DocumentResult
 from agentmap.services.storage.protocols import VectorCapableAgent
-from agentmap.agents.mixins import StorageErrorHandlerMixin
 
 
-class VectorAgent(BaseStorageAgent, StorageErrorHandlerMixin, VectorCapableAgent):
+
+class VectorAgent(BaseStorageAgent, VectorCapableAgent):
     """
     Base class for vector storage operations.
     
@@ -117,7 +118,13 @@ class VectorAgent(BaseStorageAgent, StorageErrorHandlerMixin, VectorCapableAgent
         Raises:
             ValueError: If inputs are invalid
         """
-        super()._validate_inputs(inputs)
+        # Don't call super()._validate_inputs() as it checks file existence
+        # Vector storage uses collections/databases, not files
+        
+        # Validate collection parameter
+        collection = self.get_collection(inputs)
+        if not collection:
+            raise ValueError("Missing required 'collection' parameter")
         
         # Check for required input field
         input_field = self.input_fields[0]
@@ -129,7 +136,7 @@ class VectorAgent(BaseStorageAgent, StorageErrorHandlerMixin, VectorCapableAgent
         error: Exception, 
         collection: str, 
         inputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> DocumentResult:
         """
         Handle vector operation errors.
         
@@ -139,10 +146,8 @@ class VectorAgent(BaseStorageAgent, StorageErrorHandlerMixin, VectorCapableAgent
             inputs: Input dictionary
             
         Returns:
-            Error result dictionary
+            DocumentResult with error information
         """
-        return self._handle_storage_error(
-            error,
-            "vector operation",
-            collection
-        )
+        # For vector operations, we can handle specific vector-related errors here
+        # For now, delegate all errors to base class for consistent handling
+        return super()._handle_operation_error(error, collection, inputs)

@@ -269,10 +269,17 @@ class BaseStorageAgent(BaseAgent, StorageCapableAgent):
             
         Raises:
             ValueError: If inputs are invalid
+            FileNotFoundError: If the collection file does not exist
         """
         # Base implementation - subclasses should override
-        if not self.get_collection(inputs):
+        collection = self.get_collection(inputs)
+        if not collection:
             raise ValueError("Missing required 'collection' parameter")
+        
+        # Check if the file exists (for file-based storage)
+        import os
+        if not os.path.exists(collection):
+            raise FileNotFoundError(f"File not found: {collection}")
     
     def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> Any:
         """

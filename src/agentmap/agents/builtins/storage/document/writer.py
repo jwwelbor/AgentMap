@@ -11,10 +11,9 @@ from typing import Any, Dict, Optional
 from agentmap.agents.builtins.storage.document.base_agent import (
     DocumentStorageAgent, log_operation)
 from agentmap.services.storage import DocumentResult, WriteMode
-from agentmap.agents.mixins import WriterOperationsMixin
 
 
-class DocumentWriterAgent(DocumentStorageAgent, WriterOperationsMixin):
+class DocumentWriterAgent(DocumentStorageAgent):
     """
     Base class for document writer agents.
     

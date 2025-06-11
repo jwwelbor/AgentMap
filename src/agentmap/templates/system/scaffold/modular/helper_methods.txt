@@ -1,0 +1,63 @@
+    def _pre_process(self, state: Any, inputs: Dict[str, Any]) -> tuple:
+        """
+        Optional: Override for custom input validation/transformation.
+        
+        Args:
+            state: Current state from graph
+            inputs: Extracted inputs
+            
+        Returns:
+            Tuple of (modified_state, modified_inputs)
+        """
+        # Default: use BaseAgent's implementation
+        state, inputs = super()._pre_process(state, inputs)
+        
+        # TODO: Add custom input validation/transformation here
+        # Example:
+        # if 'required_field' not in inputs:
+        #     raise ValueError("Missing required field")
+        # inputs['normalized_field'] = inputs['field'].lower().strip()
+        
+        return state, inputs
+    
+    def _post_process(self, state: Any, inputs: Dict[str, Any], output: Any) -> tuple:
+        """
+        Optional: Override for custom result formatting/cleanup.
+        
+        Args:
+            state: Current state from graph
+            inputs: Original inputs
+            output: Result from process() method
+            
+        Returns:
+            Tuple of (modified_state, modified_output)
+        """
+        # Default: use BaseAgent's implementation  
+        state, output = super()._post_process(state, inputs, output)
+        
+        # TODO: Add custom post-processing here
+        # Example:
+        # if isinstance(output, dict):
+        #     output['timestamp'] = time.time()
+        #     output['processed_by'] = self.name
+        
+        return state, output
+    
+    def _get_child_service_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Provide agent-specific service information for debugging.
+        
+        This method is called by get_service_info() to allow custom agents
+        to report their specialized services and capabilities.
+        
+        Override this method if your agent has specialized services or 
+        configuration that should be included in diagnostic output.
+        
+        Returns:
+            Dictionary with agent-specific service info, or None
+        """
+        # TODO: If your agent has specialized services, report them here
+        # Default: no specialized service info
+        return None
+    
+    

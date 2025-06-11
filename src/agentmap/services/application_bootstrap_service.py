@@ -7,10 +7,16 @@ This replaces the functionality previously handled by agents/__init__.py import-
 """
 
 from typing import Dict, List, Any, Optional
+import os
+import importlib.util
+import inspect
+import re
+from pathlib import Path
 
 from agentmap.services.agent_registry_service import AgentRegistryService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.dependency_checker_service import DependencyCheckerService
+from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
 
 
@@ -27,12 +33,14 @@ class ApplicationBootstrapService:
         agent_registry_service: AgentRegistryService,
         features_registry_service: FeaturesRegistryService,
         dependency_checker_service: DependencyCheckerService,
+        app_config_service: AppConfigService,
         logging_service: LoggingService
     ):
         """Initialize service with dependency injection following GraphRunnerService pattern."""
         self.agent_registry = agent_registry_service
         self.features_registry = features_registry_service
         self.dependency_checker = dependency_checker_service
+        self.app_config = app_config_service
         self.logger = logging_service.get_class_logger(self)
         
         self.logger.info("[ApplicationBootstrapService] Initialized with all dependencies")
@@ -56,13 +64,16 @@ class ApplicationBootstrapService:
             # Step 1: Register core agents that are always available
             self.register_core_agents()
             
-            # Step 2: Discover and register LLM agents
+            # Step 2: Register custom agents from custom_agents directory
+            self.register_custom_agents()
+            
+            # Step 3: Discover and register LLM agents
             self.discover_and_register_llm_agents()
             
-            # Step 3: Discover and register storage agents
+            # Step 4: Discover and register storage agents
             self.discover_and_register_storage_agents()
             
-            # Step 4: Register additional mixed-dependency agents
+            # Step 5: Register additional mixed-dependency agents
             self.register_mixed_dependency_agents()
             
             # Step 5: Log startup summary
@@ -106,6 +117,52 @@ class ApplicationBootstrapService:
                 # Core agents failing is serious, but don't crash the entire bootstrap
         
         self.logger.info(f"[ApplicationBootstrapService] Registered {registered_count}/{len(core_agents)} core agents")
+    
+    def register_custom_agents(self) -> None:
+        """
+        Dynamically discover and register custom agents from the custom agents directory.
+        
+        Scans the directory specified by app_config_service.get_custom_agents_path()
+        for Python files containing agent classes and registers them automatically.
+        
+        This replaces the previous hardcoded agent list approach with dynamic discovery.
+        """
+        self.logger.debug("[ApplicationBootstrapService] Dynamically discovering custom agents")
+        
+        try:
+            # Get custom agents directory from configuration
+            custom_agents_path = self.app_config.get_custom_agents_path()
+            
+            if not custom_agents_path.exists():
+                self.logger.info(f"[ApplicationBootstrapService] Custom agents directory not found: {custom_agents_path}")
+                self.logger.info("[ApplicationBootstrapService] Skipping custom agent registration")
+                return
+            
+            self.logger.debug(f"[ApplicationBootstrapService] Scanning custom agents directory: {custom_agents_path}")
+            
+            # Discover agent classes in the directory
+            discovered_agents = self._discover_agent_classes(custom_agents_path)
+            
+            if not discovered_agents:
+                self.logger.info("[ApplicationBootstrapService] No custom agent classes found")
+                return
+            
+            # Register each discovered agent
+            registered_count = 0
+            for agent_type, agent_class in discovered_agents:
+                try:
+                    self.agent_registry.register_agent(agent_type, agent_class)
+                    registered_count += 1
+                    self.logger.debug(f"[ApplicationBootstrapService] ✅ Registered custom agent: {agent_type}")
+                except Exception as e:
+                    self.logger.error(f"[ApplicationBootstrapService] ❌ Failed to register custom agent {agent_type}: {e}")
+            
+            self.logger.info(f"[ApplicationBootstrapService] Registered {registered_count}/{len(discovered_agents)} custom agents")
+            
+        except Exception as e:
+            self.logger.error(f"[ApplicationBootstrapService] Failed to register custom agents: {e}")
+            # Don't re-raise - use graceful degradation
+            self.logger.warning("[ApplicationBootstrapService] Continuing without custom agents")
     
     def discover_and_register_llm_agents(self) -> None:
         """
@@ -193,6 +250,132 @@ class ApplicationBootstrapService:
                 registered_count += 1
         
         self.logger.debug(f"[ApplicationBootstrapService] Registered {registered_count}/{len(mixed_agents)} mixed-dependency agents")
+    
+    def _discover_agent_classes(self, custom_agents_path: Path) -> List[tuple]:
+        """
+        Dynamically discover agent classes in the custom agents directory.
+        
+        Scans Python files for classes that appear to be agent classes based on:
+        - Class name ends with 'Agent'
+        - Class is not abstract
+        - Class can be instantiated (has proper constructor)
+        
+        Args:
+            custom_agents_path: Path to the custom agents directory
+            
+        Returns:
+            List of (agent_type, agent_class) tuples
+        """
+        discovered_agents = []
+        
+        try:
+            # Get all Python files in the directory
+            python_files = list(custom_agents_path.glob("*.py"))
+            
+            if not python_files:
+                self.logger.debug("[ApplicationBootstrapService] No Python files found in custom agents directory")
+                return discovered_agents
+            
+            self.logger.debug(f"[ApplicationBootstrapService] Found {len(python_files)} Python files to scan")
+            
+            for py_file in python_files:
+                # Skip __init__.py and other special files
+                if py_file.name.startswith("_"):
+                    continue
+                
+                try:
+                    # Import the module dynamically
+                    module_name = py_file.stem
+                    spec = importlib.util.spec_from_file_location(module_name, py_file)
+                    
+                    if spec is None or spec.loader is None:
+                        self.logger.debug(f"[ApplicationBootstrapService] Could not load spec for {py_file}")
+                        continue
+                    
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    
+                    # Find agent classes in the module
+                    for name, obj in inspect.getmembers(module, inspect.isclass):
+                        if self._is_agent_class(obj, module):
+                            # Generate agent type from class name
+                            agent_type = self._generate_agent_type_from_class_name(name)
+                            discovered_agents.append((agent_type, obj))
+                            self.logger.debug(f"[ApplicationBootstrapService] Discovered agent class: {name} -> {agent_type}")
+                
+                except Exception as e:
+                    self.logger.warning(f"[ApplicationBootstrapService] Failed to scan {py_file}: {e}")
+                    continue
+            
+            self.logger.debug(f"[ApplicationBootstrapService] Discovered {len(discovered_agents)} agent classes")
+            return discovered_agents
+            
+        except Exception as e:
+            self.logger.error(f"[ApplicationBootstrapService] Error during agent discovery: {e}")
+            return []
+    
+    def _is_agent_class(self, cls, module) -> bool:
+        """
+        Determine if a class is an agent class based on conventions.
+        
+        Args:
+            cls: The class object to check
+            module: The module containing the class
+            
+        Returns:
+            True if the class appears to be an agent class
+        """
+        try:
+            # Must be defined in this module (not imported)
+            if cls.__module__ != module.__name__:
+                return False
+            
+            # Must end with 'Agent' 
+            if not cls.__name__.endswith('Agent'):
+                return False
+            
+            # Should not be abstract (should be instantiable)
+            if inspect.isabstract(cls):
+                return False
+            
+            # Should have a reasonable constructor (basic duck typing check)
+            if not hasattr(cls, '__init__'):
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.debug(f"[ApplicationBootstrapService] Error checking class {cls}: {e}")
+            return False
+    
+    def _generate_agent_type_from_class_name(self, class_name: str) -> str:
+        """
+        Generate agent type identifier from class name.
+        
+        Converts PascalCase class names to snake_case agent types.
+        
+        Examples:
+        - 'CombatRouterAgent' -> 'combat_router'
+        - 'HelpAgentAgent' -> 'help_agent' 
+        - 'MyCustomAgent' -> 'my_custom'
+        
+        Args:
+            class_name: The class name (e.g., 'CombatRouterAgent')
+            
+        Returns:
+            Snake case agent type identifier
+        """
+        # Remove 'Agent' suffix
+        if class_name.endswith('Agent'):
+            name_without_agent = class_name[:-5]  # Remove 'Agent'
+        else:
+            name_without_agent = class_name
+        
+        # Convert PascalCase to snake_case
+        # Insert underscore before uppercase letters that follow lowercase letters
+        snake_case = re.sub(r'(?<!^)(?=[A-Z])', '_', name_without_agent).lower()
+        
+        return snake_case
     
     def _register_llm_provider_agents(self, provider: str) -> int:
         """
@@ -358,6 +541,7 @@ class ApplicationBootstrapService:
             },
             "agent_breakdown": {
                 "core_agents": self._count_agents_by_prefix(agent_types, ["default", "echo", "branching", "failure", "success", "input", "graph"]),
+                "custom_agents": self._count_custom_agents(agent_types),
                 "llm_agents": self._count_agents_by_prefix(agent_types, ["llm", "openai", "anthropic", "google", "gpt", "claude", "gemini", "chatgpt"]),
                 "storage_agents": self._count_agents_by_prefix(agent_types, ["csv_", "json_", "file_", "vector_"]),
                 "mixed_agents": self._count_agents_by_prefix(agent_types, ["summary", "orchestrator"])
@@ -378,6 +562,23 @@ class ApplicationBootstrapService:
                 count += 1
         return count
     
+    def _count_custom_agents(self, agent_types: List[str]) -> int:
+        """Count custom agents (those not in core, llm, storage, or mixed categories)."""
+        # Define all known built-in agent prefixes
+        builtin_prefixes = [
+            "default", "echo", "branching", "failure", "success", "input", "graph",  # core
+            "llm", "openai", "anthropic", "google", "gpt", "claude", "gemini", "chatgpt",  # llm
+            "csv_", "json_", "file_", "vector_",  # storage
+            "summary", "orchestrator"  # mixed
+        ]
+        
+        count = 0
+        for agent_type in agent_types:
+            # If agent doesn't match any builtin prefix, it's custom
+            if not any(agent_type.startswith(prefix) for prefix in builtin_prefixes):
+                count += 1
+        return count
+    
     def _log_startup_summary(self) -> None:
         """Log a comprehensive summary of the bootstrap process."""
         summary = self.get_bootstrap_summary()
@@ -385,6 +586,7 @@ class ApplicationBootstrapService:
         self.logger.info(f"📊 [ApplicationBootstrapService] Bootstrap Summary:")
         self.logger.info(f"   Total agents registered: {summary['total_agents_registered']}")
         self.logger.info(f"   Core agents: {summary['agent_breakdown']['core_agents']}")
+        self.logger.info(f"   Custom agents: {summary['agent_breakdown']['custom_agents']}")
         self.logger.info(f"   LLM agents: {summary['agent_breakdown']['llm_agents']}")
         self.logger.info(f"   Storage agents: {summary['agent_breakdown']['storage_agents']}")
         self.logger.info(f"   Mixed agents: {summary['agent_breakdown']['mixed_agents']}")
@@ -411,11 +613,13 @@ class ApplicationBootstrapService:
             "agent_registry_service": self.agent_registry is not None,
             "features_registry_service": self.features_registry is not None,
             "dependency_checker_service": self.dependency_checker is not None,
+            "app_config_service": self.app_config is not None,
             "logging_service": self.logger is not None,
             "all_dependencies_injected": all([
                 self.agent_registry is not None,
                 self.features_registry is not None,
                 self.dependency_checker is not None,
+                self.app_config is not None,
                 self.logger is not None
             ])
         }
@@ -430,6 +634,8 @@ class ApplicationBootstrapService:
                 missing_deps.append("features_registry_service")
             if not self.dependency_checker:
                 missing_deps.append("dependency_checker_service")
+            if not self.app_config:
+                missing_deps.append("app_config_service")
             if not self.logger:
                 missing_deps.append("logging_service")
             

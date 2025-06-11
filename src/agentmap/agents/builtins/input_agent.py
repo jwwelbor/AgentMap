@@ -52,3 +52,27 @@ class InputAgent(BaseAgent):
         user_input = input(prompt_text)
         
         return user_input
+    
+    def _get_child_service_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Provide InputAgent-specific service information for debugging.
+        
+        Returns:
+            Dictionary with input agent capabilities and configuration
+        """
+        return {
+            "services": {
+                "supports_user_input_prompting": True,
+                "handles_console_input": True
+            },
+            "capabilities": {
+                "interactive_user_input": True,
+                "custom_prompt_support": True,
+                "real_time_input_capture": True
+            },
+            "agent_behavior": {
+                "execution_type": "interactive_input",
+                "input_method": "console_prompt",
+                "prompt_customization": "supports_custom_prompts"
+            }
+        }

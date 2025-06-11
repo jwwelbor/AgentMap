@@ -67,6 +67,18 @@ class ExecutionTrackingService:
                 node.subgraph_execution_tracker = subgraph_tracker
                 break
 
+    def update_graph_success(self, tracker: ExecutionTracker) -> bool:
+        """
+        Update and return the current graph success status.
+        
+        Args:
+            tracker: ExecutionTracker instance to update
+            
+        Returns:
+            Boolean indicating overall graph success
+        """
+        return tracker.overall_success
+    
     def to_summary(self, tracker: ExecutionTracker, graph_name: str):
         from agentmap.models.execution_summary import ExecutionSummary, NodeExecution as SummaryNodeExecution
 

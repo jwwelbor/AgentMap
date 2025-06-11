@@ -15,11 +15,6 @@ from agentmap.agents.builtins.storage.document import (
     DocumentPathMixin
 )
 
-# Import mixins
-from agentmap.agents.mixins import (
-    StorageErrorHandlerMixin, ReaderOperationsMixin, WriterOperationsMixin
-)
-
 # Import CSV agents
 from agentmap.agents.builtins.storage.csv import (
     CSVAgent, CSVReaderAgent, CSVWriterAgent
@@ -86,11 +81,6 @@ __all__ = [
     'DocumentReaderAgent',
     'DocumentWriterAgent',
     'DocumentPathMixin',
-    
-    # Mixins
-    'StorageErrorHandlerMixin',
-    'ReaderOperationsMixin',
-    'WriterOperationsMixin',
     
     # CSV agents
     'CSVAgent',

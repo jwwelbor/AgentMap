@@ -43,7 +43,7 @@ from .protocols import (
     StorageReader,
     StorageWriter,
     StorageService,
-    StorageServiceUser,
+    # StorageServiceUser,
     StorageServiceFactory,
     # New capability protocols
     CSVCapableAgent,
@@ -52,11 +52,11 @@ from .protocols import (
     VectorCapableAgent,
     MemoryCapableAgent,
     # Legacy service user protocols (for backward compatibility)
-    CSVServiceUser,
-    JSONServiceUser,
-    FileServiceUser,
-    VectorServiceUser,
-    MemoryServiceUser,
+    # CSVServiceUser,
+    # JSONServiceUser,
+    # FileServiceUser,
+    # VectorServiceUser,
+    # MemoryServiceUser,
 )
 
 from .base import BaseStorageService
@@ -113,7 +113,7 @@ __all__ = [
     'StorageReader',
     'StorageWriter',
     'StorageService',
-    'StorageServiceUser',
+    # 'StorageServiceUser',
     'StorageServiceFactory',
     
     # New capability protocols
@@ -124,11 +124,11 @@ __all__ = [
     'MemoryCapableAgent',
     
     # Legacy service user protocols (for backward compatibility)
-    'CSVServiceUser',
-    'JSONServiceUser',
-    'FileServiceUser',
-    'VectorServiceUser',
-    'MemoryServiceUser',
+    # 'CSVServiceUser',
+    # 'JSONServiceUser',
+    # 'FileServiceUser',
+    # 'VectorServiceUser',
+    # 'MemoryServiceUser',
     
     # Classes
     'BaseStorageService',

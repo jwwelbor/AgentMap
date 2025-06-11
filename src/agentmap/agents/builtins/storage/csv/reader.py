@@ -11,9 +11,8 @@ from typing import Any, Dict, List, Optional, Union
 from agentmap.agents.builtins.storage.csv.base_agent import CSVAgent
 from agentmap.agents.builtins.storage.base_storage_agent import log_operation
 from agentmap.services.storage import DocumentResult
-from agentmap.agents.mixins import ReaderOperationsMixin
 
-class CSVReaderAgent(CSVAgent, ReaderOperationsMixin):
+class CSVReaderAgent(CSVAgent):
     """Simple agent for reading data from CSV files via CSVStorageService."""
     
     def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> Any:

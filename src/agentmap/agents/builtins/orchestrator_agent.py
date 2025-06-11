@@ -5,13 +5,13 @@ from typing import Any, Dict, Tuple, Optional
 import logging
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.agents.mixins import PromptResolutionMixin
+
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.state_adapter_service import StateAdapterService
 from agentmap.services.protocols import LLMServiceProtocol, LLMCapableAgent
 
 
-class OrchestratorAgent(BaseAgent, PromptResolutionMixin, LLMCapableAgent):
+class OrchestratorAgent(BaseAgent, LLMCapableAgent):
     """
     Agent that orchestrates workflow by selecting the best matching node based on input.
     

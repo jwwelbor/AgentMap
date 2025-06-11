@@ -398,7 +398,7 @@ class TestSummaryAgent(unittest.TestCase):
     # =============================================================================
     
     def test_prompt_resolution_with_template_variables(self):
-        """Test prompt resolution extracts content for template variables."""
+        """Test prompt resolution using PromptManagerService."""
         agent = self.create_summary_agent(use_llm=True)
         agent.configure_llm_service(self.mock_llm_service)
         
@@ -418,32 +418,10 @@ class TestSummaryAgent(unittest.TestCase):
         # System message should contain resolved prompt
         self.assertIn("summarize the following information", system_msg["content"])
         
-        # User message should contain the content variable
+        # User message should contain the concatenated content
         user_msg = messages[1]
         self.assertIn("Data point one", user_msg["content"])
         self.assertIn("Data point two", user_msg["content"])
-    
-    def test_default_template_methods(self):
-        """Test default template methods work correctly."""
-        agent = self.create_summary_agent(use_llm=False)
-        
-        # Test default template file
-        template_file = agent._get_default_template_file()
-        self.assertEqual(template_file, "file:summary/summarization_v1.txt")
-        
-        # Test default template text
-        template_text = agent._get_default_template_text()
-        self.assertIn("summarize the following information", template_text)
-        self.assertIn("{content}", template_text)
-        
-        # Test template variable extraction
-        inputs = {"field1": "value1", "field2": "value2"}
-        variables = agent._extract_template_variables(inputs)
-        
-        self.assertIn("content", variables)
-        content = variables["content"]
-        self.assertIn("value1", content)
-        self.assertIn("value2", content)
     
     # =============================================================================
     # 6. Integration Tests

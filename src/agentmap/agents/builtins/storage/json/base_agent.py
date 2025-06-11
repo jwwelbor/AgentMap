@@ -15,10 +15,10 @@ from agentmap.services.execution_tracking_service import ExecutionTrackingServic
 from agentmap.services.state_adapter_service import StateAdapterService
 from agentmap.services.storage import DocumentResult
 from agentmap.services.storage.protocols import JSONCapableAgent
-from agentmap.agents.mixins import StorageErrorHandlerMixin
 
 
-class JSONDocumentAgent(BaseStorageAgent, StorageErrorHandlerMixin, JSONCapableAgent):
+
+class JSONDocumentAgent(BaseStorageAgent, JSONCapableAgent):
     """
     Base class for JSON document storage operations.
     
@@ -151,9 +151,5 @@ class JSONDocumentAgent(BaseStorageAgent, StorageErrorHandlerMixin, JSONCapableA
                 error=f"Invalid JSON in file: {collection}"
             )
         
-        return self._handle_storage_error(
-            error,
-            "JSON operation",
-            collection,
-            file_path=collection
-        )
+        # Delegate to base class for other errors
+        return super()._handle_operation_error(error, collection, inputs)

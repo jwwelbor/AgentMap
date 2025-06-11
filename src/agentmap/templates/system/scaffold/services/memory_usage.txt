@@ -1,0 +1,8 @@
+# Memory Service Usage Example
+if hasattr(self, 'memory_service') and self.memory_service:
+    session_data = {"key": "value"}
+    self.memory_service.set("session_key", session_data)
+    
+    # Retrieve data from memory  
+    data = self.memory_service.get("session_key")
+    return data

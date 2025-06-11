@@ -40,6 +40,12 @@ class GraphAgent(BaseAgent):
             prompt: Name of the subgraph to execute
             context: Additional context (CSV path string or config dict)
         """
+        # Handle string context (CSV path) by converting to dict for BaseAgent
+        original_context = context
+        if isinstance(context, str):
+            # Convert any string context to dict for BaseAgent compatibility
+            context = {}
+        
         super().__init__(
             name=name,
             prompt=prompt,
@@ -58,12 +64,12 @@ class GraphAgent(BaseAgent):
         self._function_resolution_service = None
         
         # Handle context as either string (CSV path) or dict (config)
-        if isinstance(context, str) and context.strip():
-            self.csv_path = context.strip()
+        if isinstance(original_context, str) and original_context.strip():
+            self.csv_path = original_context.strip()
             self.execution_mode = "separate"  # Default: separate execution
-        elif isinstance(context, dict):
-            self.csv_path = context.get("csv_path")
-            self.execution_mode = context.get("execution_mode", "separate")  # "separate" or "native"
+        elif isinstance(original_context, dict):
+            self.csv_path = original_context.get("csv_path")
+            self.execution_mode = original_context.get("execution_mode", "separate")  # "separate" or "native"
         else:
             self.csv_path = None
             self.execution_mode = "separate"
@@ -105,12 +111,15 @@ class GraphAgent(BaseAgent):
         """
         self.log_info(f"[GraphAgent] Executing subgraph: {self.subgraph_name}")
         
+        # Check service configuration first (let configuration errors bubble up)
+        graph_runner = self.graph_runner_service  # Will raise ValueError if not configured
+        
         # Determine and prepare the initial state for the subgraph
         subgraph_state = self._prepare_subgraph_state(inputs)
         
         try:
             # Execute the subgraph using run_graph (maintains your current approach)
-            result = self.graph_runner_service.run_graph(
+            result = graph_runner.run_graph(
                 graph_name=self.subgraph_name, 
                 initial_state=subgraph_state,
                 csv_path=self.csv_path,
@@ -131,12 +140,13 @@ class GraphAgent(BaseAgent):
                 "last_action_success": False
             }
     
-    def _post_process(self, state: Any, output: Any) -> Tuple[Any, Any]:
+    def _post_process(self, state: Any, inputs: Dict[str, Any], output: Any) -> Tuple[Any, Any]:
         """
         Enhanced post-processing to integrate subgraph execution tracking.
         
         Args:
             state: Current state
+            inputs: Input values used for processing
             output: Output from process method
             
         Returns:
@@ -163,7 +173,7 @@ class GraphAgent(BaseAgent):
         # Set success based on subgraph result
         if isinstance(output, dict):
             graph_success = output.get("graph_success", output.get("last_action_success", True))
-            state = StateAdapterService.set_value(state, "last_action_success", graph_success)
+            state = self.state_adapter_service.set_value(state, "last_action_success", graph_success)
         
         return state, output
     
@@ -221,7 +231,7 @@ class GraphAgent(BaseAgent):
         
         try:
             # Import the mapping function
-            mapping_func = self.function_resolution_serviceimport_function(func_ref)
+            mapping_func = self.function_resolution_service.import_function(func_ref)
             
             # Execute the function to transform the state
             mapped_state = mapping_func(inputs)

@@ -1,0 +1,39 @@
+    def process(self, inputs: Dict[str, Any]) -> Any:
+        """
+        Process the inputs and return the output value.
+        
+        This method is called by BaseAgent.run() after input extraction.
+        IMPLEMENT THIS METHOD with your business logic.
+        
+        Args:
+            inputs: Processed input dictionary from BaseAgent
+            
+        Returns:
+            Output value to store in graph state under '{output_field}'
+            (BaseAgent handles state management automatically)
+        """
+        # TODO: IMPLEMENT YOUR AGENT LOGIC HERE
+        # Description: {description}
+        # Context: {context}
+        
+        # Access specific input fields:
+{input_field_access}
+        
+        # Example implementation (REPLACE WITH YOUR LOGIC):
+        try:
+            # Your processing logic goes here this could be a value or an object
+            # this is an example of an object
+            result = {{
+                "processed": True,
+                "agent_type": "{agent_type}",
+                "node": "{node_name}",
+                "timestamp": "placeholder"
+            }}
+            
+            # BaseAgent will automatically store this in state['{output_field}']
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Processing error in {class_name}: {{str(e)}}")
+            # Return error info - BaseAgent handles error state management
+            return {{"error": str(e), "success": False}}

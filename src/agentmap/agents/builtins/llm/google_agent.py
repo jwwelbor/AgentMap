@@ -46,3 +46,12 @@ class GoogleAgent(LLMAgent):
             execution_tracker_service=execution_tracker_service,
             state_adapter_service=state_adapter_service
         )
+        
+        # CRITICAL: Force provider to google even if routing is enabled
+        # GoogleAgent should always use Google provider regardless of routing settings
+        self.provider_name = "google"
+        
+        # Also preserve the model from context if routing was enabled
+        # (routing mode sets model=None, but GoogleAgent should preserve context model)
+        if self.routing_enabled and context.get("model"):
+            self.model = context["model"]

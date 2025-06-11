@@ -11,10 +11,10 @@ from typing import Any, Dict, Optional
 from agentmap.agents.builtins.storage.document.base_agent import (
     DocumentStorageAgent, log_operation)
 from agentmap.services.storage import DocumentResult
-from agentmap.agents.mixins import ReaderOperationsMixin
 
 
-class DocumentReaderAgent(DocumentStorageAgent, ReaderOperationsMixin):
+
+class DocumentReaderAgent(DocumentStorageAgent):
     """
     Base class for document reader agents.
     

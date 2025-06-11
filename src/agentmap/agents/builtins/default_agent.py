@@ -77,3 +77,27 @@ class DefaultAgent(BaseAgent):
         self.log_debug(f"DefaultAgent.process [{process_id}] COMPLETE")
 
         return base_message
+    
+    def _get_child_service_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Provide DefaultAgent-specific service information for debugging.
+        
+        Returns:
+            Dictionary with default agent capabilities and configuration
+        """
+        return {
+            "services": {
+                "supports_default_processing": True,
+                "generates_process_ids": True
+            },
+            "capabilities": {
+                "default_message_generation": True,
+                "prompt_inclusion": True,
+                "uuid_tracking": True
+            },
+            "agent_behavior": {
+                "execution_type": "default_processing",
+                "output_format": "formatted_message_with_prompt",
+                "logging_level": "debug_and_info"
+            }
+        }

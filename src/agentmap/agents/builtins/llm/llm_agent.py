@@ -4,15 +4,12 @@ Modernized LLM Agent with protocol-based dependency injection.
 import os
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
-from pathlib import Path
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.exceptions import ConfigurationException
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.state_adapter_service import StateAdapterService
-from agentmap.services.protocols import LLMServiceProtocol, LLMCapableAgent
-
-from agentmap.config import get_llm_config
+from agentmap.services.protocols import LLMServiceProtocol, LLMCapableAgent, PromptCapableAgent
 
 # Import memory utilities
 from agentmap.agents.builtins.llm.memory import (
@@ -21,7 +18,7 @@ from agentmap.agents.builtins.llm.memory import (
 )
 
 
-class LLMAgent(BaseAgent, LLMCapableAgent):
+class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
     """
     Modernized LLM agent with protocol-based dependency injection.
     
@@ -42,37 +39,38 @@ class LLMAgent(BaseAgent, LLMCapableAgent):
         name: str, 
         prompt: str,
         context: Optional[Dict[str, Any]] = None,
-        # Infrastructure services only
+        # Infrastructure services only - core services ALL agents need
         logger: Optional[logging.Logger] = None,
         execution_tracker_service: Optional[ExecutionTrackingService] = None,
-        state_adapter_service: Optional[StateAdapterService] = None
+        state_adapter_service: Optional[StateAdapterService] = None,
+        # LLMAgent-specific infrastructure services
+        prompt_manager_service: Optional[Any] = None  # PromptManagerService
     ):
         """
         Initialize LLM agent with new protocol-based pattern.
         
         Args:
             name: Name of the agent node
-            prompt: Prompt or instruction (can be a template reference)
+            prompt: Prompt or instruction for the agent
             context: Additional context including input/output configuration
             logger: Logger instance for logging operations
             execution_tracker: ExecutionTrackingService instance for tracking
             state_adapter: StateAdapterService instance for state operations
         """
-        # First, resolve prompt reference if applicable
-        from agentmap.prompts import resolve_prompt
-        resolved_prompt = resolve_prompt(prompt)
-        
-        # Call new BaseAgent constructor (infrastructure services only)
+        # Call BaseAgent constructor with core infrastructure services only
         super().__init__(
             name=name,
-            prompt=resolved_prompt,
+            prompt=prompt,
             context=context,
             logger=logger,
             execution_tracker_service=execution_tracker_service,
             state_adapter_service=state_adapter_service
         )
         
-        # Configuration from context
+        # LLMAgent-specific infrastructure services
+        self._prompt_manager_service = prompt_manager_service
+        
+        # Configuration from context with sensible defaults
         self.routing_enabled = self.context.get("routing_enabled", False)
         
         if self.routing_enabled:
@@ -84,14 +82,11 @@ class LLMAgent(BaseAgent, LLMCapableAgent):
         else:
             # Legacy mode: Use specified provider or default to anthropic
             self.provider_name = self.context.get("provider", "anthropic") 
-            
-            # Try to get configuration from DI container
-            config = self._get_provider_config()
-            
-            # Use configuration for legacy mode
-            self.model = self._get_model_name(config)
-            self.temperature = self._get_temperature(config)
-            self.api_key = self._get_api_key(config)
+            self.model = self.context.get("model") or self._get_default_model_name()
+            self.temperature = float(self.context.get("temperature", 0.7))
+            self.api_key = self.context.get("api_key") or os.environ.get(
+                self._get_api_key_env_var(), ""
+            )
         
         # Memory configuration
         self.memory_key = self.context.get("memory_key", "memory")
@@ -103,6 +98,15 @@ class LLMAgent(BaseAgent, LLMCapableAgent):
         # Add memory_key to input_fields if not already present
         if self.memory_key and self.memory_key not in self.input_fields:
             self.input_fields.append(self.memory_key)
+        
+        # Resolve the prompt using PromptManagerService if available
+        self.resolved_prompt = self._resolve_prompt(prompt)
+    
+    # LLMAgent-specific properties
+    @property
+    def prompt_manager_service(self) -> Optional[Any]:  # PromptManagerService
+        """Get prompt manager service (optional for LLMAgent)."""
+        return self._prompt_manager_service
     
     # Properties for backward compatibility
     @property
@@ -123,38 +127,24 @@ class LLMAgent(BaseAgent, LLMCapableAgent):
         self._llm_service = llm_service
         self.log_debug("LLM service configured")
     
-    # Configuration helpers
-    def _get_provider_config(self) -> Dict[str, Any]:
+    # Protocol Implementation (Required by PromptCapableAgent)
+    def configure_prompt_service(self, prompt_service: Any) -> None:  # PromptManagerServiceProtocol
         """
-        Get provider configuration from DI container or fallback.
+        Configure prompt manager service for this agent.
         
-        Returns:
-            Provider configuration dictionary
-        """
-        try:
-            # Try to use DI container if available
-            from agentmap.di import application
-            app_config = application.app_config_service()
-            config = app_config.get_section("llm", {}).get(self.provider_name, {})
-            return config
-        except (ImportError, AttributeError):
-            try:
-                # Fall back to direct config loading
-                return get_llm_config(self.provider_name)
-            except Exception:
-                self.log_warning(f"Could not get configuration for provider {self.provider_name}, using defaults")
-                return {}
-    
-    def _get_provider_name(self) -> str:
-        """
-        Get the provider name for configuration loading.
+        This method is called by GraphRunnerService during agent setup.
+        Note: This is mainly for protocol compliance. PromptManagerService
+        is typically injected via constructor as an infrastructure service.
         
-        Returns:
-            Provider name string (e.g., "openai", "anthropic", "google")
+        Args:
+            prompt_service: PromptManagerService instance to configure
         """
-        if self.routing_enabled:
-            return "auto"  # Will be determined by routing
-        return self.context.get("provider", "anthropic")
+        # Update the prompt manager service if provided post-construction
+        if prompt_service and not self.prompt_manager_service:
+            self._prompt_manager_service = prompt_service
+            # Re-resolve prompt with the new service
+            self.resolved_prompt = self._resolve_prompt(self.prompt)
+            self.log_debug("Prompt service configured post-construction")
         
     def _get_api_key_env_var(self, provider: Optional[str] = None) -> str:
         """
@@ -195,6 +185,33 @@ class LLMAgent(BaseAgent, LLMCapableAgent):
             "google": "gemini-1.0-pro"
         }
         return defaults.get(provider, "claude-3-sonnet-20240229")
+    
+    def _resolve_prompt(self, prompt: str) -> str:
+        """
+        Resolve prompt using PromptManagerService if available.
+        
+        Args:
+            prompt: Raw prompt string or prompt reference
+            
+        Returns:
+            Resolved prompt text
+        """
+        if not prompt:
+            return ""
+            
+        # If we have a prompt manager service, use it to resolve the prompt
+        if self.prompt_manager_service:
+            try:
+                resolved = self.prompt_manager_service.resolve_prompt(prompt)
+                if resolved != prompt:  # Only log if resolution actually changed the prompt
+                    self.log_debug(f"Resolved prompt reference '{prompt}' to {len(resolved)} characters")
+                return resolved
+            except Exception as e:
+                self.log_warning(f"Failed to resolve prompt '{prompt}': {e}. Using original prompt.")
+                return prompt
+        else:
+            # No prompt manager service available, use prompt as-is
+            return prompt
 
     def is_routing_enabled(self) -> bool:
         """
@@ -213,53 +230,6 @@ class LLMAgent(BaseAgent, LLMCapableAgent):
             Provider name or "routing" if routing is enabled
         """
         return "routing" if self.routing_enabled else self.provider_name
-
-    # Common configuration methods with sensible defaults
-    def _get_model_name(self, config: Dict[str, Any]) -> str:
-        """
-        Get model name with fallbacks.
-        
-        Args:
-            config: Provider configuration from config system
-            
-        Returns:
-            Model name to use
-        """
-        return (
-            self.context.get("model") or 
-            config.get("model") or 
-            self._get_default_model_name()
-        )
-        
-    def _get_temperature(self, config: Dict[str, Any]) -> float:
-        """
-        Get temperature with fallbacks.
-        
-        Args:
-            config: Provider configuration from config system
-            
-        Returns:
-            Temperature value as float
-        """
-        temp = (
-            self.context.get("temperature") or 
-            config.get("temperature") or 
-            0.7
-        )
-        return float(temp)
-        
-    def _get_api_key(self, config: Dict[str, Any]) -> str:
-        """
-        Get API key with fallbacks.
-        
-        Args:
-            config: Provider configuration from config system
-            
-        Returns:
-            API key string
-        """
-        provider = self.provider_name
-        return config.get("api_key") or os.environ.get(self._get_api_key_env_var(provider), "")
     
     def _prepare_routing_context(self, inputs: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -341,17 +311,22 @@ class LLMAgent(BaseAgent, LLMCapableAgent):
             if self.memory_key not in inputs:
                 inputs[self.memory_key] = []
                 
-                # Add system message from prompt if available
-                if self.prompt:
-                    add_system_message(inputs, self.prompt, self.memory_key)
+                # Add system message from resolved prompt if available
+                if self.resolved_prompt:
+                    add_system_message(inputs, self.resolved_prompt, self.memory_key)
             
-            # Get the primary input field (typically "input")
-            input_parts = []
-            for field in self.input_fields:
-                if field != self.memory_key and inputs.get(field):
-                    input_parts.append(f"{field}: {inputs.get(field)}")
-
-            user_input = "\n".join(input_parts) if input_parts else ""
+            # Get relevant input fields (excluding memory) and apply conditional formatting
+            relevant_fields = [field for field in self.input_fields if field != self.memory_key and inputs.get(field)]
+            
+            if len(relevant_fields) == 1:
+                # Single field: use value directly without prefix for cleaner LLM input
+                user_input = str(inputs.get(relevant_fields[0]))
+            elif len(relevant_fields) > 1:
+                # Multiple fields: use prefixed structure for clarity
+                input_parts = [f"{field}: {inputs.get(field)}" for field in relevant_fields]
+                user_input = "\n".join(input_parts)
+            else:
+                user_input = ""
 
             if not user_input:
                 self.log_warning("No input found in inputs")
@@ -448,3 +423,28 @@ class LLMAgent(BaseAgent, LLMCapableAgent):
                 output = output["output"]
         
         return state, output
+    
+    def _get_child_service_info(self) -> Dict[str, Any]:
+        """
+        Provide LLMAgent-specific service information.
+        
+        Returns:
+            Dictionary with LLMAgent-specific service info
+        """
+        return {
+            "services": {
+                "prompt_manager_available": self._prompt_manager_service is not None,
+            },
+            "protocols": {
+                "implements_prompt_capable": True
+            },
+            "llm_configuration": {
+                "routing_enabled": self.routing_enabled,
+                "provider_name": self.provider_name,
+                "model": self.model,
+                "temperature": self.temperature,
+                "memory_key": self.memory_key,
+                "max_memory_messages": self.max_memory_messages,
+                "prompt_resolved": self.resolved_prompt != self.prompt if hasattr(self, 'resolved_prompt') else False
+            }
+        }
