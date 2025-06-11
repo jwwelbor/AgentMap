@@ -290,7 +290,7 @@ class NodeRegistryService:
             Summary dictionary with registry statistics
         """
         if not node_registry:
-            return {"total_nodes": 0, "node_types": {}, "has_descriptions": 0}
+            return {"total_nodes": 0, "node_types": {}, "has_descriptions": 0, "node_names": []}
         
         node_types = {}
         has_descriptions = 0
@@ -350,9 +350,11 @@ class NodeRegistryService:
                 try:
                     return json.loads(context)
                 except json.JSONDecodeError as e:
-                    self.logger.debug(f"[NodeRegistry] Failed to parse context as JSON: {e}")
+                    self.logger.warning(f"[NodeRegistry] Malformed JSON in context: {e}. Using as plain text.")
+                    # For malformed JSON, use whole string as description (don't try key-value parsing)
+                    return {"description": context}
             
-            # Try parsing as key:value pairs
+            # Try parsing as key:value pairs (only for non-JSON-like strings)
             context_dict = {}
             try:
                 for part in context.split(","):
