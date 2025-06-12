@@ -114,7 +114,7 @@ class TestBaseAgent(unittest.TestCase):
             prompt="Test prompt",
             context=self.test_context,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -128,7 +128,7 @@ class TestBaseAgent(unittest.TestCase):
         
         # Verify infrastructure services are accessible
         self.assertEqual(agent.logger, self.mock_logger)
-        self.assertEqual(agent.execution_tracker_service, self.mock_tracker)
+        self.assertEqual(agent.execution_tracker_service, self.mock_execution_tracking_service)
         self.assertEqual(agent.state_adapter_service, self.mock_state_adapter_service)
         
         # Verify business services are not configured by default
@@ -210,17 +210,13 @@ class TestBaseAgent(unittest.TestCase):
             prompt="No output test",
             context={"input_fields": ["input"]},  # No output_field = None
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
         # Configure state adapter
         self.mock_state_adapter_service.get_inputs.return_value = {"input": "test"}
         self.mock_state_adapter_service.set_value.side_effect = lambda s, k, v: {**s, k: v}
-        
-        # Configure execution tracker methods
-        self.mock_tracker.record_node_start = Mock(return_value=None)
-        self.mock_tracker.record_node_result = Mock(return_value=None)
         
         # Test state
         test_state = {"input": "test_value", "existing": "preserved"}
@@ -407,9 +403,9 @@ class TestBaseAgent(unittest.TestCase):
         agent_with_tracker = ConcreteAgent(
             name="with_tracker",
             prompt="Test",
-            execution_tracker_service=self.mock_tracker
+            execution_tracker_service=self.mock_execution_tracking_service
         )
-        self.assertEqual(agent_with_tracker.execution_tracker_service, self.mock_tracker)
+        self.assertEqual(agent_with_tracker.execution_tracker_service, self.mock_execution_tracking_service)
         
         # Test without tracker
         agent_without_tracker = ConcreteAgent("without_tracker", "Test")
@@ -509,7 +505,7 @@ class TestBaseAgent(unittest.TestCase):
             prompt="Test run",
             context={"input_fields": ["input"], "output_field": "output"},
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,  # Pass the SERVICE, not the tracker
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -525,10 +521,6 @@ class TestBaseAgent(unittest.TestCase):
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
         
-        # Configure execution tracker methods
-        self.mock_tracker.record_node_start = Mock(return_value=None)
-        self.mock_tracker.record_node_result = Mock(return_value=None)
-        
         # Test state
         test_state = {"input": "test_value", "other": "preserved"}
         
@@ -540,18 +532,23 @@ class TestBaseAgent(unittest.TestCase):
         self.assertEqual(result_state["output"], "processed: {'input': 'test_value'}")
         self.assertEqual(result_state["other"], "preserved")
         
-        # Verify tracking calls on the actual tracker used
-        self.mock_tracker.record_node_start.assert_called_once()
-        self.mock_tracker.record_node_result.assert_called_once()
+        # Verify tracking service methods were called with correct parameters
+        self.mock_execution_tracking_service.record_node_start.assert_called_once()
+        self.mock_execution_tracking_service.record_node_result.assert_called_once()
         
-        # Verify successful result was recorded
-        call_args = self.mock_tracker.record_node_result.call_args
-        args, kwargs = call_args
+        # Verify the record_node_start call
+        start_call_args = self.mock_execution_tracking_service.record_node_start.call_args
+        start_args, start_kwargs = start_call_args
+        # Should be: record_node_start(tracker, node_name, inputs)
+        self.assertEqual(start_args[1], "run_test")  # node_name is second argument (after tracker)
         
-        # Success case uses consistent pattern: record_node_result(self.name, True, result=output)
-        self.assertEqual(args[0], "run_test")  # node_name is positional
-        self.assertTrue(args[1])  # success=True is positional
-        self.assertIn('result', kwargs)  # result is keyword
+        # Verify the record_node_result call 
+        result_call_args = self.mock_execution_tracking_service.record_node_result.call_args
+        result_args, result_kwargs = result_call_args
+        # Should be: record_node_result(tracker, node_name, success, result=output)
+        self.assertEqual(result_args[1], "run_test")  # node_name is second argument (after tracker)
+        self.assertTrue(result_args[2])  # success=True is third argument
+        self.assertIn('result', result_kwargs)  # result is keyword argument
     
     
     def test_run_method_with_process_error(self):
@@ -565,7 +562,7 @@ class TestBaseAgent(unittest.TestCase):
             prompt="Error test",
             context={"input_fields": ["input"], "output_field": "output"},
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,  # Pass the SERVICE, not the tracker
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -573,10 +570,8 @@ class TestBaseAgent(unittest.TestCase):
         self.mock_state_adapter_service.get_inputs.return_value = {"input": "test"}
         self.mock_state_adapter_service.set_value.side_effect = lambda s, k, v: s
         
-        # Configure execution tracker methods  
-        self.mock_tracker.record_node_start = Mock(return_value=None)
-        self.mock_tracker.record_node_result = Mock(return_value=None)
-        self.mock_tracker.update_graph_success = Mock(return_value=False)
+        # Configure execution tracking service methods
+        self.mock_execution_tracking_service.update_graph_success.return_value = False
         
         # Test state
         test_state = {"input": "test_value"}
@@ -587,14 +582,14 @@ class TestBaseAgent(unittest.TestCase):
         # Verify error was handled
         self.assertEqual(result_state, test_state)  # Original state returned
         
-        # Verify error tracking
-        self.mock_tracker.record_node_result.assert_called_once()
-        call_args = self.mock_tracker.record_node_result.call_args
+        # Verify error tracking service methods were called
+        self.mock_execution_tracking_service.record_node_result.assert_called_once()
+        call_args = self.mock_execution_tracking_service.record_node_result.call_args
         args, kwargs = call_args
         
-        # Error case uses consistent pattern: record_node_result(self.name, False, error=error_msg)
-        self.assertEqual(args[0], "error_test")  # node_name is positional
-        self.assertFalse(args[1])  # success=False is positional
+        # Error case uses consistent pattern: record_node_result(tracker, node_name, False, error=error_msg)
+        self.assertEqual(args[1], "error_test")  # node_name is second argument (after tracker)
+        self.assertFalse(args[2])  # success=False is third argument
         self.assertIn('error', kwargs)  # error is keyword
         
         # Verify error logging
@@ -614,7 +609,7 @@ class TestBaseAgent(unittest.TestCase):
             prompt="Info test",
             context=self.test_context,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -690,7 +685,7 @@ class TestBaseAgent(unittest.TestCase):
             prompt="Test",
             context={"input_fields": ["input"], "output_field": "output"},
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -705,10 +700,6 @@ class TestBaseAgent(unittest.TestCase):
         
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
-        
-        # Configure execution tracker
-        self.mock_tracker.record_node_start = Mock(return_value=None)
-        self.mock_tracker.record_node_result = Mock(return_value=None)
         
         # Test state with original input
         test_state = {"input": "value"}
@@ -742,7 +733,7 @@ class TestBaseAgent(unittest.TestCase):
             prompt="Test",
             context={"input_fields": ["input"], "output_field": "output"},
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -757,10 +748,6 @@ class TestBaseAgent(unittest.TestCase):
         
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
-        
-        # Configure execution tracker
-        self.mock_tracker.record_node_start = Mock(return_value=None)
-        self.mock_tracker.record_node_result = Mock(return_value=None)
         
         # Test state
         test_state = {"input": "value"}
@@ -786,17 +773,13 @@ class TestBaseAgent(unittest.TestCase):
             prompt="Invoke test",
             context={"input_fields": ["input"], "output_field": "output"},
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
         # Configure mocks
         self.mock_state_adapter_service.get_inputs.return_value = {"input": "test"}
         self.mock_state_adapter_service.set_value.side_effect = lambda s, k, v: {**s, k: v}
-        
-        # Configure execution tracker methods
-        self.mock_tracker.record_node_start = Mock(return_value=None)
-        self.mock_tracker.record_node_result = Mock(return_value=None)
         
         test_state = {"input": "test_value"}
         

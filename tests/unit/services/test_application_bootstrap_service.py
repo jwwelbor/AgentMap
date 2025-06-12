@@ -12,7 +12,7 @@ from agentmap.services.application_bootstrap_service import ApplicationBootstrap
 from agentmap.services.agent_registry_service import AgentRegistryService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.dependency_checker_service import DependencyCheckerService
-from agentmap.migration_utils import MockLoggingService
+from tests.utils.mock_service_factory import MockServiceFactory
 
 
 class TestApplicationBootstrapService(unittest.TestCase):
@@ -20,8 +20,9 @@ class TestApplicationBootstrapService(unittest.TestCase):
     
     def setUp(self):
         """Set up test fixtures with mocked dependencies."""
-        # Use migration-safe mock implementations
-        self.mock_logging_service = MockLoggingService()
+        # Use MockServiceFactory for consistent behavior
+        self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service()
         
         # Create mock services for all dependencies
         self.mock_agent_registry_service = Mock(spec=AgentRegistryService)
@@ -33,6 +34,7 @@ class TestApplicationBootstrapService(unittest.TestCase):
             agent_registry_service=self.mock_agent_registry_service,
             features_registry_service=self.mock_features_registry_service,
             dependency_checker_service=self.mock_dependency_checker_service,
+            app_config_service=self.mock_app_config_service,  # Add the missing parameter
             logging_service=self.mock_logging_service
         )
     
@@ -42,17 +44,22 @@ class TestApplicationBootstrapService(unittest.TestCase):
         self.assertEqual(self.service.agent_registry, self.mock_agent_registry_service)
         self.assertEqual(self.service.features_registry, self.mock_features_registry_service)
         self.assertEqual(self.service.dependency_checker, self.mock_dependency_checker_service)
-        self.assertEqual(self.service.logger.name, "ApplicationBootstrapService")
+        self.assertEqual(self.service.app_config, self.mock_app_config_service)
+        self.assertIsNotNone(self.service.logger)
+        
+        # Get the logger that was created for the service
+        logger = self.service.logger
         
         # Verify initialization log message
-        logger_calls = self.service.logger.calls
-        self.assertTrue(any(call[1] == "[ApplicationBootstrapService] Initialized with all dependencies" 
+        logger_calls = logger.calls
+        self.assertTrue(any("Initialized with all dependencies" in call[1] 
                           for call in logger_calls if call[0] == "info"))
     
     def test_bootstrap_application_success(self):
         """Test successful complete bootstrap process."""
         # Mock all internal methods
         with patch.object(self.service, 'register_core_agents') as mock_core, \
+             patch.object(self.service, 'register_custom_agents') as mock_custom, \
              patch.object(self.service, 'discover_and_register_llm_agents') as mock_llm, \
              patch.object(self.service, 'discover_and_register_storage_agents') as mock_storage, \
              patch.object(self.service, 'register_mixed_dependency_agents') as mock_mixed, \
@@ -63,6 +70,7 @@ class TestApplicationBootstrapService(unittest.TestCase):
             
             # Verify all methods were called in correct order
             mock_core.assert_called_once()
+            mock_custom.assert_called_once()
             mock_llm.assert_called_once()
             mock_storage.assert_called_once()
             mock_mixed.assert_called_once()
@@ -481,11 +489,12 @@ class TestApplicationBootstrapService(unittest.TestCase):
     
     def test_log_startup_summary(self):
         """Test startup summary logging."""
-        # Mock get_bootstrap_summary
+        # Mock get_bootstrap_summary with complete summary structure
         mock_summary = {
             "total_agents_registered": 10,
             "agent_breakdown": {
                 "core_agents": 7,
+                "custom_agents": 1,  # ← Add the missing custom_agents field
                 "llm_agents": 2,
                 "storage_agents": 1,
                 "mixed_agents": 0
@@ -514,6 +523,8 @@ class TestApplicationBootstrapService(unittest.TestCase):
             self.assertTrue(any("Total agents registered: 10" in call[1] 
                               for call in logger_calls if call[0] == "info"))
             self.assertTrue(any("Core agents: 7" in call[1] 
+                              for call in logger_calls if call[0] == "info"))
+            self.assertTrue(any("Custom agents: 1" in call[1] 
                               for call in logger_calls if call[0] == "info"))
             self.assertTrue(any("Available LLM providers: ['openai']" in call[1] 
                               for call in logger_calls if call[0] == "info"))

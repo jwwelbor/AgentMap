@@ -797,7 +797,7 @@ def {func_name}(state):
             self.assertFalse(bad_agent.exists())  # Failed agent should not create file
     
     def test_scaffold_template_loading_failures(self):
-        """Test graceful handling of template loading failures."""
+        """Test that template loading failures cause hard errors (no fallbacks)."""
         # Create CSV with simple agent
         csv_content = [
             {
@@ -826,20 +826,21 @@ def {func_name}(state):
         # Mock template loading to raise exception
         with patch.object(self.template_composer, '_load_template_internal', side_effect=FileNotFoundError("Template not found")):
             
-            # Test scaffolding - should use fallback templates
+            # Test scaffolding - should fail hard when templates are missing
             result = self.service.scaffold_agents_from_csv(csv_file)
             
-            # Should still create file using fallback templates
-            self.assertEqual(result.scaffolded_count, 1)
-            self.assertEqual(len(result.errors), 0)  # No errors because fallback is used
+            # Should NOT create any files when template loading fails
+            self.assertEqual(result.scaffolded_count, 0)  # No agents created when templates fail
+            self.assertEqual(len(result.errors), 1)  # Should have 1 error for template loading failure
             
-            # Verify file was created with fallback content
+            # Verify error message contains template failure information
+            error_msg = result.errors[0]
+            self.assertIn("template_test", error_msg.lower())
+            self.assertIn("template not found", error_msg.lower())
+            
+            # Verify no agent file was created
             agent_file = self.agents_dir / "template_test_agent.py"
-            self.assertTrue(agent_file.exists())
-            
-            content = agent_file.read_text()
-            # Should contain fallback template indicators
-            self.assertTrue(len(content) > 0)  # Should have some content
+            self.assertFalse(agent_file.exists())  # File should NOT be created when templates fail
     
     # =============================================================================
     # 5. Real Template Integration Tests
