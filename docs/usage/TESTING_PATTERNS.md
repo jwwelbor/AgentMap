@@ -10,6 +10,7 @@ This guide documents the **pure Mock testing patterns** used in AgentMap's fresh
 - ✅ Focus on interface testing with realistic behavior
 - ✅ Eliminate @patch decorators in favor of dependency injection
 - ✅ Follow standard Python testing conventions
+- ✅ **Use proper Path/filesystem mocking patterns** (prevents recurring test failures)
 
 ---
 
@@ -701,6 +702,386 @@ class TestServiceIntegration(unittest.TestCase):
 ---
 
 *This guide represents the established patterns for AgentMap's fresh test suite. Follow these patterns for consistency and maintainability across all service tests.*
+
+---
+
+## 12. Path and File System Mocking Patterns (CRITICAL)
+
+### 12.1 The Path Mocking Problem
+
+**This section addresses a recurring test failure pattern in AgentMap.** Many services create `Path` instances internally, which bypasses naive mocking attempts and causes tests to fail with "file not found" errors.
+
+**Common Failure Pattern:**
+```python
+# Service does this internally:
+def validate_csv_before_building(self, csv_path: Path) -> List[str]:
+    csv_path = Path(csv_path)  # Creates new Path instance!
+    
+    if not csv_path.exists():  # Calls method on new instance
+        return [f"CSV file not found: {csv_path}"]
+    
+    with csv_path.open() as f:  # Opens new instance
+        # Process file...
+```
+
+**Why Basic Mocking Fails:**
+```python
+# ❌ WRONG: This doesn't work because service creates new Path instance
+with unittest.mock.patch('pathlib.Path.exists', return_value=True):
+    errors = service.validate_csv_before_building(Path('test.csv'))
+    # FAILS: Still gets "file not found" error!
+```
+
+### 12.2 The Correct Solution: Service Module Patching
+
+**Root Cause**: Services import `Path` at module level, then create new instances using that imported reference.
+
+**Solution**: Patch the `Path` import in the specific service module:
+
+```python
+# ✅ CORRECT: Patch Path in the service module where it's imported
+import unittest.mock
+from unittest.mock import Mock, mock_open
+
+def test_validate_csv_success(self):
+    """Test CSV validation with proper Path mocking."""
+    # Mock CSV content
+    csv_content = "GraphName,Node,AgentType\ntest_graph,node1,default\n"
+    
+    # Create proper file mock
+    mock_file = mock_open(read_data=csv_content)
+    
+    # Create mock Path instance
+    mock_path = Mock()
+    mock_path.exists.return_value = True
+    mock_path.open = mock_file
+    
+    # Constructor function that always returns our mock
+    def mock_path_constructor(*args, **kwargs):
+        return mock_path
+    
+    # ✅ KEY: Patch Path in the SERVICE MODULE, not pathlib
+    with unittest.mock.patch('agentmap.services.graph_builder_service.Path', 
+                            side_effect=mock_path_constructor):
+        errors = self.service.validate_csv_before_building(Path('test.csv'))
+        self.assertEqual(errors, [])  # ✅ SUCCESS!
+```
+
+### 12.3 Essential Path Mocking Template
+
+**Use this template for ANY service that works with files:**
+
+```python
+def test_method_with_file_operations(self):
+    """Template for testing methods that use Path operations."""
+    import unittest.mock
+    
+    # 1. Create test file content (if method reads files)
+    file_content = "your,test,content\nrow1,value1,value2"
+    mock_file = mock_open(read_data=file_content)
+    
+    # 2. Create mock Path instance with required behaviors
+    mock_path = Mock()
+    mock_path.exists.return_value = True  # File exists
+    mock_path.open = mock_file            # File reading works
+    # Add other Path methods as needed:
+    # mock_path.is_file.return_value = True
+    # mock_path.stat.return_value = Mock(st_mtime=1234567890)
+    
+    # 3. Create constructor function
+    def mock_path_constructor(*args, **kwargs):
+        return mock_path
+    
+    # 4. Patch Path in the SPECIFIC SERVICE MODULE
+    with unittest.mock.patch('your.service.module.Path', 
+                            side_effect=mock_path_constructor):
+        # 5. Execute your test
+        result = self.service.method_that_uses_files()
+        
+        # 6. Verify behavior
+        self.assertEqual(result.status, "success")
+        mock_path.exists.assert_called()  # Verify file check
+```
+
+### 12.4 Common Path Mocking Scenarios
+
+#### Scenario 1: File Existence Checking
+```python
+def test_file_existence_behavior(self):
+    """Test different file existence scenarios."""
+    mock_path = Mock()
+    
+    def mock_path_constructor(*args, **kwargs):
+        return mock_path
+    
+    with unittest.mock.patch('your.service.module.Path', 
+                            side_effect=mock_path_constructor):
+        
+        # Test when file doesn't exist
+        mock_path.exists.return_value = False
+        result = self.service.process_file("missing.csv")
+        self.assertEqual(result.error, "file_not_found")
+        
+        # Test when file exists
+        mock_path.exists.return_value = True
+        result = self.service.process_file("existing.csv")
+        self.assertEqual(result.status, "success")
+```
+
+#### Scenario 2: File Reading with CSV Processing
+```python
+def test_csv_file_processing(self):
+    """Test CSV file reading and processing."""
+    csv_content = "Name,Age,City\nJohn,30,NYC\nJane,25,LA"
+    mock_file = mock_open(read_data=csv_content)
+    
+    mock_path = Mock()
+    mock_path.exists.return_value = True
+    mock_path.open = mock_file
+    
+    def mock_path_constructor(*args, **kwargs):
+        return mock_path
+    
+    with unittest.mock.patch('your.service.module.Path', 
+                            side_effect=mock_path_constructor):
+        result = self.service.load_csv_data("test.csv")
+        
+        self.assertEqual(len(result.rows), 2)
+        self.assertEqual(result.rows[0]["Name"], "John")
+        mock_path.open.assert_called_once()
+```
+
+#### Scenario 3: Multiple File Operations
+```python
+def test_multiple_file_operations(self):
+    """Test service that works with multiple files."""
+    # Different mock behavior for different file paths
+    def mock_path_constructor(*args, **kwargs):
+        path_str = str(args[0]) if args else "unknown"
+        mock_path = Mock()
+        
+        if "config" in path_str:
+            mock_path.exists.return_value = True
+            mock_path.open = mock_open(read_data="config: value")
+        elif "data" in path_str:
+            mock_path.exists.return_value = True
+            mock_path.open = mock_open(read_data="data,values\n1,2")
+        else:
+            mock_path.exists.return_value = False
+        
+        return mock_path
+    
+    with unittest.mock.patch('your.service.module.Path', 
+                            side_effect=mock_path_constructor):
+        result = self.service.load_config_and_data()
+        self.assertTrue(result.config_loaded)
+        self.assertTrue(result.data_loaded)
+```
+
+#### Scenario 4: File Writing Operations
+```python
+def test_file_writing(self):
+    """Test service that writes files."""
+    mock_path = Mock()
+    mock_path.exists.return_value = False  # File doesn't exist yet
+    mock_path.parent.mkdir = Mock()        # Parent directory creation
+    
+    # Mock the open for writing
+    mock_file_handle = mock_open()
+    mock_path.open = mock_file_handle
+    
+    def mock_path_constructor(*args, **kwargs):
+        return mock_path
+    
+    with unittest.mock.patch('your.service.module.Path', 
+                            side_effect=mock_path_constructor):
+        self.service.save_results("output.json", {"key": "value"})
+        
+        # Verify file operations
+        mock_path.parent.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+        mock_path.open.assert_called_once_with('w')
+        
+        # Verify content was written
+        written_content = mock_file_handle().write.call_args_list
+        self.assertTrue(len(written_content) > 0)
+```
+
+### 12.5 Advanced Path Mocking Patterns
+
+#### Pattern 1: Conditional File Existence
+```python
+def test_conditional_file_existence(self):
+    """Test with different files existing/missing."""
+    def mock_path_constructor(path_arg):
+        mock_path = Mock()
+        path_str = str(path_arg)
+        
+        # Configure different existence based on path
+        if "compiled" in path_str:
+            mock_path.exists.return_value = True   # Compiled files exist
+        elif "source" in path_str:
+            mock_path.exists.return_value = True   # Source files exist
+        elif "temp" in path_str:
+            mock_path.exists.return_value = False  # Temp files don't exist
+        else:
+            mock_path.exists.return_value = False  # Default: doesn't exist
+        
+        return mock_path
+    
+    with unittest.mock.patch('your.service.module.Path', 
+                            side_effect=mock_path_constructor):
+        result = self.service.resolve_execution_path("test_graph")
+        self.assertEqual(result.path_type, "compiled")
+```
+
+#### Pattern 2: File Modification Time Mocking
+```python
+def test_file_modification_time(self):
+    """Test service that checks file modification times."""
+    import time
+    
+    mock_path = Mock()
+    mock_path.exists.return_value = True
+    
+    # Mock file stats
+    mock_stat = Mock()
+    mock_stat.st_mtime = time.time() - 3600  # File modified 1 hour ago
+    mock_path.stat.return_value = mock_stat
+    
+    def mock_path_constructor(*args, **kwargs):
+        return mock_path
+    
+    with unittest.mock.patch('your.service.module.Path', 
+                            side_effect=mock_path_constructor):
+        result = self.service.check_if_rebuild_needed("source.csv", "compiled.pkl")
+        self.assertTrue(result.rebuild_needed)
+```
+
+### 12.6 File System Error Handling
+
+```python
+def test_file_system_error_handling(self):
+    """Test graceful handling of file system errors."""
+    mock_path = Mock()
+    mock_path.exists.return_value = True
+    mock_path.open.side_effect = IOError("Permission denied")
+    
+    def mock_path_constructor(*args, **kwargs):
+        return mock_path
+    
+    with unittest.mock.patch('your.service.module.Path', 
+                            side_effect=mock_path_constructor):
+        result = self.service.safe_file_operation("test.txt")
+        
+        # Service should handle error gracefully
+        self.assertFalse(result.success)
+        self.assertIn("Permission denied", result.error)
+        
+        # Should log the error
+        logger_calls = self.mock_logger.calls
+        error_calls = [call for call in logger_calls if call[0] == "error"]
+        self.assertTrue(len(error_calls) > 0)
+```
+
+### 12.7 Troubleshooting Path Mocking Issues
+
+#### Issue 1: "Still getting file not found errors"
+**Cause**: Patching wrong module or wrong Path reference.
+**Solution**: Find where Path is imported in your service:
+
+```python
+# In your service file, look for:
+from pathlib import Path  # ← This is what you need to patch
+
+# Then patch: 'your.exact.service.module.Path'
+# NOT: 'pathlib.Path'
+```
+
+#### Issue 2: "Mock object has no attribute 'exists'"
+**Cause**: Mock not properly configured.
+**Solution**: Always configure required Path methods:
+
+```python
+mock_path = Mock()
+mock_path.exists.return_value = True  # ✅ Always configure exists
+mock_path.is_file.return_value = True # ✅ Configure other methods as needed
+mock_path.is_dir.return_value = False
+```
+
+#### Issue 3: "Context manager error with open()"
+**Cause**: `mock_open()` not used correctly.
+**Solution**: Use `mock_open()` for file operations:
+
+```python
+# ✅ CORRECT
+mock_file = mock_open(read_data="content")
+mock_path.open = mock_file
+
+# ❌ WRONG
+mock_path.open.return_value = "content"  # Not a context manager
+```
+
+#### Issue 4: "Multiple Path() calls interfere with each other"
+**Solution**: Use stateful constructor function:
+
+```python
+path_behaviors = {
+    "file1.csv": {"exists": True, "content": "data1"},
+    "file2.csv": {"exists": False, "content": ""}
+}
+
+def mock_path_constructor(path_arg):
+    path_str = str(path_arg)
+    behavior = path_behaviors.get(path_str, {"exists": False, "content": ""})
+    
+    mock_path = Mock()
+    mock_path.exists.return_value = behavior["exists"]
+    if behavior["content"]:
+        mock_path.open = mock_open(read_data=behavior["content"])
+    
+    return mock_path
+```
+
+### 12.8 Path Mocking Checklist
+
+Before writing Path-related tests, check:
+
+- [ ] **Identified the correct service module** where Path is imported
+- [ ] **Used `side_effect=mock_path_constructor`** not `return_value`
+- [ ] **Configured `mock_path.exists.return_value`** appropriately
+- [ ] **Used `mock_open(read_data=...)` for file reading**
+- [ ] **Configured other Path methods** used by service (is_file, stat, etc.)
+- [ ] **Tested both file exists and file missing scenarios**
+- [ ] **Verified mock calls** with `assert_called()` methods
+
+### 12.9 Quick Reference: Common Path Patches
+
+```python
+# GraphBuilderService
+with unittest.mock.patch('agentmap.services.graph_builder_service.Path', side_effect=mock_constructor):
+
+# CompilationService  
+with unittest.mock.patch('agentmap.services.compilation_service.Path', side_effect=mock_constructor):
+
+# StorageService
+with unittest.mock.patch('agentmap.services.storage_service.Path', side_effect=mock_constructor):
+
+# For services in subdirectories, use full path:
+with unittest.mock.patch('agentmap.services.config.app_config_service.Path', side_effect=mock_constructor):
+```
+
+### 12.10 Path Mocking Best Practices
+
+1. **Always patch the service module**, never `pathlib.Path` directly
+2. **Use `side_effect` with constructor function** for flexibility
+3. **Configure all Path methods** your service uses (`exists`, `open`, `is_file`, etc.)
+4. **Use `mock_open()` for file content** with proper `read_data`
+5. **Test both success and failure scenarios** (file exists/missing)
+6. **Reset mocks between tests** to avoid state leakage
+7. **Use descriptive test data** that matches expected file formats
+8. **Verify file operations** with `assert_called()` methods
+
+**Remember**: Path mocking issues are the #1 cause of recurring test failures in AgentMap. Follow these patterns consistently to avoid "file not found" test failures!
 
 ---
 

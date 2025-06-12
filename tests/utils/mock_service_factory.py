@@ -24,9 +24,10 @@ class MockServiceFactory:
     with pure unittest.Mock objects that have the same interface behavior.
     
     Usage Examples:
-        # Create a mock logging service
+        # Create mock services using MockServiceFactory
         mock_logging = MockServiceFactory.create_mock_logging_service()
-        logger = mock_logging.get_class_logger(some_instance)
+        logger = mock_logging.get_class_logger(some_instance)  # Standard pattern
+        logger2 = mock_logging.get_class_logger("service.name")  # LLMService pattern
         
         # Create a mock app config service
         mock_config = MockServiceFactory.create_mock_app_config_service()
@@ -80,13 +81,18 @@ class MockServiceFactory:
             """Get logger by name."""
             return create_mock_logger(name)
         
-        def get_class_logger(instance) -> Mock:
-            """Get logger for class instance - extract class name."""
-            if hasattr(instance, '__class__'):
-                class_name = instance.__class__.__name__
+        def get_class_logger(instance_or_name) -> Mock:
+            """Get logger for class instance or by name - handle both patterns."""
+            if isinstance(instance_or_name, str):
+                # LLMService pattern: get_class_logger("agentmap.llm")
+                logger_name = instance_or_name
+            elif hasattr(instance_or_name, '__class__'):
+                # Standard pattern: get_class_logger(self)
+                logger_name = instance_or_name.__class__.__name__
             else:
-                class_name = str(type(instance).__name__)
-            return create_mock_logger(class_name)
+                # Fallback
+                logger_name = str(type(instance_or_name).__name__)
+            return create_mock_logger(logger_name)
         
         def get_module_logger(name: str) -> Mock:
             """Get logger for module."""

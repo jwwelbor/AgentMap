@@ -379,7 +379,13 @@ class LLMService:
             error_msg = f"LLM call failed for provider {provider}: {str(e)}"
             self._logger.error(error_msg)
             
-            if "api_key" in str(e).lower() or "authentication" in str(e).lower():
+            # If it's already one of our custom exception types, preserve it
+            if isinstance(e, (LLMConfigurationError, LLMDependencyError, LLMProviderError, LLMServiceError)):
+                raise e
+            # Check for dependency errors first
+            elif isinstance(e, ImportError) or "dependencies" in str(e).lower() or "install" in str(e).lower() or "no module named" in str(e).lower():
+                raise LLMDependencyError(f"Missing dependencies for {provider}: {str(e)}")
+            elif "api_key" in str(e).lower() or "api key" in str(e).lower() or "authentication" in str(e).lower():
                 raise LLMConfigurationError(f"Authentication failed for {provider}: {str(e)}")
             elif "model" in str(e).lower():
                 raise LLMConfigurationError(f"Model configuration error for {provider}: {str(e)}")
