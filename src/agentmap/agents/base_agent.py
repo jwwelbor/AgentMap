@@ -35,7 +35,7 @@ class BaseAgent:
         name: str, 
         prompt: str, 
         context: Optional[Dict[str, Any]] = None,
-        # Infrastructure services only
+        # Infrastructure services only - core services that ALL agents need
         logger: Optional[logging.Logger] = None,
         execution_tracker_service: Optional[ExecutionTrackingService] = None,
         state_adapter_service: Optional[StateAdapterService] = None
@@ -65,7 +65,7 @@ class BaseAgent:
         self.output_field = self.context.get("output_field", None)
         self.description = self.context.get("description", "")
         
-        # Infrastructure services (required)
+        # Infrastructure services (required) - only core services ALL agents need
         self._logger = logger
         self._execution_tracker_service = execution_tracker_service
         self._state_adapter_service = state_adapter_service
@@ -74,6 +74,9 @@ class BaseAgent:
         # Business services (configured post-construction)
         self._llm_service: Optional[LLMServiceProtocol] = None
         self._storage_service: Optional[StorageServiceProtocol] = None
+        
+        # Current execution tracker (set during graph execution)
+        self._current_execution_tracker = None
         
         # Log initialization
         if logger:
@@ -118,6 +121,15 @@ class BaseAgent:
         if self._storage_service is None:
             raise ValueError(f"Storage service not configured for agent '{self.name}'")
         return self._storage_service
+    
+    def set_execution_tracker(self, tracker):
+        """Set the current execution tracker for this agent during graph execution."""
+        self._current_execution_tracker = tracker
+    
+    @property
+    def current_execution_tracker(self):
+        """Get the current execution tracker."""
+        return self._current_execution_tracker
     
     # Logging Methods (updated for better unknown level handling)
     def log(self, level: str, message: str, *args, **kwargs):
@@ -185,13 +197,20 @@ class BaseAgent:
         self.log_trace(f"\n*** AGENT {self.name} RUN START [{execution_id}] ***")
 
         # Get required services (will raise if not available)
-        tracker = self.execution_tracker_service
+        tracking_service = self.execution_tracker_service
+        
+        # Get or create execution tracker
+        tracker = self.current_execution_tracker
+        if tracker is None:
+            # If no tracker is set, create one for this execution
+            tracker = tracking_service.create_tracker()
+            self.set_execution_tracker(tracker)
 
         # Extract inputs using state adapter
         inputs = self.state_adapter_service.get_inputs(state, self.input_fields)
 
-        # Record node start
-        tracker.record_node_start(self.name, inputs)
+        # Record node start using service
+        tracking_service.record_node_start(tracker, self.name, inputs)
 
         try:
             # Pre-processing hook for subclasses
@@ -203,8 +222,8 @@ class BaseAgent:
             # Post-processing hook for subclasses
             state, output = self._post_process(state, inputs, output)
 
-            # Record success
-            tracker.record_node_result(self.name, True, result=output)
+            # Record success using service
+            tracking_service.record_node_result(tracker, self.name, True, result=output)
 
             # Set the final output if we have an output field
             if self.output_field and output is not None:
@@ -222,9 +241,9 @@ class BaseAgent:
             error_msg = f"Error in {self.name}: {str(e)}"
             self.log_error(error_msg)
 
-            # Record failure
-            tracker.record_node_result(self.name, False, error=error_msg)
-            graph_success = tracker.update_graph_success()
+            # Record failure using service
+            tracking_service.record_node_result(tracker, self.name, False, error=error_msg)
+            graph_success = tracking_service.update_graph_success(tracker)
 
             # Prepare error updates
             error_updates = {
@@ -288,10 +307,13 @@ class BaseAgent:
         """
         Get information about injected services for debugging.
         
+        Child classes should override this method to add their specific service info.
+        
         Returns:
             Dictionary with service availability and configuration
         """
-        return {"agent_name": self.name,
+        base_info = {
+            "agent_name": self.name,
             "agent_type": self.__class__.__name__,
             "services": {
                 "logger_available": self._logger is not None,
@@ -310,3 +332,32 @@ class BaseAgent:
                 "description": self.description
             }
         }
+        
+        # Allow child classes to extend service info
+        child_info = self._get_child_service_info()
+        if child_info:
+            # Merge child-specific service info
+            if "services" in child_info:
+                base_info["services"].update(child_info["services"])
+            if "protocols" in child_info:
+                base_info["protocols"].update(child_info["protocols"])
+            if "configuration" in child_info:
+                base_info["configuration"].update(child_info["configuration"])
+            # Add any additional child-specific sections
+            for key, value in child_info.items():
+                if key not in base_info:
+                    base_info[key] = value
+        
+        return base_info
+    
+    def _get_child_service_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Hook for child classes to provide their specific service information.
+        
+        Child classes should override this method to provide information about
+        their specialized services and capabilities.
+        
+        Returns:
+            Dictionary with child-specific service info, or None
+        """
+        return None

@@ -76,7 +76,8 @@ class GraphRunnerService:
         execution_policy_service: ExecutionPolicyService,
         state_adapter_service: StateAdapterService,
         dependency_checker_service: DependencyCheckerService,
-        graph_assembly_service: GraphAssemblyService
+        graph_assembly_service: GraphAssemblyService,
+        prompt_manager_service: Any = None  # PromptManagerService - optional for backward compatibility
     ):
         """Initialize facade service with specialized service dependencies.
         
@@ -96,6 +97,7 @@ class GraphRunnerService:
             state_adapter_service: Service for state management
             dependency_checker_service: Service for dependency validation
             graph_assembly_service: Service for graph assembly
+            prompt_manager_service: Service for prompt template resolution and formatting
         """
         # Core specialized services
         self.graph_definition = graph_definition_service
@@ -112,6 +114,7 @@ class GraphRunnerService:
         self.node_registry = node_registry_service
         self.dependency_checker = dependency_checker_service
         self.graph_assembly_service = graph_assembly_service
+        self.prompt_manager_service = prompt_manager_service
         
         # Infrastructure services
         self.logger = logging_service.get_class_logger(self)
@@ -524,15 +527,29 @@ class GraphRunnerService:
         
         self.logger.debug(f"[GraphRunnerService] Instantiating {agent_cls.__name__} as node '{node.name}'")
         
-        # Step 3: Create agent with infrastructure services only
-        agent_instance = agent_cls(
-            name=node.name,
-            prompt=node.prompt or "",
-            logger=self.logger,
-            execution_tracker_service=self.execution_tracking_service.create_tracker(),
-            context=context,
-            state_adapter_service=self.state_adapter_service
-        )
+        # Step 3: Create agent with infrastructure services - check what the agent supports
+        import inspect
+        
+        # Get the agent class constructor signature
+        agent_signature = inspect.signature(agent_cls.__init__)
+        agent_params = list(agent_signature.parameters.keys())
+        
+        # Build constructor arguments based on what the agent supports
+        constructor_args = {
+            "name": node.name,
+            "prompt": node.prompt or "",
+            "context": context,
+            "logger": self.logger,
+            "execution_tracker_service": self.execution_tracking_service,
+            "state_adapter_service": self.state_adapter_service
+        }
+        
+        # Only add prompt_manager_service if the agent supports it
+        if "prompt_manager_service" in agent_params and self.prompt_manager_service:
+            constructor_args["prompt_manager_service"] = self.prompt_manager_service
+            self.logger.debug(f"[GraphRunnerService] Adding prompt_manager_service to {node.name}")
+        
+        agent_instance = agent_cls(**constructor_args)
         
         # Step 4: Configure business services based on protocols
         self._configure_agent_services(agent_instance)
@@ -560,7 +577,8 @@ class GraphRunnerService:
             LLMCapableAgent, 
             StorageCapableAgent, 
             VectorCapableAgent,
-            DatabaseCapableAgent
+            DatabaseCapableAgent,
+            PromptCapableAgent
         )
         
         if isinstance(agent, LLMCapableAgent):
@@ -570,6 +588,22 @@ class GraphRunnerService:
         if isinstance(agent, StorageCapableAgent):
             agent.configure_storage_service(self.storage_service_manager)
             self.logger.debug(f"[GraphRunnerService] ✅ Configured storage service for {agent.name}")
+        
+        if isinstance(agent, PromptCapableAgent):
+            # Check if agent has prompt_manager_service (either from constructor or post-construction)
+            has_prompt_service = (
+                hasattr(agent, 'prompt_manager_service') and 
+                agent.prompt_manager_service is not None
+            )
+            
+            if has_prompt_service:
+                self.logger.debug(f"[GraphRunnerService] Agent {agent.name} has prompt service available")
+            elif self.prompt_manager_service:
+                # Try post-construction configuration if service is available
+                agent.configure_prompt_service(self.prompt_manager_service)
+                self.logger.debug(f"[GraphRunnerService] ✅ Configured prompt service for {agent.name}")
+            else:
+                self.logger.debug(f"[GraphRunnerService] Agent {agent.name} will use fallback prompt handling (no service available)")
         
         # Future services - ready for when these services are available:
         # if isinstance(agent, VectorCapableAgent):
@@ -601,7 +635,7 @@ class GraphRunnerService:
             raise ValueError(f"Agent {node.name} missing required 'run' method")
         
         # Validate service configuration using new protocol pattern
-        from agentmap.services.protocols import LLMCapableAgent, StorageCapableAgent
+        from agentmap.services.protocols import LLMCapableAgent, StorageCapableAgent, PromptCapableAgent
         
         if isinstance(agent_instance, LLMCapableAgent):
             # Check that LLM service was properly configured
@@ -620,6 +654,24 @@ class GraphRunnerService:
                 self.logger.debug(f"[GraphRunnerService] Storage service properly configured for {node.name}")
             except ValueError:
                 raise ValueError(f"Storage agent {node.name} missing required storage service configuration")
+        
+        if isinstance(agent_instance, PromptCapableAgent):
+            # Check that prompt service is working if agent supports it
+            has_prompt_service = (
+                hasattr(agent_instance, 'prompt_manager_service') and 
+                agent_instance.prompt_manager_service is not None
+            )
+            
+            if has_prompt_service:
+                self.logger.debug(f"[GraphRunnerService] Prompt service available for {node.name}")
+                # Verify prompt resolution is working
+                try:
+                    if hasattr(agent_instance, 'resolved_prompt'):
+                        self.logger.debug(f"[GraphRunnerService] Prompt resolution working for {node.name}")
+                except Exception as e:
+                    self.logger.warning(f"[GraphRunnerService] Prompt resolution issue for {node.name}: {e}")
+            else:
+                self.logger.debug(f"[GraphRunnerService] Agent {node.name} using fallback prompt handling")
         
         self.logger.debug(f"[GraphRunnerService] ✅ Agent configuration valid for: {node.name}")
     
@@ -790,6 +842,7 @@ class GraphRunnerService:
                 "node_registry_available": self.node_registry is not None,
                 "dependency_checker_available": self.dependency_checker is not None,
                 "graph_assembly_service_available": self.graph_assembly_service is not None,
+                "prompt_manager_service_available": self.prompt_manager_service is not None,
             },
             "infrastructure_services": {
                 "config_available": self.config is not None,
@@ -811,7 +864,8 @@ class GraphRunnerService:
                 self.config is not None,
                 self.execution_tracking_service is not None,
                 self.execution_policy_service is not None,
-                self.state_adapter_service is not None
+                self.state_adapter_service is not None,
+                # Note: prompt_manager_service is optional, so not included in required dependencies check
             ]),
             "capabilities": {
                 "graph_resolution": True,
@@ -823,7 +877,8 @@ class GraphRunnerService:
                 "memory_building": True,
                 "agent_validation": True,
                 "dependency_checking": True,
-                "facade_pattern": True
+                "facade_pattern": True,
+                "prompt_resolution": self.prompt_manager_service is not None
             },
             "delegation_methods": [
                 "run_graph -> GraphExecutionService",

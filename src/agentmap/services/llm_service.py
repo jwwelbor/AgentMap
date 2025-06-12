@@ -21,20 +21,20 @@ from agentmap.services.routing.routing_service import LLMRoutingService
 
 from typing import Protocol, runtime_checkable, Any, Dict, List, Optional
 
-@runtime_checkable
-class LLMServiceUser(Protocol):
-    """
-    Protocol for agents that use LLM services.
+# @runtime_checkable
+# class LLMServiceUser(Protocol):
+#     """
+#     Protocol for agents that use LLM services.
     
-    To use LLM services in your agent, add this to your __init__:
-        self.llm_service = None
+#     To use LLM services in your agent, add this to your __init__:
+#         self.llm_service = None
     
-    Then use it in your methods:
-        response = self.llm_service.call_llm(provider="openai", messages=[...])
+#     Then use it in your methods:
+#         response = self.llm_service.call_llm(provider="openai", messages=[...])
     
-    The service will be automatically injected during graph building.
-    """
-    llm_service: 'LLMService'
+#     The service will be automatically injected during graph building.
+#     """
+#     llm_service: 'LLMService'
 
 
 class LLMService:

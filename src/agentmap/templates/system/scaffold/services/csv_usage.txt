@@ -1,0 +1,7 @@
+# CSV Service Usage Example
+if hasattr(self, 'csv_service') and self.csv_service:
+    data = self.csv_service.read("data.csv")
+    
+    # Write CSV data  
+    result = self.csv_service.write("output.csv", processed_data)
+    return result

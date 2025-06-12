@@ -1,0 +1,18 @@
+{class_definition}
+    """
+    {description}{service_description}
+    
+    Node: {node_name}
+    Input Fields: {input_fields}
+    Output Field: {output_field}{services_doc}{prompt_doc}
+    
+    Architecture: 
+    This agent uses BaseAgent's built-in processing hooks:
+    - _pre_process: Input validation and transformation (override if needed)
+    - process: Main business logic (IMPLEMENT THIS METHOD)
+    - _post_process: Result formatting and cleanup (override if needed)
+    
+    Available Storage Types: "csv", "json", "file", "vector", "memory"
+    See documentation for full API details.
+    """
+    

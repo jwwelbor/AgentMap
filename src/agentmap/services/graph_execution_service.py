@@ -354,9 +354,9 @@ class GraphExecutionService:
             f"{list(final_state.keys()) if hasattr(final_state, 'keys') else 'N/A'}"
         )
         
-        # Complete execution tracking
-        execution_tracker.complete_execution()
-        execution_summary = execution_tracker.get_summary()
+        # Complete execution tracking using service
+        self.execution_tracking_service.complete_execution(execution_tracker)
+        execution_summary = self.execution_tracking_service.to_summary(execution_tracker, graph_name)
         
         self.logger.debug(f"[GraphExecutionService] Execution tracking complete: {graph_name}")
         

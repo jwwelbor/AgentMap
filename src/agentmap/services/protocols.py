@@ -143,6 +143,36 @@ class ExecutionTrackingServiceProtocol(Protocol):
         ...
 
 
+@runtime_checkable
+class PromptManagerServiceProtocol(Protocol):
+    """Protocol for prompt manager service interface used by agents."""
+    
+    def resolve_prompt(self, prompt_ref: str) -> str:
+        """
+        Resolve prompt reference to actual prompt text.
+        
+        Args:
+            prompt_ref: Prompt reference (prompt:name, file:path, yaml:path#key, or plain text)
+            
+        Returns:
+            Resolved prompt text
+        """
+        ...
+    
+    def format_prompt(self, prompt_ref_or_text: str, values: Dict[str, Any]) -> str:
+        """
+        Format prompt with variable substitution.
+        
+        Args:
+            prompt_ref_or_text: Prompt reference or text to format
+            values: Dictionary of values for variable substitution
+            
+        Returns:
+            Formatted prompt text
+        """
+        ...
+
+
 # Agent capability protocols for service configuration
 @runtime_checkable
 class LLMCapableAgent(Protocol):
@@ -155,10 +185,38 @@ class LLMCapableAgent(Protocol):
 
 @runtime_checkable
 class StorageCapableAgent(Protocol):
-    """Protocol for agents that can use storage services."""
+    """Protocol for agents that can use unified storage services."""
     
     def configure_storage_service(self, storage_service: StorageServiceProtocol) -> None:
         """Configure storage service for this agent."""
+        ...
+
+
+# Separate storage service protocols for fine-grained dependency injection
+@runtime_checkable
+class CSVCapableAgent(Protocol):
+    """Protocol for agents that can use CSV storage services."""
+    
+    def configure_csv_service(self, csv_service: Any) -> None:
+        """Configure CSV storage service for this agent."""
+        ...
+
+
+@runtime_checkable
+class JSONCapableAgent(Protocol):
+    """Protocol for agents that can use JSON storage services."""
+    
+    def configure_json_service(self, json_service: Any) -> None:
+        """Configure JSON storage service for this agent."""
+        ...
+
+
+@runtime_checkable
+class FileCapableAgent(Protocol):
+    """Protocol for agents that can use file storage services."""
+    
+    def configure_file_service(self, file_service: Any) -> None:
+        """Configure file storage service for this agent."""
         ...
 
 
@@ -172,6 +230,15 @@ class VectorCapableAgent(Protocol):
 
 
 @runtime_checkable
+class MemoryCapableAgent(Protocol):
+    """Protocol for agents that can use memory storage services."""
+    
+    def configure_memory_service(self, memory_service: Any) -> None:
+        """Configure memory storage service for this agent."""
+        ...
+
+
+@runtime_checkable
 class DatabaseCapableAgent(Protocol):
     """Protocol for agents that can use database services."""
     
@@ -180,6 +247,22 @@ class DatabaseCapableAgent(Protocol):
         ...
 
 
-# Legacy compatibility - these might be referenced in existing code
-LLMServiceUser = LLMCapableAgent
-StorageServiceUser = StorageCapableAgent
+@runtime_checkable
+class PromptCapableAgent(Protocol):
+    """Protocol for agents that can use prompt manager services."""
+    
+    def configure_prompt_service(self, prompt_service: PromptManagerServiceProtocol) -> None:
+        """Configure prompt manager service for this agent."""
+        ...
+
+
+# # Legacy compatibility - these might be referenced in existing code
+# LLMServiceUser = LLMCapableAgent
+# StorageServiceUser = StorageCapableAgent
+
+# # Additional compatibility mappings for separate services approach
+# CSVServiceUser = CSVCapableAgent
+# JSONServiceUser = JSONCapableAgent
+# FileServiceUser = FileCapableAgent
+# VectorServiceUser = VectorCapableAgent
+# MemoryServiceUser = MemoryCapableAgent

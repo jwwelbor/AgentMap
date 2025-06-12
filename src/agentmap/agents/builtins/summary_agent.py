@@ -5,14 +5,13 @@ import logging
 from typing import Any, Dict, Optional
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.agents.mixins import PromptResolutionMixin
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.state_adapter_service import StateAdapterService
 from agentmap.services.protocols import LLMCapableAgent
 from agentmap.services.protocols import LLMServiceProtocol
 
 
-class SummaryAgent(BaseAgent, PromptResolutionMixin, LLMCapableAgent):
+class SummaryAgent(BaseAgent, LLMCapableAgent):
     """
     Agent that summarizes multiple input fields into a single output.
     
@@ -29,7 +28,8 @@ class SummaryAgent(BaseAgent, PromptResolutionMixin, LLMCapableAgent):
         # Infrastructure services only
         logger: Optional[logging.Logger] = None,
         execution_tracker_service: Optional[ExecutionTrackingService] = None,
-        state_adapter_service: Optional[StateAdapterService] = None
+        state_adapter_service: Optional[StateAdapterService] = None,
+        prompt_manager_service: Optional[Any] = None  # PromptManagerService
     ):
         """Initialize the summary agent with new protocol-based pattern."""
         super().__init__(
@@ -41,6 +41,9 @@ class SummaryAgent(BaseAgent, PromptResolutionMixin, LLMCapableAgent):
             state_adapter_service=state_adapter_service
         )
 
+        # Infrastructure services
+        self._prompt_manager_service = prompt_manager_service
+        
         # LLM Service - configured via protocol
         self._llm_service = None
 
@@ -53,9 +56,8 @@ class SummaryAgent(BaseAgent, PromptResolutionMixin, LLMCapableAgent):
         self.separator = self.context.get("separator", "\n\n")
         self.include_keys = self.context.get("include_keys", True)
 
-        # Note: LLM availability validation removed as it requires DI container access
-        # LLM service availability will be validated at runtime when configure_llm_service() is called
-        # This follows clean architecture - agents should not directly access DI container
+        # Resolve the prompt using PromptManagerService if available
+        self.resolved_prompt = self._resolve_prompt(prompt)
 
         if self.use_llm:
             self.log_debug(f"SummaryAgent '{name}' using LLM mode: {self.llm_type}")
@@ -76,27 +78,43 @@ class SummaryAgent(BaseAgent, PromptResolutionMixin, LLMCapableAgent):
         self.log_debug("LLM service configured")
 
     @property
+    def prompt_manager_service(self) -> Optional[Any]:  # PromptManagerService
+        """Get prompt manager service (optional for SummaryAgent)."""
+        return self._prompt_manager_service
+    
+    @property
     def llm_service(self) -> LLMServiceProtocol:
         """Get LLM service, raising clear error if not configured."""
         if self._llm_service is None:
             raise ValueError(f"LLM service not configured for agent '{self.name}'")
         return self._llm_service
-
-    # PromptResolutionMixin implementation
-    def _get_default_template_file(self) -> str:
-        """Get default template file for summary prompts."""
-        return "file:summary/summarization_v1.txt"
     
-    def _get_default_template_text(self) -> str:
-        """Get default template text for summary prompts."""
-        return "Please summarize the following information:\n\n{content}"
-    
-    def _extract_template_variables(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract template variables specific to summary needs."""
-        # Prepare basic concatenation as content for LLM
-        concatenated = self._basic_concatenation(inputs)
+    def _resolve_prompt(self, prompt: str) -> str:
+        """
+        Resolve prompt using PromptManagerService if available.
         
-        return {"content": concatenated}
+        Args:
+            prompt: Raw prompt string or prompt reference
+            
+        Returns:
+            Resolved prompt text
+        """
+        if not prompt:
+            return ""
+            
+        # If we have a prompt manager service, use it to resolve the prompt
+        if self.prompt_manager_service:
+            try:
+                resolved = self.prompt_manager_service.resolve_prompt(prompt)
+                if resolved != prompt:  # Only log if resolution actually changed the prompt
+                    self.log_debug(f"Resolved prompt reference '{prompt}' to {len(resolved)} characters")
+                return resolved
+            except Exception as e:
+                self.log_warning(f"Failed to resolve prompt '{prompt}': {e}. Using original prompt.")
+                return prompt
+        else:
+            # No prompt manager service available, use prompt as-is
+            return prompt
 
     def process(self, inputs: Dict[str, Any]) -> Any:
         """Process inputs and generate a summary."""
@@ -132,19 +150,19 @@ class SummaryAgent(BaseAgent, PromptResolutionMixin, LLMCapableAgent):
         return self.separator.join(formatted_items)
 
     def _summarize_with_llm(self, inputs: Dict[str, Any]) -> str:
-        """Use LLM to generate an intelligent summary with standardized prompt resolution."""
+        """Use LLM to generate an intelligent summary with resolved prompt."""
         # Check if LLM service is configured first (fail fast for configuration issues)
         if self._llm_service is None:
             raise ValueError(f"LLM service not configured for agent '{self.name}'")
         
         try:
-            # Get formatted prompt using standardized method
-            llm_prompt = self._get_formatted_prompt(inputs)
+            # Prepare the content to summarize
+            content_to_summarize = self._basic_concatenation(inputs)
             
             # Build messages for LLM call
             messages = [
-                {"role": "system", "content": llm_prompt},
-                {"role": "user", "content": self._basic_concatenation(inputs)}
+                {"role": "system", "content": self.resolved_prompt},
+                {"role": "user", "content": content_to_summarize}
             ]
             
             # Use LLM Service

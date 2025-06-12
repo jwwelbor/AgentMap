@@ -11,10 +11,9 @@ from typing import Any, Dict, Optional
 from agentmap.agents.builtins.storage.csv.base_agent import CSVAgent
 from agentmap.agents.builtins.storage.base_storage_agent import log_operation
 from agentmap.services.storage import DocumentResult, WriteMode
-from agentmap.agents.mixins import WriterOperationsMixin
 
 
-class CSVWriterAgent(CSVAgent, WriterOperationsMixin):
+class CSVWriterAgent(CSVAgent):
     """
     Simple agent for writing data to CSV files via CSVStorageService.
     

@@ -14,12 +14,12 @@ from typing import Any, Dict, List, Optional, Union
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, log_operation)
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
-from agentmap.services.storage import DocumentResult, FileStorageService
-from agentmap.services.storage.protocols import FileServiceUser
-from agentmap.agents.mixins import ReaderOperationsMixin, StorageErrorHandlerMixin
+from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.services.storage import DocumentResult
+from agentmap.services.storage.protocols import FileCapableAgent
 
 
-class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandlerMixin, FileServiceUser):
+class FileReaderAgent(BaseStorageAgent, FileCapableAgent):
     """
     Enhanced document reader agent using LangChain document loaders.
     
@@ -27,18 +27,36 @@ class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandl
     with options for chunking and filtering.
     """
     
-    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTrackingService, context: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, 
+        name: str, 
+        prompt: str, 
+        context: Optional[Dict[str, Any]] = None,
+        # Infrastructure services only
+        logger: Optional[logging.Logger] = None,
+        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        state_adapter_service: Optional[StateAdapterService] = None
+    ):
         """
-        Initialize the file reader agent.
+        Initialize the file reader agent with new protocol-based pattern.
         
         Args:
             name: Name of the agent node
             prompt: Prompt or instruction
-            logger: Logger instance for logging operations
-            execution_tracker: ExecutionTrackingService instance for tracking
             context: Additional context including chunking and format configuration
+            logger: Logger instance for logging operations
+            execution_tracker_service: ExecutionTrackingService instance for tracking
+            state_adapter_service: StateAdapterService instance for state operations
         """
-        super().__init__(name, prompt, logger, execution_tracker, context)
+        # Call new BaseAgent constructor (infrastructure services only)
+        super().__init__(
+            name=name,
+            prompt=prompt,
+            context=context,
+            logger=logger,
+            execution_tracker_service=execution_tracker_service,
+            state_adapter_service=state_adapter_service
+        )
         
         # Extract document processing configuration from context
         context = context or {}
@@ -47,18 +65,45 @@ class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandl
         self.should_split = context.get("should_split", False)
         self.include_metadata = context.get("include_metadata", True)
         
-        # FileServiceUser protocol requirement - will be set via dependency injection
+        # FileCapableAgent protocol requirement - will be set via dependency injection
         # or initialized in _initialize_client()
         self.file_service = None
         
         # For testing - allows a test to inject a mock loader
         self._test_loader = None
     
+    # Protocol Implementation (Required by FileCapableAgent)
+    def configure_file_service(self, file_service) -> None:
+        """
+        Configure file storage service for this agent.
+        
+        This method is called by GraphRunnerService during agent setup.
+        
+        Args:
+            file_service: File storage service instance to configure
+        """
+        self.file_service = file_service
+        # Also set as the main client for BaseStorageAgent
+        self._client = file_service
+        self.log_debug("File service configured")
+    
     def _initialize_client(self) -> None:
-        """Initialize FileStorageService as the client for file operations."""
-        self._client = FileStorageService(self.context)
-        # Set file_service for FileServiceUser protocol compliance
-        self.file_service = self._client
+        """
+        Initialize client - in the new pattern, services are injected via protocols.
+        
+        This method is kept for compatibility but should not be needed
+        as services are injected via configure_file_service() method.
+        """
+        # In the new pattern, services are injected via configure_* methods
+        # This method is kept for compatibility but should not be used
+        if self.file_service is None:
+            self.log_warning("File service not configured - agent needs file service injection")
+            # Don't create service directly as we don't have required dependencies
+            # Services should be injected via dependency injection in production
+            raise ValueError(
+                f"File service not configured for agent '{self.name}'. "
+                "Please inject file service via configure_file_service() method."
+            )
     
     def _log_operation_start(self, collection: str, inputs: Dict[str, Any]) -> None:
         """
@@ -81,7 +126,6 @@ class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandl
             ValueError: If inputs are invalid
         """
         super()._validate_inputs(inputs)
-        self._validate_reader_inputs(inputs)
         
         # Add file-specific validation
         file_path = self.get_collection(inputs)
@@ -118,16 +162,21 @@ class FileReaderAgent(BaseStorageAgent, ReaderOperationsMixin, StorageErrorHandl
         Returns:
             DocumentResult with error information
         """
-        if isinstance(error, FileNotFoundError):
+        if isinstance(error, (FileNotFoundError, PermissionError)):
+            # Log the actual error for debugging purposes
+            if isinstance(error, PermissionError):
+                self.log_warning(f"Permission denied accessing file: {collection} - {str(error)}")
+            
+            # Return generic "file not found" message for both cases (security through obscurity)
             return DocumentResult(
                 success=False,
                 file_path=collection,
                 error=f"File not found: {collection}"
             )
         
-        return self._handle_storage_error(
+        # Let base agent handle other errors
+        return super()._handle_operation_error(
             error,
-            "file read",
             collection,
-            file_path=collection
+            inputs
         )

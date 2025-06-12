@@ -116,7 +116,7 @@ class TestLLMAgent(unittest.TestCase):
         """Test LLMAgent with different LLM providers."""
         providers_config = [
             ("anthropic", "claude-3-sonnet-20240229", 0.5),
-            ("google", "gemini-pro", 0.3),
+            ("google", "gemini-1.0-pro", 0.3),
             ("openai", "gpt-4-turbo", 0.8)
         ]
         
@@ -214,10 +214,10 @@ class TestLLMAgent(unittest.TestCase):
         self.assertEqual(system_msg["role"], "system")
         self.assertIn("helpful AI assistant", system_msg["content"])
         
-        # Should have user message with input prompt
+        # Should have user message with input prompt (single field = no prefix)
         user_msg = messages[1]
         self.assertEqual(user_msg["role"], "user")
-        self.assertIn("capital of France", user_msg["content"])
+        self.assertEqual(user_msg["content"], "What is the capital of France?")  # Single field, no prefix
         
         # Verify result (now returns a dictionary with output and memory)
         self.assertIsInstance(result, dict)
@@ -240,13 +240,13 @@ class TestLLMAgent(unittest.TestCase):
         self.mock_llm_service.call_llm.assert_called_once()
         call_args = self.mock_llm_service.call_llm.call_args
         
-        # Verify messages include both context and prompt
+        # Verify messages include both context and prompt (multiple fields = prefixed format)
         messages = call_args.kwargs["messages"]
         user_msg = messages[1]  # User message
         
-        # Should include both context and prompt
-        self.assertIn("Summarize this information", user_msg["content"])
-        self.assertIn("sunny with 75°F", user_msg["content"])
+        # Should include both fields with prefixes since we have multiple fields
+        expected_content = "prompt: Summarize this information\ncontext: The weather today is sunny with 75°F temperature."
+        self.assertEqual(user_msg["content"], expected_content)
         
         # Verify result structure
         self.assertIsInstance(result, dict)
@@ -279,14 +279,14 @@ class TestLLMAgent(unittest.TestCase):
         
         result = agent.process(inputs)
         
-        # Verify all inputs are included in the message
+        # Verify all inputs are included in the message (multiple fields = prefixed format)
         call_args = self.mock_llm_service.call_llm.call_args
         messages = call_args.kwargs["messages"]
         user_msg = messages[1]
         
-        self.assertIn("Analyze sentiment", user_msg["content"])
-        self.assertIn("I love this product!", user_msg["content"])
-        self.assertIn("JSON", user_msg["content"])
+        # Should include all fields with prefixes since we have multiple fields
+        expected_content = "task: Analyze sentiment\ndata: I love this product!\nformat: JSON"
+        self.assertEqual(user_msg["content"], expected_content)
         
         # Verify result structure
         self.assertIsInstance(result, dict)
@@ -393,25 +393,25 @@ class TestLLMAgent(unittest.TestCase):
         call_args = self.mock_llm_service.call_llm.call_args
         messages = call_args.kwargs["messages"]
         
-        # Should still have messages, but system might be empty or default
-        self.assertTrue(len(messages) >= 1)
+        # With empty prompt, should only have user message (no system message)
+        self.assertEqual(len(messages), 1)
         
-        # Find the user message
-        user_msgs = [msg for msg in messages if msg["role"] == "user"]
-        self.assertTrue(len(user_msgs) >= 1)
-        self.assertIn("Test input", user_msgs[0]["content"])
+        # Should have user message only
+        user_msg = messages[0]
+        self.assertEqual(user_msg["role"], "user")
+        self.assertEqual(user_msg["content"], "Test input")  # Single field, no prefix
     
     def test_build_user_message_formatting(self):
-        """Test user message formatting with various input combinations."""
+        """Test user message formatting with conditional prefix logic."""
         # Configure LLM service
         self.agent.configure_llm_service(self.mock_llm_service)
         
         test_cases = [
-            # Single field
+            # Single field: no prefix
             ({"prompt": "Hello"}, "Hello"),
-            # Multiple fields
-            ({"prompt": "Question", "context": "Background"}, ["Question", "Background"]),
-            # With None values
+            # Multiple fields: prefixed format
+            ({"prompt": "Question", "context": "Background"}, "prompt: Question\ncontext: Background"),
+            # With None values (only non-None field, so no prefix)
             ({"prompt": "Test", "context": None}, "Test"),
         ]
         
@@ -424,12 +424,7 @@ class TestLLMAgent(unittest.TestCase):
                 messages = call_args.kwargs["messages"]
                 user_msg = messages[1]  # Second message should be user
                 
-                if isinstance(expected_content, list):
-                    for content in expected_content:
-                        if content:  # Skip None values
-                            self.assertIn(content, user_msg["content"])
-                else:
-                    self.assertIn(expected_content, user_msg["content"])
+                self.assertEqual(user_msg["content"], expected_content)
     
     # =============================================================================
     # 6. Integration Tests

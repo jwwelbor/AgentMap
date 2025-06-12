@@ -4,41 +4,91 @@
 from typing import Dict, Any
 
 
-def {func_name}(state: Dict[str, Any]) -> str:
+def {func_name}(
+    state: Dict[str, Any], 
+    success_node: str = "{success_node}", 
+    failure_node: str = "{failure_node}"
+) -> str:
     """
-    Edge function for graph routing.
+    Edge function for graph routing with flexible node configuration.
     
+    Args:
+        state: The current graph state dictionary
+        success_node: Node to route to on success (default: "{success_node}")
+        failure_node: Node to route to on failure (default: "{failure_node}")
+        
+    Returns:
+        str: Name of the next node to execute
+    
+    Node: {node_name}
+    Description: {description}
     Context: {context}
     
     Available fields in state:
 {context_fields}
     
-    Returns:
-        "success" to route to {success_node}
-        "failure" to route to {failure_node}
+    Routing Logic:
+    - Return success_node when conditions are met
+    - Return failure_node when conditions fail
+    - Can return any valid node name for complex routing
     """
     try:
-        # Extract relevant data from state
-        # TODO: Implement your routing logic here
+        # TODO: IMPLEMENT YOUR ROUTING LOGIC HERE
         
-        # Example logic (replace with your implementation):
-        if state.get("error"):
-            return "failure"
+        # Access state fields for routing decisions
+        last_action_success = state.get("last_action_success", True)
+        error = state.get("error")
         
-        # Add your routing conditions here
-        # if some_condition:
-        #     return "success"
+        # Example routing logic (REPLACE WITH YOUR IMPLEMENTATION):
+        
+        # Simple success/failure routing
+        if error or not last_action_success:
+            return failure_node
+        
+        # Add your custom routing conditions here:
+        # 
+        # Example: Route based on data content
+        # if state.get("user_input", "").lower().startswith("combat"):
+        #     return "CombatTurn"
+        # elif state.get("user_input", "").lower().startswith("talk"):
+        #     return "SocialEncounter"
+        # 
+        # Example: Route based on processing results
+        # result = state.get("{output_field}")
+        # if result and result.get("confidence", 0) > 0.8:
+        #     return success_node
         # else:
-        #     return "failure"
+        #     return "NeedsReview"
+        #
+        # Example: Conditional routing with multiple outcomes
+        # priority = state.get("priority", "normal")
+        # if priority == "urgent":
+        #     return "UrgentHandler"
+        # elif priority == "low":
+        #     return "BatchProcessor"
         
-        return "success"
+        # Default: route to success
+        return success_node
         
     except Exception as e:
+        # Log error and route to failure node
         print(f"Error in {func_name}: {{e}}")
-        return "failure"
+        
+        # Optionally store error in state for debugging
+        if isinstance(state, dict):
+            state["routing_error"] = str(e)
+            state["last_action_success"] = False
+        
+        return failure_node
 
 
-# Node: {node_name}
-# Description: {description}
+# ===== ROUTING CONFIGURATION =====
 # Success route: {success_node}
 # Failure route: {failure_node}
+# 
+# Routing patterns you can implement:
+# 1. Simple Success/Failure: Check last_action_success flag
+# 2. Content-Based: Route based on data content or type
+# 3. Conditional: Multiple conditions with different outcomes
+# 4. State-Based: Route based on accumulated state
+# 5. Dynamic: Calculate route based on complex logic

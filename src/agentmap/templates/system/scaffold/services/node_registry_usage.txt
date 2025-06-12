@@ -1,0 +1,16 @@
+# Node Registry Service Usage Example
+if hasattr(self, 'node_registry') and self.node_registry:
+    # Get information about available nodes
+    available_nodes = list(self.node_registry.keys())
+    
+    # Get specific node metadata
+    node_info = self.node_registry.get("target_node")
+    if node_info:
+        node_type = node_info["type"]
+        description = node_info["description"]
+        
+    # Use for dynamic routing decisions
+    if "error_handler" in self.node_registry:
+        return "error_handler"  # Route to error handling node
+    else:
+        return "default_next"  # Fallback routing

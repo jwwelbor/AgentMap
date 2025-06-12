@@ -1,0 +1,19 @@
+# ===== SERVICE INJECTION QUICK REFERENCE =====
+#
+# 1. Add protocol to class definition:
+#    from agentmap.services.protocols import LLMCapableAgent, StorageCapableAgent
+#    class {class_name}(BaseAgent, LLMCapableAgent, StorageCapableAgent):
+#
+# 2. Use services in process() method:
+#    LLM: self.llm_service.call_llm(provider="openai", messages=[...])
+#    Storage: self.storage_service.read("csv", "file.csv")
+#             self.storage_service.write("json", "output.json", data)
+#
+# 3. Available providers:
+#    LLM: "openai", "anthropic", "google"
+#    Storage: "csv", "json", "file", "vector", "memory"
+#
+# 4. Services are automatically injected by GraphRunnerService
+#    based on the protocols your agent implements.
+#
+# See full documentation for complete API reference.

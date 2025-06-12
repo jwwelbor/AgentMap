@@ -1,0 +1,13 @@
+{header}
+
+{class_definition}
+    
+    {init_method}
+
+    {process_method}
+
+    {helper_methods}
+
+{service_examples}
+
+{footer}

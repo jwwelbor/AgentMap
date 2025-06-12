@@ -62,3 +62,28 @@ class SuccessAgent(BaseAgent):
         self.log_debug(f"[SuccessAgent] Output field: {self.output_field}")
             
         return message
+    
+    def _get_child_service_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Provide SuccessAgent-specific service information for debugging.
+        
+        Returns:
+            Dictionary with success agent capabilities and configuration
+        """
+        return {
+            "services": {
+                "supports_success_simulation": True,
+                "generates_success_messages": True
+            },
+            "capabilities": {
+                "success_path_testing": True,
+                "detailed_success_reporting": True,
+                "input_context_inclusion": True,
+                "prompt_context_inclusion": True
+            },
+            "agent_behavior": {
+                "execution_type": "success_simulation",
+                "output_format": "success_message_with_context",
+                "testing_purpose": "validates_success_branches"
+            }
+        }

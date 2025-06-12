@@ -11,13 +11,12 @@ from typing import Any, Dict, Optional, TypeVar, Union
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent, log_operation)
 from agentmap.services.storage import DocumentResult, WriteMode
-from agentmap.agents.mixins import StorageErrorHandlerMixin
 
 
 T = TypeVar('T')  # Generic type for document data
 
 
-class DocumentStorageAgent(BaseStorageAgent, StorageErrorHandlerMixin):
+class DocumentStorageAgent(BaseStorageAgent):
     """
     Base class for document storage agents.
     

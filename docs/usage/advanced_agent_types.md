@@ -1,5 +1,10 @@
 # Advanced Agent Types
 
+> **Related Documentation**: 
+> - [Agent Development Contract](agent_contract.md) - Agent interface requirements and patterns
+> - [Service Injection](service_injection.md) - Dependency injection system for services
+> - [AgentMap Agent Types](agentmap_agent_types.md) - Basic agent types and usage patterns
+
 ## GraphAgent
 
 Executes a subgraph and returns its result.
@@ -226,6 +231,354 @@ In this example:
 5. **Testing**: Test with a variety of inputs to ensure proper routing behavior
 
 ---
+
+## Context Configuration Reference
+
+The `Context` field in CSV configurations accepts JSON objects that control agent behavior. This section provides a comprehensive reference for all available context configuration options organized by agent type.
+
+### General Context Patterns
+
+Context configurations follow these patterns:
+
+**Simple Configuration:**
+```csv
+MyGraph,Node1,,{"temperature":0.5},llm,Next,,input,output,Your prompt here
+```
+
+**Complex Configuration:**
+```csv
+MyGraph,Node1,,{"routing_enabled":true,"task_type":"analysis","memory_key":"conversation","max_memory_messages":10},llm,Next,,input|conversation,output,Your prompt here
+```
+
+### LLM Agent Context Configuration
+
+LLM agents support two operational modes with different configuration options.
+
+#### Legacy Mode (Direct Provider)
+
+For direct control over LLM provider and model selection:
+
+```json
+{
+  "provider": "anthropic",
+  "model": "claude-3-sonnet-20240229",
+  "temperature": 0.7,
+  "max_tokens": 1000,
+  "api_key": "your-api-key"
+}
+```
+
+**Configuration Options:**
+
+| Parameter | Description | Default | Options |
+|-----------|-------------|---------|----------|
+| `provider` | LLM provider to use | `"anthropic"` | `"openai"`, `"anthropic"`, `"google"` |
+| `model` | Specific model name | Provider default | Provider-specific model names |
+| `temperature` | Randomness in generation | `0.7` | `0.0` - `2.0` |
+| `max_tokens` | Maximum tokens to generate | Provider default | Integer |
+| `api_key` | API key (optional if in env) | Environment variable | String |
+
+**Example:**
+```csv
+Analysis,LLMNode,,{"provider":"openai","model":"gpt-4","temperature":0.3},llm,Next,,query,analysis,Analyze this data and provide insights.
+```
+
+#### Routing Mode (Intelligent Selection)
+
+For automatic provider and model selection based on task complexity:
+
+```json
+{
+  "routing_enabled": true,
+  "task_type": "analysis",
+  "complexity_override": "high",
+  "provider_preference": ["anthropic", "openai"],
+  "cost_optimization": true,
+  "prefer_quality": true
+}
+```
+
+**Core Routing Parameters:**
+
+| Parameter | Description | Default | Options |
+|-----------|-------------|---------|----------|
+| `routing_enabled` | Enable intelligent routing | `false` | `true`, `false` |
+| `task_type` | Type of task for optimization | `"general"` | `"analysis"`, `"creative"`, `"factual"`, `"coding"` |
+| `complexity_override` | Force complexity level | Auto-detect | `"low"`, `"medium"`, `"high"` |
+| `auto_detect_complexity` | Auto-detect task complexity | `true` | `true`, `false` |
+
+**Provider Selection:**
+
+| Parameter | Description | Default | Options |
+|-----------|-------------|---------|----------|
+| `provider_preference` | Preferred providers in order | `[]` | Array of provider names |
+| `excluded_providers` | Providers to exclude | `[]` | Array of provider names |
+| `model_override` | Force specific model | None | Model name string |
+| `fallback_provider` | Fallback if preferred unavailable | `"anthropic"` | Provider name |
+| `fallback_model` | Fallback model | Provider default | Model name |
+
+**Optimization Settings:**
+
+| Parameter | Description | Default | Options |
+|-----------|-------------|---------|----------|
+| `max_cost_tier` | Maximum cost tier to use | None | `1`, `2`, `3`, `4` |
+| `cost_optimization` | Optimize for cost | `true` | `true`, `false` |
+| `prefer_speed` | Prioritize response speed | `false` | `true`, `false` |
+| `prefer_quality` | Prioritize output quality | `false` | `true`, `false` |
+| `retry_with_lower_complexity` | Retry with simpler model on failure | `true` | `true`, `false` |
+
+**Advanced Routing Example:**
+```csv
+ComplexAnalysis,AnalyzeData,,{"routing_enabled":true,"task_type":"analysis","provider_preference":["anthropic","openai"],"max_cost_tier":3,"prefer_quality":true},llm,Summary,,data|context,analysis,Perform deep analysis on this dataset.
+```
+
+#### Memory Configuration
+
+Both modes support memory management for conversational agents:
+
+```json
+{
+  "memory_key": "chat_history",
+  "max_memory_messages": 20
+}
+```
+
+**Memory Parameters:**
+
+| Parameter | Description | Default | Options |
+|-----------|-------------|---------|----------|
+| `memory_key` | State field for conversation memory | `"memory"` | String |
+| `max_memory_messages` | Max messages to retain | None (unlimited) | Integer |
+
+**Memory Example:**
+```csv
+Chatbot,ChatNode,,{"provider":"anthropic","memory_key":"conversation","max_memory_messages":10},llm,ChatNode,,user_input|conversation,response,You are a helpful assistant.
+```
+
+#### Debugging Configuration
+
+For debugging and development:
+
+```json
+{
+  "debug_routing": true,
+  "log_model_selection": true,
+  "log_token_usage": true
+}
+```
+
+### SummaryAgent Context Configuration
+
+SummaryAgent operates in two modes: basic concatenation and LLM-powered summarization.
+
+#### Basic Mode Configuration
+
+```json
+{
+  "format": "{key}: {value}",
+  "separator": "\n\n",
+  "include_keys": true
+}
+```
+
+**Basic Mode Parameters:**
+
+| Parameter | Description | Default | Options |
+|-----------|-------------|---------|----------|
+| `format` | Template for each item | `"{key}: {value}"` | Template string |
+| `separator` | String between items | `"\n\n"` | String |
+| `include_keys` | Include field names | `true` | `true`, `false` |
+
+#### LLM Mode Configuration
+
+```json
+{
+  "llm": "anthropic",
+  "model": "claude-3-sonnet-20240229",
+  "temperature": 0.3
+}
+```
+
+**LLM Mode Parameters:**
+
+| Parameter | Description | Default | Options |
+|-----------|-------------|---------|----------|
+| `llm` | LLM provider for summarization | None | `"openai"`, `"anthropic"`, `"google"` |
+| `model` | Specific model to use | Provider default | Model name |
+| `temperature` | Generation temperature | `0.7` | `0.0` - `2.0` |
+
+**Example Configurations:**
+
+**Basic formatting:**
+```csv
+Report,Combine,,{"format":"**{key}**: {value}","separator":"\n---\n"},summary,Save,,section1|section2|section3,combined,
+```
+
+**LLM summarization:**
+```csv
+Report,Summarize,,{"llm":"anthropic","temperature":0.3},summary,Save,,research|analysis|conclusions,executive_summary,Create a concise executive summary highlighting key findings and recommendations.
+```
+
+### OrchestratorAgent Context Configuration
+
+Orchestrator agents route requests to appropriate nodes using various matching strategies.
+
+#### Core Configuration
+
+```json
+{
+  "matching_strategy": "tiered",
+  "confidence_threshold": 0.8,
+  "default_target": "DefaultHandler"
+}
+```
+
+**Core Parameters:**
+
+| Parameter | Description | Default | Options |
+|-----------|-------------|---------|----------|
+| `matching_strategy` | Matching approach | `"tiered"` | `"algorithm"`, `"llm"`, `"tiered"` |
+| `confidence_threshold` | Threshold for algorithm match | `0.8` | `0.0` - `1.0` |
+| `default_target` | Fallback node | `Success_Next` | Node name |
+
+#### Node Filtering
+
+```json
+{
+  "nodes": "ProcessData|AnalyzeData|GenerateReport",
+  "nodeType": "data_processor"
+}
+```
+
+**Filtering Parameters:**
+
+| Parameter | Description | Options |
+|-----------|-------------|----------|
+| `nodes` | Specific nodes to consider | Pipe-separated names or `"all"` |
+| `nodeType` | Filter by agent type | Agent type string |
+
+#### LLM Configuration (for LLM/Tiered modes)
+
+```json
+{
+  "llm_type": "openai",
+  "temperature": 0.2
+}
+```
+
+**LLM Parameters:**
+
+| Parameter | Description | Default | Options |
+|-----------|-------------|---------|----------|
+| `llm_type` | LLM provider for matching | `"openai"` | `"openai"`, `"anthropic"`, `"google"` |
+| `temperature` | LLM generation temperature | `0.2` | `0.0` - `2.0` |
+
+**Strategy Examples:**
+
+**Algorithm-only (fast):**
+```csv
+Router,Route,,{"matching_strategy":"algorithm","nodes":"DataProcessor|ReportGenerator"},orchestrator,Default,Error,available_nodes|user_input,selected_node,
+```
+
+**LLM-only (accurate):**
+```csv
+Router,Route,,{"matching_strategy":"llm","llm_type":"anthropic","temperature":0.1},orchestrator,Default,Error,available_nodes|user_input,selected_node,
+```
+
+**Tiered (balanced):**
+```csv
+Router,Route,,{"matching_strategy":"tiered","confidence_threshold":0.9},orchestrator,Default,Error,available_nodes|user_input,selected_node,
+```
+
+### Storage Agent Context Configuration
+
+Storage agents support various configuration options depending on the storage type.
+
+#### Vector Storage Configuration
+
+```json
+{
+  "k": 5,
+  "metadata_keys": ["source", "timestamp"],
+  "collection": "documents"
+}
+```
+
+**Vector Parameters:**
+
+| Parameter | Description | Default | Options |
+|-----------|-------------|---------|----------|
+| `k` | Number of results to return | `4` | Integer |
+| `metadata_keys` | Metadata fields to include | None | Array of strings |
+| `collection` | Vector collection name | Required | String |
+
+#### File Storage Configuration
+
+```json
+{
+  "path": "outputs/",
+  "filename_template": "{timestamp}_{name}.txt",
+  "encoding": "utf-8"
+}
+```
+
+#### CSV Storage Configuration
+
+```json
+{
+  "delimiter": ",",
+  "quoting": "minimal",
+  "headers": true
+}
+```
+
+### Input/Output Field Configuration
+
+All agents support input/output field configuration through context:
+
+```json
+{
+  "input_fields": ["query", "context", "memory"],
+  "output_field": "response"
+}
+```
+
+**Field Parameters:**
+
+| Parameter | Description | Default | Options |
+|-----------|-------------|---------|----------|
+| `input_fields` | Fields to extract from state | From CSV | Array of field names |
+| `output_field` | Field to store result | From CSV | Field name |
+
+### Best Practices for Context Configuration
+
+1. **Start Simple**: Begin with basic configurations and add complexity as needed
+2. **Test Configurations**: Use small test cases to validate configuration behavior
+3. **Document Choices**: Comment complex configurations in your CSV descriptions
+4. **Use Routing Wisely**: Enable routing for complex tasks, use direct providers for simple ones
+5. **Memory Management**: Set reasonable memory limits to control costs and context size
+6. **Error Handling**: Always specify fallback options for critical paths
+
+### Configuration Validation
+
+AgentMap validates context configurations at runtime. Common validation errors:
+
+- **Invalid JSON**: Context must be valid JSON format
+- **Unknown Parameters**: Unrecognized parameters are logged as warnings
+- **Type Mismatches**: Parameters must match expected types (e.g., numbers for temperature)
+- **Required Services**: Some configurations require specific services to be available
+
+### Debugging Context Issues
+
+To debug context configuration problems:
+
+1. **Check Logs**: Context validation errors appear in agent logs
+2. **Test Incrementally**: Add configuration options one at a time
+3. **Verify JSON**: Use a JSON validator to check syntax
+4. **Review Defaults**: Understand which values are defaults vs. configured
+
+---
+
 ## Field Usage in AgentMap
 
 This document explains how each field in the CSV is used by different components of AgentMap.
@@ -393,3 +746,12 @@ The `Prompt` field serves different purposes depending on the agent type:
 
 
 ---
+
+## Next Steps
+
+After mastering advanced agent types and context configuration:
+
+1. **Understand Service Architecture**: Read [Service Injection](service_injection.md) to understand how services are provided to agents
+2. **Learn Agent Patterns**: Study [Agent Development Contract](agent_contract.md) for implementation requirements
+3. **Build Custom Agents**: See `custom_agents/README.md` for complete custom agent development examples
+4. **Explore Basic Types**: Review [AgentMap Agent Types](agentmap_agent_types.md) for foundational agent patterns

@@ -1,0 +1,7 @@
+# JSON Service Usage Example
+if hasattr(self, 'json_service') and self.json_service:
+    data = self.json_service.read("data.json")
+    
+    # Write JSON data
+    result = self.json_service.write("output.json", processed_data)
+    return result

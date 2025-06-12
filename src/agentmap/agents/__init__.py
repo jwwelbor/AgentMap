@@ -92,7 +92,7 @@ from agentmap.agents.builtins.branching_agent import BranchingAgent
 from agentmap.agents.builtins.failure_agent import FailureAgent
 from agentmap.agents.builtins.success_agent import SuccessAgent
 from agentmap.agents.builtins.input_agent import InputAgent
-# from agentmap.agents.builtins.graph_agent import GraphAgent
+from agentmap.agents.builtins.graph_agent import GraphAgent
 
 # LLM agent classes (may not be available depending on dependencies)
 try:

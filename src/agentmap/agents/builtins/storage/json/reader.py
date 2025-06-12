@@ -11,10 +11,9 @@ from typing import Any, Dict, Optional
 from agentmap.agents.builtins.storage.json.base_agent import JSONDocumentAgent
 from agentmap.agents.builtins.storage.base_storage_agent import log_operation
 from agentmap.services.storage import DocumentResult
-from agentmap.agents.mixins import ReaderOperationsMixin
 
 
-class JSONDocumentReaderAgent(JSONDocumentAgent, ReaderOperationsMixin):
+class JSONDocumentReaderAgent(JSONDocumentAgent):
     """
     Simple agent for reading data from JSON documents via JSONStorageService.
     

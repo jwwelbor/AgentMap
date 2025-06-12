@@ -12,52 +12,202 @@ from agentmap.agents.base_agent import BaseAgent
     Node: {node_name}
     Input Fields: {input_fields}
     Output Field: {output_field}{services_doc}{prompt_doc}
+    
+    Architecture: 
+    This agent uses BaseAgent's built-in processing hooks:
+    - _pre_process: Input validation and transformation (override if needed)
+    - process: Main business logic (IMPLEMENT THIS METHOD)
+    - _post_process: Result formatting and cleanup (override if needed)
+    
+    SERVICE INJECTION:
+    To use LLM or Storage services, implement the appropriate protocol:
+    
+    For LLM Services:
+    from agentmap.services.protocols import LLMCapableAgent
+    class {class_name}(BaseAgent, LLMCapableAgent):
+        def process(self, inputs):
+            # Access via self.llm_service
+            response = self.llm_service.call_llm(
+                provider="openai",  # or "anthropic", "google"
+                messages=[
+                    {{"role": "user", "content": inputs.get("query")}}
+                ],
+                model="gpt-4"  # optional
+            )
+            return response.get("content")
+    
+    For Storage Services:
+    from agentmap.services.protocols import StorageCapableAgent
+    class {class_name}(BaseAgent, StorageCapableAgent):
+        def process(self, inputs):
+            # Access via self.storage_service
+            data = self.storage_service.read("csv", "data.csv")
+            processed = {{"count": len(data), "items": data}}
+            self.storage_service.write("json", "output.json", processed)
+            return processed
+    
+    Available Storage Types: "csv", "json", "file", "vector", "memory"
+    See documentation for full API details.
     """
     
-    def __init__(self):
-        """Initialize {agent_type}Agent."""
-        super().__init__(){service_attributes}
+    def __init__(self, name, prompt, context=None, logger=None, execution_tracker_service=None, state_adapter_service=None):
+        """Initialize {class_name}."""
+        super().__init__(name, prompt, context, logger, execution_tracker_service, state_adapter_service){service_attributes}
     
-    def run(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    def process(self, inputs: Dict[str, Any]) -> Any:
         """
-        Process the agent's task.
+        Process the inputs and return the output value.
+        
+        This method is called by BaseAgent.run() after input extraction.
+        IMPLEMENT THIS METHOD with your business logic.
         
         Args:
-            state: Current state dictionary containing input data
+            inputs: Processed input dictionary from BaseAgent
             
         Returns:
-            Updated state dictionary with results
+            Output value to store in graph state under '{output_field}'
+            (BaseAgent handles state management automatically)
         """
-        try:
-            # Extract inputs from state
-            processed_inputs = self.process_inputs(state)
-            
-            # Access specific input fields:
+        # TODO: IMPLEMENT YOUR AGENT LOGIC HERE
+        # Description: {description}
+        # Context: {context}
+        
+        # Access specific input fields:
 {input_field_access}
-            
-            # === IMPLEMENT YOUR BUSINESS LOGIC HERE ===
-            
-{service_usage_examples}
-            
-            # Example processing (replace with your logic):
+        
+        # Example service usage:
+        # No services configured by default. To add services:
+        #
+        # 1. Add protocols to class definition:
+        # from agentmap.services.protocols import LLMCapableAgent, StorageCapableAgent
+        # class {class_name}(BaseAgent, LLMCapableAgent, StorageCapableAgent):
+        #
+        # 2. Use in process() method:
+        # llm_response = self.llm_service.call_llm(
+        #     provider="openai", 
+        #     messages=[
+        #         {{"role": "user", "content": inputs.get("query")}}
+        #     ]
+        # )
+        # 
+        # storage_data = self.storage_service.read("csv", "input.csv")
+        # self.storage_service.write("json", "output.json", result)
+        
+        # Example implementation (REPLACE WITH YOUR LOGIC):
+        try:
+            # Your processing logic goes here
             result = {{
                 "processed": True,
                 "agent_type": "{agent_type}",
-                "node": "{node_name}"
+                "node": "{node_name}",
+                "timestamp": "placeholder"
             }}
             
-            # Set output field if specified
-            if "{output_field}":
-                result["{output_field}"] = "processed_value"
-            
+            # BaseAgent will automatically store this in state['{output_field}']
             return result
             
         except Exception as e:
-            self.logger.error(f"Error in {class_name}: {{e}}")
-            return {{
-                "error": str(e),
-                "agent_type": "{agent_type}",
-                "node": "{node_name}"
-            }}
+            self.logger.error(f"Processing error in {class_name}: {{str(e)}}")
+            # Return error info - BaseAgent handles error state management
+            return {{"error": str(e), "success": False}}
+    
+    def _pre_process(self, state: Any, inputs: Dict[str, Any]) -> tuple:
+        """
+        Optional: Override for custom input validation/transformation.
+        
+        Args:
+            state: Current state from graph
+            inputs: Extracted inputs
+            
+        Returns:
+            Tuple of (modified_state, modified_inputs)
+        """
+        # Default: use BaseAgent's implementation
+        state, inputs = super()._pre_process(state, inputs)
+        
+        # TODO: Add custom input validation/transformation here
+        # Example:
+        # if 'required_field' not in inputs:
+        #     raise ValueError("Missing required field")
+        # inputs['normalized_field'] = inputs['field'].lower().strip()
+        
+        return state, inputs
+    
+    def _post_process(self, state: Any, inputs: Dict[str, Any], output: Any) -> tuple:
+        """
+        Optional: Override for custom result formatting/cleanup.
+        
+        Args:
+            state: Current state from graph
+            inputs: Original inputs
+            output: Result from process() method
+            
+        Returns:
+            Tuple of (modified_state, modified_output)
+        """
+        # Default: use BaseAgent's implementation  
+        state, output = super()._post_process(state, inputs, output)
+        
+        # TODO: Add custom post-processing here
+        # Example:
+        # if isinstance(output, dict):
+        #     output['timestamp'] = time.time()
+        #     output['processed_by'] = self.name
+        
+        return state, output
+    
+    def _get_child_service_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Provide agent-specific service information for debugging.
+        
+        This method is called by get_service_info() to allow custom agents
+        to report their specialized services and capabilities.
+        
+        Override this method if your agent has specialized services or 
+        configuration that should be included in diagnostic output.
+        
+        Returns:
+            Dictionary with agent-specific service info, or None
+        """
+        # TODO: If your agent has specialized services, report them here
+        # Example for an agent with custom services:
+        # return {
+        #     "services": {
+        #         "my_custom_service_available": hasattr(self, 'my_service') and self.my_service is not None,
+        #         "external_api_configured": hasattr(self, 'api_key') and self.api_key is not None,
+        #     },
+        #     "protocols": {
+        #         "implements_my_custom_protocol": True
+        #     },
+        #     "custom_configuration": {
+        #         "api_endpoint": getattr(self, 'api_endpoint', 'Not configured'),
+        #         "timeout": getattr(self, 'timeout', 30),
+        #         "retry_count": getattr(self, 'retry_count', 3)
+        #     }
+        # }
+        
+        # Default: no specialized service info
+        return None
+
 
 {usage_examples_section}
+
+# ===== SERVICE INJECTION QUICK REFERENCE =====
+#
+# 1. Add protocol to class definition:
+#    from agentmap.services.protocols import LLMCapableAgent, StorageCapableAgent
+#    class {class_name}(BaseAgent, LLMCapableAgent, StorageCapableAgent):
+#
+# 2. Use services in process() method:
+#    LLM: self.llm_service.call_llm(provider="openai", messages=[...])
+#    Storage: self.storage_service.read("csv", "file.csv")
+#             self.storage_service.write("json", "output.json", data)
+#
+# 3. Available providers:
+#    LLM: "openai", "anthropic", "google"
+#    Storage: "csv", "json", "file", "vector", "memory"
+#
+# 4. Services are automatically injected by GraphRunnerService
+#    based on the protocols your agent implements.
+#
+# See full documentation for complete API reference.

@@ -36,12 +36,13 @@ class PromptManagerService:
         self.config = app_config_service
         self.logger = logging_service.get_class_logger(self)
         
-        # Get prompts configuration
-        prompts_config = self.config.get_section("prompts")
+        # Get prompts configuration using specific getter method
+        prompts_config = self.config.get_prompts_config()
         self.prompts_config = prompts_config
         self.prompts_dir = Path(prompts_config.get("directory", "prompts"))
         self.registry_path = Path(prompts_config.get("registry_file", "prompts/registry.yaml"))
         self.enable_cache = prompts_config.get("enable_cache", True)
+        self.template_location = 'agentmap.templates.system'
         self._cache = {}
         self._registry = self._load_registry()
 
@@ -56,6 +57,7 @@ class PromptManagerService:
         """Load prompt registry from configuration files."""
         registry = {}
 
+        # Try to load from configured registry path first
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, 'r') as f:
@@ -65,6 +67,7 @@ class PromptManagerService:
             except Exception as e:
                 self.logger.error(f"Error loading prompt registry from {self.registry_path}: {e}")
 
+        # Try to load from system registry as fallback
         try:
             system_registry = self._find_resource("registry.yaml")
             if system_registry and system_registry.exists():
@@ -72,9 +75,13 @@ class PromptManagerService:
                     registry = yaml.safe_load(f) or {}
                     self.logger.debug(f"Loaded {len(registry)} prompts from system registry")
                     return registry
+            else:
+                self.logger.debug("No system registry file found, continuing with empty registry")
         except Exception as e:
-            self.logger.error(f"Error loading system registry: {e}")
+            self.logger.debug(f"Could not load system registry (this is normal if not provided): {e}")
 
+        # Return empty registry if no files found (this is acceptable)
+        self.logger.debug("No prompt registry files found, using empty registry")
         return registry
 
     def _find_resource(self, resource_path: str) -> Optional[Path]:
@@ -92,7 +99,7 @@ class PromptManagerService:
     def _try_get_resource(self, resource_path: str) -> Optional[Path]:
         """Try to find embedded resource using importlib."""
         parts = resource_path.split('/')
-        package = 'agentmap.services.templates.system'
+        package = self.template_location
 
         if len(parts) > 1:
             subdir = '.'.join(parts[:-1])

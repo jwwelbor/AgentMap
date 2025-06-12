@@ -1,0 +1,14 @@
+# Vector Service Usage Example
+if hasattr(self, 'vector_service') and self.vector_service:
+    similar_docs = self.vector_service.search(
+        collection="documents",
+        query="search query"
+    )
+    
+    # Add documents to vector store
+    document = {"content": "text", "metadata": {"key": "value"}}
+    result = self.vector_service.add(
+        collection="documents", 
+        documents=[document]
+    )
+    return result

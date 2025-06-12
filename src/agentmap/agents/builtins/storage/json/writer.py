@@ -11,9 +11,9 @@ from typing import Any, Dict, Optional, Union
 from agentmap.agents.builtins.storage.json.base_agent import JSONDocumentAgent
 from agentmap.agents.builtins.storage.base_storage_agent import log_operation
 from agentmap.services.storage import DocumentResult, WriteMode
-from agentmap.agents.mixins import WriterOperationsMixin
 
-class JSONDocumentWriterAgent(JSONDocumentAgent, WriterOperationsMixin):
+
+class JSONDocumentWriterAgent(JSONDocumentAgent):
     """
     Simple agent for writing data to JSON documents via JSONStorageService.
     

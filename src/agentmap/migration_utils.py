@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import Mock
 
 # Re-export key classes for backward compatibility
+from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.models.execution_tracker import ExecutionTracker
 from agentmap.services.llm_service import LLMService
 from agentmap.services.storage.manager import StorageServiceManager

@@ -10,13 +10,12 @@ import logging
 from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.vector.base_agent import VectorAgent
-from agentmap.agents.mixins import WriterOperationsMixin
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.state_adapter_service import StateAdapterService
 from agentmap.services.storage import WriteMode
 
 
-class VectorWriterAgent(VectorAgent, WriterOperationsMixin):
+class VectorWriterAgent(VectorAgent):
     """
     Simple agent for storing documents in vector databases via VectorStorageService.
     
@@ -79,11 +78,17 @@ class VectorWriterAgent(VectorAgent, WriterOperationsMixin):
         Raises:
             ValueError: If inputs are invalid
         """
-        super()._validate_inputs(inputs)
+        # Don't call super()._validate_inputs() as it gives generic error messages
+        # Vector writer needs specific validation for documents
         
-        # Check for required input field
+        # Validate collection parameter (from base class logic)
+        collection = self.get_collection(inputs)
+        if not collection:
+            raise ValueError("Missing required 'collection' parameter")
+        
+        # Check for required input field with specific error message
         input_field = self.input_fields[0]
-        if inputs.get(input_field) is None:
+        if input_field not in inputs or inputs.get(input_field) is None:
             raise ValueError(f"No documents provided in '{input_field}' field")
     
     def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> Any:

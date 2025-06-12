@@ -7,12 +7,12 @@ based on the protocols they implement, following a declarative approach.
 from typing import Any, TYPE_CHECKING
 
 from agentmap.services.storage.protocols import (
-    CSVServiceUser,
-    JSONServiceUser, 
-    FileServiceUser,
-    VectorServiceUser,
-    MemoryServiceUser,
-    StorageServiceUser
+    CSVCapableAgent,
+    JSONCapableAgent, 
+    FileCapableAgent,
+    VectorCapableAgent,
+    MemoryCapableAgent,
+    StorageCapableAgent
 )
 from agentmap.exceptions import AgentInitializationError
 
@@ -50,7 +50,7 @@ def inject_storage_services(
     
     try:
         # Check each specific service protocol and inject accordingly
-        if isinstance(agent_instance, CSVServiceUser):
+        if isinstance(agent_instance, CSVCapableAgent):
             csv_service = storage_service_manager.get_service('csv')
             if csv_service is None:
                 raise StorageServiceInjectionError(
@@ -60,7 +60,7 @@ def inject_storage_services(
             injected_services.append('csv')
             logger.debug(f"[ServiceInjection] Injected CSV service into {agent_name}")
             
-        if isinstance(agent_instance, JSONServiceUser):
+        if isinstance(agent_instance, JSONCapableAgent):
             json_service = storage_service_manager.get_service('json')
             if json_service is None:
                 raise StorageServiceInjectionError(
@@ -70,7 +70,7 @@ def inject_storage_services(
             injected_services.append('json')
             logger.debug(f"[ServiceInjection] Injected JSON service into {agent_name}")
             
-        if isinstance(agent_instance, FileServiceUser):
+        if isinstance(agent_instance, FileCapableAgent):
             file_service = storage_service_manager.get_service('file')
             if file_service is None:
                 raise StorageServiceInjectionError(
@@ -80,7 +80,7 @@ def inject_storage_services(
             injected_services.append('file')
             logger.debug(f"[ServiceInjection] Injected File service into {agent_name}")
             
-        if isinstance(agent_instance, VectorServiceUser):
+        if isinstance(agent_instance, VectorCapableAgent):
             vector_service = storage_service_manager.get_service('vector')
             if vector_service is None:
                 raise StorageServiceInjectionError(
@@ -90,7 +90,7 @@ def inject_storage_services(
             injected_services.append('vector')
             logger.debug(f"[ServiceInjection] Injected Vector service into {agent_name}")
             
-        if isinstance(agent_instance, MemoryServiceUser):
+        if isinstance(agent_instance, MemoryCapableAgent):
             memory_service = storage_service_manager.get_service('memory')
             if memory_service is None:
                 raise StorageServiceInjectionError(
@@ -100,10 +100,10 @@ def inject_storage_services(
             injected_services.append('memory')
             logger.debug(f"[ServiceInjection] Injected Memory service into {agent_name}")
         
-        # Handle generic StorageServiceUser for backward compatibility
+        # Handle generic StorageCapableAgent for backward compatibility
         # Only inject if no specific services were injected and agent has the property
         if (not injected_services and 
-            isinstance(agent_instance, StorageServiceUser) and 
+            isinstance(agent_instance, StorageCapableAgent) and 
             hasattr(agent_instance, 'storage_service')):
             
             # Default to file service for generic storage operations
@@ -136,12 +136,12 @@ def requires_storage_services(agent_instance: Any) -> bool:
     Returns:
         True if agent implements any storage service user protocols
     """
-    return (isinstance(agent_instance, CSVServiceUser) or
-            isinstance(agent_instance, JSONServiceUser) or
-            isinstance(agent_instance, FileServiceUser) or
-            isinstance(agent_instance, VectorServiceUser) or
-            isinstance(agent_instance, MemoryServiceUser) or
-            isinstance(agent_instance, StorageServiceUser))
+    return (isinstance(agent_instance, CSVCapableAgent) or
+            isinstance(agent_instance, JSONCapableAgent) or
+            isinstance(agent_instance, FileCapableAgent) or
+            isinstance(agent_instance, VectorCapableAgent) or
+            isinstance(agent_instance, MemoryCapableAgent) or
+            isinstance(agent_instance, StorageCapableAgent))
 
 
 def get_required_service_types(agent_instance: Any) -> list[str]:
@@ -156,17 +156,17 @@ def get_required_service_types(agent_instance: Any) -> list[str]:
     """
     required_services = []
     
-    if isinstance(agent_instance, CSVServiceUser):
+    if isinstance(agent_instance, CSVCapableAgent):
         required_services.append('csv')
-    if isinstance(agent_instance, JSONServiceUser):
+    if isinstance(agent_instance, JSONCapableAgent):
         required_services.append('json')
-    if isinstance(agent_instance, FileServiceUser):
+    if isinstance(agent_instance, FileCapableAgent):
         required_services.append('file')
-    if isinstance(agent_instance, VectorServiceUser):
+    if isinstance(agent_instance, VectorCapableAgent):
         required_services.append('vector')
-    if isinstance(agent_instance, MemoryServiceUser):
+    if isinstance(agent_instance, MemoryCapableAgent):
         required_services.append('memory')
-    if isinstance(agent_instance, StorageServiceUser) and not required_services:
+    if isinstance(agent_instance, StorageCapableAgent) and not required_services:
         required_services.append('storage (generic)')
         
     return required_services

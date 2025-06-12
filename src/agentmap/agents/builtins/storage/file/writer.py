@@ -15,13 +15,13 @@ from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent
 )
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
-from agentmap.services.storage import DocumentResult, WriteMode, FileStorageService
-from agentmap.services.storage.protocols import FileServiceUser
-from agentmap.agents.mixins import WriterOperationsMixin, StorageErrorHandlerMixin
+from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.services.storage import DocumentResult, WriteMode
+from agentmap.services.storage.protocols import FileCapableAgent
 
 
 
-class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandlerMixin, FileServiceUser):
+class FileWriterAgent(BaseStorageAgent, FileCapableAgent):
     """
     Enhanced document writer agent for text-based file formats.
     
@@ -29,18 +29,36 @@ class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandl
     with support for different write modes including append and update.
     """
     
-    def __init__(self, name: str, prompt: str, logger: logging.Logger, execution_tracker: ExecutionTrackingService, context: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, 
+        name: str, 
+        prompt: str, 
+        context: Optional[Dict[str, Any]] = None,
+        # Infrastructure services only
+        logger: Optional[logging.Logger] = None,
+        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        state_adapter_service: Optional[StateAdapterService] = None
+    ):
         """
-        Initialize the file writer agent.
+        Initialize the file writer agent with new protocol-based pattern.
         
         Args:
             name: Name of the agent node
             prompt: File path or prompt with path
-            logger: Logger instance for logging operations
-            execution_tracker: ExecutionTrackingService instance for tracking
             context: Additional configuration including encoding and newline settings
+            logger: Logger instance for logging operations
+            execution_tracker_service: ExecutionTrackingService instance for tracking
+            state_adapter_service: StateAdapterService instance for state operations
         """
-        super().__init__(name, prompt, logger, execution_tracker, context)
+        # Call new BaseAgent constructor (infrastructure services only)
+        super().__init__(
+            name=name,
+            prompt=prompt,
+            context=context,
+            logger=logger,
+            execution_tracker_service=execution_tracker_service,
+            state_adapter_service=state_adapter_service
+        )
         
         # Extract file writing configuration from context
         context = context or {}
@@ -48,9 +66,24 @@ class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandl
         self.newline = context.get("newline", None)  # System default
         self._current_state = None  # Store current state for state key lookups
         
-        # FileServiceUser protocol requirement - will be set via dependency injection
+        # FileCapableAgent protocol requirement - will be set via dependency injection
         # or initialized in _initialize_client()
         self.file_service = None
+    
+    # Protocol Implementation (Required by FileCapableAgent)
+    def configure_file_service(self, file_service) -> None:
+        """
+        Configure file storage service for this agent.
+        
+        This method is called by GraphRunnerService during agent setup.
+        
+        Args:
+            file_service: File storage service instance to configure
+        """
+        self.file_service = file_service
+        # Also set as the main client for BaseStorageAgent
+        self._client = file_service
+        self.log_debug("File service configured")
     
     def run(self, state: Any) -> Any:
         """
@@ -72,10 +105,22 @@ class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandl
             self._current_state = None
     
     def _initialize_client(self) -> None:
-        """Initialize FileStorageService as the client for file operations."""
-        self._client = FileStorageService(self.context)
-        # Set file_service for FileServiceUser protocol compliance
-        self.file_service = self._client
+        """
+        Initialize client - in the new pattern, services are injected via protocols.
+        
+        This method is kept for compatibility but should not be needed
+        as services are injected via configure_file_service() method.
+        """
+        # In the new pattern, services are injected via configure_* methods
+        # This method is kept for compatibility but should not be used
+        if self.file_service is None:
+            self.log_warning("File service not configured - agent needs file service injection")
+            # Don't create service directly as we don't have required dependencies
+            # Services should be injected via dependency injection in production
+            raise ValueError(
+                f"File service not configured for agent '{self.name}'. "
+                "Please inject file service via configure_file_service() method."
+            )
     
     def _log_operation_start(self, collection: str, inputs: Dict[str, Any]) -> None:
         """
@@ -98,11 +143,15 @@ class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandl
         Raises:
             ValueError: If inputs are invalid
         """
-        super()._validate_inputs(inputs)
-        self._validate_writer_inputs(inputs)
+        # Don't call super()._validate_inputs() as it checks file existence
+        # For write operations, files don't need to exist (can be created)
         
-        # Add file-specific validation if needed
-        file_path = self.get_collection(inputs)
+        # Validate collection parameter
+        collection = self.get_collection(inputs)
+        if not collection:
+            raise ValueError("Missing required 'collection' parameter")
+        
+        # Validate mode and data requirements
         mode = inputs.get("mode", "write").lower()
         
         # Check if we have data for non-delete operations
@@ -156,12 +205,10 @@ class FileWriterAgent(BaseStorageAgent, WriterOperationsMixin, StorageErrorHandl
                 error=f"Permission denied for file: {collection}"
             )
         
-        return self._handle_storage_error(
+        return super()._handle_operation_error(
             error,
-            "file write",
             collection,
-            file_path=collection,
-            mode=inputs.get("mode", "write")
+            inputs
         )
     
     def _write_document(self, *args, **kwargs):

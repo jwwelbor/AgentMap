@@ -1,0 +1,7 @@
+# File Service Usage Example
+if hasattr(self, 'file_service') and self.file_service:
+    content = self.file_service.read("document.txt")
+    
+    # Write file
+    result = self.file_service.write("output.txt", processed_content)
+    return result

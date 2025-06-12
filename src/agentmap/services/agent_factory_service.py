@@ -239,6 +239,12 @@ class AgentFactoryService:
         """Generate a helpful error message for missing dependencies."""
         agent_type_lower = agent_type.lower()
         
+        # Handle multiple dependencies first
+        if len(missing_deps) > 1:
+            return (f"Agent '{agent_type}' requires additional dependencies: {missing_deps}. "
+                   "Install with: pip install agentmap[llm,storage]")
+        
+        # Handle single LLM dependency
         if "llm" in missing_deps:
             if agent_type_lower in ("openai", "gpt"):
                 return (f"LLM agent '{agent_type}' requires OpenAI dependencies. "
@@ -253,6 +259,7 @@ class AgentFactoryService:
                 return (f"LLM agent '{agent_type}' requires additional dependencies. "
                        "Install with: pip install agentmap[llm]")
         
+        # Handle single storage dependency
         if "storage" in missing_deps:
             if "vector" in agent_type_lower:
                 return (f"Storage agent '{agent_type}' requires vector dependencies. "
@@ -261,6 +268,6 @@ class AgentFactoryService:
                 return (f"Storage agent '{agent_type}' requires additional dependencies. "
                        "Install with: pip install agentmap[storage]")
         
-        # Generic fallback
+        # Generic fallback (shouldn't be reached with current logic)
         return (f"Agent '{agent_type}' requires additional dependencies: {missing_deps}. "
                "Install with: pip install agentmap[llm,storage]")

@@ -17,7 +17,7 @@ from agentmap.core.cli.validation_commands import (
     validate_csv_cmd, validate_config_cmd, validate_all_cmd
 )
 from agentmap.core.cli.diagnostic_commands import (
-    diagnose_cmd, config_cmd, validate_cache_cmd
+    diagnose_cmd, config_cmd, validate_cache_cmd, inspect_graph_cmd
 )
 
 from agentmap._version import __version__ 
@@ -31,7 +31,7 @@ def version_callback(value: bool):
 
 
 app = typer.Typer(
-    help="AgentMap: Build and deploy LangGraph workflows from CSV files for fun and profit!"
+    help="AgentMap: Build and deploy LangGraph workflows from CSV files for fun and profit!\n\nMain Commands: run, scaffold, compile, export\nDiagnostics: diagnose, inspect-graph, config, validate-*"
 )
 
 
@@ -81,6 +81,7 @@ app.command("validate-all")(validate_all_cmd)
 
 app.command("validate-cache")(validate_cache_cmd)
 app.command("diagnose")(diagnose_cmd)
+app.command("inspect-graph")(inspect_graph_cmd)
 
 
 def main_cli():
