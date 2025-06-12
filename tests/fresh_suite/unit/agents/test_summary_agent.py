@@ -50,14 +50,19 @@ class TestSummaryAgent(unittest.TestCase):
             context["model"] = "gpt-4"
             context["temperature"] = 0.3
         
-        return SummaryAgent(
+        agent = SummaryAgent(
             name="test_summary",
             prompt="Please summarize the following information concisely",
             context=context,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,  # Service, not tracker
             state_adapter_service=self.mock_state_adapter_service
         )
+        
+        # Set the execution tracker instance on the agent
+        agent.set_execution_tracker(self.mock_tracker)
+        
+        return agent
     
     # =============================================================================
     # 1. Agent Initialization and Mode Detection Tests
@@ -80,7 +85,7 @@ class TestSummaryAgent(unittest.TestCase):
         
         # Verify infrastructure services
         self.assertIsNotNone(agent.logger)
-        self.assertIsNotNone(agent.execution_tracker_service)
+        self.assertIsNotNone(agent.execution_tracking_service)
         self.assertIsNotNone(agent.state_adapter_service)
     
     def test_agent_initialization_llm_mode(self):
@@ -443,9 +448,7 @@ class TestSummaryAgent(unittest.TestCase):
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
         
-        # Configure execution tracker methods
-        self.mock_tracker.record_node_start = Mock(return_value=None)
-        self.mock_tracker.record_node_result = Mock(return_value=None)
+        # Note: BaseAgent calls the service methods, not the tracker methods directly
         
         # Test state
         test_state = {
@@ -466,9 +469,9 @@ class TestSummaryAgent(unittest.TestCase):
         # Verify original fields are preserved
         self.assertEqual(result_state["other_field"], "preserved")
         
-        # Verify tracking calls
-        self.mock_tracker.record_node_start.assert_called_once()
-        self.mock_tracker.record_node_result.assert_called_once()
+        # Verify tracking service methods were called
+        self.mock_execution_tracking_service.record_node_start.assert_called_once()
+        self.mock_execution_tracking_service.record_node_result.assert_called_once()
     
     def test_run_method_integration_llm_mode(self):
         """Test the inherited run method works with LLM mode."""
@@ -486,8 +489,7 @@ class TestSummaryAgent(unittest.TestCase):
         
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
-        self.mock_tracker.record_node_start = Mock(return_value=None)
-        self.mock_tracker.record_node_result = Mock(return_value=None)
+        # Note: BaseAgent calls the service methods, not the tracker methods directly
         
         test_state = {
             "content1": "User activity log",

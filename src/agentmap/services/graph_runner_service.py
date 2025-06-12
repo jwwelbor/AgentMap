@@ -183,7 +183,8 @@ class GraphRunnerService:
                 self.logger.debug(f"[GraphRunnerService] Delegating definition graph execution")
                 return self.graph_execution.execute_from_definition(
                     graph_def=resolved_execution["graph_def"],
-                    state=state
+                    state=state,
+                    graph_name=graph_name
                 )
             else:
                 raise ValueError(f"Unknown resolution type: {resolved_execution['type']}")
@@ -293,10 +294,11 @@ class GraphRunnerService:
             # Step 1: Load graph definition using GraphDefinitionService
             graph_def, resolved_graph_name = self._load_graph_definition_for_execution(csv_path, graph_name)
             
-            # Step 2: Delegate execution to GraphExecutionService
+            # Step 2: Delegate execution to GraphExecutionService with graph name
             return self.graph_execution.execute_from_definition(
                 graph_def=graph_def,
-                state=state
+                state=state,
+                graph_name=resolved_graph_name
             )
             
         except Exception as e:

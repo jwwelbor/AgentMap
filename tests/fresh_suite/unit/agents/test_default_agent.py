@@ -40,7 +40,7 @@ class TestDefaultAgent(unittest.TestCase):
             prompt="Default processing with test prompt",
             context=self.test_context,
             logger=self.mock_logging_service.get_class_logger(DefaultAgent),
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -62,7 +62,7 @@ class TestDefaultAgent(unittest.TestCase):
         
         # Verify infrastructure services are available
         self.assertIsNotNone(self.agent.logger)
-        self.assertIsNotNone(self.agent.execution_tracker_service)
+        self.assertIsNotNone(self.agent.execution_tracking_service)
         self.assertIsNotNone(self.agent.state_adapter_service)
         
         # Verify no business services are configured (DefaultAgent doesn't need them)
@@ -152,7 +152,7 @@ class TestDefaultAgent(unittest.TestCase):
             name="no_prompt_agent",
             prompt="",
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -170,7 +170,7 @@ class TestDefaultAgent(unittest.TestCase):
             name="none_prompt_agent",
             prompt=None,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -274,8 +274,8 @@ class TestDefaultAgent(unittest.TestCase):
     def test_execution_tracker_integration(self):
         """Test that agent properly integrates with execution tracker."""
         # Verify execution tracker is accessible
-        tracker = self.agent.execution_tracker_service
-        self.assertEqual(tracker, self.mock_tracker)
+        tracker = self.agent.execution_tracking_service
+        self.assertEqual(tracker, self.mock_execution_tracking_service)
         
         # Verify tracker has expected properties
         self.assertTrue(hasattr(tracker, 'track_inputs'))
@@ -371,7 +371,7 @@ class TestDefaultAgent(unittest.TestCase):
         agent_without_logger = DefaultAgent(
             name="no_logger",
             prompt="Test prompt",
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -394,9 +394,9 @@ class TestDefaultAgent(unittest.TestCase):
         
         # Accessing execution tracker should raise clear error
         with self.assertRaises(ValueError) as cm:
-            _ = agent_without_tracker.execution_tracker_service
+            _ = agent_without_tracker.execution_tracking_service
         
-        self.assertIn("ExecutionTracker not provided", str(cm.exception))
+        self.assertIn("ExecutionTrackingService not provided", str(cm.exception))
         self.assertIn("no_tracker", str(cm.exception))
     
     def test_process_with_unusual_agent_names(self):
@@ -418,7 +418,7 @@ class TestDefaultAgent(unittest.TestCase):
                     name=agent_name,
                     prompt=prompt,
                     logger=self.mock_logger,
-                    execution_tracker_service=self.mock_tracker,
+                    execution_tracker_service=self.mock_execution_tracking_service,
                     state_adapter_service=self.mock_state_adapter_service
                 )
                 
@@ -447,7 +447,7 @@ class TestDefaultAgent(unittest.TestCase):
                     name="test_agent",
                     prompt=prompt,
                     logger=self.mock_logger,
-                    execution_tracker_service=self.mock_tracker,
+                    execution_tracker_service=self.mock_execution_tracking_service,
                     state_adapter_service=self.mock_state_adapter_service
                 )
                 
@@ -493,6 +493,9 @@ class TestDefaultAgent(unittest.TestCase):
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
         
+        # IMPORTANT: Set execution tracker before calling run() - required by BaseAgent
+        self.agent.set_execution_tracker(self.mock_tracker)
+        
         # Execute run method
         result_state = self.agent.run(test_state)
         
@@ -504,9 +507,9 @@ class TestDefaultAgent(unittest.TestCase):
         # Verify original fields are preserved
         self.assertEqual(result_state["other_field"], "should be preserved")
         
-        # Verify tracking methods were called on the tracker instance
-        self.mock_tracker.record_node_start.assert_called()
-        self.mock_tracker.record_node_result.assert_called()
+        # Verify tracking methods were called on the execution tracking service
+        self.mock_execution_tracking_service.record_node_start.assert_called()
+        self.mock_execution_tracking_service.record_node_result.assert_called()
     
     def test_run_method_with_no_output_field(self):
         """Test run method when output_field is not configured."""
@@ -516,7 +519,7 @@ class TestDefaultAgent(unittest.TestCase):
             prompt="Test prompt",
             context={"input_fields": ["input"]},  # No output_field
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -534,6 +537,9 @@ class TestDefaultAgent(unittest.TestCase):
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
         
+        # IMPORTANT: Set execution tracker before calling run() - required by BaseAgent
+        agent_no_output.set_execution_tracker(self.mock_tracker)
+        
         # Execute run method
         result_state = agent_no_output.run(test_state)
         
@@ -541,8 +547,8 @@ class TestDefaultAgent(unittest.TestCase):
         self.assertEqual(result_state, test_state)
         
         # Tracking should still occur
-        self.mock_tracker.record_node_start.assert_called()
-        self.mock_tracker.record_node_result.assert_called()
+        self.mock_execution_tracking_service.record_node_start.assert_called()
+        self.mock_execution_tracking_service.record_node_result.assert_called()
     
     def test_invoke_method_compatibility(self):
         """Test LangGraph compatibility via invoke method."""
@@ -559,6 +565,9 @@ class TestDefaultAgent(unittest.TestCase):
         
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
+        
+        # IMPORTANT: Set execution tracker before calling run() - required by BaseAgent
+        self.agent.set_execution_tracker(self.mock_tracker)
         
         # invoke should work the same as run
         result_via_invoke = self.agent.invoke(test_state)

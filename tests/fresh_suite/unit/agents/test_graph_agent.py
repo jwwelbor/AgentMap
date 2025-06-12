@@ -63,7 +63,7 @@ class TestGraphAgent(unittest.TestCase):
             prompt="test_subgraph",  # subgraph name
             context=context,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
             **kwargs
         )
@@ -96,7 +96,7 @@ class TestGraphAgent(unittest.TestCase):
         
         # Verify infrastructure services
         self.assertIsNotNone(agent.logger)
-        self.assertIsNotNone(agent.execution_tracker_service)
+        self.assertIsNotNone(agent.execution_tracking_service)
         self.assertIsNotNone(agent.state_adapter_service)
         
         # Verify custom services are not configured by default
@@ -553,6 +553,9 @@ class TestGraphAgent(unittest.TestCase):
         self.mock_tracker.record_node_start = Mock(return_value=None)
         self.mock_tracker.record_node_result = Mock(return_value=None)
         
+        # IMPORTANT: Set execution tracker before calling run() - required by BaseAgent
+        agent.set_execution_tracker(self.mock_tracker)
+        
         # Test state
         test_state = {
             "data1": "input_value1",
@@ -574,8 +577,8 @@ class TestGraphAgent(unittest.TestCase):
         self.assertEqual(result_state["other_field"], "preserved")
         
         # Verify tracking calls
-        self.mock_tracker.record_node_start.assert_called_once()
-        self.mock_tracker.record_node_result.assert_called_once()
+        self.mock_execution_tracking_service.record_node_start.assert_called_once()
+        self.mock_execution_tracking_service.record_node_result.assert_called_once()
     
     def test_post_process_with_execution_summary(self):
         """Test post-processing handles execution summaries from subgraphs."""
@@ -583,6 +586,9 @@ class TestGraphAgent(unittest.TestCase):
         
         # Mock execution tracker with subgraph recording capability
         self.mock_tracker.record_subgraph_execution = Mock()
+        
+        # CRITICAL: Set execution tracker on agent before testing post-process
+        agent.set_execution_tracker(self.mock_tracker)
         
         # Mock output with execution summary
         output = {
@@ -619,6 +625,9 @@ class TestGraphAgent(unittest.TestCase):
         """Test post-processing when tracker doesn't support subgraph recording."""
         agent = self.create_graph_agent()
         
+        # CRITICAL: Set execution tracker on agent before testing post-process
+        agent.set_execution_tracker(self.mock_tracker)
+        
         # Don't add record_subgraph_execution method to tracker
         
         output = {
@@ -637,6 +646,9 @@ class TestGraphAgent(unittest.TestCase):
     def test_post_process_sets_success_state(self):
         """Test post-processing sets success state based on subgraph result."""
         agent = self.create_graph_agent()
+        
+        # CRITICAL: Set execution tracker on agent before testing post-process
+        agent.set_execution_tracker(self.mock_tracker)
         
         # Configure state adapter to return updated state
         def mock_set_value(state, field, value):

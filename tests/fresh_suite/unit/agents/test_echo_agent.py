@@ -39,7 +39,7 @@ class TestEchoAgent(unittest.TestCase):
             prompt="Echo the input unchanged",
             context=self.test_context,
             logger=self.mock_logging_service.get_class_logger(EchoAgent),
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -61,7 +61,7 @@ class TestEchoAgent(unittest.TestCase):
         
         # Verify infrastructure services are available
         self.assertIsNotNone(self.agent.logger)
-        self.assertIsNotNone(self.agent.execution_tracker_service)
+        self.assertIsNotNone(self.agent.execution_tracking_service)
         self.assertIsNotNone(self.agent.state_adapter_service)
         
         # Verify no business services are configured (EchoAgent doesn't need them)
@@ -203,8 +203,8 @@ class TestEchoAgent(unittest.TestCase):
     def test_execution_tracker_integration(self):
         """Test that agent properly integrates with execution tracker."""
         # Verify execution tracker is accessible
-        tracker = self.agent.execution_tracker_service
-        self.assertEqual(tracker, self.mock_tracker)
+        tracker = self.agent.execution_tracking_service
+        self.assertEqual(tracker, self.mock_execution_tracking_service)
         
         # Verify tracker has expected properties
         self.assertTrue(hasattr(tracker, 'track_inputs'))
@@ -263,7 +263,7 @@ class TestEchoAgent(unittest.TestCase):
         agent_without_logger = EchoAgent(
             name="no_logger",
             prompt="Test prompt",
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -286,9 +286,9 @@ class TestEchoAgent(unittest.TestCase):
         
         # Accessing execution tracker should raise clear error
         with self.assertRaises(ValueError) as cm:
-            _ = agent_without_tracker.execution_tracker_service
+            _ = agent_without_tracker.execution_tracking_service
         
-        self.assertIn("ExecutionTracker not provided", str(cm.exception))
+        self.assertIn("ExecutionTrackingService not provided", str(cm.exception))
         self.assertIn("no_tracker", str(cm.exception))
     
     def test_process_with_unusual_input_structures(self):
@@ -336,6 +336,9 @@ class TestEchoAgent(unittest.TestCase):
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
         
+        # CRITICAL: Set execution tracker on agent (required by new architecture)
+        self.agent.set_execution_tracker(self.mock_tracker)
+        
         # Execute run method
         result_state = self.agent.run(test_state)
         
@@ -346,9 +349,9 @@ class TestEchoAgent(unittest.TestCase):
         # Verify original fields are preserved
         self.assertEqual(result_state["other_field"], "should be ignored")
         
-        # Verify tracking methods were called on the tracker instance
-        self.mock_tracker.record_node_start.assert_called()
-        self.mock_tracker.record_node_result.assert_called()
+        # Verify tracking methods were called on the execution tracking service
+        self.mock_execution_tracking_service.record_node_start.assert_called_once()
+        self.mock_execution_tracking_service.record_node_result.assert_called_once()
 
 
 if __name__ == '__main__':

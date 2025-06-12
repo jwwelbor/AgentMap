@@ -168,17 +168,18 @@ class TestCompilationWorkflowIntegration(BaseIntegrationTest):
         # Test direct bundle service operations
         graph_domain_model = self.graph_definition_service.build_from_csv(csv_path, "test_single")
         
-        # Convert to old format (testing the conversion process)
-        old_format = self._convert_graph_to_old_format(graph_domain_model)
+        # Add agent instances to nodes (required for GraphAssemblyService)
+        self._inject_agent_instances(graph_domain_model)
         
         # Prepare node registry
-        node_registry = self.node_registry_service.prepare_for_assembly(old_format, "test_single")
+        node_registry = self.node_registry_service.prepare_for_assembly(
+            self._convert_graph_to_old_format(graph_domain_model), "test_single"
+        )
         
-        # Assemble graph
+        # Assemble graph using current interface
         compiled_graph = self.graph_assembly_service.assemble_graph(
-            graph_def=old_format,
-            node_registry=node_registry,
-            enable_logging=True
+            graph=graph_domain_model,
+            node_registry=node_registry
         )
         
         # Test bundle creation and saving
@@ -478,6 +479,19 @@ filesystem_test,single_node,,general,Default,,,,response,Simple test node
     def _create_test_agent_instance(self, node):
         """Create a simple agent instance for testing."""
         return TestAgent(node.name, node.prompt or "")
+    
+    def _inject_agent_instances(self, graph):
+        """Inject test agent instances into graph nodes for assembly."""
+        for node_name, node in graph.nodes.items():
+            # Create agent instance
+            agent_instance = self._create_test_agent_instance(node)
+            
+            # Ensure node has context dict
+            if not hasattr(node, 'context') or node.context is None:
+                node.context = {}
+            
+            # Inject agent instance into context
+            node.context["instance"] = agent_instance
     
     def _verify_compiled_file_contents(self, file_path: Path) -> None:
         """Verify that compiled file contains valid pickle data."""

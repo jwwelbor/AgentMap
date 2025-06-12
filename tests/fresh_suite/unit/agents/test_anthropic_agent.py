@@ -58,7 +58,7 @@ class TestAnthropicAgent(unittest.TestCase):
             prompt="You are Claude, an AI assistant created by Anthropic.",
             context=context,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
             **kwargs
         )
@@ -384,6 +384,9 @@ class TestAnthropicAgent(unittest.TestCase):
         agent = self.create_anthropic_agent()
         agent.configure_llm_service(self.mock_llm_service)
         
+        # CRITICAL: Set execution tracker on agent (required by new architecture)
+        agent.set_execution_tracker(self.mock_tracker)
+        
         # Configure state adapter behavior
         def mock_get_inputs(state, input_fields):
             return {field: state.get(field) for field in input_fields if field in state}
@@ -396,9 +399,7 @@ class TestAnthropicAgent(unittest.TestCase):
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
         
-        # Configure execution tracker methods
-        self.mock_tracker.record_node_start = Mock(return_value=None)
-        self.mock_tracker.record_node_result = Mock(return_value=None)
+        # The execution tracking service methods are already configured by MockServiceFactory
         
         # Test state
         test_state = {
@@ -422,9 +423,9 @@ class TestAnthropicAgent(unittest.TestCase):
         # Verify original fields are preserved
         self.assertEqual(result_state["other_field"], "preserved")
         
-        # Verify tracking calls (inherited behavior)
-        self.mock_tracker.record_node_start.assert_called_once()
-        self.mock_tracker.record_node_result.assert_called_once()
+        # Verify tracking calls (inherited behavior via execution tracking service)
+        self.mock_execution_tracking_service.record_node_start.assert_called_once()
+        self.mock_execution_tracking_service.record_node_result.assert_called_once()
     
     # =============================================================================
     # 6. Anthropic-Specific Edge Cases

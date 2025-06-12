@@ -52,14 +52,19 @@ class TestOrchestratorAgent(unittest.TestCase):
             **context_overrides
         }
         
-        return OrchestratorAgent(
+        agent = OrchestratorAgent(
             name="test_orchestrator",
             prompt="Select the best node for the given request",
             context=context,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
+        
+        # Set the execution tracker instance on the agent
+        agent.set_execution_tracker(self.mock_tracker)
+        
+        return agent
     
     # =============================================================================
     # 1. Agent Initialization and Protocol Compliance Tests
@@ -80,7 +85,7 @@ class TestOrchestratorAgent(unittest.TestCase):
         
         # Verify infrastructure services are available
         self.assertIsNotNone(agent.logger)
-        self.assertIsNotNone(agent.execution_tracker_service)
+        self.assertIsNotNone(agent.execution_tracking_service)
         self.assertIsNotNone(agent.state_adapter_service)
     
     def test_agent_initialization_with_llm_strategy(self):
@@ -458,9 +463,7 @@ class TestOrchestratorAgent(unittest.TestCase):
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
         
-        # Configure execution tracker methods
-        self.mock_tracker.record_node_start = Mock(return_value=None)
-        self.mock_tracker.record_node_result = Mock(return_value=None)
+        # Note: BaseAgent calls the service methods, not the tracker methods directly
         
         # Test state
         test_state = {
@@ -479,9 +482,9 @@ class TestOrchestratorAgent(unittest.TestCase):
         # Verify original fields are preserved
         self.assertEqual(result_state["other_field"], "preserved")
         
-        # Verify tracking calls
-        self.mock_tracker.record_node_start.assert_called_once()
-        self.mock_tracker.record_node_result.assert_called_once()
+        # Verify tracking service methods were called
+        self.mock_execution_tracking_service.record_node_start.assert_called_once()
+        self.mock_execution_tracking_service.record_node_result.assert_called_once()
     
     def test_run_method_integration_with_llm_strategy(self):
         """Test the inherited run method works with LLM strategy."""
@@ -499,8 +502,7 @@ class TestOrchestratorAgent(unittest.TestCase):
         
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
-        self.mock_tracker.record_node_start = Mock(return_value=None)
-        self.mock_tracker.record_node_result = Mock(return_value=None)
+        # Note: BaseAgent calls the service methods, not the tracker methods directly
         
         test_state = {
             "request": "process payment",

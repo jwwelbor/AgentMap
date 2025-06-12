@@ -12,7 +12,7 @@ import yaml
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from agentmap.di import initialize_di
+from agentmap.di import initialize_application
 from tests.utils.service_interface_auditor import ServiceInterfaceAuditor
 
 
@@ -38,8 +38,8 @@ class BaseIntegrationTest(unittest.TestCase):
         # Create test configuration following established patterns
         self.test_config_path = self._create_test_config()
         
-        # Initialize real DI container with test configuration
-        self.container = initialize_di(str(self.test_config_path))
+        # Initialize real DI container with test configuration and agent bootstrap
+        self.container = initialize_application(str(self.test_config_path))
         
         # Initialize service interface auditor for validation
         self.service_auditor = ServiceInterfaceAuditor()
@@ -84,8 +84,25 @@ class BaseIntegrationTest(unittest.TestCase):
         # This avoids Windows path escaping issues entirely
         config_data = {
             "logging": {
-                "level": "DEBUG",
-                "format": "[%(levelname)s] %(name)s: %(message)s"
+                "version": 1,
+                "disable_existing_loggers": False,
+                "formatters": {
+                    "simple": {
+                        "format": "[%(levelname)s] %(name)s: %(message)s"
+                    }
+                },
+                "handlers": {
+                    "console": {
+                        "class": "logging.StreamHandler",
+                        "level": "DEBUG",
+                        "formatter": "simple",
+                        "stream": "ext://sys.stdout"
+                    }
+                },
+                "root": {
+                    "level": "DEBUG",
+                    "handlers": ["console"]
+                }
             },
             "llm": {
                 "anthropic": {

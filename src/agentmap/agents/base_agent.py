@@ -37,7 +37,7 @@ class BaseAgent:
         context: Optional[Dict[str, Any]] = None,
         # Infrastructure services only - core services that ALL agents need
         logger: Optional[logging.Logger] = None,
-        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        execution_tracking_service: Optional[ExecutionTrackingService] = None,
         state_adapter_service: Optional[StateAdapterService] = None
     ):
         """
@@ -67,7 +67,7 @@ class BaseAgent:
         
         # Infrastructure services (required) - only core services ALL agents need
         self._logger = logger
-        self._execution_tracker_service = execution_tracker_service
+        self._execution_tracking_service = execution_tracking_service
         self._state_adapter_service = state_adapter_service
         self._log_prefix = f"[{self.__class__.__name__}:{self.name}]"
         
@@ -94,14 +94,14 @@ class BaseAgent:
         return self._logger
     
     @property
-    def execution_tracker_service(self) -> ExecutionTrackingService:
+    def execution_tracking_service(self) -> ExecutionTrackingService:
         """Get execution tracker instance, raising if not available."""
-        if self._execution_tracker_service is None:
+        if self._execution_tracking_service is None:
             raise ValueError(
-                f"ExecutionTracker not provided to agent '{self.name}'. "
+                f"ExecutionTrackingService not provided to agent '{self.name}'. "
                 "Please inject execution_tracker dependency via constructor."
             )
-        return self._execution_tracker_service
+        return self._execution_tracking_service
     
     @property
     def state_adapter_service(self) -> StateAdapterService:
@@ -197,14 +197,15 @@ class BaseAgent:
         self.log_trace(f"\n*** AGENT {self.name} RUN START [{execution_id}] ***")
 
         # Get required services (will raise if not available)
-        tracking_service = self.execution_tracker_service
+        tracking_service = self.execution_tracking_service
         
-        # Get or create execution tracker
+        # Get the shared execution tracker object (must be set before execution)
         tracker = self.current_execution_tracker
         if tracker is None:
-            # If no tracker is set, create one for this execution
-            tracker = tracking_service.create_tracker()
-            self.set_execution_tracker(tracker)
+            raise ValueError(
+                f"No ExzecutionTracker set for agent '{self.name}'. "
+                "Tracker must be distributed to agents before graph execution starts."
+            )
 
         # Extract inputs using state adapter
         inputs = self.state_adapter_service.get_inputs(state, self.input_fields)
@@ -317,7 +318,7 @@ class BaseAgent:
             "agent_type": self.__class__.__name__,
             "services": {
                 "logger_available": self._logger is not None,
-                "execution_tracker_available": self._execution_tracker_service is not None,
+                "execution_tracker_available": self._execution_tracking_service is not None,
                 "state_adapter_available": self._state_adapter_service is not None,
                 "llm_service_configured": self._llm_service is not None,
                 "storage_service_configured": self._storage_service is not None
