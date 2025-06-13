@@ -1,0 +1,976 @@
+"""
+Enhanced unit tests for LLMService - Comprehensive coverage for 90%+.
+
+These tests extend the existing LLMService test coverage to achieve 90%+ by
+focusing on edge cases, error scenarios, and comprehensive integration testing.
+"""
+
+import unittest
+from unittest.mock import Mock, patch, MagicMock
+from typing import Dict, Any, List, Optional
+import os
+
+from agentmap.services.llm_service import LLMService
+from agentmap.exceptions import (
+    LLMServiceError, 
+    LLMProviderError, 
+    LLMConfigurationError,
+    LLMDependencyError
+)
+from tests.utils.mock_service_factory import MockServiceFactory
+
+
+class TestLLMServiceEnhanced(unittest.TestCase):
+    """Enhanced unit tests for LLMService with comprehensive coverage."""
+    
+    def setUp(self):
+        """Set up test fixtures with mocked dependencies."""
+        # Create mock services using MockServiceFactory
+        self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service()
+        
+        # Create mock LLMRoutingService
+        self.mock_routing_service = Mock()
+        
+        # Initialize LLMService with mocked dependencies
+        self.service = LLMService(
+            configuration=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            routing_service=self.mock_routing_service
+        )
+        
+        # Get the mock logger for verification
+        self.mock_logger = self.service._logger
+    
+    # =============================================================================
+    # 1. Enhanced Provider Configuration Tests
+    # =============================================================================
+    
+    def test_get_provider_defaults_all_providers(self):
+        """Test _get_provider_defaults() returns correct defaults for all providers."""
+        # Test OpenAI defaults
+        openai_defaults = self.service._get_provider_defaults("openai")
+        self.assertEqual(openai_defaults["model"], "gpt-3.5-turbo")
+        self.assertEqual(openai_defaults["temperature"], 0.7)
+        self.assertIn("api_key", openai_defaults)
+        
+        # Test Anthropic defaults
+        anthropic_defaults = self.service._get_provider_defaults("anthropic")
+        self.assertEqual(anthropic_defaults["model"], "claude-3-sonnet-20240229")
+        self.assertEqual(anthropic_defaults["temperature"], 0.7)
+        
+        # Test Google defaults
+        google_defaults = self.service._get_provider_defaults("google")
+        self.assertEqual(google_defaults["model"], "gemini-1.0-pro")
+        self.assertEqual(google_defaults["temperature"], 0.7)
+        
+        # Test unknown provider
+        unknown_defaults = self.service._get_provider_defaults("unknown")
+        self.assertEqual(unknown_defaults, {})
+    
+    def test_get_provider_config_environment_variable_fallback(self):
+        """Test _get_provider_config() falls back to environment variables."""
+        # Configure config with missing API key
+        partial_config = {"model": "gpt-4", "temperature": 0.5}
+        self.mock_app_config_service.get_llm_config.return_value = partial_config
+        
+        # Mock environment variable
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "env_api_key"}):
+            result = self.service._get_provider_config("openai")
+            
+            # Should use environment variable as default
+            self.assertEqual(result["api_key"], "env_api_key")
+            self.assertEqual(result["model"], "gpt-4")  # From config
+            self.assertEqual(result["temperature"], 0.5)  # From config
+    
+    def test_get_provider_config_all_defaults_applied(self):
+        """Test _get_provider_config() applies all missing defaults."""
+        # Configure minimal config (not empty, so it passes the 'not config' check)
+        minimal_config = {"provider": "openai"}  # Just enough to not be considered "no config"
+        self.mock_app_config_service.get_llm_config.return_value = minimal_config
+        
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "env_key"}):
+            result = self.service._get_provider_config("openai")
+            
+            # All defaults should be applied to the minimal config
+            self.assertEqual(result["model"], "gpt-3.5-turbo")
+            self.assertEqual(result["temperature"], 0.7)
+            self.assertEqual(result["api_key"], "env_key")
+            self.assertEqual(result["provider"], "openai")  # Original field preserved
+    
+    def test_get_provider_config_empty_config_raises_error(self):
+        """Test _get_provider_config() raises error for empty configuration."""
+        from agentmap.exceptions import LLMConfigurationError
+        
+        # Configure truly empty config
+        self.mock_app_config_service.get_llm_config.return_value = {}
+        
+        # Execute and verify error
+        with self.assertRaises(LLMConfigurationError) as context:
+            self.service._get_provider_config("openai")
+        
+        self.assertIn("No configuration found for provider", str(context.exception))
+    
+    # =============================================================================
+    # 2. Enhanced Client Creation and Caching Tests
+    # =============================================================================
+    
+    def test_get_or_create_client_cache_key_generation(self):
+        """Test _get_or_create_client() generates proper cache keys."""
+        config = {
+            "api_key": "test_key_12345678",
+            "model": "gpt-4",
+            "temperature": 0.7
+        }
+        
+        with patch.object(self.service, '_create_langchain_client') as mock_create:
+            mock_client = Mock()
+            mock_create.return_value = mock_client
+            
+            # First call
+            client1 = self.service._get_or_create_client("openai", config)
+            
+            # Verify cache key was generated with truncated API key
+            expected_cache_key = "openai_gpt-4_test_key"
+            self.assertIn(expected_cache_key, self.service._clients)
+            
+            # Second call with same config should use cache
+            client2 = self.service._get_or_create_client("openai", config)
+            self.assertEqual(client1, client2)
+            
+            # Should only create client once
+            mock_create.assert_called_once()
+    
+    def test_get_or_create_client_different_configs_different_cache(self):
+        """Test _get_or_create_client() uses different cache entries for different configs."""
+        config1 = {"api_key": "key1", "model": "gpt-3.5-turbo"}
+        config2 = {"api_key": "key2", "model": "gpt-4"}
+        
+        with patch.object(self.service, '_create_langchain_client') as mock_create:
+            mock_create.side_effect = [Mock(), Mock()]  # Return different mocks
+            
+            # Create clients with different configs
+            client1 = self.service._get_or_create_client("openai", config1)
+            client2 = self.service._get_or_create_client("openai", config2)
+            
+            # Should be different clients
+            self.assertNotEqual(client1, client2)
+            
+            # Should create both clients
+            self.assertEqual(mock_create.call_count, 2)
+            
+            # Should have two cache entries
+            self.assertEqual(len(self.service._clients), 2)
+    
+    def test_create_langchain_client_openai_legacy_import(self):
+        """Test _create_openai_client() handles legacy LangChain imports."""
+        import sys
+        original_modules = sys.modules.copy()
+        
+        try:
+            # Remove langchain_openai from sys.modules to simulate it not being available
+            if 'langchain_openai' in sys.modules:
+                del sys.modules['langchain_openai']
+            
+            # Create mock for the legacy module
+            mock_legacy_module = Mock()
+            mock_chat_openai = Mock()
+            mock_client = Mock()
+            mock_chat_openai.return_value = mock_client
+            mock_legacy_module.ChatOpenAI = mock_chat_openai
+            
+            # Ensure the legacy module is available
+            sys.modules['langchain.chat_models'] = mock_legacy_module
+            
+            # Execute the method - it should fail on langchain_openai and fall back to langchain.chat_models
+            result = self.service._create_openai_client("test_key", "gpt-4", 0.8)
+            
+            # Should use legacy import
+            mock_chat_openai.assert_called_once_with(
+                model_name="gpt-4",
+                temperature=0.8,
+                openai_api_key="test_key"
+            )
+            self.assertEqual(result, mock_client)
+            
+            # Verify warning was logged about using deprecated import
+            self.mock_logger.warning.assert_called_once()
+            warning_call = self.mock_logger.warning.call_args[0][0]
+            self.assertIn("deprecated", warning_call.lower())
+            
+        finally:
+            # Restore original sys.modules
+            sys.modules.clear()
+            sys.modules.update(original_modules)
+    
+    def test_create_langchain_client_anthropic_community_fallback(self):
+        """Test _create_anthropic_client() falls back to community package."""
+        with patch('langchain_anthropic.ChatAnthropic', side_effect=ImportError), \
+             patch('langchain_community.chat_models.ChatAnthropic') as mock_community:
+            
+            mock_client = Mock()
+            mock_community.return_value = mock_client
+            
+            result = self.service._create_anthropic_client("test_key", "claude-3", 0.5)
+            
+            # Should use community package
+            mock_community.assert_called_once_with(
+                model="claude-3",
+                temperature=0.5,
+                anthropic_api_key="test_key"
+            )
+            self.assertEqual(result, mock_client)
+    
+    def test_create_langchain_client_google_community_fallback(self):
+        """Test _create_google_client() falls back to community package."""
+        with patch('langchain_google_genai.ChatGoogleGenerativeAI', side_effect=ImportError), \
+             patch('langchain_community.chat_models.ChatGoogleGenerativeAI') as mock_community:
+            
+            mock_client = Mock()
+            mock_community.return_value = mock_client
+            
+            result = self.service._create_google_client("test_key", "gemini-pro", 0.3)
+            
+            # Should use community package
+            mock_community.assert_called_once_with(
+                model="gemini-pro",
+                temperature=0.3,
+                google_api_key="test_key"
+            )
+            self.assertEqual(result, mock_client)
+    
+    def test_create_langchain_client_all_imports_fail(self):
+        """Test client creation raises LLMDependencyError when all imports fail."""
+        # Mock all imports to fail
+        import_error = ImportError("No module named 'langchain_openai'")
+        
+        with patch('langchain_openai.ChatOpenAI', side_effect=import_error), \
+             patch('langchain.chat_models.ChatOpenAI', side_effect=import_error):
+            
+            with self.assertRaises(LLMDependencyError) as context:
+                self.service._create_openai_client("test_key", "gpt-4", 0.7)
+            
+            self.assertIn("OpenAI dependencies not found", str(context.exception))
+    
+    # =============================================================================
+    # 3. Enhanced Message Conversion Tests
+    # =============================================================================
+    
+    def test_convert_messages_to_langchain_modern_import(self):
+        """Test _convert_messages_to_langchain() with modern LangChain imports."""
+        messages = [
+            {"role": "system", "content": "You are helpful"},
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there"}
+        ]
+        
+        with patch('langchain_core.messages.HumanMessage') as mock_human, \
+             patch('langchain_core.messages.AIMessage') as mock_ai, \
+             patch('langchain_core.messages.SystemMessage') as mock_system:
+            
+            mock_human_msg = Mock()
+            mock_ai_msg = Mock()
+            mock_system_msg = Mock()
+            
+            mock_human.return_value = mock_human_msg
+            mock_ai.return_value = mock_ai_msg
+            mock_system.return_value = mock_system_msg
+            
+            result = self.service._convert_messages_to_langchain(messages)
+            
+            # Verify correct message types created
+            self.assertEqual(len(result), 3)
+            mock_system.assert_called_once_with(content="You are helpful")
+            mock_human.assert_called_once_with(content="Hello")
+            mock_ai.assert_called_once_with(content="Hi there")
+    
+    def test_convert_messages_to_langchain_legacy_fallback(self):
+        """Test _convert_messages_to_langchain() with legacy LangChain fallback."""
+        messages = [{"role": "user", "content": "Test message"}]
+        
+        with patch('langchain_core.messages.HumanMessage', side_effect=ImportError), \
+             patch('langchain.schema.HumanMessage') as mock_legacy_human:
+            
+            mock_human_msg = Mock()
+            mock_legacy_human.return_value = mock_human_msg
+            
+            result = self.service._convert_messages_to_langchain(messages)
+            
+            # Should use legacy import
+            mock_legacy_human.assert_called_once_with(content="Test message")
+            self.assertEqual(result, [mock_human_msg])
+    
+    def test_convert_messages_to_langchain_unknown_role(self):
+        """Test _convert_messages_to_langchain() handles unknown roles as user messages."""
+        messages = [{"role": "unknown_role", "content": "Mystery message"}]
+        
+        with patch('langchain_core.messages.HumanMessage') as mock_human:
+            mock_human_msg = Mock()
+            mock_human.return_value = mock_human_msg
+            
+            result = self.service._convert_messages_to_langchain(messages)
+            
+            # Unknown role should default to user
+            mock_human.assert_called_once_with(content="Mystery message")
+    
+    def test_convert_messages_to_langchain_import_failure_fallback(self):
+        """Test _convert_messages_to_langchain() returns original messages when all imports fail."""
+        messages = [{"role": "user", "content": "Test"}]
+        
+        with patch('langchain_core.messages.HumanMessage', side_effect=ImportError), \
+             patch('langchain.schema.HumanMessage', side_effect=ImportError):
+            
+            result = self.service._convert_messages_to_langchain(messages)
+            
+            # Should return original messages
+            self.assertEqual(result, messages)
+    
+    # =============================================================================
+    # 4. Enhanced Available Providers Tests
+    # =============================================================================
+    
+    def test_get_available_providers_environment_variables_only(self):
+        """Test _get_available_providers() with environment variables but no config."""
+        # Configure no provider configs available
+        self.mock_app_config_service.get_llm_config.return_value = None
+        
+        # Mock environment variables
+        env_vars = {
+            "OPENAI_API_KEY": "openai_key",
+            "ANTHROPIC_API_KEY": "anthropic_key"
+            # No GOOGLE_API_KEY
+        }
+        
+        with patch.dict(os.environ, env_vars, clear=True):
+            providers = self.service._get_available_providers()
+            
+            # Should find providers with environment variables
+            self.assertIn("openai", providers)
+            self.assertIn("anthropic", providers)
+            self.assertNotIn("google", providers)
+    
+    def test_get_available_providers_config_without_api_keys(self):
+        """Test _get_available_providers() with config but no API keys."""
+        def mock_get_llm_config(provider):
+            # Return configs without API keys
+            configs = {
+                "openai": {"model": "gpt-4", "temperature": 0.7},
+                "anthropic": {"model": "claude-3", "temperature": 0.5}
+            }
+            return configs.get(provider)
+        
+        self.mock_app_config_service.get_llm_config.side_effect = mock_get_llm_config
+        
+        # No environment variables
+        with patch.dict(os.environ, {}, clear=True):
+            providers = self.service._get_available_providers()
+            
+            # Should not find any providers (no API keys)
+            self.assertEqual(providers, [])
+    
+    def test_get_available_providers_exception_handling(self):
+        """Test _get_available_providers() handles exceptions gracefully."""
+        def problematic_get_config(provider):
+            if provider == "openai":
+                raise Exception("Config error")
+            return {"api_key": "test_key"}
+        
+        self.mock_app_config_service.get_llm_config.side_effect = problematic_get_config
+        
+        providers = self.service._get_available_providers()
+        
+        # Should handle openai exception but still find other providers
+        self.assertNotIn("openai", providers)
+        self.assertIn("anthropic", providers)
+        self.assertIn("google", providers)
+    
+    def test_get_api_key_env_var_mapping(self):
+        """Test _get_api_key_env_var() returns correct environment variable names."""
+        self.assertEqual(self.service._get_api_key_env_var("openai"), "OPENAI_API_KEY")
+        self.assertEqual(self.service._get_api_key_env_var("anthropic"), "ANTHROPIC_API_KEY")
+        self.assertEqual(self.service._get_api_key_env_var("google"), "GOOGLE_API_KEY")
+        self.assertEqual(self.service._get_api_key_env_var("custom"), "CUSTOM_API_KEY")
+    
+    # =============================================================================
+    # 5. Enhanced Routing Integration Tests
+    # =============================================================================
+    
+    def test_create_routing_context_comprehensive_fields(self):
+        """Test _create_routing_context() creates RoutingContext with all fields."""
+        routing_dict = {
+            "task_type": "code_generation",
+            "routing_enabled": True,
+            "complexity_override": "high",
+            "auto_detect_complexity": False,
+            "provider_preference": ["anthropic", "openai"],
+            "excluded_providers": ["google"],
+            "model_override": "claude-3-opus",
+            "max_cost_tier": 4,
+            "input_context": {"framework": "React"},
+            "input_field_count": 5,
+            "cost_optimization": False,
+            "prefer_speed": True,
+            "prefer_quality": False,
+            "fallback_provider": "openai",
+            "fallback_model": "gpt-4",
+            "retry_with_lower_complexity": False
+        }
+        
+        messages = [
+            {"role": "system", "content": "Code generation assistant"},
+            {"role": "user", "content": "Create a React component"}
+        ]
+        
+        context = self.service._create_routing_context(routing_dict, messages)
+        
+        # Verify all fields are properly set
+        self.assertEqual(context.task_type, "code_generation")
+        self.assertTrue(context.routing_enabled)
+        self.assertEqual(context.complexity_override, "high")
+        self.assertFalse(context.auto_detect_complexity)
+        self.assertEqual(context.provider_preference, ["anthropic", "openai"])
+        self.assertEqual(context.excluded_providers, ["google"])
+        self.assertEqual(context.model_override, "claude-3-opus")
+        self.assertEqual(context.max_cost_tier, 4)
+        self.assertEqual(context.input_context, {"framework": "React"})
+        self.assertEqual(context.input_field_count, 5)
+        self.assertFalse(context.cost_optimization)
+        self.assertTrue(context.prefer_speed)
+        self.assertFalse(context.prefer_quality)
+        self.assertEqual(context.fallback_provider, "openai")
+        self.assertEqual(context.fallback_model, "gpt-4")
+        self.assertFalse(context.retry_with_lower_complexity)
+        
+        # Verify computed fields
+        self.assertEqual(context.memory_size, 1)  # Exclude system message
+        self.assertIn("Code generation assistant", context.prompt)
+        self.assertIn("Create a React component", context.prompt)
+    
+    def test_extract_prompt_from_messages_complex_scenarios(self):
+        """Test _extract_prompt_from_messages() with complex message scenarios."""
+        # Empty messages
+        result = self.service._extract_prompt_from_messages([])
+        self.assertEqual(result, "")
+        
+        # Only assistant messages (should be ignored)
+        assistant_only = [{"role": "assistant", "content": "I can help you"}]
+        result = self.service._extract_prompt_from_messages(assistant_only)
+        self.assertEqual(result, "")
+        
+        # Mixed roles with empty content
+        mixed_messages = [
+            {"role": "system", "content": ""},
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi"},
+            {"role": "user", "content": ""},
+            {"role": "system", "content": "Be helpful"}
+        ]
+        result = self.service._extract_prompt_from_messages(mixed_messages)
+        self.assertEqual(result, "Hello Be helpful")
+        
+        # Messages with missing content field
+        incomplete_messages = [
+            {"role": "user"},  # Missing content
+            {"role": "system", "content": "System prompt"},
+            {"content": "Content without role"}  # Missing role
+        ]
+        result = self.service._extract_prompt_from_messages(incomplete_messages)
+        self.assertEqual(result, "System prompt")
+    
+    def test_call_llm_with_routing_no_providers_available(self):
+        """Test _call_llm_with_routing() when no providers are available."""
+        routing_context = {"routing_enabled": True, "fallback_provider": "anthropic"}
+        messages = [{"role": "user", "content": "Test"}]
+        
+        with patch.object(self.service, '_get_available_providers', return_value=[]):
+            with self.assertRaises(LLMServiceError) as context:
+                self.service._call_llm_with_routing(messages, routing_context)
+            
+            self.assertIn("No providers configured", str(context.exception))
+    
+    def test_call_llm_with_routing_service_not_available(self):
+        """Test _call_llm_with_routing() raises error when routing service is None."""
+        service_no_routing = LLMService(
+            configuration=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            routing_service=None
+        )
+        
+        routing_context = {"routing_enabled": True}
+        messages = [{"role": "user", "content": "Test"}]
+        
+        with self.assertRaises(LLMServiceError) as context:
+            service_no_routing._call_llm_with_routing(messages, routing_context)
+        
+        self.assertIn("Routing requested but no routing service available", str(context.exception))
+    
+    # =============================================================================
+    # 6. Enhanced Error Handling Tests
+    # =============================================================================
+    
+    def test_call_llm_direct_response_without_content_attribute(self):
+        """Test _call_llm_direct() handles responses without content attribute."""
+        config = {"api_key": "test_key", "model": "test-model", "temperature": 0.7}
+        self.mock_app_config_service.get_llm_config.return_value = config
+        
+        with patch.object(self.service, '_get_or_create_client') as mock_get_client, \
+             patch.object(self.service, '_convert_messages_to_langchain') as mock_convert:
+            
+            # Mock client that returns response without content attribute
+            mock_client = Mock()
+            mock_response = "Raw string response"  # Not an object with .content
+            mock_client.invoke.return_value = mock_response
+            mock_get_client.return_value = mock_client
+            mock_convert.return_value = [Mock()]
+            
+            result = self.service._call_llm_direct("openai", [{"role": "user", "content": "test"}])
+            
+            # Should convert to string
+            self.assertEqual(result, "Raw string response")
+    
+    def test_call_llm_direct_provider_normalization_edge_cases(self):
+        """Test _call_llm_direct() provider normalization with edge cases."""
+        config = {"api_key": "test_key", "model": "test-model", "temperature": 0.7}
+        self.mock_app_config_service.get_llm_config.return_value = config
+        
+        with patch.object(self.service, '_get_or_create_client') as mock_get_client, \
+             patch.object(self.service, '_convert_messages_to_langchain') as mock_convert:
+            
+            mock_client = Mock()
+            mock_response = Mock()
+            mock_response.content = "Test response"
+            mock_client.invoke.return_value = mock_response
+            mock_get_client.return_value = mock_client
+            mock_convert.return_value = [Mock()]
+            
+            # Test various provider name formats
+            test_cases = [
+                ("OpenAI", "openai"),
+                ("ANTHROPIC", "anthropic"),
+                ("gPt", "openai"),
+                ("Claude", "anthropic"),
+                ("GEMINI", "google"),
+                ("custom_provider", "custom_provider")
+            ]
+            
+            for input_provider, expected_normalized in test_cases:
+                result = self.service._call_llm_direct(input_provider, [{"role": "user", "content": "test"}])
+                self.assertEqual(result, "Test response")
+                
+                # Verify normalized provider was used in config request
+                self.mock_app_config_service.get_llm_config.assert_called_with(expected_normalized)
+    
+    def test_error_classification_comprehensive(self):
+        """Test error classification in _call_llm_direct() for various error types."""
+        config = {"api_key": "test_key", "model": "test-model", "temperature": 0.7}
+        self.mock_app_config_service.get_llm_config.return_value = config
+        
+        with patch.object(self.service, '_get_or_create_client') as mock_get_client, \
+             patch.object(self.service, '_convert_messages_to_langchain') as mock_convert:
+            
+            mock_client = Mock()
+            mock_get_client.return_value = mock_client
+            mock_convert.return_value = [Mock()]
+            
+            # Test different error scenarios
+            error_scenarios = [
+                # Dependency errors
+                (ImportError("No module named 'langchain'"), LLMDependencyError),
+                (Exception("dependencies not installed"), LLMDependencyError),
+                (Exception("please install package"), LLMDependencyError),
+                
+                # Authentication errors
+                (Exception("Invalid API key"), LLMConfigurationError),
+                (Exception("authentication failed"), LLMConfigurationError),
+                (Exception("api_key is required"), LLMConfigurationError),
+                
+                # Model errors
+                (Exception("model not found"), LLMConfigurationError),
+                (Exception("unsupported model"), LLMConfigurationError),
+                
+                # Generic provider errors
+                (Exception("rate limit exceeded"), LLMProviderError),
+                (Exception("timeout"), LLMProviderError)
+            ]
+            
+            for error, expected_exception_type in error_scenarios:
+                mock_client.invoke.side_effect = error
+                
+                with self.assertRaises(expected_exception_type):
+                    self.service._call_llm_direct("openai", [{"role": "user", "content": "test"}])
+    
+    def test_call_llm_direct_preserve_custom_exceptions(self):
+        """Test _call_llm_direct() preserves custom exception types."""
+        config = {"api_key": "test_key", "model": "test-model", "temperature": 0.7}
+        self.mock_app_config_service.get_llm_config.return_value = config
+        
+        with patch.object(self.service, '_get_or_create_client') as mock_get_client:
+            # Mock client creation to raise custom exception
+            custom_error = LLMConfigurationError("Custom configuration error")
+            mock_get_client.side_effect = custom_error
+            
+            with self.assertRaises(LLMConfigurationError) as context:
+                self.service._call_llm_direct("openai", [{"role": "user", "content": "test"}])
+            
+            # Should preserve the exact same exception
+            self.assertEqual(context.exception, custom_error)
+    
+    # =============================================================================
+    # 7. Enhanced Utility and Helper Method Tests
+    # =============================================================================
+    
+    def test_generate_method_comprehensive_parameters(self):
+        """Test generate() method with comprehensive parameter handling."""
+        with patch.object(self.service, 'call_llm') as mock_call_llm:
+            mock_call_llm.return_value = "Generated response"
+            
+            # Test with all possible parameters
+            result = self.service.generate(
+                prompt="Generate code for a function",
+                provider="anthropic",
+                model="claude-3-opus",
+                temperature=0.3,
+                max_tokens=1000,
+                routing_context={"task_type": "coding"}
+            )
+            
+            # Verify delegation with all parameters
+            expected_messages = [{"role": "user", "content": "Generate code for a function"}]
+            mock_call_llm.assert_called_once_with(
+                provider="anthropic",
+                messages=expected_messages,
+                model="claude-3-opus",
+                temperature=0.3,
+                max_tokens=1000,
+                routing_context={"task_type": "coding"}
+            )
+            
+            self.assertEqual(result, "Generated response")
+    
+    def test_clear_cache_with_populated_cache(self):
+        """Test clear_cache() removes all cached clients."""
+        # Populate cache with multiple clients
+        self.service._clients = {
+            "openai_gpt-4_key123": Mock(),
+            "anthropic_claude-3_key456": Mock(),
+            "google_gemini_key789": Mock()
+        }
+        
+        self.assertEqual(len(self.service._clients), 3)
+        
+        self.service.clear_cache()
+        
+        self.assertEqual(len(self.service._clients), 0)
+    
+    def test_get_routing_stats_with_routing_service(self):
+        """Test get_routing_stats() returns detailed routing statistics."""
+        mock_stats = {
+            "total_requests": 150,
+            "successful_routes": 145,
+            "fallback_routes": 5,
+            "average_confidence": 0.87,
+            "provider_distribution": {
+                "anthropic": 80,
+                "openai": 60,
+                "google": 10
+            }
+        }
+        self.mock_routing_service.get_routing_stats.return_value = mock_stats
+        
+        result = self.service.get_routing_stats()
+        
+        self.assertEqual(result, mock_stats)
+        self.mock_routing_service.get_routing_stats.assert_called_once()
+    
+    def test_public_get_available_providers_method(self):
+        """Test public get_available_providers() method delegates correctly."""
+        with patch.object(self.service, '_get_available_providers') as mock_private:
+            mock_providers = ["openai", "anthropic", "google"]
+            mock_private.return_value = mock_providers
+            
+            result = self.service.get_available_providers()
+            
+            self.assertEqual(result, mock_providers)
+            mock_private.assert_called_once()
+    
+    # =============================================================================
+    # 8. Configuration Integration Tests
+    # =============================================================================
+    
+    def test_llm_service_with_complex_configuration(self):
+        """Test LLMService with complex, realistic configuration."""
+        complex_config = {
+            "openai": {
+                "api_key": "sk-test123",
+                "model": "gpt-4-turbo",
+                "temperature": 0.2,
+                "max_tokens": 2000,
+                "timeout": 30
+            },
+            "anthropic": {
+                "api_key": "ant-test456",
+                "model": "claude-3-opus-20240229",
+                "temperature": 0.1,
+                "max_tokens": 4000
+            },
+            "google": {
+                "api_key": "goog-test789",
+                "model": "gemini-1.5-pro",
+                "temperature": 0.5
+            }
+        }
+        
+        def mock_get_llm_config(provider):
+            return complex_config.get(provider)
+        
+        self.mock_app_config_service.get_llm_config.side_effect = mock_get_llm_config
+        
+        # Test all providers are detected as available
+        providers = self.service._get_available_providers()
+        self.assertEqual(set(providers), {"openai", "anthropic", "google"})
+        
+        # Test configuration retrieval for each provider
+        for provider in ["openai", "anthropic", "google"]:
+            config = self.service._get_provider_config(provider)
+            expected_config = complex_config[provider]
+            
+            # Should contain all configured values
+            for key, value in expected_config.items():
+                self.assertEqual(config[key], value)
+    
+    def test_llm_service_configuration_override_behavior(self):
+        """Test LLMService configuration override behavior in call_llm()."""
+        base_config = {
+            "api_key": "test_key",
+            "model": "base-model",
+            "temperature": 0.7
+        }
+        self.mock_app_config_service.get_llm_config.return_value = base_config
+        
+        with patch.object(self.service, '_get_or_create_client') as mock_get_client, \
+             patch.object(self.service, '_convert_messages_to_langchain') as mock_convert:
+            
+            mock_client = Mock()
+            mock_response = Mock()
+            mock_response.content = "Override test response"
+            mock_client.invoke.return_value = mock_response
+            mock_get_client.return_value = mock_client
+            mock_convert.return_value = [Mock()]
+            
+            # Call with overrides
+            result = self.service.call_llm(
+                provider="openai",
+                messages=[{"role": "user", "content": "test"}],
+                model="override-model",
+                temperature=0.3
+            )
+            
+            # Verify client was created with overridden config
+            call_args = mock_get_client.call_args[0]
+            provider_arg, config_arg = call_args
+            
+            self.assertEqual(provider_arg, "openai")
+            self.assertEqual(config_arg["model"], "override-model")  # Overridden
+            self.assertEqual(config_arg["temperature"], 0.3)  # Overridden
+            self.assertEqual(config_arg["api_key"], "test_key")  # From base config
+    
+    # =============================================================================
+    # 9. Performance and Edge Case Tests
+    # =============================================================================
+    
+    def test_large_message_handling(self):
+        """Test LLMService handles large message payloads."""
+        # Create large messages
+        large_content = "x" * 10000  # 10KB of content
+        large_messages = [
+            {"role": "system", "content": "System prompt"},
+            {"role": "user", "content": large_content},
+            {"role": "assistant", "content": "Previous response"},
+            {"role": "user", "content": large_content + " continued"}
+        ]
+        
+        config = {"api_key": "test_key", "model": "test-model", "temperature": 0.7}
+        self.mock_app_config_service.get_llm_config.return_value = config
+        
+        with patch.object(self.service, '_get_or_create_client') as mock_get_client, \
+             patch.object(self.service, '_convert_messages_to_langchain') as mock_convert:
+            
+            mock_client = Mock()
+            mock_response = Mock()
+            mock_response.content = "Large message response"
+            mock_client.invoke.return_value = mock_response
+            mock_get_client.return_value = mock_client
+            mock_convert.return_value = [Mock()]
+            
+            result = self.service.call_llm("openai", large_messages)
+            
+            # Should handle large messages without issues
+            self.assertEqual(result, "Large message response")
+            
+            # Verify message conversion was called with full messages
+            mock_convert.assert_called_once_with(large_messages)
+    
+    def test_concurrent_client_cache_access_simulation(self):
+        """Test client cache behavior under simulated concurrent access."""
+        config = {"api_key": "test_key", "model": "test-model", "temperature": 0.7}
+        
+        with patch.object(self.service, '_create_langchain_client') as mock_create:
+            mock_clients = [Mock() for _ in range(10)]
+            mock_create.side_effect = mock_clients
+            
+            # Simulate concurrent access to same provider/config
+            results = []
+            for i in range(10):
+                client = self.service._get_or_create_client("openai", config)
+                results.append(client)
+            
+            # All should return the same client (first one created)
+            self.assertTrue(all(client == results[0] for client in results))
+            
+            # Client should only be created once
+            mock_create.assert_called_once()
+    
+    def test_memory_usage_with_cache_growth(self):
+        """Test memory behavior as cache grows with different configurations."""
+        base_config = {"api_key": "test_key", "temperature": 0.7}
+        
+        with patch.object(self.service, '_create_langchain_client', return_value=Mock()):
+            # Create many different client configurations
+            for i in range(100):
+                config = base_config.copy()
+                config["model"] = f"model-{i}"
+                self.service._get_or_create_client("openai", config)
+            
+            # Should have 100 different cache entries
+            self.assertEqual(len(self.service._clients), 100)
+            
+            # Clear cache should free all entries
+            self.service.clear_cache()
+            self.assertEqual(len(self.service._clients), 0)
+    
+    # =============================================================================
+    # 10. Integration and Workflow Tests
+    # =============================================================================
+    
+    def test_complete_llm_workflow_without_routing(self):
+        """Test complete LLM workflow from initialization to response without routing."""
+        # Configure realistic provider config
+        provider_config = {
+            "api_key": "test-api-key-12345",
+            "model": "gpt-4",
+            "temperature": 0.7,
+            "max_tokens": 1000
+        }
+        self.mock_app_config_service.get_llm_config.return_value = provider_config
+        
+        with patch.object(self.service, '_create_langchain_client') as mock_create, \
+             patch.object(self.service, '_convert_messages_to_langchain') as mock_convert:
+            
+            # Mock LangChain client and response
+            mock_client = Mock()
+            mock_response = Mock()
+            mock_response.content = "This is a complete workflow response with detailed information."
+            mock_client.invoke.return_value = mock_response
+            mock_create.return_value = mock_client
+            
+            # Mock message conversion
+            mock_langchain_messages = [Mock(), Mock()]
+            mock_convert.return_value = mock_langchain_messages
+            
+            # Execute complete workflow
+            messages = [
+                {"role": "system", "content": "You are a helpful AI assistant"},
+                {"role": "user", "content": "Explain quantum computing in simple terms"}
+            ]
+            
+            result = self.service.call_llm(
+                provider="openai",
+                messages=messages,
+                model="gpt-4-turbo",  # Override model
+                temperature=0.3  # Override temperature
+            )
+            
+            # Verify complete workflow
+            self.assertEqual(result, "This is a complete workflow response with detailed information.")
+            
+            # Verify configuration was properly merged
+            mock_create.assert_called_once()
+            create_call_args = mock_create.call_args[0]
+            self.assertEqual(create_call_args[0], "openai")  # provider
+            
+            config_used = create_call_args[1]
+            self.assertEqual(config_used["model"], "gpt-4-turbo")  # Overridden
+            self.assertEqual(config_used["temperature"], 0.3)  # Overridden
+            self.assertEqual(config_used["api_key"], "test-api-key-12345")  # From config
+            
+            # Verify message conversion and client invocation
+            mock_convert.assert_called_once_with(messages)
+            mock_client.invoke.assert_called_once_with(mock_langchain_messages)
+    
+    def test_complete_llm_workflow_with_routing(self):
+        """Test complete LLM workflow with intelligent routing."""
+        # Configure routing context
+        routing_context = {
+            "routing_enabled": True,
+            "task_type": "analysis",
+            "complexity_override": "medium",
+            "provider_preference": ["anthropic", "openai"],
+            "cost_optimization": True
+        }
+        
+        # Mock routing decision
+        mock_decision = Mock()
+        mock_decision.provider = "anthropic"
+        mock_decision.model = "claude-3-sonnet-20240229"
+        mock_decision.complexity = "medium"
+        mock_decision.confidence = 0.92
+        self.mock_routing_service.route_request.return_value = mock_decision
+        
+        # Configure provider config
+        provider_config = {
+            "api_key": "ant-test-key",
+            "model": "claude-3-haiku",  # Will be overridden by routing
+            "temperature": 0.7
+        }
+        self.mock_app_config_service.get_llm_config.return_value = provider_config
+        
+        with patch.object(self.service, '_get_available_providers', return_value=["openai", "anthropic"]), \
+             patch.object(self.service, '_create_langchain_client') as mock_create, \
+             patch.object(self.service, '_convert_messages_to_langchain') as mock_convert:
+            
+            # Mock LangChain client and response
+            mock_client = Mock()
+            mock_response = Mock()
+            mock_response.content = "Routed response from Claude with high-quality analysis."
+            mock_client.invoke.return_value = mock_response
+            mock_create.return_value = mock_client
+            mock_convert.return_value = [Mock()]
+            
+            # Execute routing workflow
+            messages = [
+                {"role": "user", "content": "Analyze the market trends for renewable energy"}
+            ]
+            
+            result = self.service.call_llm(
+                provider="openai",  # This should be overridden by routing
+                messages=messages,
+                routing_context=routing_context
+            )
+            
+            # Verify routing workflow
+            self.assertEqual(result, "Routed response from Claude with high-quality analysis.")
+            
+            # Verify routing service was called
+            self.mock_routing_service.route_request.assert_called_once()
+            
+            # Verify final call used routed provider and model
+            mock_create.assert_called_once()
+            create_call_args = mock_create.call_args[0]
+            self.assertEqual(create_call_args[0], "anthropic")  # Routed provider
+            
+            config_used = create_call_args[1]
+            self.assertEqual(config_used["model"], "claude-3-sonnet-20240229")  # Routed model
+
+
+if __name__ == '__main__':
+    unittest.main()
