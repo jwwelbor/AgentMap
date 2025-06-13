@@ -28,13 +28,13 @@ class StateAdapterService:
     #     pass
 
     @staticmethod
-    def has_value(state: Any, key: str) -> bool:
+    def has_value(state: Any, key: Any) -> bool:
         """
         Check if a key exists in the state.
         
         Args:
             state: State object (dict, Pydantic model, etc.)
-            key: Key to check
+            key: Key to check (string for attributes/dict keys, int for list indices, etc.)
             
         Returns:
             True if key exists, False otherwise
@@ -45,10 +45,10 @@ class StateAdapterService:
         # Dictionary state
         if hasattr(state, "get") and callable(state.get):
             return key in state
-        # Pydantic model or object with attributes
-        elif hasattr(state, key):
+        # Pydantic model or object with attributes (only for string keys)
+        elif isinstance(key, str) and hasattr(state, key):
             return True
-        # Support for __getitem__ access
+        # Support for __getitem__ access (lists, custom objects, etc.)
         elif hasattr(state, "__getitem__"):
             try:
                 _ = state[key]
@@ -59,13 +59,13 @@ class StateAdapterService:
         return False
     
     @staticmethod
-    def get_value(state: Any, key: str, default: Any = None) -> Any:
+    def get_value(state: Any, key: Any, default: Any = None) -> Any:
         """
         Get a value from the state.
         
         Args:
             state: State object (dict, Pydantic model, etc.)
-            key: Key to retrieve
+            key: Key to retrieve (string for attributes/dict keys, int for list indices, etc.)
             default: Default value if key not found
             
         Returns:
@@ -80,10 +80,10 @@ class StateAdapterService:
         # Dictionary state
         if hasattr(state, "get") and callable(state.get):
             value = state.get(key, default)
-        # Pydantic model or object with attributes
-        elif hasattr(state, key):
+        # Pydantic model or object with attributes (only for string keys)
+        elif isinstance(key, str) and hasattr(state, key):
             value = getattr(state, key, default)
-        # Support for __getitem__ access
+        # Support for __getitem__ access (lists, custom objects, etc.)
         elif hasattr(state, "__getitem__"):
             try:
                 value = state[key]
@@ -95,13 +95,13 @@ class StateAdapterService:
         return value
 
     @staticmethod
-    def set_value(state: StateType, key: str, value: Any) -> StateType:
+    def set_value(state: StateType, key: Any, value: Any) -> StateType:
         """
         Set a value in the state, returning a new state object.
         
         Args:
             state: State object (dict, Pydantic model, etc.)
-            key: Key to set
+            key: Key to set (string for attributes/dict keys, int for list indices, etc.)
             value: Value to set
             
         Returns:
