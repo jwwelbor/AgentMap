@@ -198,7 +198,7 @@ class CSVGraphParserService:
         )
         
         for idx, row in df.iterrows():
-            line_number = idx + 2  # +1 for 0-indexing, +1 for header row
+            line_number = int(idx) + 2  # +1 for 0-indexing, +1 for header row
             
             try:
                 node_spec = self._parse_row_to_node_spec(row, line_number)
@@ -336,7 +336,7 @@ class CSVGraphParserService:
         from pydantic import ValidationError as PydanticValidationError
         
         for idx, row in df.iterrows():
-            line_number = idx + 2  # +1 for 0-indexing, +1 for header row
+            line_number = int(idx) + 2  # +1 for 0-indexing, +1 for header row
             
             try:
                 # Convert row to dict, handling NaN values (pattern from CSVValidationService)

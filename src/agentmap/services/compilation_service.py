@@ -124,14 +124,13 @@ class CompilationService:
             # Build graph using GraphDefinitionService
             graph = self.graph_definition.build_from_csv(csv_path, graph_name)
             
-            # Convert Graph domain model to old format for compatibility
-            graph_def = self._convert_graph_to_old_format(graph)
+            # Use Graph domain model directly with GraphAssemblyService
             
             # Prepare node registry
-            node_registry = self.node_registry.prepare_for_assembly(graph_def, graph_name)
+            node_registry = self.node_registry.prepare_for_assembly(graph.nodes, graph_name)
             
             # Create agent instances for each node (CompilationService needs this)
-            for node in graph_def.values():
+            for node in graph.nodes.values():
                 agent_instance = self._create_agent_instance(node, graph_name)
                 # Ensure node.context is a dictionary and add the agent instance
                 if not hasattr(node, 'context') or node.context is None:
@@ -142,9 +141,8 @@ class CompilationService:
             
             # Create fresh compiled graph with registry injection (avoid LangGraph reuse issues)
             compiled_graph = self.assembly_service.assemble_graph(
-                graph_def=graph_def,
+                graph=graph,
                 node_registry=node_registry,
-                enable_logging=True
             )
             
             # Check if assembly was successful
@@ -186,7 +184,7 @@ class CompilationService:
             # Get registry statistics
             # Note: This is a simplified approach - in full implementation we'd capture these during compilation
             registry_stats = {
-                "nodes_processed": len(graph_def),
+                "nodes_processed": len(graph.nodes),
                 "registry_size": len(node_registry),
                 "compilation_time": compilation_time
             }
@@ -343,33 +341,7 @@ class CompilationService:
         
         return status
     
-    def _convert_graph_to_old_format(self, graph: Graph) -> Dict:
-        """
-        Convert Graph domain model to old format for compatibility.
-        
-        Args:
-            graph: Graph domain model
-            
-        Returns:
-            Dictionary in old GraphBuilder format
-        """
-        old_format = {}
-        
-        for node_name, node in graph.nodes.items():
-            # Convert Node to old format
-            old_format[node_name] = type('Node', (), {
-                'name': node.name,
-                'context': node.context,
-                'agent_type': node.agent_type,
-                'inputs': node.inputs,
-                'output': node.output,
-                'prompt': node.prompt,
-                'description': node.description,
-                'edges': node.edges
-            })()
-        
-        return old_format
-    
+
     def _create_agent_instance(self, node, graph_name: str):
         """Create agent instance for compilation."""
         # For compilation, we just need a minimal agent that can be assembled

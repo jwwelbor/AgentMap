@@ -39,7 +39,7 @@ class TestInputAgent(unittest.TestCase):
             prompt="Please enter your data: ",
             context=self.test_context,
             logger=self.mock_logging_service.get_class_logger(InputAgent),
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -61,7 +61,7 @@ class TestInputAgent(unittest.TestCase):
         
         # Verify infrastructure services are available
         self.assertIsNotNone(self.agent.logger)
-        self.assertIsNotNone(self.agent.execution_tracker_service)
+        self.assertIsNotNone(self.agent.execution_tracking_service)
         self.assertIsNotNone(self.agent.state_adapter_service)
         
         # Verify no business services are configured (InputAgent doesn't need them)
@@ -130,7 +130,7 @@ class TestInputAgent(unittest.TestCase):
             name="no_prompt",
             prompt=None,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -151,7 +151,7 @@ class TestInputAgent(unittest.TestCase):
             name="empty_prompt",
             prompt="",
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -230,8 +230,8 @@ class TestInputAgent(unittest.TestCase):
     def test_execution_tracker_integration(self):
         """Test that agent properly integrates with execution tracker."""
         # Verify execution tracker is accessible
-        tracker = self.agent.execution_tracker_service
-        self.assertEqual(tracker, self.mock_tracker)
+        tracker = self.agent.execution_tracking_service
+        self.assertEqual(tracker, self.mock_execution_tracking_service)
         
         # Verify tracker has expected properties
         self.assertTrue(hasattr(tracker, 'track_inputs'))
@@ -314,7 +314,7 @@ class TestInputAgent(unittest.TestCase):
         agent_without_logger = InputAgent(
             name="no_logger",
             prompt="Test prompt",
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -337,9 +337,9 @@ class TestInputAgent(unittest.TestCase):
         
         # Accessing execution tracker should raise clear error
         with self.assertRaises(ValueError) as cm:
-            _ = agent_without_tracker.execution_tracker_service
+            _ = agent_without_tracker.execution_tracking_service
         
-        self.assertIn("ExecutionTracker not provided", str(cm.exception))
+        self.assertIn("ExecutionTrackingService not provided", str(cm.exception))
         self.assertIn("no_tracker", str(cm.exception))
     
     @patch('builtins.input', side_effect=KeyboardInterrupt)
@@ -385,6 +385,9 @@ class TestInputAgent(unittest.TestCase):
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
         
+        # CRITICAL: Set execution tracker on agent (required by new architecture)
+        self.agent.set_execution_tracker(self.mock_tracker)
+        
         # Execute run method
         result_state = self.agent.run(test_state)
         
@@ -398,9 +401,9 @@ class TestInputAgent(unittest.TestCase):
         # Verify input() was called with correct prompt
         mock_input.assert_called_once_with("Please enter your data: ")
         
-        # Verify tracking methods were called on the tracker instance
-        self.mock_tracker.record_node_start.assert_called()
-        self.mock_tracker.record_node_result.assert_called()
+        # Verify tracking methods were called on the execution tracking service
+        self.mock_execution_tracking_service.record_node_start.assert_called_once()
+        self.mock_execution_tracking_service.record_node_result.assert_called_once()
 
 
 if __name__ == '__main__':

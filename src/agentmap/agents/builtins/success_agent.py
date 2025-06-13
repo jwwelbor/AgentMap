@@ -29,7 +29,7 @@ class SuccessAgent(BaseAgent):
             prompt=prompt,
             context=context,
             logger=logger,
-            execution_tracker_service=execution_tracker_service,
+            execution_tracking_service=execution_tracker_service,
             state_adapter_service=state_adapter_service
         )
     

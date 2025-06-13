@@ -79,7 +79,7 @@ class ExecutionTrackingService:
         """
         return tracker.overall_success
     
-    def to_summary(self, tracker: ExecutionTracker, graph_name: str):
+    def to_summary(self, tracker: ExecutionTracker, graph_name: str, final_output: Any = None):
         from agentmap.models.execution_summary import ExecutionSummary, NodeExecution as SummaryNodeExecution
 
         summary_executions = []
@@ -99,7 +99,7 @@ class ExecutionTrackingService:
             start_time=tracker.start_time,
             end_time=tracker.end_time,
             node_executions=summary_executions,
-            final_output=None,
+            final_output=final_output,  # Use the provided final_output instead of hardcoded None
             graph_success=tracker.overall_success,
             status="completed" if tracker.end_time else "in_progress"
         )

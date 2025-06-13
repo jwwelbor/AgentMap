@@ -114,7 +114,7 @@ class TestBaseAgent(unittest.TestCase):
             prompt="Test prompt",
             context=self.test_context,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -128,7 +128,7 @@ class TestBaseAgent(unittest.TestCase):
         
         # Verify infrastructure services are accessible
         self.assertEqual(agent.logger, self.mock_logger)
-        self.assertEqual(agent.execution_tracker_service, self.mock_execution_tracking_service)
+        self.assertEqual(agent.execution_tracking_service, self.mock_execution_tracking_service)
         self.assertEqual(agent.state_adapter_service, self.mock_state_adapter_service)
         
         # Verify business services are not configured by default
@@ -156,7 +156,7 @@ class TestBaseAgent(unittest.TestCase):
         with self.assertRaises(ValueError):
             _ = agent.logger
         with self.assertRaises(ValueError):
-            _ = agent.execution_tracker_service
+            _ = agent.execution_tracking_service
     
     def test_base_agent_context_processing(self):
         """Test BaseAgent correctly processes context information."""
@@ -210,13 +210,16 @@ class TestBaseAgent(unittest.TestCase):
             prompt="No output test",
             context={"input_fields": ["input"]},  # No output_field = None
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
         # Configure state adapter
         self.mock_state_adapter_service.get_inputs.return_value = {"input": "test"}
         self.mock_state_adapter_service.set_value.side_effect = lambda s, k, v: {**s, k: v}
+        
+        # CRITICAL: Set execution tracker on agent (required by new architecture)
+        agent.set_execution_tracker(self.mock_tracker)
         
         # Test state
         test_state = {"input": "test_value", "existing": "preserved"}
@@ -403,17 +406,17 @@ class TestBaseAgent(unittest.TestCase):
         agent_with_tracker = ConcreteAgent(
             name="with_tracker",
             prompt="Test",
-            execution_tracker_service=self.mock_execution_tracking_service
+            execution_tracking_service=self.mock_execution_tracking_service
         )
-        self.assertEqual(agent_with_tracker.execution_tracker_service, self.mock_execution_tracking_service)
+        self.assertEqual(agent_with_tracker.execution_tracking_service, self.mock_execution_tracking_service)
         
         # Test without tracker
         agent_without_tracker = ConcreteAgent("without_tracker", "Test")
         with self.assertRaises(ValueError) as cm:
-            _ = agent_without_tracker.execution_tracker_service
+            _ = agent_without_tracker.execution_tracking_service
         
         error_msg = str(cm.exception)
-        self.assertIn("ExecutionTracker not provided", error_msg)
+        self.assertIn("ExecutionTrackingService not provided", error_msg)
         self.assertIn("without_tracker", error_msg)
     
     def test_state_adapter_property_access(self):
@@ -505,7 +508,7 @@ class TestBaseAgent(unittest.TestCase):
             prompt="Test run",
             context={"input_fields": ["input"], "output_field": "output"},
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,  # Pass the SERVICE, not the tracker
+            execution_tracking_service=self.mock_execution_tracking_service,  # Pass the SERVICE, not the tracker
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -520,6 +523,9 @@ class TestBaseAgent(unittest.TestCase):
         
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
+        
+        # CRITICAL: Set execution tracker on agent (required by new architecture)
+        agent.set_execution_tracker(self.mock_tracker)
         
         # Test state
         test_state = {"input": "test_value", "other": "preserved"}
@@ -562,7 +568,7 @@ class TestBaseAgent(unittest.TestCase):
             prompt="Error test",
             context={"input_fields": ["input"], "output_field": "output"},
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,  # Pass the SERVICE, not the tracker
+            execution_tracking_service=self.mock_execution_tracking_service,  # Pass the SERVICE, not the tracker
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -572,6 +578,9 @@ class TestBaseAgent(unittest.TestCase):
         
         # Configure execution tracking service methods
         self.mock_execution_tracking_service.update_graph_success.return_value = False
+        
+        # CRITICAL: Set execution tracker on agent (required by new architecture)
+        agent.set_execution_tracker(self.mock_tracker)
         
         # Test state
         test_state = {"input": "test_value"}
@@ -609,7 +618,7 @@ class TestBaseAgent(unittest.TestCase):
             prompt="Info test",
             context=self.test_context,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -685,7 +694,7 @@ class TestBaseAgent(unittest.TestCase):
             prompt="Test",
             context={"input_fields": ["input"], "output_field": "output"},
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -700,6 +709,9 @@ class TestBaseAgent(unittest.TestCase):
         
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
+        
+        # CRITICAL: Set execution tracker on agent (required by new architecture)
+        agent.set_execution_tracker(self.mock_tracker)
         
         # Test state with original input
         test_state = {"input": "value"}
@@ -733,7 +745,7 @@ class TestBaseAgent(unittest.TestCase):
             prompt="Test",
             context={"input_fields": ["input"], "output_field": "output"},
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
@@ -748,6 +760,9 @@ class TestBaseAgent(unittest.TestCase):
         
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
+        
+        # CRITICAL: Set execution tracker on agent (required by new architecture)
+        agent.set_execution_tracker(self.mock_tracker)
         
         # Test state
         test_state = {"input": "value"}
@@ -773,13 +788,16 @@ class TestBaseAgent(unittest.TestCase):
             prompt="Invoke test",
             context={"input_fields": ["input"], "output_field": "output"},
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
         
         # Configure mocks
         self.mock_state_adapter_service.get_inputs.return_value = {"input": "test"}
         self.mock_state_adapter_service.set_value.side_effect = lambda s, k, v: {**s, k: v}
+        
+        # CRITICAL: Set execution tracker on agent (required by new architecture)
+        agent.set_execution_tracker(self.mock_tracker)
         
         test_state = {"input": "test_value"}
         

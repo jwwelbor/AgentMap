@@ -44,7 +44,7 @@ class TestBranchingAgent(unittest.TestCase):
             prompt="Branch based on input conditions",
             context=context,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_tracker,
+            execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
     
@@ -72,7 +72,7 @@ class TestBranchingAgent(unittest.TestCase):
         
         # Verify infrastructure services
         self.assertIsNotNone(agent.logger)
-        self.assertIsNotNone(agent.execution_tracker_service)
+        self.assertIsNotNone(agent.execution_tracking_service)
         self.assertIsNotNone(agent.state_adapter_service)
     
     def test_agent_initialization_custom_configuration(self):
@@ -453,6 +453,9 @@ class TestBranchingAgent(unittest.TestCase):
         self.mock_tracker.record_node_start = Mock(return_value=None)
         self.mock_tracker.record_node_result = Mock(return_value=None)
         
+        # IMPORTANT: Set execution tracker before calling run() - required by BaseAgent
+        agent.set_execution_tracker(self.mock_tracker)
+        
         # Test state with success condition
         test_state = {
             "success": True,
@@ -493,6 +496,9 @@ class TestBranchingAgent(unittest.TestCase):
         self.mock_state_adapter_service.set_value.side_effect = mock_set_value
         self.mock_tracker.record_node_start = Mock(return_value=None)
         self.mock_tracker.record_node_result = Mock(return_value=None)
+        
+        # IMPORTANT: Set execution tracker before calling run() - required by BaseAgent
+        agent.set_execution_tracker(self.mock_tracker)
         
         test_state = {"status": "PASSED"}
         

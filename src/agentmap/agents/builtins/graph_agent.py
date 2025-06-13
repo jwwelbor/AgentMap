@@ -51,7 +51,7 @@ class GraphAgent(BaseAgent):
             prompt=prompt,
             context=context,
             logger=logger,
-            execution_tracker_service=execution_tracker_service,
+            execution_tracking_service=execution_tracker_service,
             state_adapter_service=state_adapter_service
         )
         
@@ -152,8 +152,8 @@ class GraphAgent(BaseAgent):
         Returns:
             Tuple of (updated_state, processed_output)
         """
-        # Get parent execution tracker
-        parent_tracker = self.execution_tracker_service
+        # Get parent execution tracker (instance, not service)
+        parent_tracker = self.current_execution_tracker
         
         # If output contains execution summary from subgraph, record it
         if isinstance(output, dict) and "__execution_summary" in output:
