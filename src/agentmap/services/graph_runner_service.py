@@ -77,7 +77,8 @@ class GraphRunnerService:
         state_adapter_service: StateAdapterService,
         dependency_checker_service: DependencyCheckerService,
         graph_assembly_service: GraphAssemblyService,
-        prompt_manager_service: Any = None  # PromptManagerService - optional for backward compatibility
+        prompt_manager_service: Any = None,  # PromptManagerService - optional for backward compatibility
+        application_container: Any = None  # ApplicationContainer - optional for host service injection
     ):
         """Initialize facade service with specialized service dependencies.
         
@@ -98,6 +99,7 @@ class GraphRunnerService:
             dependency_checker_service: Service for dependency validation
             graph_assembly_service: Service for graph assembly
             prompt_manager_service: Service for prompt template resolution and formatting
+            application_container: Application container for host service injection (optional)
         """
         # Core specialized services
         self.graph_definition = graph_definition_service
@@ -124,6 +126,10 @@ class GraphRunnerService:
         self.execution_tracking_service = execution_tracking_service
         self.execution_policy_service = execution_policy_service
         self.state_adapter_service = state_adapter_service
+        
+        # Host service injection support (optional)
+        self.application_container = application_container
+        self._host_services_available = application_container is not None
         
         self.logger.info("[GraphRunnerService] Initialized as simplified facade")
         self._log_service_status()
@@ -572,6 +578,9 @@ class GraphRunnerService:
         """
         Configure services using clean protocol checking.
         
+        This method now supports both AgentMap core services and host-defined services.
+        Host services are configured after core services to ensure proper layering.
+        
         Args:
             agent: Agent instance to configure services for
         """
@@ -583,13 +592,18 @@ class GraphRunnerService:
             PromptCapableAgent
         )
         
+        # Configure core AgentMap services first
+        core_services_configured = 0
+        
         if isinstance(agent, LLMCapableAgent):
             agent.configure_llm_service(self.llm_service)
             self.logger.debug(f"[GraphRunnerService] ✅ Configured LLM service for {agent.name}")
+            core_services_configured += 1
         
         if isinstance(agent, StorageCapableAgent):
             agent.configure_storage_service(self.storage_service_manager)
             self.logger.debug(f"[GraphRunnerService] ✅ Configured storage service for {agent.name}")
+            core_services_configured += 1
         
         if isinstance(agent, PromptCapableAgent):
             # Check if agent has prompt_manager_service (either from constructor or post-construction)
@@ -604,6 +618,7 @@ class GraphRunnerService:
                 # Try post-construction configuration if service is available
                 agent.configure_prompt_service(self.prompt_manager_service)
                 self.logger.debug(f"[GraphRunnerService] ✅ Configured prompt service for {agent.name}")
+                core_services_configured += 1
             else:
                 self.logger.debug(f"[GraphRunnerService] Agent {agent.name} will use fallback prompt handling (no service available)")
         
@@ -615,6 +630,103 @@ class GraphRunnerService:
         # if isinstance(agent, DatabaseCapableAgent):
         #     agent.configure_database_service(self.database_service)
         #     self.logger.debug(f"[GraphRunnerService] ✅ Configured database service for {agent.name}")
+        
+        # Configure host-defined services after core services
+        host_services_configured = self._configure_host_services(agent)
+        
+        # Log summary of service configuration
+        total_configured = core_services_configured + host_services_configured
+        if total_configured > 0:
+            self.logger.debug(f"[GraphRunnerService] Total services configured for {agent.name}: {total_configured} (core: {core_services_configured}, host: {host_services_configured})")
+        else:
+            self.logger.debug(f"[GraphRunnerService] No services configured for {agent.name} (agent does not implement service protocols)")
+    
+    def _configure_host_services(self, agent: Any) -> int:
+        """
+        Configure host-defined services using dynamic protocol discovery.
+        
+        This method extends the existing service injection pattern to support
+        host application services that are dynamically discovered and registered.
+        
+        Args:
+            agent: Agent instance to configure host services for
+            
+        Returns:
+            Number of host services successfully configured
+        """
+        if not self._host_services_available:
+            self.logger.debug(f"[GraphRunnerService] Host services not available for {agent.name}")
+            return 0
+        
+        if not self.config.is_host_application_enabled():
+            self.logger.debug(f"[GraphRunnerService] Host application support disabled for {agent.name}")
+            return 0
+        
+        try:
+            # Use ApplicationContainer's host service injection capability
+            configured_count = self.application_container.configure_host_protocols(agent)
+            
+            if configured_count > 0:
+                self.logger.debug(f"[GraphRunnerService] ✅ Configured {configured_count} host services for {agent.name}")
+            else:
+                self.logger.debug(f"[GraphRunnerService] Agent {agent.name} does not implement host protocols")
+            
+            return configured_count
+            
+        except Exception as e:
+            self.logger.error(f"[GraphRunnerService] ❌ Failed to configure host services for {agent.name}: {e}")
+            # Graceful degradation - continue without host services
+            return 0
+    
+    def get_host_service_status(self, agent: Any) -> Dict[str, Any]:
+        """
+        Get status of host service injection for debugging and monitoring.
+        
+        Args:
+            agent: Agent instance to check
+            
+        Returns:
+            Dictionary with host service status information
+        """
+        status = {
+            "agent_name": getattr(agent, 'name', 'unknown'),
+            "host_services_available": self._host_services_available,
+            "host_application_enabled": self.config.is_host_application_enabled() if self.config else False,
+            "protocols_implemented": [],
+            "services_configured": 0,
+            "error": None
+        }
+        
+        if not self._host_services_available:
+            status["error"] = "ApplicationContainer not available"
+            return status
+        
+        if not self.config.is_host_application_enabled():
+            status["error"] = "Host application support disabled"
+            return status
+        
+        try:
+            # Get protocol implementations from container
+            protocol_implementations = self.application_container.get_protocol_implementations()
+            
+            # Check which protocols this agent implements
+            for protocol_name, service_name in protocol_implementations.items():
+                # Try to get the actual protocol class
+                # Note: This is a simplified check - in practice, you'd need to resolve the protocol class
+                status["protocols_implemented"].append({
+                    "protocol": protocol_name,
+                    "service": service_name,
+                    "implemented": False  # Would need actual isinstance check with resolved protocol
+                })
+            
+            # For now, just return the count we would get from configure_host_protocols
+            # In a real scenario, we might want to do a dry-run check
+            status["services_configured"] = len([p for p in status["protocols_implemented"] if p["implemented"]])
+            
+        except Exception as e:
+            status["error"] = str(e)
+        
+        return status
     
     def _validate_agent_configuration(self, agent_instance, node) -> None:
         """
@@ -867,12 +979,18 @@ class GraphRunnerService:
                 self.execution_tracking_service is not None,
                 self.execution_policy_service is not None,
                 self.state_adapter_service is not None,
-                # Note: prompt_manager_service is optional, so not included in required dependencies check
+                # Note: prompt_manager_service and application_container are optional, so not included in required dependencies check
             ]),
+            "host_services": {
+                "container_available": self._host_services_available,
+                "host_application_enabled": self.config.is_host_application_enabled() if self.config else False,
+                "protocol_discovery_available": self._host_services_available and self.config.is_host_application_enabled() if self.config else False
+            },
             "capabilities": {
                 "graph_resolution": True,
                 "agent_resolution": True,
                 "service_injection": True,
+                "host_service_injection": self._host_services_available,
                 "execution_delegation": True,
                 "precompiled_graphs": True,
                 "autocompilation": True,
@@ -880,7 +998,8 @@ class GraphRunnerService:
                 "agent_validation": True,
                 "dependency_checking": True,
                 "facade_pattern": True,
-                "prompt_resolution": self.prompt_manager_service is not None
+                "prompt_resolution": self.prompt_manager_service is not None,
+                "dynamic_protocol_discovery": self._host_services_available
             },
             "delegation_methods": [
                 "run_graph -> GraphExecutionService",
@@ -889,7 +1008,8 @@ class GraphRunnerService:
                 "compilation -> CompilationService",
                 "graph_loading -> GraphDefinitionService",
                 "agent_resolution -> AgentFactoryService.resolve_agent_class",
-                "service_injection -> protocol-based in _configure_agent_services"
+                "service_injection -> protocol-based in _configure_agent_services",
+                "host_service_injection -> ApplicationContainer.configure_host_protocols"
             ],
             "complexity_reduction": {
                 "execution_logic_extracted": True,
@@ -919,3 +1039,12 @@ class GraphRunnerService:
             self.logger.warning(f"[GraphRunnerService] Missing dependencies: {missing_deps}")
         else:
             self.logger.info("[GraphRunnerService] All dependencies initialized successfully")
+        
+        # Log host service status
+        if status["host_services"]["container_available"]:
+            if status["host_services"]["host_application_enabled"]:
+                self.logger.info("[GraphRunnerService] Host service injection enabled and available")
+            else:
+                self.logger.debug("[GraphRunnerService] Host service container available but host application disabled")
+        else:
+            self.logger.debug("[GraphRunnerService] Host service injection not available (container not injected)")
