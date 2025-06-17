@@ -5,6 +5,7 @@ Dependency injection container with string-based providers for clean architectur
 Uses string-based providers to avoid circular dependencies and implements
 graceful degradation for optional services like storage configuration.
 """
+from typing import Any, Dict, List, Optional, Type
 from dependency_injector import containers, providers
 
 
@@ -420,7 +421,8 @@ class ApplicationContainer(containers.DeclarativeContainer):
         state_adapter_service,
         dependency_checker_service,
         graph_assembly_service,
-        prompt_manager_service
+        prompt_manager_service,
+        providers.Self()  # Inject the container itself for host service access
     )
     
 
@@ -435,6 +437,298 @@ class ApplicationContainer(containers.DeclarativeContainer):
             return False
     
     storage_available = providers.Callable(_check_storage_availability)
+
+    # ==========================================================================
+    # HOST APPLICATION SERVICE INTEGRATION
+    # ==========================================================================
+    # 
+    # Host service registration and management following AgentMap DI patterns.
+    # Enables host applications to extend AgentMap's service injection system
+    # while maintaining separation from core functionality.
+    # ==========================================================================
+    
+    def __init__(self):
+        """Initialize container with host service storage."""
+        super().__init__()
+        
+        # Host service storage
+        self._host_service_providers: Dict[str, Any] = {}
+        self._host_protocol_implementations: Dict[Type, str] = {}
+        self._host_service_metadata: Dict[str, Dict[str, Any]] = {}
+    
+    def register_host_service(
+        self,
+        service_name: str,
+        service_class_path: str,
+        dependencies: Optional[List[str]] = None,
+        protocols: Optional[List[Type]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        singleton: bool = True
+    ) -> None:
+        """
+        Register a host application service using string-based provider pattern.
+        
+        Args:
+            service_name: Unique name for the service
+            service_class_path: String path to service class (e.g., "myapp.services.MyService")
+            dependencies: List of dependency service names (from container)
+            protocols: List of protocols this service implements
+            metadata: Optional metadata about the service
+            singleton: Whether to create as singleton (default: True)
+        """
+        if not service_name:
+            raise ValueError("Service name cannot be empty")
+        if not service_class_path:
+            raise ValueError("Service class path cannot be empty")
+        
+        # Prevent overriding existing AgentMap services
+        if hasattr(self, service_name):
+            raise ValueError(f"Service '{service_name}' conflicts with existing AgentMap service")
+        
+        if service_name in self._host_service_providers:
+            # Log warning but allow override for development flexibility
+            # Get logger if available (graceful degradation)
+            try:
+                logger = self.logging_service().get_logger("agentmap.di.host")
+                logger.warning(f"Overriding existing host service: {service_name}")
+            except:
+                pass  # Graceful degradation if logging not available
+        
+        # Create dependency providers
+        dependency_providers = []
+        if dependencies:
+            for dep in dependencies:
+                # Try to get from AgentMap services first
+                if hasattr(self, dep):
+                    dependency_providers.append(getattr(self, dep))
+                # Then try host services
+                elif dep in self._host_service_providers:
+                    dependency_providers.append(self._host_service_providers[dep])
+                else:
+                    raise ValueError(f"Dependency '{dep}' not found for service '{service_name}'")
+        
+        # Create provider using same pattern as AgentMap services
+        if singleton:
+            provider = providers.Singleton(service_class_path, *dependency_providers)
+        else:
+            provider = providers.Factory(service_class_path, *dependency_providers)
+        
+        # Add to container as dynamic attribute
+        setattr(self, service_name, provider)
+        
+        # Store in host service tracking
+        self._host_service_providers[service_name] = provider
+        self._host_service_metadata[service_name] = metadata or {}
+        
+        # Register protocol implementations
+        if protocols:
+            for protocol in protocols:
+                self._host_protocol_implementations[protocol] = service_name
+    
+    def register_host_factory(
+        self,
+        service_name: str,
+        factory_function: callable,
+        dependencies: Optional[List[str]] = None,
+        protocols: Optional[List[Type]] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Register a host service using a factory function.
+        
+        Args:
+            service_name: Unique name for the service
+            factory_function: Function that creates the service instance
+            dependencies: List of dependency service names
+            protocols: List of protocols this service implements
+            metadata: Optional metadata about the service
+        """
+        if not service_name:
+            raise ValueError("Service name cannot be empty")
+        if not factory_function:
+            raise ValueError("Factory function cannot be empty")
+        
+        # Prevent overriding existing AgentMap services
+        if hasattr(self, service_name):
+            raise ValueError(f"Service '{service_name}' conflicts with existing AgentMap service")
+        
+        # Create dependency providers
+        dependency_providers = []
+        if dependencies:
+            for dep in dependencies:
+                # Try to get from AgentMap services first
+                if hasattr(self, dep):
+                    dependency_providers.append(getattr(self, dep))
+                # Then try host services
+                elif dep in self._host_service_providers:
+                    dependency_providers.append(self._host_service_providers[dep])
+                else:
+                    raise ValueError(f"Dependency '{dep}' not found for service '{service_name}'")
+        
+        # Create provider
+        provider = providers.Singleton(factory_function, *dependency_providers)
+        
+        # Add to container as dynamic attribute
+        setattr(self, service_name, provider)
+        
+        # Store in host service tracking
+        self._host_service_providers[service_name] = provider
+        self._host_service_metadata[service_name] = metadata or {}
+        
+        # Register protocol implementations
+        if protocols:
+            for protocol in protocols:
+                self._host_protocol_implementations[protocol] = service_name
+    
+    def get_host_services(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get all registered host services with metadata.
+        
+        Returns:
+            Dictionary with service information:
+            - provider: The DI provider
+            - metadata: Service metadata
+            - protocols: List of protocol names implemented
+        """
+        result = {}
+        
+        for service_name, provider in self._host_service_providers.items():
+            # Find protocols implemented by this service
+            service_protocols = [
+                protocol.__name__ for protocol, svc_name 
+                in self._host_protocol_implementations.items() 
+                if svc_name == service_name
+            ]
+            
+            result[service_name] = {
+                "provider": provider,
+                "metadata": self._host_service_metadata.get(service_name, {}),
+                "protocols": service_protocols
+            }
+        
+        return result
+    
+    def get_protocol_implementations(self) -> Dict[str, str]:
+        """
+        Get mapping of protocol names to service names.
+        
+        Returns:
+            Dictionary mapping protocol names to service names
+        """
+        return {
+            protocol.__name__: service_name 
+            for protocol, service_name in self._host_protocol_implementations.items()
+        }
+    
+    def configure_host_protocols(self, agent: Any) -> int:
+        """
+        Configure host-defined protocols on an agent.
+        
+        Args:
+            agent: Agent instance to configure
+            
+        Returns:
+            Number of host services configured
+        """
+        configured_count = 0
+        
+        for protocol, service_name in self._host_protocol_implementations.items():
+            # Check if agent implements this protocol
+            if isinstance(agent, protocol):
+                try:
+                    # Get the service instance
+                    service_provider = self._host_service_providers.get(service_name)
+                    if service_provider:
+                        service_instance = service_provider()
+                        
+                        # Call the protocol's configuration method
+                        # Convert protocol name to method name: EmailServiceProtocol -> configure_email_service
+                        protocol_name = protocol.__name__
+                        if protocol_name.endswith('ServiceProtocol'):
+                            base_name = protocol_name[:-15]  # Remove 'ServiceProtocol'
+                        elif protocol_name.endswith('Protocol'):
+                            base_name = protocol_name[:-8]  # Remove 'Protocol'
+                        else:
+                            base_name = protocol_name
+                        
+                        # Convert to snake_case and create method name
+                        import re
+                        snake_case = re.sub(r'(?<!^)(?=[A-Z])', '_', base_name).lower()
+                        configure_method_name = f"configure_{snake_case}_service"
+                        
+                        if hasattr(agent, configure_method_name):
+                            getattr(agent, configure_method_name)(service_instance)
+                            configured_count += 1
+                            
+                            # Log success if logging is available
+                            try:
+                                logger = self.logging_service().get_logger("agentmap.di.host")
+                                logger.debug(f"Configured host service '{service_name}' for agent '{agent.name}'")
+                            except:
+                                pass  # Graceful degradation
+                        
+                except Exception as e:
+                    # Log error if logging is available, but don't fail
+                    try:
+                        logger = self.logging_service().get_logger("agentmap.di.host")
+                        logger.error(f"Failed to configure host service '{service_name}' for agent '{getattr(agent, 'name', 'unknown')}': {e}")
+                    except:
+                        pass  # Graceful degradation
+        
+        return configured_count
+    
+    def has_host_service(self, service_name: str) -> bool:
+        """
+        Check if a host service is registered.
+        
+        Args:
+            service_name: Name of the service to check
+            
+        Returns:
+            True if the service is registered
+        """
+        return service_name in self._host_service_providers
+    
+    def get_host_service_instance(self, service_name: str) -> Optional[Any]:
+        """
+        Get a host service instance by name.
+        
+        Args:
+            service_name: Name of the service
+            
+        Returns:
+            Service instance or None if not found
+        """
+        if service_name in self._host_service_providers:
+            try:
+                return self._host_service_providers[service_name]()
+            except Exception:
+                return None
+        return None
+    
+    def clear_host_services(self) -> None:
+        """
+        Clear all registered host services.
+        
+        Warning: This removes all host service registrations.
+        Used primarily for testing and cleanup.
+        """
+        # Remove dynamic attributes from container
+        for service_name in list(self._host_service_providers.keys()):
+            if hasattr(self, service_name):
+                delattr(self, service_name)
+        
+        # Clear storage
+        self._host_service_providers.clear()
+        self._host_protocol_implementations.clear()
+        self._host_service_metadata.clear()
+        
+        # Log if logging is available
+        try:
+            logger = self.logging_service().get_logger("agentmap.di.host")
+            logger.info("Cleared all host services")
+        except:
+            pass  # Graceful degradation
 
 
 # Factory functions for optional service creation

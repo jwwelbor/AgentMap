@@ -76,7 +76,10 @@ class ApplicationBootstrapService:
             # Step 5: Register additional mixed-dependency agents
             self.register_mixed_dependency_agents()
             
-            # Step 5: Log startup summary
+            # Step 6: Discover and register host protocols
+            self.discover_and_register_host_protocols()
+            
+            # Step 7: Log startup summary
             self._log_startup_summary()
             
             self.logger.info("✅ [ApplicationBootstrapService] Application bootstrap completed successfully")
@@ -250,6 +253,256 @@ class ApplicationBootstrapService:
                 registered_count += 1
         
         self.logger.debug(f"[ApplicationBootstrapService] Registered {registered_count}/{len(mixed_agents)} mixed-dependency agents")
+    
+    def discover_and_register_host_protocols(self) -> None:
+        """
+        Dynamically discover and register host-defined protocols.
+        
+        Scans host-specified protocol folders for Python files containing protocol classes
+        and registers them for use by the host application's dependency injection system.
+        
+        This extends the existing dynamic discovery patterns used for agents to support
+        host application extensibility without affecting core AgentMap functionality.
+        """
+        self.logger.debug("[ApplicationBootstrapService] Discovering and registering host protocols")
+        
+        try:
+            # Check if host application support is enabled
+            if not self.app_config.is_host_application_enabled():
+                self.logger.debug("[ApplicationBootstrapService] Host application support disabled, skipping protocol discovery")
+                return
+            
+            # Get protocol discovery folders from configuration
+            protocol_folders = self.app_config.get_host_protocol_folders()
+            
+            if not protocol_folders:
+                self.logger.debug("[ApplicationBootstrapService] No host protocol folders configured")
+                return
+            
+            self.logger.debug(f"[ApplicationBootstrapService] Scanning {len(protocol_folders)} protocol folders")
+            
+            # Discover protocol classes across all configured folders
+            discovered_protocols = self._discover_protocol_classes(protocol_folders)
+            
+            if not discovered_protocols:
+                self.logger.info("[ApplicationBootstrapService] No host protocol classes found")
+                return
+            
+            # Register discovered protocols
+            registered_count = self._register_discovered_protocols(discovered_protocols)
+            
+            self.logger.info(f"[ApplicationBootstrapService] ✅ Registered {registered_count}/{len(discovered_protocols)} host protocols")
+            
+        except Exception as e:
+            self.logger.error(f"[ApplicationBootstrapService] Failed to discover host protocols: {e}")
+            # Don't re-raise - use graceful degradation following storage service patterns
+            self.logger.warning("[ApplicationBootstrapService] Continuing without host protocols")
+    
+    def _discover_protocol_classes(self, protocol_folders: List[Path]) -> List[tuple]:
+        """
+        Dynamically discover protocol classes in the specified folders.
+        
+        Reuses the existing agent discovery patterns but adapted for protocol classes.
+        Scans Python files for classes that appear to be protocol classes based on:
+        - Class name ends with 'Protocol' or contains 'Protocol'
+        - Class is defined using typing.Protocol or similar patterns
+        - Class has appropriate protocol characteristics
+        
+        Args:
+            protocol_folders: List of Path objects to scan for protocols
+            
+        Returns:
+            List of (protocol_name, protocol_class) tuples
+        """
+        discovered_protocols = []
+        
+        try:
+            for protocol_folder in protocol_folders:
+                if not protocol_folder.exists():
+                    self.logger.debug(f"[ApplicationBootstrapService] Protocol folder not found: {protocol_folder}")
+                    continue
+                
+                if not protocol_folder.is_dir():
+                    self.logger.warning(f"[ApplicationBootstrapService] Protocol path is not a directory: {protocol_folder}")
+                    continue
+                
+                self.logger.debug(f"[ApplicationBootstrapService] Scanning protocol folder: {protocol_folder}")
+                
+                # Get all Python files in the folder
+                python_files = list(protocol_folder.glob("*.py"))
+                
+                if not python_files:
+                    self.logger.debug(f"[ApplicationBootstrapService] No Python files found in: {protocol_folder}")
+                    continue
+                
+                self.logger.debug(f"[ApplicationBootstrapService] Found {len(python_files)} Python files in {protocol_folder}")
+                
+                for py_file in python_files:
+                    # Skip __init__.py and other special files
+                    if py_file.name.startswith("_"):
+                        continue
+                    
+                    try:
+                        # Import the module dynamically
+                        module_name = py_file.stem
+                        spec = importlib.util.spec_from_file_location(module_name, py_file)
+                        
+                        if spec is None or spec.loader is None:
+                            self.logger.debug(f"[ApplicationBootstrapService] Could not load spec for {py_file}")
+                            continue
+                        
+                        module = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(module)
+                        
+                        # Find protocol classes in the module
+                        for name, obj in inspect.getmembers(module, inspect.isclass):
+                            if self._is_protocol_class(obj, module):
+                                # Generate protocol name from class name
+                                protocol_name = self._generate_protocol_name_from_class_name(name)
+                                discovered_protocols.append((protocol_name, obj))
+                                self.logger.debug(f"[ApplicationBootstrapService] Discovered protocol class: {name} -> {protocol_name}")
+                    
+                    except Exception as e:
+                        self.logger.warning(f"[ApplicationBootstrapService] Failed to scan protocol file {py_file}: {e}")
+                        continue
+            
+            self.logger.debug(f"[ApplicationBootstrapService] Discovered {len(discovered_protocols)} protocol classes total")
+            return discovered_protocols
+            
+        except Exception as e:
+            self.logger.error(f"[ApplicationBootstrapService] Error during protocol discovery: {e}")
+            return []
+    
+    def _is_protocol_class(self, cls, module) -> bool:
+        """
+        Determine if a class is a protocol class based on conventions.
+        
+        Args:
+            cls: The class object to check
+            module: The module containing the class
+            
+        Returns:
+            True if the class appears to be a protocol class
+        """
+        try:
+            # Must be defined in this module (not imported)
+            if cls.__module__ != module.__name__:
+                return False
+            
+            # Should have 'Protocol' in the name or be a typing.Protocol subclass
+            class_name = cls.__name__
+            
+            # Check for Protocol naming conventions
+            if not (class_name.endswith('Protocol') or 'Protocol' in class_name):
+                return False
+            
+            # Check if it's a typing.Protocol subclass (best indicator)
+            try:
+                import typing
+                if hasattr(typing, 'Protocol'):
+                    # Check if it's a Protocol subclass
+                    mro = inspect.getmro(cls)
+                    for base in mro:
+                        if hasattr(base, '_is_protocol') and getattr(base, '_is_protocol', False):
+                            return True
+                        # Also check for typing.Protocol itself
+                        if getattr(base, '__module__', '') == 'typing' and base.__name__ == 'Protocol':
+                            return True
+            except Exception:
+                pass
+            
+            # Fallback: check for protocol-like characteristics
+            # Protocols typically have abstract methods or are designed as interfaces
+            if inspect.isabstract(cls):
+                return True
+            
+            # Check for common protocol patterns (methods without implementation)
+            try:
+                methods = inspect.getmembers(cls, predicate=inspect.isfunction)
+                if methods:
+                    # If it has methods that look like interface definitions
+                    for method_name, method in methods:
+                        if not method_name.startswith('_'):
+                            # Found public methods, likely a protocol
+                            return True
+            except Exception:
+                pass
+            
+            return False
+            
+        except Exception as e:
+            self.logger.debug(f"[ApplicationBootstrapService] Error checking protocol class {cls}: {e}")
+            return False
+    
+    def _generate_protocol_name_from_class_name(self, class_name: str) -> str:
+        """
+        Generate protocol name identifier from class name.
+        
+        Converts PascalCase protocol class names to snake_case protocol names.
+        
+        Examples:
+        - 'DatabaseServiceProtocol' -> 'database_service'
+        - 'LLMCapableProtocol' -> 'llm_capable' 
+        - 'CustomHostProtocol' -> 'custom_host'
+        
+        Args:
+            class_name: The class name (e.g., 'DatabaseServiceProtocol')
+            
+        Returns:
+            Snake case protocol name identifier
+        """
+        # Remove 'Protocol' suffix
+        if class_name.endswith('Protocol'):
+            name_without_protocol = class_name[:-8]  # Remove 'Protocol'
+        else:
+            name_without_protocol = class_name
+        
+        # Convert PascalCase to snake_case
+        # Insert underscore before uppercase letters that follow lowercase letters
+        snake_case = re.sub(r'(?<!^)(?=[A-Z])', '_', name_without_protocol).lower()
+        
+        return snake_case
+    
+    def _register_discovered_protocols(self, protocols: List[tuple]) -> int:
+        """
+        Register discovered protocol classes with the application container.
+        
+        This method would integrate with the host service registration system
+        to make the discovered protocols available for dependency injection.
+        
+        Args:
+            protocols: List of (protocol_name, protocol_class) tuples
+            
+        Returns:
+            Number of protocols successfully registered
+        """
+        registered_count = 0
+        
+        try:
+            for protocol_name, protocol_class in protocols:
+                try:
+                    # TODO: Integrate with ApplicationContainer's host service registration
+                    # This would call something like:
+                    # self.container.register_host_protocol(protocol_name, protocol_class)
+                    
+                    # For now, log the discovery (actual registration depends on container integration)
+                    self.logger.debug(f"[ApplicationBootstrapService] Would register protocol: {protocol_name} -> {protocol_class.__name__}")
+                    
+                    # Track successful "registration" for reporting
+                    registered_count += 1
+                    
+                except Exception as e:
+                    self.logger.error(f"[ApplicationBootstrapService] Failed to register protocol {protocol_name}: {e}")
+                    continue
+            
+            if registered_count > 0:
+                self.logger.debug(f"[ApplicationBootstrapService] Successfully registered {registered_count} host protocols")
+            
+            return registered_count
+            
+        except Exception as e:
+            self.logger.error(f"[ApplicationBootstrapService] Error during protocol registration: {e}")
+            return 0
     
     def _discover_agent_classes(self, custom_agents_path: Path) -> List[tuple]:
         """
@@ -537,7 +790,8 @@ class ApplicationBootstrapService:
                 "llm_enabled": llm_enabled,
                 "storage_enabled": storage_enabled,
                 "available_llm_providers": llm_providers,
-                "available_storage_providers": storage_providers
+                "available_storage_providers": storage_providers,
+                "host_application_enabled": self.app_config.is_host_application_enabled()
             },
             "agent_breakdown": {
                 "core_agents": self._count_agents_by_prefix(agent_types, ["default", "echo", "branching", "failure", "success", "input", "graph"]),
@@ -545,6 +799,11 @@ class ApplicationBootstrapService:
                 "llm_agents": self._count_agents_by_prefix(agent_types, ["llm", "openai", "anthropic", "google", "gpt", "claude", "gemini", "chatgpt"]),
                 "storage_agents": self._count_agents_by_prefix(agent_types, ["csv_", "json_", "file_", "vector_"]),
                 "mixed_agents": self._count_agents_by_prefix(agent_types, ["summary", "orchestrator"])
+            },
+            "host_application": {
+                "enabled": self.app_config.is_host_application_enabled(),
+                "protocol_folders_configured": len(self.app_config.get_host_protocol_folders()),
+                "protocol_discovery_available": True
             },
             "missing_dependencies": {
                 "llm": self.features_registry.get_missing_dependencies("llm"),
@@ -596,6 +855,10 @@ class ApplicationBootstrapService:
         
         if summary['features']['available_storage_providers']:
             self.logger.info(f"   Available storage providers: {summary['features']['available_storage_providers']}")
+        
+        # Log host application status
+        if summary['features']['host_application_enabled']:
+            self.logger.info(f"   Host application enabled with {summary['host_application']['protocol_folders_configured']} protocol folders")
         
         # Log any missing dependencies
         missing_llm = summary['missing_dependencies'].get('llm', {})

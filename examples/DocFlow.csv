@@ -1,0 +1,6 @@
+GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+DocFlow,ReadFile,,"{'should_split': true, 'chunk_size': 1000}",file_reader,Summarize,ErrorHandler,"collection",documents,path/to/document.pdf
+DocFlow,Summarize,,Generate summary,openai,SaveSummary,ErrorHandler,"documents",summary,"prompt:document_summary"
+DocFlow,SaveSummary,,Save the summary,file_writer,End,ErrorHandler,"summary",write_result,output/summary.md
+DocFlow,End,,Workflow complete,Echo,,,"write_result",final_message,"Summary saved successfully"
+DocFlow,ErrorHandler,,Handle processing errors,Echo,End,,"error",error_message,"Error processing document: {error}"
