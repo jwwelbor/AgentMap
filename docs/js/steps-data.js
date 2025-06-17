@@ -375,57 +375,69 @@ def run_graph(graph_name, initial_state, csv_path=None, ...):
  * Documentation files available in the project
  */
 const documentationFiles = [
+    // Core Documentation
     {
         "path": "README.md",
         "title": "Main README"
     },
-    // {
-    //     "path": "./usage/index.md",
-    //     "title": "Usage Documentation"
-    // },
     {
-        "path": "./usage/agentmap_cli_documentation.md",
-        "title": "AgentMap CLI Documentation"
+        "path": "./usage/index.md",
+        "title": "Usage Documentation Index"
     },
+    
+    // Getting Started
     {
         "path": "./usage/agentmap_csv_schema_documentation.md",
-        "title": "AgentMap CSV Schema Documentation"
+        "title": "CSV Schema Documentation"
     },
     {
-        "path": "./usage/prompt_management_in_agentmap.md",
-        "title": "Prompt Management in AgentMap"
+        "path": "./usage/agentmap_cli_documentation.md",
+        "title": "CLI Documentation"
     },
+    {
+        "path": "./usage/state_management_and_data_flow.md",
+        "title": "State Management and Data Flow"
+    },
+    
+    // Agent Development
     {
         "path": "./usage/agentmap_agent_types.md",
-        "title": "AgentMap Agent Types"
+        "title": "Basic Agent Types"
     },
     {
         "path": "./usage/advanced_agent_types.md",
         "title": "Advanced Agent Types"
     },
     {
-        "path": "./usage/README_orchestrator.md",
-        "title": "Orchestrator Agent"
+        "path": "./usage/host-service-integration.md",
+        "title": "Host Service Integration (Custom Services)"
     },
+    
+    // Workflow Building
     {
-        "path": "./usage/state_management_and_data_flow.md",
-        "title": "State Management and Data Flow"
+        "path": "./usage/prompt_management_in_agentmap.md",
+        "title": "Prompt Management"
     },
     {
         "path": "./usage/agentmap_example_workflows.md",
-        "title": "AgentMap Example Workflows"
+        "title": "Example Workflows"
+    },
+    {
+        "path": "./usage/README_orchestrator.md",
+        "title": "Orchestrator Agent"
+    },
+    
+    // Advanced Features
+    {
+        "path": "./usage/langchain_memory_in_agentmap.md",
+        "title": "Memory Management"
     },
     {
         "path": "./usage/README_cloud_storage.md",
-        "title": "Cloud Storage"
-    },
-    {
-        "path": "./usage/langchain_memory_in_agentmap.md",
-        "title": "LangChain Memory in AgentMap"
+        "title": "Cloud Storage Integration"
     },
     {
         "path": "./usage/agentmap_execution_tracking.md",
-        "title": "AgentMap Execution Tracking"
+        "title": "Execution Tracking and Monitoring"
     }
-
 ];

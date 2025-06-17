@@ -448,6 +448,10 @@ class TestApplicationBootstrapService(unittest.TestCase):
         }.get(category, [])
         self.mock_features_registry_service.get_missing_dependencies.return_value = {}
         
+        # Mock app_config responses for host application methods
+        self.mock_app_config_service.is_host_application_enabled.return_value = True
+        self.mock_app_config_service.get_host_protocol_folders.return_value = []
+        
         # Execute get summary
         summary = self.service.get_bootstrap_summary()
         
@@ -501,7 +505,12 @@ class TestApplicationBootstrapService(unittest.TestCase):
             },
             "features": {
                 "available_llm_providers": ["openai"],
-                "available_storage_providers": ["csv"]
+                "available_storage_providers": ["csv"],
+                "host_application_enabled": True  # ← Add missing host application enabled field
+            },
+            "host_application": {  # ← Add missing host application section
+                "enabled": True,
+                "protocol_folders_configured": 2
             },
             "missing_dependencies": {
                 "llm": {},
@@ -527,6 +536,9 @@ class TestApplicationBootstrapService(unittest.TestCase):
             self.assertTrue(any("Custom agents: 1" in call[1] 
                               for call in logger_calls if call[0] == "info"))
             self.assertTrue(any("Available LLM providers: ['openai']" in call[1] 
+                              for call in logger_calls if call[0] == "info"))
+            # Check for host application logging
+            self.assertTrue(any("Host application enabled with 2 protocol folders" in call[1] 
                               for call in logger_calls if call[0] == "info"))
 
 

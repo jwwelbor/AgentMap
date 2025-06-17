@@ -1,0 +1,4 @@
+agent_name,agent_type,predecessor,context
+user_data,database_agent,,"operation=get_users"
+process_data,multi_service_agent,user_data,"operation=process_user_request,user_id=1"
+notify_completion,notification_agent,process_data,"operation=send_agent_notification,operation_name=Host Integration Demo,operation_result=Successfully demonstrated host service integration"

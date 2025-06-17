@@ -374,16 +374,8 @@ class HostApplicationIntegrationExample:
                 logger=self.logger
             )
             
-            # Configure with all available services
+            # Configure with all available host services
             self.container.configure_host_protocols(multi_agent)
-            
-            # Also configure AgentMap core services if available
-            try:
-                if hasattr(multi_agent, 'configure_llm_service'):
-                    llm_service = self.container.llm_service()
-                    multi_agent.configure_llm_service(llm_service)
-            except:
-                pass  # LLM service may not be available
             
             # Create state for multi-service operation
             multi_state = {

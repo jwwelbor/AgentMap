@@ -12,6 +12,7 @@ This documentation provides detailed information about using AgentMap, a declara
 ### Agent Development
 - [Agent Development Contract](agent_contract.md) - Required interface and patterns for all agents
 - [Service Injection](service_injection.md) - Protocol-based dependency injection system
+- [Host Service Integration](host-service-integration.md) - Extend AgentMap with custom services and agents
 - [AgentMap Agent Types](agentmap_agent_types.md) - Built-in agent types and basic usage
 - [Advanced Agent Types](advanced_agent_types.md) - Advanced agents and comprehensive context configuration
 
@@ -34,7 +35,8 @@ For new developers, we recommend following this learning path:
 2. **Understand Agent Architecture**: Review [Agent Contract](agent_contract.md) and [Service Injection](service_injection.md)
 3. **Explore Agent Types**: Study [Agent Types](agentmap_agent_types.md) and [Advanced Agent Types](advanced_agent_types.md)
 4. **Build Workflows**: Practice with [Example Workflows](agentmap_example_workflows.md)
-5. **Advanced Topics**: Dive into orchestration, memory management, and cloud storage
+5. **Extend AgentMap**: Learn [Host Service Integration](host-service-integration.md) to inject custom services
+6. **Advanced Topics**: Dive into orchestration, memory management, and cloud storage
 
 ## Key Architecture Concepts
 
@@ -50,6 +52,13 @@ The [Service Injection](service_injection.md) documentation covers:
 - Protocol implementation patterns
 - Service configuration examples
 - Debugging and troubleshooting
+
+### Host Service Integration
+The [Host Service Integration](host-service-integration.md) documentation provides:
+- Extending AgentMap with custom domain-specific services
+- Protocol-based service injection for custom agents
+- Configuration patterns for external service integration
+- Best practices for maintaining clean architecture boundaries
 
 ### Agent Development Patterns
 The [Agent Contract](agent_contract.md) defines:

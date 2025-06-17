@@ -1,272 +1,114 @@
 # AgentMap Configuration with Host Application Integration
-# This configuration demonstrates how to set up AgentMap with host application services
+# This configuration demonstrates the essentials of host service integration
 
-# Core AgentMap Configuration
+# ============================================================================
+# AGENTMAP CORE CONFIGURATION (Minimal)
+# ============================================================================
+
 logging:
-  level: INFO
-  format: "[%(asctime)s] %(levelname)s: %(message)s"
-  file: "agentmap.log"
+  version: 1
+  disable_existing_loggers: False
+  file_path: null  # Set to a path to enable file logging
+  formatters:
+    default:
+      format: "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"
+  handlers:
+    console:
+      class: logging.StreamHandler
+      formatter: default
+      level: DEBUG # TRACE, DEBUG, INFO, WARNING, ERROR
+  root:
+    level: INFO
+    handlers: [console]
 
 llm:
   anthropic:
     api_key: "${ANTHROPIC_API_KEY}"
     model: "claude-3-haiku-20240307"
-    max_tokens: 1000
-  openai:
-    api_key: "${OPENAI_API_KEY}"
-    model: "gpt-3.5-turbo"
-    max_tokens: 1000
 
-prompts:
-  directory: "prompts"
-  registry_file: "prompts/registry.yaml"
-
-execution:
-  tracking:
-    enabled: true
-    detailed_logs: true
-  policy:
-    max_retries: 3
-    timeout_seconds: 300
-
-# Path Configuration
-paths:
-  custom_agents: "examples/host_integration"
-  functions: "functions"
-  compiled_graphs: "compiled_graphs"
-
-# CSV path for examples
+# Path to your workflow CSV
 csv_path: "examples/host_integration/example_workflow.csv"
 
-# Storage Configuration (optional)
-storage_config_path: "storage_config.yaml"
+#
+# plus whatever else you need. See the root level agentmap_config.yaml and agentmap_config_storage.yaml for more details.
+#
+
+
 
 # ============================================================================
-# HOST APPLICATION CONFIGURATION
+# HOST APPLICATION INTEGRATION
 # ============================================================================
-# This section configures host application integration with AgentMap
+# This is where you configure your application's services and agents
+# Alternatively, you can inject your configuration into your agents or service via the same mechanism below
 
 host_application:
-  # Enable host application support
+  # Enable host service integration
   enabled: true
   
-  # Protocol discovery configuration
+  # Where to find your custom protocols (support multiple folders)
   protocol_folders:
-    - "examples/host_integration"  # Folder containing host protocol definitions
-    - "host_services/protocols"   # Additional protocol folder (if exists)
+    - "examples/host_integration"  # Your protocol definitions
   
-  # Service discovery settings
-  service_discovery:
-    enabled: true
-    scan_on_startup: true
-    cache_protocols: true
-  
-  # Host service configurations
+  # Your custom services that get injected into agents
   services:
-    # Database service configuration
+    # Database service example
     database_service:
       enabled: true
-      auto_configure: true
-      dependencies: []
       configuration:
         database_path: "examples/host_integration/host_app.db"
         connection_timeout: 30
-        max_retries: 3
-      metadata:
-        description: "SQLite database service for host application"
-        version: "1.0"
-        protocols:
-          - "DatabaseServiceProtocol"
     
-    # Email service configuration
+    # Email service example  
     email_service:
       enabled: true
-      auto_configure: true
-      dependencies: []
       configuration:
+        demo_mode: true  # Set false for real email
         smtp_host: "localhost"
         smtp_port: 587
-        demo_mode: true  # Set to false for real email sending
-        username: null   # Set for authenticated SMTP
-        password: null   # Set for authenticated SMTP
-      metadata:
-        description: "Email service for notifications and communications"
-        version: "1.0"
-        protocols:
-          - "EmailServiceProtocol"
     
-    # Notification service configuration
+    # Notification service example
     notification_service:
       enabled: true
-      auto_configure: true
-      dependencies: []
       configuration:
-        default_channels:
-          - "console"
-          - "slack"
-        webhook_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
-        slack_token: "${SLACK_BOT_TOKEN}"  # Optional: for direct Slack API
-      metadata:
-        description: "Multi-channel notification service"
-        version: "1.0"
-        protocols:
-          - "NotificationServiceProtocol"
+        default_channels: ["console", "slack"]
+        webhook_url: "${SLACK_WEBHOOK_URL}"  # Optional
     
-    # File service configuration
+    # File service example
     file_service:
       enabled: true
-      auto_configure: true
-      dependencies: []
       configuration:
         storage_path: "examples/host_integration/files"
         max_file_size: "10MB"
-        allowed_extensions:
-          - ".txt"
-          - ".json"
-          - ".csv"
-          - ".md"
-      metadata:
-        description: "File management service for document operations"
-        version: "1.0"
-        protocols:
-          - "FileServiceProtocol"
-  
-  # Host application specific configuration
-  configuration:
-    # Application-specific settings
-    app_name: "AgentMap Host Integration Example"
-    app_version: "1.0.0"
-    
-    # Database settings
-    database:
-      enable_auto_backup: true
-      backup_interval_hours: 24
-      max_backup_files: 7
-    
-    # Notification settings
-    notifications:
-      default_recipient: "admin@example.com"
-      critical_channels:
-        - "email"
-        - "slack"
-      info_channels:
-        - "console"
-    
-    # Integration settings
-    integration:
-      enable_workflow_logging: true
-      enable_performance_metrics: true
-      enable_error_tracking: true
-  
-  # Feature flags for host application
-  features:
-    dynamic_protocols: true
-    runtime_registration: true
-    graceful_degradation: true
-    service_health_checks: true
-    automatic_reconnection: true
 
 # ============================================================================
-# EXAMPLE WORKFLOW CONFIGURATION
+# EXAMPLE WORKFLOWS (Optional)
 # ============================================================================
-# Configuration for the example workflows
+# Define some example workflows using your custom agents
 
 workflows:
-  # Example: Database workflow
+  # Simple database workflow
   database_example:
-    description: "Demonstrate database service integration"
+    description: "Show database service integration"
     agents:
-      - type: "database_agent"
-        name: "db_reader"
-        operations:
-          - "get_users"
-          - "get_tasks"
-    
-  # Example: Multi-service workflow
-  multi_service_example:
-    description: "Demonstrate multiple service integration"
-    agents:
-      - type: "multi_service_agent"
-        name: "coordinator"
-        operations:
-          - "process_user_request"
-          - "generate_report"
-    
-  # Example: Notification workflow
+      - name: "data_reader"
+        type: "database_agent"
+        operation: "get_users"
+  
+  # Multi-service coordination
   notification_example:
-    description: "Demonstrate notification service integration"
+    description: "Show multi-service coordination"
     agents:
-      - type: "notification_agent"
-        name: "notifier"
-        operations:
-          - "send_agent_notification"
+      - name: "processor" 
+        type: "multi_service_agent"
+        operation: "process_user_request"
+      - name: "notifier"
+        type: "notification_agent"
+        operation: "send_agent_notification"
 
 # ============================================================================
-# ENVIRONMENT VARIABLE DOCUMENTATION
+# ENVIRONMENT VARIABLES
 # ============================================================================
-# The following environment variables can be used:
-#
-# ANTHROPIC_API_KEY - API key for Anthropic Claude models
-# OPENAI_API_KEY - API key for OpenAI models
-# SLACK_BOT_TOKEN - Token for Slack bot integration (optional)
-# DATABASE_PATH - Override default database path (optional)
-# EMAIL_SMTP_HOST - Override SMTP host for email service (optional)
-# EMAIL_SMTP_PORT - Override SMTP port for email service (optional)
-# NOTIFICATION_WEBHOOK_URL - Override webhook URL for notifications (optional)
-
-# ============================================================================
-# DEVELOPMENT AND TESTING CONFIGURATION
-# ============================================================================
-# Additional configuration for development and testing
-
-development:
-  # Enable debug features
-  debug_mode: false
-  verbose_logging: false
-  
-  # Mock services for testing
-  mock_services:
-    enabled: false  # Set to true to use mock services instead of real ones
-    database_service: false
-    email_service: false
-    notification_service: false
-  
-  # Performance monitoring
-  performance:
-    enable_timing: true
-    enable_memory_tracking: false
-    log_slow_operations: true
-    slow_operation_threshold_ms: 1000
-
-# ============================================================================
-# PRODUCTION CONFIGURATION OVERRIDES
-# ============================================================================
-# Configuration overrides for production deployment
-
-production:
-  # Logging for production
-  logging:
-    level: WARNING
-    file: "/var/log/agentmap/agentmap.log"
-    rotate: true
-    max_size: "100MB"
-    backup_count: 5
-  
-  # Security settings
-  security:
-    encrypt_database: false  # Set to true for production
-    require_ssl: false       # Set to true for production
-    api_key_validation: true
-  
-  # Performance settings
-  performance:
-    connection_pool_size: 10
-    max_concurrent_operations: 5
-    operation_timeout_seconds: 120
-  
-  # Error handling
-  error_handling:
-    retry_on_failure: true
-    max_retries: 5
-    exponential_backoff: true
-    circuit_breaker_enabled: true
+# Set these in your environment:
+# 
+# ANTHROPIC_API_KEY - Your Anthropic API key (if using LLM agents)
+# SLACK_WEBHOOK_URL - Your Slack webhook (if using Slack notifications)

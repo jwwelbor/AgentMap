@@ -9,8 +9,7 @@ agent patterns while extending functionality with host services.
 
 import json
 from typing import Dict, Any, Optional, List
-from agentmap.agents.base.base_agent import BaseAgent
-from agentmap.services.protocols import LLMCapableAgent
+from agentmap.agents.base_agent import BaseAgent
 
 # Import our host protocols
 from .host_protocols import (
@@ -485,12 +484,12 @@ class FileAgent(BaseAgent, FileServiceProtocol):
             }
 
 
-class MultiServiceAgent(BaseAgent, FullServiceAgentProtocol, LLMCapableAgent):
+class MultiServiceAgent(BaseAgent, FullServiceAgentProtocol):
     """
-    Example agent that demonstrates multiple service integration.
+    Example agent that demonstrates multiple host service integration.
     
     This agent implements multiple protocols and can use database, email,
-    notification, and LLM services in coordinated operations.
+    and notification services in coordinated operations.
     """
     
     def __init__(self, name: str, prompt: str = "", context: Optional[Dict[str, Any]] = None, 
@@ -500,7 +499,6 @@ class MultiServiceAgent(BaseAgent, FullServiceAgentProtocol, LLMCapableAgent):
         self.database_service = None
         self.email_service = None
         self.notification_service = None
-        self.llm_service = None
         self.logger.debug(f"MultiServiceAgent '{name}' initialized")
     
     def configure_database_service(self, database_service: Any) -> None:
@@ -536,16 +534,7 @@ class MultiServiceAgent(BaseAgent, FullServiceAgentProtocol, LLMCapableAgent):
             self.logger.error(f"❌ Failed to configure notification service for {self.name}: {e}")
             raise
     
-    def configure_llm_service(self, llm_service: Any) -> None:
-        """Configure LLM service."""
-        try:
-            if not llm_service:
-                raise ValueError("LLM service cannot be None")
-            self.llm_service = llm_service
-            self.logger.debug(f"✅ LLM service configured for {self.name}")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to configure LLM service for {self.name}: {e}")
-            raise
+
     
     def run(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -612,20 +601,12 @@ class MultiServiceAgent(BaseAgent, FullServiceAgentProtocol, LLMCapableAgent):
         else:
             raise ValueError("Database service not available")
         
-        # Step 2: Process with LLM if available
+        # Step 2: Create summary of user tasks
         summary = f"User {user['name']} has {len(tasks)} tasks"
-        if self.llm_service and tasks:
-            try:
-                # Create a prompt for the LLM
-                task_descriptions = [f"- {task['title']}: {task['status']}" for task in tasks[:5]]
-                prompt = f"Summarize the following tasks for user {user['name']}:\n" + "\n".join(task_descriptions)
-                
-                # Use LLM service (this is a simplified example)
-                # In practice, you'd use the actual LLM service API
-                summary = f"AI Summary: User {user['name']} has {len(tasks)} tasks with various priorities and statuses."
-                
-            except Exception as e:
-                self.logger.warning(f"LLM processing failed, using fallback summary: {e}")
+        if tasks:
+            completed_count = len([t for t in tasks if t['status'] == 'completed'])
+            pending_count = len([t for t in tasks if t['status'] == 'pending'])
+            summary = f"User {user['name']} has {len(tasks)} tasks: {completed_count} completed, {pending_count} pending"
         
         # Step 3: Send notifications
         if self.notification_service:
