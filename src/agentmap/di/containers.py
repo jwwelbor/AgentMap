@@ -167,8 +167,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service
     )
     
-    # NEW SERVICES - Clean Architecture Migration
-    
     # LEVEL 1: Utility Services (no business logic dependencies)
     
     # Function Resolution Service for dynamic function loading
@@ -275,18 +273,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         )
     )
 
-    # Graph Export Service for exporting graphs in various formats
-    # Note: CompilationService dependency temporarily removed to avoid circular dependency
-    graph_export_service = providers.Singleton(
-        "agentmap.services.graph_export_service.GraphExportService",
-        app_config_service,
-        logging_service,
-        function_resolution_service,
-        graph_bundle_service,
-        # compilation_service,  # TODO: Add back after resolving circular dependency
-    )
-    
-    
+
     # Compilation Service for graph compilation and auto-compile capabilities
     compilation_service = providers.Singleton(
         "agentmap.services.compilation_service.CompilationService",
@@ -297,6 +284,15 @@ class ApplicationContainer(containers.DeclarativeContainer):
         graph_bundle_service,
         graph_assembly_service,
         function_resolution_service
+    )
+
+    # Graph Output Service for exporting graphs in human-readable formats
+    graph_output_service = providers.Singleton(
+        "agentmap.services.graph_output_service.GraphOutputService",
+        app_config_service,
+        logging_service,
+        function_resolution_service,
+        compilation_service
     )
     
     # ExecutionTrackingService for creating clean ExecutionTracker instances

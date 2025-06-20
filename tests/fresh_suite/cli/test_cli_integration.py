@@ -82,7 +82,7 @@ class SimpleCLITestBase(unittest.TestCase):
         # Additional services needed for comprehensive CLI testing
         self.mock_graph_compilation_service = MockServiceFactory.create_mock_compilation_service()
         self.mock_graph_scaffold_service = Mock()
-        self.mock_graph_serialization_service = Mock()
+        self.mock_graph_output_service = Mock()
         
         # Configure features registry service with proper boolean returns
         self.mock_features_registry_service = Mock()
@@ -132,7 +132,7 @@ test_graph,end,Default,End node,Description,output,result,
         mock_container.graph_runner_service.return_value = self.mock_graph_runner_service
         mock_container.graph_compilation_service.return_value = self.mock_graph_compilation_service
         mock_container.graph_scaffold_service.return_value = self.mock_graph_scaffold_service
-        mock_container.graph_serialization_service.return_value = self.mock_graph_serialization_service
+        mock_container.graph_output_service.return_value = self.mock_graph_output_service
         mock_container.features_registry_service.return_value = self.mock_features_registry_service
         mock_container.dependency_checker_service.return_value = self.mock_dependency_checker_service
         mock_container.validation_cache_service.return_value = self.mock_validation_cache_service

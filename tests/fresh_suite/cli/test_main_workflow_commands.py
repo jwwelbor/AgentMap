@@ -111,7 +111,7 @@ execution:
         mock_container.graph_runner_service.return_value = self.mock_graph_runner_service
         mock_container.graph_compilation_service.return_value = self.mock_compilation_service
         mock_container.graph_scaffold_service.return_value = self.mock_scaffold_service
-        mock_container.graph_serialization_service.return_value = self.mock_export_service
+        mock_container.graph_output_service.return_value = self.mock_export_service
         mock_container.app_config_service.return_value = self.mock_app_config_service
         
         # Mock the validation service directly for run commands (accessed as attribute)

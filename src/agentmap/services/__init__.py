@@ -7,7 +7,7 @@ This module contains services that implement business use cases:
 - GraphRunnerService: Graph execution orchestration
 - CompilationService: Graph compilation and caching
 - GraphAssemblyService: StateGraph assembly from domain models
-- GraphSerializationService: Graph export in various formats
+- GraphOutputService: Graph export in various formats
 - FunctionResolutionService: Dynamic function loading and reference extraction
 - ValidationService: Comprehensive validation orchestration
 - Configuration services: Existing config management
@@ -21,7 +21,7 @@ from .graph_builder_service import GraphBuilderService
 from .compilation_service import CompilationService
 from .graph_runner_service import GraphRunnerService, RunOptions
 from .graph_assembly_service import GraphAssemblyService
-from .graph_serialization_service import GraphSerializationService
+from .graph_output_service import GraphOutputService
 from .graph_scaffold_service import GraphScaffoldService
 from agentmap.models.scaffold_types import ScaffoldOptions, ScaffoldResult, ServiceRequirements, ServiceAttribute
 from .graph_bundle_service import GraphBundleService
@@ -74,7 +74,7 @@ __all__ = [
     "CompilationService",
     "GraphRunnerService",
     "GraphAssemblyService",
-    "GraphSerializationService",
+    "GraphOutputService",
     "GraphBundleService",
     "GraphScaffoldService",
     "RunOptions",

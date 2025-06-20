@@ -238,10 +238,10 @@ def export_command(
     """Export the specified graph in the chosen format."""
     try:
         container = initialize_di(config_file)
-        serialization_service = container.graph_serialization_service()
+        output_service = container.graph_output_service()
         
         # Export the graph
-        result = serialization_service.export_graph(graph, format, output, state_schema)
+        result = output_service.export_graph(graph, format, output, state_schema)
         
         # Display success message
         typer.secho(f"✅ Graph '{graph}' exported successfully to {output}", fg=typer.colors.GREEN)
