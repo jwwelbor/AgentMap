@@ -24,6 +24,7 @@ This documentation provides detailed information about using AgentMap, a declara
 ### Operations and Tools
 - [AgentMap CLI Documentation](agentmap_cli_documentation.md) - Command-line interface and tools
 - [AgentMap Execution Tracking](agentmap_execution_tracking.md) - Performance monitoring and debugging
+- [Storage Services](storage_services.md) - Unified storage operations for CSV, files, and data
 - [AgentMap Cloud Storage](agentmap_cloud_storage.md) - Cloud storage integration
 - [LangChain Memory in AgentMap](langchain_memory_in_agentmap.md) - Memory management patterns
 
@@ -33,10 +34,11 @@ For new developers, we recommend following this learning path:
 
 1. **Start with Core Concepts**: Read [Agentmap Features](agentmap_features.md) and [CSV Schema](agentmap_csv_schema_documentation.md)
 2. **Understand Agent Architecture**: Review [Agent Contract](agent_contract.md) and [Service Injection](service_injection.md)
-3. **Explore Agent Types**: Study [Agent Types](agentmap_agent_types.md) and [Advanced Agent Types](advanced_agent_types.md)
-4. **Build Workflows**: Practice with [Example Workflows](agentmap_example_workflows.md)
-5. **Extend AgentMap**: Learn [Host Service Integration](host-service-integration.md) to inject custom services
-6. **Advanced Topics**: Dive into orchestration, memory management, and cloud storage
+3. **Learn Data Operations**: Study [Storage Services](storage_services.md) for file and data management
+4. **Explore Agent Types**: Study [Agent Types](agentmap_agent_types.md) and [Advanced Agent Types](advanced_agent_types.md)
+5. **Build Workflows**: Practice with [Example Workflows](agentmap_example_workflows.md)
+6. **Extend AgentMap**: Learn [Host Service Integration](host-service-integration.md) to inject custom services
+7. **Advanced Topics**: Dive into orchestration, memory management, and cloud storage
 
 ## Key Architecture Concepts
 

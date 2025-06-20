@@ -33,19 +33,24 @@ class TestVectorStorageService(unittest.TestCase):
         
         # Create mock services using MockServiceFactory
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
-        
-        # Create context with vector configuration
-        self.context = {
-            "persist_directory": self.temp_dir,
-            "provider": "chroma",
-            "embedding_model": "openai",
-            "k": 4
-        }
+        self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service({
+            "storage": {
+                "vector": {
+                    "provider": "chroma",
+                    "options": {
+                        "persist_directory": self.temp_dir,
+                        "embedding_model": "openai",
+                        "k": 4,
+                        "store_key": "_vector_store"
+                    }
+                }
+            }
+        })
         
         # Create VectorStorageService with mocked dependencies
         self.service = VectorStorageService(
-            name="vector",
-            context=self.context,
+            provider_name="vector",
+            configuration=self.mock_app_config_service,
             logging_service=self.mock_logging_service
         )
         
@@ -112,14 +117,20 @@ class TestVectorStorageService(unittest.TestCase):
     def test_health_check_with_inaccessible_directory(self):
         """Test health check fails with inaccessible directory."""
         # Create service with non-existent directory that can't be created
-        bad_context = {
-            "persist_directory": "/root/protected/directory",
-            "provider": "chroma"
-        }
+        bad_config = MockServiceFactory.create_mock_app_config_service({
+            "storage": {
+                "vector": {
+                    "provider": "chroma",
+                    "options": {
+                        "persist_directory": "/root/protected/directory"
+                    }
+                }
+            }
+        })
         
         bad_service = VectorStorageService(
-            name="vector",
-            context=bad_context,
+            provider_name="vector",
+            configuration=bad_config,
             logging_service=self.mock_logging_service
         )
         
@@ -650,11 +661,15 @@ class TestVectorStorageService(unittest.TestCase):
         mock_store.delete.side_effect = Exception("Delete failed")
         mock_get_store.return_value = mock_store
         
-        # Delete should handle error
-        result = self.service.delete("test_collection", document_id="doc123")
+        # BaseStorageService now raises StorageProviderError for exceptions
+        from agentmap.services.storage.types import StorageProviderError
         
-        self.assertFalse(result.success)
-        self.assertIn("Vector deletion failed", result.error)
+        # Delete should raise StorageProviderError
+        with self.assertRaises(StorageProviderError) as context:
+            self.service.delete("test_collection", document_id="doc123")
+        
+        # Verify error message contains context
+        self.assertIn("Delete failed", str(context.exception))
     
     # =============================================================================
     # 7. Utility Operations Tests
@@ -836,23 +851,34 @@ class TestVectorStorageService(unittest.TestCase):
     
     def test_handle_error_method(self):
         """Test error handling helper method."""
-        # This will be handled by the base class _handle_error method
-        # We test that operations that fail get properly handled
+        # BaseStorageService now raises StorageProviderError for exceptions
+        from agentmap.services.storage.types import StorageProviderError
         
         with patch.object(self.service, '_get_vector_store', side_effect=Exception("Test error")):
-            result = self.service.read("test_collection", query={"text": "query"})
+            # Should raise StorageProviderError (handled by base class)
+            with self.assertRaises(StorageProviderError) as context:
+                self.service.read("test_collection", query={"text": "query"})
             
-            # Should return None and log error (handled by base class)
-            self.assertIsNone(result)
+            # Verify error message contains context
+            self.assertIn("Test error", str(context.exception))
     
     def test_invalid_configuration(self):
         """Test service with invalid configuration."""
         # Test with missing required configuration
-        bad_context = {}
+        bad_config = MockServiceFactory.create_mock_app_config_service({
+            "storage": {
+                "vector": {
+                    "provider": "chroma",
+                    "options": {
+                        # Missing other configuration options
+                    }
+                }
+            }
+        })
         
         bad_service = VectorStorageService(
-            name="vector",
-            context=bad_context,
+            provider_name="vector",
+            configuration=bad_config,
             logging_service=self.mock_logging_service
         )
         

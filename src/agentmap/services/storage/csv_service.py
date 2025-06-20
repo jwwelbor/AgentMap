@@ -257,7 +257,14 @@ class CSVStorageService(BaseStorageService):
             
             if not os.path.exists(file_path):
                 self._logger.debug(f"CSV file does not exist: {file_path}")
-                return pd.DataFrame()  # Return empty DataFrame
+                # Return appropriate empty format based on request
+                format_type = kwargs.get('format', 'dataframe')
+                if format_type == 'records':
+                    return []
+                elif format_type == 'dict':
+                    return {}
+                else:
+                    return pd.DataFrame()
             
             # Extract service-specific parameters
             format_type = kwargs.pop('format', 'dataframe')
@@ -269,11 +276,19 @@ class CSVStorageService(BaseStorageService):
             # Apply document_id filter
             if document_id is not None:
                 if id_field in df.columns:
-                    df = df[df[id_field] == document_id]
-                    if len(df) == 1:
-                        return df.iloc[0].to_dict()  # Return single record as dict
-                    elif len(df) == 0:
+                    filtered_df = df[df[id_field] == document_id]
+                    if len(filtered_df) == 1:
+                        return filtered_df.iloc[0].to_dict()  # Return single record as dict
+                    elif len(filtered_df) == 0:
+                        # No matching document found - return None consistently
                         return None
+                    else:
+                        # Multiple matches - return all matching records
+                        df = filtered_df
+                else:
+                    # ID field not found in CSV - return None for specific document requests
+                    self._logger.debug(f"ID field '{id_field}' not found in CSV")
+                    return None
             
             # Apply query filters
             if query:
@@ -529,9 +544,12 @@ class CSVStorageService(BaseStorageService):
             id_field = 'id'  # Default ID field for exists check
             
             if id_field in df.columns:
-                return (df[id_field] == document_id).any()
+                # Convert pandas boolean to Python bool
+                result = (df[id_field] == document_id).any()
+                return bool(result)
             
-            return False
+            # If no ID field, check if any data exists in file (for simple CSVs)
+            return len(df) > 0
             
         except Exception as e:
             self._logger.debug(f"Error checking existence: {e}")

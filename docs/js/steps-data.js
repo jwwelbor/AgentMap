@@ -412,6 +412,12 @@ const documentationFiles = [
         "path": "./usage/host-service-integration.md",
         "title": "Host Service Integration (Custom Services)"
     },
+
+
+    {
+        "path": "./usage/storage_services.md",
+        "title": "Storage Services"
+    },
     
     // Workflow Building
     {

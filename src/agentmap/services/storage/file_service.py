@@ -628,6 +628,7 @@ class FileStorageService(BaseStorageService):
                 if output_format == "raw":
                     return content
                 else:
+                    # Default format for binary files returns structured data with metadata
                     return {
                         "content": content,
                         "metadata": {
@@ -641,11 +642,10 @@ class FileStorageService(BaseStorageService):
             if self._is_text_file(str(file_path)):
                 content = self._read_text_file(file_path, **kwargs)
                 
-                if output_format == "text":
-                    return content
-                elif output_format == "raw":
+                if output_format == "text" or output_format == "raw":
                     return content
                 else:
+                    # Default format for text files returns structured data with metadata
                     return {
                         "content": content,
                         "metadata": {
@@ -721,6 +721,7 @@ class FileStorageService(BaseStorageService):
                 if output_format == "text" or output_format == "raw":
                     return content
                 else:
+                    # Default format returns structured data with metadata
                     return {
                         "content": content,
                         "metadata": {
