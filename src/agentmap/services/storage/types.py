@@ -18,8 +18,7 @@ T = TypeVar('T')
 class WriteMode(str, Enum):
     """Storage write operation modes using string values."""
     WRITE = "write"    # Create or overwrite document
-    UPDATE = "update"  # Update existing document fields
-    MERGE = "merge"    # Merge with existing document
+    UPDATE = "update"  # Update existing document fields (fails if document doesn't exist)
     DELETE = "delete"  # Delete document or field
     APPEND = "append"  # Append to existing document
     
@@ -71,10 +70,13 @@ class StorageResult(Generic[T]):
     created_new: Optional[bool] = None
     document_created: Optional[bool] = None
     file_deleted: Optional[bool] = None
+    collection_deleted: Optional[bool] = None
+    directory_deleted: Optional[bool] = None
     rows_written: Optional[int] = None
     rows_updated: Optional[int] = None
     rows_added: Optional[int] = None
     total_affected: Optional[int] = None
+    ids: Optional[List[str]] = None  # Add missing ids field
     updated_ids: Optional[List[str]] = None
     deleted_ids: Optional[List[str]] = None
     is_collection: Optional[bool] = None

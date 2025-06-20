@@ -84,7 +84,16 @@ class StorageServiceManager:
         Args:
             provider_name: Name of the provider (e.g., "csv", "json", "firebase")
             service_class: Class that implements the storage service
+            
+        Raises:
+            StorageServiceConfigurationError: If provider_name is invalid or service_class is invalid
         """
+        # Validate provider name
+        if not provider_name or not isinstance(provider_name, str) or not provider_name.strip():
+            raise StorageServiceConfigurationError(
+                "Provider name must be a non-empty string"
+            )
+        
         if not issubclass(service_class, BaseStorageService):
             raise StorageServiceConfigurationError(
                 f"Service class for {provider_name} must inherit from BaseStorageService"
@@ -104,7 +113,16 @@ class StorageServiceManager:
         Args:
             provider_name: Name of the provider
             factory: Factory instance for creating services
+            
+        Raises:
+            StorageServiceConfigurationError: If provider_name is invalid
         """
+        # Validate provider name
+        if not provider_name or not isinstance(provider_name, str) or not provider_name.strip():
+            raise StorageServiceConfigurationError(
+                "Provider name must be a non-empty string"
+            )
+        
         self._factories[provider_name] = factory
         self._logger.info(f"Registered storage factory: {provider_name}")
     

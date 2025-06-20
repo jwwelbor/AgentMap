@@ -31,12 +31,18 @@ class CSVStorageService(BaseStorageService):
         
         Returns:
             Configuration dict for CSV operations
+            
+        Raises:
+            OSError: If base directory cannot be created or accessed
         """
         base_dir = self._config.get_option("base_directory", "./data")
         encoding = self._config.get_option("encoding", "utf-8")
         
-        # Ensure base directory exists
-        os.makedirs(base_dir, exist_ok=True)
+        # Ensure base directory exists - fail fast if we can't create it
+        try:
+            os.makedirs(base_dir, exist_ok=True)
+        except (OSError, PermissionError) as e:
+            raise OSError(f"Cannot create base directory '{base_dir}': {e}")
         
         return {
             "base_directory": base_dir,
@@ -53,7 +59,7 @@ class CSVStorageService(BaseStorageService):
         Perform health check for CSV storage.
         
         Checks if base directory is accessible and we can perform
-        basic pandas operations.
+        basic pandas operations and file operations.
         
         Returns:
             True if healthy, False otherwise
@@ -61,11 +67,19 @@ class CSVStorageService(BaseStorageService):
         try:
             base_dir = self.client["base_directory"]
             
-            # Check if directory exists and is writable
+            # Check if directory exists
             if not os.path.exists(base_dir):
                 return False
             
-            if not os.access(base_dir, os.W_OK):
+            # Test actual write access by creating a temporary file
+            import tempfile
+            test_file_path = os.path.join(base_dir, ".health_check_test.tmp")
+            try:
+                with open(test_file_path, 'w', encoding=self.client["encoding"]) as f:
+                    f.write("test")
+                # Clean up test file
+                os.remove(test_file_path)
+            except (OSError, PermissionError):
                 return False
             
             # Test basic pandas operation

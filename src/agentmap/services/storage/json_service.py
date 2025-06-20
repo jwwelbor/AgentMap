@@ -282,7 +282,7 @@ class JSONStorageService(BaseStorageService):
                     
                 # Create a nested structure if needed
                 if current[index] is None:
-                    if i < len(components) - 2 and components[i+1].isdigit():
+                    if i + 1 < len(components) and components[i+1].isdigit():
                         current[index] = []  # Next level is array
                     else:
                         current[index] = {}  # Next level is dict
@@ -302,7 +302,7 @@ class JSONStorageService(BaseStorageService):
                         
                 # Create the next level if it doesn't exist
                 if component not in current:
-                    if i < len(components) - 2 and components[i+1].isdigit():
+                    if i + 1 < len(components) and components[i+1].isdigit():
                         current[component] = []  # Next level is array
                     else:
                         current[component] = {}  # Next level is dict
@@ -468,8 +468,9 @@ class JSONStorageService(BaseStorageService):
             doc_with_id[id_field] = document_id
             return [doc_with_id]
         else:
-            # For other data, use a dict with document ID as key
-            return {document_id: data}
+            # For non-dict data, wrap it properly with id and value
+            wrapped_doc = {id_field: document_id, "value": data}
+            return {document_id: wrapped_doc}
     
     def _add_document_to_structure(
         self, 
@@ -491,7 +492,7 @@ class JSONStorageService(BaseStorageService):
             Updated data structure
         """
         if isinstance(data, dict):
-            # Add to dictionary
+            # Add to dictionary - preserve original behavior for internal methods
             data[document_id] = doc_data
             return data
         
@@ -511,12 +512,44 @@ class JSONStorageService(BaseStorageService):
             # Create new structure
             return self._create_initial_structure(doc_data, document_id, id_field)
     
+    def _add_document_to_structure_simple(
+        self, 
+        data: Any, 
+        prepared_doc: Any, 
+        document_id: str
+    ) -> Any:
+        """
+        Add a properly wrapped document to an existing data structure.
+        
+        Args:
+            data: Current data structure
+            prepared_doc: Already wrapped document data
+            document_id: Document ID (for key-based storage)
+            
+        Returns:
+            Updated data structure
+        """
+        if isinstance(data, dict):
+            # Add to dictionary using document_id as key
+            data[document_id] = prepared_doc
+            return data
+        
+        elif isinstance(data, list):
+            # Add to list
+            data.append(prepared_doc)
+            return data
+        
+        else:
+            # Replace scalar with new structure
+            return {document_id: prepared_doc}
+    
     def _update_document_in_structure(
         self,
         data: Any,
         doc_data: Any,
         document_id: str,
-        id_field: str = 'id'
+        id_field: str = 'id',
+        merge: bool = True
     ) -> tuple[Any, bool]:
         """
         Update a document in an existing data structure.
@@ -526,6 +559,7 @@ class JSONStorageService(BaseStorageService):
             doc_data: Document data
             document_id: Document ID
             id_field: Field name to use as document identifier
+            merge: Whether to merge with existing document or replace entirely
             
         Returns:
             Tuple of (updated data, whether document was created)
@@ -543,19 +577,32 @@ class JSONStorageService(BaseStorageService):
             if isinstance(data, dict):
                 # Dictionary with direct keys
                 if document_id in data:
-                    data[document_id] = doc_data
+                    # Merge existing document with new data for UPDATE operations
+                    existing_doc = data[document_id]
+                    if isinstance(existing_doc, dict) and isinstance(doc_data, dict) and merge:
+                        data[document_id] = self._merge_documents(existing_doc, doc_data)
+                    else:
+                        data[document_id] = self._ensure_id_in_document(doc_data, document_id, id_field)
                 else:
                     # Find and update by ID field
                     for key, value in data.items():
                         if isinstance(value, dict) and value.get(id_field) == document_id:
-                            data[key] = self._ensure_id_in_document(doc_data, document_id, id_field)
+                            if isinstance(value, dict) and isinstance(doc_data, dict) and merge:
+                                merged_doc = self._merge_documents(value, doc_data)
+                                data[key] = self._ensure_id_in_document(merged_doc, document_id, id_field)
+                            else:
+                                data[key] = self._ensure_id_in_document(doc_data, document_id, id_field)
                             break
             
             elif isinstance(data, list):
                 # List of documents
                 for i, item in enumerate(data):
                     if isinstance(item, dict) and item.get(id_field) == document_id:
-                        data[i] = self._ensure_id_in_document(doc_data, document_id, id_field)
+                        if isinstance(item, dict) and isinstance(doc_data, dict) and merge:
+                            merged_doc = self._merge_documents(item, doc_data)
+                            data[i] = self._ensure_id_in_document(merged_doc, document_id, id_field)
+                        else:
+                            data[i] = self._ensure_id_in_document(doc_data, document_id, id_field)
                         break
         
         return data, created_new
@@ -704,7 +751,7 @@ class JSONStorageService(BaseStorageService):
             
             if not os.path.exists(file_path):
                 self._logger.debug(f"JSON file does not exist: {file_path}")
-                return {} if document_id is None else None
+                return None
             
             # Extract service-specific parameters
             format_type = kwargs.pop('format', 'raw')
@@ -768,6 +815,14 @@ class JSONStorageService(BaseStorageService):
         Returns:
             StorageResult with operation details
         """
+        # Validate mode parameter
+        if not isinstance(mode, WriteMode):
+            return self._create_error_result(
+                "write",
+                f"Unsupported write mode: {mode}",
+                collection=collection
+            )
+        
         try:
             file_path = self._get_file_path(collection)
             
@@ -777,21 +832,37 @@ class JSONStorageService(BaseStorageService):
             file_existed = os.path.exists(file_path)
             
             if mode == WriteMode.WRITE:
-                # Simple write operation (overwrite file)
+                # Simple write operation
                 if document_id is not None:
-                    # If document ID provided, create with initial structure
-                    self._write_json_file(
-                        file_path, 
-                        self._create_initial_structure(data, document_id, id_field),
-                        **kwargs
-                    )
+                    # For document-based writes, read existing file and add/update document
+                    current_data = None
+                    if file_existed:
+                        try:
+                            current_data = self._read_json_file(file_path)
+                        except (FileNotFoundError, ValueError):
+                            current_data = None
+                    
+                    # Create initial structure if needed
+                    if current_data is None:
+                        current_data = self._create_initial_structure(data, document_id, id_field)
+                    else:
+                        # Prepare the document data with proper wrapping at API level
+                        prepared_data = self._ensure_id_in_document(data, document_id, id_field)
+                        
+                        # Add document to existing structure with prepared data
+                        current_data = self._add_document_to_structure_simple(
+                        current_data, prepared_data, document_id
+                        )
+                    
+                    self._write_json_file(file_path, current_data, **kwargs)
                 else:
-                    # Direct write
+                    # Direct write (overwrite entire file)
                     self._write_json_file(file_path, data, **kwargs)
                 
                 return self._create_success_result(
                     "write",
                     collection=collection,
+                    document_id=document_id,
                     file_path=file_path,
                     created_new=not file_existed
                 )
@@ -804,40 +875,56 @@ class JSONStorageService(BaseStorageService):
                 except (FileNotFoundError, ValueError):
                     current_data = None
             
-            # Use appropriate structure if file doesn't exist or has invalid data
-            if current_data is None:
-                if document_id is not None:
-                    current_data = self._create_initial_structure(data, document_id, id_field)
-                else:
-                    current_data = [] if isinstance(data, list) else {}
-            
             if mode == WriteMode.UPDATE:
-                # Update operation
+                # Update operation - fail if file or document doesn't exist
+                if not file_existed:
+                    return self._create_error_result(
+                        "update",
+                        f"File not found for update: {file_path}",
+                        collection=collection
+                    )
+                
+                if current_data is None:
+                    return self._create_error_result(
+                        "update",
+                        f"Invalid JSON data in file: {file_path}",
+                        collection=collection
+                    )
+                
                 if path:
                     # Path-based update
                     if document_id:
                         # Update path in specific document
                         doc = self._find_document_by_id(current_data, document_id, id_field)
                         if doc is None:
-                            # Document not found, create it
-                            new_doc = {id_field: document_id}
-                            new_doc = self._update_path(new_doc, path, data)
-                            current_data = self._add_document_to_structure(
-                                current_data, new_doc, document_id, id_field
+                            return self._create_error_result(
+                                "update",
+                                f"Document with ID '{document_id}' not found for update",
+                                collection=collection,
+                                document_id=document_id
                             )
-                        else:
-                            # Update existing document
-                            updated_doc = self._update_path(doc, path, data)
-                            current_data = self._update_document_in_structure(
-                                current_data, updated_doc, document_id, id_field
-                            )[0]
+                        
+                        # Update existing document
+                        updated_doc = self._update_path(doc, path, data)
+                        current_data = self._update_document_in_structure(
+                            current_data, updated_doc, document_id, id_field
+                        )[0]
                     else:
                         # Update path in entire file
                         current_data = self._update_path(current_data, path, data)
                 else:
                     # Direct document update
                     if document_id is not None:
-                        # Update specific document
+                        # Update specific document - must exist
+                        doc = self._find_document_by_id(current_data, document_id, id_field)
+                        if doc is None:
+                            return self._create_error_result(
+                                "update",
+                                f"Document with ID '{document_id}' not found for update",
+                                collection=collection,
+                                document_id=document_id
+                            )
+                        
                         current_data, created_new = self._update_document_in_structure(
                             current_data, data, document_id, id_field
                         )
@@ -849,9 +936,18 @@ class JSONStorageService(BaseStorageService):
                 return self._create_success_result(
                     "update",
                     collection=collection,
+                    document_id=document_id,
                     file_path=file_path,
                     created_new=not file_existed
                 )
+            
+            # Use appropriate structure if file doesn't exist or has invalid data
+            # (Only for non-UPDATE modes)
+            if current_data is None:
+                if document_id is not None:
+                    current_data = self._create_initial_structure(data, document_id, id_field)
+                else:
+                    current_data = [] if isinstance(data, list) else {}
             
             elif mode == WriteMode.APPEND:
                 # Append operation
@@ -865,9 +961,12 @@ class JSONStorageService(BaseStorageService):
                     # Merge dictionaries
                     current_data.update(data)
                 elif document_id is not None:
+                    # Prepare the document data with proper wrapping at API level
+                    prepared_data = self._ensure_id_in_document(data, document_id, id_field)
+                    
                     # Add document with ID
-                    current_data = self._add_document_to_structure(
-                        current_data, data, document_id, id_field
+                    current_data = self._add_document_to_structure_simple(
+                        current_data, prepared_data, document_id
                     )
                 else:
                     # Can't append to incompatible structures
@@ -881,85 +980,7 @@ class JSONStorageService(BaseStorageService):
                 return self._create_success_result(
                     "append",
                     collection=collection,
-                    file_path=file_path
-                )
-            
-            elif mode == WriteMode.MERGE:
-                # Merge operation
-                if path:
-                    # Path-based merge
-                    if document_id:
-                        # Merge at path in specific document
-                        doc = self._find_document_by_id(current_data, document_id, id_field)
-                        if doc is None:
-                            # Document not found, create it
-                            new_doc = {id_field: document_id}
-                            new_doc = self._update_path(new_doc, path, data)
-                            current_data = self._add_document_to_structure(
-                                current_data, new_doc, document_id, id_field
-                            )
-                        else:
-                            # Get current value at path
-                            current_value = self._apply_path(doc, path)
-                            
-                            # Merge if both are dictionaries
-                            if isinstance(current_value, dict) and isinstance(data, dict):
-                                merged_value = self._merge_documents(current_value, data)
-                                updated_doc = self._update_path(doc, path, merged_value)
-                                current_data = self._update_document_in_structure(
-                                    current_data, updated_doc, document_id, id_field
-                                )[0]
-                            else:
-                                # Otherwise, just update
-                                updated_doc = self._update_path(doc, path, data)
-                                current_data = self._update_document_in_structure(
-                                    current_data, updated_doc, document_id, id_field
-                                )[0]
-                    else:
-                        # Merge at path in entire file
-                        current_value = self._apply_path(current_data, path)
-                        
-                        # Merge if both are dictionaries
-                        if isinstance(current_value, dict) and isinstance(data, dict):
-                            merged_value = self._merge_documents(current_value, data)
-                            current_data = self._update_path(current_data, path, merged_value)
-                        else:
-                            # Otherwise, just update
-                            current_data = self._update_path(current_data, path, data)
-                else:
-                    # Direct document merge
-                    if document_id is not None:
-                        # Merge specific document
-                        doc = self._find_document_by_id(current_data, document_id, id_field)
-                        if doc is None:
-                            # Document not found, create it
-                            current_data = self._add_document_to_structure(
-                                current_data, data, document_id, id_field
-                            )
-                        else:
-                            # Merge with existing document
-                            if isinstance(doc, dict) and isinstance(data, dict):
-                                merged_doc = self._merge_documents(doc, data)
-                                current_data = self._update_document_in_structure(
-                                    current_data, merged_doc, document_id, id_field
-                                )[0]
-                            else:
-                                # Can't merge incompatible types, overwrite
-                                current_data = self._update_document_in_structure(
-                                    current_data, data, document_id, id_field
-                                )[0]
-                    else:
-                        # Merge entire file
-                        if isinstance(current_data, dict) and isinstance(data, dict):
-                            current_data = self._merge_documents(current_data, data)
-                        else:
-                            # Can't merge incompatible types, overwrite
-                            current_data = data
-                
-                self._write_json_file(file_path, current_data, **kwargs)
-                return self._create_success_result(
-                    "merge",
-                    collection=collection,
+                    document_id=document_id,
                     file_path=file_path
                 )
             
@@ -971,7 +992,13 @@ class JSONStorageService(BaseStorageService):
                 )
                 
         except Exception as e:
-            self._handle_error("write", e, collection=collection, mode=mode.value)
+            error_msg = f"Write operation failed: {str(e)}"
+            self._logger.error(f"[{self.provider_name}] {error_msg} (collection={collection}, mode={mode.value})")
+            return self._create_error_result(
+                "write",
+                error_msg,
+                collection=collection
+            )
     
     def delete(
         self,
@@ -1023,7 +1050,7 @@ class JSONStorageService(BaseStorageService):
                     "delete",
                     collection=collection,
                     file_path=file_path,
-                    file_deleted=True
+                    collection_deleted=True
                 )
             
             # Handle deleting specific path
@@ -1042,7 +1069,7 @@ class JSONStorageService(BaseStorageService):
                     # Delete path in document
                     updated_doc = self._delete_path(doc, path)
                     current_data = self._update_document_in_structure(
-                        current_data, updated_doc, document_id, id_field
+                        current_data, updated_doc, document_id, id_field, merge=False
                     )[0]
                 else:
                     # Delete path in entire file
@@ -1052,6 +1079,7 @@ class JSONStorageService(BaseStorageService):
                 return self._create_success_result(
                     "delete",
                     collection=collection,
+                    document_id=document_id,
                     file_path=file_path,
                     path=path
                 )
@@ -1133,7 +1161,13 @@ class JSONStorageService(BaseStorageService):
             )
             
         except Exception as e:
-            self._handle_error("delete", e, collection=collection)
+            error_msg = f"Delete operation failed: {str(e)}"
+            self._logger.error(f"[{self.provider_name}] {error_msg} (collection={collection})")
+            return self._create_error_result(
+                "delete",
+                error_msg,
+                collection=collection
+            )
     
     def exists(
         self, 

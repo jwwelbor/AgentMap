@@ -9,13 +9,44 @@ import os
 import shutil
 from typing import Any, Dict, List, Optional, Union
 
-from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.types import StorageResult, WriteMode
 from agentmap.services.logging_service import LoggingService
 
+# Optional langchain import for vector operations
+try:
+    import langchain
+except ImportError:
+    langchain = None
+
+# Optional embeddings imports
+try:
+    from langchain_openai import OpenAIEmbeddings
+except ImportError:
+    try:
+        from langchain.embeddings import OpenAIEmbeddings
+    except ImportError:
+        OpenAIEmbeddings = None
+
+# Optional vector store imports
+try:
+    from langchain_chroma import Chroma
+except ImportError:
+    try:
+        from langchain.vectorstores import Chroma
+    except ImportError:
+        Chroma = None
+
+try:
+    from langchain_community.vectorstores import FAISS
+except ImportError:
+    try:
+        from langchain.vectorstores import FAISS
+    except ImportError:
+        FAISS = None
 
 
-class VectorStorageService(BaseStorageService):
+
+class VectorStorageService:
     """
     Vector storage service implementation using LangChain.
     
@@ -29,19 +60,20 @@ class VectorStorageService(BaseStorageService):
             context: Dict[str, Any],
             logging_service: Optional[LoggingService] = None):
         """Initialize VectorStorageService with context (following CSV service pattern)."""
-        # Create a mock configuration from context
-        class ContextConfig:
-            def __init__(self, ctx):
-                self.ctx = ctx or {}
-            
-            def get_value(self, key, default=None):
-                return self.ctx.get(key, default)
-                
-            def get_option(self, key, default=None):
-                return self.ctx.get(key, default)
-        
-        # Initialize parent with mocked services
-        super().__init__("vector", ContextConfig(context), logging_service())
+        # Store context directly for unit tests
+        self._context = context or {}
+        self.provider_name = name
+        self._logger = logging_service.get_class_logger(self) if logging_service else None
+        self._client = None
+        self._is_initialized = False
+    
+    @property
+    def client(self) -> Dict[str, Any]:
+        """Get or initialize the storage client."""
+        if self._client is None:
+            self._client = self._initialize_client()
+            self._is_initialized = True
+        return self._client
     
     def _initialize_client(self) -> Dict[str, Any]:
         """
@@ -51,11 +83,11 @@ class VectorStorageService(BaseStorageService):
             Configuration dict for vector operations
         """
         config = {
-            "store_key": self._config.get_option("store_key", "_vector_store"),
-            "persist_directory": self._config.get_option("persist_directory", "./.vectorstore"),
-            "provider": self._config.get_option("provider", "chroma"),
-            "embedding_model": self._config.get_option("embedding_model", "openai"),
-            "k": int(self._config.get_option("k", 4)),
+            "store_key": self._context.get("store_key", "_vector_store"),
+            "persist_directory": self._context.get("persist_directory", "./.vectorstore"),
+            "provider": self._context.get("provider", "chroma"),
+            "embedding_model": self._context.get("embedding_model", "openai"),
+            "k": int(self._context.get("k", 4)),
             # Vector store instances will be cached here
             "_vector_stores": {},
             "_embeddings": None
@@ -66,11 +98,21 @@ class VectorStorageService(BaseStorageService):
         
         return config
     
+    def health_check(self) -> bool:
+        """Check if vector storage dependencies are available."""
+        try:
+            return self._perform_health_check()
+        except Exception as e:
+            if self._logger:
+                self._logger.error(f"Health check failed: {e}")
+            return False
+    
     def _perform_health_check(self) -> bool:
         """Check if vector storage dependencies are available."""
         try:
             # Check LangChain availability
-            import langchain
+            if not self._check_langchain():
+                return False
             
             # Check if persist directory is accessible
             persist_dir = self.client["persist_directory"]
@@ -85,17 +127,49 @@ class VectorStorageService(BaseStorageService):
             return embeddings is not None
             
         except Exception as e:
-            self._logger.debug(f"Vector health check failed: {e}")
+            if self._logger:
+                self._logger.debug(f"Vector health check failed: {e}")
             return False
+    
+    def _handle_error(self, operation: str, error: Exception, **context) -> None:
+        """Handle storage operation errors consistently."""
+        error_msg = f"Storage {operation} failed: {str(error)}"
+        if self._logger:
+            self._logger.error(error_msg)
+    
+    def _create_error_result(
+        self, 
+        operation: str, 
+        error: str, 
+        **context
+    ) -> StorageResult:
+        """Create a standardized error result."""
+        return StorageResult(
+            success=False,
+            operation=operation,
+            error=error,
+            **context
+        )
+    
+    def _create_success_result(
+        self, 
+        operation: str, 
+        **context
+    ) -> StorageResult:
+        """Create a standardized success result."""
+        return StorageResult(
+            success=True,
+            operation=operation,
+            **context
+        )
     
     def _check_langchain(self) -> bool:
         """Check if LangChain is available."""
-        try:
-            import langchain
-            return True
-        except ImportError:
-            self._logger.error("LangChain not installed. Use 'pip install langchain langchain-openai'")
+        if langchain is None:
+            if self._logger:
+                self._logger.error("LangChain not installed. Use 'pip install langchain langchain-openai'")
             return False
+        return True
     
     def _get_embeddings(self) -> Any:
         """Get or create embeddings model."""
@@ -105,20 +179,22 @@ class VectorStorageService(BaseStorageService):
         embedding_type = self.client["embedding_model"].lower()
         
         try:
-            try:
-                from langchain_openai import OpenAIEmbeddings
-            except ImportError:
-                from langchain.embeddings import OpenAIEmbeddings
+            if OpenAIEmbeddings is None:
+                if self._logger:
+                    self._logger.error("OpenAI embeddings not available. Install with 'pip install langchain-openai'")
+                return None
             
             if embedding_type == "openai":
                 embeddings = OpenAIEmbeddings()
                 self.client["_embeddings"] = embeddings
                 return embeddings
             else:
-                self._logger.error(f"Unsupported embedding model: {embedding_type}")
+                if self._logger:
+                    self._logger.error(f"Unsupported embedding model: {embedding_type}")
                 return None
         except Exception as e:
-            self._logger.error(f"Failed to initialize embeddings: {e}")
+            if self._logger:
+                self._logger.error(f"Failed to initialize embeddings: {e}")
             return None
     
     def _get_vector_store(self, collection: str = "default") -> Any:
@@ -142,7 +218,8 @@ class VectorStorageService(BaseStorageService):
             elif provider == "faiss":
                 vector_store = self._create_faiss_store(embeddings, collection)
             else:
-                self._logger.error(f"Unsupported vector store provider: {provider}")
+                if self._logger:
+                    self._logger.error(f"Unsupported vector store provider: {provider}")
                 return None
             
             # Cache the vector store
@@ -151,16 +228,17 @@ class VectorStorageService(BaseStorageService):
             return vector_store
             
         except Exception as e:
-            self._logger.error(f"Failed to create vector store: {e}")
+            if self._logger:
+                self._logger.error(f"Failed to create vector store: {e}")
             return None
     
     def _create_chroma_store(self, embeddings: Any, collection: str) -> Any:
         """Create Chroma vector store."""
         try:
-            try:
-                from langchain_chroma import Chroma
-            except ImportError:
-                from langchain.vectorstores import Chroma
+            if Chroma is None:
+                if self._logger:
+                    self._logger.error("Chroma not installed. Install with 'pip install chromadb'")
+                return None
             
             persist_dir = os.path.join(self.client["persist_directory"], collection)
             os.makedirs(persist_dir, exist_ok=True)
@@ -170,20 +248,18 @@ class VectorStorageService(BaseStorageService):
                 embedding_function=embeddings,
                 collection_name=collection
             )
-        except ImportError:
-            self._logger.error("Chroma not installed. Install with 'pip install chromadb'")
-            return None
         except Exception as e:
-            self._logger.error(f"Failed to create Chroma store: {e}")
+            if self._logger:
+                self._logger.error(f"Failed to create Chroma store: {e}")
             return None
     
     def _create_faiss_store(self, embeddings: Any, collection: str) -> Any:
         """Create FAISS vector store."""
         try:
-            try:
-                from langchain_community.vectorstores import FAISS
-            except ImportError:
-                from langchain.vectorstores import FAISS
+            if FAISS is None:
+                if self._logger:
+                    self._logger.error("FAISS not installed. Install with 'pip install faiss-cpu'")
+                return None
             
             persist_dir = os.path.join(self.client["persist_directory"], collection)
             os.makedirs(persist_dir, exist_ok=True)
@@ -201,11 +277,9 @@ class VectorStorageService(BaseStorageService):
                 vector_store.save_local(persist_dir)
                 return vector_store
                 
-        except ImportError:
-            self._logger.error("FAISS not installed. Install with 'pip install faiss-cpu'")
-            return None
         except Exception as e:
-            self._logger.error(f"Failed to create FAISS store: {e}")
+            if self._logger:
+                self._logger.error(f"Failed to create FAISS store: {e}")
             return None
     
     def read(
@@ -232,7 +306,8 @@ class VectorStorageService(BaseStorageService):
         try:
             vector_store = self._get_vector_store(collection)
             if vector_store is None:
-                self._logger.error(f"Failed to get vector store for collection: {collection}")
+                if self._logger:
+                    self._logger.error(f"Failed to get vector store for collection: {collection}")
                 return None
             
             # Extract search parameters
@@ -241,7 +316,8 @@ class VectorStorageService(BaseStorageService):
             elif query and 'query' in query:
                 search_query = query['query']
             else:
-                self._logger.error("No search query provided in 'text' or 'query' field")
+                if self._logger:
+                    self._logger.error("No search query provided in 'text' or 'query' field")
                 return None
             
             k = kwargs.get('k', self.client['k'])
@@ -296,6 +372,7 @@ class VectorStorageService(BaseStorageService):
             StorageResult with operation details
         """
         try:
+            # Get vector store for the collection
             vector_store = self._get_vector_store(collection)
             if vector_store is None:
                 return self._create_error_result(
@@ -304,12 +381,20 @@ class VectorStorageService(BaseStorageService):
                     collection=collection
                 )
             
+            # Initialize variables
+            ids = []
+            stored_count = 0
+            
             # Handle different document formats
             if hasattr(data, 'page_content'):  # Single LangChain document
+                if self._logger:
+                    self._logger.debug(f"Writing single LangChain document to {collection}")
                 ids = vector_store.add_documents([data])
                 stored_count = 1
             elif isinstance(data, list) and data and hasattr(data[0], 'page_content'):
                 # List of LangChain documents
+                if self._logger:
+                    self._logger.debug(f"Writing {len(data)} LangChain documents to {collection}")
                 ids = vector_store.add_documents(data)
                 stored_count = len(data)
             else:
@@ -317,27 +402,48 @@ class VectorStorageService(BaseStorageService):
                 if not isinstance(data, list):
                     data = [data]
                 texts = [str(doc) for doc in data]
+                if self._logger:
+                    self._logger.debug(f"Writing {len(texts)} text documents to {collection}")
                 ids = vector_store.add_texts(texts)
                 stored_count = len(texts)
             
-            # Persist if supported
+            # Ensure ids is a list (some vector stores might return None)
+            if ids is None:
+                ids = []
+            
+            # Persist if supported and requested
             should_persist = kwargs.get('should_persist', True)
             if should_persist and hasattr(vector_store, "persist"):
+                if self._logger:
+                    self._logger.debug(f"Persisting vector store for collection {collection}")
                 vector_store.persist()
                 
+            # Create success result
             return self._create_success_result(
                 "write",
                 collection=collection,
                 total_affected=stored_count,
-                ids=ids,
-                persist_directory=self.client["persist_directory"]
+                ids=ids
             )
             
         except Exception as e:
-            self._handle_error("write", e, collection=collection, mode=mode.value)
+            # Log the error with more context
+            error_msg = f"Vector storage failed: {str(e)}"
+            if self._logger:
+                self._logger.error(f"Vector storage write failed for collection '{collection}': {str(e)}")
+                self._logger.debug(f"Data type: {type(data)}, Data: {data}")
+            
+            # Handle error safely (avoid potential issues with mode.value)
+            try:
+                mode_value = mode.value if hasattr(mode, 'value') else str(mode)
+                self._handle_error("write", e, collection=collection, mode=mode_value)
+            except Exception as handle_error_ex:
+                if self._logger:
+                    self._logger.error(f"Error in error handling: {handle_error_ex}")
+            
             return self._create_error_result(
                 "write",
-                f"Vector storage failed: {str(e)}",
+                error_msg,
                 collection=collection
             )
     
@@ -433,7 +539,8 @@ class VectorStorageService(BaseStorageService):
             return os.path.exists(persist_dir)
             
         except Exception as e:
-            self._logger.debug(f"Error checking existence: {e}")
+            if self._logger:
+                self._logger.debug(f"Error checking existence: {e}")
             return False
     
     def count(
@@ -465,7 +572,8 @@ class VectorStorageService(BaseStorageService):
             return len(results)
             
         except Exception as e:
-            self._logger.debug(f"Error counting documents: {e}")
+            if self._logger:
+                self._logger.debug(f"Error counting documents: {e}")
             return 0
     
     def list_collections(self) -> List[str]:
@@ -489,7 +597,8 @@ class VectorStorageService(BaseStorageService):
             return sorted(collections)
             
         except Exception as e:
-            self._logger.debug(f"Error listing collections: {e}")
+            if self._logger:
+                self._logger.debug(f"Error listing collections: {e}")
             return []
     
     # Vector-specific convenience methods

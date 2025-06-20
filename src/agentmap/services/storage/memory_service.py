@@ -487,7 +487,7 @@ class MemoryStorageService(BaseStorageService):
             collection: Collection name
             data: Data to write
             document_id: Document ID (optional, will be generated if not provided)
-            mode: Write mode (write, append, update, merge)
+            mode: Write mode (write, append, update)
             path: Dot-notation path for nested updates
             **kwargs: Additional parameters
             
@@ -647,45 +647,7 @@ class MemoryStorageService(BaseStorageService):
                     created_new=created_new
                 )
             
-            elif mode == WriteMode.MERGE:
-                # Merge operation
-                if document_id not in collection_data:
-                    # Create new document
-                    collection_data[document_id] = data_to_store
-                    created_new = True
-                    self._stats["documents_created"] += 1
-                else:
-                    current_doc = collection_data[document_id]
-                    
-                    if path:
-                        # Path-based merge
-                        current_value = self._apply_path(current_doc, path)
-                        
-                        if isinstance(current_value, dict) and isinstance(data_to_store, dict):
-                            # Deep merge dictionaries
-                            merged_value = {**current_value, **data_to_store}
-                            collection_data[document_id] = self._update_path(current_doc, path, merged_value)
-                        else:
-                            # Replace value at path
-                            collection_data[document_id] = self._update_path(current_doc, path, data_to_store)
-                    else:
-                        # Document-level merge
-                        if isinstance(current_doc, dict) and isinstance(data_to_store, dict):
-                            # Deep merge
-                            collection_data[document_id] = {**current_doc, **data_to_store}
-                        else:
-                            # Replace document
-                            collection_data[document_id] = data_to_store
-                
-                # Update metadata
-                self._update_metadata(collection, document_id, "create" if created_new else "update")
-                
-                return self._create_success_result(
-                    "merge",
-                    collection=collection,
-                    document_id=document_id,
-                    created_new=created_new
-                )
+
             
             else:
                 return self._create_error_result(
@@ -944,7 +906,7 @@ class MemoryStorageService(BaseStorageService):
             return self._create_success_result(
                 "clear_all",
                 total_affected=documents_cleared,
-                collections_cleared=collections_cleared
+                message=f"Cleared {collections_cleared} collections and {documents_cleared} documents"
             )
             
         except Exception as e:

@@ -31,11 +31,17 @@ class FileStorageService(BaseStorageService):
         
         Returns:
             Configuration dict for file operations
+            
+        Raises:
+            OSError: If base directory cannot be created or accessed
         """
         base_dir = self._config.get_option("base_directory", "./data/files")
         
-        # Ensure base directory exists
-        os.makedirs(base_dir, exist_ok=True)
+        # Ensure base directory exists - fail fast if we can't create it
+        try:
+            os.makedirs(base_dir, exist_ok=True)
+        except (OSError, PermissionError) as e:
+            raise OSError(f"Cannot create base directory '{base_dir}': {e}")
         
         # Extract configuration options (based on FileReaderAgent/FileWriterAgent context)
         config = {
@@ -46,7 +52,6 @@ class FileStorageService(BaseStorageService):
             "should_split": self._config.get_option("should_split", False),
             "include_metadata": self._config.get_option("include_metadata", True),
             "newline": self._config.get_option("newline"),
-            "create_dirs": self._config.get_option("create_dirs", True),
             "allow_binary": self._config.get_option("allow_binary", True),
             "max_file_size": self._config.get_option("max_file_size"),
         }
@@ -111,10 +116,15 @@ class FileStorageService(BaseStorageService):
             ValueError: If path tries to escape base directory
         """
         base_dir = Path(self.client["base_directory"]).resolve()
-        full_path = Path(file_path).resolve()
+        
+        # Resolve file_path relative to base_dir to handle relative paths correctly
+        if Path(file_path).is_absolute():
+            full_path = Path(file_path).resolve()
+        else:
+            full_path = (base_dir / file_path).resolve()
         
         try:
-            # Check if the path is within base directory
+            # Check if the resolved path is within base directory
             full_path.relative_to(base_dir)
             return str(full_path)
         except ValueError:
@@ -147,8 +157,7 @@ class FileStorageService(BaseStorageService):
         Args:
             directory_path: Path to directory
         """
-        if self.client["create_dirs"]:
-            directory_path.mkdir(parents=True, exist_ok=True)
+        directory_path.mkdir(parents=True, exist_ok=True)
     
     def _is_text_file(self, file_path: str) -> bool:
         """
@@ -421,6 +430,7 @@ class FileStorageService(BaseStorageService):
         content: str, 
         mode: WriteMode,
         file_exists: bool,
+        collection: str,
         **kwargs
     ) -> StorageResult:
         """
@@ -447,7 +457,7 @@ class FileStorageService(BaseStorageService):
                 
             return self._create_success_result(
                 "write",
-                collection=str(file_path.parent),
+                collection=collection,
                 file_path=str(file_path),
                 created_new=not file_exists
             )
@@ -462,7 +472,7 @@ class FileStorageService(BaseStorageService):
                 
             return self._create_success_result(
                 "append",
-                collection=str(file_path.parent),
+                collection=collection,
                 file_path=str(file_path),
                 created_new=not file_exists
             )
@@ -474,7 +484,7 @@ class FileStorageService(BaseStorageService):
                 
             return self._create_success_result(
                 "update",
-                collection=str(file_path.parent),
+                collection=collection,
                 file_path=str(file_path),
                 created_new=not file_exists
             )
@@ -483,7 +493,7 @@ class FileStorageService(BaseStorageService):
         return self._create_error_result(
             "write",
             f"Unsupported write mode for text files: {mode}",
-            collection=str(file_path.parent),
+            collection=collection,
             file_path=str(file_path)
         )
     
@@ -493,6 +503,7 @@ class FileStorageService(BaseStorageService):
         content: bytes, 
         mode: WriteMode,
         file_exists: bool,
+        collection: str,
         **kwargs
     ) -> StorageResult:
         """
@@ -516,7 +527,7 @@ class FileStorageService(BaseStorageService):
                 
             return self._create_success_result(
                 "write",
-                collection=str(file_path.parent),
+                collection=collection,
                 file_path=str(file_path),
                 created_new=not file_exists
             )
@@ -528,7 +539,7 @@ class FileStorageService(BaseStorageService):
                 
             return self._create_success_result(
                 "append",
-                collection=str(file_path.parent),
+                collection=collection,
                 file_path=str(file_path),
                 created_new=not file_exists
             )
@@ -540,7 +551,7 @@ class FileStorageService(BaseStorageService):
                 
             return self._create_success_result(
                 "update",
-                collection=str(file_path.parent),
+                collection=collection,
                 file_path=str(file_path),
                 created_new=not file_exists
             )
@@ -549,7 +560,7 @@ class FileStorageService(BaseStorageService):
         return self._create_error_result(
             "write",
             f"Unsupported write mode for binary files: {mode}",
-            collection=str(file_path.parent),
+            collection=collection,
             file_path=str(file_path)
         )
     
@@ -803,13 +814,13 @@ class FileStorageService(BaseStorageService):
                 if isinstance(content, str):
                     content = content.encode(kwargs.get('encoding', self.client["encoding"]))
                 
-                return self._write_binary_file(file_path, content, mode, file_exists, **kwargs)
+                return self._write_binary_file(file_path, content, mode, file_exists, collection, **kwargs)
             
             # Handle as text file
             if isinstance(content, bytes):
                 content = content.decode(kwargs.get('encoding', self.client["encoding"]))
             
-            return self._write_text_file(file_path, content, mode, file_exists, **kwargs)
+            return self._write_text_file(file_path, content, mode, file_exists, collection, **kwargs)
                 
         except Exception as e:
             self._handle_error("write", e, collection=collection, document_id=document_id, mode=mode.value)

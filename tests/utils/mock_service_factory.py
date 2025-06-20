@@ -167,8 +167,19 @@ class MockServiceFactory:
         mock_service.get_tracking_config.return_value = defaults["tracking"]
         mock_service.get_prompts_config.return_value = defaults["prompts"]
         
-        # Add get_value method for generic config access
+        # Add get_value method for generic config access with nested path support
         def get_value(key: str, default: Any = None) -> Any:
+            """Get value with support for nested paths like 'storage.csv'."""
+            if '.' in key:
+                # Handle nested keys like 'storage.csv'
+                keys = key.split('.')
+                current = defaults
+                for k in keys:
+                    if isinstance(current, dict) and k in current:
+                        current = current[k]
+                    else:
+                        return default
+                return current
             return defaults.get(key, default)
         
         mock_service.get_value.side_effect = get_value
