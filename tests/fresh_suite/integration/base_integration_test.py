@@ -117,6 +117,7 @@ class BaseIntegrationTest(unittest.TestCase):
                 }
             },
             "routing": {
+                "enabled": True,
                 "complexity_analysis": {
                     "prompt_length_thresholds": {
                         "low": 100,
@@ -148,11 +149,17 @@ class BaseIntegrationTest(unittest.TestCase):
                     }
                 },
                 "routing_matrix": {
-                    "general": {
-                        "low": "openai",
-                        "medium": "anthropic",
-                        "high": "anthropic",
-                        "critical": "anthropic"
+                    "anthropic": {
+                        "low": "claude-3-haiku-20240307",
+                        "medium": "claude-3-sonnet-20240229",
+                        "high": "claude-3-opus-20240229",
+                        "critical": "claude-3-opus-20240229"
+                    },
+                    "openai": {
+                        "low": "gpt-3.5-turbo",
+                        "medium": "gpt-4",
+                        "high": "gpt-4",
+                        "critical": "gpt-4"
                     }
                 }
             },
@@ -347,7 +354,7 @@ complex_graph,output_node,default,Format final output,Output formatting node,pro
         """
         Assert that a service has logging capabilities.
         
-        Handles different logging patterns: public 'logger' or private '_logger'.
+        Handles different logging patterns: public 'logger', private '_logger', or bootstrap '_bootstrap_logger'.
         
         Args:
             service: Service instance to check
@@ -355,13 +362,16 @@ complex_graph,output_node,default,Format final output,Output formatting node,pro
         """
         # Check for logging capability - services may use different patterns
         has_logger = (hasattr(service, 'logger') and service.logger is not None) or \
-                    (hasattr(service, '_logger') and service._logger is not None)
+                    (hasattr(service, '_logger') and service._logger is not None) or \
+                    (hasattr(service, '_bootstrap_logger') and service._bootstrap_logger is not None)
         
         self.assertTrue(has_logger, 
-                      f"{service_name} should have logging capability (either 'logger' or '_logger' attribute)")
+                      f"{service_name} should have logging capability (either 'logger', '_logger', or '_bootstrap_logger' attribute)")
         
         # Verify the logger instance is valid
-        logger_instance = getattr(service, 'logger', None) or getattr(service, '_logger', None)
+        logger_instance = getattr(service, 'logger', None) or \
+                         getattr(service, '_logger', None) or \
+                         getattr(service, '_bootstrap_logger', None)
         self.assertIsNotNone(logger_instance, 
                            f"{service_name} logger instance should not be None")
         
