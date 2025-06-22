@@ -20,7 +20,7 @@ from unittest.mock import Mock, patch, MagicMock
 from typing import Dict, Any, List
 
 from agentmap.services.storage.file_service import FileStorageService
-from agentmap.services.storage.types import WriteMode, StorageResult
+from agentmap.services.storage.types import WriteMode, StorageResult, StorageProviderError
 from tests.utils.mock_service_factory import MockServiceFactory
 
 
@@ -169,16 +169,15 @@ class TestFileStorageService(unittest.TestCase):
         ]
         
         for dangerous_path in dangerous_paths:
-            # Test through public read API
-            result = self.service.read("test_collection", dangerous_path)
-            # Should return None for invalid paths  
-            self.assertIsNone(result, f"Expected None for dangerous path: {dangerous_path}")
+            # Test through public read API - should raise StorageProviderError
+            with self.assertRaises(StorageProviderError) as context:
+                self.service.read("test_collection", dangerous_path)
+            self.assertIn("outside base directory", str(context.exception))
             
-            # Test through public write API
-            result = self.service.write("test_collection", "content", dangerous_path)
-            # Should return error result
-            self.assertFalse(result.success, f"Expected failure for dangerous path: {dangerous_path}")
-            self.assertIn("outside base directory", result.error)
+            # Test through public write API - should also raise StorageProviderError
+            with self.assertRaises(StorageProviderError) as context:
+                self.service.write("test_collection", "content", dangerous_path)
+            self.assertIn("outside base directory", str(context.exception))
     
     def test_path_validation_allowed_paths(self):
         """Test path validation allows safe paths."""
