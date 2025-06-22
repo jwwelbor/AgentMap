@@ -12,7 +12,6 @@ const stepsData = [
             <div class="mermaid-wrapper">
                 <pre class="mermaid">
                     flowchart TD
-
                     csv[CSV Definition] -->|Parse| graphBuilder[Graph Builder]
                     graphBuilder -->|Build| graphDef[Graph Definition]
                     registry[Agent Registry] -->|Lookup| graphDef

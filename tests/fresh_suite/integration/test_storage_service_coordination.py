@@ -627,12 +627,30 @@ class TestStorageServiceCoordination(BaseIntegrationTest):
             ("file", self.file_service, "Initial file content")
         ]
         
+        # Ensure clean state before test
+        for service_name, service, _ in setup_data:
+            collection = f"{mixed_collection}_{service_name}"
+            try:
+                # Delete any existing data from previous test runs
+                service.delete(collection, "mixed_test")
+                service.delete(collection, "mixed_update")
+            except:
+                pass  # Ignore if doesn't exist
+        
+        # Setup initial data with verification
         for service_name, service, data in setup_data:
-            service.write(
-                collection=f"{mixed_collection}_{service_name}",
+            collection = f"{mixed_collection}_{service_name}"
+            result = service.write(
+                collection=collection,
                 data=data,
                 document_id="mixed_test"
             )
+            # Verify write succeeded
+            self.assertTrue(result.success, f"Setup write for {service_name} should succeed")
+            
+            # Verify data exists immediately after write
+            exists = service.exists(collection, "mixed_test")
+            self.assertTrue(exists, f"Data should exist in {service_name} immediately after setup")
         
         def perform_mixed_operation(operation_info):
             operation_type, service_name, service = operation_info
@@ -654,7 +672,14 @@ class TestStorageServiceCoordination(BaseIntegrationTest):
                     return {"operation": "write", "service": service_name, "success": result.success}
                 
                 elif operation_type == "exists":
-                    exists = service.exists(collection, "mixed_test")
+                    # Add retry logic for exists check to handle potential timing issues
+                    exists = False
+                    for _ in range(3):  # Try up to 3 times
+                        exists = service.exists(collection, "mixed_test")
+                        if exists:
+                            break
+                        time.sleep(0.1)  # Small delay between retries
+                    
                     return {"operation": "exists", "service": service_name, "success": True, "exists": exists}
                 
             except Exception as e:
@@ -699,8 +724,9 @@ class TestStorageServiceCoordination(BaseIntegrationTest):
         for exists_result in exists_results:
             self.assertTrue(exists_result["success"], 
                           f"Exists check for {exists_result['service']} should succeed")
+            # Add more detailed error message for debugging
             self.assertTrue(exists_result.get("exists", False), 
-                          f"Data should exist in {exists_result['service']}")
+                          f"Data should exist in {exists_result['service']}. Result: {exists_result}")
     
     # =============================================================================
     # 5. Service Information and Diagnostics
