@@ -606,6 +606,10 @@ footer {
     margin: 0 auto;
 }
 
+.mermaid-wrapper .flowchart-link {
+    stroke: lightgrey;
+}
+
 /* Move buttons styling - make them more prominent */
 .nav-buttons {
     display: flex;

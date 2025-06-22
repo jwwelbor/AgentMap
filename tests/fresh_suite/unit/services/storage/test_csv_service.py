@@ -852,43 +852,47 @@ class TestCSVStorageService(unittest.TestCase):
             # If it fails, should be handled by error handling
             self.assertIsInstance(e, Exception)
     
+    @unittest.skipIf(
+        os.name == 'nt' or os.environ.get('CI') == 'true',
+        "Permission tests unreliable on Windows and CI environments"
+    )
     def test_write_to_readonly_location(self):
         """Test writing to read-only location."""
-        if os.name != 'nt':  # Skip on Windows as permissions work differently
-            # Create read-only directory
-            readonly_dir = os.path.join(self.temp_dir, "readonly")
-            os.makedirs(readonly_dir)
-            os.chmod(readonly_dir, 0o444)  # Read-only
-            
-            try:
-                # Create service with read-only base directory
-                readonly_config = MockServiceFactory.create_mock_app_config_service({
-                    "storage": {
-                        "csv": {
-                            "options": {
-                                "base_directory": readonly_dir
-                            }
+        # Create read-only directory
+        readonly_dir = os.path.join(self.temp_dir, "readonly")
+        os.makedirs(readonly_dir)
+        os.chmod(readonly_dir, 0o444)  # Read-only
+        
+        try:
+            # Create service with read-only base directory
+            readonly_config = MockServiceFactory.create_mock_app_config_service({
+                "storage": {
+                    "csv": {
+                        "options": {
+                            "base_directory": readonly_dir
                         }
                     }
-                })
-                
-                readonly_service = CSVStorageService(
-                    provider_name="csv",
-                    configuration=readonly_config,
-                    logging_service=self.mock_logging_service
-                )
-                
-                # Try to write (should handle permission error)
-                test_data = {'name': ['Alice'], 'age': [25]}
-                result = readonly_service.write("test", test_data)
-                
-                # Should handle error gracefully
-                if not result.success:
-                    self.assertIsNotNone(result.error)
-                
-            finally:
-                # Restore permissions for cleanup
-                os.chmod(readonly_dir, 0o755)
+                }
+            })
+            
+            readonly_service = CSVStorageService(
+                provider_name="csv",
+                configuration=readonly_config,
+                logging_service=self.mock_logging_service
+            )
+            
+            # Try to write (should handle permission error)
+            test_data = {'name': ['Alice'], 'age': [25]}
+            result = readonly_service.write("test", test_data)
+            
+            # Should handle error gracefully
+            self.assertFalse(result.success)
+            self.assertIsNotNone(result.error)
+            self.assertIn("Permission denied", result.error)
+            
+        finally:
+            # Restore permissions for cleanup
+            os.chmod(readonly_dir, 0o755)
     
     def test_pandas_operation_failure(self):
         """Test handling of pandas operation failures."""

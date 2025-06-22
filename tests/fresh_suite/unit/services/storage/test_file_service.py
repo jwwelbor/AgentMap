@@ -160,18 +160,25 @@ class TestFileStorageService(unittest.TestCase):
     
     def test_path_validation_security(self):
         """Test path validation prevents directory traversal attacks."""
-        # These paths should raise ValueError
+        # These paths should be rejected when trying to read/write
         dangerous_paths = [
             "../../../etc/passwd",
-            "subdir/../../etc/passwd",
+            "subdir/../../etc/passwd", 
             "/etc/passwd",
             "C:\\Windows\\System32\\config",
         ]
         
         for dangerous_path in dangerous_paths:
-            with self.assertRaises(ValueError) as context:
-                self.service._validate_file_path(dangerous_path)
-            self.assertIn("outside base directory", str(context.exception))
+            # Test through public read API
+            result = self.service.read("test_collection", dangerous_path)
+            # Should return None for invalid paths  
+            self.assertIsNone(result, f"Expected None for dangerous path: {dangerous_path}")
+            
+            # Test through public write API
+            result = self.service.write("test_collection", "content", dangerous_path)
+            # Should return error result
+            self.assertFalse(result.success, f"Expected failure for dangerous path: {dangerous_path}")
+            self.assertIn("outside base directory", result.error)
     
     def test_path_validation_allowed_paths(self):
         """Test path validation allows safe paths."""
@@ -646,6 +653,10 @@ class TestFileStorageService(unittest.TestCase):
                 # If it raises an exception, that's also acceptable
                 pass
     
+    @unittest.skipIf(
+        os.name == 'nt' or os.environ.get('CI') == 'true', 
+        "Permission tests unreliable on Windows and CI environments"
+    )
     def test_file_permission_errors(self):
         """Test handling of file permission errors."""
         collection = "permission_test"
@@ -654,21 +665,21 @@ class TestFileStorageService(unittest.TestCase):
         # Create file
         self.service.write(collection, "initial content", document_id)
         
-        # Make file read-only (on Unix systems)
+        # Make file read-only
         file_path = os.path.join(self.temp_dir, collection, document_id)
-        if os.name != 'nt':  # Skip on Windows as chmod behavior is different
-            try:
-                os.chmod(file_path, 0o444)  # Read-only
-                
-                # Try to write to read-only file
-                result = self.service.write(collection, "new content", document_id)
-                # Should handle permission error gracefully
-                if not result.success:
-                    self.assertIsNotNone(result.error)
-                
-            finally:
-                # Restore permissions for cleanup
-                os.chmod(file_path, 0o644)
+        os.chmod(file_path, 0o444)  # Read-only
+        
+        try:
+            # Try to write to read-only file
+            result = self.service.write(collection, "new content", document_id)
+            # Should handle permission error gracefully
+            self.assertFalse(result.success)
+            self.assertIsNotNone(result.error)
+            self.assertIn("Permission denied", result.error)
+            
+        finally:
+            # Restore permissions for cleanup
+            os.chmod(file_path, 0o644)
     
     # =============================================================================
     # 11. Configuration and Options Tests

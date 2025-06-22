@@ -490,21 +490,32 @@ class TestGraphOutputService(unittest.TestCase):
     
     def test_get_output_path_with_file_override(self):
         """Test _get_output_path() with file path override."""
-        override_path = "/custom/output.py"
-        result = self.service._get_output_path("test_graph", override_path, "py")
-        
-        expected_path = Path(override_path)
-        self.assertEqual(result, expected_path)
+        # Use temp directory instead of absolute path
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp_dir:
+            override_path = os.path.join(temp_dir, "custom", "test.py")
+            result = self.service._get_output_path("test_graph", override_path, "py")
+            
+            expected_path = Path(override_path)
+            self.assertEqual(result, expected_path)
+            # Verify parent directory was created
+            self.assertTrue(result.parent.exists())
     
     def test_get_output_path_with_directory_override(self):
         """Test _get_output_path() with directory path override."""
-        override_dir = "/custom/directory"
-        
-        with patch('pathlib.Path.is_dir', return_value=True):
-            result = self.service._get_output_path("test_graph", override_dir, "py")
-        
-        expected_path = Path(override_dir) / "test_graph.py"
-        self.assertEqual(result, expected_path)
+        # Use temp directory instead of absolute path
+        import tempfile  
+        with tempfile.TemporaryDirectory() as temp_dir:
+            override_dir = os.path.join(temp_dir, "custom", "directory")
+            
+            # Create the directory first to simulate it exists
+            os.makedirs(override_dir, exist_ok=True)
+            
+            with patch('pathlib.Path.is_dir', return_value=True):
+                result = self.service._get_output_path("test_graph", override_dir, "py")
+            
+            expected_path = Path(override_dir) / "test_graph.py"
+            self.assertEqual(result, expected_path)
     
     def test_get_output_path_creates_parent_directories(self):
         """Test _get_output_path() creates parent directories."""
