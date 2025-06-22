@@ -106,6 +106,9 @@ class FileStorageService(BaseStorageService):
         """
         Validate file path is within base directory bounds (security).
         
+        Enhanced validation that checks for path traversal attacks,
+        absolute paths, and dangerous characters across all platforms.
+        
         Args:
             file_path: Path to validate
             
@@ -115,6 +118,41 @@ class FileStorageService(BaseStorageService):
         Raises:
             ValueError: If path tries to escape base directory
         """
+        import re
+        
+        # Check for null bytes and other dangerous characters
+        if '\0' in file_path:
+            raise ValueError(f"Path {file_path} is outside base directory (contains null bytes)")
+        
+        # Check for obvious directory traversal patterns
+        # Normalize separators for cross-platform compatibility
+        normalized_path = file_path.replace('\\', '/').replace('//', '/')
+        
+        # Check for parent directory references
+        if '../' in normalized_path or normalized_path.startswith('../'):
+            raise ValueError(f"Path {file_path} is outside base directory (contains directory traversal)")
+        
+        # Check if it's an absolute path that's clearly outside our base
+        if Path(file_path).is_absolute():
+            # On Windows, check for different drive letters or system paths
+            if os.name == 'nt':
+                # Block access to Windows system directories
+                lower_path = file_path.lower()
+                dangerous_windows_paths = [
+                    'c:\\windows', 'c:\\program files', 'c:\\system32',
+                    '/windows', '/program files', '/system32'
+                ]
+                for dangerous in dangerous_windows_paths:
+                    if dangerous in lower_path:
+                        raise ValueError(f"Path {file_path} is outside base directory (system path)")
+            else:
+                # On Unix-like systems, block access to system directories
+                dangerous_unix_paths = ['/etc', '/usr', '/var', '/bin', '/sbin', '/root', '/sys', '/proc']
+                for dangerous in dangerous_unix_paths:
+                    if normalized_path.startswith(dangerous + '/') or normalized_path == dangerous:
+                        raise ValueError(f"Path {file_path} is outside base directory (system path)")
+        
+        # Get base directory and resolve it
         base_dir = Path(self.client["base_directory"]).resolve()
         
         # Resolve file_path relative to base_dir to handle relative paths correctly
