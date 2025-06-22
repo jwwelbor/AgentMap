@@ -607,8 +607,9 @@ footer {
 }
 
 .mermaid-wrapper .flowchart-link {
-    stroke: lightgrey;
+    stroke: lightgrey !important;
 }
+.mermaid-wrapper .flowchart-link.arrowheadPath{fill:lightgrey !important;}
 
 /* Move buttons styling - make them more prominent */
 .nav-buttons {
