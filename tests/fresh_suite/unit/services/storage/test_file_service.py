@@ -301,12 +301,16 @@ class TestFileStorageService(unittest.TestCase):
         result = self.service.write(collection, binary_content, "image.png")
         self.assertTrue(result.success)
         
-        # Read should return dict with metadata for binary
+        # Default read should return raw binary content
         retrieved = self.service.read(collection, "image.png")
-        self.assertIsInstance(retrieved, dict)
-        self.assertIn("content", retrieved)
-        self.assertIn("metadata", retrieved)
-        self.assertEqual(retrieved["metadata"]["type"], "binary")
+        self.assertEqual(retrieved, binary_content)
+        
+        # To get structured data with metadata, explicitly request structured format
+        structured_result = self.service.read(collection, "image.png", format="structured")
+        self.assertIsInstance(structured_result, dict)
+        self.assertIn("content", structured_result)
+        self.assertIn("metadata", structured_result)
+        self.assertEqual(structured_result["metadata"]["type"], "binary")
     
     def test_binary_disabled_configuration(self):
         """Test behavior when binary file handling is disabled."""
@@ -558,22 +562,24 @@ class TestFileStorageService(unittest.TestCase):
         document_id = "document.unknown"  # Unknown extension
         self._create_test_file(f"{collection}/{document_id}", "Original content")
         
-        # Read using document loader (should go through LangChain path)
+        # Read using document loader - the mocked LangChain loader should be used
         result = self.service.read(collection, document_id)
         
         # Verify that TextLoader was called
         mock_text_loader.assert_called_once()
         mock_loader_instance.load.assert_called_once()
         
-        # Should return structured result with metadata from the mocked loader
-        self.assertIsInstance(result, list)
-        self.assertEqual(len(result), 1)
+        # Since the file service now returns raw content by default,
+        # it should extract and return the page_content from the mocked loader
+        self.assertEqual(result, "Loaded document content")
         
-        doc_result = result[0]
-        self.assertIn("content", doc_result)
-        self.assertIn("metadata", doc_result)
-        self.assertEqual(doc_result["content"], "Loaded document content")
-        self.assertEqual(doc_result["metadata"]["source"], "test.unknown")
+        # To get structured data with metadata, explicitly request structured format
+        structured_result = self.service.read(collection, document_id, format="structured")
+        self.assertIsInstance(structured_result, dict)
+        self.assertIn("content", structured_result)
+        self.assertIn("metadata", structured_result)
+        self.assertEqual(structured_result["content"], "Loaded document content")
+        self.assertEqual(structured_result["metadata"]["source"], "test.unknown")
     
     @patch('langchain_community.document_loaders.TextLoader')
     def test_langchain_loader_fallback(self, mock_text_loader):
@@ -734,12 +740,16 @@ class TestFileStorageService(unittest.TestCase):
         raw_result = self.service.read(collection, document_id, format="raw")
         self.assertEqual(raw_result, content)
         
-        # Test default format (should include metadata)
+        # Test default format (now returns raw content)
         default_result = self.service.read(collection, document_id)
-        self.assertIsInstance(default_result, dict)
-        self.assertIn("content", default_result)
-        self.assertIn("metadata", default_result)
-        self.assertEqual(default_result["content"], content)
+        self.assertEqual(default_result, content)
+        
+        # To get structured data with metadata, explicitly request structured format
+        dict_result = self.service.read(collection, document_id, format="structured")
+        self.assertIsInstance(dict_result, dict)
+        self.assertIn("content", dict_result)
+        self.assertIn("metadata", dict_result)
+        self.assertEqual(dict_result["content"], content)
     
     def test_content_preparation(self):
         """Test content preparation for writing."""

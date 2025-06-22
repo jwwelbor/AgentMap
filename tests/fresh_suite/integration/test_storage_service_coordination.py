@@ -235,7 +235,7 @@ class TestStorageServiceCoordination(BaseIntegrationTest):
         first_record = csv_data[0]
         self.assertEqual(first_record["name"], "Alice")
         self.assertEqual(first_record["department"], "Engineering")
-        self.assertEqual(first_record["salary"], "75000")  # CSV values are strings
+        self.assertEqual(first_record["salary"], 75000)  # CSV service preserves data types
         
         # Step 5: Verify data transformation preserved structure
         original_keys = set(self.test_data["tabular_data"][0].keys())

@@ -382,11 +382,16 @@ class TestCSVStorageService(unittest.TestCase):
         # Create test file
         self._create_test_csv_file(f"{collection}.csv", test_df)
         
-        # Read entire file (default format: DataFrame)
+        # Read entire file (default format: dict)
         result = self.service.read(collection)
         
-        self.assertIsInstance(result, pd.DataFrame)
-        pd.testing.assert_frame_equal(result, test_df)
+        self.assertIsInstance(result, dict)
+        # Should be index-based dict {0: row_dict, 1: row_dict, ...}
+        self.assertEqual(len(result), 5)
+        self.assertIn(0, result)
+        self.assertIn(4, result)
+        self.assertEqual(result[0]['name'], 'Alice')
+        self.assertEqual(result[4]['name'], 'Eve')
     
     def test_read_with_different_formats(self):
         """Test reading with different output formats."""
@@ -401,15 +406,19 @@ class TestCSVStorageService(unittest.TestCase):
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 5)
         self.assertIn("name", result[0])
+        self.assertEqual(result[0]['name'], 'Alice')
         
-        # Test dict format
+        # Test dict format (index-based keys)
         result = self.service.read(collection, format="dict")
         self.assertIsInstance(result, dict)
         self.assertIn(0, result)  # Index-based keys
+        self.assertIn(4, result)
+        self.assertEqual(result[0]['name'], 'Alice')
         
-        # Test dataframe format (default)
+        # Test dataframe format
         result = self.service.read(collection, format="dataframe")
         self.assertIsInstance(result, pd.DataFrame)
+        pd.testing.assert_frame_equal(result, test_df)
     
     def test_read_specific_document_by_id(self):
         """Test reading specific row by ID."""
@@ -431,8 +440,8 @@ class TestCSVStorageService(unittest.TestCase):
         result = self.service.read(collection, document_id=999)
         self.assertIsNone(result)
     
-    def test_read_with_custom_id_field(self):
-        """Test reading with custom ID field."""
+    def test_read_with_explicit_id_field(self):
+        """Test reading with explicit ID field specification."""
         collection = "custom_id_test"
         test_df = pd.DataFrame({
             'user_id': ['u1', 'u2', 'u3'],
@@ -443,20 +452,46 @@ class TestCSVStorageService(unittest.TestCase):
         # Create test file
         self._create_test_csv_file(f"{collection}.csv", test_df)
         
-        # Read specific document with custom ID field
-        result = self.service.read(collection, document_id='u2', id_field='user_id')
-        
+        # Test auto-detection (user_id ends with _id, should be detected)
+        result = self.service.read(collection, document_id='u2')
         self.assertIsInstance(result, dict)
         self.assertEqual(result["name"], "Bob")
         self.assertEqual(result["user_id"], "u2")
+        
+        # Test explicit id_field (for cases where auto-detection might be ambiguous)
+        result = self.service.read(collection, document_id='u2', id_field='user_id')
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["name"], "Bob")
+        self.assertEqual(result["user_id"], "u2")
+    
+    def test_read_with_business_identifier(self):
+        """Test reading with business identifier that doesn't follow ID conventions."""
+        collection = "products_test"
+        test_df = pd.DataFrame({
+            'sku': ['PROD001', 'PROD002', 'PROD003'],
+            'name': ['Widget', 'Gadget', 'Tool'],
+            'price': [10.99, 25.50, 15.75]
+        })
+        
+        # Create test file
+        self._create_test_csv_file(f"{collection}.csv", test_df)
+        
+        # Auto-detection should fail (no conventional ID columns)
+        result = self.service.read(collection, document_id='PROD002')
+        self.assertIsNone(result)  # No ID column detected
+        
+        # But explicit id_field should work
+        result = self.service.read(collection, document_id='PROD002', id_field='sku')
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["name"], "Gadget")
+        self.assertEqual(result["sku"], "PROD002")
     
     def test_read_nonexistent_file(self):
         """Test reading non-existent CSV file."""
         result = self.service.read("nonexistent_collection")
         
-        # Should return empty DataFrame
-        self.assertIsInstance(result, pd.DataFrame)
-        self.assertTrue(result.empty)
+        # Should return None for non-existent file
+        self.assertIsNone(result)
     
     def test_read_with_query(self):
         """Test reading with query parameters."""
@@ -466,15 +501,16 @@ class TestCSVStorageService(unittest.TestCase):
         # Create test file
         self._create_test_csv_file(f"{collection}.csv", test_df)
         
-        # Read with query
+        # Read with query (default format: dict)
         query = {"active": True, "limit": 2}
         result = self.service.read(collection, query=query)
         
-        self.assertIsInstance(result, pd.DataFrame)
+        self.assertIsInstance(result, dict)
         self.assertEqual(len(result), 2)
         
-        for _, row in result.iterrows():
-            self.assertTrue(row['active'])
+        # Check that all returned rows have active=True
+        for row_dict in result.values():
+            self.assertTrue(row_dict['active'])
     
     # =============================================================================
     # 6. Write Operations Tests
@@ -521,8 +557,8 @@ class TestCSVStorageService(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.rows_written, 5)
         
-        # Read back and compare
-        written_df = self.service.read(collection)
+        # Read back and compare (specify dataframe format)
+        written_df = self.service.read(collection, format="dataframe")
         pd.testing.assert_frame_equal(written_df, test_df)
     
     def test_write_list_of_dicts(self):
@@ -540,10 +576,10 @@ class TestCSVStorageService(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.rows_written, 3)
         
-        # Read back and verify
-        written_df = self.service.read(collection)
-        self.assertEqual(len(written_df), 3)
-        self.assertEqual(written_df.iloc[0]['name'], 'Alice')
+        # Read back and verify (use records format for list-like access)
+        written_records = self.service.read(collection, format="records")
+        self.assertEqual(len(written_records), 3)
+        self.assertEqual(written_records[0]['name'], 'Alice')
     
     def test_write_modes(self):
         """Test different write modes."""
@@ -569,8 +605,8 @@ class TestCSVStorageService(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertFalse(result.created_new)
         
-        # Verify all data exists
-        final_df = self.service.read(collection)
+        # Verify all data exists (use dataframe format for DataFrame operations)
+        final_df = self.service.read(collection, format="dataframe")
         self.assertEqual(len(final_df), 4)
         
         # Test UPDATE mode
@@ -582,8 +618,8 @@ class TestCSVStorageService(unittest.TestCase):
         result = self.service.write(collection, update_data, mode=WriteMode.UPDATE)
         self.assertTrue(result.success)
         
-        # Verify updates and additions
-        final_df = self.service.read(collection)
+        # Verify updates and additions (use dataframe format for DataFrame operations)
+        final_df = self.service.read(collection, format="dataframe")
         alice_row = final_df[final_df['id'] == 1].iloc[0]
         self.assertEqual(alice_row['name'], 'Alice Updated')
         self.assertEqual(alice_row['version'], 2)
@@ -641,16 +677,16 @@ class TestCSVStorageService(unittest.TestCase):
         self.assertEqual(result.document_id, 2)
         self.assertEqual(result.total_affected, 1)
         
-        # Verify row is gone
-        remaining_df = self.service.read(collection)
+        # Verify row is gone (use dataframe format for DataFrame operations)
+        remaining_df = self.service.read(collection, format="dataframe")
         self.assertEqual(len(remaining_df), 4)
         
         # Verify specific row is gone
         bob_rows = remaining_df[remaining_df['name'] == 'Bob']
         self.assertTrue(bob_rows.empty)
     
-    def test_delete_with_custom_id_field(self):
-        """Test deleting with custom ID field."""
+    def test_delete_with_explicit_id_field(self):
+        """Test deleting with explicit ID field specification."""
         collection = "delete_custom_id_test"
         test_df = pd.DataFrame({
             'user_id': ['u1', 'u2', 'u3'],
@@ -666,8 +702,8 @@ class TestCSVStorageService(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.total_affected, 1)
         
-        # Verify row is gone
-        remaining_df = self.service.read(collection)
+        # Verify row is gone (use dataframe format for DataFrame operations)
+        remaining_df = self.service.read(collection, format="dataframe")
         self.assertEqual(len(remaining_df), 2)
         
         bob_rows = remaining_df[remaining_df['user_id'] == 'u2']
@@ -891,12 +927,12 @@ class TestCSVStorageService(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.rows_written, 1000)
         
-        # Read back and verify size
-        read_df = self.service.read(collection)
+        # Read back and verify size (use dataframe format for DataFrame operations)
+        read_df = self.service.read(collection, format="dataframe")
         self.assertEqual(len(read_df), 1000)
         
-        # Test query on large data
-        query_result = self.service.read(collection, query={"category": "Cat_5", "limit": 10})
+        # Test query on large data (use dataframe format for DataFrame operations)
+        query_result = self.service.read(collection, query={"category": "Cat_5", "limit": 10}, format="dataframe")
         self.assertLessEqual(len(query_result), 10)
         
         for _, row in query_result.iterrows():
@@ -914,10 +950,9 @@ class TestCSVStorageService(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.rows_written, 0)
         
-        # Read back
-        read_df = self.service.read(collection)
-        self.assertTrue(read_df.empty)
-        self.assertListEqual(list(read_df.columns), ['id', 'name', 'age'])
+        # Read back (should return None for empty file)
+        read_result = self.service.read(collection)
+        self.assertIsNone(read_result)
         
         # Test count on empty
         self.assertEqual(self.service.count(collection), 0)
@@ -938,7 +973,7 @@ class TestCSVStorageService(unittest.TestCase):
         result = self.service.write(collection, special_df)
         self.assertTrue(result.success)
         
-        read_df = self.service.read(collection)
+        read_df = self.service.read(collection, format="dataframe")
         
         # Verify special characters are preserved
         self.assertIn('"', read_df.iloc[0]['name'])
@@ -964,7 +999,7 @@ class TestCSVStorageService(unittest.TestCase):
         result = self.service.write(collection, mixed_df)
         self.assertTrue(result.success)
         
-        read_df = self.service.read(collection)
+        read_df = self.service.read(collection, format="dataframe")
         
         # Verify data was preserved (types might be converted by pandas)
         self.assertEqual(len(read_df), 3)
@@ -988,8 +1023,8 @@ class TestCSVStorageService(unittest.TestCase):
             
             self.assertTrue(result.success)
         
-        # Verify all data was written
-        final_df = self.service.read(collection)
+        # Verify all data was written (use dataframe format for DataFrame operations)
+        final_df = self.service.read(collection, format="dataframe")
         self.assertEqual(len(final_df), 5)
         
         # Verify all batches are present

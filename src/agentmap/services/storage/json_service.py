@@ -398,14 +398,17 @@ class JSONStorageService(BaseStorageService):
             
         return result
     
-    def _find_document_by_id(self, data: Any, document_id: str, id_field: str = 'id') -> Optional[Dict]:
+    def _find_document_by_id(self, data: Any, document_id: str, id_field: str = 'id') -> Optional[Any]:
         """
-        Find a document by ID in different data structures.
+        Find a document by ID in direct storage.
+        
+        With direct storage, the document_id is the storage key and user data
+        is stored directly as the value. No wrapping or unwrapping needed.
         
         Args:
             data: JSON data structure
-            document_id: Document ID to find
-            id_field: Field name to use as document identifier
+            document_id: Document ID to find (storage key)
+            id_field: Unused parameter (kept for backwards compatibility)
             
         Returns:
             Document data or None if not found
@@ -414,63 +417,52 @@ class JSONStorageService(BaseStorageService):
             return None
             
         if isinstance(data, dict):
-            # Direct key lookup
+            # Direct storage: Direct key lookup
+            # document_id is the storage key, user data is stored directly
             if document_id in data:
                 return data[document_id]
-            
-            # Search for document with matching ID field
-            for key, value in data.items():
-                if isinstance(value, dict) and value.get(id_field) == document_id:
-                    return value
         
-        elif isinstance(data, list):
-            # Find in array by id field
-            for item in data:
-                if isinstance(item, dict) and item.get(id_field) == document_id:
-                    return item
-        
+        # For direct storage, lists don't support direct ID lookup
+        # List-based searching should use query mechanisms instead
         return None
     
-    def _ensure_id_in_document(self, data: Any, document_id: str, id_field: str = 'id') -> dict:
+    def _ensure_id_in_document(self, data: Any, document_id: str, id_field: str = 'id') -> Any:
         """
-        Ensure the document has the correct ID field.
+        Return document data as-is for direct storage.
+        
+        With direct storage, user data is stored exactly as provided without wrapping.
+        The document_id serves as the storage key, and user data is the value.
         
         Args:
-            data: Document data
-            document_id: Document ID
-            id_field: Field name to use as document identifier
+            data: Document data (any type)
+            document_id: Document ID (used only as storage key)
+            id_field: Field name (ignored - legacy parameter)
             
         Returns:
-            Document with ID field
+            Document data unchanged
         """
-        if not isinstance(data, dict):
-            return {id_field: document_id, "value": data}
-        
-        result = data.copy()
-        result[id_field] = document_id
-        return result
+        # Direct storage: return user data as-is
+        return data
     
     def _create_initial_structure(self, data: Any, document_id: str, id_field: str = 'id') -> Any:
         """
-        Create an initial data structure for a document.
+        Create an initial data structure for a document using direct storage.
+        
+        Creates a simple dict structure with document_id as key and data as value.
         
         Args:
             data: Document data
             document_id: Document ID
-            id_field: Field name to use as document identifier
+            id_field: Field name to use as document identifier (unused)
             
         Returns:
-            New data structure
+            New data structure: {document_id: data}
         """
-        if isinstance(data, dict):
-            # For dict data, create a list with ID field
-            doc_with_id = data.copy()
-            doc_with_id[id_field] = document_id
-            return [doc_with_id]
-        else:
-            # For non-dict data, wrap it properly with id and value
-            wrapped_doc = {id_field: document_id, "value": data}
-            return {document_id: wrapped_doc}
+        # Direct storage: store data as-is
+        processed_data = self._ensure_id_in_document(data, document_id, id_field)
+        
+        # Create dict structure with document_id as key
+        return {document_id: processed_data}
     
     def _add_document_to_structure(
         self, 
@@ -480,68 +472,51 @@ class JSONStorageService(BaseStorageService):
         id_field: str = 'id'
     ) -> Any:
         """
-        Add a document to an existing data structure.
+        Add a document to an existing data structure using direct storage.
         
         Args:
             data: Current data structure
             doc_data: Document data
             document_id: Document ID
-            id_field: Field name to use as document identifier
+            id_field: Field name to use as document identifier (unused)
             
         Returns:
             Updated data structure
         """
+        # Direct storage: store document data as-is
+        processed_doc = self._ensure_id_in_document(doc_data, document_id, id_field)
+        
         if isinstance(data, dict):
-            # Add to dictionary - preserve original behavior for internal methods
-            data[document_id] = doc_data
+            # For dict structures, store under document_id key
+            data[document_id] = processed_doc
             return data
-        
         elif isinstance(data, list):
-            # Add to list with ID
-            if isinstance(doc_data, dict):
-                # Make sure document has ID
-                doc_with_id = doc_data.copy()
-                doc_with_id[id_field] = document_id
-                data.append(doc_with_id)
-            else:
-                # Wrap non-dict data
-                data.append({id_field: document_id, "value": doc_data})
+            # For list structures, append document
+            data.append(processed_doc)
             return data
-        
         else:
-            # Create new structure
-            return self._create_initial_structure(doc_data, document_id, id_field)
+            # Create new dictionary structure
+            return {document_id: processed_doc}
     
     def _add_document_to_structure_simple(
         self, 
         data: Any, 
-        prepared_doc: Any, 
+        doc_data: Any, 
         document_id: str
     ) -> Any:
         """
-        Add a properly wrapped document to an existing data structure.
+        Add a document to an existing data structure (simple version).
         
         Args:
             data: Current data structure
-            prepared_doc: Already wrapped document data
-            document_id: Document ID (for key-based storage)
+            doc_data: Document data
+            document_id: Document ID
             
         Returns:
             Updated data structure
         """
-        if isinstance(data, dict):
-            # Add to dictionary using document_id as key
-            data[document_id] = prepared_doc
-            return data
-        
-        elif isinstance(data, list):
-            # Add to list
-            data.append(prepared_doc)
-            return data
-        
-        else:
-            # Replace scalar with new structure
-            return {document_id: prepared_doc}
+        # Use the main method with default id_field
+        return self._add_document_to_structure(data, doc_data, document_id)
     
     def _update_document_in_structure(
         self,
@@ -568,6 +543,9 @@ class JSONStorageService(BaseStorageService):
         doc = self._find_document_by_id(data, document_id, id_field)
         created_new = False
         
+        # Direct storage: store document data as-is
+        processed_doc = self._ensure_id_in_document(doc_data, document_id, id_field)
+        
         if doc is None:
             # Document not found, add it
             created_new = True
@@ -579,31 +557,26 @@ class JSONStorageService(BaseStorageService):
                 if document_id in data:
                     # Merge existing document with new data for UPDATE operations
                     existing_doc = data[document_id]
-                    if isinstance(existing_doc, dict) and isinstance(doc_data, dict) and merge:
-                        data[document_id] = self._merge_documents(existing_doc, doc_data)
+                    if isinstance(existing_doc, dict) and isinstance(processed_doc, dict) and merge:
+                        data[document_id] = self._merge_documents(existing_doc, processed_doc)
                     else:
-                        data[document_id] = self._ensure_id_in_document(doc_data, document_id, id_field)
+                        # Replace entirely
+                        data[document_id] = processed_doc
                 else:
                     # Find and update by ID field
                     for key, value in data.items():
                         if isinstance(value, dict) and value.get(id_field) == document_id:
-                            if isinstance(value, dict) and isinstance(doc_data, dict) and merge:
-                                merged_doc = self._merge_documents(value, doc_data)
-                                data[key] = self._ensure_id_in_document(merged_doc, document_id, id_field)
+                            if isinstance(value, dict) and isinstance(processed_doc, dict) and merge:
+                                merged_doc = self._merge_documents(value, processed_doc)
+                                data[key] = merged_doc
                             else:
-                                data[key] = self._ensure_id_in_document(doc_data, document_id, id_field)
+                                data[key] = processed_doc
                             break
             
             elif isinstance(data, list):
-                # List of documents
-                for i, item in enumerate(data):
-                    if isinstance(item, dict) and item.get(id_field) == document_id:
-                        if isinstance(item, dict) and isinstance(doc_data, dict) and merge:
-                            merged_doc = self._merge_documents(item, doc_data)
-                            data[i] = self._ensure_id_in_document(merged_doc, document_id, id_field)
-                        else:
-                            data[i] = self._ensure_id_in_document(doc_data, document_id, id_field)
-                        break
+                # Direct storage doesn't support ID-based updates in lists
+                # List updates should use query mechanisms or direct indexing
+                pass
         
         return data, created_new
     
@@ -766,6 +739,7 @@ class JSONStorageService(BaseStorageService):
                 if doc is None:
                     return None
                 
+                # With direct storage, return document data as-is
                 # Apply path extraction if needed
                 if path:
                     return self._apply_path(doc, path)
@@ -846,12 +820,9 @@ class JSONStorageService(BaseStorageService):
                     if current_data is None:
                         current_data = self._create_initial_structure(data, document_id, id_field)
                     else:
-                        # Prepare the document data with proper wrapping at API level
-                        prepared_data = self._ensure_id_in_document(data, document_id, id_field)
-                        
-                        # Add document to existing structure with prepared data
+                        # Add document to existing structure with user data unchanged
                         current_data = self._add_document_to_structure_simple(
-                        current_data, prepared_data, document_id
+                            current_data, data, document_id
                         )
                     
                     self._write_json_file(file_path, current_data, **kwargs)
@@ -961,12 +932,9 @@ class JSONStorageService(BaseStorageService):
                     # Merge dictionaries
                     current_data.update(data)
                 elif document_id is not None:
-                    # Prepare the document data with proper wrapping at API level
-                    prepared_data = self._ensure_id_in_document(data, document_id, id_field)
-                    
-                    # Add document with ID
+                    # Add document with ID - store user data unchanged
                     current_data = self._add_document_to_structure_simple(
-                        current_data, prepared_data, document_id
+                        current_data, data, document_id
                     )
                 else:
                     # Can't append to incompatible structures
@@ -1066,8 +1034,9 @@ class JSONStorageService(BaseStorageService):
                             document_id=document_id
                         )
                     
-                    # Delete path in document
+                    # For direct storage: delete path from document data directly
                     updated_doc = self._delete_path(doc, path)
+                    
                     current_data = self._update_document_in_structure(
                         current_data, updated_doc, document_id, id_field, merge=False
                     )[0]

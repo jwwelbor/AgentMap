@@ -625,10 +625,11 @@ class FileStorageService(BaseStorageService):
                 
                 content = self._read_binary_file(file_path, **kwargs)
                 
-                if output_format == "raw":
+                if output_format == "default" or output_format == "raw":
+                    # Return raw content by default (consistent with other storage services)
                     return content
-                else:
-                    # Default format for binary files returns structured data with metadata
+                elif output_format == "structured":
+                    # Structured format returns data with metadata when explicitly requested
                     return {
                         "content": content,
                         "metadata": {
@@ -637,23 +638,36 @@ class FileStorageService(BaseStorageService):
                             "type": "binary"
                         }
                     }
-            
-            # Handle text file reading
-            if self._is_text_file(str(file_path)):
-                content = self._read_text_file(file_path, **kwargs)
-                
-                if output_format == "text" or output_format == "raw":
-                    return content
                 else:
-                    # Default format for text files returns structured data with metadata
-                    return {
-                        "content": content,
-                        "metadata": {
-                            "source": str(file_path),
-                            "size": len(content),
-                            "type": "text"
+                    # Unknown format - default to raw content
+                    return content
+            
+            # Handle text file reading - prioritize simple text reading over document loaders  
+            if self._is_text_file(str(file_path)):
+                try:
+                    content = self._read_text_file(file_path, **kwargs)
+                    
+                    if output_format == "default" or output_format == "text" or output_format == "raw":
+                        # Return raw content by default (consistent with other storage services)
+                        return content
+                    elif output_format == "structured":
+                        # Structured format returns data with metadata when explicitly requested
+                        return {
+                            "content": content,
+                            "metadata": {
+                                "source": str(file_path),
+                                "size": len(content),
+                                "type": "text"
+                            }
                         }
-                    }
+                    else:
+                        # Unknown format - default to raw content
+                        return content
+                except Exception as e:
+                    # If simple text reading fails, fallback to document loaders
+                    self._logger.debug(f"Simple text reading failed for {file_path}, trying document loaders: {e}")
+            
+            # If we reach here, it's not a simple text file or text reading failed, try document loaders
             
             # Handle document files via LangChain loaders
             try:
@@ -683,7 +697,8 @@ class FileStorageService(BaseStorageService):
                 # Return format based on request
                 if output_format == "raw":
                     return documents
-                elif output_format == "text":
+                elif output_format == "default" or output_format == "text":
+                    # Return raw content by default (consistent with other storage services)
                     if isinstance(documents, list):
                         return "\n\n".join(doc.page_content for doc in documents 
                                          if hasattr(doc, 'page_content'))
@@ -691,37 +706,60 @@ class FileStorageService(BaseStorageService):
                         return documents.page_content
                     else:
                         return str(documents)
-                else:
-                    # Default format - return structured result
-                    formatted_docs = []
-                    
+                elif output_format == "structured":
+                    # Structured format - return metadata when explicitly requested
+                    # For specific document reads, return single document, not list
                     if isinstance(documents, list):
-                        for i, doc in enumerate(documents):
+                        if len(documents) == 1:
+                            # Single document case - return the document directly
+                            doc = documents[0]
                             if hasattr(doc, "page_content"):
-                                item = {"content": doc.page_content}
+                                result = {"content": doc.page_content}
                                 if self.client["include_metadata"] and hasattr(doc, "metadata"):
-                                    item["metadata"] = doc.metadata
-                                formatted_docs.append(item)
+                                    result["metadata"] = doc.metadata
+                                return result
                             else:
-                                formatted_docs.append(str(doc))
+                                return str(doc)
+                        else:
+                            # Multiple documents - return list
+                            formatted_docs = []
+                            for i, doc in enumerate(documents):
+                                if hasattr(doc, "page_content"):
+                                    item = {"content": doc.page_content}
+                                    if self.client["include_metadata"] and hasattr(doc, "metadata"):
+                                        item["metadata"] = doc.metadata
+                                    formatted_docs.append(item)
+                                else:
+                                    formatted_docs.append(str(doc))
+                            return formatted_docs
                     elif hasattr(documents, "page_content"):
-                        formatted_docs = {"content": documents.page_content}
+                        # Single document case
+                        result = {"content": documents.page_content}
                         if self.client["include_metadata"] and hasattr(documents, "metadata"):
-                            formatted_docs["metadata"] = documents.metadata
+                            result["metadata"] = documents.metadata
+                        return result
                     else:
-                        formatted_docs = documents
-                    
-                    return formatted_docs
+                        return documents
+                else:
+                    # Unknown format - default to raw content
+                    if isinstance(documents, list):
+                        return "\n\n".join(doc.page_content for doc in documents 
+                                         if hasattr(doc, 'page_content'))
+                    elif hasattr(documents, 'page_content'):
+                        return documents.page_content
+                    else:
+                        return str(documents)
                     
             except Exception as e:
                 # Fallback to text reading
                 self._logger.warning(f"Document loader failed for {file_path}, falling back to text: {e}")
                 content = self._read_text_file(file_path, **kwargs)
                 
-                if output_format == "text" or output_format == "raw":
+                if output_format == "default" or output_format == "text" or output_format == "raw":
+                    # Return raw content by default (consistent with other storage services)
                     return content
-                else:
-                    # Default format returns structured data with metadata
+                elif output_format == "structured":
+                    # Structured format returns data with metadata when explicitly requested
                     return {
                         "content": content,
                         "metadata": {
@@ -730,6 +768,9 @@ class FileStorageService(BaseStorageService):
                             "type": "text"
                         }
                     }
+                else:
+                    # Unknown format - default to raw content
+                    return content
                 
         except Exception as e:
             self._handle_error("read", e, collection=collection, document_id=document_id)

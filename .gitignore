@@ -186,3 +186,5 @@ data/
 .vscode/
 
 .idea
+# Code Index MCP cache directory
+.code_indexer/

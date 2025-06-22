@@ -366,8 +366,8 @@ class TestJSONStorageService(unittest.TestCase):
     # =============================================================================
     
     def test_find_document_by_id(self):
-        """Test document finding by ID."""
-        # Test dict structure with direct keys
+        """Test document finding by ID with direct storage structure."""
+        # Test dict structure with direct storage (document ID as key)
         dict_data = {
             "doc1": {"name": "Document 1"},
             "doc2": {"name": "Document 2"}
@@ -376,48 +376,45 @@ class TestJSONStorageService(unittest.TestCase):
         result = self.service._find_document_by_id(dict_data, "doc1")
         self.assertEqual(result, {"name": "Document 1"})
         
-        # Test dict structure with id field
-        id_field_data = {
-            "some_key": {"id": "doc1", "name": "Document 1"},
-            "other_key": {"id": "doc2", "name": "Document 2"}
-        }
+        # Test not found
+        result = self.service._find_document_by_id(dict_data, "nonexistent")
+        self.assertIsNone(result)
         
-        result = self.service._find_document_by_id(id_field_data, "doc2")
-        self.assertEqual(result, {"id": "doc2", "name": "Document 2"})
+        # Test with empty data
+        result = self.service._find_document_by_id({}, "doc1")
+        self.assertIsNone(result)
         
-        # Test list structure
+        # Test with list data - should return None (no ID lookup in lists)
         list_data = [
             {"id": "doc1", "name": "Document 1"},
             {"id": "doc2", "name": "Document 2"}
         ]
         
         result = self.service._find_document_by_id(list_data, "doc1")
-        self.assertEqual(result, {"id": "doc1", "name": "Document 1"})
-        
-        # Test not found
-        result = self.service._find_document_by_id(dict_data, "nonexistent")
-        self.assertIsNone(result)
+        self.assertIsNone(result)  # List structures don't support ID lookup
     
     def test_ensure_id_in_document(self):
-        """Test ensuring document has ID field."""
-        # Test dict document
+        """Test ensuring document data is properly formatted for direct storage."""
+        # Test dict document - should be stored directly (no wrapping)
         doc_data = {"name": "John", "age": 30}
         result = self.service._ensure_id_in_document(doc_data, "user123")
         
-        self.assertEqual(result["id"], "user123")
+        # Should return data directly without wrapping
+        self.assertEqual(result, doc_data)
         self.assertEqual(result["name"], "John")
         self.assertEqual(result["age"], 30)
+        self.assertNotIn("value", result)  # No wrapping in direct storage
         
-        # Test non-dict document
+        # Test non-dict document - stored directly as-is
         simple_data = "simple string"
         result = self.service._ensure_id_in_document(simple_data, "item123")
         
-        self.assertEqual(result["id"], "item123")
-        self.assertEqual(result["value"], "simple string")
+        self.assertEqual(result, "simple string")
+        # Non-dict data stored directly without any modification
     
     def test_update_document_in_structure(self):
-        """Test updating documents in different structures."""
-        # Test updating in dict structure
+        """Test updating documents in different structures with direct storage."""
+        # Test updating in dict structure - documents stored directly
         dict_data = {
             "doc1": {"name": "Document 1", "version": 1},
             "doc2": {"name": "Document 2", "version": 1}
@@ -429,6 +426,7 @@ class TestJSONStorageService(unittest.TestCase):
         )
         
         self.assertFalse(created)  # Document existed
+        # With direct storage, the new data is merged directly
         self.assertEqual(result["doc1"]["name"], "Updated Document 1")
         self.assertEqual(result["doc1"]["version"], 2)
         
@@ -442,7 +440,7 @@ class TestJSONStorageService(unittest.TestCase):
         self.assertIn("doc3", result)
         self.assertEqual(result["doc3"], new_doc_data)
         
-        # Test updating in list structure
+        # Test updating in list structure - direct storage doesn't support ID-based updates in lists
         list_data = [
             {"id": "doc1", "name": "Document 1"},
             {"id": "doc2", "name": "Document 2"}
@@ -453,9 +451,12 @@ class TestJSONStorageService(unittest.TestCase):
             list_data, new_doc_data, "doc1"
         )
         
-        self.assertFalse(created)
-        self.assertEqual(result[0]["name"], "Updated Document 1")
-        self.assertEqual(result[0]["id"], "doc1")  # ID preserved
+        # Direct storage doesn't support ID-based updates in lists
+        # So the document is not found and a new one is created instead
+        self.assertTrue(created)  # Document was created (not updated)
+        # The new document is appended to the list
+        self.assertEqual(len(result), 3)  # Original 2 + 1 new document
+        self.assertEqual(result[2], new_doc_data)  # New document at end
     
     def test_merge_documents(self):
         """Test document merging functionality."""
@@ -509,18 +510,19 @@ class TestJSONStorageService(unittest.TestCase):
         self.assertEqual(result, test_data)
     
     def test_read_specific_document(self):
-        """Test reading specific document by ID."""
+        """Test reading specific document by ID with direct storage."""
         collection = "documents"
-        test_data = [
-            {"id": "doc1", "title": "First Document", "content": "Content 1"},
-            {"id": "doc2", "title": "Second Document", "content": "Content 2"}
-        ]
+        # Use direct storage structure - document ID as key, data stored directly
+        test_data = {
+            "doc1": {"id": "doc1", "title": "First Document", "content": "Content 1"},
+            "doc2": {"id": "doc2", "title": "Second Document", "content": "Content 2"}
+        }
         
         # Create test file
         file_path = self.service._get_file_path(collection)
         self.service._write_json_file(file_path, test_data)
         
-        # Read specific document
+        # Read specific document - should return data directly
         result = self.service.read(collection, "doc1")
         expected = {"id": "doc1", "title": "First Document", "content": "Content 1"}
         self.assertEqual(result, expected)
@@ -576,10 +578,10 @@ class TestJSONStorageService(unittest.TestCase):
         file_path = self.service._get_file_path(collection)
         self.assertTrue(os.path.exists(file_path))
         
-        # Verify content
+        # Verify content - user data should be preserved with direct storage
         retrieved = self.service.read(collection, document_id)
-        expected = {"id": "doc1", "title": "New Document", "content": "Test content"}
-        self.assertEqual(retrieved, expected)
+        expected = {"title": "New Document", "content": "Test content"}
+        self.assertEqual(retrieved, expected)  # Should get data exactly as stored
     
     def test_write_modes(self):
         """Test different write modes."""
@@ -678,7 +680,7 @@ class TestJSONStorageService(unittest.TestCase):
         self.assertFalse(os.path.exists(file_path))
     
     def test_delete_with_path(self):
-        """Test deletion with path parameter."""
+        """Test deletion with path parameter using direct storage."""
         collection = "delete_path_test"
         document_id = "test_doc"
         
@@ -697,7 +699,7 @@ class TestJSONStorageService(unittest.TestCase):
         result = self.service.delete(collection, document_id, path="user.profile.age")
         self.assertTrue(result.success)
         
-        # Verify field was deleted
+        # Verify field was deleted - read returns data directly
         retrieved = self.service.read(collection, document_id)
         self.assertNotIn("age", retrieved["user"]["profile"])
         self.assertIn("city", retrieved["user"]["profile"])  # Other fields preserved
@@ -925,12 +927,12 @@ class TestJSONStorageService(unittest.TestCase):
         """Test handling of empty data structures."""
         collection = "empty_test"
         
-        # Test empty dict
+        # Test empty dict - should be stored and retrieved as empty dict
         result = self.service.write(collection, {}, "empty_dict")
         self.assertTrue(result.success)
         
         retrieved = self.service.read(collection, "empty_dict")
-        self.assertEqual(retrieved["id"], "empty_dict")
+        self.assertEqual(retrieved, {})  # Should get empty dict directly
         
         # Test empty list
         file_path = self.service._get_file_path("empty_list")
@@ -1017,20 +1019,12 @@ class TestJSONStorageService(unittest.TestCase):
             result = self.service.write(collection, doc_data, doc_id)
             self.assertTrue(result.success)
         
-        # Read all back and verify types
+        # Read all back and verify types - user data should be preserved
         for doc_id, expected_data in documents:
             retrieved = self.service.read(collection, doc_id)
             
-            # For non-dict data, it gets wrapped
-            if isinstance(expected_data, dict):
-                # Dict data gets ID added
-                expected_with_id = expected_data.copy()
-                expected_with_id["id"] = doc_id
-                self.assertEqual(retrieved, expected_with_id)
-            else:
-                # Non-dict data gets wrapped
-                self.assertEqual(retrieved["id"], doc_id)
-                self.assertEqual(retrieved["value"], expected_data)
+            # All data should be returned exactly as originally provided
+            self.assertEqual(retrieved, expected_data, f"Data should match for {doc_id}")
 
 
 if __name__ == '__main__':

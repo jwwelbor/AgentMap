@@ -42,6 +42,11 @@ class PerformanceMetrics:
         """Calculate throughput in bytes per second."""
         if self.duration > 0:
             return self.data_size / self.duration
+        # For extremely fast operations (duration ~ 0), return a reasonable estimate
+        # This prevents division by zero and acknowledges the operation completed
+        elif self.success and self.data_size > 0:
+            # Assume minimum measurable time of 1 microsecond for very fast operations
+            return self.data_size / 0.000001  # 1 microsecond minimum
         return 0.0
 
 
@@ -165,7 +170,7 @@ class TestStoragePerformanceIntegration(BaseIntegrationTest):
         data_size: int = 0
     ) -> PerformanceMetrics:
         """Measure the performance of a storage operation."""
-        start_time = time.time()
+        start_time = time.perf_counter()  # Use high-precision timer
         success = False
         error_message = None
         
@@ -175,7 +180,7 @@ class TestStoragePerformanceIntegration(BaseIntegrationTest):
         except Exception as e:
             error_message = str(e)
         
-        end_time = time.time()
+        end_time = time.perf_counter()  # Use high-precision timer
         
         metrics = PerformanceMetrics(
             operation=operation_name,

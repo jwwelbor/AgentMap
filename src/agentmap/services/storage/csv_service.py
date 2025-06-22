@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 
 from agentmap.services.storage.base import BaseStorageService
-from agentmap.services.storage.types import StorageResult, WriteMode
+from agentmap.services.storage.types import StorageResult, WriteMode, StorageProviderError
 
 
 class CSVStorageService(BaseStorageService):
@@ -186,6 +186,58 @@ class CSVStorageService(BaseStorageService):
         except Exception as e:
             self._handle_error("write_csv", e, file_path=file_path)
     
+    def _detect_id_column(self, df: pd.DataFrame) -> Optional[str]:
+        """
+        Detect the ID column using smart detection logic.
+        
+        Priority:
+        1. Exact match: "id" (case insensitive)
+        2. Ends with "_id": user_id, customer_id, etc.
+        3. Starts with "id_": id_user, etc.
+        4. If multiple candidates, prefer "id" > first column > alphabetical
+        
+        Args:
+            df: DataFrame to analyze
+            
+        Returns:
+            Column name to use as ID, or None if no suitable column found
+        """
+        if df.empty or len(df.columns) == 0:
+            return None
+            
+        columns = df.columns.tolist()
+        candidates = []
+        
+        # Check for exact "id" match (case insensitive)
+        for col in columns:
+            if col.lower() == 'id':
+                return col  # Immediate return for exact match
+        
+        # Check for columns ending with "_id"
+        for col in columns:
+            if col.lower().endswith('_id'):
+                candidates.append((col, 'ends_with_id'))
+        
+        # Check for columns starting with "id_"
+        for col in columns:
+            if col.lower().startswith('id_'):
+                candidates.append((col, 'starts_with_id'))
+        
+        # If we have candidates, prioritize them
+        if candidates:
+            # Prefer ends_with_id over starts_with_id
+            ends_with_id = [col for col, type_ in candidates if type_ == 'ends_with_id']
+            if ends_with_id:
+                # If multiple, prefer first column, then alphabetical
+                return min(ends_with_id, key=lambda x: (columns.index(x), x.lower()))
+            
+            starts_with_id = [col for col, type_ in candidates if type_ == 'starts_with_id']
+            if starts_with_id:
+                return min(starts_with_id, key=lambda x: (columns.index(x), x.lower()))
+        
+        # No ID column found
+        return None
+    
     def _apply_query_filter(self, df: pd.DataFrame, query: Dict[str, Any]) -> pd.DataFrame:
         """
         Apply query filters to DataFrame.
@@ -237,73 +289,113 @@ class CSVStorageService(BaseStorageService):
         document_id: Optional[str] = None,
         query: Optional[Dict[str, Any]] = None,
         path: Optional[str] = None,
+        id_field: Optional[str] = None,
         **kwargs
     ) -> Any:
         """
         Read data from CSV file.
         
+        Smart ID detection:
+        - Automatically detects ID column (id, user_id, etc.)
+        - Falls back to row index if no ID column found
+        - Returns single row dict when document_id provided
+        - Returns formatted data when document_id is None
+        
         Args:
             collection: CSV file name/path
-            document_id: Row ID to read (looks for 'id' column)
-            query: Query parameters for filtering
+            document_id: Row ID to read or row index (0, 1, 2...)
+            query: Query parameters for filtering (table-like)
             path: Not used for CSV (no nested structure)
-            **kwargs: Additional parameters (format, id_field, pandas options)
+            id_field: Custom ID field name (overrides auto-detection)
+            **kwargs: Additional parameters (format, pandas options)
             
         Returns:
-            DataFrame, dict, or list depending on query
+            None if not found, or formatted data based on format parameter:
+            - format="dict" (default): {0: row_dict, 1: row_dict, ...}
+            - format="records": [row_dict, row_dict, ...]
+            - format="dataframe": pd.DataFrame
         """
         try:
             file_path = self._get_file_path(collection)
             
             if not os.path.exists(file_path):
                 self._logger.debug(f"CSV file does not exist: {file_path}")
-                # Return appropriate empty format based on request
-                format_type = kwargs.get('format', 'dataframe')
-                if format_type == 'records':
-                    return []
-                elif format_type == 'dict':
-                    return {}
-                else:
-                    return pd.DataFrame()
+                return None
             
             # Extract service-specific parameters
-            format_type = kwargs.pop('format', 'dataframe')
-            id_field = kwargs.pop('id_field', 'id')
+            format_type = kwargs.pop('format', 'dict')  # Default to dict
             
             # Read the CSV file (remaining kwargs go to pandas)
             df = self._read_csv_file(file_path, **kwargs)
             
-            # Apply document_id filter
-            if document_id is not None:
-                if id_field in df.columns:
-                    filtered_df = df[df[id_field] == document_id]
-                    if len(filtered_df) == 1:
-                        return filtered_df.iloc[0].to_dict()  # Return single record as dict
-                    elif len(filtered_df) == 0:
-                        # No matching document found - return None consistently
-                        return None
-                    else:
-                        # Multiple matches - return all matching records
-                        df = filtered_df
-                else:
-                    # ID field not found in CSV - return None for specific document requests
-                    self._logger.debug(f"ID field '{id_field}' not found in CSV")
-                    return None
+            if df.empty:
+                return None
             
-            # Apply query filters
+            # Handle document_id lookup
+            if document_id is not None:
+                # First check if there's a batch column (multi-row document_id)
+                batch_column = '_document_id'
+                if batch_column in df.columns:
+                    # Look for batch with matching document_id
+                    matching_rows = df[df[batch_column] == document_id]
+                    if len(matching_rows) > 0:
+                        # Return all rows in the batch (excluding the batch column)
+                        result_df = matching_rows.drop(columns=[batch_column])
+                        return result_df.to_dict(orient='records')
+                
+                # No batch column found, try smart ID column detection for single row
+                id_column = id_field if id_field else self._detect_id_column(df)
+                
+                if id_column is not None:
+                    # Use detected ID column
+                    # Convert document_id to match column type
+                    try:
+                        # Try to convert document_id to match the column's dtype
+                        if pd.api.types.is_numeric_dtype(df[id_column]):
+                            # Convert to numeric if the column is numeric
+                            search_value = pd.to_numeric(document_id)
+                        else:
+                            # Keep as string for text columns
+                            search_value = str(document_id)
+                        
+                        matching_rows = df[df[id_column] == search_value]
+                        if len(matching_rows) > 0:
+                            return matching_rows.iloc[0].to_dict()
+                    except (ValueError, TypeError):
+                        # Conversion failed, try direct string comparison
+                        matching_rows = df[df[id_column].astype(str) == str(document_id)]
+                        if len(matching_rows) > 0:
+                            return matching_rows.iloc[0].to_dict()
+                
+                # No ID column or ID not found - try row index fallback
+                try:
+                    row_index = int(document_id)
+                    if 0 <= row_index < len(df):
+                        return df.iloc[row_index].to_dict()
+                except (ValueError, TypeError):
+                    pass
+                
+                # Document not found
+                return None
+            
+            # No document_id provided - return all data
+            # Apply query filters if provided
             if query:
                 df = self._apply_query_filter(df, query)
             
-            # Return format based on request
-            if format_type == 'records':
+            # Return data in requested format
+            if format_type == 'dataframe':
+                return df
+            elif format_type == 'records':
                 return df.to_dict(orient='records')
             elif format_type == 'dict':
                 return df.to_dict(orient='index')
             else:
-                return df  # Return DataFrame by default
+                raise ValueError(f"Unsupported format: {format_type}")
                 
         except Exception as e:
-            self._handle_error("read", e, collection=collection, document_id=document_id)
+            self._logger.debug(f"Error reading CSV: {e}")
+            return None
     
     def write(
         self,
@@ -317,10 +409,15 @@ class CSVStorageService(BaseStorageService):
         """
         Write data to CSV file.
         
+        Smart writing:
+        - When document_id provided: updates/inserts single row using detected ID column
+        - When document_id not provided: writes all data (list/DataFrame)
+        - Auto-detects ID column or falls back to row index
+        
         Args:
             collection: CSV file name/path
             data: Data to write (DataFrame, dict, or list of dicts)
-            document_id: Row ID for updates (looks for 'id' column)
+            document_id: Row ID for single-row operations
             mode: Write mode (write, append, update)
             path: Not used for CSV
             **kwargs: Additional parameters
@@ -330,9 +427,7 @@ class CSVStorageService(BaseStorageService):
         """
         try:
             file_path = self._get_file_path(collection)
-            
-            # Extract service-specific parameters
-            id_field = kwargs.pop('id_field', 'id')
+            file_existed = os.path.exists(file_path)
             
             # Convert data to DataFrame
             if isinstance(data, pd.DataFrame):
@@ -342,106 +437,251 @@ class CSVStorageService(BaseStorageService):
             elif isinstance(data, list):
                 df = pd.DataFrame(data)
             else:
-                raise ValueError(f"Unsupported data type: {type(data)}")
+                raise StorageProviderError(f"Unsupported data type: {type(data)}")
             
-            rows_written = len(df)
-            file_existed = os.path.exists(file_path)
+            # Handle document_id-based operations
+            if document_id is not None:
+                # Check if this is single-row or multi-row operation
+                if len(df) == 1:
+                        # Read existing file to determine ID column
+                    existing_df = None
+                    id_column = None
+                    if file_existed:
+                        try:
+                            existing_df = self._read_csv_file(file_path)
+                            id_column = self._detect_id_column(existing_df)
+                        except Exception:
+                            existing_df = None
+                    
+                    # If no existing file, try to detect ID from new data
+                    if id_column is None:
+                        id_column = self._detect_id_column(df)
+                    
+                    # Ensure the document_id is in the data
+                    if id_column is not None:
+                        # Set the ID column value
+                        df[id_column] = document_id
+                    else:
+                        # No ID column detected - create one
+                        id_column = 'id'
+                        df[id_column] = document_id
+                
+                    # Handle single-row write based on mode and existing data
+                    if mode == WriteMode.WRITE or not file_existed:
+                        # Overwrite or create new file
+                        self._write_csv_file(df, file_path, mode='w', **kwargs)
+                        return self._create_success_result(
+                            "write",
+                            collection=collection,
+                            document_id=document_id,
+                            file_path=file_path,
+                            rows_written=len(df),
+                            created_new=not file_existed
+                        )
+                    
+                    elif mode == WriteMode.UPDATE:
+                        # Update existing row or append new row
+                        if existing_df is not None and id_column in existing_df.columns:
+                            # Try to update existing row
+                            mask = existing_df[id_column].astype(str) == str(document_id)
+                            if mask.any():
+                                # Update existing row
+                                for col in df.columns:
+                                    if col in existing_df.columns:
+                                        existing_df.loc[mask, col] = df[col].iloc[0]
+                                updated_df = existing_df
+                            else:
+                                # Append new row
+                                updated_df = pd.concat([existing_df, df], ignore_index=True)
+                        else:
+                            # No existing data, just write new
+                            updated_df = df
+                        
+                        self._write_csv_file(updated_df, file_path, mode='w', **kwargs)
+                        return self._create_success_result(
+                            "update",
+                            collection=collection,
+                            document_id=document_id,
+                            file_path=file_path,
+                            rows_written=len(df)
+                        )
+                    
+                    elif mode == WriteMode.APPEND:
+                        # Append new row
+                        write_mode = 'a' if file_existed else 'w'
+                        self._write_csv_file(df, file_path, mode=write_mode, **kwargs)
+                        return self._create_success_result(
+                            "append",
+                            collection=collection,
+                            document_id=document_id,
+                            file_path=file_path,
+                            rows_written=len(df)
+                        )
+                    
+                else:
+                    # Multi-row operation: use document_id as batch identifier
+                    # Add a special column to track the batch/document ID
+                    batch_column = '_document_id'
+                    df[batch_column] = document_id
+                    
+                    if mode == WriteMode.WRITE or not file_existed:
+                        # Overwrite or create new file
+                        self._write_csv_file(df, file_path, mode='w', **kwargs)
+                        return self._create_success_result(
+                            "write",
+                            collection=collection,
+                            document_id=document_id,
+                            file_path=file_path,
+                            rows_written=len(df),
+                            created_new=not file_existed
+                        )
+                    
+                    elif mode == WriteMode.UPDATE:
+                        # Replace existing batch or append new batch
+                        if file_existed:
+                            existing_df = self._read_csv_file(file_path)
+                            if batch_column in existing_df.columns:
+                                # Remove existing rows with same document_id
+                                filtered_df = existing_df[existing_df[batch_column] != document_id]
+                                # Append new batch
+                                updated_df = pd.concat([filtered_df, df], ignore_index=True)
+                            else:
+                                # No batch column in existing data, just append
+                                updated_df = pd.concat([existing_df, df], ignore_index=True)
+                        else:
+                            updated_df = df
+                        
+                        self._write_csv_file(updated_df, file_path, mode='w', **kwargs)
+                        return self._create_success_result(
+                            "update",
+                            collection=collection,
+                            document_id=document_id,
+                            file_path=file_path,
+                            rows_written=len(df)
+                        )
+                    
+                    elif mode == WriteMode.APPEND:
+                        # Append new batch
+                        write_mode = 'a' if file_existed else 'w'
+                        self._write_csv_file(df, file_path, mode=write_mode, **kwargs)
+                        return self._create_success_result(
+                            "append",
+                            collection=collection,
+                            document_id=document_id,
+                            file_path=file_path,
+                            rows_written=len(df)
+                        )
             
-            if mode == WriteMode.WRITE:
-                # Overwrite file
-                self._write_csv_file(df, file_path, mode='w', **kwargs)
-                return self._create_success_result(
-                    "write",
-                    collection=collection,
-                    file_path=file_path,
-                    rows_written=rows_written,
-                    created_new=not file_existed
-                )
-            
-            elif mode == WriteMode.APPEND:
-                # Append to file
-                write_mode = 'a' if file_existed else 'w'
-                self._write_csv_file(df, file_path, mode=write_mode, **kwargs)
-                return self._create_success_result(
-                    "append",
-                    collection=collection,
-                    file_path=file_path,
-                    rows_written=rows_written
-                )
-            
-            elif mode == WriteMode.UPDATE:
-                # Update existing rows or append new ones
-                if not file_existed:
-                    # File doesn't exist, just write new data
+            else:
+                # Bulk data operations (no document_id)
+                rows_written = len(df)
+                
+                if mode == WriteMode.WRITE:
+                    # Overwrite file
                     self._write_csv_file(df, file_path, mode='w', **kwargs)
                     return self._create_success_result(
-                        "update",
+                        "write",
                         collection=collection,
                         file_path=file_path,
                         rows_written=rows_written,
-                        created_new=True
+                        created_new=not file_existed
                     )
                 
-                # Read existing data and merge
-                existing_df = self._read_csv_file(file_path)
-                
-                if id_field in df.columns and id_field in existing_df.columns:
-                    # Merge on ID field
-                    updated_df = existing_df.copy()
-                    for _, row in df.iterrows():
-                        row_id = row[id_field]
-                        mask = updated_df[id_field] == row_id
-                        if mask.any():
-                            # Update existing row - use proper column assignment
-                            for col in row.index:
-                                if col in updated_df.columns:
-                                    updated_df.loc[mask, col] = row[col]
-                        else:
-                            # Append new row
-                            updated_df = pd.concat([updated_df, row.to_frame().T], ignore_index=True)
-                    
-                    self._write_csv_file(updated_df, file_path, mode='w', **kwargs)
+                elif mode == WriteMode.APPEND:
+                    # Append to file
+                    write_mode = 'a' if file_existed else 'w'
+                    self._write_csv_file(df, file_path, mode=write_mode, **kwargs)
                     return self._create_success_result(
-                        "update",
-                        collection=collection,
-                        file_path=file_path,
-                        rows_written=rows_written,
-                        total_affected=len(updated_df)
-                    )
-                else:
-                    # No ID field, just append
-                    self._write_csv_file(df, file_path, mode='a', **kwargs)
-                    return self._create_success_result(
-                        "update",
+                        "append",
                         collection=collection,
                         file_path=file_path,
                         rows_written=rows_written
                     )
-            
-            else:
-                return self._create_error_result(
-                    "write",
-                    f"Unsupported write mode: {mode}",
-                    collection=collection
-                )
                 
+                elif mode == WriteMode.UPDATE:
+                    # For bulk updates without document_id, merge on detected ID column
+                    if file_existed:
+                        existing_df = self._read_csv_file(file_path)
+                        id_column = self._detect_id_column(existing_df)
+                        
+                        if id_column and id_column in df.columns:
+                            # Merge DataFrames on ID column
+                            updated_df = existing_df.copy()
+                            for _, row in df.iterrows():
+                                row_id = row[id_column]
+                                mask = updated_df[id_column] == row_id
+                                if mask.any():
+                                    # Update existing row
+                                    for col in row.index:
+                                        if col in updated_df.columns:
+                                            updated_df.loc[mask, col] = row[col]
+                                else:
+                                    # Append new row
+                                    updated_df = pd.concat([updated_df, row.to_frame().T], ignore_index=True)
+                            
+                            self._write_csv_file(updated_df, file_path, mode='w', **kwargs)
+                            return self._create_success_result(
+                                "update",
+                                collection=collection,
+                                file_path=file_path,
+                                rows_written=rows_written,
+                                total_affected=len(updated_df)
+                            )
+                        else:
+                            # No ID column, just append
+                            self._write_csv_file(df, file_path, mode='a', **kwargs)
+                            return self._create_success_result(
+                                "update",
+                                collection=collection,
+                                file_path=file_path,
+                                rows_written=rows_written
+                            )
+                    else:
+                        # File doesn't exist, create it
+                        self._write_csv_file(df, file_path, mode='w', **kwargs)
+                        return self._create_success_result(
+                            "update",
+                            collection=collection,
+                            file_path=file_path,
+                            rows_written=rows_written,
+                            created_new=True
+                        )
+            
+            return self._create_error_result(
+                "write",
+                f"Unsupported write mode: {mode}",
+                collection=collection
+            )
+                
+        except StorageProviderError:
+            # Let StorageProviderError propagate to caller
+            raise
         except Exception as e:
-            self._handle_error("write", e, collection=collection, mode=mode.value)
+            return self._create_error_result(
+                "write",
+                f"Write operation failed: {str(e)}",
+                collection=collection
+            )
     
     def delete(
         self,
         collection: str,
         document_id: Optional[str] = None,
         path: Optional[str] = None,
+        id_field: Optional[str] = None,
         **kwargs
     ) -> StorageResult:
         """
         Delete from CSV file.
         
+        Uses smart ID detection to find and delete rows.
+        Falls back to row index if no ID column found.
+        
         Args:
             collection: CSV file name/path
-            document_id: Row ID to delete (looks for 'id' column)
+            document_id: Row ID to delete or row index
             path: Not used for CSV
+            id_field: Custom ID field name (overrides auto-detection)
             **kwargs: Additional parameters
             
         Returns:
@@ -449,9 +689,6 @@ class CSVStorageService(BaseStorageService):
         """
         try:
             file_path = self._get_file_path(collection)
-            
-            # Extract service-specific parameters
-            id_field = kwargs.pop('id_field', 'id')
             
             if document_id is None:
                 # Delete entire file
@@ -480,16 +717,46 @@ class CSVStorageService(BaseStorageService):
             
             df = self._read_csv_file(file_path)
             
-            if id_field not in df.columns:
+            if df.empty:
                 return self._create_error_result(
                     "delete",
-                    f"ID field '{id_field}' not found in CSV",
+                    "CSV file is empty",
                     collection=collection
                 )
             
-            # Filter out rows to delete
             initial_count = len(df)
-            df_filtered = df[df[id_field] != document_id]
+            
+            # First check if there's a batch column (multi-row document_id)
+            batch_column = '_document_id'
+            if batch_column in df.columns:
+                # Delete all rows with matching document_id
+                df_filtered = df[df[batch_column] != document_id]
+            else:
+                # Try smart ID column detection for single row
+                id_column = id_field if id_field else self._detect_id_column(df)
+                
+                if id_column is not None:
+                    # Delete using detected ID column
+                    try:
+                        # Try to convert document_id to match column type
+                        if pd.api.types.is_numeric_dtype(df[id_column]):
+                            search_value = pd.to_numeric(document_id)
+                        else:
+                            search_value = str(document_id)
+                        
+                        df_filtered = df[df[id_column] != search_value]
+                    except (ValueError, TypeError):
+                        # Conversion failed, try direct string comparison
+                        df_filtered = df[df[id_column].astype(str) != str(document_id)]
+                else:
+                    # No ID column found - fail with clear error message
+                    return self._create_error_result(
+                        "delete",
+                        f"ID field not found in CSV and no custom id_field specified. Available columns: {list(df.columns)}",
+                        collection=collection,
+                        document_id=document_id
+                    )
+            
             deleted_count = initial_count - len(df_filtered)
             
             if deleted_count == 0:
@@ -512,19 +779,28 @@ class CSVStorageService(BaseStorageService):
             )
             
         except Exception as e:
-            self._handle_error("delete", e, collection=collection, document_id=document_id)
+            return self._create_error_result(
+                "delete",
+                f"Delete operation failed: {str(e)}",
+                collection=collection
+            )
     
     def exists(
         self, 
         collection: str, 
-        document_id: Optional[str] = None
+        document_id: Optional[str] = None,
+        id_field: Optional[str] = None
     ) -> bool:
         """
         Check if CSV file or document exists.
         
+        Uses smart ID detection to check document existence.
+        Falls back to row index if no ID column found.
+        
         Args:
             collection: CSV file name/path
-            document_id: Row ID to check (looks for 'id' column)
+            document_id: Row ID to check or row index
+            id_field: Custom ID field name (overrides auto-detection)
             
         Returns:
             True if exists, False otherwise
@@ -541,15 +817,40 @@ class CSVStorageService(BaseStorageService):
                 return False
             
             df = self._read_csv_file(file_path)
-            id_field = 'id'  # Default ID field for exists check
             
-            if id_field in df.columns:
-                # Convert pandas boolean to Python bool
-                result = (df[id_field] == document_id).any()
-                return bool(result)
+            # If file is empty, document doesn't exist
+            if len(df) == 0:
+                return False
             
-            # If no ID field, check if any data exists in file (for simple CSVs)
-            return len(df) > 0
+            # First check if there's a batch column (multi-row document_id)
+            batch_column = '_document_id'
+            if batch_column in df.columns:
+                # Check for batch with matching document_id
+                return document_id in df[batch_column].values
+            
+            # Try smart ID column detection for single row
+            id_column = id_field if id_field else self._detect_id_column(df)
+            
+            if id_column is not None:
+                # Check using detected ID column
+                try:
+                    # Try to convert document_id to match column type
+                    if pd.api.types.is_numeric_dtype(df[id_column]):
+                        search_value = pd.to_numeric(document_id)
+                    else:
+                        search_value = str(document_id)
+                    
+                    return search_value in df[id_column].values
+                except (ValueError, TypeError):
+                    # Conversion failed, try direct string comparison
+                    return str(document_id) in df[id_column].astype(str).values
+            else:
+                # No ID column - try row index fallback
+                try:
+                    row_index = int(document_id)
+                    return 0 <= row_index < len(df)
+                except (ValueError, TypeError):
+                    return False
             
         except Exception as e:
             self._logger.debug(f"Error checking existence: {e}")
