@@ -181,5 +181,8 @@ scripts/
 junk/
 agentmap_local_config.yaml
 agentmap_local_storage_config.yaml
+data/
+.git-original-backup/
+.vscode/
 
 .idea
