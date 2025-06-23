@@ -479,6 +479,7 @@ class FileStorageService(BaseStorageService):
             content: Content to write
             mode: Write mode
             file_exists: Whether file existed before operation
+            collection: Collection name for error reporting
             **kwargs: Additional parameters
             
         Returns:
@@ -487,53 +488,65 @@ class FileStorageService(BaseStorageService):
         encoding = kwargs.get('encoding', self.client["encoding"])
         newline = kwargs.get('newline', self.client["newline"])
         
-        # Handle different write modes
-        if mode == WriteMode.WRITE:
-            # Create or overwrite file
-            with open(file_path, 'w', encoding=encoding, newline=newline) as f:
-                f.write(content)
+        try:
+            # Handle different write modes
+            if mode == WriteMode.WRITE:
+                # Create or overwrite file
+                with open(file_path, 'w', encoding=encoding, newline=newline) as f:
+                    f.write(content)
+                    
+                return self._create_success_result(
+                    "write",
+                    collection=collection,
+                    file_path=str(file_path),
+                    created_new=not file_exists
+                )
                 
-            return self._create_success_result(
+            elif mode == WriteMode.APPEND:
+                # Append to existing file or create new
+                with open(file_path, 'a', encoding=encoding, newline=newline) as f:
+                    if file_exists:
+                        # Add a newline before appending if needed
+                        f.write("\n\n")
+                    f.write(content)
+                    
+                return self._create_success_result(
+                    "append",
+                    collection=collection,
+                    file_path=str(file_path),
+                    created_new=not file_exists
+                )
+                
+            elif mode == WriteMode.UPDATE:
+                # For text files, update is the same as write for simplicity
+                with open(file_path, 'w', encoding=encoding, newline=newline) as f:
+                    f.write(content)
+                    
+                return self._create_success_result(
+                    "update",
+                    collection=collection,
+                    file_path=str(file_path),
+                    created_new=not file_exists
+                )
+            
+            # Other modes not supported for simple text files
+            return self._create_error_result(
                 "write",
+                f"Unsupported write mode for text files: {mode}",
                 collection=collection,
-                file_path=str(file_path),
-                created_new=not file_exists
+                file_path=str(file_path)
             )
             
-        elif mode == WriteMode.APPEND:
-            # Append to existing file or create new
-            with open(file_path, 'a', encoding=encoding, newline=newline) as f:
-                if file_exists:
-                    # Add a newline before appending if needed
-                    f.write("\n\n")
-                f.write(content)
-                
-            return self._create_success_result(
-                "append",
+        except (PermissionError, OSError) as e:
+            # Handle permission and OS errors gracefully
+            error_msg = f"Permission denied: {str(e)}"
+            self._logger.error(f"[{self.provider_name}] {error_msg} (collection={collection}, file_path={file_path})")
+            return self._create_error_result(
+                "write",
+                error_msg,
                 collection=collection,
-                file_path=str(file_path),
-                created_new=not file_exists
+                file_path=str(file_path)
             )
-            
-        elif mode == WriteMode.UPDATE:
-            # For text files, update is the same as write for simplicity
-            with open(file_path, 'w', encoding=encoding, newline=newline) as f:
-                f.write(content)
-                
-            return self._create_success_result(
-                "update",
-                collection=collection,
-                file_path=str(file_path),
-                created_new=not file_exists
-            )
-        
-        # Other modes not supported for simple text files
-        return self._create_error_result(
-            "write",
-            f"Unsupported write mode for text files: {mode}",
-            collection=collection,
-            file_path=str(file_path)
-        )
     
     def _write_binary_file(
         self, 
@@ -552,55 +565,68 @@ class FileStorageService(BaseStorageService):
             content: Binary content to write
             mode: Write mode
             file_exists: Whether file existed before operation
+            collection: Collection name for error reporting
             **kwargs: Additional parameters
             
         Returns:
             StorageResult with operation details
         """
-        # Handle different write modes
-        if mode == WriteMode.WRITE:
-            # Create or overwrite file
-            with open(file_path, 'wb') as f:
-                f.write(content)
+        try:
+            # Handle different write modes
+            if mode == WriteMode.WRITE:
+                # Create or overwrite file
+                with open(file_path, 'wb') as f:
+                    f.write(content)
+                    
+                return self._create_success_result(
+                    "write",
+                    collection=collection,
+                    file_path=str(file_path),
+                    created_new=not file_exists
+                )
                 
-            return self._create_success_result(
+            elif mode == WriteMode.APPEND:
+                # Append to existing file or create new
+                with open(file_path, 'ab') as f:
+                    f.write(content)
+                    
+                return self._create_success_result(
+                    "append",
+                    collection=collection,
+                    file_path=str(file_path),
+                    created_new=not file_exists
+                )
+                
+            elif mode == WriteMode.UPDATE:
+                # For binary files, update is the same as write
+                with open(file_path, 'wb') as f:
+                    f.write(content)
+                    
+                return self._create_success_result(
+                    "update",
+                    collection=collection,
+                    file_path=str(file_path),
+                    created_new=not file_exists
+                )
+            
+            # Other modes not supported for binary files
+            return self._create_error_result(
                 "write",
+                f"Unsupported write mode for binary files: {mode}",
                 collection=collection,
-                file_path=str(file_path),
-                created_new=not file_exists
+                file_path=str(file_path)
             )
             
-        elif mode == WriteMode.APPEND:
-            # Append to existing file or create new
-            with open(file_path, 'ab') as f:
-                f.write(content)
-                
-            return self._create_success_result(
-                "append",
+        except (PermissionError, OSError) as e:
+            # Handle permission and OS errors gracefully
+            error_msg = f"Permission denied: {str(e)}"
+            self._logger.error(f"[{self.provider_name}] {error_msg} (collection={collection}, file_path={file_path})")
+            return self._create_error_result(
+                "write",
+                error_msg,
                 collection=collection,
-                file_path=str(file_path),
-                created_new=not file_exists
+                file_path=str(file_path)
             )
-            
-        elif mode == WriteMode.UPDATE:
-            # For binary files, update is the same as write
-            with open(file_path, 'wb') as f:
-                f.write(content)
-                
-            return self._create_success_result(
-                "update",
-                collection=collection,
-                file_path=str(file_path),
-                created_new=not file_exists
-            )
-        
-        # Other modes not supported for binary files
-        return self._create_error_result(
-            "write",
-            f"Unsupported write mode for binary files: {mode}",
-            collection=collection,
-            file_path=str(file_path)
-        )
     
     def read(
         self, 

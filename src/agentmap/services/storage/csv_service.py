@@ -119,9 +119,17 @@ class CSVStorageService(BaseStorageService):
         
         Args:
             file_path: Path to file
+            
+        Raises:
+            PermissionError: If directory cannot be created due to permissions
+            OSError: If other OS-level errors occur
         """
         directory = os.path.dirname(os.path.abspath(file_path))
-        os.makedirs(directory, exist_ok=True)
+        try:
+            os.makedirs(directory, exist_ok=True)
+        except (PermissionError, OSError) as e:
+            # Let permission errors propagate to be handled by caller
+            raise
     
     def _read_csv_file(self, file_path: str, **kwargs) -> pd.DataFrame:
         """
@@ -165,6 +173,10 @@ class CSVStorageService(BaseStorageService):
             file_path: Path to CSV file
             mode: Write mode ('w' for write, 'a' for append)
             **kwargs: Additional pandas to_csv parameters
+            
+        Raises:
+            PermissionError: If file cannot be written due to permissions
+            OSError: If other OS-level errors occur
         """
         try:
             self._ensure_directory_exists(file_path)
@@ -183,6 +195,9 @@ class CSVStorageService(BaseStorageService):
             df.to_csv(file_path, mode=mode, **write_options)
             self._logger.debug(f"Wrote {len(df)} rows to {file_path} (mode: {mode})")
             
+        except (PermissionError, OSError) as e:
+            # Let permission and OS errors propagate to be handled by write method
+            raise
         except Exception as e:
             self._handle_error("write_csv", e, file_path=file_path)
     
@@ -653,6 +668,15 @@ class CSVStorageService(BaseStorageService):
                 collection=collection
             )
                 
+        except (PermissionError, OSError) as e:
+            # Handle permission and OS errors gracefully
+            error_msg = f"Permission denied: {str(e)}"
+            self._logger.error(f"[{self.provider_name}] {error_msg} (collection={collection}, file_path={file_path})")
+            return self._create_error_result(
+                "write",
+                error_msg,
+                collection=collection
+            )
         except StorageProviderError:
             # Let StorageProviderError propagate to caller
             raise

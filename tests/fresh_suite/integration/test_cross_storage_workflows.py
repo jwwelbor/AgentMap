@@ -334,7 +334,6 @@ DETAILED CUSTOMER DATA:
     # 2. Memory Caching with Persistent Storage Backend Tests
     # =============================================================================
     
-    @unittest.skip("Memory/JSON synchronization issue - needs investigation")
     def test_memory_cache_with_json_persistence(self):
         """Test memory caching layer with JSON persistent storage backend."""
         cache_workflow_id = "memory_json_cache"
@@ -432,7 +431,6 @@ DETAILED CUSTOMER DATA:
         self.assertEqual(final_cached["cache_metadata"]["total_users"], 4)
         self.assertIn("USER004", final_cached["user_preferences"])
     
-    @unittest.skip("Cache invalidation logic issue - needs investigation")
     def test_memory_cache_invalidation_and_refresh(self):
         """Test cache invalidation and refresh mechanisms across storage types."""
         cache_invalidation_id = "cache_invalidation_test"
@@ -621,7 +619,6 @@ Cached data is available in memory storage.
     # 3. Data Migration and Transformation Workflows
     # =============================================================================
     
-    @unittest.skip("CSV reading issue with document_id - needs investigation")
     def test_data_migration_workflow(self):
         """Test complete data migration workflow across storage types."""
         migration_id = "data_migration_workflow"

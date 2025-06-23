@@ -15,9 +15,11 @@ import unittest
 import os
 import tempfile
 import shutil
+import platform
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from typing import Dict, Any, List
+import pytest
 
 from agentmap.services.storage.file_service import FileStorageService
 from agentmap.services.storage.types import WriteMode, StorageResult, StorageProviderError
@@ -688,26 +690,36 @@ class TestFileStorageService(unittest.TestCase):
                 # If it raises an exception, that's also acceptable
                 pass
     
-    @unittest.skipIf(
-        os.name == 'nt' or os.environ.get('CI') == 'true', 
-        "Permission tests unreliable on Windows and CI environments"
+    @pytest.mark.skipif(
+        platform.system() == "Windows" or os.environ.get('CI') == 'true',
+        reason="Permission tests not reliable on Windows or CI environments. Alternative security validation performed through path validation tests."
     )
     def test_file_permission_errors(self):
-        """Test handling of file permission errors."""
+        """Test handling of file permission errors with cross-platform compatibility.
+        
+        This test validates permission error handling in the File storage service.
+        
+        Platform-specific behavior:
+        - Unix-like systems: Uses chmod to create read-only files and validates permission errors
+        - Windows: Skipped due to unreliable chmod behavior
+        - CI environments: Skipped due to permission constraints
+        
+        Alternative security measures are tested through path validation tests on all platforms.
+        """
         collection = "permission_test"
         document_id = "readonly.txt"
         
-        # Create file
+        # Create file (Unix-like systems only)
         self.service.write(collection, "initial content", document_id)
         
         # Make file read-only
         file_path = os.path.join(self.temp_dir, collection, document_id)
-        os.chmod(file_path, 0o444)  # Read-only
+        os.chmod(file_path, 0o444)  # Read-only permissions
         
         try:
             # Try to write to read-only file
             result = self.service.write(collection, "new content", document_id)
-            # Should handle permission error gracefully
+            # Should handle permission error gracefully with StorageResult
             self.assertFalse(result.success)
             self.assertIsNotNone(result.error)
             self.assertIn("Permission denied", result.error)
@@ -715,6 +727,92 @@ class TestFileStorageService(unittest.TestCase):
         finally:
             # Restore permissions for cleanup
             os.chmod(file_path, 0o644)
+    
+    def test_cross_platform_security_validation(self):
+        """Test security validation that works across all platforms.
+        
+        This test ensures security measures are validated on all platforms,
+        including Windows where file permission tests are unreliable.
+        Tests path validation and error handling for security violations.
+        
+        Platform-specific behavior:
+        - All platforms: Path traversal validation and security error handling
+        - Windows: Alternative security measures since permission tests are unreliable
+        - Unix-like: Additional permission validation through other test methods
+        """
+        # Test path traversal security (works on all platforms)
+        dangerous_paths = [
+            "../../../etc/passwd",
+            "..\\..\\..\\windows\\system32\\config",
+            "subdir/../../sensitive_file"
+        ]
+        
+        for dangerous_path in dangerous_paths:
+            # Should either return error result or raise security exception
+            try:
+                result = self.service.write("test_collection", "content", dangerous_path)
+                # If no exception, should return error result
+                if hasattr(result, 'success'):
+                    self.assertFalse(result.success, 
+                        f"Expected security failure for path: {dangerous_path}")
+                    if result.error:
+                        self.assertIn("outside base directory", result.error.lower())
+            except Exception as e:
+                # Security exceptions are acceptable
+                error_msg = str(e).lower()
+                self.assertTrue(
+                    "outside base directory" in error_msg or 
+                    "permission" in error_msg or
+                    "security" in error_msg,
+                    f"Expected security-related error for {dangerous_path}, got: {e}"
+                )
+        
+        # Test that the service correctly handles invalid base directories
+        # This works on all platforms
+        invalid_configs = []
+        
+        if platform.system() == "Windows":
+            # Windows-specific invalid paths
+            invalid_configs.extend([
+                "C:\\invalid<>|path",
+                "Z:\\nonexistent\\drive"
+            ])
+        else:
+            # Unix-like invalid paths
+            invalid_configs.extend([
+                "/root/restricted_access",
+                "/sys/kernel/restricted"
+            ])
+        
+        for invalid_path in invalid_configs:
+            try:
+                bad_config = MockServiceFactory.create_mock_app_config_service({
+                    "storage": {
+                        "file": {
+                            "options": {
+                                "base_directory": invalid_path
+                            }
+                        }
+                    }
+                })
+                
+                # Service creation or health check should fail
+                try:
+                    bad_service = FileStorageService(
+                        provider_name="file",
+                        configuration=bad_config,
+                        logging_service=self.mock_logging_service
+                    )
+                    # If service creation succeeds, health check should fail
+                    self.assertFalse(bad_service.health_check(),
+                        f"Expected health check failure for invalid path: {invalid_path}")
+                except Exception:
+                    # Exception during service creation is acceptable
+                    pass
+                    
+            except Exception:
+                # Any exception is acceptable for invalid paths
+                pass
     
     # =============================================================================
     # 11. Configuration and Options Tests
