@@ -1019,14 +1019,70 @@ AgentMap Architecture
     ├── Configuration management
     └── Monitoring & debugging
 ```
+### Clean Architecture Design
+
+AgentMap follows clean architecture principles with clear separation of concerns:
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   Core Layer                        │
+│         (CLI, API, Serverless Handlers)            │
+└──────────────────────┬──────────────────────────────┘
+                       │ uses
+┌──────────────────────▼──────────────────────────────┐
+│                Services Layer                       │  
+│   (Business Logic, Orchestration, Workflows)       │
+│                                                     │
+│  • GraphBuilderService  • CompilationService       │
+│  • GraphRunnerService   • AgentFactoryService      │
+│  • ExecutionTracking    • ValidationService        │
+└──────────────────────┬──────────────────────────────┘
+                       │ uses
+┌──────────────────────▼──────────────────────────────┐
+│                 Models Layer                        │
+│        (Pure Data Containers, Entities)             │
+│                                                     │
+│  • Node  • Graph  • ExecutionSummary  • Result     │
+└─────────────────────────────────────────────────────┘
+                       ▲
+┌──────────────────────┴──────────────────────────────┐
+│             Infrastructure Layer                    │
+│         (Storage, Logging, External APIs)          │
+└─────────────────────────────────────────────────────┘
+                       ▲
+┌──────────────────────┴──────────────────────────────┐
+│         Dependency Injection Container              │
+│      (Service Registry, Dependency Wiring)         │
+└─────────────────────────────────────────────────────┘
+```
+
+### Key Architectural Benefits
+
+- **Separation of Concerns**: Models contain only data, services contain all business logic
+- **Dependency Injection**: All services are injected, improving testability and flexibility
+- **Clean Interfaces**: Protocol-based service injection for extensibility
+- **Graceful Degradation**: Optional services fail gracefully when unavailable
 
 ### Data Flow Architecture
 
 ```
-User Input → CSV Parser → Graph Builder → Agent Registry → Execution Engine
-     ↓            ↓            ↓             ↓              ↓
-State Init → Node Creation → Agent Loading → State Flow → Result Output
+User Input → CSV Definition → Service Layer → Execution
+     ↓            ↓               ↓              ↓
+DI Container → Parser Service → Builder Service → Runner Service
+     ↓            ↓               ↓              ↓  
+Models ← Node Creation ← Graph Assembly ← State Management
+     ↓            ↓               ↓              ↓
+Result ← Execution Policy ← Tracking Service ← Output
 ```
+
+### Service-Based Workflow
+
+1. **Input Processing**: CSV parsed by CSVGraphParserService
+2. **Model Creation**: GraphBuilderService creates pure data models
+3. **Agent Creation**: AgentFactoryService creates agents with injected services
+4. **Compilation**: CompilationService produces executable graph
+5. **Execution**: GraphRunnerService orchestrates execution with tracking
+6. **Result**: ExecutionResult with state, success status, and metrics
 
 ### Key Design Patterns
 

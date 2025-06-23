@@ -44,16 +44,27 @@ For new developers, we recommend following this learning path:
 
 ### Clean Architecture Pattern
 AgentMap follows clean architecture principles with:
-- **Infrastructure Services**: Core services injected via constructor (logging, state management)
-- **Business Services**: Specialized services configured via protocols (LLM, storage, vector)
+- **Models Layer**: Pure data containers with no business logic
+- **Services Layer**: All business logic and orchestration
+- **Dependency Injection**: Automatic service wiring and lifecycle management
 - **Protocol-Based Injection**: Type-safe service configuration using Python protocols
+
+📚 **New Architecture Documentation**:
+- [Clean Architecture Overview](../architecture/clean_architecture_overview.md) - Comprehensive guide to the new architecture
+- [Service Catalog](../architecture/service_catalog.md) - Complete list of services and their interfaces
+- [Dependency Injection Guide](../architecture/dependency_injection_guide.md) - How to use the DI container
+- [Migration Status](../architecture/migration_status.md) - Current state of the architecture migration
 
 ### Service Injection System
 The [Service Injection](./usage/service_injection.md) documentation covers:
-- Dependency injection container architecture
-- Protocol implementation patterns
-- Service configuration examples
-- Debugging and troubleshooting
+- **DI Container**: Centralized service registry with automatic dependency resolution
+- **Service Lifecycle**: Lazy instantiation and singleton pattern
+- **Graceful Degradation**: Optional services fail gracefully when unavailable
+- **Protocol-Based Injection**: Services injected based on interface implementation
+
+📖 **Documentation**:
+- [Service Injection](./service_injection.md) - Protocol-based injection patterns
+- [Dependency Injection Guide](../architecture/dependency_injection_guide.md) - Complete DI container guide
 
 ### Host Service Integration
 The [Host Service Integration](./usage/host-service-integration.md) documentation provides:

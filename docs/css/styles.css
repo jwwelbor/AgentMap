@@ -609,7 +609,16 @@ footer {
 .mermaid-wrapper .flowchart-link {
     stroke: lightgrey !important;
 }
-.mermaid-wrapper .flowchart-link.arrowheadPath{fill:lightgrey !important;}
+.mermaid-wrapper .arrowheadPath{fill:lightgrey !important;}
+
+.mermaid-wrapper  .marker{
+  fill:lightgrey !important;
+  stroke:lightgrey !important;
+}
+
+.mermaid-wrapper .arrowheadPath{
+  fill:lightgrey !important;
+}
 
 /* Move buttons styling - make them more prominent */
 .nav-buttons {

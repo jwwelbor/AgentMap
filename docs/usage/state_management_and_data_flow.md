@@ -1,29 +1,39 @@
 # State Management and Data Flow
 
-AgentMap uses a shared state object to pass data between nodes. Understanding how state is managed and flows through the graph is crucial for effective workflow design.
+AgentMap uses a service-based architecture for state management, with the StateAdapterService handling different state formats and the ExecutionTrackingService monitoring state evolution through the workflow.
+
+## State Management Architecture
+
+### Clean Architecture Approach
+
+State management is handled by specialized services:
+
+1. **StateAdapterService**: Adapts between different state formats
+2. **ExecutionTrackingService**: Tracks state changes during execution
+3. **GraphRunnerService**: Orchestrates state flow through the graph
 
 ## State Structure
 
-The state is a dictionary that contains:
+The state is typically a dictionary that contains:
 
 - Input fields from the initial state
 - Output fields from each node's execution
 - System fields like `last_action_success`
-- Optional memory fields
+- Optional memory fields for conversational agents
 
 Example state evolution:
 ```python
-### Initial state
+# Initial state
 state = {"input": "Hello, world!"}
 
-### After Node1 (Echo)
+# After Node1 (Echo)
 state = {
     "input": "Hello, world!",
     "echoed": "Hello, world!",  # output_field from Node1
     "last_action_success": True
 }
 
-### After Node2 (OpenAI)
+# After Node2 (OpenAI)  
 state = {
     "input": "Hello, world!",
     "echoed": "Hello, world!",
@@ -32,22 +42,59 @@ state = {
 }
 ```
 
-## State Adapter
+## StateAdapterService
 
-The `StateAdapter` class handles different state formats:
+The StateAdapterService provides a clean interface for state operations:
 
-- Dictionary state (default)
-- Pydantic models
-- Custom state objects
-
-It provides methods for getting and setting values regardless of state type:
+### Service Interface
 
 ```python
-### Get a value
-value = StateAdapter.get_value(state, "field_name", default="default value")
+class StateAdapterService:
+    """Service for adapting state between different formats"""
+    
+    def adapt_initial_state(self, state: Any, schema: Type = None) -> Dict[str, Any]:
+        """Adapt initial state to required format"""
+        if isinstance(state, dict):
+            return state
+        elif hasattr(state, 'dict'):  # Pydantic model
+            return state.dict()
+        else:
+            return {"input": state}  # Wrap simple values
+    
+    def extract_value(self, state: Any, key: str, default: Any = None) -> Any:
+        """Extract value from state regardless of format"""
+        if isinstance(state, dict):
+            return state.get(key, default)
+        elif hasattr(state, '__getattribute__'):
+            return getattr(state, key, default)
+        return default
+    
+    def update_state(self, state: Any, key: str, value: Any) -> Any:
+        """Update state value maintaining format"""
+        if isinstance(state, dict):
+            state[key] = value
+            return state
+        # Handle other formats as needed
+```
 
-### Set a value
-new_state = StateAdapter.set_value(state, "field_name", "new value")
+### Usage in Services
+
+```python
+class GraphRunnerService:
+    def __init__(self, state_adapter_service: StateAdapterService, ...):
+        self.state_adapter = state_adapter_service
+        # ... other dependencies
+    
+    def run_graph(self, graph_name: str, initial_state: Any) -> ExecutionResult:
+        # Adapt state to standard format
+        adapted_state = self.state_adapter.adapt_initial_state(
+            initial_state, 
+            self.get_state_schema(graph_name)
+        )
+        
+        # Execute with adapted state
+        result = self.execute(adapted_state)
+        return result
 ```
 
 ## State Flow in an Agent's Lifecycle
@@ -97,14 +144,70 @@ state = {
 }
 ```
 
-## Execution Tracking
+## ExecutionTrackingService
 
-Execution tracking is handled via LangSmith
+The ExecutionTrackingService provides comprehensive tracking of state evolution:
 
-This tracking is useful for:
+### Service Interface
+
+```python
+class ExecutionTrackingService:
+    """Service for tracking workflow execution"""
+    
+    def create_tracker(self, graph_name: str) -> ExecutionTracker:
+        """Create a new execution tracker"""
+        return ExecutionTracker(
+            graph_name=graph_name,
+            track_outputs=self.config.track_outputs,
+            track_inputs=self.config.track_inputs
+        )
+
+class ExecutionTracker:
+    """Tracks execution of a single workflow"""
+    
+    def track_node_start(self, node_name: str, inputs: Dict[str, Any]):
+        """Track when a node starts executing"""
+        
+    def track_node_complete(self, node_name: str, outputs: Any, success: bool):
+        """Track when a node completes"""
+        
+    def get_summary(self) -> ExecutionSummary:
+        """Get execution summary with all tracking data"""
+```
+
+### Tracking Configuration
+
+```yaml
+# In agentmap_config.yaml
+execution:
+  tracking:
+    enabled: true              # Enable tracking
+    track_outputs: false       # Track output values (can be large)
+    track_inputs: false        # Track input values
+    track_duration: true       # Track execution times
+```
+
+### Using Execution Tracking
+
+```python
+# The GraphRunnerService automatically tracks execution
+result = runner.run_graph("MyWorkflow", {"input": "data"})
+
+# Access tracking data
+summary = result.execution_summary
+print(f"Total duration: {summary.total_duration}s")
+print(f"Execution path: {' → '.join(summary.execution_path)}")
+
+# Check node-level details
+for node, details in summary.node_results.items():
+    print(f"{node}: {'✓' if details.success else '✗'} ({details.duration}s)")
+```
+
+Execution tracking is useful for:
 - Debugging workflow execution
-- Monitoring performance
+- Monitoring performance bottlenecks
 - Understanding the execution path
+- Identifying failing nodes
 
 ## Error Handling
 
