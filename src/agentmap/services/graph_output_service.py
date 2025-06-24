@@ -83,7 +83,7 @@ class GraphOutputService:
     def export_graph(
         self,
         graph_name: str,
-        format: str = "python",
+        export_format: str = "python",
         output_path: Optional[str] = None,
         state_schema: str = "dict",
     ) -> Path:
@@ -92,7 +92,7 @@ class GraphOutputService:
 
         Args:
             graph_name: Name of the graph to export
-            format: Export format ('python', 'source', 'src', 'debug')
+            export_format: Export format ('python', 'source', 'src', 'debug')
             output_path: Optional output path override
             state_schema: State schema to use for export
 
@@ -107,18 +107,18 @@ class GraphOutputService:
             This service focuses on human-readable formats only.
         """
         self.logger.info(
-            f"[GraphOutputService] Exporting graph '{graph_name}' to format '{format}'"
+            f"[GraphOutputService] Exporting graph '{graph_name}' to format '{export_format}'"
         )
 
-        if format == "python":
+        if export_format == "python":
             return self.export_as_python(graph_name, output_path, state_schema)
-        elif format in ("source", "src"):
+        elif export_format in ("source", "src"):
             return self.export_as_source(graph_name, output_path, state_schema)
-        elif format == "debug":
+        elif export_format == "debug":
             return self.export_as_debug(graph_name, output_path, state_schema)
         else:
             raise ValueError(
-                f"Unsupported export format: {format}. "
+                f"Unsupported export format: {export_format}. "
                 f"Supported formats: python, source, src, debug. "
                 f"For persistence, use GraphBundleService."
             )
@@ -277,7 +277,7 @@ class GraphOutputService:
         self,
         graph_name: str,
         output_path: Optional[str] = None,
-        format: str = "markdown",
+        export_format: str = "markdown",
     ) -> Path:
         """
         Export graph as documentation.
@@ -285,7 +285,7 @@ class GraphOutputService:
         Args:
             graph_name: Name of the graph to export
             output_path: Optional output path override
-            format: Documentation format ('markdown', 'html')
+            export_format: Documentation format ('markdown', 'html')
 
         Returns:
             Path to the exported documentation file
@@ -295,18 +295,18 @@ class GraphOutputService:
         )
 
         # Validate format first before expensive operations
-        if format == "markdown":
+        if export_format == "markdown":
             ext = "md"
-        elif format == "html":
+        elif export_format == "html":
             ext = "html"
         else:
-            raise ValueError(f"Unsupported documentation format: {format}")
+            raise ValueError(f"Unsupported documentation format: {export_format}")
 
         graph_def = self._get_graph_definition(graph_name)
         lines = ""
-        if format == "markdown":
+        if export_format == "markdown":
             lines = self._generate_markdown_docs(graph_name, graph_def)
-        elif format == "html":
+        elif export_format == "html":
             lines = self._generate_html_docs(graph_name, graph_def)
 
         path = self._get_output_path(graph_name, output_path, ext)
@@ -314,7 +314,7 @@ class GraphOutputService:
             f.write("\n".join(lines))
 
         self.logger.info(
-            f"[GraphOutputService] ✅ Generated {format} documentation for {graph_name}: {path}"
+            f"[GraphOutputService] ✅ Generated {export_format} documentation for {graph_name}: {path}"
         )
         return path
 
@@ -390,7 +390,8 @@ class GraphOutputService:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         return output_path
 
-    def _convert_graph_to_old_format(self, graph: Graph) -> Dict:
+    @staticmethod
+    def _convert_graph_to_old_format(graph: Graph) -> Dict:
         """
         Convert Graph domain model to old format for compatibility with export methods.
 
@@ -502,8 +503,9 @@ class GraphOutputService:
             context = (
                 f'{{"input_fields": {node.inputs}, "output_field": "{node.output}"}}'
             )
+            prompt_text = node.prompt or ''
             lines.append(
-                f'builder.add_node("{node.name}", {agent_class}(name="{node.name}", prompt="{node.prompt or ''}", context={context}))'
+                f'builder.add_node("{node.name}", {agent_class}(name="{node.name}", prompt="{prompt_text}", context={context}))'
             )
 
         entry = next(iter(graph_def))
@@ -513,7 +515,8 @@ class GraphOutputService:
 
         return lines
 
-    def _generate_markdown_docs(self, graph_name: str, graph_def: Dict) -> List[str]:
+    @staticmethod
+    def _generate_markdown_docs(graph_name: str, graph_def: Dict) -> List[str]:
         """Generate markdown documentation for graph."""
         lines = [
             f"# Graph: {graph_name}",
@@ -548,7 +551,8 @@ class GraphOutputService:
 
         return lines
 
-    def _generate_html_docs(self, graph_name: str, graph_def: Dict) -> List[str]:
+    @staticmethod
+    def _generate_html_docs(graph_name: str, graph_def: Dict) -> List[str]:
         """Generate HTML documentation for graph."""
         lines = [
             "<!DOCTYPE html>",

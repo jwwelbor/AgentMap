@@ -46,6 +46,7 @@ class LLMRoutingService:
         """
         self.routing_config = llm_routing_config_service
         self._logger = logging_service.get_class_logger(self)
+        self.cache = routing_cache
 
         # Initialize components
         self.complexity_analyzer = prompt_complexity_analyzer
@@ -54,7 +55,7 @@ class LLMRoutingService:
         if self.routing_config.is_routing_cache_enabled():
             cache_size = self.routing_config.performance.get("max_cache_size", 1000)
             cache_ttl = self.routing_config.get_cache_ttl()
-            self.cache = routing_cache.update_cache_parameters(
+            self.cache.update_cache_parameters(
                 max_size=cache_size, default_ttl=cache_ttl
             )
         else:
