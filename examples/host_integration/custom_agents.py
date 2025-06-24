@@ -12,13 +12,24 @@ from typing import Dict, Any, Optional, List
 from agentmap.agents.base_agent import BaseAgent
 
 # Import our host protocols
-from .host_protocols import (
-    DatabaseServiceProtocol,
-    EmailServiceProtocol,
-    NotificationServiceProtocol,
-    FileServiceProtocol,
-    FullServiceAgentProtocol
-)
+try:
+    # Try relative import first (for when used as a package)
+    from .host_protocols import (
+        DatabaseServiceProtocol,
+        EmailServiceProtocol,
+        NotificationServiceProtocol,
+        FileServiceProtocol,
+        FullServiceAgentProtocol
+    )
+except ImportError:
+    # Fall back to absolute import (for direct execution)
+    from host_protocols import (
+        DatabaseServiceProtocol,
+        EmailServiceProtocol,
+        NotificationServiceProtocol,
+        FileServiceProtocol,
+        FullServiceAgentProtocol
+    )
 
 
 class DatabaseAgent(BaseAgent, DatabaseServiceProtocol):

@@ -13,7 +13,7 @@ import os
 from agentmap.agents.builtins.storage.file.writer import FileWriterAgent
 from agentmap.agents.builtins.storage.base_storage_agent import BaseStorageAgent
 from agentmap.services.storage.protocols import FileCapableAgent
-from agentmap.services.storage import DocumentResult, WriteMode
+from agentmap.models.storage import DocumentResult, WriteMode
 from tests.utils.mock_service_factory import MockServiceFactory
 
 

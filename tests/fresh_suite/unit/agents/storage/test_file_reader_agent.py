@@ -13,7 +13,7 @@ import os
 from agentmap.agents.builtins.storage.file.reader import FileReaderAgent
 from agentmap.agents.builtins.storage.base_storage_agent import BaseStorageAgent
 from agentmap.services.storage.protocols import FileCapableAgent
-from agentmap.services.storage import DocumentResult
+from agentmap.models.storage import DocumentResult
 from tests.utils.mock_service_factory import MockServiceFactory
 
 

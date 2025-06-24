@@ -1,6 +1,7 @@
 """
 Modernized Echo Agent demonstrating the new protocol-based pattern.
 """
+
 import logging
 from typing import Any, Dict, Optional
 
@@ -12,26 +13,26 @@ from agentmap.services.state_adapter_service import StateAdapterService
 class EchoAgent(BaseAgent):
     """
     Echo agent that simply returns input data unchanged.
-    
+
     Demonstrates the modernized protocol-based pattern where:
     - Infrastructure services are injected via constructor
     - Business services are configured post-construction via protocols
     - EchoAgent needs no business services, so implements no protocols
     """
-    
+
     def __init__(
-        self, 
-        name: str, 
+        self,
+        name: str,
         prompt: str,
         context: Optional[Dict[str, Any]] = None,
         # Infrastructure services only
         logger: Optional[logging.Logger] = None,
         execution_tracker_service: Optional[ExecutionTrackingService] = None,
-        state_adapter_service: Optional[StateAdapterService] = None
+        state_adapter_service: Optional[StateAdapterService] = None,
     ):
         """
         Initialize echo agent with new protocol-based pattern.
-        
+
         Args:
             name: Name of the agent node
             prompt: Prompt or instruction
@@ -43,25 +44,25 @@ class EchoAgent(BaseAgent):
         # Call new BaseAgent constructor (infrastructure services only)
         super().__init__(
             name=name,
-            prompt=prompt, 
+            prompt=prompt,
             context=context,
             logger=logger,
             execution_tracking_service=execution_tracker_service,
-            state_adapter_service=state_adapter_service
+            state_adapter_service=state_adapter_service,
         )
-    
+
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
         Echo back the input data unchanged.
-        
+
         Args:
             inputs: Dictionary containing input values from input_fields
-            
+
         Returns:
             The input data unchanged
         """
         self.log_info(f"received inputs: {inputs} and prompt: '{self.prompt}'")
-        
+
         # If there are inputs, return the first input value
         if inputs:
             # For multiple inputs, return all as a dictionary to maintain structure
@@ -70,30 +71,30 @@ class EchoAgent(BaseAgent):
             # For single input, return just the value
             else:
                 return next(iter(inputs.values()))
-        
+
         # Default return if no inputs
         return "No input provided to echo"
-    
+
     def _get_child_service_info(self) -> Optional[Dict[str, Any]]:
         """
         Provide EchoAgent-specific service information for debugging.
-        
+
         Returns:
             Dictionary with echo agent capabilities and configuration
         """
         return {
             "services": {
                 "supports_input_echoing": True,
-                "handles_multiple_inputs": True
+                "handles_multiple_inputs": True,
             },
             "capabilities": {
                 "data_passthrough": True,
                 "input_preservation": True,
-                "structure_maintenance": True
+                "structure_maintenance": True,
             },
             "agent_behavior": {
                 "execution_type": "echo_passthrough",
                 "output_format": "unchanged_input_data",
-                "data_transformation": "none"
-            }
+                "data_transformation": "none",
+            },
         }

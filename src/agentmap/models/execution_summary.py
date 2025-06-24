@@ -1,7 +1,7 @@
 """
 Execution summary domain models for AgentMap.
 
-This module contains ExecutionSummary and NodeExecution models which are 
+This module contains ExecutionSummary and NodeExecution models which are
 pure data containers for tracking graph execution results.
 """
 
@@ -13,7 +13,7 @@ from typing import Any, List, Optional
 @dataclass
 class NodeExecution:
     """Pure data container for individual node execution record.
-    
+
     Attributes:
         node_name: Name of the executed node
         success: Whether the execution was successful
@@ -23,6 +23,7 @@ class NodeExecution:
         output: Optional output from the node execution
         error: Optional error message if execution failed
     """
+
     node_name: str
     success: bool
     start_time: datetime
@@ -35,9 +36,9 @@ class NodeExecution:
 @dataclass
 class ExecutionSummary:
     """Pure data container for execution tracking.
-    
+
     This model only holds data - all business logic belongs in ExecutionService.
-    
+
     Attributes:
         graph_name: Name of the graph being executed
         start_time: When the graph execution started
@@ -47,6 +48,7 @@ class ExecutionSummary:
         graph_success: Whether the overall graph execution was successful should be executed accoring to the configured execution_policy_service
         status: Current execution status
     """
+
     graph_name: str
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None

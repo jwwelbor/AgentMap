@@ -4,9 +4,9 @@ Local file system connector for JSON storage.
 This module provides a local file system implementation of the BlobStorageConnector
 interface, serving as a fallback when cloud storage is not specified.
 """
+
 import os
-from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from agentmap.agents.builtins.storage.blob.base_connector import BlobStorageConnector
 
@@ -36,18 +36,20 @@ class LocalFileConnector(BlobStorageConnector):
     def _initialize_client(self) -> None:
         """
         No client initialization needed for local files.
-        
+
         This is a placeholder to satisfy the interface requirement.
         """
         self._client = True  # Just a placeholder
-        
+
         # Create base directory if configured
         if self.base_dir and not os.path.exists(self.base_dir):
             try:
                 os.makedirs(self.base_dir, exist_ok=True)
                 self.log_debug(f"Created base directory: {self.base_dir}")
             except Exception as e:
-                self.log_warning(f"Failed to create base directory {self.base_dir}: {str(e)}")
+                self.log_warning(
+                    f"Failed to create base directory {self.base_dir}: {str(e)}"
+                )
 
     def read_blob(self, uri: str) -> bytes:
         """
@@ -63,27 +65,25 @@ class LocalFileConnector(BlobStorageConnector):
             FileNotFoundError: If the file doesn't exist
             StorageOperationError: For other file-related errors
         """
+        path=""
         try:
             path = self._resolve_path(uri)
             if not os.path.exists(path):
                 raise FileNotFoundError(f"File not found: {path}")
-                
+
             with open(path, "rb") as f:
                 return f.read()
         except FileNotFoundError as e:
             return self._handle_provider_error(
-                "reading", path, e,
-                raise_error=True, resource_type="file"
+                "reading", path, e, raise_error=True, resource_type="file"
             )
         except PermissionError as e:
             return self._handle_provider_error(
-                "reading", path, e,
-                raise_error=True, resource_type="file"
+                "reading", path, e, raise_error=True, resource_type="file"
             )
         except Exception as e:
             return self._handle_provider_error(
-                "reading", uri, e,
-                raise_error=True, resource_type="file"
+                "reading", uri, e, raise_error=True, resource_type="file"
             )
 
     def write_blob(self, uri: str, data: bytes) -> None:
@@ -99,26 +99,24 @@ class LocalFileConnector(BlobStorageConnector):
         """
         try:
             path = self._resolve_path(uri)
-            
+
             # Ensure directory exists
             directory = os.path.dirname(path)
             if not os.path.exists(directory):
                 os.makedirs(directory, exist_ok=True)
-                
+
             # Write file
             with open(path, "wb") as f:
                 f.write(data)
-                
+
             self.log_debug(f"Successfully wrote {len(data)} bytes to {path}")
         except PermissionError as e:
             return self._handle_provider_error(
-                "writing", path, e,
-                raise_error=True, resource_type="file"
+                "writing", path, e, raise_error=True, resource_type="file"
             )
         except Exception as e:
             return self._handle_provider_error(
-                "writing", uri, e,
-                raise_error=True, resource_type="file"
+                "writing", uri, e, raise_error=True, resource_type="file"
             )
 
     def blob_exists(self, uri: str) -> bool:
@@ -164,7 +162,7 @@ class LocalFileConnector(BlobStorageConnector):
 
         # Ensure path is absolute
         path = os.path.abspath(path)
-        
+
         # Expand user directory if needed (e.g., ~/)
         path = os.path.expanduser(path)
 

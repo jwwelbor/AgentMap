@@ -1,8 +1,9 @@
-from typing import Any, Dict, List, Optional, Union
-from pathlib import Path
-from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import List, Optional
+
+from pydantic import BaseModel, Field, field_validator
 
 # --- ConfigModel Definitions ---
+
 
 class PathsConfigModel(BaseModel):
     custom_agents: Optional[str] = "agentmap/custom_agents"
@@ -47,7 +48,7 @@ class SuccessPolicyConfigModel(BaseModel):
     critical_nodes: Optional[List[str]] = []
     custom_function: Optional[str] = ""
 
-    @field_validator('type')
+    @field_validator("type")
     @classmethod
     def valid_policy(cls, v: Optional[str]) -> Optional[str]:
         if v and v not in ["all_nodes", "final_node", "critical_nodes", "custom"]:
@@ -70,14 +71,14 @@ class TracingConfigModel(BaseModel):
     trace_all: Optional[bool] = False
     trace_graphs: Optional[List[str]] = []
 
-    @field_validator('mode')
+    @field_validator("mode")
     @classmethod
     def valid_mode(cls, v: Optional[str]) -> Optional[str]:
         if v and v not in ["local", "langsmith"]:
             raise ValueError("Tracing mode must be 'local' or 'langsmith'")
         return v
 
-    @field_validator('local_exporter')
+    @field_validator("local_exporter")
     @classmethod
     def valid_exporter(cls, v: Optional[str]) -> Optional[str]:
         if v and v not in ["file", "csv"]:
@@ -100,9 +101,9 @@ class ConfigModel(BaseModel):
     class Config:
         extra = "allow"
 
-    @field_validator('csv_path')
+    @field_validator("csv_path")
     @classmethod
     def ensure_csv(cls, v: Optional[str]) -> Optional[str]:
-        if v and not v.endswith('.csv'):
+        if v and not v.endswith(".csv"):
             raise ValueError("CSV path must end with '.csv'")
         return v

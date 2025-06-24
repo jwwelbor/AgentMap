@@ -4,17 +4,18 @@ Node domain model for AgentMap workflows.
 Simple data container representing a workflow node with properties and edge relationships.
 All business logic belongs in services, not in this domain model.
 """
-from typing import Dict, List, Optional, Any
+
+from typing import Any, Dict, List, Optional
 
 
 class Node:
     """
     Domain entity representing a workflow node.
-    
+
     Simple data container for node properties and edge relationships.
     Business logic for parsing, validation, and graph operations belongs in services.
     """
-    
+
     def __init__(
         self,
         name: str,
@@ -23,11 +24,11 @@ class Node:
         inputs: Optional[List[str]] = None,
         output: Optional[str] = None,
         prompt: Optional[str] = None,
-        description: Optional[str] = None
+        description: Optional[str] = None,
     ) -> None:
         """
         Initialize a workflow node with properties.
-        
+
         Args:
             name: Unique identifier for the node
             context: Node-specific context and configuration
@@ -49,22 +50,22 @@ class Node:
     def add_edge(self, condition: str, target_node: str) -> None:
         """
         Store an edge relationship to another node.
-        
+
         Used by GraphBuilder to store routing relationships during CSV parsing.
-        
+
         Args:
             condition: Routing condition (e.g., 'success', 'failure', 'default')
             target_node: Name of the target node
         """
         self.edges[condition] = target_node
-        
+
     def has_conditional_routing(self) -> bool:
         """
         Check if this node has conditional routing (success/failure paths).
-        
+
         Simple query method for determining if the node uses conditional routing
         versus direct routing.
-        
+
         Returns:
             True if node has 'success' or 'failure' edges, False otherwise
         """

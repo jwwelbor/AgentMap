@@ -43,6 +43,7 @@ langchain-anthropic = ">=0.3.13,<0.4.0"
 toml = "^0.10.2"
 pytest = "^8.4.0"
 uvicorn = "^0.34.3"
+autoflake = "^2.3.1"
 
 [tool.poetry.extras]
 llm = [

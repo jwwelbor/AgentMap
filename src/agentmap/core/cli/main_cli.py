@@ -6,21 +6,28 @@ with existing command interfaces while using the new service architecture.
 """
 
 import sys
-from typing import Optional
 
 import typer
 
+from agentmap._version import __version__
+from agentmap.core.cli.diagnostic_commands import (
+    config_cmd,
+    diagnose_cmd,
+    inspect_graph_cmd,
+    validate_cache_cmd,
+)
 from agentmap.core.cli.run_commands import (
-    run_command, compile_command, export_command, scaffold_command
+    compile_command,
+    export_command,
+    run_command,
+    scaffold_command,
 )
 from agentmap.core.cli.validation_commands import (
-    validate_csv_cmd, validate_config_cmd, validate_all_cmd
-)
-from agentmap.core.cli.diagnostic_commands import (
-    diagnose_cmd, config_cmd, validate_cache_cmd, inspect_graph_cmd
+    validate_all_cmd,
+    validate_config_cmd,
+    validate_csv_cmd,
 )
 
-from agentmap._version import __version__ 
 
 # Version callback
 def version_callback(value: bool):
@@ -39,16 +46,15 @@ app = typer.Typer(
 @app.callback()
 def main(
     version: bool = typer.Option(
-        None, 
-        "--version", 
+        None,
+        "--version",
         "-v",
-        callback=version_callback, 
+        callback=version_callback,
         is_eager=True,
-        help="Show version and exit"
+        help="Show version and exit",
     )
 ):
     """AgentMap CLI with service-based architecture."""
-    pass
 
 
 # ============================================================================
@@ -57,7 +63,7 @@ def main(
 
 app.command("run")(run_command)
 app.command("scaffold")(scaffold_command)
-app.command("compile")(compile_command) 
+app.command("compile")(compile_command)
 app.command("export")(export_command)
 
 
@@ -76,7 +82,7 @@ app.command("validate-config")(validate_config_cmd)
 app.command("validate-all")(validate_all_cmd)
 
 # ============================================================================
-# CACHE AND DIAGNOSTIC COMMANDS  
+# CACHE AND DIAGNOSTIC COMMANDS
 # ============================================================================
 
 app.command("validate-cache")(validate_cache_cmd)

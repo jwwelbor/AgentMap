@@ -6,13 +6,29 @@ in isolation, following the existing test patterns in AgentMap.
 """
 
 import unittest
-from unittest.mock import Mock, patch, call
+from unittest.mock import Mock, patch, call, MagicMock
+from pathlib import Path
+from typing import Protocol
 
 from agentmap.services.application_bootstrap_service import ApplicationBootstrapService
 from agentmap.services.agent_registry_service import AgentRegistryService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.dependency_checker_service import DependencyCheckerService
+from agentmap.services.host_service_registry import HostServiceRegistry
 from tests.utils.mock_service_factory import MockServiceFactory
+
+
+# Mock protocols for testing
+class MockDatabaseServiceProtocol(Protocol):
+    """Mock protocol for testing."""
+    def connect(self) -> None:
+        ...
+
+
+class MockEmailServiceProtocol(Protocol):
+    """Another mock protocol for testing."""
+    def send_email(self, to: str, subject: str, body: str) -> None:
+        ...
 
 
 class TestApplicationBootstrapService(unittest.TestCase):
@@ -28,14 +44,16 @@ class TestApplicationBootstrapService(unittest.TestCase):
         self.mock_agent_registry_service = Mock(spec=AgentRegistryService)
         self.mock_features_registry_service = Mock(spec=FeaturesRegistryService)
         self.mock_dependency_checker_service = Mock(spec=DependencyCheckerService)
+        self.mock_host_service_registry = Mock(spec=HostServiceRegistry)
         
         # Create service instance with mocked dependencies
         self.service = ApplicationBootstrapService(
             agent_registry_service=self.mock_agent_registry_service,
             features_registry_service=self.mock_features_registry_service,
             dependency_checker_service=self.mock_dependency_checker_service,
-            app_config_service=self.mock_app_config_service,  # Add the missing parameter
-            logging_service=self.mock_logging_service
+            app_config_service=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            host_service_registry=self.mock_host_service_registry
         )
     
     def test_service_initialization(self):
@@ -63,6 +81,7 @@ class TestApplicationBootstrapService(unittest.TestCase):
              patch.object(self.service, 'discover_and_register_llm_agents') as mock_llm, \
              patch.object(self.service, 'discover_and_register_storage_agents') as mock_storage, \
              patch.object(self.service, 'register_mixed_dependency_agents') as mock_mixed, \
+             patch.object(self.service, 'discover_and_register_host_protocols') as mock_protocols, \
              patch.object(self.service, '_log_startup_summary') as mock_log_summary:
             
             # Execute bootstrap
@@ -74,6 +93,7 @@ class TestApplicationBootstrapService(unittest.TestCase):
             mock_llm.assert_called_once()
             mock_storage.assert_called_once()
             mock_mixed.assert_called_once()
+            mock_protocols.assert_called_once()
             mock_log_summary.assert_called_once()
             
             # Verify success logging
@@ -540,6 +560,334 @@ class TestApplicationBootstrapService(unittest.TestCase):
             # Check for host application logging
             self.assertTrue(any("Host application enabled with 2 protocol folders" in call[1] 
                               for call in logger_calls if call[0] == "info"))
+
+
+class TestHostProtocolDiscovery(unittest.TestCase):
+    """Unit tests for host protocol discovery functionality."""
+    
+    def setUp(self):
+        """Set up test fixtures with mocked dependencies."""
+        # Use MockServiceFactory for consistent behavior
+        self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service()
+        
+        # Create mock services for all dependencies
+        self.mock_agent_registry_service = Mock()
+        self.mock_features_registry_service = Mock()
+        self.mock_dependency_checker_service = Mock()
+        self.mock_host_service_registry = Mock(spec=HostServiceRegistry)
+        
+        # Create service instance with mocked dependencies
+        self.service = ApplicationBootstrapService(
+            agent_registry_service=self.mock_agent_registry_service,
+            features_registry_service=self.mock_features_registry_service,
+            dependency_checker_service=self.mock_dependency_checker_service,
+            app_config_service=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            host_service_registry=self.mock_host_service_registry
+        )
+    
+    def test_discover_and_register_host_protocols_disabled(self):
+        """Test protocol discovery when host application support is disabled."""
+        # Mock host application disabled
+        self.mock_app_config_service.is_host_application_enabled.return_value = False
+        
+        # Execute protocol discovery
+        self.service.discover_and_register_host_protocols()
+        
+        # Verify no protocol folders were requested
+        self.mock_app_config_service.get_host_protocol_folders.assert_not_called()
+        
+        # Verify debug logging
+        logger_calls = self.service.logger.calls
+        self.assertTrue(any("Host application support disabled" in call[1] 
+                          for call in logger_calls if call[0] == "debug"))
+    
+    def test_discover_and_register_host_protocols_no_folders(self):
+        """Test protocol discovery with no configured folders."""
+        # Mock host application enabled but no folders
+        self.mock_app_config_service.is_host_application_enabled.return_value = True
+        self.mock_app_config_service.get_host_protocol_folders.return_value = []
+        
+        # Execute protocol discovery
+        self.service.discover_and_register_host_protocols()
+        
+        # Verify logging
+        logger_calls = self.service.logger.calls
+        self.assertTrue(any("No host protocol folders configured" in call[1] 
+                          for call in logger_calls if call[0] == "debug"))
+    
+    @patch('agentmap.services.application_bootstrap_service.ApplicationBootstrapService._discover_protocol_classes')
+    @patch('agentmap.services.application_bootstrap_service.ApplicationBootstrapService._register_discovered_protocols')
+    def test_discover_and_register_host_protocols_success(self, mock_register, mock_discover):
+        """Test successful protocol discovery and registration."""
+        # Mock configuration
+        self.mock_app_config_service.is_host_application_enabled.return_value = True
+        protocol_folders = [Path("protocols"), Path("custom_protocols")]
+        self.mock_app_config_service.get_host_protocol_folders.return_value = protocol_folders
+        
+        # Mock discovered protocols
+        discovered_protocols = [
+            ("database_service", MockDatabaseServiceProtocol),
+            ("email_service", MockEmailServiceProtocol)
+        ]
+        mock_discover.return_value = discovered_protocols
+        
+        # Mock successful registration
+        mock_register.return_value = 2
+        
+        # Execute protocol discovery
+        self.service.discover_and_register_host_protocols()
+        
+        # Verify discovery was called with correct folders
+        mock_discover.assert_called_once_with(protocol_folders)
+        
+        # Verify registration was called with discovered protocols
+        mock_register.assert_called_once_with(discovered_protocols)
+        
+        # Verify success logging
+        logger_calls = self.service.logger.calls
+        self.assertTrue(any("Registered 2/2 host protocols" in call[1] 
+                          for call in logger_calls if call[0] == "info"))
+    
+    @patch('agentmap.services.application_bootstrap_service.ApplicationBootstrapService._discover_protocol_classes')
+    def test_discover_and_register_host_protocols_no_protocols_found(self, mock_discover):
+        """Test protocol discovery when no protocols are found."""
+        # Mock configuration
+        self.mock_app_config_service.is_host_application_enabled.return_value = True
+        protocol_folders = [Path("empty_folder")]
+        self.mock_app_config_service.get_host_protocol_folders.return_value = protocol_folders
+        
+        # Mock no protocols discovered
+        mock_discover.return_value = []
+        
+        # Execute protocol discovery
+        self.service.discover_and_register_host_protocols()
+        
+        # Verify logging
+        logger_calls = self.service.logger.calls
+        self.assertTrue(any("No host protocol classes found" in call[1] 
+                          for call in logger_calls if call[0] == "info"))
+    
+    def test_discover_and_register_host_protocols_with_exception(self):
+        """Test protocol discovery with exception handling."""
+        # Mock configuration to raise exception
+        self.mock_app_config_service.is_host_application_enabled.side_effect = Exception("Config error")
+        
+        # Execute protocol discovery - should not raise due to graceful degradation
+        self.service.discover_and_register_host_protocols()
+        
+        # Verify error logging and graceful degradation
+        logger_calls = self.service.logger.calls
+        self.assertTrue(any("Failed to discover host protocols" in call[1] 
+                          for call in logger_calls if call[0] == "error"))
+        self.assertTrue(any("Continuing without host protocols" in call[1] 
+                          for call in logger_calls if call[0] == "warning"))
+    
+    @patch('importlib.util.spec_from_file_location')
+    @patch('importlib.util.module_from_spec')
+    def test_discover_protocol_classes_success(self, mock_module_from_spec, mock_spec_from_file):
+        """Test successful protocol class discovery."""
+        # Create mock folders with Python files
+        mock_folder = Mock(spec=Path)
+        mock_folder.exists.return_value = True
+        mock_folder.is_dir.return_value = True
+        
+        # Mock Python files
+        mock_py_file = Mock(spec=Path)
+        mock_py_file.name = "database_protocol.py"
+        mock_py_file.stem = "database_protocol"
+        
+        mock_folder.glob.return_value = [mock_py_file]
+        
+        # Mock module loading
+        mock_spec = Mock()
+        mock_spec.loader = Mock()
+        mock_spec_from_file.return_value = mock_spec
+        
+        # Create mock module with protocol class
+        mock_module = MagicMock()
+        mock_module.__name__ = "database_protocol"
+        
+        # Create a mock protocol class
+        mock_protocol_class = type('DatabaseServiceProtocol', (), {
+            '__module__': 'database_protocol',
+            '_is_protocol': True
+        })
+        
+        # Set up module members
+        mock_module.DatabaseServiceProtocol = mock_protocol_class
+        mock_module_from_spec.return_value = mock_module
+        
+        # Mock inspect.getmembers to return our protocol
+        with patch('inspect.getmembers', return_value=[
+            ('DatabaseServiceProtocol', mock_protocol_class)
+        ]):
+            # Execute discovery
+            result = self.service._discover_protocol_classes([mock_folder])
+        
+        # Verify result
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0][0], "database_service")
+        self.assertEqual(result[0][1], mock_protocol_class)
+    
+    def test_discover_protocol_classes_folder_not_exists(self):
+        """Test protocol discovery with non-existent folder."""
+        # Create mock folder that doesn't exist
+        mock_folder = Mock(spec=Path)
+        mock_folder.exists.return_value = False
+        
+        # Execute discovery
+        result = self.service._discover_protocol_classes([mock_folder])
+        
+        # Verify empty result
+        self.assertEqual(result, [])
+        
+        # Verify debug logging
+        logger_calls = self.service.logger.calls
+        self.assertTrue(any("Protocol folder not found" in call[1] 
+                          for call in logger_calls if call[0] == "debug"))
+    
+    def test_is_protocol_class_valid_protocol(self):
+        """Test protocol class validation with valid protocol."""
+        # Create mock module
+        mock_module = MagicMock()
+        mock_module.__name__ = "test_module"
+        
+        # Create a valid protocol class
+        mock_class = type('TestProtocol', (), {
+            '__module__': 'test_module',
+            '__name__': 'TestProtocol',
+            '_is_protocol': True
+        })
+        
+        # Test validation
+        result = self.service._is_protocol_class(mock_class, mock_module)
+        self.assertTrue(result)
+    
+    def test_generate_protocol_name_from_class_name(self):
+        """Test protocol name generation from class names."""
+        # Test various class name patterns
+        test_cases = [
+            ('DatabaseServiceProtocol', 'database_service'),
+            ('LLMCapableProtocol', 'llm_capable'),
+            ('CustomHostProtocol', 'custom_host'),
+            ('SimpleProtocol', 'simple'),
+            ('HTTPAPIServiceProtocol', 'httpapi_service'),
+            ('IOProtocol', 'io')
+        ]
+        
+        for class_name, expected_name in test_cases:
+            result = self.service._generate_protocol_name_from_class_name(class_name)
+            self.assertEqual(result, expected_name)
+    
+    def test_register_discovered_protocols_no_registry(self):
+        """Test protocol registration when host service registry is not available."""
+        # Remove host service registry
+        self.service.host_service_registry = None
+        
+        # Try to register protocols
+        protocols = [("test_protocol", MockDatabaseServiceProtocol)]
+        result = self.service._register_discovered_protocols(protocols)
+        
+        # Should return 0 and log warning
+        self.assertEqual(result, 0)
+        
+        # Verify warning logging
+        logger_calls = self.service.logger.calls
+        self.assertTrue(any("HostServiceRegistry not available" in call[1] 
+                          for call in logger_calls if call[0] == "warning"))
+    
+    def test_register_discovered_protocols_success(self):
+        """Test successful protocol registration."""
+        # Create test protocols
+        protocols = [
+            ("database_service", MockDatabaseServiceProtocol),
+            ("email_service", MockEmailServiceProtocol)
+        ]
+        
+        # Execute registration
+        result = self.service._register_discovered_protocols(protocols)
+        
+        # Verify host service registry was called correctly
+        self.assertEqual(self.mock_host_service_registry.register_service_provider.call_count, 2)
+        
+        # Verify return value
+        self.assertEqual(result, 2)
+        
+        # Verify success logging
+        logger_calls = self.service.logger.calls
+        self.assertTrue(any("Successfully registered 2 discovered host protocols" in call[1] 
+                          for call in logger_calls if call[0] == "info"))
+    
+    @patch('agentmap.services.application_bootstrap_service.ApplicationBootstrapService._get_discovered_protocols_summary')
+    def test_register_discovered_protocols_with_summary(self, mock_get_summary):
+        """Test protocol registration with summary logging."""
+        # Mock summary data
+        mock_get_summary.return_value = [
+            {
+                "name": "database_service",
+                "class": "DatabaseServiceProtocol",
+                "module": "protocols.database",
+                "status": "pending"
+            }
+        ]
+        
+        # Create test protocol
+        protocols = [("database_service", MockDatabaseServiceProtocol)]
+        
+        # Execute registration
+        result = self.service._register_discovered_protocols(protocols)
+        
+        # Verify summary was retrieved
+        mock_get_summary.assert_called_once()
+        
+        # Verify summary logging
+        logger_calls = self.service.logger.calls
+        self.assertTrue(any("Discovered protocols awaiting implementation" in call[1] 
+                          for call in logger_calls if call[0] == "info"))
+    
+    def test_get_discovered_protocols_summary(self):
+        """Test getting summary of discovered protocols."""
+        # Mock host service registry responses
+        self.mock_host_service_registry.list_registered_services.return_value = [
+            "protocol:database_service",
+            "protocol:email_service",
+            "regular_service"  # Should be ignored
+        ]
+        
+        # Mock metadata for protocol services
+        def get_metadata_side_effect(service_name):
+            if service_name == "protocol:database_service":
+                return {
+                    "type": "discovered_protocol",
+                    "protocol_name": "database_service",
+                    "protocol_class": "DatabaseServiceProtocol",
+                    "module": "protocols.database",
+                    "implementation_status": "pending"
+                }
+            elif service_name == "protocol:email_service":
+                return {
+                    "type": "discovered_protocol",
+                    "protocol_name": "email_service",
+                    "protocol_class": "EmailServiceProtocol",
+                    "module": "protocols.email",
+                    "implementation_status": "implemented"
+                }
+            else:
+                return {}
+        
+        self.mock_host_service_registry.get_service_metadata.side_effect = get_metadata_side_effect
+        
+        # Get summary
+        result = self.service._get_discovered_protocols_summary()
+        
+        # Verify result
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["name"], "database_service")
+        self.assertEqual(result[0]["class"], "DatabaseServiceProtocol")
+        self.assertEqual(result[1]["name"], "email_service")
+        self.assertEqual(result[1]["status"], "implemented")
 
 
 if __name__ == '__main__':

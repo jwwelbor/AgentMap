@@ -14,9 +14,9 @@ from .execution_summary import ExecutionSummary
 @dataclass
 class ExecutionResult:
     """Pure data container for complete graph execution results.
-    
+
     This model only holds data - all business logic belongs in GraphRunnerService.
-    
+
     Attributes:
         graph_name: Name of the executed graph
         final_state: Final state dictionary from graph execution
@@ -26,6 +26,7 @@ class ExecutionResult:
         compiled_from: Source of the executed graph ("precompiled", "autocompiled", "memory")
         error: Optional error message if execution failed
     """
+
     graph_name: str
     final_state: Dict[str, Any]
     execution_summary: ExecutionSummary

@@ -582,65 +582,87 @@ class FileService:
 
 
 # Factory functions for creating services with proper configuration
-def create_database_service(config: Dict[str, Any], logger: logging.Logger) -> DatabaseService:
+def create_database_service(app_config_service, logging_service) -> DatabaseService:
     """
     Factory function for creating database service.
     
     Args:
-        config: Service configuration
-        logger: Logger instance
+        app_config_service: AppConfigService instance
+        logging_service: LoggingService instance
         
     Returns:
         Configured DatabaseService instance
     """
+    # Get configuration from app config service
+    config = app_config_service.get_host_service_config("database_service").get("configuration", {})
+    logger = logging_service.get_logger("host.database_service")
+    
     database_path = config.get("database_path", "host_app.db")
     return DatabaseService(database_path, logger)
 
 
-def create_email_service(config: Dict[str, Any], logger: logging.Logger) -> EmailService:
+def create_email_service(app_config_service, logging_service) -> EmailService:
     """
     Factory function for creating email service.
     
     Args:
-        config: Service configuration
-        logger: Logger instance
+        app_config_service: AppConfigService instance
+        logging_service: LoggingService instance
         
     Returns:
         Configured EmailService instance
     """
-    return EmailService(
+    # Get configuration from app config service
+    config = app_config_service.get_host_service_config("email_service").get("configuration", {})
+    logger = logging_service.get_logger("host.email_service")
+    
+    # Set demo mode from config
+    email_service = EmailService(
         smtp_host=config.get("smtp_host", "localhost"),
         smtp_port=config.get("smtp_port", 587),
         username=config.get("username"),
         password=config.get("password"),
         logger=logger
     )
+    
+    # Apply demo mode setting
+    email_service.demo_mode = config.get("demo_mode", True)
+    
+    return email_service
 
 
-def create_notification_service(config: Dict[str, Any], logger: logging.Logger) -> NotificationService:
+def create_notification_service(app_config_service, logging_service) -> NotificationService:
     """
     Factory function for creating notification service.
     
     Args:
-        config: Service configuration
-        logger: Logger instance
+        app_config_service: AppConfigService instance
+        logging_service: LoggingService instance
         
     Returns:
         Configured NotificationService instance
     """
+    # Get configuration from app config service
+    config = app_config_service.get_host_service_config("notification_service").get("configuration", {})
+    logger = logging_service.get_logger("host.notification_service")
+    
     return NotificationService(config, logger)
 
 
-def create_file_service(config: Dict[str, Any], logger: logging.Logger) -> FileService:
+def create_file_service(app_config_service, logging_service) -> FileService:
     """
     Factory function for creating file service.
     
     Args:
-        config: Service configuration
-        logger: Logger instance
+        app_config_service: AppConfigService instance
+        logging_service: LoggingService instance
         
     Returns:
         Configured FileService instance
     """
+    # Get configuration from app config service
+    config = app_config_service.get_host_service_config("file_service").get("configuration", {})
+    logger = logging_service.get_logger("host.file_service")
+    
     storage_path = config.get("storage_path", "host_app_files")
     return FileService(storage_path, logger)

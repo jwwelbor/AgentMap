@@ -8,12 +8,13 @@ dependency injection following established service patterns.
 
 import importlib.resources
 import importlib.util
-import sys
-import os
-import yaml
-from pathlib import Path
-from typing import Dict, Optional, Union, Any
 import logging
+import os
+import sys
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
+
+import yaml
 
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
@@ -22,27 +23,27 @@ from agentmap.services.logging_service import LoggingService
 class PromptManagerService:
     """
     Service for prompt template loading, resolution, and formatting.
-    
+
     Provides capabilities for loading templates from embedded resources, external files,
     and YAML configurations with proper dependency injection and caching.
     """
 
     def __init__(
-        self,
-        app_config_service: AppConfigService,
-        logging_service: LoggingService
+        self, app_config_service: AppConfigService, logging_service: LoggingService
     ):
         """Initialize service with dependency injection."""
         self.config = app_config_service
         self.logger = logging_service.get_class_logger(self)
-        
+
         # Get prompts configuration using specific getter method
         prompts_config = self.config.get_prompts_config()
         self.prompts_config = prompts_config
         self.prompts_dir = Path(prompts_config.get("directory", "prompts"))
-        self.registry_path = Path(prompts_config.get("registry_file", "prompts/registry.yaml"))
+        self.registry_path = Path(
+            prompts_config.get("registry_file", "prompts/registry.yaml")
+        )
         self.enable_cache = prompts_config.get("enable_cache", True)
-        self.template_location = 'agentmap.templates.system'
+        self.template_location = "agentmap.templates.system"
         self._cache = {}
         self._registry = self._load_registry()
 
@@ -60,25 +61,35 @@ class PromptManagerService:
         # Try to load from configured registry path first
         if self.registry_path.exists():
             try:
-                with open(self.registry_path, 'r') as f:
+                with open(self.registry_path, "r") as f:
                     registry = yaml.safe_load(f) or {}
-                    self.logger.debug(f"Loaded {len(registry)} prompts from registry at {self.registry_path}")
+                    self.logger.debug(
+                        f"Loaded {len(registry)} prompts from registry at {self.registry_path}"
+                    )
                     return registry
             except Exception as e:
-                self.logger.error(f"Error loading prompt registry from {self.registry_path}: {e}")
+                self.logger.error(
+                    f"Error loading prompt registry from {self.registry_path}: {e}"
+                )
 
         # Try to load from system registry as fallback
         try:
             system_registry = self._find_resource("registry.yaml")
             if system_registry and system_registry.exists():
-                with open(system_registry, 'r') as f:
+                with open(system_registry, "r") as f:
                     registry = yaml.safe_load(f) or {}
-                    self.logger.debug(f"Loaded {len(registry)} prompts from system registry")
+                    self.logger.debug(
+                        f"Loaded {len(registry)} prompts from system registry"
+                    )
                     return registry
             else:
-                self.logger.debug("No system registry file found, continuing with empty registry")
+                self.logger.debug(
+                    "No system registry file found, continuing with empty registry"
+                )
         except Exception as e:
-            self.logger.debug(f"Could not load system registry (this is normal if not provided): {e}")
+            self.logger.debug(
+                f"Could not load system registry (this is normal if not provided): {e}"
+            )
 
         # Return empty registry if no files found (this is acceptable)
         self.logger.debug("No prompt registry files found, using empty registry")
@@ -98,11 +109,11 @@ class PromptManagerService:
 
     def _try_get_resource(self, resource_path: str) -> Optional[Path]:
         """Try to find embedded resource using importlib."""
-        parts = resource_path.split('/')
+        parts = resource_path.split("/")
         package = self.template_location
 
         if len(parts) > 1:
-            subdir = '.'.join(parts[:-1])
+            subdir = ".".join(parts[:-1])
             package = f"{package}.{subdir}"
 
         resource_name = parts[-1]
@@ -135,10 +146,10 @@ class PromptManagerService:
     def resolve_prompt(self, prompt_ref: str) -> str:
         """
         Resolve prompt reference to actual prompt text.
-        
+
         Args:
             prompt_ref: Prompt reference (prompt:name, file:path, yaml:path#key, or plain text)
-            
+
         Returns:
             Resolved prompt text
         """
@@ -184,9 +195,11 @@ class PromptManagerService:
             return f"[Prompt file not found: {file_path}]"
 
         try:
-            with open(path, 'r') as f:
+            with open(path, "r") as f:
                 content = f.read().strip()
-                self.logger.debug(f"Loaded prompt from file: {path} ({len(content)} chars)")
+                self.logger.debug(
+                    f"Loaded prompt from file: {path} ({len(content)} chars)"
+                )
                 return content
         except Exception as e:
             self.logger.error(f"Error reading prompt file '{path}': {e}")
@@ -195,7 +208,9 @@ class PromptManagerService:
     def _resolve_yaml_prompt(self, yaml_ref: str) -> str:
         """Resolve prompt from YAML file with key path."""
         if "#" not in yaml_ref:
-            self.logger.warning(f"Invalid YAML prompt reference (missing #key): {yaml_ref}")
+            self.logger.warning(
+                f"Invalid YAML prompt reference (missing #key): {yaml_ref}"
+            )
             return f"[Invalid YAML reference (missing #key): {yaml_ref}]"
 
         file_path, key_path = yaml_ref.split("#", 1)
@@ -206,7 +221,7 @@ class PromptManagerService:
             return f"[YAML prompt file not found: {file_path}]"
 
         try:
-            with open(path, 'r') as f:
+            with open(path, "r") as f:
                 data = yaml.safe_load(f)
 
             keys = key_path.split(".")
@@ -215,15 +230,21 @@ class PromptManagerService:
                 if isinstance(value, dict) and key in value:
                     value = value[key]
                 else:
-                    self.logger.warning(f"Key '{key}' not found in YAML prompt path: {key_path}")
+                    self.logger.warning(
+                        f"Key '{key}' not found in YAML prompt path: {key_path}"
+                    )
                     return f"[Key not found in YAML: {key_path}]"
 
             if not isinstance(value, (str, int, float, bool)):
-                self.logger.warning(f"YAML prompt value is not a scalar type: {type(value)}")
+                self.logger.warning(
+                    f"YAML prompt value is not a scalar type: {type(value)}"
+                )
                 return f"[Invalid prompt type in YAML: {type(value)}]"
 
             result = str(value)
-            self.logger.debug(f"Loaded prompt from YAML: {path}#{key_path} ({len(result)} chars)")
+            self.logger.debug(
+                f"Loaded prompt from YAML: {path}#{key_path} ({len(result)} chars)"
+            )
             return result
 
         except Exception as e:
@@ -242,42 +263,52 @@ class PromptManagerService:
     def format_prompt(self, prompt_ref_or_text: str, values: Dict[str, Any]) -> str:
         """
         Format prompt with variable substitution.
-        
+
         Args:
             prompt_ref_or_text: Prompt reference or text to format
             values: Dictionary of values for variable substitution
-            
+
         Returns:
             Formatted prompt text
         """
         known_prefixes = ["prompt:", "file:", "yaml:"]
-        is_reference = any(prompt_ref_or_text.startswith(prefix) for prefix in known_prefixes)
+        is_reference = any(
+            prompt_ref_or_text.startswith(prefix) for prefix in known_prefixes
+        )
 
-        prompt_text = self.resolve_prompt(prompt_ref_or_text) if is_reference else prompt_ref_or_text
+        prompt_text = (
+            self.resolve_prompt(prompt_ref_or_text)
+            if is_reference
+            else prompt_ref_or_text
+        )
 
         try:
             from langchain.prompts import PromptTemplate
+
             prompt_template = PromptTemplate(
-                template=prompt_text,
-                input_variables=list(values.keys())
+                template=prompt_text, input_variables=list(values.keys())
             )
             return prompt_template.format(**values)
         except Exception as e:
-            self.logger.warning(f"Error using LangChain PromptTemplate: {e}, falling back to standard formatting")
+            self.logger.warning(
+                f"Error using LangChain PromptTemplate: {e}, falling back to standard formatting"
+            )
             try:
                 return prompt_text.format(**values)
             except Exception as e2:
-                self.logger.error(f"Error formatting prompt with standard formatting: {e2}")
+                self.logger.error(
+                    f"Error formatting prompt with standard formatting: {e2}"
+                )
                 result = prompt_text
                 for key, value in values.items():
                     placeholder = "{" + key + "}"
                     result = result.replace(placeholder, str(value))
                 return result
-    
+
     def get_service_info(self) -> Dict[str, Any]:
         """
         Get information about the prompt manager service for debugging.
-        
+
         Returns:
             Dictionary with service status and configuration info
         """
@@ -289,7 +320,7 @@ class PromptManagerService:
             "cache_enabled": self.enable_cache,
             "cache_size": len(self._cache),
             "registry_size": len(self._registry),
-            "supported_prefixes": ["prompt:", "file:", "yaml:"]
+            "supported_prefixes": ["prompt:", "file:", "yaml:"],
         }
 
 
@@ -297,7 +328,9 @@ class PromptManagerService:
 _prompt_manager = None
 
 
-def get_prompt_manager(config_path: Optional[Union[str, Path]] = None) -> PromptManagerService:
+def get_prompt_manager(
+    config_path: Optional[Union[str, Path]] = None,
+) -> PromptManagerService:
     """Get global PromptManagerService instance."""
     global _prompt_manager
     if _prompt_manager is None:
@@ -329,7 +362,7 @@ def get_formatted_prompt(
 ) -> str:
     """
     Get formatted prompt with fallback options.
-    
+
     Tries primary_prompt, then template_file, then default_template.
     """
     prompt_manager = get_prompt_manager()
@@ -338,7 +371,7 @@ def get_formatted_prompt(
     for prompt_option, desc in [
         (primary_prompt, "primary prompt"),
         (template_file, "file template"),
-        (default_template, "default template")
+        (default_template, "default template"),
     ]:
         if not prompt_option:
             continue

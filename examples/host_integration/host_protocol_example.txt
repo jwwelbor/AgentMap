@@ -1,0 +1,338 @@
+"""
+Example demonstrating how to use the host protocol discovery feature in AgentMap.
+
+This example shows how a host application can:
+1. Define custom protocols
+2. Have them automatically discovered by ApplicationBootstrapService
+3. Register implementations with HostServiceRegistry
+4. Use them with agents via dependency injection
+"""
+
+from typing import Protocol, Optional, List, Dict, Any
+from pathlib import Path
+import logging
+
+# Example 1: Define custom protocols in a protocols folder
+# These would typically be in separate files in your host_services/protocols folder
+
+class DatabaseServiceProtocol(Protocol):
+    """Protocol for database operations."""
+    
+    def connect(self, connection_string: str) -> None:
+        """Connect to the database."""
+        ...
+    
+    def query(self, sql: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Execute a query and return results."""
+        ...
+    
+    def close(self) -> None:
+        """Close the database connection."""
+        ...
+
+
+class EmailServiceProtocol(Protocol):
+    """Protocol for email operations."""
+    
+    def send_email(self, to: str, subject: str, body: str, attachments: Optional[List[str]] = None) -> bool:
+        """Send an email."""
+        ...
+    
+    def send_bulk_emails(self, recipients: List[Dict[str, str]]) -> Dict[str, bool]:
+        """Send emails to multiple recipients."""
+        ...
+
+
+class CacheServiceProtocol(Protocol):
+    """Protocol for caching operations."""
+    
+    def get(self, key: str) -> Optional[Any]:
+        """Get value from cache."""
+        ...
+    
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        """Set value in cache with optional TTL."""
+        ...
+    
+    def delete(self, key: str) -> bool:
+        """Delete value from cache."""
+        ...
+
+
+# Example 2: Implement the protocols in your host application
+
+class PostgresDatabaseService:
+    """PostgreSQL implementation of DatabaseServiceProtocol."""
+    
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+        self.connection = None
+    
+    def connect(self, connection_string: str) -> None:
+        self.logger.info(f"Connecting to PostgreSQL: {connection_string}")
+        # Actual connection logic here
+        self.connection = "mock_connection"
+    
+    def query(self, sql: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        self.logger.info(f"Executing query: {sql}")
+        # Actual query logic here
+        return [{"id": 1, "name": "Test"}]
+    
+    def close(self) -> None:
+        self.logger.info("Closing PostgreSQL connection")
+        self.connection = None
+
+
+class SMTPEmailService:
+    """SMTP implementation of EmailServiceProtocol."""
+    
+    def __init__(self, smtp_host: str, smtp_port: int, logger: logging.Logger):
+        self.smtp_host = smtp_host
+        self.smtp_port = smtp_port
+        self.logger = logger
+    
+    def send_email(self, to: str, subject: str, body: str, attachments: Optional[List[str]] = None) -> bool:
+        self.logger.info(f"Sending email to {to}: {subject}")
+        # Actual email sending logic here
+        return True
+    
+    def send_bulk_emails(self, recipients: List[Dict[str, str]]) -> Dict[str, bool]:
+        results = {}
+        for recipient in recipients:
+            results[recipient["email"]] = self.send_email(
+                recipient["email"], 
+                recipient.get("subject", ""), 
+                recipient.get("body", "")
+            )
+        return results
+
+
+class RedisCache:
+    """Redis implementation of CacheServiceProtocol."""
+    
+    def __init__(self, redis_url: str, logger: logging.Logger):
+        self.redis_url = redis_url
+        self.logger = logger
+        self.cache = {}  # Simplified in-memory cache for example
+    
+    def get(self, key: str) -> Optional[Any]:
+        self.logger.debug(f"Getting cache key: {key}")
+        return self.cache.get(key)
+    
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        self.logger.debug(f"Setting cache key: {key} with TTL: {ttl}")
+        self.cache[key] = value
+        return True
+    
+    def delete(self, key: str) -> bool:
+        self.logger.debug(f"Deleting cache key: {key}")
+        if key in self.cache:
+            del self.cache[key]
+            return True
+        return False
+
+
+# Example 3: Create a custom agent that uses these protocols
+
+from agentmap.agents.base_agent import BaseAgent
+from typing import Dict, Any
+import logging
+
+
+class DatabaseQueryAgent(BaseAgent, DatabaseServiceProtocol):
+    """Agent that can query databases using the injected database service."""
+    
+    def __init__(
+        self,
+        name: str,
+        prompt: str,
+        context: Optional[Dict[str, Any]] = None,
+        logger: Optional[logging.Logger] = None,
+        execution_tracker_service: Optional[Any] = None,
+        state_adapter_service: Optional[Any] = None
+    ):
+        super().__init__(
+            name=name,
+            prompt=prompt,
+            context=context,
+            logger=logger,
+            execution_tracker_service=execution_tracker_service,
+            state_adapter_service=state_adapter_service
+        )
+        self._database_service = None
+    
+    def configure_database_service(self, database_service: DatabaseServiceProtocol) -> None:
+        """Configure the database service for this agent."""
+        self._database_service = database_service
+        self.log_debug("Database service configured")
+    
+    @property
+    def database_service(self) -> DatabaseServiceProtocol:
+        """Get the configured database service."""
+        if self._database_service is None:
+            raise ValueError(f"Database service not configured for agent '{self.name}'")
+        return self._database_service
+    
+    def process(self, inputs: Dict[str, Any]) -> Any:
+        """Process database queries."""
+        query = inputs.get("query", "")
+        params = inputs.get("params", {})
+        
+        try:
+            # Connect if needed
+            if not hasattr(self.database_service, 'connection') or not self.database_service.connection:
+                connection_string = self.context.get("connection_string", "postgresql://localhost/test")
+                self.database_service.connect(connection_string)
+            
+            # Execute query
+            results = self.database_service.query(query, params)
+            
+            self.log_info(f"Query returned {len(results)} results")
+            return {"results": results, "count": len(results)}
+            
+        except Exception as e:
+            self.log_error(f"Database query failed: {e}")
+            return {"error": str(e), "results": []}
+
+
+# Example 4: Configuration in your host application
+
+def setup_host_protocols(app_container):
+    """
+    Example setup function for host application.
+    This would typically be called during your application initialization.
+    """
+    
+    # 1. Configure AgentMap to know where to find your protocols
+    # In your config.yaml or programmatically:
+    # host_application:
+    #   enabled: true
+    #   protocol_folders:
+    #     - "host_services/protocols"
+    #     - "custom_protocols"
+    
+    # 2. Register your service implementations
+    # Get the host service registry from the container
+    host_registry = app_container.host_service_registry()
+    logger = app_container.logging_service().get_logger("host_app")
+    
+    # Register database service
+    db_service = PostgresDatabaseService(logger)
+    host_registry.register_service_provider(
+        service_name="database_service",
+        provider=lambda: db_service,  # Factory function
+        protocols=[DatabaseServiceProtocol],
+        metadata={
+            "type": "database",
+            "engine": "postgresql",
+            "version": "14.5"
+        }
+    )
+    
+    # Register email service
+    email_service = SMTPEmailService("smtp.example.com", 587, logger)
+    host_registry.register_service_provider(
+        service_name="email_service",
+        provider=lambda: email_service,
+        protocols=[EmailServiceProtocol],
+        metadata={
+            "type": "email",
+            "provider": "smtp"
+        }
+    )
+    
+    # Register cache service
+    cache_service = RedisCache("redis://localhost:6379", logger)
+    host_registry.register_service_provider(
+        service_name="cache_service",
+        provider=lambda: cache_service,
+        protocols=[CacheServiceProtocol],
+        metadata={
+            "type": "cache",
+            "backend": "redis"
+        }
+    )
+    
+    logger.info("Host protocols registered successfully")
+
+
+# Example 5: How protocol discovery works during bootstrap
+
+def demonstrate_protocol_discovery():
+    """
+    This demonstrates what happens during ApplicationBootstrapService.bootstrap_application()
+    """
+    
+    # When bootstrap_application() is called, it will:
+    
+    # 1. Check if host application support is enabled
+    # if app_config.is_host_application_enabled():
+    
+    # 2. Get configured protocol folders
+    # protocol_folders = app_config.get_host_protocol_folders()
+    # e.g., [Path("host_services/protocols"), Path("custom_protocols")]
+    
+    # 3. Scan each folder for Python files containing Protocol classes
+    # For each .py file in the folders:
+    #   - Import the module dynamically
+    #   - Find all classes that:
+    #     * End with 'Protocol' or contain 'Protocol' in the name
+    #     * Are defined in that module (not imported)
+    #     * Look like Protocol classes (inherit from Protocol, have abstract methods, etc.)
+    
+    # 4. Register discovered protocols with HostServiceRegistry
+    # For each discovered protocol:
+    #   - Generate a snake_case name (DatabaseServiceProtocol -> database_service)
+    #   - Register as a "discovered_protocol" with metadata
+    #   - This creates a placeholder that can be filled with an implementation later
+    
+    # 5. Log summary of discovered protocols
+    # The host application can then query what protocols were discovered
+    # and register implementations for them
+    
+    print("""
+    Protocol Discovery Flow:
+    1. ApplicationBootstrapService.bootstrap_application()
+    2. ├─> discover_and_register_host_protocols()
+    3. │   ├─> Check if host support enabled
+    4. │   ├─> Get protocol folders from config
+    5. │   ├─> _discover_protocol_classes(folders)
+    6. │   │   ├─> Scan each folder for .py files
+    7. │   │   ├─> Import modules dynamically
+    8. │   │   ├─> Find Protocol classes
+    9. │   │   └─> Return [(name, class), ...]
+    10.│   └─> _register_discovered_protocols(protocols)
+    11.│       ├─> Register each with HostServiceRegistry
+    12.│       └─> Log discovered protocols summary
+    13.└─> Continue with rest of bootstrap
+    """)
+
+
+# Example 6: Using in a workflow
+
+def example_workflow():
+    """
+    Example CSV workflow using the custom database agent.
+    """
+    
+    csv_content = """
+    Node Name,Agent Type,Description,Inputs,Output,Context
+    get_user_data,database_query,Query user information,user_id,user_data,{"connection_string": "postgresql://localhost/users"}
+    cache_result,cache_writer,Cache the user data,user_data,cached,{"ttl": 3600}
+    send_notification,email_sender,Send email to user,user_data,sent,{"template": "welcome"}
+    """
+    
+    # When the graph runs:
+    # 1. GraphRunnerService creates the database_query agent
+    # 2. It checks if the agent implements any host protocols
+    # 3. If it implements DatabaseServiceProtocol, it calls configure_database_service()
+    # 4. The agent can then use the injected database service
+    
+    print("Workflow would use the registered host services automatically!")
+
+
+if __name__ == "__main__":
+    # This example shows the complete flow
+    demonstrate_protocol_discovery()
+    print("\n" + "="*60 + "\n")
+    example_workflow()

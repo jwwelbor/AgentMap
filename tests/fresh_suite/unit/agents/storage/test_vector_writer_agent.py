@@ -13,7 +13,7 @@ from agentmap.agents.builtins.storage.vector.writer import VectorWriterAgent
 from agentmap.agents.builtins.storage.vector.base_agent import VectorAgent
 from agentmap.agents.builtins.storage.base_storage_agent import BaseStorageAgent
 from agentmap.services.storage.protocols import VectorCapableAgent
-from agentmap.services.storage import WriteMode, DocumentResult
+from agentmap.models.storage import WriteMode, DocumentResult
 from tests.utils.mock_service_factory import MockServiceFactory
 
 

@@ -12,7 +12,7 @@ from agentmap.agents.builtins.storage.csv.reader import CSVReaderAgent
 from agentmap.agents.builtins.storage.csv.writer import CSVWriterAgent
 
 __all__ = [
-    'CSVAgent',
-    'CSVReaderAgent',
-    'CSVWriterAgent',
+    "CSVAgent",
+    "CSVReaderAgent",
+    "CSVWriterAgent",
 ]

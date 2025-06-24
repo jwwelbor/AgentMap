@@ -6,15 +6,15 @@ Re-exports key functions from the prompt manager service for backward compatibil
 """
 
 from agentmap.services.prompt_manager_service import (
-    get_formatted_prompt,
-    resolve_prompt,
     format_prompt,
-    get_prompt_manager
+    get_formatted_prompt,
+    get_prompt_manager,
+    resolve_prompt,
 )
 
 __all__ = [
     "get_formatted_prompt",
-    "resolve_prompt", 
+    "resolve_prompt",
     "format_prompt",
-    "get_prompt_manager"
+    "get_prompt_manager",
 ]

@@ -25,6 +25,7 @@ class TestGraphOutputService(unittest.TestCase):
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
         self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service()
         self.mock_function_resolution_service = Mock()
+        self.mock_agent_registry_service = MockServiceFactory.create_mock_agent_registry_service()
         self.mock_compilation_service = Mock()
         
         # Configure mock app config service with expected paths
@@ -41,6 +42,7 @@ class TestGraphOutputService(unittest.TestCase):
             app_config_service=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
             function_resolution_service=self.mock_function_resolution_service,
+            agent_registry_service=self.mock_agent_registry_service,
             compilation_service=self.mock_compilation_service
         )
         
@@ -110,6 +112,7 @@ class TestGraphOutputService(unittest.TestCase):
             app_config_service=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
             function_resolution_service=self.mock_function_resolution_service,
+            agent_registry_service=self.mock_agent_registry_service,
             compilation_service=None
         )
         
@@ -238,51 +241,52 @@ class TestGraphOutputService(unittest.TestCase):
     def test_export_as_source_successful(self):
         """Test export_as_source() successful export."""
         # Configure mock agent class resolution
-        with patch('agentmap.services.graph_output_service.get_agent_class') as mock_get_agent_class:
-            mock_agent_class = Mock()
-            mock_agent_class.__name__ = "DefaultAgent"
-            mock_get_agent_class.return_value = mock_agent_class
+        mock_agent_class = Mock()
+        mock_agent_class.__name__ = "DefaultAgent"
+        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
+        
+        # Mock other dependencies
+        with patch.object(self.service, '_get_graph_definition', return_value=self.sample_graph_def), \
+             patch.object(self.service, '_get_output_path', return_value=Path("test.src")), \
+             patch('builtins.open', mock_open()) as mock_file:
             
-            # Mock other dependencies
-            with patch.object(self.service, '_get_graph_definition', return_value=self.sample_graph_def), \
-                 patch.object(self.service, '_get_output_path', return_value=Path("test.src")), \
-                 patch('builtins.open', mock_open()) as mock_file:
+            result = self.service.export_as_source("test_graph", "/output", "dict")
                 
-                result = self.service.export_as_source("test_graph", "/output", "dict")
-                
-                # Verify method calls
-                self.service._get_graph_definition.assert_called_once_with("test_graph")
-                self.service._get_output_path.assert_called_once_with("test_graph", "/output", "src")
-                
-                # Verify file writing with expected content
-                mock_file.assert_called_once_with(Path("test.src"), "w")
-                written_content = mock_file().write.call_args[0][0]
-                
-                # Verify content includes StateGraph initialization
-                self.assertIn("builder = StateGraph(dict)", written_content)
-                self.assertIn('builder.add_node("input_processor", DefaultAgent())', written_content)
-                self.assertIn('builder.add_node("output_formatter", DefaultAgent())', written_content)
-                self.assertIn('builder.set_entry_point("input_processor")', written_content)
-                self.assertIn("graph = builder.compile()", written_content)
-                
-                self.assertEqual(result, Path("test.src"))
+            # Verify method calls
+            self.service._get_graph_definition.assert_called_once_with("test_graph")
+            self.service._get_output_path.assert_called_once_with("test_graph", "/output", "src")
+            
+            # Verify file writing with expected content
+            mock_file.assert_called_once_with(Path("test.src"), "w")
+            written_content = mock_file().write.call_args[0][0]
+            
+            # Verify content includes StateGraph initialization
+            self.assertIn("builder = StateGraph(dict)", written_content)
+            self.assertIn('builder.add_node("input_processor", DefaultAgent())', written_content)
+            self.assertIn('builder.add_node("output_formatter", DefaultAgent())', written_content)
+            self.assertIn('builder.set_entry_point("input_processor")', written_content)
+            self.assertIn("graph = builder.compile()", written_content)
+            
+            self.assertEqual(result, Path("test.src"))
+            
+            # Verify agent registry was called
+            self.mock_agent_registry_service.get_agent_class.assert_called()
     
     def test_export_as_source_custom_state_schema(self):
         """Test export_as_source() with custom state schema."""
-        with patch('agentmap.services.graph_output_service.get_agent_class') as mock_get_agent_class:
-            mock_agent_class = Mock()
-            mock_agent_class.__name__ = "ProcessorAgent"
-            mock_get_agent_class.return_value = mock_agent_class
+        mock_agent_class = Mock()
+        mock_agent_class.__name__ = "ProcessorAgent"
+        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
+        
+        with patch.object(self.service, '_get_graph_definition', return_value=self.sample_graph_def), \
+             patch.object(self.service, '_get_output_path', return_value=Path("test.src")), \
+             patch('builtins.open', mock_open()) as mock_file:
             
-            with patch.object(self.service, '_get_graph_definition', return_value=self.sample_graph_def), \
-                 patch.object(self.service, '_get_output_path', return_value=Path("test.src")), \
-                 patch('builtins.open', mock_open()) as mock_file:
-                
-                result = self.service.export_as_source("test_graph", None, "CustomSchema")
-                
-                # Verify custom state schema is used
-                written_content = mock_file().write.call_args[0][0]
-                self.assertIn("builder = StateGraph(CustomSchema)", written_content)
+            result = self.service.export_as_source("test_graph", None, "CustomSchema")
+            
+            # Verify custom state schema is used
+            written_content = mock_file().write.call_args[0][0]
+            self.assertIn("builder = StateGraph(CustomSchema)", written_content)
     
     # =============================================================================
     # 5. Debug Export Tests (New Functionality)
@@ -467,6 +471,7 @@ class TestGraphOutputService(unittest.TestCase):
             app_config_service=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
             function_resolution_service=self.mock_function_resolution_service,
+            agent_registry_service=self.mock_agent_registry_service,
             compilation_service=None
         )
         
@@ -572,27 +577,27 @@ class TestGraphOutputService(unittest.TestCase):
         # Configure function resolution to return no functions
         self.mock_function_resolution_service.extract_func_ref.return_value = None
         
-        with patch('agentmap.services.graph_output_service.get_agent_class') as mock_get_agent_class:
-            mock_agent_class = Mock()
-            mock_agent_class.__name__ = "DefaultAgent"
-            mock_get_agent_class.return_value = mock_agent_class
+        # Configure mock agent class resolution
+        mock_agent_class = Mock()
+        mock_agent_class.__name__ = "DefaultAgent"
+        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
+        
+        result = self.service._generate_python_code("test_graph", self.sample_graph_def, "dict")
+        
+        # Verify code structure
+        code = "\n".join(result)
             
-            result = self.service._generate_python_code("test_graph", self.sample_graph_def, "dict")
-            
-            # Verify code structure
-            code = "\n".join(result)
-            
-            # Check imports
-            self.assertIn("from langgraph.graph import StateGraph", code)
-            self.assertIn("from agentmap.agents.builtins.openai_agent import OpenAIAgent", code)
-            
-            # Check graph construction
-            self.assertIn("# Graph: test_graph", code)
-            self.assertIn("builder = StateGraph(dict)", code)
-            self.assertIn('builder.add_node("input_processor", DefaultAgent(', code)
-            self.assertIn('builder.add_node("output_formatter", DefaultAgent(', code)
-            self.assertIn('builder.set_entry_point("input_processor")', code)
-            self.assertIn("graph = builder.compile()", code)
+        # Check imports
+        self.assertIn("from langgraph.graph import StateGraph", code)
+        self.assertIn("from agentmap.agents.builtins.openai_agent import OpenAIAgent", code)
+        
+        # Check graph construction
+        self.assertIn("# Graph: test_graph", code)
+        self.assertIn("builder = StateGraph(dict)", code)
+        self.assertIn('builder.add_node("input_processor", DefaultAgent(', code)
+        self.assertIn('builder.add_node("output_formatter", DefaultAgent(', code)
+        self.assertIn('builder.set_entry_point("input_processor")', code)
+        self.assertIn("graph = builder.compile()", code)
     
     def test_generate_python_code_with_functions(self):
         """Test _generate_python_code() includes function imports."""
@@ -604,17 +609,17 @@ class TestGraphOutputService(unittest.TestCase):
         
         self.mock_function_resolution_service.extract_func_ref.side_effect = mock_extract_func_ref
         
-        with patch('agentmap.services.graph_output_service.get_agent_class') as mock_get_agent_class:
-            mock_agent_class = Mock()
-            mock_agent_class.__name__ = "DefaultAgent"
-            mock_get_agent_class.return_value = mock_agent_class
+        # Configure mock agent class resolution
+        mock_agent_class = Mock()
+        mock_agent_class.__name__ = "DefaultAgent"
+        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
+        
+        result = self.service._generate_python_code("test_graph", self.sample_graph_def, "dict")
+        
+        code = "\n".join(result)
             
-            result = self.service._generate_python_code("test_graph", self.sample_graph_def, "dict")
-            
-            code = "\n".join(result)
-            
-            # Check function import
-            self.assertIn("from agentmap.functions.custom_formatter import custom_formatter", code)
+        # Check function import
+        self.assertIn("from agentmap.functions.custom_formatter import custom_formatter", code)
     
     # =============================================================================
     # 11. Error Handling Tests
@@ -627,6 +632,7 @@ class TestGraphOutputService(unittest.TestCase):
             app_config_service=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
             function_resolution_service=self.mock_function_resolution_service,
+            agent_registry_service=self.mock_agent_registry_service,
             compilation_service=None
         )
         

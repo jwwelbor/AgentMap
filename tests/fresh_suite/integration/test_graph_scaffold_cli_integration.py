@@ -171,8 +171,7 @@ storage:
         # Mock container and services
         mock_container = self.create_mock_container()
         
-        with patch('agentmap.core.di.container.DIContainer', return_value=mock_container), \
-             patch('agentmap.agents.get_agent_class', return_value=None):
+        with patch('agentmap.core.di.container.DIContainer', return_value=mock_container):
             
             # Execute scaffold command
             result = self.runner.invoke(self.cli_app, [
@@ -295,25 +294,23 @@ class {class_name}(BaseAgent):
             template_composer=mock_template_composer
         )
         
-        with patch('agentmap.agents.get_agent_class', return_value=None):
-            
-            # Execute scaffolding
-            options = ScaffoldOptions(graph_name="integration_test")
-            result = service.scaffold_agents_from_csv(csv_file, options)
-            
-            # Verify scaffolding results - only custom agents should be scaffolded
-            # input and orchestrator are builtin agents and should be skipped
-            self.assertEqual(result.scaffolded_count, 0)  # No custom agents in this CSV
-            self.assertEqual(len(result.errors), 0)
-            self.assertEqual(result.service_stats.get("with_services", 0), 0)  # No custom agents scaffolded
-            self.assertEqual(result.service_stats.get("without_services", 0), 0)  # No custom agents scaffolded
-            
-            # Verify no files were created (builtin agents skipped)
-            input_agent = self.agents_dir / "input_agent.py"
-            orchestrator_agent = self.agents_dir / "orchestrator_agent.py"
-            
-            self.assertFalse(input_agent.exists(), "Builtin input agent should not be scaffolded")
-            self.assertFalse(orchestrator_agent.exists(), "Builtin orchestrator agent should not be scaffolded")
+        # Execute scaffolding
+        options = ScaffoldOptions(graph_name="integration_test")
+        result = service.scaffold_agents_from_csv(csv_file, options)
+        
+        # Verify scaffolding results - only custom agents should be scaffolded
+        # input and orchestrator are builtin agents and should be skipped
+        self.assertEqual(result.scaffolded_count, 0)  # No custom agents in this CSV
+        self.assertEqual(len(result.errors), 0)
+        self.assertEqual(result.service_stats.get("with_services", 0), 0)  # No custom agents scaffolded
+        self.assertEqual(result.service_stats.get("without_services", 0), 0)  # No custom agents scaffolded
+        
+        # Verify no files were created (builtin agents skipped)
+        input_agent = self.agents_dir / "input_agent.py"
+        orchestrator_agent = self.agents_dir / "orchestrator_agent.py"
+        
+        self.assertFalse(input_agent.exists(), "Builtin input agent should not be scaffolded")
+        self.assertFalse(orchestrator_agent.exists(), "Builtin orchestrator agent should not be scaffolded")
     
     def test_scaffold_command_error_handling_simulation(self):
         """Test scaffold command error handling simulation."""
@@ -360,22 +357,20 @@ class {class_name}(BaseAgent):
             template_composer=mock_template_composer
         )
         
-        with patch('agentmap.agents.get_agent_class', return_value=None):
-            
-            # Execute scaffolding (should handle error gracefully)
-            result = service.scaffold_agents_from_csv(csv_file)
-            
-            # Should have captured error
-            self.assertEqual(result.scaffolded_count, 0)
-            self.assertEqual(len(result.errors), 1)
-            
-            # Error should mention invalid service
-            error_msg = result.errors[0]
-            self.assertIn("invalid_service_name", error_msg)
-            
-            # No agent file should be created
-            error_agent = self.agents_dir / "error_agent_agent.py"
-            self.assertFalse(error_agent.exists())
+        # Execute scaffolding (should handle error gracefully)
+        result = service.scaffold_agents_from_csv(csv_file)
+        
+        # Should have captured error
+        self.assertEqual(result.scaffolded_count, 0)
+        self.assertEqual(len(result.errors), 1)
+        
+        # Error should mention invalid service
+        error_msg = result.errors[0]
+        self.assertIn("invalid_service_name", error_msg)
+        
+        # No agent file should be created
+        error_agent = self.agents_dir / "error_agent_agent.py"
+        self.assertFalse(error_agent.exists())
     
     def test_scaffold_with_functions_cli_workflow(self):
         """Test scaffolding workflow that creates both agents and functions."""
@@ -440,34 +435,32 @@ def {func_name}(state):
             template_composer=mock_template_composer
         )
         
-        with patch('agentmap.agents.get_agent_class', return_value=None):
-            
-            # Execute scaffolding
-            result = service.scaffold_agents_from_csv(csv_file)
-            
-            # Should create 1 agent + 2 functions
-            self.assertEqual(result.scaffolded_count, 3)
-            self.assertEqual(len(result.errors), 0)
-            
-            # Verify agent file
-            processor_agent = self.agents_dir / "processor_agent.py"
-            self.assertTrue(processor_agent.exists())
-            
-            agent_content = processor_agent.read_text()
-            self.assertIn("ProcessorAgent", agent_content)
-            
-            # Verify function files
-            validate_func = self.functions_dir / "validate_input.py"
-            error_func = self.functions_dir / "handle_processing_error.py"
-            
-            self.assertTrue(validate_func.exists())
-            self.assertTrue(error_func.exists())
-            
-            validate_content = validate_func.read_text()
-            error_content = error_func.read_text()
-            
-            self.assertIn("def validate_input", validate_content)
-            self.assertIn("def handle_processing_error", error_content)
+        # Execute scaffolding
+        result = service.scaffold_agents_from_csv(csv_file)
+        
+        # Should create 1 agent + 2 functions
+        self.assertEqual(result.scaffolded_count, 3)
+        self.assertEqual(len(result.errors), 0)
+        
+        # Verify agent file
+        processor_agent = self.agents_dir / "processor_agent.py"
+        self.assertTrue(processor_agent.exists())
+        
+        agent_content = processor_agent.read_text()
+        self.assertIn("ProcessorAgent", agent_content)
+        
+        # Verify function files
+        validate_func = self.functions_dir / "validate_input.py"
+        error_func = self.functions_dir / "handle_processing_error.py"
+        
+        self.assertTrue(validate_func.exists())
+        self.assertTrue(error_func.exists())
+        
+        validate_content = validate_func.read_text()
+        error_content = error_func.read_text()
+        
+        self.assertIn("def validate_input", validate_content)
+        self.assertIn("def handle_processing_error", error_content)
     
     def test_scaffold_performance_with_realistic_graph(self):
         """Test scaffolding performance with realistic graph size."""
@@ -575,11 +568,9 @@ class {agent_type.title()}Agent(BaseAgent):
         import time
         start_time = time.time()
         
-        with patch('agentmap.agents.get_agent_class', return_value=None):
-            
-            # Execute scaffolding
-            result = service.scaffold_agents_from_csv(csv_file)
-            
+        # Execute scaffolding
+        result = service.scaffold_agents_from_csv(csv_file)
+        
         end_time = time.time()
         execution_time = end_time - start_time
         

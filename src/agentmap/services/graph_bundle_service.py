@@ -20,23 +20,27 @@ class GraphBundleService:
         graph: any,
         node_registry: dict,
         csv_content: Optional[str] = None,
-        version_hash: Optional[str] = None
+        version_hash: Optional[str] = None,
     ) -> GraphBundle:
         """Create a new GraphBundle, optionally computing a version hash."""
         if not version_hash and csv_content:
             version_hash = self._generate_hash(csv_content)
-        return GraphBundle(graph=graph, node_registry=node_registry, version_hash=version_hash)
+        return GraphBundle(
+            graph=graph, node_registry=node_registry, version_hash=version_hash
+        )
 
     def save_bundle(self, bundle: GraphBundle, path: Path) -> None:
         """Persist the bundle to disk as a pickle file."""
         data = {
             "graph": bundle.graph,
             "node_registry": bundle.node_registry,
-            "version_hash": bundle.version_hash
+            "version_hash": bundle.version_hash,
         }
         with path.open("wb") as f:
             pickle.dump(data, f)
-        self.logger.debug(f"Saved GraphBundle to {path} with version hash {bundle.version_hash}")
+        self.logger.debug(
+            f"Saved GraphBundle to {path} with version hash {bundle.version_hash}"
+        )
 
     def load_bundle(self, path: Path) -> Optional[GraphBundle]:
         """Load a GraphBundle from a file."""
@@ -47,7 +51,7 @@ class GraphBundleService:
             return GraphBundle(
                 graph=data["graph"],
                 node_registry=data["node_registry"],
-                version_hash=data["version_hash"]
+                version_hash=data["version_hash"],
             )
         except Exception as e:
             self.logger.error(f"Failed to load GraphBundle from {path}: {e}")

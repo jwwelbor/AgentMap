@@ -6,35 +6,46 @@ including CSV files, JSON documents, Firebase, vector stores, and cloud storage.
 """
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
-    BaseStorageAgent, DocumentResult, WriteMode, log_operation
+    BaseStorageAgent,
+    log_operation,
+)
+
+# Import types from models (where they belong)
+from agentmap.models.storage import DocumentResult, WriteMode
+
+# Import CSV agents
+from agentmap.agents.builtins.storage.csv import (
+    CSVAgent,
+    CSVReaderAgent,
+    CSVWriterAgent,
 )
 
 # Import document storage base classes
 from agentmap.agents.builtins.storage.document import (
-    DocumentStorageAgent, DocumentReaderAgent, DocumentWriterAgent,
-    DocumentPathMixin
-)
-
-# Import CSV agents
-from agentmap.agents.builtins.storage.csv import (
-    CSVAgent, CSVReaderAgent, CSVWriterAgent
-)
-
-# Import JSON document agents
-from agentmap.agents.builtins.storage.json import (
-    JSONDocumentAgent, JSONDocumentReaderAgent, JSONDocumentWriterAgent
+    DocumentPathMixin,
+    DocumentReaderAgent,
+    DocumentStorageAgent,
+    DocumentWriterAgent,
 )
 
 # Import File agents
-from agentmap.agents.builtins.storage.file import (
-    FileReaderAgent, FileWriterAgent
+from agentmap.agents.builtins.storage.file import FileReaderAgent, FileWriterAgent
+
+# Import JSON document agents
+from agentmap.agents.builtins.storage.json import (
+    JSONDocumentAgent,
+    JSONDocumentReaderAgent,
+    JSONDocumentWriterAgent,
 )
 
 # Import Vector agents
 try:
     from agentmap.agents.builtins.storage.vector import (
-        VectorAgent, VectorReaderAgent, VectorWriterAgent
+        VectorAgent,
+        VectorReaderAgent,
+        VectorWriterAgent,
     )
+
     _vector_available = True
 except ImportError:
     VectorAgent = None
@@ -67,46 +78,43 @@ except ImportError:
 #     _json_cloud_available = False
 
 # Import config utilities
-#from agentmap.config import get_storage_config_path, load_storage_config
+# from agentmap.config import get_storage_config_path, load_storage_config
 
 __all__ = [
     # Base classes
-    'BaseStorageAgent',
-    'DocumentResult',
-    'WriteMode',
-    'log_operation',
-    
+    "BaseStorageAgent",
+    "DocumentResult",
+    "WriteMode",
+    "log_operation",
     # Document storage
-    'DocumentStorageAgent',
-    'DocumentReaderAgent',
-    'DocumentWriterAgent',
-    'DocumentPathMixin',
-    
+    "DocumentStorageAgent",
+    "DocumentReaderAgent",
+    "DocumentWriterAgent",
+    "DocumentPathMixin",
     # CSV agents
-    'CSVAgent',
-    'CSVReaderAgent',
-    'CSVWriterAgent',
-    
+    "CSVAgent",
+    "CSVReaderAgent",
+    "CSVWriterAgent",
     # JSON document agents
-    'JSONDocumentAgent',
-    'JSONDocumentReaderAgent',
-    'JSONDocumentWriterAgent',
-
+    "JSONDocumentAgent",
+    "JSONDocumentReaderAgent",
+    "JSONDocumentWriterAgent",
     # File agents
-    'FileReaderAgent',
-    'FileWriterAgent',
-    
+    "FileReaderAgent",
+    "FileWriterAgent",
     # Config utilities
-    'get_storage_config_path',
+    "get_storage_config_path",
 ]
 
 # Add Vector agents if available
 if _vector_available:
-    __all__.extend([
-        'VectorAgent',
-        'VectorReaderAgent',
-        'VectorWriterAgent',
-    ])
+    __all__.extend(
+        [
+            "VectorAgent",
+            "VectorReaderAgent",
+            "VectorWriterAgent",
+        ]
+    )
 
 # # Add Firebase agents if available
 # if _firebase_available:

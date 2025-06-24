@@ -7,12 +7,13 @@ and GraphScaffoldService to avoid circular import dependencies.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Any, NamedTuple
+from typing import Dict, List, NamedTuple, Optional
 
 
 @dataclass
 class ServiceAttribute:
     """Represents a service attribute to be added to an agent."""
+
     name: str
     type_hint: str
     documentation: str
@@ -20,6 +21,7 @@ class ServiceAttribute:
 
 class ServiceRequirements(NamedTuple):
     """Container for parsed service requirements."""
+
     services: List[str]
     protocols: List[str]
     imports: List[str]
@@ -30,6 +32,7 @@ class ServiceRequirements(NamedTuple):
 @dataclass
 class ScaffoldOptions:
     """Configuration options for scaffolding operations."""
+
     graph_name: Optional[str] = None
     output_path: Optional[Path] = None
     function_path: Optional[Path] = None
@@ -39,6 +42,7 @@ class ScaffoldOptions:
 @dataclass
 class ScaffoldResult:
     """Result of scaffolding operations."""
+
     scaffolded_count: int
     created_files: List[Path] = field(default_factory=list)
     skipped_files: List[Path] = field(default_factory=list)

@@ -12,6 +12,6 @@ from agentmap.agents.builtins.storage.file.reader import FileReaderAgent
 from agentmap.agents.builtins.storage.file.writer import FileWriterAgent
 
 __all__ = [
-    'FileReaderAgent',
-    'FileWriterAgent',
+    "FileReaderAgent",
+    "FileWriterAgent",
 ]
