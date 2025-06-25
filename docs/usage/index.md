@@ -30,13 +30,23 @@ This documentation provides detailed information about using AgentMap, a declara
 
 ## Getting Started Guide
 
+### 🚀 Quick Start
+- **[AgentMap Quick Start Guide](./usage/agentmap_quick_start.md)** - Build your first workflow in minutes! Complete examples showing:
+  - Creating CSV workflow definitions
+  - Building custom agents for API integration
+  - Using LLMs for natural language processing
+  - Orchestrating complex multi-agent workflows
+  - Executing and getting results
+
+### Learning Path
+
 For new developers, we recommend following this learning path:
 
-1. **Start with Core Concepts**: Read [Agentmap Features](./usage/agentmap_features.md) and [CSV Schema](./usage/agentmap_csv_schema_documentation.md)
-2. **Understand Agent Architecture**: Review [Agent Contract](./usage/agent_contract.md) and [Service Injection](./usage/service_injection.md)
-3. **Learn Data Operations**: Study [Storage Services](./usage/storage_services.md) for file and data management
-4. **Explore Agent Types**: Study [Agent Types](./usage/agentmap_agent_types.md) and [Advanced Agent Types](./usage/advanced_agent_types.md)
-5. **Build Workflows**: Practice with [Example Workflows](./usage/agentmap_example_workflows.md)
+1. **Start with the Quick Start**: Follow the [Quick Start Guide](./usage/agentmap_quick_start.md) to build a working workflow
+2. **Understand Core Concepts**: Read [Agentmap Features](./usage/agentmap_features.md) and [CSV Schema](./usage/agentmap_csv_schema_documentation.md)
+3. **Learn Agent Types**: Study [Agent Types](./usage/agentmap_agent_types.md) and [Advanced Agent Types](./usage/advanced_agent_types.md)
+4. **Build More Workflows**: Practice with [Example Workflows](./usage/agentmap_example_workflows.md)
+5. **Data Operations**: Study [Storage Services](./usage/storage_services.md) for file and data management
 6. **Extend AgentMap**: Learn [Host Service Integration](./usage/host-service-integration.md) to inject custom services
 7. **Advanced Topics**: Dive into orchestration, memory management, and cloud storage
 

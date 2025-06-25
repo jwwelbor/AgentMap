@@ -13,6 +13,7 @@ from pathlib import Path
 from agentmap.services.graph_assembly_service import GraphAssemblyService
 from agentmap.services.node_registry_service import NodeRegistryUser
 from agentmap.models.node import Node
+from agentmap.agents.builtins.default_agent import DefaultAgent
 from tests.utils.mock_service_factory import MockServiceFactory
 
 
@@ -295,11 +296,11 @@ class TestGraphAssemblyService(unittest.TestCase):
         """Test assemble_graph() detects and uses proper entry points."""
         # Create nodes with entry point configuration
         node1 = Node(name="node1", agent_type="default")
-        node1.context = {"instance": Mock()}
+        node1.context = {"instance": DefaultAgent(name="node1", prompt="test")}
         node1._is_entry_point = True  # Node-level entry point marker
         
         node2 = Node(name="node2", agent_type="default")
-        node2.context = {"instance": Mock()}
+        node2.context = {"instance": DefaultAgent(name="node2", prompt="test")}
         
         # Create Graph object
         from agentmap.models.graph import Graph
@@ -323,11 +324,11 @@ class TestGraphAssemblyService(unittest.TestCase):
         """Test assemble_graph() prioritizes graph-level entry point."""
         # Create nodes
         node1 = Node(name="node1", agent_type="default")
-        node1.context = {"instance": Mock()}
+        node1.context = {"instance": DefaultAgent(name="node1", prompt="test")}
         node1._is_entry_point = True  # Node-level entry point (should be ignored)
         
         node2 = Node(name="node2", agent_type="default")
-        node2.context = {"instance": Mock()}
+        node2.context = {"instance": DefaultAgent(name="node2", prompt="test")}
         
         # Create Graph object with entry point
         from agentmap.models.graph import Graph
@@ -351,10 +352,10 @@ class TestGraphAssemblyService(unittest.TestCase):
         """Test assemble_graph() falls back to first node when no entry point specified."""
         # Create nodes without entry point markers
         node1 = Node(name="node1", agent_type="default")
-        node1.context = {"instance": Mock()}
+        node1.context = {"instance": DefaultAgent(name="node1", prompt="test")}
         
         node2 = Node(name="node2", agent_type="default")
-        node2.context = {"instance": Mock()}
+        node2.context = {"instance": DefaultAgent(name="node2", prompt="test")}
         
         # Create Graph object
         from agentmap.models.graph import Graph
@@ -383,7 +384,7 @@ class TestGraphAssemblyService(unittest.TestCase):
     def test_assemble_graph_with_logging_disabled(self):
         """Test assemble_graph() respects logger level settings."""
         node1 = Node(name="node1", agent_type="default")
-        node1.context = {"instance": Mock()}
+        node1.context = {"instance": DefaultAgent(name="node1", prompt="test")}
         
         # Create Graph object
         from agentmap.models.graph import Graph
@@ -907,7 +908,7 @@ class TestGraphAssemblyService(unittest.TestCase):
             
             # Add minimal node to make graph valid
             test_node = Node(name="test_node", agent_type="default")
-            test_node.context = {"instance": Mock()}
+            test_node.context = {"instance": DefaultAgent(name="test_node", prompt="test")}
             graph.nodes["test_node"] = test_node
             
             self.service.assemble_graph(graph)

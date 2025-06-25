@@ -1,1 +1,974 @@
-# Host Service Integration\n\nAgentMap's Host Service Integration allows you to extend AgentMap with your own custom services and agents while leveraging AgentMap's dependency injection system. This enables host applications to define domain-specific services that are automatically injected into compatible agents.\n\n## Overview\n\nHost Service Integration bridges the gap between AgentMap's workflow orchestration capabilities and your application's domain-specific functionality. Instead of being limited to AgentMap's built-in agents, you can:\n\n- **Define Custom Services**: Implement services specific to your domain (database access, external APIs, business logic)\n- **Create Protocol Interfaces**: Define contracts that specify how agents interact with services\n- **Build Custom Agents**: Create agents that implement your protocols and automatically receive service dependencies\n- **Maintain Clean Architecture**: Keep services separate from agents while ensuring automatic dependency injection\n\n## Architecture\n\n### Core Components\n\n```\nHost Application\n├── Protocols (interfaces)\n│   ├── DatabaseServiceProtocol\n│   ├── EmailServiceProtocol\n│   └── CustomServiceProtocol\n├── Services (implementations) \n│   ├── DatabaseService\n│   ├── EmailService\n│   └── CustomService\n└── Agents (consumers)\n    ├── DatabaseAgent\n    ├── EmailAgent\n    └── CustomAgent\n\n        ↓ Automatic Injection ↓\n        \nAgentMap Container\n├── Service Registration\n├── Protocol Discovery\n├── Dependency Injection\n└── Graph Execution\n```\n\n### Integration Flow\n\n1. **Protocol Definition**: Define service interfaces using Python protocols\n2. **Service Implementation**: Create concrete service classes that provide functionality\n3. **Agent Creation**: Build agents that implement protocols to receive services\n4. **Registration**: Register services with AgentMap's dependency injection container\n5. **Configuration**: Configure services through AgentMap's configuration system\n6. **Execution**: AgentMap automatically injects services into compatible agents during graph execution\n\n## Core Concepts\n\n### Protocols\n\nProtocols define the interface contract between agents and services. They specify what methods an agent must implement to receive a particular service.\n\n```python\nfrom typing import Protocol, runtime_checkable, Any\nfrom abc import abstractmethod\n\n@runtime_checkable\nclass DatabaseServiceProtocol(Protocol):\n    \"\"\"Protocol for agents that need database access.\"\"\"\n    \n    @abstractmethod\n    def configure_database_service(self, database_service: Any) -> None:\n        \"\"\"Configure the agent with a database service.\n        \n        Args:\n            database_service: Database service instance\n        \"\"\"\n        ...\n```\n\n**Key Requirements:**\n- Must use `@runtime_checkable` decorator\n- Should end with \"ServiceProtocol\" by convention\n- Configuration methods should follow pattern: `configure_{service_name}_service`\n- Must be abstract protocols, not concrete classes\n\n### Services\n\nServices provide the actual implementation of functionality that agents need. They contain business logic, external integrations, or data access code.\n\n```python\nclass DatabaseService:\n    \"\"\"Concrete database service implementation.\"\"\"\n    \n    def __init__(self, config: Dict[str, Any], logger: logging.Logger):\n        self.config = config\n        self.logger = logger\n        self._initialize_database()\n    \n    def execute_query(self, query: str, params: tuple = None) -> List[Dict]:\n        \"\"\"Execute database query and return results.\"\"\"\n        # Implementation here\n        pass\n```\n\n**Key Requirements:**\n- Should accept configuration and logger in constructor\n- Should provide clean, domain-specific APIs\n- Should handle errors gracefully\n- Should follow dependency injection patterns\n\n### Custom Agents\n\nCustom agents implement one or more protocols to automatically receive the corresponding services.\n\n```python\nfrom agentmap.agents.base_agent import BaseAgent\n\nclass DatabaseAgent(BaseAgent, DatabaseServiceProtocol):\n    \"\"\"Agent that performs database operations.\"\"\"\n    \n    def __init__(self, name: str, prompt: str = \"\", context: Dict[str, Any] = None, \n                 logger=None, **kwargs):\n        super().__init__(name, prompt, context, logger, **kwargs)\n        self.database_service = None\n    \n    def configure_database_service(self, database_service: Any) -> None:\n        \"\"\"Configure database service (called automatically by AgentMap).\"\"\"\n        self.database_service = database_service\n        self.logger.debug(f\"Database service configured for {self.name}\")\n    \n    def run(self, state: Dict[str, Any]) -> Dict[str, Any]:\n        \"\"\"Execute agent logic using injected service.\"\"\"\n        if not self.database_service:\n            raise ValueError(\"Database service not configured\")\n        \n        operation = state.get(\"operation\", \"query\")\n        \n        if operation == \"get_users\":\n            users = self.database_service.execute_query(\"SELECT * FROM users\")\n            return {**state, \"users\": users}\n        \n        # Handle other operations...\n        return state\n```\n\n**Key Requirements:**\n- Must inherit from `BaseAgent` and implement one or more service protocols\n- Must implement all abstract methods from the protocols\n- Should handle cases where services are not available (graceful degradation)\n- Should validate service availability before use\n\n## Implementation Guide\n\n### Step 1: Define Your Protocol\n\nCreate a protocol interface that defines how agents will interact with your service.\n\n```python\n# protocols/my_service_protocol.py\nfrom typing import Protocol, runtime_checkable, Any\nfrom abc import abstractmethod\n\n@runtime_checkable\nclass MyServiceProtocol(Protocol):\n    \"\"\"Protocol for agents that need my custom service.\"\"\"\n    \n    @abstractmethod\n    def configure_my_service(self, service: Any) -> None:\n        \"\"\"Configure the agent with my service.\n        \n        Args:\n            service: MyService instance\n        \"\"\"\n        ...\n```\n\n### Step 2: Implement Your Service\n\nCreate a concrete service class that provides the actual functionality.\n\n```python\n# services/my_service.py\nimport logging\nfrom typing import Dict, Any\n\nclass MyService:\n    \"\"\"Custom service implementation.\"\"\"\n    \n    def __init__(self, config: Dict[str, Any], logger: logging.Logger):\n        self.config = config\n        self.logger = logger\n        self.api_key = config.get(\"api_key\")\n        self.timeout = config.get(\"timeout\", 30)\n    \n    def do_something(self, data: Any) -> Dict[str, Any]:\n        \"\"\"Perform service operation.\"\"\"\n        try:\n            # Your service logic here\n            result = self._process_data(data)\n            self.logger.info(f\"Service operation completed: {result}\")\n            return {\"success\": True, \"result\": result}\n        except Exception as e:\n            self.logger.error(f\"Service operation failed: {e}\")\n            return {\"success\": False, \"error\": str(e)}\n    \n    def _process_data(self, data: Any) -> Any:\n        \"\"\"Internal processing logic.\"\"\"\n        # Implementation here\n        return data\n\n# Factory function for dependency injection\ndef create_my_service(app_config_service, logging_service) -> MyService:\n    \"\"\"Factory function to create MyService with dependencies.\n    \n    Args:\n        app_config_service: AppConfigService instance\n        logging_service: LoggingService instance\n    \n    Returns:\n        Configured MyService instance\n    \"\"\"\n    config = app_config_service.get_host_service_config(\"my_service\")\n    logger = logging_service.get_logger(\"my_service\")\n    return MyService(config[\"configuration\"], logger)\n```\n\n### Step 3: Create Your Agent\n\nBuild an agent that implements your protocol to automatically receive your service.\n\n```python\n# agents/my_agent.py\nfrom typing import Dict, Any\nfrom agentmap.agents.base_agent import BaseAgent\nfrom protocols.my_service_protocol import MyServiceProtocol\n\nclass MyAgent(BaseAgent, MyServiceProtocol):\n    \"\"\"Agent that uses my custom service.\"\"\"\n    \n    def __init__(self, name: str, prompt: str = \"\", context: Dict[str, Any] = None,\n                 logger=None, **kwargs):\n        super().__init__(name, prompt, context, logger, **kwargs)\n        self.my_service = None\n    \n    def configure_my_service(self, service: Any) -> None:\n        \"\"\"Configure my service (called automatically).\"\"\"\n        self.my_service = service\n        self.logger.debug(f\"My service configured for {self.name}\")\n    \n    def run(self, state: Dict[str, Any]) -> Dict[str, Any]:\n        \"\"\"Execute agent using my service.\"\"\"\n        if not self.my_service:\n            return {**state, \"error\": \"My service not available\"}\n        \n        # Use your service\n        data = state.get(\"data\", {})\n        result = self.my_service.do_something(data)\n        \n        return {\n            **state,\n            \"my_service_result\": result,\n            \"agent_name\": self.name\n        }\n```\n\n### Step 4: Register With AgentMap\n\nRegister your service and agent with AgentMap's dependency injection system.\n\n```python\n# In your application initialization\nfrom agentmap.di.containers import ApplicationContainer\nfrom services.my_service import create_my_service\nfrom protocols.my_service_protocol import MyServiceProtocol\nfrom agents.my_agent import MyAgent\n\n# Get the application container\ncontainer = ApplicationContainer()\n\n# Register your service\ncontainer.register_host_factory(\n    service_name=\"my_service\",\n    factory_function=create_my_service,\n    dependencies=[\"app_config_service\", \"logging_service\"],\n    protocols=[MyServiceProtocol]\n)\n\n# Register your agent\nagent_registry = container.agent_registry_service()\nagent_registry.register_agent(\"my_agent\", MyAgent)\n```\n\n### Step 5: Configure\n\nAdd configuration for your service in AgentMap's configuration file.\n\n```yaml\n# agentmap_config.yaml\nhost_application:\n  enabled: true\n  protocol_folders:\n    - \"protocols\"  # Where your protocol files are located\n  services:\n    my_service:\n      enabled: true\n      configuration:\n        api_key: \"${MY_API_KEY}\"\n        timeout: 30\n        retries: 3\n```\n\n## Configuration Reference\n\n### Host Application Configuration\n\nThe `host_application` section in your AgentMap configuration controls host service integration.\n\n```yaml\nhost_application:\n  # Enable/disable host service integration\n  enabled: true\n  \n  # Folders to scan for protocol definitions\n  protocol_folders:\n    - \"protocols\"\n    - \"custom_protocols\"\n  \n  # Service configurations\n  services:\n    service_name:\n      enabled: true\n      configuration:\n        # Service-specific configuration\n        key: value\n```\n\n### Service Configuration Structure\n\n```yaml\nservices:\n  my_service:\n    # Enable/disable this specific service\n    enabled: true\n    \n    # Configuration passed to service constructor\n    configuration:\n      api_key: \"${MY_API_KEY}\"  # Environment variable\n      timeout: 30\n      base_url: \"https://api.example.com\"\n      retry_attempts: 3\n      \n      # Nested configuration\n      database:\n        host: \"localhost\"\n        port: 5432\n        name: \"myapp\"\n```\n\n### Environment Variables\n\nHost services can use environment variables in configuration:\n\n```yaml\nservices:\n  database_service:\n    configuration:\n      host: \"${DATABASE_HOST}\"\n      password: \"${DATABASE_PASSWORD}\"\n      api_key: \"${API_KEY}\"\n```\n\nSet these in your environment:\n```bash\nexport DATABASE_HOST=\"prod-db.company.com\"\nexport DATABASE_PASSWORD=\"secure-password\"\nexport API_KEY=\"your-api-key\"\n```\n\n## Advanced Topics\n\n### Multi-Service Agents\n\nAgents can implement multiple protocols to receive multiple services:\n\n```python\nclass MultiServiceAgent(BaseAgent, DatabaseServiceProtocol, EmailServiceProtocol):\n    \"\"\"Agent that uses multiple services.\"\"\"\n    \n    def __init__(self, name: str, **kwargs):\n        super().__init__(name, **kwargs)\n        self.database_service = None\n        self.email_service = None\n    \n    def configure_database_service(self, service: Any) -> None:\n        self.database_service = service\n    \n    def configure_email_service(self, service: Any) -> None:\n        self.email_service = service\n    \n    def run(self, state: Dict[str, Any]) -> Dict[str, Any]:\n        # Use both services together\n        data = self.database_service.get_data()\n        self.email_service.send_report(data)\n        return {**state, \"report_sent\": True}\n```\n\n### Protocol Composition\n\nCreate composite protocols for agents that need multiple related services:\n\n```python\n@runtime_checkable\nclass FullStackProtocol(\n    DatabaseServiceProtocol, \n    EmailServiceProtocol, \n    NotificationServiceProtocol, \n    Protocol\n):\n    \"\"\"Composite protocol for agents needing multiple services.\"\"\"\n    pass\n\nclass FullStackAgent(BaseAgent, FullStackProtocol):\n    \"\"\"Agent that gets all three services automatically.\"\"\"\n    # Implement all three configure methods\n    pass\n```\n\n### Graceful Degradation\n\nHandle cases where services might not be available:\n\n```python\nclass RobustAgent(BaseAgent, DatabaseServiceProtocol):\n    \"\"\"Agent with graceful degradation.\"\"\"\n    \n    def run(self, state: Dict[str, Any]) -> Dict[str, Any]:\n        if hasattr(self, 'database_service') and self.database_service:\n            # Use database if available\n            try:\n                data = self.database_service.get_data()\n                return {**state, \"data\": data, \"source\": \"database\"}\n            except Exception as e:\n                self.logger.warning(f\"Database failed, using fallback: {e}\")\n        \n        # Fallback to alternative approach\n        fallback_data = self._get_fallback_data()\n        return {**state, \"data\": fallback_data, \"source\": \"fallback\"}\n```\n\n### Service Dependencies\n\nServices can depend on other services or AgentMap components:\n\n```python\ndef create_advanced_service(database_service, email_service, logging_service):\n    \"\"\"Service that depends on other services.\"\"\"\n    logger = logging_service.get_logger(\"advanced_service\")\n    return AdvancedService(database_service, email_service, logger)\n\n# Register with dependencies\ncontainer.register_host_factory(\n    service_name=\"advanced_service\",\n    factory_function=create_advanced_service,\n    dependencies=[\"database_service\", \"email_service\", \"logging_service\"],\n    protocols=[AdvancedServiceProtocol]\n)\n```\n\n### Error Handling Patterns\n\nImplement robust error handling in services and agents:\n\n```python\nclass RobustService:\n    \"\"\"Service with comprehensive error handling.\"\"\"\n    \n    def __init__(self, config: Dict[str, Any], logger: logging.Logger):\n        self.config = config\n        self.logger = logger\n        self.circuit_breaker = CircuitBreaker()\n    \n    def call_external_api(self, data: Any) -> Dict[str, Any]:\n        \"\"\"Make external API call with error handling.\"\"\"\n        try:\n            # Circuit breaker pattern\n            if self.circuit_breaker.is_open():\n                raise Exception(\"Circuit breaker is open\")\n            \n            # Make API call\n            response = self._make_api_call(data)\n            self.circuit_breaker.record_success()\n            return {\"success\": True, \"data\": response}\n            \n        except Exception as e:\n            self.circuit_breaker.record_failure()\n            self.logger.error(f\"API call failed: {e}\")\n            \n            # Return error response instead of raising\n            return {\n                \"success\": False, \n                \"error\": str(e),\n                \"fallback_available\": True\n            }\n```\n\n## API Reference\n\n### ApplicationContainer Methods\n\n#### `register_host_factory()`\n\nRegister a host service using a factory function.\n\n```python\ndef register_host_factory(\n    self,\n    service_name: str,\n    factory_function: callable,\n    dependencies: Optional[List[str]] = None,\n    protocols: Optional[List[Type]] = None,\n    metadata: Optional[Dict[str, Any]] = None\n) -> None\n```\n\n**Parameters:**\n- `service_name`: Unique name for the service\n- `factory_function`: Function that creates the service instance\n- `dependencies`: List of dependency service names from the container\n- `protocols`: List of protocols this service implements\n- `metadata`: Optional metadata about the service\n\n#### `register_host_service()`\n\nRegister a host service using a class path.\n\n```python\ndef register_host_service(\n    self,\n    service_name: str,\n    service_class_path: str,\n    dependencies: Optional[List[str]] = None,\n    protocols: Optional[List[Type]] = None,\n    metadata: Optional[Dict[str, Any]] = None,\n    singleton: bool = True\n) -> None\n```\n\n#### `configure_host_protocols()`\n\nConfigure host protocols on an agent instance.\n\n```python\ndef configure_host_protocols(self, agent: Any) -> int\n```\n\n**Parameters:**\n- `agent`: Agent instance to configure\n\n**Returns:**\n- Number of services configured on the agent\n\n#### `get_host_services()`\n\nGet information about all registered host services.\n\n```python\ndef get_host_services(self) -> Dict[str, Dict[str, Any]]\n```\n\n**Returns:**\n- Dictionary mapping service names to service information\n\n### AppConfigService Methods\n\n#### `get_host_application_config()`\n\nGet host application configuration with defaults.\n\n```python\ndef get_host_application_config(self) -> Dict[str, Any]\n```\n\n#### `get_host_service_config()`\n\nGet configuration for a specific host service.\n\n```python\ndef get_host_service_config(self, service_name: str) -> Dict[str, Any]\n```\n\n#### `is_host_application_enabled()`\n\nCheck if host application support is enabled.\n\n```python\ndef is_host_application_enabled(self) -> bool\n```\n\n## Best Practices\n\n### Protocol Design\n\n1. **Use Descriptive Names**: Protocol names should clearly indicate their purpose\n   ```python\n   # Good\n   class DatabaseServiceProtocol(Protocol): ...\n   class EmailNotificationProtocol(Protocol): ...\n   \n   # Avoid\n   class ServiceProtocol(Protocol): ...\n   class Protocol1(Protocol): ...\n   ```\n\n2. **Keep Protocols Focused**: Each protocol should represent a single responsibility\n   ```python\n   # Good - focused protocols\n   class DatabaseReadProtocol(Protocol): ...\n   class DatabaseWriteProtocol(Protocol): ...\n   \n   # Avoid - overly broad protocol\n   class DatabaseEverythingProtocol(Protocol): ...\n   ```\n\n3. **Use Runtime Checkable**: Always use `@runtime_checkable` decorator\n   ```python\n   from typing import Protocol, runtime_checkable\n   \n   @runtime_checkable\n   class MyServiceProtocol(Protocol):\n       # Protocol definition\n   ```\n\n### Service Implementation\n\n1. **Follow Dependency Injection**: Accept dependencies in constructor\n   ```python\n   class MyService:\n       def __init__(self, config: Dict[str, Any], logger: logging.Logger):\n           self.config = config\n           self.logger = logger\n   ```\n\n2. **Handle Configuration Gracefully**: Provide sensible defaults\n   ```python\n   def __init__(self, config: Dict[str, Any], logger: logging.Logger):\n       self.timeout = config.get(\"timeout\", 30)\n       self.retries = config.get(\"retries\", 3)\n       self.base_url = config.get(\"base_url\", \"https://api.default.com\")\n   ```\n\n3. **Implement Error Recovery**: Don't let service failures crash agents\n   ```python\n   def call_api(self, data):\n       try:\n           return self._make_call(data)\n       except Exception as e:\n           self.logger.error(f\"API call failed: {e}\")\n           return {\"error\": str(e), \"fallback\": True}\n   ```\n\n### Agent Development\n\n1. **Validate Service Availability**: Check services before use\n   ```python\n   def run(self, state):\n       if not self.my_service:\n           return {**state, \"error\": \"Service not available\"}\n       # Use service\n   ```\n\n2. **Implement Graceful Degradation**: Provide fallback behavior\n   ```python\n   def run(self, state):\n       if hasattr(self, 'database_service'):\n           return self._use_database(state)\n       else:\n           return self._use_fallback(state)\n   ```\n\n3. **Log Service Usage**: Help with debugging and monitoring\n   ```python\n   def configure_my_service(self, service):\n       self.my_service = service\n       self.logger.info(f\"Service configured for {self.name}\")\n   ```\n\n### Configuration Management\n\n1. **Use Environment Variables**: Keep secrets out of config files\n   ```yaml\n   services:\n     my_service:\n       configuration:\n         api_key: \"${API_KEY}\"  # From environment\n         secret: \"${MY_SECRET}\"\n   ```\n\n2. **Organize by Environment**: Use different configs for dev/test/prod\n   ```yaml\n   # development.yaml\n   host_application:\n     services:\n       database_service:\n         configuration:\n           host: \"localhost\"\n   \n   # production.yaml\n   host_application:\n     services:\n       database_service:\n         configuration:\n           host: \"${PROD_DB_HOST}\"\n   ```\n\n3. **Validate Configuration**: Check required settings early\n   ```python\n   def __init__(self, config, logger):\n       required_keys = [\"api_key\", \"base_url\"]\n       for key in required_keys:\n           if key not in config:\n               raise ValueError(f\"Missing required config: {key}\")\n   ```\n\n## Troubleshooting\n\n### Common Issues\n\n#### Service Not Being Injected\n\n**Symptoms:**\n- Agent's configure method never called\n- Service attribute is None\n- \"Service not configured\" errors\n\n**Solutions:**\n1. Verify protocol implementation:\n   ```python\n   # Check if agent implements protocol\n   assert isinstance(my_agent, MyServiceProtocol)\n   ```\n\n2. Check service registration:\n   ```python\n   # Verify service is registered\n   services = container.get_host_services()\n   assert \"my_service\" in services\n   ```\n\n3. Enable debug logging:\n   ```yaml\n   logging:\n     level: DEBUG\n   ```\n\n#### Import Errors\n\n**Symptoms:**\n- ModuleNotFoundError when loading protocols/services\n- ImportError during agent registration\n\n**Solutions:**\n1. Check Python path includes your modules\n2. Verify file names and directory structure\n3. Ensure `__init__.py` files exist in package directories\n\n#### Configuration Not Loading\n\n**Symptoms:**\n- Service receives empty or default configuration\n- Environment variables not being resolved\n\n**Solutions:**\n1. Verify YAML syntax is correct\n2. Check environment variables are set:\n   ```bash\n   echo $MY_API_KEY\n   ```\n3. Use absolute paths for protocol folders:\n   ```yaml\n   protocol_folders:\n     - \"/absolute/path/to/protocols\"\n   ```\n\n#### Protocol Not Found\n\n**Symptoms:**\n- Protocol discovery fails\n- \"No protocol implementations found\" warnings\n\n**Solutions:**\n1. Check protocol folder configuration\n2. Ensure protocols use `@runtime_checkable`\n3. Verify protocol naming conventions\n\n### Debugging Tips\n\n1. **Enable Verbose Logging**:\n   ```yaml\n   logging:\n     level: DEBUG\n     format: \"[%(asctime)s] %(name)s %(levelname)s: %(message)s\"\n   ```\n\n2. **Check Service Registration**:\n   ```python\n   # In your application\n   container = ApplicationContainer()\n   services = container.get_host_services()\n   print(f\"Registered services: {list(services.keys())}\")\n   \n   protocols = container.get_protocol_implementations()\n   print(f\"Protocol implementations: {protocols}\")\n   ```\n\n3. **Test Service Instantiation**:\n   ```python\n   # Verify service can be created\n   service = container.get_host_service_instance(\"my_service\")\n   assert service is not None\n   ```\n\n4. **Validate Agent Protocol Implementation**:\n   ```python\n   from protocols.my_service_protocol import MyServiceProtocol\n   \n   agent = MyAgent(\"test\")\n   assert isinstance(agent, MyServiceProtocol)\n   assert hasattr(agent, 'configure_my_service')\n   ```\n\n## Examples\n\nFor complete working examples, see:\n- **[Host Integration Example](../examples/host_integration/)** - Complete example with database, email, and notification services\n- **[Basic Integration Test](../examples/host_integration/test_basic_integration.py)** - Simple verification test\n- **[Comprehensive Tests](../examples/host_integration/test_host_integration.py)** - Full test suite\n\nThe example demonstrates:\n- Protocol definition for database, email, and notification services\n- Service implementations with proper error handling\n- Custom agents that use multiple services\n- Configuration examples for different scenarios\n- Testing patterns for host integration\n\n## Migration Guide\n\nIf you're migrating from a different AgentMap integration approach:\n\n### From Manual Service Injection\n\n**Before:**\n```python\n# Manual injection\nagent = MyAgent(\"test\")\nagent.database_service = DatabaseService(config)\n```\n\n**After:**\n```python\n# Protocol-based injection\nclass MyAgent(BaseAgent, DatabaseServiceProtocol):\n    def configure_database_service(self, service):\n        self.database_service = service\n\n# Service automatically injected by AgentMap\n```\n\n### From Hardcoded Dependencies\n\n**Before:**\n```python\nclass MyAgent(BaseAgent):\n    def __init__(self, name, database_url):\n        super().__init__(name)\n        self.db = Database(database_url)  # Hardcoded\n```\n\n**After:**\n```python\nclass MyAgent(BaseAgent, DatabaseServiceProtocol):\n    def configure_database_service(self, service):\n        self.database_service = service  # Injected\n```\n\nThis approach provides better testability, configuration management, and separation of concerns.\n"
+# Host Service Integration
+
+AgentMap's Host Service Integration allows you to extend AgentMap with your own custom services and agents while leveraging AgentMap's dependency injection system. This enables host applications to define domain-specific services that are automatically injected into compatible agents.
+
+> **Related Documentation**: 
+> - [Service Injection](service_injection.md) - AgentMap's built-in protocol-based dependency injection system
+> - [Host Service Registry](host_service_registry.md) - Registry API for managing host services
+> - [Agent Development Contract](agent_contract.md) - Required agent interface and patterns
+> - [Advanced Agent Types](advanced_agent_types.md) - Context configuration for services
+
+## Prerequisites
+
+Before implementing host service integration, you should be familiar with:
+
+- **AgentMap Fundamentals**: Basic workflow creation and agent development
+- **Service Injection Patterns**: Read [Service Injection](service_injection.md) to understand AgentMap's built-in DI system
+- **Agent Contract**: Review [Agent Development Contract](agent_contract.md) for required patterns
+- **Python Protocols**: Understanding of `typing.Protocol` and `@runtime_checkable` decorator
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Core Concepts](#core-concepts)
+- [Implementation Guide](#implementation-guide)
+- [Configuration Reference](#configuration-reference)
+- [Advanced Topics](#advanced-topics)
+- [API Reference](#api-reference)
+- [Best Practices](#best-practices)
+- [Troubleshooting](#troubleshooting)
+- [Examples](#examples)
+- [Migration Guide](#migration-guide)
+- [Next Steps](#next-steps)
+- [See Also](#see-also)
+
+## Overview
+
+Host Service Integration bridges the gap between AgentMap's workflow orchestration capabilities and your application's domain-specific functionality. Instead of being limited to AgentMap's built-in agents, you can:
+
+- **Define Custom Services**: Implement services specific to your domain (database access, external APIs, business logic)
+- **Create Protocol Interfaces**: Define contracts that specify how agents interact with services
+- **Build Custom Agents**: Create agents that implement your protocols and automatically receive service dependencies
+- **Maintain Clean Architecture**: Keep services separate from agents while ensuring automatic dependency injection
+
+## Architecture
+
+### Core Components
+
+```
+Host Application
+├── Protocols (interfaces)
+│   ├── DatabaseServiceProtocol
+│   ├── EmailServiceProtocol
+│   └── CustomServiceProtocol
+├── Services (implementations) 
+│   ├── DatabaseService
+│   ├── EmailService
+│   └── CustomService
+└── Agents (consumers)
+    ├── DatabaseAgent
+    ├── EmailAgent
+    └── CustomAgent
+
+        ↓ Automatic Injection ↓
+        
+AgentMap Container
+├── Service Registration
+├── Protocol Discovery
+├── Dependency Injection
+└── Graph Execution
+```
+
+### Integration Flow
+
+1. **Protocol Definition**: Define service interfaces using Python protocols
+2. **Service Implementation**: Create concrete service classes that provide functionality
+3. **Agent Creation**: Build agents that implement protocols to receive services
+4. **Registration**: Register services with AgentMap's dependency injection container
+5. **Configuration**: Configure services through AgentMap's configuration system
+6. **Execution**: AgentMap automatically injects services into compatible agents during graph execution
+
+## Core Concepts
+
+### Protocols
+
+Protocols define the interface contract between agents and services. They specify what methods an agent must implement to receive a particular service.
+
+```python
+from typing import Protocol, runtime_checkable, Any
+from abc import abstractmethod
+
+@runtime_checkable
+class DatabaseServiceProtocol(Protocol):
+    """Protocol for agents that need database access."""
+    
+    @abstractmethod
+    def configure_database_service(self, database_service: Any) -> None:
+        """Configure the agent with a database service.
+        
+        Args:
+            database_service: Database service instance
+        """
+        ...
+```
+
+**Key Requirements:**
+- Must use `@runtime_checkable` decorator
+- Should end with "ServiceProtocol" by convention
+- Configuration methods should follow pattern: `configure_{service_name}_service`
+- Must be abstract protocols, not concrete classes
+
+> **See Also**: [Agent Development Contract](agent_contract.md#protocol-based-service-configuration) for more details on protocol implementation patterns.
+
+### Services
+
+Services provide the actual implementation of functionality that agents need. They contain business logic, external integrations, or data access code.
+
+```python
+class DatabaseService:
+    """Concrete database service implementation."""
+    
+    def __init__(self, config: Dict[str, Any], logger: logging.Logger):
+        self.config = config
+        self.logger = logger
+        self._initialize_database()
+    
+    def execute_query(self, query: str, params: tuple = None) -> List[Dict]:
+        """Execute database query and return results."""
+        # Implementation here
+        pass
+```
+
+**Key Requirements:**
+- Should accept configuration and logger in constructor
+- Should provide clean, domain-specific APIs
+- Should handle errors gracefully
+- Should follow dependency injection patterns
+
+### Custom Agents
+
+Custom agents implement one or more protocols to automatically receive the corresponding services.
+
+```python
+from agentmap.agents.base_agent import BaseAgent
+
+class DatabaseAgent(BaseAgent, DatabaseServiceProtocol):
+    """Agent that performs database operations."""
+    
+    def __init__(self, name: str, prompt: str = "", context: Dict[str, Any] = None, 
+                 logger=None, **kwargs):
+        super().__init__(name, prompt, context, logger, **kwargs)
+        self.database_service = None
+    
+    def configure_database_service(self, database_service: Any) -> None:
+        """Configure database service (called automatically by AgentMap)."""
+        self.database_service = database_service
+        self.logger.debug(f"Database service configured for {self.name}")
+    
+    def run(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute agent logic using injected service."""
+        if not self.database_service:
+            raise ValueError("Database service not configured")
+        
+        operation = state.get("operation", "query")
+        
+        if operation == "get_users":
+            users = self.database_service.execute_query("SELECT * FROM users")
+            return {**state, "users": users}
+        
+        # Handle other operations...
+        return state
+```
+
+**Key Requirements:**
+- Must inherit from `BaseAgent` and implement one or more service protocols
+- Must implement all abstract methods from the protocols
+- Should handle cases where services are not available (graceful degradation)
+- Should validate service availability before use
+
+> **See Also**: [Agent Development Contract](agent_contract.md) for complete agent implementation requirements and [Service Injection](service_injection.md#complete-implementation-examples) for AgentMap's built-in service patterns.
+
+## Implementation Guide
+
+### Step 1: Define Your Protocol
+
+Create a protocol interface that defines how agents will interact with your service.
+
+```python
+# protocols/my_service_protocol.py
+from typing import Protocol, runtime_checkable, Any
+from abc import abstractmethod
+
+@runtime_checkable
+class MyServiceProtocol(Protocol):
+    """Protocol for agents that need my custom service."""
+    
+    @abstractmethod
+    def configure_my_service(self, service: Any) -> None:
+        """Configure the agent with my service.
+        
+        Args:
+            service: MyService instance
+        """
+        ...
+```
+
+### Step 2: Implement Your Service
+
+Create a concrete service class that provides the actual functionality.
+
+```python
+# services/my_service.py
+import logging
+from typing import Dict, Any
+
+class MyService:
+    """Custom service implementation."""
+    
+    def __init__(self, config: Dict[str, Any], logger: logging.Logger):
+        self.config = config
+        self.logger = logger
+        self.api_key = config.get("api_key")
+        self.timeout = config.get("timeout", 30)
+    
+    def do_something(self, data: Any) -> Dict[str, Any]:
+        """Perform service operation."""
+        try:
+            # Your service logic here
+            result = self._process_data(data)
+            self.logger.info(f"Service operation completed: {result}")
+            return {"success": True, "result": result}
+        except Exception as e:
+            self.logger.error(f"Service operation failed: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def _process_data(self, data: Any) -> Any:
+        """Internal processing logic."""
+        # Implementation here
+        return data
+
+# Factory function for dependency injection
+def create_my_service(app_config_service, logging_service) -> MyService:
+    """Factory function to create MyService with dependencies.
+    
+    Args:
+        app_config_service: AppConfigService instance
+        logging_service: LoggingService instance
+    
+    Returns:
+        Configured MyService instance
+    """
+    config = app_config_service.get_host_service_config("my_service")
+    logger = logging_service.get_logger("my_service")
+    return MyService(config["configuration"], logger)
+```
+
+### Step 3: Create Your Agent
+
+Build an agent that implements your protocol to automatically receive your service.
+
+```python
+# agents/my_agent.py
+from typing import Dict, Any
+from agentmap.agents.base_agent import BaseAgent
+from protocols.my_service_protocol import MyServiceProtocol
+
+class MyAgent(BaseAgent, MyServiceProtocol):
+    """Agent that uses my custom service."""
+    
+    def __init__(self, name: str, prompt: str = "", context: Dict[str, Any] = None,
+                 logger=None, **kwargs):
+        super().__init__(name, prompt, context, logger, **kwargs)
+        self.my_service = None
+    
+    def configure_my_service(self, service: Any) -> None:
+        """Configure my service (called automatically)."""
+        self.my_service = service
+        self.logger.debug(f"My service configured for {self.name}")
+    
+    def run(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute agent using my service."""
+        if not self.my_service:
+            return {**state, "error": "My service not available"}
+        
+        # Use your service
+        data = state.get("data", {})
+        result = self.my_service.do_something(data)
+        
+        return {
+            **state,
+            "my_service_result": result,
+            "agent_name": self.name
+        }
+```
+
+### Step 4: Register With AgentMap
+
+Register your service and agent with AgentMap's dependency injection system.
+
+```python
+# In your application initialization
+from agentmap.di.containers import ApplicationContainer
+from services.my_service import create_my_service
+from protocols.my_service_protocol import MyServiceProtocol
+from agents.my_agent import MyAgent
+
+# Get the application container
+container = ApplicationContainer()
+
+# Register your service
+container.register_host_factory(
+    service_name="my_service",
+    factory_function=create_my_service,
+    dependencies=["app_config_service", "logging_service"],
+    protocols=[MyServiceProtocol]
+)
+
+# Register your agent
+agent_registry = container.agent_registry_service()
+agent_registry.register_agent("my_agent", MyAgent)
+```
+
+### Step 5: Configure
+
+Add configuration for your service in AgentMap's configuration file.
+
+```yaml
+# agentmap_config.yaml
+host_application:
+  enabled: true
+  protocol_folders:
+    - "protocols"  # Where your protocol files are located
+  services:
+    my_service:
+      enabled: true
+      configuration:
+        api_key: "${MY_API_KEY}"
+        timeout: 30
+        retries: 3
+```
+
+## Configuration Reference
+
+> **Related**: [Storage Services](storage_services.md) for storage configuration patterns and [Advanced Agent Types](advanced_agent_types.md) for agent context configuration.
+
+### Host Application Configuration
+
+The `host_application` section in your AgentMap configuration controls host service integration.
+
+```yaml
+host_application:
+  # Enable/disable host service integration
+  enabled: true
+  
+  # Folders to scan for protocol definitions
+  protocol_folders:
+    - "protocols"
+    - "custom_protocols"
+  
+  # Service configurations
+  services:
+    service_name:
+      enabled: true
+      configuration:
+        # Service-specific configuration
+        key: value
+```
+
+### Service Configuration Structure
+
+```yaml
+services:
+  my_service:
+    # Enable/disable this specific service
+    enabled: true
+    
+    # Configuration passed to service constructor
+    configuration:
+      api_key: "${MY_API_KEY}"  # Environment variable
+      timeout: 30
+      base_url: "https://api.example.com"
+      retry_attempts: 3
+      
+      # Nested configuration
+      database:
+        host: "localhost"
+        port: 5432
+        name: "myapp"
+```
+
+### Environment Variables
+
+Host services can use environment variables in configuration:
+
+```yaml
+services:
+  database_service:
+    configuration:
+      host: "${DATABASE_HOST}"
+      password: "${DATABASE_PASSWORD}"
+      api_key: "${API_KEY}"
+```
+
+Set these in your environment:
+
+```bash
+export DATABASE_HOST="prod-db.company.com"
+export DATABASE_PASSWORD="secure-password"
+export API_KEY="your-api-key"
+```
+
+## Advanced Topics
+
+### Multi-Service Agents
+
+Agents can implement multiple protocols to receive multiple services:
+
+```python
+class MultiServiceAgent(BaseAgent, DatabaseServiceProtocol, EmailServiceProtocol):
+    """Agent that uses multiple services."""
+    
+    def __init__(self, name: str, **kwargs):
+        super().__init__(name, **kwargs)
+        self.database_service = None
+        self.email_service = None
+    
+    def configure_database_service(self, service: Any) -> None:
+        self.database_service = service
+    
+    def configure_email_service(self, service: Any) -> None:
+        self.email_service = service
+    
+    def run(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        # Use both services together
+        data = self.database_service.get_data()
+        self.email_service.send_report(data)
+        return {**state, "report_sent": True}
+```
+
+### Protocol Composition
+
+Create composite protocols for agents that need multiple related services:
+
+```python
+@runtime_checkable
+class FullStackProtocol(
+    DatabaseServiceProtocol, 
+    EmailServiceProtocol, 
+    NotificationServiceProtocol, 
+    Protocol
+):
+    """Composite protocol for agents needing multiple services."""
+    pass
+
+class FullStackAgent(BaseAgent, FullStackProtocol):
+    """Agent that gets all three services automatically."""
+    # Implement all three configure methods
+    pass
+```
+
+### Graceful Degradation
+
+Handle cases where services might not be available:
+
+```python
+class RobustAgent(BaseAgent, DatabaseServiceProtocol):
+    """Agent with graceful degradation."""
+    
+    def run(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        if hasattr(self, 'database_service') and self.database_service:
+            # Use database if available
+            try:
+                data = self.database_service.get_data()
+                return {**state, "data": data, "source": "database"}
+            except Exception as e:
+                self.logger.warning(f"Database failed, using fallback: {e}")
+        
+        # Fallback to alternative approach
+        fallback_data = self._get_fallback_data()
+        return {**state, "data": fallback_data, "source": "fallback"}
+```
+
+### Service Dependencies
+
+Services can depend on other services or AgentMap components:
+
+```python
+def create_advanced_service(database_service, email_service, logging_service):
+    """Service that depends on other services."""
+    logger = logging_service.get_logger("advanced_service")
+    return AdvancedService(database_service, email_service, logger)
+
+# Register with dependencies
+container.register_host_factory(
+    service_name="advanced_service",
+    factory_function=create_advanced_service,
+    dependencies=["database_service", "email_service", "logging_service"],
+    protocols=[AdvancedServiceProtocol]
+)
+```
+
+### Error Handling Patterns
+
+Implement robust error handling in services and agents:
+
+```python
+class RobustService:
+    """Service with comprehensive error handling."""
+    
+    def __init__(self, config: Dict[str, Any], logger: logging.Logger):
+        self.config = config
+        self.logger = logger
+        self.circuit_breaker = CircuitBreaker()
+    
+    def call_external_api(self, data: Any) -> Dict[str, Any]:
+        """Make external API call with error handling."""
+        try:
+            # Circuit breaker pattern
+            if self.circuit_breaker.is_open():
+                raise Exception("Circuit breaker is open")
+            
+            # Make API call
+            response = self._make_api_call(data)
+            self.circuit_breaker.record_success()
+            return {"success": True, "data": response}
+            
+        except Exception as e:
+            self.circuit_breaker.record_failure()
+            self.logger.error(f"API call failed: {e}")
+            
+            # Return error response instead of raising
+            return {
+                "success": False, 
+                "error": str(e),
+                "fallback_available": True
+            }
+```
+
+## API Reference
+
+> **Note**: This section covers host service-specific methods. For complete AgentMap container documentation, see [Dependency Injection Guide](../architecture/dependency_injection_guide.md).
+> For host service registry operations, see [Host Service Registry](host_service_registry.md).
+
+### ApplicationContainer Methods
+
+#### `register_host_factory()`
+
+Register a host service using a factory function.
+
+```python
+def register_host_factory(
+    self,
+    service_name: str,
+    factory_function: callable,
+    dependencies: Optional[List[str]] = None,
+    protocols: Optional[List[Type]] = None,
+    metadata: Optional[Dict[str, Any]] = None
+) -> None
+```
+
+**Parameters:**
+- `service_name`: Unique name for the service
+- `factory_function`: Function that creates the service instance
+- `dependencies`: List of dependency service names from the container
+- `protocols`: List of protocols this service implements
+- `metadata`: Optional metadata about the service
+
+#### `register_host_service()`
+
+Register a host service using a class path.
+
+```python
+def register_host_service(
+    self,
+    service_name: str,
+    service_class_path: str,
+    dependencies: Optional[List[str]] = None,
+    protocols: Optional[List[Type]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    singleton: bool = True
+) -> None
+```
+
+#### `configure_host_protocols()`
+
+Configure host protocols on an agent instance.
+
+```python
+def configure_host_protocols(self, agent: Any) -> int
+```
+
+**Parameters:**
+- `agent`: Agent instance to configure
+
+**Returns:**
+- Number of services configured on the agent
+
+#### `get_host_services()`
+
+Get information about all registered host services.
+
+```python
+def get_host_services(self) -> Dict[str, Dict[str, Any]]
+```
+
+**Returns:**
+- Dictionary mapping service names to service information
+
+### AppConfigService Methods
+
+#### `get_host_application_config()`
+
+Get host application configuration with defaults.
+
+```python
+def get_host_application_config(self) -> Dict[str, Any]
+```
+
+#### `get_host_service_config()`
+
+Get configuration for a specific host service.
+
+```python
+def get_host_service_config(self, service_name: str) -> Dict[str, Any]
+```
+
+#### `is_host_application_enabled()`
+
+Check if host application support is enabled.
+
+```python
+def is_host_application_enabled(self) -> bool
+```
+
+## Best Practices
+
+### Protocol Design
+
+1. **Use Descriptive Names**: Protocol names should clearly indicate their purpose
+   ```python
+   # Good
+   class DatabaseServiceProtocol(Protocol): ...
+   class EmailNotificationProtocol(Protocol): ...
+   
+   # Avoid
+   class ServiceProtocol(Protocol): ...
+   class Protocol1(Protocol): ...
+   ```
+
+2. **Keep Protocols Focused**: Each protocol should represent a single responsibility
+   ```python
+   # Good - focused protocols
+   class DatabaseReadProtocol(Protocol): ...
+   class DatabaseWriteProtocol(Protocol): ...
+   
+   # Avoid - overly broad protocol
+   class DatabaseEverythingProtocol(Protocol): ...
+   ```
+
+3. **Use Runtime Checkable**: Always use `@runtime_checkable` decorator
+   ```python
+   from typing import Protocol, runtime_checkable
+   
+   @runtime_checkable
+   class MyServiceProtocol(Protocol):
+       # Protocol definition
+   ```
+
+### Service Implementation
+
+1. **Follow Dependency Injection**: Accept dependencies in constructor
+   ```python
+   class MyService:
+       def __init__(self, config: Dict[str, Any], logger: logging.Logger):
+           self.config = config
+           self.logger = logger
+   ```
+
+2. **Handle Configuration Gracefully**: Provide sensible defaults
+   ```python
+   def __init__(self, config: Dict[str, Any], logger: logging.Logger):
+       self.timeout = config.get("timeout", 30)
+       self.retries = config.get("retries", 3)
+       self.base_url = config.get("base_url", "https://api.default.com")
+   ```
+
+3. **Implement Error Recovery**: Don't let service failures crash agents
+   ```python
+   def call_api(self, data):
+       try:
+           return self._make_call(data)
+       except Exception as e:
+           self.logger.error(f"API call failed: {e}")
+           return {"error": str(e), "fallback": True}
+   ```
+
+### Agent Development
+
+1. **Validate Service Availability**: Check services before use
+   ```python
+   def run(self, state):
+       if not self.my_service:
+           return {**state, "error": "Service not available"}
+       # Use service
+   ```
+
+2. **Implement Graceful Degradation**: Provide fallback behavior
+   ```python
+   def run(self, state):
+       if hasattr(self, 'database_service'):
+           return self._use_database(state)
+       else:
+           return self._use_fallback(state)
+   ```
+
+3. **Log Service Usage**: Help with debugging and monitoring
+   ```python
+   def configure_my_service(self, service):
+       self.my_service = service
+       self.logger.info(f"Service configured for {self.name}")
+   ```
+
+### Configuration Management
+
+1. **Use Environment Variables**: Keep secrets out of config files
+   ```yaml
+   services:
+     my_service:
+       configuration:
+         api_key: "${API_KEY}"  # From environment
+         secret: "${MY_SECRET}"
+   ```
+
+2. **Organize by Environment**: Use different configs for dev/test/prod
+   ```yaml
+   # development.yaml
+   host_application:
+     services:
+       database_service:
+         configuration:
+           host: "localhost"
+   
+   # production.yaml
+   host_application:
+     services:
+       database_service:
+         configuration:
+           host: "${PROD_DB_HOST}"
+   ```
+
+3. **Validate Configuration**: Check required settings early
+   ```python
+   def __init__(self, config, logger):
+       required_keys = ["api_key", "base_url"]
+       for key in required_keys:
+           if key not in config:
+               raise ValueError(f"Missing required config: {key}")
+   ```
+
+## Troubleshooting
+
+### Common Issues
+
+#### Service Not Being Injected
+
+**Symptoms:**
+- Agent's configure method never called
+- Service attribute is None
+- "Service not configured" errors
+
+**Solutions:**
+1. Verify protocol implementation:
+   ```python
+   # Check if agent implements protocol
+   assert isinstance(my_agent, MyServiceProtocol)
+   ```
+
+2. Check service registration:
+   ```python
+   # Verify service is registered
+   services = container.get_host_services()
+   assert "my_service" in services
+   ```
+
+3. Enable debug logging:
+   ```yaml
+   logging:
+     level: DEBUG
+   ```
+
+#### Import Errors
+
+**Symptoms:**
+- ModuleNotFoundError when loading protocols/services
+- ImportError during agent registration
+
+**Solutions:**
+1. Check Python path includes your modules
+2. Verify file names and directory structure
+3. Ensure `__init__.py` files exist in package directories
+
+#### Configuration Not Loading
+
+**Symptoms:**
+- Service receives empty or default configuration
+- Environment variables not being resolved
+
+**Solutions:**
+1. Verify YAML syntax is correct
+2. Check environment variables are set:
+   ```bash
+   echo $MY_API_KEY
+   ```
+3. Use absolute paths for protocol folders:
+   ```yaml
+   protocol_folders:
+     - "/absolute/path/to/protocols"
+   ```
+
+#### Protocol Not Found
+
+**Symptoms:**
+- Protocol discovery fails
+- "No protocol implementations found" warnings
+
+**Solutions:**
+1. Check protocol folder configuration
+2. Ensure protocols use `@runtime_checkable`
+3. Verify protocol naming conventions
+
+### Debugging Tips
+
+1. **Enable Verbose Logging**:
+   ```yaml
+   logging:
+     level: DEBUG
+     format: "[%(asctime)s] %(name)s %(levelname)s: %(message)s"
+   ```
+
+2. **Check Service Registration**:
+   ```python
+   # In your application
+   container = ApplicationContainer()
+   services = container.get_host_services()
+   print(f"Registered services: {list(services.keys())}")
+   
+   protocols = container.get_protocol_implementations()
+   print(f"Protocol implementations: {protocols}")
+   ```
+
+3. **Test Service Instantiation**:
+   ```python
+   # Verify service can be created
+   service = container.get_host_service_instance("my_service")
+   assert service is not None
+   ```
+
+4. **Validate Agent Protocol Implementation**:
+   ```python
+   from protocols.my_service_protocol import MyServiceProtocol
+   
+   agent = MyAgent("test")
+   assert isinstance(agent, MyServiceProtocol)
+   assert hasattr(agent, 'configure_my_service')
+   ```
+
+## Examples
+
+### Complete Working Examples
+
+For hands-on learning, explore these complete examples:
+
+- **[Host Integration Example](../examples/host_integration/)** - Complete example with database, email, and notification services
+- **[Basic Integration Test](../examples/host_integration/test_basic_integration.py)** - Simple verification test
+- **[Comprehensive Tests](../examples/host_integration/test_host_integration.py)** - Full test suite
+
+### What the Examples Demonstrate
+
+- **Protocol Definition**: How to define clean service interfaces
+- **Service Implementation**: Best practices for service development with proper error handling
+- **Multi-Service Agents**: Agents that use multiple services together
+- **Configuration Patterns**: YAML configuration examples for different scenarios
+- **Testing Strategies**: Comprehensive testing patterns for host integration
+
+### Related Examples
+
+- **[AgentMap Agent Types](agentmap_agent_types.md)** - Built-in agents using AgentMap's service injection
+- **[Service Injection Examples](service_injection.md#complete-implementation-examples)** - AgentMap's built-in service patterns
+
+## Migration Guide
+
+If you're migrating from a different AgentMap integration approach:
+
+### From Manual Service Injection
+
+**Before:**
+```python
+# Manual injection
+agent = MyAgent("test")
+agent.database_service = DatabaseService(config)
+```
+
+**After:**
+```python
+# Protocol-based injection
+class MyAgent(BaseAgent, DatabaseServiceProtocol):
+    def configure_database_service(self, service):
+        self.database_service = service
+
+# Service automatically injected by AgentMap
+```
+
+### From Hardcoded Dependencies
+
+**Before:**
+```python
+class MyAgent(BaseAgent):
+    def __init__(self, name, database_url):
+        super().__init__(name)
+        self.db = Database(database_url)  # Hardcoded
+```
+
+**After:**
+```python
+class MyAgent(BaseAgent, DatabaseServiceProtocol):
+    def configure_database_service(self, service):
+        self.database_service = service  # Injected
+```
+
+This approach provides better testability, configuration management, and separation of concerns.
+
+## Next Steps
+
+After implementing host service integration:
+
+### Immediate Next Steps
+1. **Test Your Integration**: Use the patterns in [Examples](#examples) to verify your implementation
+2. **Configure Services**: Review [Configuration Reference](#configuration-reference) for production setup
+3. **Debug Issues**: Use [Troubleshooting](#troubleshooting) section for common problems
+
+### Advanced Topics
+1. **Registry Management**: Learn [Host Service Registry](host_service_registry.md) for advanced service management
+2. **Built-in Service Patterns**: Study [Service Injection](service_injection.md) for AgentMap's internal patterns
+3. **Agent Development**: Master [Agent Development Contract](agent_contract.md) for advanced agent patterns
+4. **Context Configuration**: Explore [Advanced Agent Types](advanced_agent_types.md) for service-specific configuration
+
+### Integration with AgentMap Ecosystem
+1. **Storage Integration**: Combine with [Storage Services](storage_services.md) for data operations
+2. **Workflow Development**: Use in [AgentMap Example Workflows](agentmap_example_workflows.md)
+3. **Prompt Management**: Integrate with [Prompt Management](prompt_management_in_agentmap.md)
+4. **Execution Tracking**: Monitor with [AgentMap Execution Tracking](agentmap_execution_tracking.md)
+
+## See Also
+
+### Core Documentation
+- **[Service Injection](service_injection.md)** - AgentMap's built-in protocol-based dependency injection system
+- **[Agent Development Contract](agent_contract.md)** - Required interface and patterns for all agents
+- **[Host Service Registry](host_service_registry.md)** - Registry API for managing host services
+
+### Related Guides
+- **[Advanced Agent Types](advanced_agent_types.md)** - Context configuration for services
+- **[Storage Services](storage_services.md)** - Unified storage operations patterns
+- **[AgentMap Agent Types](agentmap_agent_types.md)** - Built-in agents using service injection
+
+### Architecture Documentation
+- **[Clean Architecture Overview](../architecture/clean_architecture_overview.md)** - Overall architecture principles
+- **[Dependency Injection Guide](../architecture/dependency_injection_guide.md)** - Complete DI container documentation
+- **[Service Catalog](../architecture/service_catalog.md)** - Complete list of AgentMap services
+
+### Operational Guides
+- **[AgentMap CLI Documentation](agentmap_cli_documentation.md)** - Command-line tools for service debugging
+- **[AgentMap Execution Tracking](agentmap_execution_tracking.md)** - Performance monitoring and debugging
+- **[Prompt Management in AgentMap](prompt_management_in_agentmap.md)** - Template system integration
