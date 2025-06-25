@@ -11,7 +11,7 @@ const stepsData = [
         visual: `
             <div class="mermaid-wrapper">
                 <pre class="mermaid">
-                    flowchart TD
+                    flowchart LR
                     User[You] -->|Write| CSV[Simple CSV File]
                     CSV -->|Run| AgentMap[AgentMap]
                     AgentMap -->|Creates| Workflow[AI Workflow]
@@ -169,7 +169,7 @@ Process,Summarize,summary,{"llm":"anthropic"},Create executive summary`,
         visual: `
             <div class="mermaid-wrapper">
                 <pre class="mermaid">
-                    flowchart TB
+                    flowchart LR
                     
                     subgraph "Built-in Agent Library"
                         subgraph "LLM Agents"
@@ -249,7 +249,7 @@ with 65% humidity and gentle winds. Perfect for a walk in the park!"`,
                     Build --> Execute[Execute Nodes]
                     Execute --> Results[Get Results]
                     
-                    Execute --> Node1[GetCity: "London"]
+                    Execute --> Node1[GetCity: London]
                     Node1 --> Node2[FetchWeather: API Call]
                     Node2 --> Node3[GenerateReport: LLM]
                     Node3 --> Node4[ShowResult: Display]
