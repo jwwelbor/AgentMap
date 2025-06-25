@@ -25,6 +25,9 @@ from agentmap.services.graph_assembly_service import GraphAssemblyService
 from agentmap.services.graph_bundle_service import GraphBundleService
 from agentmap.services.graph_definition_service import GraphDefinitionService
 from agentmap.services.graph_execution_service import GraphExecutionService
+from agentmap.services.host_protocol_configuration_service import (
+    HostProtocolConfigurationService,
+)
 from agentmap.services.llm_service import LLMService
 
 # Direct imports from migrated services in src_new
@@ -32,7 +35,6 @@ from agentmap.services.logging_service import LoggingService
 from agentmap.services.node_registry_service import NodeRegistryService
 from agentmap.services.state_adapter_service import StateAdapterService
 from agentmap.services.storage.manager import StorageServiceManager
-from agentmap.services.host_protocol_configuration_service import HostProtocolConfigurationService
 
 
 @dataclass
@@ -745,7 +747,9 @@ class GraphRunnerService:
 
         try:
             # Delegate to HostProtocolConfigurationService
-            configured_count = self.host_protocol_configuration.configure_host_protocols(agent)
+            configured_count = (
+                self.host_protocol_configuration.configure_host_protocols(agent)
+            )
 
             if configured_count > 0:
                 self.logger.debug(
@@ -796,16 +800,26 @@ class GraphRunnerService:
 
         try:
             # Use HostProtocolConfigurationService to get status
-            config_status = self.host_protocol_configuration.get_configuration_status(agent)
-            
+            config_status = self.host_protocol_configuration.get_configuration_status(
+                agent
+            )
+
             # Update status with configuration details
-            status["protocols_implemented"] = config_status.get("configuration_potential", [])
-            status["services_configured"] = config_status.get("summary", {}).get("configuration_ready", 0)
-            
-            # Add service summary to status  
+            status["protocols_implemented"] = config_status.get(
+                "configuration_potential", []
+            )
+            status["services_configured"] = config_status.get("summary", {}).get(
+                "configuration_ready", 0
+            )
+
+            # Add service summary to status
             status["registry_stats"] = {
-                "total_services": config_status.get("summary", {}).get("total_services_available", 0),
-                "total_protocols": config_status.get("summary", {}).get("total_protocols_implemented", 0),
+                "total_services": config_status.get("summary", {}).get(
+                    "total_services_available", 0
+                ),
+                "total_protocols": config_status.get("summary", {}).get(
+                    "total_protocols_implemented", 0
+                ),
             }
 
         except Exception as e:

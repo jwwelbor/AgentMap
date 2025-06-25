@@ -10,9 +10,6 @@ from agentmap.agents.builtins.storage.base_storage_agent import (
     log_operation,
 )
 
-# Import types from models (where they belong)
-from agentmap.models.storage import DocumentResult, WriteMode
-
 # Import CSV agents
 from agentmap.agents.builtins.storage.csv import (
     CSVAgent,
@@ -37,6 +34,9 @@ from agentmap.agents.builtins.storage.json import (
     JSONDocumentReaderAgent,
     JSONDocumentWriterAgent,
 )
+
+# Import types from models (where they belong)
+from agentmap.models.storage import DocumentResult, WriteMode
 
 # Import Vector agents
 try:

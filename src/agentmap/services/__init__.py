@@ -61,11 +61,11 @@ from .protocols import (
     StorageCapableAgent,
     StorageServiceProtocol,
 )
+from .routing import PromptComplexityAnalyzer, RoutingCache
 
 # Routing Services
 # Import LLMRoutingService directly to avoid circular import
 from .routing.routing_service import LLMRoutingService
-from .routing import PromptComplexityAnalyzer, RoutingCache
 from .state_adapter_service import StateAdapterService
 
 # Storage Services

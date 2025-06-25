@@ -14,9 +14,9 @@ from typing import Any, Dict, Optional
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent,
 )
+from agentmap.models.storage import DocumentResult
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.state_adapter_service import StateAdapterService
-from agentmap.models.storage import DocumentResult
 from agentmap.services.storage.protocols import FileCapableAgent
 
 

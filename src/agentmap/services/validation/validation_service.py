@@ -31,18 +31,20 @@ class ValidationService:
         if csv_validator is None:
             # Create minimal services for CSV validation
             functions_path = config_service.get_functions_path()
-            from agentmap.services.function_resolution_service import (
-                FunctionResolutionService,
-            )
+            from agentmap.models.agent_registry import AgentRegistry
             from agentmap.services.agent_registry_service import (
                 AgentRegistryService,
             )
-            from agentmap.models.agent_registry import AgentRegistry
+            from agentmap.services.function_resolution_service import (
+                FunctionResolutionService,
+            )
 
             function_resolution_service = FunctionResolutionService(functions_path)
             agent_registry_model = AgentRegistry()
-            agent_registry_service = AgentRegistryService(agent_registry_model, logging_service)
-            
+            agent_registry_service = AgentRegistryService(
+                agent_registry_model, logging_service
+            )
+
             self.csv_validator = CSVValidationService(
                 logging_service, function_resolution_service, agent_registry_service
             )

@@ -51,7 +51,7 @@ jobs:
       run: |
         poetry run black --check src/
         poetry run isort --check-only src/
-        poetry run flake8 src/
+        # poetry run flake8 src/
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3

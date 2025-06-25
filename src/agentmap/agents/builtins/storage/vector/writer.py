@@ -11,9 +11,9 @@ import logging
 from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.vector.base_agent import VectorAgent
+from agentmap.models.storage import WriteMode
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.state_adapter_service import StateAdapterService
-from agentmap.models.storage import WriteMode
 
 
 class VectorWriterAgent(VectorAgent):

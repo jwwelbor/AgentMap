@@ -185,9 +185,7 @@ class GraphOutputService:
         for node in graph_def.values():
             agent_class_obj = self.agent_registry.get_agent_class(node.agent_type)
             agent_class = (
-                agent_class_obj.__name__
-                if agent_class_obj
-                else "DefaultAgent"
+                agent_class_obj.__name__ if agent_class_obj else "DefaultAgent"
             )
             lines.append(f'builder.add_node("{node.name}", {agent_class}())')
 
@@ -496,14 +494,12 @@ class GraphOutputService:
         for node in graph_def.values():
             agent_class_obj = self.agent_registry.get_agent_class(node.agent_type)
             agent_class = (
-                agent_class_obj.__name__
-                if agent_class_obj
-                else "DefaultAgent"
+                agent_class_obj.__name__ if agent_class_obj else "DefaultAgent"
             )
             context = (
                 f'{{"input_fields": {node.inputs}, "output_field": "{node.output}"}}'
             )
-            prompt_text = node.prompt or ''
+            prompt_text = node.prompt or ""
             lines.append(
                 f'builder.add_node("{node.name}", {agent_class}(name="{node.name}", prompt="{prompt_text}", context={context}))'
             )

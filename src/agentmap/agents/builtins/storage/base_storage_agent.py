@@ -12,10 +12,10 @@ import logging
 from typing import Any, Callable, Dict, Optional, TypeVar, cast
 
 from agentmap.agents.base_agent import BaseAgent
+from agentmap.models.storage import DocumentResult
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.protocols import StorageCapableAgent, StorageServiceProtocol
 from agentmap.services.state_adapter_service import StateAdapterService
-from agentmap.models.storage import DocumentResult
 
 F = TypeVar("F", bound=Callable[..., Any])  # Type for callable functions
 

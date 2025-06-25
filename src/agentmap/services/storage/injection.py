@@ -26,7 +26,6 @@ class StorageServiceInjectionError(AgentInitializationError):
     """Raised when storage service injection fails."""
 
 
-
 def inject_storage_services(
     agent_instance: Any,
     storage_service_manager: "StorageServiceManager",

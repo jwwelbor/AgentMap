@@ -376,7 +376,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     host_protocol_configuration_service = providers.Singleton(
         "agentmap.services.host_protocol_configuration_service.HostProtocolConfigurationService",
         host_service_registry,
-        logging_service
+        logging_service,
     )
 
     # Application bootstrap service (coordinates agent registration and feature discovery)
@@ -528,7 +528,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         try:
             # Get HostServiceRegistry
             registry = self.host_service_registry()
-            
+
             # Check if service already registered
             if registry.is_service_registered(service_name):
                 logger = self.logging_service().get_logger("agentmap.di.host")
@@ -557,7 +557,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
             # Create provider using same pattern as AgentMap services
             if singleton:
-                provider = providers.Singleton(service_class_path, *dependency_providers)
+                provider = providers.Singleton(
+                    service_class_path, *dependency_providers
+                )
             else:
                 provider = providers.Factory(service_class_path, *dependency_providers)
 
@@ -568,7 +570,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
             registry.register_service_provider(
                 service_name, provider, protocols=protocols, metadata=metadata
             )
-            
+
         except Exception as e:
             # Clean up if registration failed
             if hasattr(self, service_name):
@@ -641,7 +643,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
             registry.register_service_provider(
                 service_name, provider, protocols=protocols, metadata=metadata
             )
-            
+
         except Exception as e:
             # Clean up if registration failed
             if hasattr(self, service_name):
@@ -663,25 +665,25 @@ class ApplicationContainer(containers.DeclarativeContainer):
         try:
             registry = self.host_service_registry()
             result = {}
-            
+
             # Get all services from registry
             for service_name in registry.list_registered_services():
                 # Skip protocol placeholders
                 if service_name.startswith("protocol:"):
                     continue
-                    
+
                 provider = registry.get_service_provider(service_name)
                 metadata = registry.get_service_metadata(service_name) or {}
                 protocols = registry.get_service_protocols(service_name)
-                
+
                 result[service_name] = {
                     "provider": provider,
                     "metadata": metadata,
                     "protocols": [p.__name__ for p in protocols],
                 }
-            
+
             return result
-            
+
         except Exception as e:
             logger = self.logging_service().get_logger("agentmap.di.host")
             logger.error(f"Failed to get host services: {e}")
@@ -699,18 +701,18 @@ class ApplicationContainer(containers.DeclarativeContainer):
         try:
             registry = self.host_service_registry()
             implementations = {}
-            
+
             # Build protocol to service mapping from registry data
             for service_name in registry.list_registered_services():
                 if service_name.startswith("protocol:"):
                     continue
-                    
+
                 protocols = registry.get_service_protocols(service_name)
                 for protocol in protocols:
                     implementations[protocol.__name__] = service_name
-            
+
             return implementations
-            
+
         except Exception as e:
             logger = self.logging_service().get_logger("agentmap.di.host")
             logger.error(f"Failed to get protocol implementations: {e}")
@@ -731,10 +733,10 @@ class ApplicationContainer(containers.DeclarativeContainer):
         try:
             # Get the HostProtocolConfigurationService instance
             config_service = self.host_protocol_configuration_service()
-            
+
             # Delegate to the service
             return config_service.configure_host_protocols(agent)
-            
+
         except Exception as e:
             # Log error if possible
             try:
@@ -742,7 +744,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
                 logger.error(f"Failed to configure host protocols: {e}")
             except:
                 pass
-            
+
             # Return 0 on failure
             return 0
 
@@ -794,13 +796,15 @@ class ApplicationContainer(containers.DeclarativeContainer):
         """
         try:
             registry = self.host_service_registry()
-            
+
             # Get all services before clearing
             service_names = registry.list_registered_services()
-            
+
             # Remove dynamic attributes from container
             for service_name in service_names:
-                if not service_name.startswith("protocol:") and hasattr(self, service_name):
+                if not service_name.startswith("protocol:") and hasattr(
+                    self, service_name
+                ):
                     delattr(self, service_name)
 
             # Clear registry
@@ -808,7 +812,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
             logger = self.logging_service().get_logger("agentmap.di.host")
             logger.info("Cleared all host services")
-            
+
         except Exception as e:
             try:
                 logger = self.logging_service().get_logger("agentmap.di.host")

@@ -65,7 +65,7 @@ class LocalFileConnector(BlobStorageConnector):
             FileNotFoundError: If the file doesn't exist
             StorageOperationError: For other file-related errors
         """
-        path=""
+        path = ""
         try:
             path = self._resolve_path(uri)
             if not os.path.exists(path):
