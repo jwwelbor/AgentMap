@@ -1,0 +1,687 @@
+/* WorkflowVisualizer.module.css */
+
+.workflowVisualizer {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem;
+  font-family: var(--ifm-font-family-base);
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.header h1 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.header p {
+  font-size: 1.1rem;
+  color: var(--ifm-color-emphasis-700);
+  margin-bottom: 0;
+}
+
+.content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-bottom: 3rem;
+}
+
+.inputPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.templateSelector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.templateSelector label {
+  font-weight: 600;
+  color: var(--ifm-color-emphasis-800);
+}
+
+.templateSelect {
+  padding: 0.75rem;
+  border: 2px solid var(--ifm-color-emphasis-300);
+  border-radius: 8px;
+  background: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.templateSelect:focus {
+  outline: none;
+  border-color: var(--ifm-color-primary);
+  box-shadow: 0 0 0 3px var(--ifm-color-primary-lightest);
+}
+
+.csvEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.editorHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.editorHeader label {
+  font-weight: 600;
+  color: var(--ifm-color-emphasis-800);
+}
+
+.editorControls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.controlButton {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--ifm-color-primary);
+  background: transparent;
+  color: var(--ifm-color-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.controlButton:hover:not(:disabled) {
+  background: var(--ifm-color-primary);
+  color: white;
+  transform: translateY(-1px);
+}
+
+.controlButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.csvTextarea {
+  width: 100%;
+  min-height: 300px;
+  padding: 1rem;
+  border: 2px solid var(--ifm-color-emphasis-300);
+  border-radius: 8px;
+  background: var(--ifm-code-background);
+  color: var(--ifm-font-color-base);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  resize: vertical;
+  transition: border-color 0.2s ease;
+}
+
+.csvTextarea:focus {
+  outline: none;
+  border-color: var(--ifm-color-primary);
+  box-shadow: 0 0 0 3px var(--ifm-color-primary-lightest);
+}
+
+.csvTextarea::placeholder {
+  color: var(--ifm-color-emphasis-500);
+}
+
+.errorPanel {
+  background: #fff5f5;
+  border: 1px solid #fed7d7;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 0.5rem;
+}
+
+[data-theme='dark'] .errorPanel {
+  background: #2d1b1b;
+  border-color: #e53e3e;
+}
+
+.errorHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #e53e3e;
+}
+
+.dismissButton {
+  background: none;
+  border: none;
+  color: #e53e3e;
+  cursor: pointer;
+  padding: 0;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.dismissButton:hover {
+  opacity: 0.7;
+}
+
+.errorList {
+  margin: 0;
+  padding-left: 1.5rem;
+  color: #e53e3e;
+}
+
+.errorList li {
+  margin-bottom: 0.25rem;
+}
+
+.visualPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.diagramHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.diagramHeader h3 {
+  margin: 0;
+  color: var(--ifm-color-emphasis-800);
+}
+
+.diagramControls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.formatSelect {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 4px;
+  background: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.exportButton {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--ifm-color-success);
+  background: var(--ifm-color-success);
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.exportButton:hover:not(:disabled) {
+  background: var(--ifm-color-success-dark);
+  transform: translateY(-1px);
+}
+
+.exportButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.diagramContainer {
+  border: 2px solid var(--ifm-color-emphasis-300);
+  border-radius: 12px;
+  padding: 1.5rem;
+  background: var(--ifm-background-color);
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+
+.mermaidDiagram {
+  width: 100%;
+  text-align: center;
+}
+
+.mermaidDiagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.fallbackDiagram {
+  display: none;
+}
+
+.mermaidCode {
+  background: var(--ifm-code-background);
+  padding: 1rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  margin: 0;
+  border: 1px solid var(--ifm-color-emphasis-300);
+}
+
+.errorContent {
+  color: #e53e3e;
+  padding: 1rem;
+  text-align: center;
+  background: #fff5f5;
+  border: 1px solid #fed7d7;
+  border-radius: 8px;
+}
+
+[data-theme='dark'] .errorContent {
+  background: #2d1b1b;
+  border-color: #e53e3e;
+}
+
+.emptyDiagram {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+}
+
+.emptyContent {
+  text-align: center;
+  color: var(--ifm-color-emphasis-600);
+  padding: 2rem;
+}
+
+.emptyContent h4 {
+  margin-bottom: 0.5rem;
+  color: var(--ifm-color-emphasis-700);
+}
+
+.emptyContent p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.workflowStats {
+  display: flex;
+  gap: 1.5rem;
+  padding: 1rem;
+  background: var(--ifm-color-emphasis-100);
+  border-radius: 8px;
+  margin-top: 1rem;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.statLabel {
+  font-size: 0.85rem;
+  color: var(--ifm-color-emphasis-600);
+  font-weight: 600;
+}
+
+.statValue {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--ifm-color-primary);
+}
+
+.legend {
+  background: var(--ifm-color-emphasis-100);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.legend h4 {
+  margin-bottom: 1rem;
+  color: var(--ifm-color-emphasis-800);
+}
+
+.colorLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.legendGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.legendTitle {
+  font-weight: 600;
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.9rem;
+}
+
+.colorDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.help {
+  background: var(--ifm-color-emphasis-50);
+  border-radius: 12px;
+  padding: 1.5rem;
+  border: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.help h4 {
+  margin-bottom: 1rem;
+  color: var(--ifm-color-emphasis-800);
+}
+
+.help ol {
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+}
+
+.help li {
+  margin-bottom: 0.5rem;
+  line-height: 1.5;
+}
+
+.help li strong {
+  color: var(--ifm-color-emphasis-800);
+}
+
+.help p {
+  margin: 0;
+  color: var(--ifm-color-emphasis-700);
+}
+
+.help a {
+  color: var(--ifm-color-primary);
+  text-decoration: none;
+}
+
+.help a:hover {
+  text-decoration: underline;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+  .content {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+  
+  .diagramContainer {
+    min-height: 300px;
+  }
+}
+
+@media (max-width: 768px) {
+  .workflowVisualizer {
+    padding: 1rem;
+  }
+  
+  .header h1 {
+    font-size: 2rem;
+  }
+  
+  .editorHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .editorControls {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  
+  .diagramHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .diagramControls {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  
+  .workflowStats {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .stat {
+    flex-direction: row;
+    justify-content: space-between;
+  }
+  
+  .colorLegend {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .legendGroup {
+    justify-content: flex-start;
+  }
+  
+  .csvTextarea {
+    min-height: 250px;
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .workflowVisualizer {
+    padding: 0.5rem;
+  }
+  
+  .content {
+    gap: 1.5rem;
+  }
+  
+  .inputPanel {
+    gap: 1rem;
+  }
+  
+  .visualPanel {
+    gap: 0.75rem;
+  }
+  
+  .diagramContainer {
+    padding: 1rem;
+    min-height: 250px;
+  }
+  
+  .legend,
+  .help {
+    padding: 1rem;
+  }
+  
+  .controlButton,
+  .exportButton {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+  }
+  
+  .templateSelect {
+    padding: 0.6rem;
+    font-size: 0.9rem;
+  }
+  
+  .help ol {
+    padding-left: 1rem;
+  }
+}
+
+/* Dark mode adjustments */
+[data-theme='dark'] .diagramContainer {
+  background: var(--ifm-background-surface-color);
+  border-color: var(--ifm-color-emphasis-400);
+}
+
+[data-theme='dark'] .csvTextarea {
+  background: var(--ifm-background-surface-color);
+  border-color: var(--ifm-color-emphasis-400);
+}
+
+[data-theme='dark'] .workflowStats {
+  background: var(--ifm-background-surface-color);
+}
+
+[data-theme='dark'] .legend {
+  background: var(--ifm-background-surface-color);
+}
+
+[data-theme='dark'] .help {
+  background: var(--ifm-background-surface-color);
+  border-color: var(--ifm-color-emphasis-400);
+}
+
+[data-theme='dark'] .colorDot {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Animation for smooth transitions */
+.mermaidDiagram {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.errorPanel {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Loading states */
+.exportButton:disabled {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* Focus indicators for accessibility */
+.templateSelect:focus,
+.csvTextarea:focus,
+.formatSelect:focus {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+.controlButton:focus,
+.exportButton:focus,
+.dismissButton:focus {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .diagramContainer {
+    border-width: 3px;
+  }
+  
+  .csvTextarea {
+    border-width: 3px;
+  }
+  
+  .errorPanel {
+    border-width: 2px;
+  }
+  
+  .colorDot {
+    border-width: 2px;
+    border-color: #000;
+  }
+  
+  [data-theme='dark'] .colorDot {
+    border-color: #fff;
+  }
+  
+  .mermaidCode {
+    border-width: 2px;
+  }
+  
+  .errorContent {
+    border-width: 2px;
+  }
+}
+
+/* Print styles */
+@media print {
+  .workflowVisualizer {
+    padding: 0;
+  }
+  
+  .editorControls,
+  .diagramControls {
+    display: none;
+  }
+  
+  .content {
+    grid-template-columns: 1fr;
+  }
+  
+  .csvTextarea {
+    border: 1px solid #ccc;
+    background: white;
+    color: black;
+  }
+  
+  .diagramContainer {
+    border: 1px solid #ccc;
+    background: white;
+  }
+  
+  .errorPanel {
+    border: 1px solid #e53e3e;
+    background: #fff5f5;
+  }
+}

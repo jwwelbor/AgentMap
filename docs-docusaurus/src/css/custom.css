@@ -1,0 +1,254 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+
+/* You can override the default Infima variables here. */
+:root {
+  --ifm-color-primary: #2e8555;
+  --ifm-color-primary-dark: #29784c;
+  --ifm-color-primary-darker: #277148;
+  --ifm-color-primary-darkest: #205d3b;
+  --ifm-color-primary-light: #33925d;
+  --ifm-color-primary-lighter: #359962;
+  --ifm-color-primary-lightest: #3cad6e;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+/* For readability concerns, you should choose a lighter palette in dark mode. */
+[data-theme='dark'] {
+  --ifm-color-primary: #25c2a0;
+  --ifm-color-primary-dark: #21af90;
+  --ifm-color-primary-darker: #1fa588;
+  --ifm-color-primary-darkest: #1a8870;
+  --ifm-color-primary-light: #29d5b0;
+  --ifm-color-primary-lighter: #32d8b4;
+  --ifm-color-primary-lightest: #4fddbf;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+/* ================================
+   Button Styling Fixes
+   ================================ */
+
+/* Fix outline button hover state to prevent white text on white background */
+.button--outline {
+  border: 2px solid var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+  background-color: transparent;
+}
+
+.button--outline:hover,
+.button--outline:focus {
+  background-color: var(--ifm-color-primary);
+  border-color: var(--ifm-color-primary);
+  color: white !important;
+  text-decoration: none;
+}
+
+.button--outline:active {
+  background-color: var(--ifm-color-primary-dark);
+  border-color: var(--ifm-color-primary-dark);
+  color: white !important;
+}
+
+/* Ensure primary buttons maintain proper contrast */
+.button--primary {
+  background-color: var(--ifm-color-primary);
+  border-color: var(--ifm-color-primary);
+  color: white !important;
+}
+
+.button--primary:hover,
+.button--primary:focus {
+  background-color: var(--ifm-color-primary-dark);
+  border-color: var(--ifm-color-primary-dark);
+  color: white !important;
+  text-decoration: none;
+}
+
+.button--primary:active {
+  background-color: var(--ifm-color-primary-darker);
+  border-color: var(--ifm-color-primary-darker);
+  color: white !important;
+}
+
+/* Dark theme adjustments for buttons */
+[data-theme='dark'] .button--outline {
+  border-color: var(--ifm-color-primary-light);
+  color: var(--ifm-color-primary-light);
+  background-color: transparent;
+}
+
+[data-theme='dark'] .button--outline:hover,
+[data-theme='dark'] .button--outline:focus {
+  background-color: var(--ifm-color-primary-light);
+  border-color: var(--ifm-color-primary-light);
+  color: var(--ifm-color-gray-900) !important;
+}
+
+[data-theme='dark'] .button--outline:active {
+  background-color: var(--ifm-color-primary);
+  border-color: var(--ifm-color-primary);
+  color: var(--ifm-color-gray-900) !important;
+}
+
+/* ================================
+   Navbar Logo Styling
+   ================================ */
+
+/* Style the navbar logo to provide background for transparent images */
+.navbar__logo img {
+  background: var(--ifm-color-primary-lightest);
+  border-radius: 8px;
+  padding: 6px;
+  transition: background-color 0.3s ease;
+}
+
+.navbar__logo img:hover {
+  background: var(--ifm-color-primary-light);
+}
+
+/* Dark theme adjustments */
+[data-theme='dark'] .navbar__logo img {
+  background: var(--ifm-color-primary-dark);
+}
+
+[data-theme='dark'] .navbar__logo img:hover {
+  background: var(--ifm-color-primary);
+}
+
+/* ================================
+   Interactive Playground Styles
+   ================================ */
+
+/* Live codeblock styling */
+.theme-code-block {
+  margin: 1.5rem 0;
+}
+
+.prism-live-editor {
+  font-size: 0.9rem !important;
+  line-height: 1.4 !important;
+  font-family: var(--ifm-font-family-monospace) !important;
+}
+
+.react-live-preview {
+  padding: 1rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-top: none;
+  background: var(--ifm-background-surface-color);
+  min-height: 100px;
+  border-radius: 0 0 8px 8px;
+}
+
+.react-live-error {
+  padding: 1rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.8rem;
+  border-radius: 0 0 8px 8px;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+[data-theme='dark'] .react-live-error {
+  background: #2d1b1b;
+  border-color: #e53e3e;
+  color: #fed7d7;
+}
+
+/* Playground container */
+.playground {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 2rem 0;
+  background: var(--ifm-background-color);
+}
+
+/* Responsive adjustments for playground */
+@media (max-width: 768px) {
+  .react-live-preview {
+    padding: 0.75rem;
+  }
+  
+  .prism-live-editor {
+    font-size: 0.8rem !important;
+  }
+}
+
+/* Custom alert styles for better visibility */
+.alert--tip {
+  background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+  border-left: 4px solid #2196f3;
+}
+
+[data-theme='dark'] .alert--tip {
+  background: linear-gradient(135deg, #1e3a8a 0%, #6b21a8 100%);
+  color: #e0e7ff;
+  border-left-color: #60a5fa;
+}
+
+/* Enhanced interactive elements */
+.clean-btn {
+  transition: all 0.2s ease;
+}
+
+.clean-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Smooth animations */
+.card, .button {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+}
+
+/* Code editor enhancements */
+.npm2yarn-command {
+  margin: 1rem 0;
+}
+
+/* Ensure proper spacing in MDX content */
+.markdown > div:first-child {
+  margin-top: 0;
+}
+
+.markdown > div:last-child {
+  margin-bottom: 0;
+}
+
+/* Live code block focus states */
+.prism-live-editor:focus-within {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+/* Better scrollbars in code editors */
+.prism-live-editor::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.prism-live-editor::-webkit-scrollbar-track {
+  background: var(--ifm-color-emphasis-200);
+  border-radius: 4px;
+}
+
+.prism-live-editor::-webkit-scrollbar-thumb {
+  background: var(--ifm-color-emphasis-400);
+  border-radius: 4px;
+}
+
+.prism-live-editor::-webkit-scrollbar-thumb:hover {
+  background: var(--ifm-color-emphasis-600);
+}

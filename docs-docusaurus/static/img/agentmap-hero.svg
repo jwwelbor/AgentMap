@@ -1,0 +1,15 @@
+<svg width="400" height="300" viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#25c2a0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2e8555;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#bg)" rx="20"/>
+  <text x="200" y="120" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="white" text-anchor="middle">AgentMap</text>
+  <text x="200" y="160" font-family="Arial, sans-serif" font-size="16" fill="white" text-anchor="middle">CSV → AI Workflows</text>
+  <circle cx="200" cy="220" r="30" fill="white" opacity="0.3"/>
+  <circle cx="160" cy="190" r="20" fill="white" opacity="0.4"/>
+  <circle cx="240" cy="190" r="20" fill="white" opacity="0.4"/>
+  <text x="200" y="270" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle" opacity="0.8">Placeholder - Copy Real Image</text>
+</svg>
