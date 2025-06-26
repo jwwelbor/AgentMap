@@ -117,6 +117,56 @@ WeatherFlow,End,,Complete workflow,echo,,,report|error_message,output,,Final out
 - Include expected inputs and outputs
 - Document any special configuration requirements
 
+## Validation Rules
+
+### Required Fields
+- **GraphName**: Must be non-empty string
+- **Node**: Must be unique within the graph
+
+### Routing Validation
+- Cannot use both `Edge` and `Success_Next`/`Failure_Next` in the same row
+- Raises `InvalidEdgeDefinitionError` if both are specified
+- Target nodes in routing fields must exist in the graph
+
+### Field References
+- `Input_Fields` and `Output_Field` should reference valid state keys
+- Pipe-separated lists must not contain empty values
+- Function references must follow `func:function_name` format
+
+### Context Validation
+- JSON in Context field must be valid JSON syntax
+- Environment variable references must use `env:VARIABLE_NAME` format
+- Prompt references must use `prompt:template_name` format
+
+## Error Handling
+
+### Common Validation Errors
+
+**InvalidEdgeDefinitionError**
+```csv
+# WRONG: Using both Edge and Success_Next
+MyGraph,Node1,Next,config,agent,Success,Failure,input,output,prompt
+```
+
+**NodeNotFoundError**
+```csv
+# WRONG: Referencing non-existent node
+MyGraph,Node1,,config,agent,NonExistentNode,,input,output,prompt
+```
+
+**InvalidJSONError**
+```csv
+# WRONG: Invalid JSON in Context
+MyGraph,Node1,,{invalid json},agent,Next,,input,output,prompt
+```
+
+### Best Practices for Error Prevention
+
+1. **Validate CSV Structure**: Use `agentmap validate workflow.csv` before execution
+2. **Test Small Graphs**: Start with simple graphs and add complexity gradually
+3. **Check Node References**: Ensure all referenced nodes exist in the graph
+4. **Validate JSON**: Use a JSON validator for complex Context configurations
+
 ## Common Patterns
 
 ### Linear Flow

@@ -340,22 +340,149 @@ DocGraph,WriteFile,{"mode": "write", "encoding": "utf-8"},Write document,file_wr
 
 ## Specialized Agents
 
-### OrchestrationAgent
+### GraphAgent
 
-Routes execution to one or more nodes based on context configuration.
+Executes a subgraph and returns its result. Useful for modular workflow design and reusable sub-processes.
+
+- **Input Fields**: Passed to the subgraph
+- **Output Field**: Result from the subgraph  
+- **Prompt Usage**: Name of the subgraph to execute
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: GraphRunnerService (configured automatically)
 
 **CSV Example:**
 ```csv
-WorkflowGraph,Router,{"nodes": "ProcessA|ProcessB|ProcessC"},Route to processors,orchestrator,Collect,Error,available_nodes|data,selected_nodes,
+MainFlow,ProcessData,,Execute data processing subgraph,graph,CombineResults,Error,input_data,processed_data,DataProcessingGraph
 ```
 
 ### SummaryAgent
 
-Combines multiple inputs into a structured summary.
+Combines and summarizes multiple input fields into a single output. Useful for consolidating outputs from parallel operations or creating concise summaries from multiple data sources.
+
+- **Input Fields**: Multiple fields to be summarized (pipe-separated list)
+- **Output Field**: Single field for the consolidated output
+- **Prompt Usage**: Instructions for LLM-based summarization (when using LLM mode)
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: LLMService (when using LLM mode)
+- **Protocol Implementation**: LLMCapableAgent (when using LLM mode)
+
+#### Basic Concatenation Mode (Default)
+
+Simply formats and joins the input fields according to templates.
+
+**Context Configuration Options:**
+```python
+context = {
+    "format": "{key}: {value}",        # Template for formatting each item
+    "separator": "\n\n",              # String used to join formatted items
+    "include_keys": True               # Whether to include field names in output
+}
+```
 
 **CSV Example:**
 ```csv
-DataGraph,Combine,{"format": "{key}: {value}\\n"},Combine results,summary,Next,Error,result_a|result_b|result_c,combined,
+DataGraph,Combine,{"format":"{key}: {value}","separator":"\n\n---\n\n"},Combine results,summary,Next,Error,result_a|result_b|result_c,combined_results,
+```
+
+#### LLM Summarization Mode
+
+Uses an LLM to create an intelligent summary of the inputs.
+
+**Context Configuration Options:**
+```python
+context = {
+    "llm": "anthropic",               # LLM provider ("openai", "anthropic", "google")
+    "model": "claude-3-sonnet-20240229",  # Specific model to use (optional)
+    "temperature": 0.3                # Temperature for generation (optional)
+}
+```
+
+**CSV Example:**
+```csv
+ReportFlow,ExecutiveSummary,{"llm":"anthropic","temperature":0.3},Create executive summary,summary,Store,Error,financial_data|market_data|competitor_data,executive_summary,Create a concise executive summary highlighting key insights and trends from the financial, market, and competitor data.
+```
+
+### OrchestratorAgent
+
+Dynamically routes user input to the most appropriate node in your workflow based on intent matching. Uses LLMs or algorithmic matching to determine which node best matches the user's request.
+
+- **Input Fields**: First field = available nodes, Second field = user input text
+- **Output Field**: Selected node name
+- **Prompt Usage**: Instructions for routing logic
+- **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
+- **Business Services**: LLMService (when using LLM or tiered matching)
+- **Protocol Implementation**: LLMCapableAgent (when using LLM modes)
+- **Built-in Routing**: Automatically navigates to selected node without separate routing function
+
+#### Key Features
+- **Multiple Matching Strategies**: Choose between LLM-based, algorithmic, or tiered matching
+- **Flexible Node Filtering**: Filter available nodes by type, specific list, or use all nodes
+- **Confidence Thresholds**: Configure when to use LLM vs. algorithmic matching
+- **Automatic Navigation**: Built-in routing to selected node
+
+#### Context Configuration Options
+
+**Core Parameters:**
+```python
+context = {
+    "matching_strategy": "tiered",     # "algorithm", "llm", or "tiered"
+    "confidence_threshold": 0.8,       # Threshold for algorithmic confidence (0.0-1.0)
+    "default_target": "DefaultHandler", # Fallback node if no match found
+    
+    # Node filtering options
+    "nodes": "NodeA|NodeB|NodeC",      # Specific nodes or "all"
+    "nodeType": "data_processor",      # Filter by agent type
+    
+    # LLM configuration (for LLM/tiered modes)
+    "llm_type": "openai",             # LLM provider
+    "temperature": 0.2                # LLM generation temperature
+}
+```
+
+#### Matching Strategies
+
+**Tiered Matching (Default)**
+Combines speed of algorithmic matching with intelligence of LLM matching:
+1. First attempts algorithmic matching
+2. If confidence exceeds threshold, uses that result
+3. Otherwise, falls back to LLM-based matching
+
+**Algorithm-Only Matching**
+Uses only fast algorithmic matching without LLM calls:
+1. Checks if node names appear in user input
+2. Counts matching keywords between node prompts and user input
+3. Returns node with highest keyword match ratio
+
+**LLM-Only Matching**
+Uses only LLM-based matching for highest quality but slower performance.
+
+#### CSV Examples
+
+**General Intent Router:**
+```csv
+IntentRouter,RouteIntent,{"nodes":"AnswerQuestion|FetchData|GenerateReport"},Route user requests,orchestrator,DefaultHandler,ErrorHandler,available_nodes|user_input,selected_node,Route the user request to the appropriate node.
+```
+
+**Type-Based Router:**
+```csv
+DataProcessor,RouteDataOp,{"nodeType":"data_processor","matching_strategy":"algorithm"},Select data operation,orchestrator,DefaultHandler,ErrorHandler,available_nodes|user_input,selected_node,Select the appropriate data processing operation.
+```
+
+**Tiered Matching:**
+```csv
+Router,RouteRequest,{"matching_strategy":"tiered","confidence_threshold":0.9},Smart routing,orchestrator,DefaultHandler,ErrorHandler,available_nodes|user_input,selected_node,Route to the most appropriate node.
+```
+
+#### Complete Workflow Example
+
+```csv
+Router,GetUserInput,,Get user request,input,RouteRequest,,message,user_input,What would you like to do?
+Router,RouteRequest,{"nodes":"all"},Route to appropriate node,orchestrator,DefaultHandler,ErrorHandler,available_nodes|user_input,selected_node,Route to the appropriate node
+Router,WeatherNode,,Get weather information,default,End,,location,weather,Getting weather for {location}
+Router,NewsNode,,Get latest news,default,End,,topic,news,Getting news about {topic}
+Router,DefaultHandler,,Handle unmatched requests,default,End,,user_input,response,I can't handle that request
+Router,ErrorHandler,,Handle errors,default,End,,error,error_message,An error occurred
+Router,End,,End workflow,echo,,,response|weather|news|error_message,final_output,
 ```
 
 ## Testing and Development

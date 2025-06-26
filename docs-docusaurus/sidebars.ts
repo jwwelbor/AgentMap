@@ -37,6 +37,15 @@ const sidebars: SidebarsConfig = {
       ],
     },
     
+    // Templates - Ready-to-use workflow templates
+    {
+      type: 'category',
+      label: '📄 Templates',
+      items: [
+        'templates/index',
+      ],
+    },
+    
     // Guides - Core development guides
     {
       type: 'category',
