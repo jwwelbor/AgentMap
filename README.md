@@ -1330,9 +1330,9 @@ result = agent.run({"test_input": "Hello"}, {"prompt": "Say hello back"})
 ## 📖 Additional Resources
 
 ### Documentation
-- [AgentMap Documentation Site](https://jwwelbor.github.io/AgentMap)
-- [API Reference](https://github.com/jwwelbor/AgentMap/wiki)
-- [Example Workflows](https://github.com/jwwelbor/AgentMap/tree/main/examples)
+- [AgentMap Documentation Site](https://jwwelbor.github.io/AgentMap/)
+- [API Reference](https://jwwelbor.github.io/AgentMap/docs/reference/csv-schema)
+- [Examples & Tutorials](https://jwwelbor.github.io/AgentMap/docs/tutorial/intro)
 
 ### Community
 - [GitHub Issues](https://github.com/jwwelbor/AgentMap/issues)

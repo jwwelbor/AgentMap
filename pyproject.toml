@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "agentmap"
-version = "0.9.0"
+version = "0.9.3"
 description = "AgentMap: Build and deploy LangGraph workflows from CSV files for fun and profit!"
 authors = ["John Welborn <jwwelbor@gmail.com>"]
 readme = "README.md"
