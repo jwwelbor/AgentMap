@@ -36,6 +36,7 @@ class TestGraphAssemblyService(unittest.TestCase):
         # Create mocks for services not yet in MockServiceFactory
         self.mock_features_registry_service = Mock()
         self.mock_function_resolution_service = Mock()
+        self.mock_graph_factory_service = MockServiceFactory.create_mock_graph_factory_service()
         
         # Configure function resolution service methods
         self.mock_function_resolution_service.extract_func_ref.return_value = None
@@ -47,7 +48,8 @@ class TestGraphAssemblyService(unittest.TestCase):
             logging_service=self.mock_logging_service,
             state_adapter_service=self.mock_state_adapter_service,
             features_registry_service=self.mock_features_registry_service,
-            function_resolution_service=self.mock_function_resolution_service
+            function_resolution_service=self.mock_function_resolution_service,
+            graph_factory_service=self.mock_graph_factory_service
         )
         
         # Get the mock logger for verification
@@ -64,6 +66,7 @@ class TestGraphAssemblyService(unittest.TestCase):
         self.assertEqual(self.service.state_adapter, self.mock_state_adapter_service)
         self.assertEqual(self.service.features_registry, self.mock_features_registry_service)
         self.assertEqual(self.service.function_resolution, self.mock_function_resolution_service)
+        self.assertEqual(self.service.graph_factory_service, self.mock_graph_factory_service)
         
         # Verify logger is configured
         self.assertIsNotNone(self.service.logger)
@@ -349,7 +352,7 @@ class TestGraphAssemblyService(unittest.TestCase):
             mock_builder.set_entry_point.assert_called_once_with("node2")
     
     def test_assemble_graph_fallback_entry_point(self):
-        """Test assemble_graph() falls back to first node when no entry point specified."""
+        """Test assemble_graph() uses graph factory service to detect entry point when none specified."""
         # Create nodes without entry point markers
         node1 = Node(name="node1", agent_type="default")
         node1.context = {"instance": DefaultAgent(name="node1", prompt="test")}
@@ -357,11 +360,15 @@ class TestGraphAssemblyService(unittest.TestCase):
         node2 = Node(name="node2", agent_type="default")
         node2.context = {"instance": DefaultAgent(name="node2", prompt="test")}
         
-        # Create Graph object
+        # Create Graph object without entry point
         from agentmap.models.graph import Graph
         graph = Graph(name="test_graph")
         graph.nodes["node1"] = node1
         graph.nodes["node2"] = node2
+        graph.entry_point = None  # Explicitly no entry point
+        
+        # Configure mock graph factory service to return first node
+        self.mock_graph_factory_service.detect_entry_point.return_value = "node1"
         
         # Mock the StateGraph class
         mock_builder = Mock()
@@ -372,14 +379,17 @@ class TestGraphAssemblyService(unittest.TestCase):
         with patch('agentmap.services.graph_assembly_service.StateGraph', return_value=mock_builder):
             result = self.service.assemble_graph(graph)
             
-            # Verify first node was set as entry point (fallback behavior)
+            # Verify graph factory service was called to detect entry point
+            self.mock_graph_factory_service.detect_entry_point.assert_called_once_with(graph)
+            
+            # Verify entry point was set to what factory detected
             mock_builder.set_entry_point.assert_called_once_with("node1")
             
-            # Verify warning was logged
+            # Verify factory detection was logged
             logger_calls = self.mock_logger.calls
-            warning_calls = [call for call in logger_calls if call[0] == "warning"]
-            self.assertTrue(any("No entry point detected, using first node: 'node1'" in call[1] 
-                              for call in warning_calls))
+            debug_calls = [call for call in logger_calls if call[0] == "debug"]
+            self.assertTrue(any("🚪 Factory detected entry point: 'node1'" in call[1] 
+                              for call in debug_calls))
     
     def test_assemble_graph_with_logging_disabled(self):
         """Test assemble_graph() respects logger level settings."""
@@ -929,7 +939,8 @@ class TestGraphAssemblyService(unittest.TestCase):
                 logging_service=None,
                 state_adapter_service=self.mock_state_adapter_service,
                 features_registry_service=self.mock_features_registry_service,
-                function_resolution_service=self.mock_function_resolution_service
+                function_resolution_service=self.mock_function_resolution_service,
+                graph_factory_service=self.mock_graph_factory_service
             )
         self.assertIn("'NoneType' object has no attribute 'get_class_logger'", str(context.exception))
         
@@ -940,7 +951,8 @@ class TestGraphAssemblyService(unittest.TestCase):
                 logging_service=self.mock_logging_service,
                 state_adapter_service=self.mock_state_adapter_service,
                 features_registry_service=self.mock_features_registry_service,
-                function_resolution_service=self.mock_function_resolution_service
+                function_resolution_service=self.mock_function_resolution_service,
+                graph_factory_service=self.mock_graph_factory_service
             )
         # Should mention that None config cannot be used
         self.assertIn("'NoneType' object has no attribute 'get_functions_path'", str(context.exception))

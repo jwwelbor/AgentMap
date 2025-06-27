@@ -35,7 +35,7 @@ try:
     from langchain_chroma import Chroma
 except ImportError:
     try:
-        from langchain.vectorstores import Chroma
+        from langchain_community.vectorstores import Chroma
     except ImportError:
         Chroma = None
 
@@ -43,7 +43,7 @@ try:
     from langchain_community.vectorstores import FAISS
 except ImportError:
     try:
-        from langchain.vectorstores import FAISS
+        from langchain_community.vectorstores import FAISS
     except ImportError:
         FAISS = None
 

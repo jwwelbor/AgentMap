@@ -6,6 +6,7 @@ from agentmap.models.graph import Graph
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.function_resolution_service import FunctionResolutionService
+from agentmap.services.graph_factory_service import GraphFactoryService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.node_registry_service import NodeRegistryUser
 from agentmap.services.state_adapter_service import StateAdapterService
@@ -19,6 +20,7 @@ class GraphAssemblyService:
         state_adapter_service: StateAdapterService,
         features_registry_service: FeaturesRegistryService,
         function_resolution_service: FunctionResolutionService,
+        graph_factory_service: GraphFactoryService,
     ):
         self.config = app_config_service
         self.logger = logging_service.get_class_logger(self)
@@ -26,6 +28,7 @@ class GraphAssemblyService:
         self.state_adapter = state_adapter_service
         self.features_registry = features_registry_service
         self.function_resolution = function_resolution_service
+        self.graph_factory_service = graph_factory_service
 
         # Get state schema from config or default to dict
         state_schema = self._get_state_schema_from_config()
@@ -124,37 +127,25 @@ class GraphAssemblyService:
 
         # Add all nodes and process their edges
         node_names = list(graph.nodes.keys())
-        entry_point = None
 
         self.logger.debug(f"Processing {len(node_names)} nodes: {node_names}")
 
-        # First, check if graph-level entry point is available
-        if graph.entry_point:
-            entry_point = graph.entry_point
-            self.logger.debug(f"🚪 Using graph-level entry point: '{entry_point}'")
+        # ENSURE consistent entry point using factory (in case graph doesn't have one)
+        if not graph.entry_point:
+            graph.entry_point = self.graph_factory_service.detect_entry_point(graph)
+            self.logger.debug(f"🚪 Factory detected entry point: '{graph.entry_point}'")
+        else:
+            self.logger.debug(
+                f"🚪 Using pre-existing graph entry point: '{graph.entry_point}'"
+            )
 
         for node_name, node in graph.nodes.items():
             self.add_node(node_name, node.context.get("instance"))
             self.process_node_edges(node_name, node.edges)
 
-            # Check if this node has entry point information from Node domain model
-            if (
-                not entry_point
-                and hasattr(node, "_is_entry_point")
-                and node._is_entry_point
-            ):
-                entry_point = node_name
-                self.logger.debug(f"🚪 Using node-level entry point: '{entry_point}'")
-
-        # Set entry point - use detected entry point or fall back to first node
-        if not entry_point and node_names:
-            entry_point = node_names[0]  # Fallback to first node
-            self.logger.warning(
-                f"🚪 No entry point detected, using first node: '{entry_point}'"
-            )
-
-        if entry_point:
-            self.set_entry_point(entry_point)
+        # Set entry point
+        if graph.entry_point:
+            self.set_entry_point(graph.entry_point)
 
         # Add dynamic routers for orchestrator nodes
         if self.orchestrator_nodes:

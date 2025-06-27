@@ -244,6 +244,18 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # LEVEL 4: Advanced Services (depend on Level 1, 2 & 3)
 
+    # CSV Graph Parser Service for pure CSV parsing functionality
+    csv_graph_parser_service = providers.Singleton(
+        "agentmap.services.csv_graph_parser_service.CSVGraphParserService",
+        logging_service,
+    )
+
+    # Graph Factory Service for centralized graph creation (no dependencies except logging)
+    graph_factory_service = providers.Singleton(
+        "agentmap.services.graph_factory_service.GraphFactoryService",
+        logging_service,
+    )
+
     # Graph Assembly Service for assembling StateGraph instances
     graph_assembly_service = providers.Singleton(
         "agentmap.services.graph_assembly_service.GraphAssemblyService",
@@ -252,12 +264,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         state_adapter_service,
         features_registry_service,
         function_resolution_service,
-    )
-
-    # CSV Graph Parser Service for pure CSV parsing functionality
-    csv_graph_parser_service = providers.Singleton(
-        "agentmap.services.csv_graph_parser_service.CSVGraphParserService",
-        logging_service,
+        graph_factory_service,
     )
 
     # Graph Definition Service (renamed from GraphBuilderService) for graph building with CSV parsing delegation
@@ -266,6 +273,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,  # 1st: logging_service (correct order)
         app_config_service,  # 2nd: app_config_service
         csv_graph_parser_service,  # 3rd: csv_parser
+        graph_factory_service,  # 4th: graph_factory
     )
 
     # Graph Bundle Service for graph bundle operations
@@ -321,6 +329,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         state_adapter_service,
         graph_assembly_service,
         graph_bundle_service,
+        graph_factory_service,
         logging_service,
     )
 

@@ -1,9 +1,8 @@
 """
-GraphDefinitionService for AgentMap.
+GraphDefinitionService - REFACTORED to eliminate duplication.
 
-Service containing business logic for building Graph domain models from various sources.
-This service coordinates graph definition building from CSV files (via CSVGraphParserService)
-and potentially other sources, focusing on graph definition assembly.
+This shows the AFTER state using GraphFactoryService to eliminate
+graph creation and entry point detection duplication.
 """
 
 from pathlib import Path
@@ -15,6 +14,7 @@ from agentmap.models.graph_spec import GraphSpec, NodeSpec
 from agentmap.models.node import Node
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.csv_graph_parser_service import CSVGraphParserService
+from agentmap.services.graph_factory_service import GraphFactoryService
 from agentmap.services.logging_service import LoggingService
 
 
@@ -22,9 +22,10 @@ class GraphDefinitionService:
     """
     Service for building Graph domain models from various sources.
 
-    Coordinates graph definition building from CSV files (via CSVGraphParserService)
-    and potentially other sources. Focuses on graph definition assembly and
-    conversion from intermediate representations to final Graph domain models.
+    REFACTORED: Now uses GraphFactoryService to eliminate duplication of:
+    - Graph object creation and node population
+    - Entry point detection logic
+    - Graph name resolution
     """
 
     def __init__(
@@ -32,11 +33,13 @@ class GraphDefinitionService:
         logging_service: LoggingService,
         app_config_service: AppConfigService,
         csv_parser: CSVGraphParserService,
+        graph_factory: GraphFactoryService,  # NEW: Injected factory
     ):
         """Initialize service with dependency injection."""
         self.logger = logging_service.get_class_logger(self)
         self.config = app_config_service
         self.csv_parser = csv_parser
+        self.graph_factory = graph_factory  # NEW: Factory dependency
         self.logger.info("[GraphDefinitionService] Initialized")
 
     def build_from_csv(self, csv_path: Path, graph_name: Optional[str] = None) -> Graph:
@@ -135,8 +138,9 @@ class GraphDefinitionService:
             # Step 2: Connect nodes with edges
             self._connect_nodes_from_specs(nodes_dict, node_specs, graph_name)
 
-            # Step 3: Convert to Graph domain model
-            graph = self._convert_to_graph_domain_model(graph_name, nodes_dict)
+            # Step 3: Convert to Graph domain model using factory
+            # REFACTORED: Replace duplicated graph creation with factory call
+            graph = self.graph_factory.create_graph_from_nodes(graph_name, nodes_dict)
 
             domain_graphs[graph_name] = graph
 
@@ -363,41 +367,5 @@ class GraphDefinitionService:
         nodes_dict[source_node].add_edge("failure", target_node)
         self.logger.debug(f"  🔗 {source_node} --failure--> {target_node}")
 
-    def _convert_to_graph_domain_model(
-        self, graph_name: str, nodes_dict: Dict[str, Node]
-    ) -> Graph:
-        """
-        Convert nodes dictionary to Graph domain model.
-
-        Args:
-            graph_name: Name of the graph
-            nodes_dict: Dictionary mapping node names to Node instances
-
-        Returns:
-            Graph domain model
-        """
-        # Create Graph domain model
-        graph = Graph(name=graph_name)
-
-        # Add all nodes to the graph
-        for node_name, node in nodes_dict.items():
-            graph.nodes[node_name] = node
-
-        # Detect entry point (node with no incoming edges)
-        self._detect_entry_point(graph)
-
-        return graph
-
-    def _detect_entry_point(self, graph: Graph) -> None:
-        """
-        Detect and set the entry point for a graph.
-
-        Entry point is set to the first node (preserving existing behavior).
-
-        Args:
-            graph: Graph domain model to analyze
-        """
-        # Set entry point to first node (preserving existing logic)
-        if graph.nodes:
-            graph.entry_point = next(iter(graph.nodes))
-            self.logger.debug(f"Set entry point: {graph.entry_point}")
+    # REMOVED: _convert_to_graph_domain_model() - replaced by graph_factory.create_graph_from_nodes()
+    # REMOVED: _detect_entry_point() - replaced by graph_factory.detect_entry_point()

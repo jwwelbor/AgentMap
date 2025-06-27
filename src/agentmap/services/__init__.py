@@ -43,10 +43,10 @@ from .features_registry_service import FeaturesRegistryService
 # Utility Services
 from .function_resolution_service import FunctionResolutionService
 from .graph_assembly_service import GraphAssemblyService
+from .graph_bundle_service import GraphBundleService
 
 # Core Graph Services
-from .graph_builder_service import GraphBuilderService
-from .graph_bundle_service import GraphBundleService
+from .graph_definition_service import GraphDefinitionService
 from .graph_output_service import GraphOutputService
 from .graph_runner_service import GraphRunnerService, RunOptions
 from .graph_scaffold_service import GraphScaffoldService
@@ -79,7 +79,7 @@ from .validation.validation_service import ValidationService
 
 __all__ = [
     # Core Graph Services
-    "GraphBuilderService",
+    "GraphDefinitionService",
     "CompilationService",
     "GraphRunnerService",
     "GraphAssemblyService",

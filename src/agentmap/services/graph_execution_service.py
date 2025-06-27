@@ -15,6 +15,7 @@ from agentmap.services.execution_policy_service import ExecutionPolicyService
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.graph_assembly_service import GraphAssemblyService
 from agentmap.services.graph_bundle_service import GraphBundleService
+from agentmap.services.graph_factory_service import GraphFactoryService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.state_adapter_service import StateAdapterService
 
@@ -41,6 +42,7 @@ class GraphExecutionService:
         state_adapter_service: StateAdapterService,
         graph_assembly_service: GraphAssemblyService,
         graph_bundle_service: GraphBundleService,
+        graph_factory_service: GraphFactoryService,
         logging_service: LoggingService,
     ):
         """Initialize service with dependency injection.
@@ -51,6 +53,7 @@ class GraphExecutionService:
             state_adapter_service: Service for state management
             graph_assembly_service: Service for graph assembly from definitions
             graph_bundle_service: Service for graph bundle operations
+            graph_factory_service: Service for centralized graph creation
             logging_service: Service for logging operations
         """
         self.execution_tracking_service = execution_tracking_service
@@ -58,6 +61,7 @@ class GraphExecutionService:
         self.state_adapter_service = state_adapter_service
         self.graph_assembly_service = graph_assembly_service
         self.graph_bundle_service = graph_bundle_service
+        self.graph_factory_service = graph_factory_service
         self.logger = logging_service.get_class_logger(self)
 
         self.logger.info(
@@ -191,7 +195,9 @@ class GraphExecutionService:
         """
         # Use provided graph name or extract from definition
         if graph_name is None:
-            graph_name = self._extract_graph_name_from_definition(graph_def)
+            graph_name = self.graph_factory_service.resolve_graph_name_from_definition(
+                graph_def
+            )
 
         self.logger.info(
             f"[GraphExecutionService] Executing from definition: {graph_name}"
@@ -396,14 +402,10 @@ class GraphExecutionService:
             # Set execution tracker on all agent instances BEFORE assembly
             self._set_tracker_on_agents(graph_def, execution_tracker)
 
-            # Convert dictionary definition to Graph object for GraphAssemblyService
-            from agentmap.models.graph import Graph
-
-            graph = Graph(name=graph_name)
-
-            # Convert nodes from dictionary format to Graph object
-            for node_name, node in graph_def.items():
-                graph.nodes[node_name] = node
+            # REPLACE duplicated logic with factory call
+            graph = self.graph_factory_service.create_graph_from_definition(
+                graph_def, graph_name
+            )
 
             # Use GraphAssemblyService to assemble the graph
             # Note: This assumes the graph_def already has agent instances in context
@@ -580,33 +582,7 @@ class GraphExecutionService:
                 f"[GraphExecutionService] ✅ Successfully set tracker on {agent_count} agents"
             )
 
-    def _extract_graph_name_from_definition(self, graph_def: Dict[str, Any]) -> str:
-        """
-        Extract graph name from definition or generate a default.
-
-        Args:
-            graph_def: Graph definition dictionary
-
-        Returns:
-            Graph name string
-        """
-        # Try to find a name in the definition metadata
-        if hasattr(graph_def, "get") and graph_def.get("__graph_name"):
-            return graph_def["__graph_name"]
-
-        # Try to extract from the first node's graph_name attribute
-        if graph_def:
-            for node_name, node in graph_def.items():
-                if hasattr(node, "graph_name") and node.graph_name:
-                    return node.graph_name
-
-        # Generate name based on nodes
-        if graph_def:
-            node_names = list(graph_def.keys())
-            return f"graph_{len(node_names)}_nodes"
-
-        # Fallback name
-        return "unknown_graph"
+    # REMOVED: _extract_graph_name_from_definition() - replaced by graph_factory_service.resolve_graph_name_from_definition()
 
     def get_service_info(self) -> Dict[str, Any]:
         """

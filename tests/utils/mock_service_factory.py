@@ -969,6 +969,118 @@ class MockServiceFactory:
         mock_service.to_summary.side_effect = to_summary
         
         return mock_service
+    
+    @staticmethod
+    def create_mock_graph_factory_service() -> Mock:
+        """
+        Create a pure Mock object for GraphFactoryService.
+        
+        This Mock provides graph creation operations including name resolution,
+        entry point detection, and graph object creation from various sources.
+        
+        Returns:
+            Mock object with create_graph_from_nodes, detect_entry_point, 
+            and resolve_graph_name_from_definition methods
+            
+        Example:
+            mock_factory = MockServiceFactory.create_mock_graph_factory_service()
+            graph = mock_factory.create_graph_from_nodes("test_graph", nodes_dict)
+        """
+        mock_service = Mock()
+        
+        def create_graph_from_nodes(graph_name: str, nodes_dict: Dict[str, Any], auto_detect_entry_point: bool = True) -> Mock:
+            """Create a mock Graph domain model from nodes dictionary."""
+            mock_graph = Mock()
+            mock_graph.name = graph_name
+            mock_graph.nodes = nodes_dict.copy()
+            mock_graph.entry_point = list(nodes_dict.keys())[0] if nodes_dict and auto_detect_entry_point else None
+            return mock_graph
+        
+        def create_graph_from_definition(graph_def: Dict[str, Any], graph_name: Optional[str] = None) -> Mock:
+            """Create a mock Graph domain model from definition dictionary."""
+            if graph_name is None:
+                graph_name = "test_graph"  # Default for mock
+            
+            mock_graph = Mock()
+            mock_graph.name = graph_name
+            mock_graph.nodes = graph_def.copy()
+            mock_graph.entry_point = list(graph_def.keys())[0] if graph_def else None
+            return mock_graph
+        
+        def resolve_graph_name_from_definition(graph_def: Dict[str, Any]) -> str:
+            """Mock graph name resolution from definition."""
+            # Check for explicit metadata
+            if hasattr(graph_def, "get") and graph_def.get("__graph_name"):
+                return graph_def["__graph_name"]
+            
+            # Check first node's graph_name attribute
+            if graph_def:
+                for node_name, node in graph_def.items():
+                    if hasattr(node, "graph_name") and node.graph_name:
+                        return node.graph_name
+            
+            # Generate name based on node count
+            if graph_def:
+                return f"graph_{len(graph_def)}_nodes"
+            
+            # Fallback
+            return "unknown_graph"
+        
+        def resolve_graph_name_from_path(path: Path) -> str:
+            """Mock graph name resolution from file path."""
+            return path.stem
+        
+        def detect_entry_point(graph: Mock) -> Optional[str]:
+            """Mock entry point detection - returns first node."""
+            if not graph.nodes:
+                return None
+            
+            node_names = list(graph.nodes.keys())
+            
+            # Check for explicitly marked entry point
+            for node_name, node in graph.nodes.items():
+                if hasattr(node, "_is_entry_point") and node._is_entry_point:
+                    return node_name
+            
+            # Return first node (simple logic as requested)
+            return node_names[0] if node_names else None
+        
+        def validate_graph_structure(graph: Mock) -> List[str]:
+            """Mock graph validation - returns empty list (valid)."""
+            errors = []
+            
+            if not graph.nodes:
+                errors.append("Graph has no nodes")
+                return errors
+            
+            if not graph.entry_point:
+                errors.append("Graph has no entry point")
+            elif graph.entry_point not in graph.nodes:
+                errors.append(f"Entry point '{graph.entry_point}' not found in nodes")
+            
+            return errors
+        
+        def get_graph_summary(graph: Mock) -> Dict[str, Any]:
+            """Mock graph summary."""
+            return {
+                "name": graph.name,
+                "node_count": len(graph.nodes) if graph.nodes else 0,
+                "node_names": list(graph.nodes.keys()) if graph.nodes else [],
+                "entry_point": graph.entry_point,
+                "total_edges": 0,  # Simplified for mock
+                "validation_errors": validate_graph_structure(graph)
+            }
+        
+        # Configure methods
+        mock_service.create_graph_from_nodes.side_effect = create_graph_from_nodes
+        mock_service.create_graph_from_definition.side_effect = create_graph_from_definition
+        mock_service.resolve_graph_name_from_definition.side_effect = resolve_graph_name_from_definition
+        mock_service.resolve_graph_name_from_path.side_effect = resolve_graph_name_from_path
+        mock_service.detect_entry_point.side_effect = detect_entry_point
+        mock_service.validate_graph_structure.side_effect = validate_graph_structure
+        mock_service.get_graph_summary.side_effect = get_graph_summary
+        
+        return mock_service
 
 
 # Convenience functions for quick mock creation
@@ -1050,6 +1162,11 @@ def create_execution_tracking_service_mock() -> Mock:
 def create_agent_registry_service_mock() -> Mock:
     """Quick function to create an agent registry service mock."""
     return MockServiceFactory.create_mock_agent_registry_service()
+
+
+def create_graph_factory_service_mock() -> Mock:
+    """Quick function to create a graph factory service mock."""
+    return MockServiceFactory.create_mock_graph_factory_service()
 
 
 # Usage examples and documentation

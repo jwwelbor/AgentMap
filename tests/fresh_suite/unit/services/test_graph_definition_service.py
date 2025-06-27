@@ -19,16 +19,18 @@ class TestGraphDefinitionService(unittest.TestCase):
     
     def setUp(self):
         """Set up test fixtures with mocked dependencies."""
-        # Create all 3 mock services using MockServiceFactory
+        # Create all 4 mock services using MockServiceFactory
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
         self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service()
         self.mock_csv_parser_service = MockServiceFactory.create_mock_csv_graph_parser_service()
+        self.mock_graph_factory = MockServiceFactory.create_mock_graph_factory_service()
         
         # Initialize GraphDefinitionService with all mocked dependencies
         self.service = GraphDefinitionService(
             logging_service=self.mock_logging_service,
             app_config_service=self.mock_app_config_service,
-            csv_parser=self.mock_csv_parser_service
+            csv_parser=self.mock_csv_parser_service,
+            graph_factory=self.mock_graph_factory
         )
         
         # Get the mock logger for verification
@@ -103,7 +105,7 @@ class TestGraphDefinitionService(unittest.TestCase):
         
         with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value={'node1': Mock()}), \
              unittest.mock.patch.object(self.service, '_connect_nodes_from_specs'), \
-             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model') as mock_convert:
+             unittest.mock.patch.object(self.service.graph_factory, 'create_graph_from_nodes') as mock_convert:
             
             mock_convert.side_effect = lambda name, nodes: mock_graph_1 if name == 'graph1' else mock_graph_2
             
@@ -152,7 +154,7 @@ class TestGraphDefinitionService(unittest.TestCase):
         
         with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value={'node1': Mock()}), \
              unittest.mock.patch.object(self.service, '_connect_nodes_from_specs'), \
-             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model') as mock_convert:
+             unittest.mock.patch.object(self.service.graph_factory, 'create_graph_from_nodes') as mock_convert:
             
             mock_convert.side_effect = lambda name, nodes: mock_first_graph if name == 'first_graph' else mock_second_graph
             
@@ -186,7 +188,7 @@ class TestGraphDefinitionService(unittest.TestCase):
         
         with unittest.mock.patch.object(self.service, '_create_nodes_from_specs'), \
              unittest.mock.patch.object(self.service, '_connect_nodes_from_specs'), \
-             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model'):
+             unittest.mock.patch.object(self.service.graph_factory, 'create_graph_from_nodes'):
             
             # Execute test - request non-existent graph
             with self.assertRaises(ValueError) as context:
@@ -232,7 +234,7 @@ class TestGraphDefinitionService(unittest.TestCase):
         
         with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value={'node': Mock()}), \
              unittest.mock.patch.object(self.service, '_connect_nodes_from_specs'), \
-             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model') as mock_convert:
+             unittest.mock.patch.object(self.service.graph_factory, 'create_graph_from_nodes') as mock_convert:
             
             mock_convert.side_effect = lambda name, nodes: {
                 'graph_alpha': mock_graph_alpha,
@@ -278,7 +280,7 @@ class TestGraphDefinitionService(unittest.TestCase):
         
         with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value=mock_nodes_dict) as mock_create, \
              unittest.mock.patch.object(self.service, '_connect_nodes_from_specs') as mock_connect, \
-             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model', return_value=mock_graph) as mock_convert:
+             unittest.mock.patch.object(self.service.graph_factory, 'create_graph_from_nodes', return_value=mock_graph) as mock_convert:
             
             # Execute test
             result = self.service.build_from_graph_spec(mock_graph_spec)
@@ -456,7 +458,7 @@ class TestGraphDefinitionService(unittest.TestCase):
         
         with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value={'test_node': Mock()}), \
              unittest.mock.patch.object(self.service, '_connect_nodes_from_specs'), \
-             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model', return_value=mock_graph):
+             unittest.mock.patch.object(self.service.graph_factory, 'create_graph_from_nodes', return_value=mock_graph):
             
             # Test when file exists
             with unittest.mock.patch('pathlib.Path.exists', return_value=True):
@@ -504,7 +506,7 @@ class TestGraphDefinitionService(unittest.TestCase):
         # Mock internal methods to reach the validation logic
         with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value={'node1': Mock()}), \
              unittest.mock.patch.object(self.service, '_connect_nodes_from_specs'), \
-             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model', return_value=Mock()):
+             unittest.mock.patch.object(self.service.graph_factory, 'create_graph_from_nodes', return_value=Mock()):
             
             # Execute and verify ValueError with proper message
             with self.assertRaises(ValueError) as context:
@@ -531,7 +533,7 @@ class TestGraphDefinitionService(unittest.TestCase):
         # Mock internal methods to reach the validation logic
         with unittest.mock.patch.object(self.service, '_create_nodes_from_specs'), \
              unittest.mock.patch.object(self.service, '_connect_nodes_from_specs'), \
-             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model'):
+             unittest.mock.patch.object(self.service.graph_factory, 'create_graph_from_nodes'):
             
             # Execute and verify ValueError
             with self.assertRaises(ValueError) as context:
@@ -566,7 +568,7 @@ class TestGraphDefinitionService(unittest.TestCase):
         nodes_dict = {'conflicting_node': Mock(), 'next_node': Mock(), 'success_node': Mock()}
         
         with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value=nodes_dict), \
-             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model'):
+             unittest.mock.patch.object(self.service.graph_factory, 'create_graph_from_nodes'):
             
             # Execute and verify InvalidEdgeDefinitionError
             with self.assertRaises(InvalidEdgeDefinitionError) as context:
@@ -601,7 +603,7 @@ class TestGraphDefinitionService(unittest.TestCase):
         nodes_dict = {'source_node': Mock()}  # Missing 'nonexistent_target'
         
         with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value=nodes_dict), \
-             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model'):
+             unittest.mock.patch.object(self.service.graph_factory, 'create_graph_from_nodes'):
             
             # Execute and verify ValueError for missing edge target
             with self.assertRaises(ValueError) as context:
@@ -628,7 +630,8 @@ class TestGraphDefinitionService(unittest.TestCase):
             GraphDefinitionService(
                 logging_service=None,
                 app_config_service=self.mock_app_config_service,
-                csv_parser=self.mock_csv_parser_service
+                csv_parser=self.mock_csv_parser_service,
+                graph_factory=self.mock_graph_factory
             )
         self.assertIn("'NoneType' object has no attribute 'get_class_logger'", str(context.exception))
         
@@ -636,7 +639,8 @@ class TestGraphDefinitionService(unittest.TestCase):
         service_with_none_config = GraphDefinitionService(
             logging_service=self.mock_logging_service,
             app_config_service=None,
-            csv_parser=self.mock_csv_parser_service
+            csv_parser=self.mock_csv_parser_service,
+            graph_factory=self.mock_graph_factory
         )
         # Verify service was created successfully (config is stored but not used)
         self.assertIsNone(service_with_none_config.config)
@@ -647,7 +651,8 @@ class TestGraphDefinitionService(unittest.TestCase):
         service_with_none_parser = GraphDefinitionService(
             logging_service=self.mock_logging_service,
             app_config_service=self.mock_app_config_service,
-            csv_parser=None
+            csv_parser=None,
+            graph_factory=self.mock_graph_factory
         )
         # Verify service was created but csv_parser is None
         self.assertIsNone(service_with_none_parser.csv_parser)
@@ -771,7 +776,7 @@ class TestGraphDefinitionService(unittest.TestCase):
         nodes_dict = {'source_node': Mock()}  # Missing 'nonexistent_success_target'
         
         with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value=nodes_dict), \
-             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model'):
+             unittest.mock.patch.object(self.service.graph_factory, 'create_graph_from_nodes'):
             
             # Execute and verify ValueError for missing success target
             with self.assertRaises(ValueError) as context:
@@ -806,7 +811,7 @@ class TestGraphDefinitionService(unittest.TestCase):
         nodes_dict = {'source_node': Mock()}  # Missing 'nonexistent_failure_target'
         
         with unittest.mock.patch.object(self.service, '_create_nodes_from_specs', return_value=nodes_dict), \
-             unittest.mock.patch.object(self.service, '_convert_to_graph_domain_model'):
+             unittest.mock.patch.object(self.service.graph_factory, 'create_graph_from_nodes'):
             
             # Execute and verify ValueError for missing failure target
             with self.assertRaises(ValueError) as context:
