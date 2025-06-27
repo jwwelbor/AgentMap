@@ -22,3 +22,28 @@ Allow: /assets/
 # Allow CSS and JS for better rendering
 Allow: *.css
 Allow: *.js
+
+# Block development files
+Disallow: /.docusaurus/
+Disallow: /build/
+Disallow: /node_modules/
+Disallow: /src/
+
+# Block query parameters
+Disallow: /*?*
+
+# Block tag pages to reduce duplicate content
+Disallow: /tags/
+
+# Specific bot instructions
+User-agent: Googlebot
+Crawl-delay: 0
+Allow: /
+
+User-agent: Bingbot
+Crawl-delay: 1
+Allow: /
+
+User-agent: DuckDuckBot
+Crawl-delay: 1
+Allow: /

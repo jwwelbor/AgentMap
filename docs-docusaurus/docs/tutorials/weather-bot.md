@@ -1,23 +1,25 @@
 ---
 sidebar_position: 2
-title: Weather Bot Tutorial
-description: Build an AI weather bot that fetches real weather data and generates natural language reports
+title: Build an AI Weather Bot - API Integration & LLM Tutorial
+description: Build an intelligent weather bot using AgentMap workflows with API integration, custom agents, and LLM-powered reporting. Learn fundamental agent patterns.
+keywords: [weather bot tutorial, API integration, custom agents, LLM integration, AgentMap workflow, intelligent automation, AI weather reporting]
+image: /img/agentmap-hero.png
 ---
 
-# Build a Weather Bot with AgentMap
+# Build an AI Weather Bot with API Integration
 
 ## What We're Building
 
-Create an intelligent weather bot that:
-- ✅ Prompts users for a city name
-- ✅ Fetches real weather data from OpenWeatherMap API
-- ✅ Generates natural language weather reports using AI
-- ✅ Handles errors gracefully
-- ✅ Formats output professionally
+Create an **intelligent weather reporting system** that demonstrates key AgentMap concepts:
+- ✅ **Custom Agent Development** - Build a specialized weather API agent
+- ✅ **API Integration** - Connect to external services with error handling
+- ✅ **LLM Integration** - Generate natural language reports from structured data
+- ✅ **Workflow Orchestration** - Chain agents together for end-to-end automation
+- ✅ **Error Handling** - Graceful failure management and user feedback
 
 **Estimated Time**: 30 minutes  
 **Difficulty**: Beginner  
-**Learning Goals**: Custom agents, API integration, LLM usage, error handling
+**Learning Goals**: Custom agent development, API integration, LLM workflows, error handling patterns
 
 ## Prerequisites
 
@@ -398,16 +400,52 @@ curl -O https://raw.githubusercontent.com/jwwelbor/AgentMap-Examples/main/weathe
 curl -O https://raw.githubusercontent.com/jwwelbor/AgentMap-Examples/main/weather-bot/custom_agents/weather_api_agent.py
 ```
 
-## Related Tutorials
+## Related Documentation
 
-- **[Data Processing Pipeline](./data-processing-pipeline)** - Learn data transformation
-- **[Customer Support Bot](./customer-support-bot)** - Build conversational agents  
-- **[API Integration](./api-integration)** - Connect to external services
+### 📖 **Core Concepts**
+- **[Understanding Workflows](../guides/understanding-workflows)**: Learn workflow fundamentals with interactive examples
+- **[CSV Schema Reference](../reference/csv-schema)**: Complete workflow format specification
+- **[State Management](../guides/state-management)**: How data flows between agents
+
+### 🤖 **Agent Development**
+- **[Agent Types Reference](../reference/agent-types)**: Complete list of available agents
+- **[Advanced Agent Types](../guides/advanced/advanced-agent-types)**: Build custom agents
+- **[Agent Development Contract](../guides/advanced/agent-development-contract)**: Agent interface requirements
+- **[Service Injection Patterns](../guides/advanced/service-injection-patterns)**: Dependency injection in custom agents
+
+### 🔧 **Tools & Development**
+- **[CLI Commands](../reference/cli-commands)**: Complete command-line reference
+- **[CLI Graph Inspector](../reference/cli-graph-inspector)**: Debug and analyze workflows
+- **[Interactive Playground](../playground)**: Test workflows in your browser
+
+### 📚 **Related Tutorials**
+- **[Data Processing Pipeline](./data-processing-pipeline)**: Learn data transformation and ETL patterns
+- **[Customer Support Bot](./customer-support-bot)**: Build conversational agents with routing
+- **[API Integration](./api-integration)**: Connect to multiple external services
+- **[Document Analyzer](./document-analyzer)**: Process files with AI analysis
+- **[Example Workflows](./example-workflows)**: Real-world workflow patterns and templates
+
+### 🏗️ **Advanced Topics**
+- **[Memory Management](../guides/advanced/memory-and-orchestration/memory-management)**: Persistent state across runs
+- **[Error Handling Patterns](../guides/advanced/error-handling)**: Robust error management
+- **[Performance Optimization](../guides/advanced/performance)**: Scale workflows efficiently
 
 ## Troubleshooting
 
-Having issues? Check our [troubleshooting guide](../guides/troubleshooting) or ask for help in our [community discussions](https://github.com/jwwelbor/AgentMap/discussions).
+Having issues? Check our comprehensive resources:
+- **[CLI Graph Inspector](../reference/cli-graph-inspector)**: Diagnose workflow issues
+- **[Testing Patterns](../guides/operations/testing-patterns)**: Validate your workflows
+- **[Community Discussions](https://github.com/jwwelbor/AgentMap/discussions)**: Get help from the community
 
 ---
 
-**🎉 Congratulations!** You've built your first AI-powered weather bot with AgentMap. This tutorial covered custom agents, API integration, error handling, and LLM usage - foundational skills for building more complex workflows.
+**🎉 Congratulations!** You've built your first AI-powered weather bot with AgentMap! This tutorial covered the fundamentals:
+
+### **🎆 What You've Learned**
+- **👨‍💻 Custom Agent Development**: Built a specialized WeatherAPIAgent from scratch
+- **🔗 API Integration**: Connected to external services with robust error handling
+- **🤖 LLM Workflows**: Used AI to transform data into natural language
+- **🔄 Workflow Orchestration**: Chained multiple agents for end-to-end automation
+
+### **🚀 Next Steps**
+Ready for more advanced patterns? Check out our **[Multi-Agent Customer Support System](./customer-support-bot)** to see how multiple specialized agents can work together in sophisticated coordination!

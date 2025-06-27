@@ -1,14 +1,55 @@
 ---
 sidebar_position: 1
+title: AgentMap Workflow Templates - Ready-to-Use AI Workflow Examples
+description: Browse and download ready-to-use AgentMap workflow templates. Weather bots, data processing, customer support, and more. Start building AI workflows instantly.
+keywords: [AgentMap templates, workflow templates, AI workflow examples, CSV templates, ready-to-use workflows, weather bot template, data processing template, customer support template]
+image: /img/agentmap-hero.png
 ---
 
-# Workflow Templates
+# Agentic AI Workflow Templates
 
-Get started quickly with AgentMap using our curated collection of ready-to-use workflow templates. Each template is designed to showcase specific capabilities and can be customized for your unique use cases.
+Get started quickly with AgentMap using our curated collection of **ready-to-use agentic AI workflow templates**. Each template demonstrates autonomous agent behavior, multi-agent collaboration, and intelligent decision-making patterns that you can customize for your specific use cases.
 
 import TemplateLibrary from '@site/src/components/TemplateLibrary';
 
 <TemplateLibrary />
+
+## 📥 Quick Download Templates
+
+Download these essential workflow templates to get started immediately:
+
+<div className="download-section">
+
+### 🌟 **Essential Starter Templates**
+
+<div className="template-downloads">
+
+**🚀 [Basic Agentic Workflow Template](../../../static/downloads/basic_workflow_template.csv)**  
+Perfect for beginners - autonomous agents with intelligent error handling  
+*Autonomous Input → Reasoning → Output with Agent Collaboration*
+
+**🌤️ [Multi-Agent Weather System](../../../static/downloads/weather_bot_template.csv)**  
+Demonstrates agent specialization and LLM orchestration  
+*Features: Custom API agents, LLM reasoning agents, intelligent routing*
+
+**📊 [Agentic Data Pipeline](../../../static/downloads/data_processing_template.csv)**  
+Autonomous ETL with intelligent validation and decision-making  
+*Capabilities: Self-validating agents, AI transformation, adaptive processing*
+
+**🎯 [Multi-Agent Customer Support](../../../static/downloads/customer_support_template.csv)**  
+Sophisticated intent classification with specialized handler agents  
+*Architecture: Intent agents, routing logic, specialized response agents, interaction logging*
+
+</div>
+
+:::tip Quick Start with Agentic AI Templates
+1. **Right-click** any template link above → **Save link as...**
+2. **Save** the CSV file to your AgentMap project directory
+3. **Run** with: `agentmap run --csv your_agentic_workflow.csv`
+4. **Customize** agent behaviors and routing for your specific use case
+:::
+
+</div>
 
 ## How to Use Templates
 

@@ -1,14 +1,16 @@
 ---
 sidebar_position: 1
-title: Understanding Workflows
-description: Learn how AgentMap workflows work with interactive visualizations
+title: Understanding AgentMap Workflows - Interactive Guide to AI Workflow Design
+description: Learn how AgentMap workflows work with interactive visualizations, CSV structure, data flow patterns, and best practices for building AI workflows. Complete with examples.
+keywords: [AgentMap workflows, AI workflow design, CSV workflows, workflow patterns, data flow, agent orchestration, workflow visualization, CSV structure]
+image: /img/agentmap-hero.png
 ---
 
 import WorkflowVisualizer from '@site/src/components/WorkflowVisualizer';
 
-# Understanding AgentMap Workflows
+# Understanding Agentic AI Workflows
 
-AgentMap workflows are defined using simple CSV files that describe how AI agents connect and pass data between each other. This guide will help you understand the structure and flow of these workflows through interactive visualizations.
+AgentMap **agentic AI workflows** are autonomous multi-agent systems defined using simple CSV files. Unlike traditional workflows, these are **intelligent agent networks** where each agent can reason, make decisions, and collaborate with other agents. This guide helps you understand how to build sophisticated agentic AI systems through interactive visualizations.
 
 :::tip Try Workflows Live!
 🎮 **Ready to build your own?** Jump straight to our [Interactive Playground](../playground) to create and test workflows with live simulation!
@@ -190,14 +192,33 @@ The templates in the visualizer above demonstrate real-world patterns:
 
 Each template showcases different aspects of workflow design and can serve as starting points for your own implementations.
 
-## Next Steps
+## Related Documentation
 
-Ready to build your own workflows? Check out these resources:
-
+### 🚀 **Getting Started**
 - **[Quick Start Guide](../getting-started/quick-start)**: Build your first workflow in 5 minutes
-- **[Agent Reference](../reference/agent-types)**: Complete list of available agents
-- **[Tutorial Workflows](../tutorials/weather-bot)**: Step-by-step workflow examples
-- **[Examples](../examples/index)**: Real-world workflow examples
+- **[CSV Schema Reference](../reference/csv-schema)**: Complete workflow format specification
+- **[Agent Types Reference](../reference/agent-types)**: Complete list of available agents
+
+### 📖 **Core Concepts**
+- **[State Management](./state-management)**: How data flows between agents
+- **[Advanced Agent Types](./advanced/advanced-agent-types)**: Custom agent development
+- **[Agent Development Contract](./advanced/agent-development-contract)**: Building your own agents
+
+### 💻 **Tools & Development**
+- **[CLI Commands](../reference/cli-commands)**: Command-line interface for AgentMap
+- **[CLI Graph Inspector](../reference/cli-graph-inspector)**: Debug and analyze workflows
+- **[Interactive Playground](../playground)**: Test workflows in your browser
+
+### 🏗️ **Advanced Topics**
+- **[Memory Management](./advanced/memory-and-orchestration/memory-management)**: Persistent state across workflow runs
+- **[Service Injection](./advanced/service-injection-patterns)**: Dependency injection patterns
+- **[Host Service Integration](./advanced/host-service-integration)**: Custom service integration
+
+### 📚 **Tutorials & Examples**
+- **[Weather Bot Tutorial](../tutorials/weather-bot)**: API integration with error handling
+- **[Data Processing Pipeline](../tutorials/data-processing-pipeline)**: ETL workflow patterns
+- **[Customer Support Bot](../tutorials/customer-support-bot)**: Multi-intent classification
+- **[Example Workflows](../examples/)**: Real-world workflow patterns
 
 ---
 

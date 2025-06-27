@@ -1,12 +1,31 @@
 ---
 sidebar_position: 1
-title: CSV Schema Reference
-description: Complete reference for AgentMap CSV workflow schema
+title: CSV Schema Reference - Define Agentic AI Workflows & Multi-Agent Systems
+description: Complete CSV schema reference for AgentMap agentic AI workflows. Learn to define autonomous multi-agent systems, RAG AI workflows, and LLM orchestration with CSV files.
+keywords: [CSV schema, agentic AI workflows, multi-agent systems, RAG AI configuration, LLM orchestration, autonomous agents, agent routing, vector database workflows, agent framework CSV]
+image: /img/agentmap-hero.png
 ---
 
 # CSV Schema Reference
 
-AgentMap uses CSV files to define workflows as directed graphs. Each row in the CSV represents a node in the graph and its connections to other nodes. This document explains the structure and fields of these CSV files.
+AgentMap uses CSV files to define **agentic AI workflows** as directed graphs where autonomous agents make decisions, route intelligently, and collaborate in multi-agent systems. Each row in the CSV represents an autonomous agent node that can reason, decide, and interact with other agents. This document explains how to structure CSV files for building sophisticated agentic AI systems.
+
+:::tip Quick Start
+🚀 **New to AgentMap?** Start with our [Quick Start Guide](../getting-started/quick-start.md) to build your first workflow, then return here for detailed schema reference.
+:::
+
+:::info Why CSV for Agentic AI?
+**CSV files are perfect for multi-agent systems because they:**
+- ✅ **Collaborative** - Teams can design agent workflows together in familiar spreadsheets
+- ✅ **Version Control** - Track changes to agent configurations and routing logic
+- ✅ **Visual** - See the entire multi-agent system structure at a glance
+- ✅ **Accessible** - No programming required to design sophisticated agentic workflows
+- ✅ **Scalable** - Define complex RAG AI and LLM orchestration systems easily
+:::
+
+import DownloadButton from '@site/src/components/DownloadButton';
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 ## CSV Columns
 
@@ -24,6 +43,60 @@ AgentMap uses CSV files to define workflows as directed graphs. Each row in the 
 | `Prompt` | No | Text or template used by LLM agents. For some agent types, this can be configuration data. Can reference managed prompts using the prompt: notation. |
 | `Description` | No | Detailed documentation for the node's purpose. Unlike Context (which can be used for configuration), Description is solely for documentation and does not affect functionality. |
 
+## Quick Start Templates
+
+Get started quickly with these ready-to-use CSV templates:
+
+<Tabs>
+<TabItem value="basic" label="Basic Template" default>
+
+<DownloadButton 
+  filename="agentmap_basic_template.csv" 
+  content={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+MyFlow,Start,,Get user input,input,Process,ErrorHandler,,user_input,Enter your data:,Entry point for workflow
+MyFlow,Process,,Process the input,default,End,ErrorHandler,user_input,result,,Main processing logic
+MyFlow,ErrorHandler,,Handle any errors,echo,End,,error,error_message,,Error handling and display
+MyFlow,End,,Complete the workflow,echo,,,result|error_message,output,,Final output node`}>
+  📄 Download Basic Template
+</DownloadButton>
+
+</TabItem>
+<TabItem value="advanced" label="Advanced Template">
+
+<DownloadButton 
+  filename="agentmap_advanced_template.csv" 
+  content={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+AdvancedFlow,GetInput,,Collect user requirements,input,RouteByType,ErrorHandler,,requirements,Describe your task:,User input collection with validation
+AdvancedFlow,RouteByType,,{"analysis_type": "sentiment"|"summary"|"extraction"},routing,AnalyzeSentiment|CreateSummary|ExtractData,ErrorHandler,requirements,route_decision,,Dynamic routing based on task type
+AdvancedFlow,AnalyzeSentiment,,{"provider": "openai", "temperature": 0.3},llm,FormatResults,ErrorHandler,requirements,sentiment_analysis,Analyze the sentiment of this text: {requirements},Sentiment analysis with low temperature
+AdvancedFlow,CreateSummary,,{"provider": "anthropic", "model": "claude-3-sonnet", "max_tokens": 150},llm,FormatResults,ErrorHandler,requirements,summary,Create a concise summary of: {requirements},Text summarization with token limit
+AdvancedFlow,ExtractData,,{"provider": "openai", "temperature": 0.1},llm,FormatResults,ErrorHandler,requirements,extracted_data,Extract key entities and data from: {requirements},Data extraction with minimal creativity
+AdvancedFlow,FormatResults,,{"template": "markdown"},formatter,SaveResults,ErrorHandler,sentiment_analysis|summary|extracted_data,formatted_output,,Format results in markdown
+AdvancedFlow,SaveResults,,{"directory": "outputs", "timestamp": true},file_writer,End,ErrorHandler,formatted_output,save_path,results_{timestamp}.md,Save results to file with timestamp
+AdvancedFlow,ErrorHandler,,Handle errors gracefully,echo,End,,error,error_message,,Comprehensive error handling
+AdvancedFlow,End,,Workflow completion,echo,,,formatted_output|save_path|error_message,final_output,,Final output with status`}>
+  ⚙️ Download Advanced Template
+</DownloadButton>
+
+</TabItem>
+<TabItem value="api" label="API Integration Template">
+
+<DownloadButton 
+  filename="agentmap_api_template.csv" 
+  content={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+APIFlow,GetQuery,,Collect search parameters,input,FetchData,ErrorHandler,,search_params,Enter search criteria:,User input for API query
+APIFlow,FetchData,,{"api_endpoint": "https://api.example.com", "method": "GET", "timeout": 30},custom:APIAgent,ProcessData,ErrorHandler,search_params,api_response,,External API data fetching
+APIFlow,ProcessData,,{"provider": "openai", "temperature": 0.5},llm,FormatOutput,ErrorHandler,api_response|search_params,processed_data,"Analyze this API data and provide insights: {api_response}",AI-powered data analysis
+APIFlow,FormatOutput,,{"format": "json", "pretty_print": true},formatter,SaveData,ErrorHandler,processed_data,formatted_json,,JSON formatting with pretty print
+APIFlow,SaveData,,{"storage_type": "local", "backup": true},data_store,End,ErrorHandler,formatted_json|search_params,storage_result,api_results/{search_params}_data.json,Persistent data storage
+APIFlow,ErrorHandler,,{"retry_count": 3, "fallback_message": "Service temporarily unavailable"},error_handler,End,,error,error_details,,Robust error handling with retry
+APIFlow,End,,{"include_metadata": true},summary,,,storage_result|formatted_json|error_details,final_result,,Comprehensive output with metadata`}>
+  🔌 Download API Template
+</DownloadButton>
+
+</TabItem>
+</Tabs>
+
 ## Field Details
 
 ### Routing Fields (Edge, Success_Next, Failure_Next)
@@ -32,7 +105,13 @@ You can define routing in two ways:
 1. Using `Edge` for simple linear flows
 2. Using `Success_Next` and `Failure_Next` for conditional branching based on `last_action_success`
 
-**Important:** Don't use both `Edge` and `Success_Next`/`Failure_Next` in the same row - this will raise an `InvalidEdgeDefinitionError`.
+:::warning Routing Rule Conflict
+**⚠️ Important:** Don't use both `Edge` and `Success_Next`/`Failure_Next` in the same row - this will raise an `InvalidEdgeDefinitionError`.
+
+Use either:
+- `Edge` for simple linear flows
+- `Success_Next`/`Failure_Next` for conditional branching
+:::
 
 ### Function References
 
@@ -142,23 +221,67 @@ WeatherFlow,End,,Complete workflow,echo,,,report|error_message,output,,Final out
 
 ### Common Validation Errors
 
-**InvalidEdgeDefinitionError**
+<Tabs>
+<TabItem value="edge-error" label="Edge Definition Error" default>
+
+:::danger InvalidEdgeDefinitionError
+**❌ Wrong:** Using both Edge and Success_Next
 ```csv
-# WRONG: Using both Edge and Success_Next
+# DON'T DO THIS
 MyGraph,Node1,Next,config,agent,Success,Failure,input,output,prompt
 ```
 
-**NodeNotFoundError**
+**✅ Correct:** Use either Edge OR Success_Next/Failure_Next
 ```csv
-# WRONG: Referencing non-existent node
+# Option 1: Simple linear flow
+MyGraph,Node1,Next,config,agent,,,input,output,prompt
+
+# Option 2: Conditional branching
+MyGraph,Node1,,config,agent,Success,Failure,input,output,prompt
+```
+:::
+
+</TabItem>
+<TabItem value="node-error" label="Node Reference Error">
+
+:::danger NodeNotFoundError
+**❌ Wrong:** Referencing non-existent node
+```csv
+# DON'T DO THIS - 'NonExistentNode' doesn't exist
 MyGraph,Node1,,config,agent,NonExistentNode,,input,output,prompt
 ```
 
-**InvalidJSONError**
+**✅ Correct:** Reference only defined nodes
 ```csv
-# WRONG: Invalid JSON in Context
+# First define all nodes
+MyGraph,Node1,,config,agent,Node2,,input,output,prompt
+MyGraph,Node2,,config,agent,End,,input,output,prompt
+MyGraph,End,,config,echo,,,output,final,
+```
+:::
+
+</TabItem>
+<TabItem value="json-error" label="JSON Format Error">
+
+:::danger InvalidJSONError
+**❌ Wrong:** Invalid JSON in Context
+```csv
+# DON'T DO THIS - Invalid JSON syntax
 MyGraph,Node1,,{invalid json},agent,Next,,input,output,prompt
 ```
+
+**✅ Correct:** Valid JSON formatting
+```csv
+# Proper JSON syntax
+MyGraph,Node1,,"{""provider"": ""openai"", ""temperature"": 0.7}",llm,Next,,input,output,prompt
+
+# Or simple text
+MyGraph,Node1,,Simple text description,agent,Next,,input,output,prompt
+```
+:::
+
+</TabItem>
+</Tabs>
 
 ### Best Practices for Error Prevention
 

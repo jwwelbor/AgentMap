@@ -111,6 +111,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'reference/csv-schema',
         'reference/cli-commands',
+        'reference/cli-graph-inspector',
         'reference/agent-types',
         'reference/agent-catalog',
       ],
@@ -127,10 +128,21 @@ const sidebars: SidebarsConfig = {
     //   ],
     // },
     
+    // Tools - Development and debugging utilities
+    {
+      type: 'category',
+      label: '🔧 Tools',
+      items: [
+        'playground',
+        'reference/cli-commands',
+        'reference/cli-graph-inspector',
+      ],
+    },
+    
     // Advanced Topics - Architecture and contribution
     {
       type: 'category',
-      label: '🏗️ Advanced',
+      label: '🎯 Advanced',
       items: [
         {
           type: 'category',

@@ -1,16 +1,16 @@
 ---
 sidebar_position: 1
-title: AgentMap Documentation - Build AI Workflows with CSV Files
-description: Complete guide to AgentMap - build powerful AI workflows using simple CSV files. No coding required. Get started in 5 minutes with our quick start guide.
-keywords: [AgentMap, AI workflows, CSV automation, no-code AI, agent orchestration, data pipelines, business automation]
+title: AgentMap - Build Agentic AI Workflows with Multi-Agent Systems
+description: Build autonomous multi-agent AI workflows with CSV files. RAG AI support, vector databases, LLM orchestration, and custom agentic AI development. No-code agent framework.
+keywords: [agentic AI workflows, multi-agent systems, RAG AI, retrieval augmented generation, LLM orchestration, autonomous AI agents, vector database integration, agent framework, multi-agent AI]
 image: /img/agentmap-hero.png
 ---
 
 # Welcome to AgentMap
 
-**Build AI Workflows with Simple CSV Files** - No coding required!
+**Build Agentic AI Workflows with Multi-Agent Systems** - Autonomous agents that think, decide, and act!
 
-AgentMap makes it incredibly easy to create powerful AI workflows using familiar CSV files. Whether you're automating business processes, building data pipelines, or creating AI assistants, AgentMap handles the complexity while you focus on your goals.
+AgentMap makes it incredibly easy to create autonomous multi-agent AI systems using familiar CSV files. Whether you're building RAG AI applications, LLM orchestration systems, or complex agentic workflows, AgentMap handles the complexity while you focus on your AI goals.
 
 ## 🚀 Get Started in 5 Minutes
 
@@ -20,32 +20,35 @@ Ready to build your first AI workflow? Our quick start guide will have you up an
 
 ## ✨ What Makes AgentMap Special?
 
+### 🤖 **Agentic AI Workflows**
+Create autonomous agents that make decisions, route intelligently, and adapt behavior based on context. True agentic AI that goes beyond simple automation.
+
+### 🧠 **Multi-Agent Orchestration** 
+Combine specialized AI agents seamlessly. LLM reasoning, vector search, document processing, and custom logic - all working together in intelligent coordination.
+
+### 🔍 **Native RAG AI Support**
+Built-in vector database integration (Chroma, FAISS) for retrieval-augmented generation. Create knowledge-aware agents that reference your data.
+
 ### 📝 **CSV-Based Configuration**
-Define your entire workflow in a simple CSV file. No complex YAML, no programming - just rows and columns that anyone can understand and edit.
+Define complex multi-agent systems in simple CSV files. Version control friendly, collaborative, and no YAML complexity.
 
-### 🤖 **AI Agent Orchestration** 
-Combine multiple AI agents seamlessly. Weather APIs, language models, data processors - all working together in harmony.
+### 🌐 **Production-Grade Multi-LLM**
+Orchestrate OpenAI, Anthropic, and Google models with memory management, routing, and failover capabilities.
 
-### ⚡ **Simple but Powerful**
-Start with a basic workflow in minutes, then scale to enterprise complexity with advanced features like parallel processing, memory management, and custom routing.
+## 📊 Examples: Agentic AI Systems You Can Build
 
-### 🌐 **Production Ready**
-Built for real-world use with enterprise-grade reliability, monitoring, and deployment capabilities.
+- **🧠 RAG AI Chatbots** - Knowledge-aware agents with vector search and memory - **[See Tutorial](./tutorials/rag-chatbot)**
+- **🔄 Multi-Agent Research** - Autonomous agents that gather, analyze, and synthesize information - **[See Tutorial](./tutorials/multi-agent-research)**  
+- **🎯 Intelligent Document Processing** - Agentic workflows for document understanding and extraction - **[See Tutorial](./tutorials/document-analyzer)**
+- **🤖 Autonomous Customer Support** - Multi-agent systems with intent classification and specialized handlers - **[See Tutorial](./tutorials/customer-support-bot)**
+- **🔗 Adaptive API Orchestration** - Self-routing agents that choose optimal APIs and fallbacks - **[See Tutorial](./tutorials/api-integration)**
+- **📈 Agentic Data Pipelines** - Intelligent ETL with decision-making and quality assessment - **[See Tutorial](./tutorials/data-processing-pipeline)**
 
-## 📋 Examples: What You Can Build
+## 🎯 How Agentic AI Works in AgentMap
 
-- **🌐 API-Driven Bots** - API driven bots (e.g. WeatherBot, FlightBot, StatusBot) - **[See Tutorial](./tutorials/weather-bot)**
-- **📊 Data Pipelines** - Transform and analyze data from multiple sources - **[See Tutorial](./tutorials/data-processing-pipeline)**  
-- **📧 Customer Support Bots** - Smart categorization and automated responses - **[See Tutorial](./tutorials/customer-support-bot)**
-- **🔍 Document Analyzers** - AI-powered document processing - **[See Tutorial](./tutorials/document-analyzer)**
-- **🔗 API Integrations** - Connect to external services and APIs - **[See Tutorial](./tutorials/api-integration)**
-- **💼 Business Automators** - Streamline invoicing, reporting, and communication
-
-## 🎯 How It Works
-
-1. **📝 Define** - Create a CSV file describing your workflow
-2. **🤖 Configure** - Set up AI agents with roles and data sources  
-3. **🚀 Deploy** - Launch your workflow and watch it work automatically
+1. **📝 Define** - Create a CSV file describing your multi-agent system
+2. **🤖 Configure** - Set up autonomous agents with reasoning capabilities and data sources  
+3. **🚀 Deploy** - Launch your agentic workflow and watch agents collaborate autonomously
 
 ## 🧭 Navigation Guide
 
@@ -93,14 +96,14 @@ Build real workflows with tutorials:
 
 ### **4. Advanced Topics** (60 minutes)
 Dive deeper into AgentMap:
-- **[Agent Development](./guides/agent-development)** - Custom agent creation
+- **[Agent Development Contract](./guides/advanced/agent-development-contract)** - Custom agent creation
 - **[State Management](./guides/state-management)** - Data flow patterns
-- **[Memory & Conversations](./guides/memory-and-conversations)** - Conversational AI
-- **[Storage & Data](./guides/storage-and-data)** - File and database operations
+- **[Memory Management](./guides/advanced/memory-and-orchestration/memory-management)** - Conversational AI and persistence
+- **[Infrastructure Services](./guides/infrastructure/storage-services-overview)** - File, database, and cloud operations
 
 ### **5. Production Deployment**
 Prepare for real-world use:
-- **[Monitoring & Debugging](./guides/monitoring-and-debugging)** - Performance tracking
+- **[Execution Tracking](./guides/operations/execution-tracking)** - Performance monitoring and debugging
 - **[Testing Workflows](./advanced/testing-workflows)** - Quality assurance
 - **[Custom Services](./advanced/custom-services)** - Enterprise integration
 
@@ -121,7 +124,7 @@ The [Dependency Injection](./guides/dependency-injection) system provides:
 - **Protocol-Based Injection**: Services injected based on interface implementation
 
 ### **Agent Development Patterns**
-The [Agent Development](./guides/agent-development) framework defines:
+The [Agent Development Contract](./guides/advanced/agent-development-contract) framework defines:
 - Modern constructor patterns with infrastructure service injection
 - Protocol-based business service configuration  
 - Debugging hooks and service information methods
@@ -135,27 +138,27 @@ The [Agent Development](./guides/agent-development) framework defines:
 - **[State Management](./guides/state-management)** - How data flows between agents
 
 ### **Agent Development**
-- **[Agent Development](./guides/agent-development)** - Required interface and patterns for all agents
-- **[Dependency Injection](./guides/dependency-injection)** - Protocol-based dependency injection system
-- **[Built-in Agents](./reference/built-in-agents)** - Built-in agent types and basic usage
-- **[Advanced Agents](./reference/advanced-agents)** - Advanced agents and comprehensive context configuration
+- **[Agent Development Contract](./guides/advanced/agent-development-contract)** - Required interface and patterns for all agents
+- **[Service Injection Patterns](./guides/advanced/service-injection-patterns)** - Protocol-based dependency injection system
+- **[Agent Types Reference](./reference/agent-types)** - Built-in agent types and basic usage
+- **[Advanced Agent Types](./guides/advanced/advanced-agent-types)** - Advanced agents and comprehensive context configuration
 
 ### **Workflow Management**
-- **[Memory & Conversations](./guides/memory-and-conversations)** - Template system and conversation management
-- **[Intelligent Routing](./guides/intelligent-routing)** - Dynamic workflow routing and orchestration
-- **[Workflow Patterns](./examples/workflow-patterns)** - Complete workflow examples
+- **[Memory Management](./guides/advanced/memory-and-orchestration/memory-management)** - Template system and conversation management
+- **[Orchestration Patterns](./guides/advanced/memory-and-orchestration/orchestration-patterns)** - Dynamic workflow routing and orchestration
+- **[Example Workflows](./examples/)** - Complete workflow examples
 
 ### **Operations and Tools**
-- **[CLI Reference](./reference/cli-reference)** - Command-line interface and tools
-- **[Graph Inspection](./tools/graph-inspection)** - Debugging and inspection tools
-- **[Monitoring & Debugging](./guides/monitoring-and-debugging)** - Performance monitoring and debugging
-- **[Storage & Data](./guides/storage-and-data)** - Unified storage operations for CSV, files, and data
-- **[Cloud Storage](./guides/cloud-storage)** - Cloud storage integration
+- **[CLI Commands](./reference/cli-commands)** - Command-line interface and tools
+- **[CLI Graph Inspector](./reference/cli-graph-inspector)** - Debug and analyze workflows
+- **[Execution Tracking](./guides/operations/execution-tracking)** - Performance monitoring and debugging
+- **[Infrastructure Services](./guides/infrastructure/storage-services-overview)** - Unified storage operations for CSV, files, and data
+- **[Cloud Storage Integration](./guides/infrastructure/cloud-storage-integration)** - Cloud storage integration
 
 ### **Advanced Topics**
-- **[Custom Services](./advanced/custom-services)** - Extend AgentMap with custom services and agents
-- **[Service Registry](./advanced/service-registry)** - Registry API for managing services
-- **[Testing Workflows](./advanced/testing-workflows)** - Testing patterns and best practices
+- **[Host Service Integration](./guides/advanced/host-service-integration)** - Extend AgentMap with custom services and agents
+- **[Service Registry Patterns](./guides/infrastructure/service-registry-patterns)** - Registry patterns for managing services
+- **[Testing Workflows](./guides/operations/testing-patterns)** - Testing patterns and best practices
 
 ## 🤝 Community & Support
 

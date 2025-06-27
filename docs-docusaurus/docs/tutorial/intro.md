@@ -28,13 +28,29 @@ Build real workflows with step-by-step guides:
 
 ### **Advanced Tutorials**
 - **[API Integration](../tutorials/api-integration)** - Multi-source data processing
+- **[Example Workflows](../examples/)** - Real-world patterns and templates
 
-## 📚 Learning Resources
+## 📚 Core Learning Resources
 
-- **[Interactive Playground](../playground)** - Try building workflows live
+### **📖 Fundamentals**
+- **[Understanding Workflows](../guides/understanding-workflows)** - Interactive workflow concepts
+- **[CSV Schema Reference](../reference/csv-schema)** - Complete CSV format guide
+- **[State Management](../guides/state-management)** - Data flow between agents
+
+### **🤖 Agent Development**
 - **[Agent Types Reference](../reference/agent-types)** - Complete agent documentation
-- **[CSV Schema Reference](../reference/csv-schema)** - CSV format guide
-- **[CLI Commands](../reference/cli-commands)** - Command-line interface
+- **[Advanced Agent Types](../guides/advanced/advanced-agent-types)** - Custom agent development
+- **[Agent Development Contract](../guides/advanced/agent-development-contract)** - Agent interface requirements
+
+### **🔧 Tools & Debugging**
+- **[Interactive Playground](../playground)** - Try building workflows live
+- **[CLI Commands](../reference/cli-commands)** - Command-line interface reference
+- **[CLI Graph Inspector](../reference/cli-graph-inspector)** - Debug and analyze workflows
+
+### **🏗️ Advanced Topics**
+- **[Service Injection Patterns](../guides/advanced/service-injection-patterns)** - Dependency injection
+- **[Memory Management](../guides/advanced/memory-and-orchestration/memory-management)** - Persistent state
+- **[Host Service Integration](../guides/advanced/host-service-integration)** - Custom services
 
 ## 🎯 What You'll Learn
 

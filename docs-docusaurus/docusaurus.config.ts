@@ -4,8 +4,8 @@ import type * as Preset from '@docusaurus/preset-classic';
 import type * as Plugin from '@docusaurus/types';
 
 const config: Config = {
-  title: 'AgentMap',
-  tagline: 'Build AI Workflows with Simple CSV Files',
+  title: 'AgentMap - Agentic AI Workflows & Multi-Agent Systems',
+  tagline: 'Build Autonomous Multi-Agent AI Systems with CSV Files',
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
@@ -28,7 +28,7 @@ const config: Config = {
       tagName: 'meta',
       attributes: {
         name: 'keywords',
-        content: 'AI workflows, CSV automation, no-code AI, agent orchestration, data pipelines, business automation',
+        content: 'agentic AI workflows, multi-agent systems, RAG AI, retrieval augmented generation, LLM orchestration, autonomous AI agents, vector database integration, agent framework, multi-agent AI, agentic workflows',
       },
     },
     {
@@ -52,6 +52,66 @@ const config: Config = {
         href: 'https://jwwelbor.github.io/AgentMap/',
       },
     },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'author',
+        content: 'AgentMap Team',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'robots',
+        content: 'index, follow',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        property: 'og:site_name',
+        content: 'AgentMap Documentation',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'twitter:site',
+        content: '@agentmap',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'theme-color',
+        content: '#2e8555',
+      },
+    },
+    {
+      tagName: 'script',
+      attributes: {
+        type: 'application/ld+json',
+      },
+      innerHTML: JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'SoftwareApplication',
+        name: 'AgentMap - Agentic AI Workflows & Multi-Agent Systems',
+        description: 'Build autonomous multi-agent AI workflows with CSV files. RAG AI support, vector databases, LLM orchestration, and custom agentic AI development.',
+        url: 'https://jwwelbor.github.io/AgentMap/',
+        applicationCategory: 'DeveloperApplication',
+        operatingSystem: 'Cross-platform',
+        softwareVersion: '1.0.0',
+        author: {
+          '@type': 'Organization',
+          name: 'AgentMap Team',
+        },
+        offers: {
+          '@type': 'Offer',
+          price: '0',
+          priceCurrency: 'USD',
+        },
+      }),
+    },
   ],
 
   // Even if you don't use internationalization, you can use this field to set
@@ -65,7 +125,23 @@ const config: Config = {
   markdown: {
     mermaid: true,
   },
-  themes: ['@docusaurus/theme-mermaid', '@docusaurus/theme-live-codeblock'],
+  themes: [
+    '@docusaurus/theme-mermaid', 
+    '@docusaurus/theme-live-codeblock',
+    [
+      '@easyops-cn/docusaurus-search-local',
+      {
+        // Basic options
+        indexDocs: true,
+        indexBlog: true,
+        indexPages: false,
+        language: "en",
+        searchResultLimits: 8,
+        searchResultContextMaxLength: 50,
+        hashed: true,
+      },
+    ],
+  ],
 
   plugins: [
     [
@@ -120,6 +196,179 @@ const config: Config = {
             from: '/agent-catalog',
             to: '/docs/playground',
           },
+          // Legacy usage documentation redirects
+          {
+            from: '/usage/agentmap_features.md',
+            to: '/docs/overview/core-features',
+          },
+          {
+            from: '/usage/agentmap_features',
+            to: '/docs/overview/core-features',
+          },
+          {
+            from: '/usage/agentmap_csv_schema_documentation.md',
+            to: '/docs/reference/csv-schema',
+          },
+          {
+            from: '/usage/agentmap_csv_schema_documentation',
+            to: '/docs/reference/csv-schema',
+          },
+          {
+            from: '/usage/agentmap_agent_types.md',
+            to: '/docs/reference/agent-types',
+          },
+          {
+            from: '/usage/agentmap_agent_types',
+            to: '/docs/reference/agent-types',
+          },
+          {
+            from: '/usage/agentmap_example_workflows.md',
+            to: '/docs/tutorial/intro',
+          },
+          {
+            from: '/usage/agentmap_example_workflows',
+            to: '/docs/tutorial/intro',
+          },
+          {
+            from: '/usage/advanced_agent_types.md',
+            to: '/docs/guides/advanced/advanced-agent-types',
+          },
+          {
+            from: '/usage/advanced_agent_types',
+            to: '/docs/guides/advanced/advanced-agent-types',
+          },
+          {
+            from: '/usage/state_management_and_data_flow.md',
+            to: '/docs/guides/state-management',
+          },
+          {
+            from: '/usage/state_management_and_data_flow',
+            to: '/docs/guides/state-management',
+          },
+          {
+            from: '/usage/memory_management_in_agentmap.md',
+            to: '/docs/guides/advanced/memory-and-orchestration/memory-management',
+          },
+          {
+            from: '/usage/memory_management_in_agentmap',
+            to: '/docs/guides/advanced/memory-and-orchestration/memory-management',
+          },
+          {
+            from: '/usage/agentmap_execution_tracking.md',
+            to: '/docs/guides/operations/execution-tracking',
+          },
+          {
+            from: '/usage/agentmap_execution_tracking',
+            to: '/docs/guides/operations/execution-tracking',
+          },
+          {
+            from: '/usage/CLI_INSPECT_GRAPH_DOCS.md',
+            to: '/docs/reference/cli-graph-inspector',
+          },
+          {
+            from: '/usage/CLI_INSPECT_GRAPH_DOCS',
+            to: '/docs/reference/cli-graph-inspector',
+          },
+          {
+            from: '/usage/TESTING_PATTERNS.md',
+            to: '/docs/guides/operations/testing-patterns',
+          },
+          {
+            from: '/usage/TESTING_PATTERNS',
+            to: '/docs/guides/operations/testing-patterns',
+          },
+          {
+            from: '/usage/storage_services.md',
+            to: '/docs/guides/infrastructure/storage-services-overview',
+          },
+          {
+            from: '/usage/storage_services',
+            to: '/docs/guides/infrastructure/storage-services-overview',
+          },
+          {
+            from: '/usage/agentmap_cloud_storage.md',
+            to: '/docs/guides/infrastructure/cloud-storage-integration',
+          },
+          {
+            from: '/usage/agentmap_cloud_storage',
+            to: '/docs/guides/infrastructure/cloud-storage-integration',
+          },
+          {
+            from: '/usage/host-service-integration.md',
+            to: '/docs/guides/advanced/host-service-integration',
+          },
+          {
+            from: '/usage/host-service-integration',
+            to: '/docs/guides/advanced/host-service-integration',
+          },
+          {
+            from: '/usage/service_injection.md',
+            to: '/docs/guides/advanced/service-injection-patterns',
+          },
+          {
+            from: '/usage/service_injection',
+            to: '/docs/guides/advanced/service-injection-patterns',
+          },
+          {
+            from: '/usage/agent_contract.md',
+            to: '/docs/guides/advanced/agent-development-contract',
+          },
+          {
+            from: '/usage/agent_contract',
+            to: '/docs/guides/advanced/agent-development-contract',
+          },
+          {
+            from: '/usage/orchestration_agent.md',
+            to: '/docs/guides/advanced/memory-and-orchestration/orchestration-patterns',
+          },
+          {
+            from: '/usage/orchestration_agent',
+            to: '/docs/guides/advanced/memory-and-orchestration/orchestration-patterns',
+          },
+          {
+            from: '/usage/prompt_management_in_agentmap.md',
+            to: '/docs/guides/advanced/memory-and-orchestration/prompt-management',
+          },
+          {
+            from: '/usage/prompt_management_in_agentmap',
+            to: '/docs/guides/advanced/memory-and-orchestration/prompt-management',
+          },
+          {
+            from: '/usage/langchain_memory_in_agentmap.md',
+            to: '/docs/guides/advanced/memory-and-orchestration/langchain-memory-integration',
+          },
+          {
+            from: '/usage/langchain_memory_in_agentmap',
+            to: '/docs/guides/advanced/memory-and-orchestration/langchain-memory-integration',
+          },
+          {
+            from: '/usage/host_service_registry.md',
+            to: '/docs/guides/infrastructure/service-registry-patterns',
+          },
+          {
+            from: '/usage/host_service_registry',
+            to: '/docs/guides/infrastructure/service-registry-patterns',
+          },
+          {
+            from: '/usage/agentmap-quickstart.md',
+            to: '/docs/getting-started/quick-start',
+          },
+          {
+            from: '/usage/agentmap-quickstart',
+            to: '/docs/getting-started/quick-start',
+          },
+          {
+            from: '/usage/index.md',
+            to: '/docs/intro',
+          },
+          {
+            from: '/usage/index',
+            to: '/docs/intro',
+          },
+          {
+            from: '/usage/',
+            to: '/docs/intro',
+          },
         ],
       },
     ],
@@ -135,6 +384,15 @@ const config: Config = {
           // Remove this to remove the "edit this page" links.
           editUrl:
             'https://github.com/jwwelbor/AgentMap/tree/main/docs-docusaurus/',
+          // Versioning configuration (ready for activation)
+          // lastVersion: 'current',
+          // versions: {
+          //   current: {
+          //     label: 'Next 🚧',
+          //     path: 'next',
+          //   },
+          // },
+          // includeCurrentVersion: true,
         },
         blog: {
           showReadingTime: true,
@@ -149,8 +407,39 @@ const config: Config = {
         sitemap: {
           changefreq: 'weekly',
           priority: 0.5,
-          ignorePatterns: ['/tags/**'],
+          ignorePatterns: ['/tags/**', '/blog/archive/**'],
           filename: 'sitemap.xml',
+          createSitemapItems: async (params) => {
+            const {defaultCreateSitemapItems, ...rest} = params;
+            const items = await defaultCreateSitemapItems(rest);
+            return items.map((item) => {
+              // Higher priority for key pages
+              if (item.url.includes('/docs/intro') || 
+                  item.url.includes('/docs/getting-started/quick-start')) {
+                return {
+                  ...item,
+                  priority: 1.0,
+                  changefreq: 'daily',
+                };
+              }
+              if (item.url.includes('/docs/tutorials/') || 
+                  item.url.includes('/docs/reference/')) {
+                return {
+                  ...item,
+                  priority: 0.8,
+                  changefreq: 'weekly',
+                };
+              }
+              if (item.url.includes('/docs/guides/')) {
+                return {
+                  ...item,
+                  priority: 0.7,
+                  changefreq: 'weekly',
+                };
+              }
+              return item;
+            });
+          },
         },
         gtag: {
           trackingID: 'G-XXXXXXXXXX', // Replace with your Google Analytics 4 tracking ID
@@ -164,16 +453,20 @@ const config: Config = {
     // Replace with your project's social card
     image: 'img/agentmap-hero.png',
     
-    // Algolia DocSearch configuration
+    // Algolia DocSearch configuration (UNCOMMENT WHEN APPROVED)
     // Note: Apply for free DocSearch at https://docsearch.algolia.com/apply/
     // algolia: {
     //   appId: 'YOUR_APP_ID',
     //   apiKey: 'YOUR_SEARCH_API_KEY',
     //   indexName: 'agentmap',
     //   contextualSearch: true,
-    //   searchParameters: {},
+    //   searchParameters: {
+    //     facetFilters: ['language:en'],
+    //   },
     //   searchPagePath: 'search',
+    //   insights: true, // Enable search analytics
     // },
+    
     navbar: {
       title: 'AgentMap',
       logo: {
@@ -199,6 +492,12 @@ const config: Config = {
           label: 'Tools',
         },
         {to: '/blog', label: 'Blog', position: 'left'},
+        // Version dropdown (ready for activation when versioning is enabled)
+        // {
+        //   type: 'docsVersionDropdown',
+        //   position: 'left',
+        //   dropdownActiveClassDisabled: true,
+        // },
         {
           href: 'https://github.com/jwwelbor/AgentMap',
           label: 'GitHub',

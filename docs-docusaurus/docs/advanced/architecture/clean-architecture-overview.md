@@ -338,11 +338,20 @@ class TestMyService(unittest.TestCase):
         self.assertIsNotNone(result)
 ```
 
-## Next Steps
+## Related Documentation
 
-1. Review the [Service Catalog](./service-catalog.md) for detailed service documentation
-2. Read the [Dependency Injection Guide](./dependency-injection.md) for DI patterns
-3. See the [Migration Guide](./migration-guide.md) for updating existing code
-4. Check [Testing Patterns](../../guides/advanced/testing-patterns.md) for test guidelines
+### **🏗️ Architecture**
+- **[Service Catalog](./service-catalog)** - Complete service reference and interfaces
+- **[Infrastructure Overview](../../guides/infrastructure/index)** - Infrastructure services and patterns
+
+### **🔧 Development Patterns**
+- **[Agent Development Contract](../../guides/advanced/agent-development-contract)** - Agent interface requirements
+- **[Service Injection Patterns](../../guides/advanced/service-injection-patterns)** - Dependency injection patterns
+- **[Testing Patterns](../../guides/operations/testing-patterns)** - Testing strategies and guidelines
+
+### **📖 Core Concepts**
+- **[Understanding Workflows](../../guides/understanding-workflows)** - Workflow fundamentals
+- **[State Management](../../guides/state-management)** - Data flow between components
+- **[Advanced Agent Types](../../guides/advanced/advanced-agent-types)** - Custom agent development
 
 The clean architecture provides a solid foundation for AgentMap's continued growth and maintainability while preserving all existing functionality.

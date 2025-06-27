@@ -1,22 +1,31 @@
 ---
-title: Core Features & Capabilities
-description: Comprehensive overview of AgentMap's features, architecture patterns, and implementation capabilities for AI agent workflow orchestration.
+title: AgentMap Core Features & Capabilities - Complete AI Workflow Platform Overview
+description: Comprehensive overview of AgentMap's features, architecture patterns, and implementation capabilities for AI agent workflow orchestration. Multi-LLM support, storage integration, and more.
+keywords: [AgentMap features, AI workflow platform, multi-LLM integration, workflow orchestration, agent architecture, CSV workflows, storage integration, vector databases]
+image: /img/agentmap-hero.png
 sidebar_position: 3
 tags: [features, architecture, overview, capabilities]
 ---
 
 # AgentMap Core Features & Capabilities
 
-AgentMap is a sophisticated declarative orchestration framework that transforms simple CSV files into powerful AI agent workflows. This comprehensive guide covers the complete feature set, architecture patterns, and provides a detailed roadmap for extending and enhancing the framework.
+AgentMap is a sophisticated **agentic AI orchestration framework** that transforms simple CSV files into powerful autonomous multi-agent AI systems. This comprehensive guide covers the complete feature set for building **RAG AI applications**, **multi-agent workflows**, and **LLM orchestration systems**.
 
-## 🎯 Core Framework Features
+## 🎯 Core Agentic AI Features
 
-### Declarative Workflow Definition
-- **CSV-driven workflow definitions** with simple spreadsheet format
-- **Visual workflow design** that's version control friendly
-- **Graph-based execution** with conditional branching and parallel processing
-- **Dynamic routing** with function-based and content-based routing
-- **State-driven execution** with comprehensive data flow management
+### Autonomous Multi-Agent Workflows
+- **Agentic decision-making** with intelligent routing and autonomous behavior
+- **Multi-agent collaboration** where specialized agents coordinate and communicate
+- **Self-directed execution** with agents that adapt and respond to changing conditions
+- **Hierarchical agent systems** with supervisor and worker agent patterns
+- **Event-driven autonomy** where agents react intelligently to triggers and state changes
+
+### RAG AI & Vector Database Integration
+- **Native vector database support** (Chroma, FAISS, Pinecone) for retrieval-augmented generation
+- **Semantic search agents** that intelligently query knowledge bases
+- **Document processing pipelines** with chunking, embedding, and retrieval
+- **Knowledge-aware LLM agents** that combine reasoning with retrieved context
+- **Multi-modal RAG systems** supporting text, code, and structured data
 
 ### Agent Ecosystem (20+ Built-in Types)
 - **Core Agents**: Default, Echo, Branching, Success/Failure, Input
@@ -215,18 +224,18 @@ Smart,Classifier,func:choose_specialist,default,user_query,classification
 
 :::tip Ready to Get Started?
 - **Quick Start**: Begin with our [5-minute tutorial](../getting-started/quick-start.md)
-- **Build Your First Workflow**: Follow the [complete quick start guide](../getting-started/complete-quick-start.md)
-- **Explore Examples**: Check out [workflow patterns](../examples/workflow-patterns.md)
+- **Build Your First Workflow**: Follow the [quick start guide](../getting-started/quick-start.md)
+- **Explore Examples**: Check out [example workflows](../examples/)
 :::
 
 :::info Deep Dive Topics
 - **[State Management](../guides/state-management.md)**: Understand data flow between agents
-- **[Agent Development](../guides/agent-development.md)**: Create custom agents
-- **[Storage & Data](../guides/storage-and-data.md)**: Work with files and databases
+- **[Agent Development](../guides/advanced/agent-development-contract.md)**: Create custom agents
+- **[Infrastructure Guide](../guides/infrastructure/index.md)**: Work with files, databases and cloud storage
 :::
 
 ## Related Documentation
 
 - **[CSV Schema Reference](../reference/csv-schema.md)**: Complete schema documentation
-- **[Built-in Agents](../reference/built-in-agents.md)**: All available agent types
-- **[CLI Reference](../reference/cli-reference.md)**: Command-line tools and options
+- **[Agent Types Reference](../reference/agent-types.md)**: All available agent types
+- **[CLI Commands](../reference/cli-commands.md)**: Command-line tools and options

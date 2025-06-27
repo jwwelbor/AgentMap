@@ -535,5 +535,5 @@ The execution tracking system provides comprehensive visibility into your AgentM
 
 - [Testing Patterns](testing-patterns.md) - Testing strategies for workflows with execution tracking
 - [CLI Commands Reference](../../reference/cli-commands.md) - CLI commands for execution and monitoring
-- [Configuration Guide](../basics/configuration.md) - Configuration options for execution tracking
-- [Performance Optimization](../advanced/performance-optimization.md) - Advanced performance tuning
+- [Infrastructure Guide](../infrastructure/index.md) - Configuration options for execution tracking
+- [Advanced Agent Types](../advanced/advanced-agent-types.md) - Advanced performance patterns and optimization

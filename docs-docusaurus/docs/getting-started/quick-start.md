@@ -377,8 +377,8 @@ RAG,Answer,,{"provider": "openai", "temperature": 0.3},llm,End,,query|search_res
 
 - Explore [Agent Types Reference](../reference/agent-types.md) for more agent options
 - Learn about [CSV Schema Reference](../reference/csv-schema.md) for advanced CSV features
-- Read the [Testing Patterns](../guides/advanced/testing-patterns.md) guide for testing workflows
-- Check [Configuration Guide](../guides/basics/configuration.md) for setup options
+- Read the [Testing Patterns](../guides/operations/testing-patterns.md) guide for testing workflows
+- Check [Infrastructure Guide](../guides/infrastructure/index.md) for setup and configuration options
 
 ## Download All Examples
 
@@ -469,8 +469,8 @@ python --version
 
 ### Getting Help
 
-- **Documentation**: [Complete AgentMap Docs](../README.md)
-- **Examples**: [More Examples](../tutorials/example-workflows.md)
+- **Documentation**: [Complete AgentMap Docs](../intro.md)
+- **Examples**: [More Examples](../examples/)
 - **Community**: [Discord Server](https://discord.gg/agentmap)
 - **Issues**: [GitHub Issues](https://github.com/agentic-labs/agentmap/issues)
 
@@ -479,5 +479,5 @@ python --version
 This quick start guide provides the foundation for building powerful workflows with AgentMap. Start simple and gradually add complexity as you become familiar with the patterns!
 
 :::tip Next Steps
-🚀 **Ready for more?** Check out our [Complete Example Workflows](../tutorials/example-workflows.md) for advanced patterns including parallel processing, API integrations, and data pipelines!
+🚀 **Ready for more?** Check out our [Complete Example Workflows](../examples/) for advanced patterns including parallel processing, API integrations, and data pipelines!
 :::

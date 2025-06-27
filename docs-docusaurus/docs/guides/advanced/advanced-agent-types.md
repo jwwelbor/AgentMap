@@ -768,11 +768,35 @@ The `Prompt` field serves different purposes depending on the agent type:
 
 ---
 
-## Next Steps
+## Related Documentation
 
-After mastering advanced agent types and context configuration:
+### 🚀 **Getting Started**
+- **[Quick Start Guide](../../getting-started/quick-start)**: Build your first workflow in 5 minutes
+- **[Understanding Workflows](../understanding-workflows)**: Core workflow concepts and interactive examples
+- **[CSV Schema Reference](../../reference/csv-schema)**: Complete workflow format specification
 
-1. **Understand Service Architecture**: Read [Service Injection Patterns](./service-injection-patterns) to understand how services are provided to agents
-2. **Learn Agent Patterns**: Study [Agent Development Contract](./agent-development-contract) for implementation requirements
-3. **Build Custom Agents**: See [Tutorial: Building Custom Agents](../../tutorials/building-custom-agents) for complete custom agent development examples
-4. **Explore Basic Types**: Review [Reference: Agent Types](../../reference/agent-types) for foundational agent patterns
+### 🤖 **Agent Development**
+- **[Agent Development Contract](./agent-development-contract)**: Required interface and patterns for all agents
+- **[Service Injection Patterns](./service-injection-patterns)**: Protocol-based dependency injection system
+- **[Reference: Agent Types](../../reference/agent-types)**: Basic agent types and usage patterns
+- **[Agent Catalog](../../reference/agent-catalog)**: Comprehensive agent reference
+
+### 💻 **Tools & Development**
+- **[CLI Commands](../../reference/cli-commands)**: Complete command-line reference
+- **[CLI Graph Inspector](../../reference/cli-graph-inspector)**: Debug and analyze workflows
+- **[Interactive Playground](../../playground)**: Test workflows in your browser
+
+### 🏗️ **Advanced Topics**
+- **[Memory Management](./memory-and-orchestration/memory-management)**: Persistent state across workflow runs
+- **[Host Service Integration](./host-service-integration)**: Custom service integration
+- **[State Management](../state-management)**: How data flows between agents
+
+### 📚 **Tutorials & Examples**
+- **[Weather Bot Tutorial](../../tutorials/weather-bot)**: Custom agent development example
+- **[Data Processing Pipeline](../../tutorials/data-processing-pipeline)**: Advanced agent orchestration
+- **[Customer Support Bot](../../tutorials/customer-support-bot)**: OrchestratorAgent usage patterns
+- **[Example Workflows](../../examples/)**: Real-world advanced agent examples
+
+### 🏗️ **Architecture**
+- **[Clean Architecture Overview](../../advanced/architecture/clean-architecture-overview)**: System architecture principles
+- **[Service Catalog](../../advanced/architecture/service-catalog)**: Complete service reference
