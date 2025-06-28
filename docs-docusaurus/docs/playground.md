@@ -57,24 +57,24 @@ While we build these visual tools, explore AgentMap through our comprehensive do
 ### 🚀 **Quick Start**
 Get up and running with your first workflow in 5 minutes.
 
-**[→ Quick Start Guide](../getting-started/quick-start)**
+**[→ Quick Start Guide](./getting-started/quick-start)**
 
 ### 📖 **Complete Tutorials**
 Step-by-step guides for building real workflows:
 
-- **[Weather Bot Tutorial](../tutorials/weather-bot)** - API integration and LLM processing
-- **[Data Processing Pipeline](../tutorials/data-processing-pipeline)** - CSV processing with validation
-- **[Customer Support Bot](../tutorials/customer-support-bot)** - Intent classification and routing
+- **[Weather Bot Tutorial](./tutorials/weather-bot)** - API integration and LLM processing
+- **[Data Processing Pipeline](./tutorials/data-processing-pipeline)** - CSV processing with validation
+- **[Customer Support Bot](./tutorials/customer-support-bot)** - Intent classification and routing
 
 ### 🔧 **Agent Reference**
 Complete documentation of all AgentMap agent types:
 
-**[→ Agent Types Reference](../reference/agent-types)**
+**[→ Agent Types Reference](./reference/agent-types)**
 
 ### 💡 **Examples Gallery**
 Real-world workflow examples you can download and use:
 
-**[→ Workflow Examples](../examples/index)**
+**[→ Workflow Examples](./examples/)**
 
 ---
 
@@ -111,7 +111,7 @@ AgentMap's CSV format is powerful but can be hard to visualize for complex workf
 These tools are in active development! Check back soon or:
 
 - **[⭐ Star on GitHub](https://github.com/jwwelbor/AgentMap)** - Get notified of releases
-- **[📖 Read the Docs](../intro)** - Master AgentMap fundamentals
+- **[📖 Read the Docs](./intro)** - Master AgentMap fundamentals
 - **[💬 Join Discussions](https://github.com/jwwelbor/AgentMap/discussions)** - Share ideas and feedback
 
 ---

@@ -530,6 +530,205 @@ class DataTransformerAgent(BaseAgent):
         }
 ```
 
+## Intelligent Data Pipelines {#intelligent-data-pipelines}
+
+This tutorial demonstrates **AI-powered data processing** that goes far beyond traditional ETL pipelines. Your pipeline uses machine learning and AI to make intelligent decisions about data quality, transformation strategies, and insights generation.
+
+### 🧠 **AI-Driven Data Quality Assessment**
+
+Your pipeline doesn't just check for missing values - it intelligently assesses data quality:
+
+```python
+# Advanced AI-powered data quality assessment
+class IntelligentDataQualityAgent(BaseAgent):
+    def __init__(self):
+        self.quality_models = {
+            "anomaly_detection": IsolationForest(contamination=0.1),
+            "pattern_recognition": LocalOutlierFactor(n_neighbors=20),
+            "semantic_validation": SemanticValidator(),
+            "completeness_predictor": CompletenessPredictor()
+        }
+    
+    def assess_data_quality(self, df):
+        quality_score = 0
+        
+        # AI-powered anomaly detection
+        numeric_data = df.select_dtypes(include=[np.number])
+        if not numeric_data.empty:
+            anomalies = self.quality_models["anomaly_detection"].fit_predict(numeric_data)
+            anomaly_ratio = (anomalies == -1).sum() / len(anomalies)
+            quality_score += (1 - anomaly_ratio) * 30
+        
+        # Semantic consistency checking
+        for column in df.columns:
+            semantic_score = self.quality_models["semantic_validation"].validate_column(
+                df[column], expected_type=self._infer_semantic_type(column)
+            )
+            quality_score += semantic_score * (70 / len(df.columns))
+        
+        return {
+            "overall_score": min(100, quality_score),
+            "anomalies_detected": (anomalies == -1).sum(),
+            "semantic_consistency": semantic_score,
+            "recommendations": self._generate_quality_recommendations(df, anomalies)
+        }
+```
+
+### 🔄 **Adaptive Transformation Strategies**
+
+Your pipeline learns optimal transformation strategies based on data characteristics:
+
+```python
+class AdaptiveTransformationEngine:
+    def __init__(self):
+        self.transformation_history = TransformationMemory()
+        self.performance_tracker = TransformationPerformanceTracker()
+    
+    def select_optimal_transformations(self, data_profile):
+        # AI selects best transformation strategy based on data characteristics
+        similar_datasets = self.transformation_history.find_similar_datasets(data_profile)
+        
+        if similar_datasets:
+            # Use proven strategies from similar data
+            strategies = self._extract_successful_strategies(similar_datasets)
+            return self._rank_strategies_by_expected_performance(strategies, data_profile)
+        else:
+            # Generate new strategies using AI
+            return self._generate_novel_strategies(data_profile)
+    
+    def apply_transformations_with_learning(self, df, strategies):
+        results = []
+        
+        for strategy in strategies:
+            try:
+                transformed_df = self._apply_strategy(df, strategy)
+                performance_metrics = self._evaluate_transformation_quality(df, transformed_df)
+                
+                # Learn from the results
+                self.transformation_history.record_transformation(
+                    original_profile=self._profile_data(df),
+                    strategy=strategy,
+                    results=performance_metrics,
+                    success=performance_metrics["quality_improvement"] > 0.1
+                )
+                
+                results.append({
+                    "strategy": strategy,
+                    "transformed_data": transformed_df,
+                    "performance": performance_metrics
+                })
+                
+            except Exception as e:
+                self.transformation_history.record_failure(strategy, str(e))
+        
+        # Return best performing transformation
+        return max(results, key=lambda x: x["performance"]["overall_score"])
+```
+
+### 📊 **Predictive Pipeline Optimization**
+
+Your pipeline predicts and prevents issues before they occur:
+
+```python
+class PredictivePipelineOptimizer:
+    def __init__(self):
+        self.performance_predictor = PipelinePerformancePredictor()
+        self.resource_optimizer = ResourceUsageOptimizer()
+        self.failure_predictor = PipelineFailurePredictor()
+    
+    def optimize_pipeline_execution(self, pipeline_config, data_characteristics):
+        # Predict performance bottlenecks
+        predicted_bottlenecks = self.performance_predictor.identify_bottlenecks(
+            pipeline_config, data_characteristics
+        )
+        
+        # Optimize resource allocation
+        optimal_resources = self.resource_optimizer.calculate_optimal_allocation(
+            data_size=data_characteristics["size"],
+            complexity_score=data_characteristics["complexity"],
+            predicted_bottlenecks=predicted_bottlenecks
+        )
+        
+        # Predict and prevent failures
+        failure_risk = self.failure_predictor.assess_failure_probability(
+            pipeline_config, data_characteristics
+        )
+        
+        if failure_risk > 0.3:
+            # Implement preventive measures
+            preventive_actions = self._generate_preventive_actions(failure_risk)
+            pipeline_config = self._apply_preventive_measures(pipeline_config, preventive_actions)
+        
+        return {
+            "optimized_config": pipeline_config,
+            "resource_allocation": optimal_resources,
+            "predicted_performance": self.performance_predictor.estimate_execution_time(pipeline_config),
+            "risk_assessment": failure_risk
+        }
+```
+
+### 🎆 **Self-Healing Pipeline Architecture**
+
+Your pipeline automatically recovers from errors and adapts to changing data:
+
+```python
+class SelfHealingPipeline:
+    def __init__(self):
+        self.health_monitor = PipelineHealthMonitor()
+        self.auto_recovery = AutoRecoverySystem()
+        self.adaptation_engine = PipelineAdaptationEngine()
+    
+    def execute_with_self_healing(self, pipeline_steps, data):
+        execution_context = ExecutionContext()
+        
+        for step_index, step in enumerate(pipeline_steps):
+            try:
+                # Monitor step execution
+                with self.health_monitor.monitor_step(step) as monitor:
+                    result = step.execute(data)
+                    execution_context.record_success(step_index, result)
+                    data = result  # Pass to next step
+                    
+            except Exception as error:
+                # Intelligent error recovery
+                recovery_strategy = self.auto_recovery.determine_recovery_strategy(
+                    error=error,
+                    step=step,
+                    context=execution_context,
+                    data_state=data
+                )
+                
+                if recovery_strategy["can_recover"]:
+                    # Attempt automated recovery
+                    recovered_result = self.auto_recovery.execute_recovery(
+                        strategy=recovery_strategy,
+                        step=step,
+                        data=data
+                    )
+                    
+                    if recovered_result["success"]:
+                        data = recovered_result["data"]
+                        execution_context.record_recovery(step_index, recovery_strategy)
+                        continue
+                
+                # If recovery fails, adapt the pipeline
+                adapted_pipeline = self.adaptation_engine.adapt_pipeline(
+                    original_pipeline=pipeline_steps,
+                    failure_point=step_index,
+                    error=error,
+                    data_characteristics=self._analyze_data_characteristics(data)
+                )
+                
+                # Continue with adapted pipeline
+                return self.execute_with_self_healing(adapted_pipeline[step_index:], data)
+        
+        return {
+            "final_result": data,
+            "execution_summary": execution_context.get_summary(),
+            "adaptations_made": execution_context.get_adaptations()
+        }
+```
+
 ## Step 6: Implement Report Generator Agent  
 
 Create `custom_agents/report_generator_agent.py`:

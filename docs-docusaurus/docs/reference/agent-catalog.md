@@ -34,7 +34,7 @@ Explore all available AgentMap agent types in this interactive catalog. Use the 
 - **[Quick Start Guide](../getting-started/quick-start)** - Build your first workflow using these agents
 - **[CSV Schema Reference](./csv-schema)** - Learn the complete CSV format for defining workflows
 - **[CLI Commands](./cli-commands)** - Use scaffolding to generate custom agent templates
-- **[Agent Development](../guides/advanced/custom-agents)** - Create your own custom agents
+- **[Agent Development](../tutorials/building-custom-agents)** - Create your own custom agents
 
 ## Common Agent Combinations
 

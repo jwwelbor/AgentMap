@@ -14,7 +14,7 @@ from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.execution_tracking_service import ExecutionTrackingService, NodeExecution
 from agentmap.models.execution_summary import ExecutionSummary
-from agentmap.migration_utils import MockLoggingService
+from tests.utils.migration_utils import MockLoggingService
 from tests.utils.mock_factory import MockServiceFactory
 
 

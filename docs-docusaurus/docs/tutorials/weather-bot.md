@@ -388,6 +388,78 @@ export OPENWEATHER_API_KEY="your_actual_api_key"
 3. **Scheduling**: Set up automated daily weather reports
 4. **Integration**: Connect to Slack/Discord for notifications
 
+## Weather Bot API Integration {#weather-bot-api-integration}
+
+The weather bot demonstrates sophisticated **API integration patterns** that you can apply to any external service:
+
+### 🔌 **Multi-Provider API Strategy**
+Extend your weather bot to use multiple weather services for redundancy:
+
+```python
+# Advanced API integration with fallback providers
+class MultiProviderWeatherAgent(WeatherAPIAgent):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.providers = [
+            {"name": "openweather", "url": "https://api.openweathermap.org/data/2.5/weather"},
+            {"name": "weatherapi", "url": "https://api.weatherapi.com/v1/current.json"},
+            {"name": "accuweather", "url": "https://dataservice.accuweather.com/currentconditions/v1/"}
+        ]
+    
+    def process(self, inputs):
+        for provider in self.providers:
+            try:
+                result = self._fetch_from_provider(provider, inputs)
+                if result.get("success"):
+                    return result
+            except Exception as e:
+                self.log_warning(f"Provider {provider['name']} failed: {e}")
+                continue
+        
+        return self._fallback_response(inputs)
+```
+
+### 🔄 **Rate Limiting & Caching**
+Implement intelligent request management:
+
+```python
+# Add to WeatherAPIAgent
+from functools import lru_cache
+import time
+
+class CachedWeatherAgent(WeatherAPIAgent):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.last_request_time = 0
+        self.request_interval = 1.0  # Minimum seconds between requests
+    
+    @lru_cache(maxsize=100)
+    def _cached_weather_request(self, location, timestamp_hour):
+        # Cache results for 1 hour by including hour in cache key
+        return self._make_api_request(location)
+    
+    def process(self, inputs):
+        # Rate limiting
+        current_time = time.time()
+        if current_time - self.last_request_time < self.request_interval:
+            time.sleep(self.request_interval - (current_time - self.last_request_time))
+        
+        # Use cached request with hourly granularity
+        timestamp_hour = int(time.time() // 3600)
+        result = self._cached_weather_request(inputs.get("location"), timestamp_hour)
+        
+        self.last_request_time = time.time()
+        return result
+```
+
+### 🌐 **Global API Integration Patterns**
+These patterns work for any external API:
+
+- **Authentication Management**: Secure API key rotation and management
+- **Error Classification**: Distinguish between temporary and permanent failures  
+- **Response Transformation**: Normalize data from different API schemas
+- **Monitoring Integration**: Track API performance and usage metrics
+
 ## Download Starter Files
 
 ```bash
@@ -427,7 +499,7 @@ curl -O https://raw.githubusercontent.com/jwwelbor/AgentMap-Examples/main/weathe
 
 ### 🏗️ **Advanced Topics**
 - **[Memory Management](../guides/advanced/memory-and-orchestration/memory-management)**: Persistent state across runs
-- **[Error Handling Patterns](../guides/advanced/error-handling)**: Robust error management
+- **[Testing Patterns](../guides/operations/testing-patterns)**: Testing and quality assurance
 - **[Performance Optimization](../guides/advanced/performance)**: Scale workflows efficiently
 
 ## Troubleshooting

@@ -39,10 +39,10 @@ function WhatCanIBuild() {
   ];
 
   return (
-    <section className={styles.whatSection} id="what-can-i-build">
+    <section className={styles.whatSection} role="region" aria-label="What Can I Build" data-anchor="what-can-i-build">
       <div className="container">
         <div className={styles.sectionHeader}>
-          <Heading as="h2" className={styles.sectionTitle}>
+          <Heading as="h2" className={styles.sectionTitle} id="what-can-i-build">
             What Can I Build?
           </Heading>
           <p className={styles.sectionSubtitle}>

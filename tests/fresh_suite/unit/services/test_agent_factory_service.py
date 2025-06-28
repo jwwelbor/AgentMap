@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import Mock
 from typing import Type, Dict, Any
 from agentmap.services.agent_factory_service import AgentFactoryService
-from agentmap.migration_utils import MockLoggingService
+from tests.utils.migration_utils import MockLoggingService
 from tests.utils.mock_factory import MockServiceFactory
 
 

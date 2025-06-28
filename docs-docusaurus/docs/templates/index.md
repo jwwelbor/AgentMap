@@ -22,23 +22,78 @@ Download these essential workflow templates to get started immediately:
 
 ### 🌟 **Essential Starter Templates**
 
+import DownloadButton from '@site/src/components/DownloadButton';
+
 <div className="template-downloads">
 
-**🚀 [Basic Agentic Workflow Template](../../../static/downloads/basic_workflow_template.csv)**  
+**🚀 Basic Agentic Workflow Template**  
 Perfect for beginners - autonomous agents with intelligent error handling  
 *Autonomous Input → Reasoning → Output with Agent Collaboration*
 
-**🌤️ [Multi-Agent Weather System](../../../static/downloads/weather_bot_template.csv)**  
+<DownloadButton 
+  filename="basic_workflow_template.csv"
+  content={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+BasicWorkflow,Start,,Begin workflow,input,Process,,collection,user_input,Enter your input:
+BasicWorkflow,Process,,Process user input,llm,Output,ErrorHandler,user_input,processed_result,Process this input and provide a helpful response: {user_input}
+BasicWorkflow,Output,,Display result,echo,End,,processed_result,final_output,
+BasicWorkflow,End,,Complete workflow,echo,,,final_output,completion_msg,Workflow completed successfully!
+BasicWorkflow,ErrorHandler,,Handle errors,echo,End,,error,error_msg,An error occurred: {error}`}
+>
+  📥 Download Basic Template
+</DownloadButton>
+
+**🌤️ Multi-Agent Weather System**  
 Demonstrates agent specialization and LLM orchestration  
 *Features: Custom API agents, LLM reasoning agents, intelligent routing*
 
-**📊 [Agentic Data Pipeline](../../../static/downloads/data_processing_template.csv)**  
+<DownloadButton 
+  filename="weather_bot_template.csv"
+  content={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+WeatherBot,GetLocation,,Get user location,input,FetchWeather,,collection,location,Enter your location (e.g. New York, NY):
+WeatherBot,FetchWeather,,Fetch weather data,echo,AnalyzeWeather,ErrorHandler,location,weather_data,Fetching weather for {location}...
+WeatherBot,AnalyzeWeather,,"{'temperature': 0.7, 'model': 'gpt-3.5-turbo'}",llm,FormatResponse,ErrorHandler,weather_data,analysis,Analyze this weather data and provide a helpful summary with recommendations: {weather_data}
+WeatherBot,FormatResponse,,Format final response,echo,End,,analysis,formatted_response,
+WeatherBot,End,,Weather report complete,echo,,,formatted_response,final_msg,Weather report delivered successfully!
+WeatherBot,ErrorHandler,,Handle weather errors,echo,End,,error,error_msg,Unable to get weather data: {error}`}
+>
+  🌤️ Download Weather Template
+</DownloadButton>
+
+**📊 Agentic Data Pipeline**  
 Autonomous ETL with intelligent validation and decision-making  
 *Capabilities: Self-validating agents, AI transformation, adaptive processing*
 
-**🎯 [Multi-Agent Customer Support](../../../static/downloads/customer_support_template.csv)**  
+<DownloadButton 
+  filename="data_processing_template.csv"
+  content={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+DataPipeline,LoadData,,"{'format': 'records'}",csv_reader,ValidateData,ErrorHandler,collection,raw_data,data/input.csv
+DataPipeline,ValidateData,,"{'temperature': 0.2}",llm,TransformData,ErrorHandler,raw_data,validation_result,Validate this data for completeness and identify any issues: {raw_data}
+DataPipeline,TransformData,,"{'temperature': 0.3}",llm,SaveResults,ErrorHandler,raw_data|validation_result,transformed_data,Transform and clean this data based on validation results: {raw_data}. Validation: {validation_result}
+DataPipeline,SaveResults,,"{'format': 'records', 'mode': 'write'}",csv_writer,End,ErrorHandler,transformed_data,save_result,data/output.csv
+DataPipeline,End,,Pipeline complete,echo,,,save_result,final_msg,Data processing pipeline completed successfully!
+DataPipeline,ErrorHandler,,Handle processing errors,echo,End,,error,error_msg,Data processing failed: {error}`}
+>
+  📊 Download Data Pipeline Template
+</DownloadButton>
+
+**🎯 Multi-Agent Customer Support**  
 Sophisticated intent classification with specialized handler agents  
 *Architecture: Intent agents, routing logic, specialized response agents, interaction logging*
+
+<DownloadButton 
+  filename="customer_support_template.csv"
+  content={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+CustomerSupport,ReceiveQuery,,Receive customer query,input,ClassifyIntent,,collection,customer_query,What can I help you with today?
+CustomerSupport,ClassifyIntent,,"{'temperature': 0.2}",llm,RouteToHandler,ErrorHandler,customer_query,intent_classification,Classify this customer query into one of these categories: Technical Support, Billing, General Inquiry, Complaint. Query: {customer_query}
+CustomerSupport,RouteToHandler,,Route based on intent,branching,HandleTechnical,HandleGeneral,intent_classification,routing_decision,
+CustomerSupport,HandleTechnical,,"{'temperature': 0.5}",llm,LogInteraction,ErrorHandler,customer_query,support_response,Provide technical support for this query: {customer_query}
+CustomerSupport,HandleGeneral,,"{'temperature': 0.7}",llm,LogInteraction,ErrorHandler,customer_query,support_response,Provide general customer service response for: {customer_query}
+CustomerSupport,LogInteraction,,Log customer interaction,echo,End,,customer_query|support_response,logged_interaction,Interaction logged successfully
+CustomerSupport,End,,Support session complete,echo,,,support_response,final_response,
+CustomerSupport,ErrorHandler,,Handle support errors,echo,End,,error,error_msg,I apologize, but I'm experiencing technical difficulties: {error}`}
+>
+  🎯 Download Support Template
+</DownloadButton>
 
 </div>
 

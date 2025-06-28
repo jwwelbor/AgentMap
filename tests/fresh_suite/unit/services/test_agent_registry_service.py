@@ -10,7 +10,7 @@ from unittest.mock import Mock
 from typing import Type, Dict, Any
 from agentmap.services.agent_registry_service import AgentRegistryService
 from agentmap.models.agent_registry import AgentRegistry
-from agentmap.migration_utils import MockLoggingService
+from tests.utils.migration_utils import MockLoggingService
 
 
 class TestAgentRegistryService(unittest.TestCase):

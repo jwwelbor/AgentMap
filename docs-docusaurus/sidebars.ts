@@ -51,12 +51,28 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: '📖 Guides',
       items: [
+        'guides/index',
+        {
+          type: 'category',
+          label: '🚀 Basics',
+          items: [
+            'guides/basics/index',
+          ],
+        },
         'guides/understanding-workflows',
         'guides/state-management',
         {
           type: 'category',
+          label: '🎯 Best Practices',
+          items: [
+            'guides/best-practices/index',
+          ],
+        },
+        {
+          type: 'category',
           label: '🔧 Advanced',
           items: [
+            'guides/advanced/index',
             'guides/advanced/advanced-agent-types',
             'guides/advanced/agent-development-contract',
             'guides/advanced/host-service-integration',
@@ -88,6 +104,7 @@ const sidebars: SidebarsConfig = {
           type: 'category',
           label: '⚙️ Operations',
           items: [
+            'guides/operations/index',
             'guides/operations/execution-tracking',
             'guides/operations/testing-patterns',
           ],
@@ -109,11 +126,23 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: '📚 Reference',
       items: [
+        'reference/index',
         'reference/csv-schema',
         'reference/cli-commands',
         'reference/cli-graph-inspector',
         'reference/agent-types',
         'reference/agent-catalog',
+        'reference/configuration',
+        'reference/dependency-injection',
+      ],
+    },
+    
+    // API Documentation
+    {
+      type: 'category',
+      label: '🔌 API',
+      items: [
+        'api/index',
       ],
     },
     
@@ -133,6 +162,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: '🔧 Tools',
       items: [
+        'tools/index',
         'playground',
         'reference/cli-commands',
         'reference/cli-graph-inspector',
@@ -149,15 +179,13 @@ const sidebars: SidebarsConfig = {
           label: 'Architecture',
           items: [
             'advanced/architecture/clean-architecture-overview',
+            'advanced/architecture/dependency-injection',
             'advanced/architecture/service-catalog',
             // These will be added when additional architecture docs are created
-            // 'advanced/architecture/dependency-injection',
             // 'advanced/architecture/migration-guide',
           ],
         },
-        // These will be added when contribution docs are created
-        // 'advanced/contributing',
-        // 'advanced/development-setup',
+        'contributing',
       ],
     },
   ],
@@ -176,6 +204,7 @@ const sidebars: SidebarsConfig = {
     'tutorials/customer-support-bot',
     'tutorials/document-analyzer', 
     'tutorials/api-integration',
+    'tutorials/example-workflows',       // Comprehensive workflow patterns and templates
     // Additional tutorials will be added when content is created
     // 'tutorials/rag-chatbot',
     // 'tutorials/parallel-processing',

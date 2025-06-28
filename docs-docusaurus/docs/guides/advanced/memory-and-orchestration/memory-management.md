@@ -251,7 +251,7 @@ ChatBot,Respond,{"memory_key":"chat_history"},Generate response,OpenAI,GetInput,
 - [LangChain Memory Integration](./langchain-memory-integration) - Advanced memory features with LangChain
 - [Orchestration Patterns](./orchestration-patterns) - Dynamic workflow routing
 - [Agent Development Contract](../agent-development-contract) - Building custom agents
-- [State Management and Data Flow](../../core-concepts/state-management-data-flow) - Understanding AgentMap state
+- [State Management and Data Flow](../../state-management) - Understanding AgentMap state
 
 ## Conclusion
 

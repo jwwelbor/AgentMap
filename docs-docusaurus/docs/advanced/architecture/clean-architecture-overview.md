@@ -342,7 +342,7 @@ class TestMyService(unittest.TestCase):
 
 ### **🏗️ Architecture**
 - **[Service Catalog](./service-catalog)** - Complete service reference and interfaces
-- **[Infrastructure Overview](../../guides/infrastructure/index)** - Infrastructure services and patterns
+- **[Infrastructure Overview](../../guides/infrastructure/)** - Infrastructure services and patterns
 
 ### **🔧 Development Patterns**
 - **[Agent Development Contract](../../guides/advanced/agent-development-contract)** - Agent interface requirements

@@ -63,11 +63,11 @@ Deep dive into AgentMap features with comprehensive examples and explanations:
 - **[API Integration](./tutorials/api-integration)** - Connect to external services
 - **[Document Analyzer](./tutorials/document-analyzer)** - AI-powered document processing
 
-### 📖 **[Guides](./guides)**
+### 📖 **[Guides](./guides/)**
 Detailed documentation on specific topics:
 - **[Understanding Workflows](./guides/understanding-workflows)** - Core concepts and patterns
-- **[Advanced Features](./guides/advanced)** - Memory, routing, and optimization
-- **[Best Practices](./guides/best-practices)** - Production-ready workflows
+- **[Advanced Features](./guides/advanced/)** - Memory, routing, and optimization
+- **[Best Practices](./guides/best-practices/)** - Production-ready workflows
 
 ### 🔧 **[Reference](./reference)**
 Complete API and configuration documentation:
@@ -104,8 +104,8 @@ Dive deeper into AgentMap:
 ### **5. Production Deployment**
 Prepare for real-world use:
 - **[Execution Tracking](./guides/operations/execution-tracking)** - Performance monitoring and debugging
-- **[Testing Workflows](./advanced/testing-workflows)** - Quality assurance
-- **[Custom Services](./advanced/custom-services)** - Enterprise integration
+- **[Testing Workflows](./guides/operations/testing-patterns)** - Quality assurance
+- **[Host Service Integration](./guides/advanced/host-service-integration)** - Enterprise integration
 
 ## 🏗️ Key Architecture Concepts
 
@@ -117,7 +117,7 @@ AgentMap follows clean architecture principles:
 - **Protocol-Based Injection**: Type-safe service configuration using Python protocols
 
 ### **Service Injection System**
-The [Dependency Injection](./guides/dependency-injection) system provides:
+The [Dependency Injection](./reference/dependency-injection) system provides:
 - **DI Container**: Centralized service registry with automatic dependency resolution
 - **Service Lifecycle**: Lazy instantiation and singleton pattern
 - **Graceful Degradation**: Optional services fail gracefully when unavailable
