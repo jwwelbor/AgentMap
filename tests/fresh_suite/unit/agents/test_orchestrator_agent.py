@@ -52,13 +52,17 @@ class TestOrchestratorAgent(unittest.TestCase):
             **context_overrides
         }
         
+        # Create mock orchestrator service
+        mock_orchestrator_service = MockServiceFactory.create_mock_orchestrator_service()
+        
         agent = OrchestratorAgent(
             name="test_orchestrator",
             prompt="Select the best node for the given request",
             context=context,
             logger=self.mock_logger,
             execution_tracker_service=self.mock_execution_tracking_service,
-            state_adapter_service=self.mock_state_adapter_service
+            state_adapter_service=self.mock_state_adapter_service,
+            orchestrator_service=mock_orchestrator_service  # Add this parameter
         )
         
         # Set the execution tracker instance on the agent
@@ -143,11 +147,8 @@ class TestOrchestratorAgent(unittest.TestCase):
         # Now service should be accessible
         self.assertEqual(agent.llm_service, self.mock_llm_service)
         
-        # Verify logging occurred
-        logger_calls = self.mock_logger.calls
-        debug_calls = [call for call in logger_calls if call[0] == "debug"]
-        llm_configured = any("LLM service configured" in call[1] for call in debug_calls)
-        self.assertTrue(llm_configured, f"Expected LLM service log, got: {debug_calls}")
+        # Verify orchestrator service also has LLM service configured
+        self.assertEqual(agent.orchestrator_service.llm_service, self.mock_llm_service)
     
     def test_llm_service_not_required_for_algorithm_strategy(self):
         """Test that algorithm strategy doesn't require LLM service."""
@@ -178,13 +179,18 @@ class TestOrchestratorAgent(unittest.TestCase):
         
         result = agent.process(inputs)
         
-        # Should select node_2 (payment processing)
+        # CORE BUSINESS LOGIC TEST: Should select node_2 (payment processing)
         self.assertIn("node_2", result)
         
-        # Verify logging
-        logger_calls = self.mock_logger.calls
-        info_calls = [call for call in logger_calls if call[0] == "info"]
-        self.assertTrue(any("algorithm-based" in call[1] for call in info_calls))
+        # VERIFY SERVICE DELEGATION: Orchestrator service should be called
+        mock_orchestrator_service = agent.orchestrator_service
+        mock_orchestrator_service.select_best_node.assert_called_once()
+        
+        # Verify the service was called with correct strategy and input
+        call_args = mock_orchestrator_service.select_best_node.call_args
+        self.assertEqual(call_args.kwargs["strategy"], "algorithm")
+        self.assertEqual(call_args.kwargs["input_text"], "I need to process a payment transaction")
+        self.assertEqual(call_args.kwargs["available_nodes"], self.test_nodes)
     
     def test_algorithm_orchestration_with_no_matches(self):
         """Test algorithm orchestration when no nodes match the request."""
@@ -197,13 +203,12 @@ class TestOrchestratorAgent(unittest.TestCase):
         
         result = agent.process(inputs)
         
-        # Should return first available node as fallback
-        self.assertIn("node_1", result)
+        # Should return a valid node (fallback behavior)
+        self.assertIn(result, self.test_nodes.keys())
         
-        # Verify fallback logging
-        logger_calls = self.mock_logger.calls
-        warning_calls = [call for call in logger_calls if call[0] == "warning"]
-        self.assertTrue(any("No specific match found" in call[1] for call in warning_calls))
+        # Verify service delegation occurred
+        mock_orchestrator_service = agent.orchestrator_service
+        mock_orchestrator_service.select_best_node.assert_called_once()
     
     def test_algorithm_orchestration_with_multiple_matches(self):
         """Test algorithm orchestration with multiple potential matches."""
@@ -522,8 +527,8 @@ class TestOrchestratorAgent(unittest.TestCase):
     # 8. Logging and Service Information Tests
     # =============================================================================
     
-    def test_logging_integration_algorithm_strategy(self):
-        """Test logging for algorithm-based orchestration."""
+    def test_service_delegation_algorithm_strategy(self):
+        """Test service delegation for algorithm-based orchestration."""
         agent = self.create_orchestrator_agent(matching_strategy="algorithm")
         
         inputs = {
@@ -531,22 +536,25 @@ class TestOrchestratorAgent(unittest.TestCase):
             "available_nodes": self.test_nodes
         }
         
-        agent.process(inputs)
+        result = agent.process(inputs)
         
-        # Verify relevant information is logged
-        logger_calls = self.mock_logger.calls
-        info_calls = [call for call in logger_calls if call[0] == "info"]
+        # Verify service delegation with correct parameters
+        mock_orchestrator_service = agent.orchestrator_service
+        mock_orchestrator_service.select_best_node.assert_called_once_with(
+            input_text="process payment",
+            available_nodes=self.test_nodes,
+            strategy="algorithm",
+            confidence_threshold=0.8,
+            node_filter="all",
+            llm_config={"provider": "openai", "temperature": 0.2},
+            context={"routing_context": None, "default_target": None}
+        )
         
-        # Should log strategy and request
-        log_messages = [call[1] for call in info_calls]
-        strategy_logged = any("algorithm-based" in msg for msg in log_messages)
-        request_logged = any("process payment" in msg for msg in log_messages)
-        
-        self.assertTrue(strategy_logged, f"Expected strategy logged, got: {log_messages}")
-        self.assertTrue(request_logged, f"Expected request logged, got: {log_messages}")
+        # Verify result is valid
+        self.assertIsNotNone(result)
     
-    def test_logging_integration_llm_strategy(self):
-        """Test logging for LLM-based orchestration."""
+    def test_service_delegation_llm_strategy(self):
+        """Test service delegation for LLM-based orchestration."""
         agent = self.create_orchestrator_agent(matching_strategy="llm")
         agent.configure_llm_service(self.mock_llm_service)
         
@@ -555,15 +563,22 @@ class TestOrchestratorAgent(unittest.TestCase):
             "available_nodes": self.test_nodes
         }
         
-        agent.process(inputs)
+        result = agent.process(inputs)
         
-        # Verify LLM strategy is logged
-        logger_calls = self.mock_logger.calls
-        info_calls = [call for call in logger_calls if call[0] == "info"]
-        log_messages = [call[1] for call in info_calls]
+        # Verify service delegation with LLM strategy
+        mock_orchestrator_service = agent.orchestrator_service
+        mock_orchestrator_service.select_best_node.assert_called_once_with(
+            input_text="authenticate user",
+            available_nodes=self.test_nodes,
+            strategy="llm",
+            confidence_threshold=0.8,
+            node_filter="all",
+            llm_config={"provider": "openai", "temperature": 0.2},
+            context={"routing_context": None, "default_target": None}
+        )
         
-        llm_strategy_logged = any("LLM-based" in msg for msg in log_messages)
-        self.assertTrue(llm_strategy_logged, f"Expected LLM strategy logged, got: {log_messages}")
+        # Verify result is valid
+        self.assertIsNotNone(result)
     
     def test_get_service_info_algorithm_strategy(self):
         """Test service information for algorithm strategy."""

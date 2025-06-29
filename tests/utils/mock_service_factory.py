@@ -627,6 +627,122 @@ class MockServiceFactory:
         return mock_service
     
     @staticmethod
+    def create_mock_orchestrator_service() -> Mock:
+        """
+        Create a pure Mock object for OrchestratorService.
+        
+        This Mock provides the orchestrator service interface for node selection
+        and orchestration business logic that OrchestratorAgent delegates to.
+        
+        Returns:
+            Mock object with select_best_node method
+            
+        Example:
+            mock_orchestrator = MockServiceFactory.create_mock_orchestrator_service()
+            selected_node = mock_orchestrator.select_best_node("process payment", nodes, "algorithm")
+        """
+        mock_service = Mock()
+        
+        def select_best_node(
+            input_text: str,
+            available_nodes: Dict[str, Dict[str, Any]],
+            strategy: str = "tiered",
+            confidence_threshold: float = 0.8,
+            node_filter: str = "all",
+            llm_config: Optional[Dict[str, Any]] = None,
+            context: Optional[Dict[str, Any]] = None,
+        ) -> str:
+            """
+            Mock node selection that provides realistic algorithm-based matching.
+            
+            This implementation mimics the actual OrchestratorService logic for testing.
+            """
+            if not available_nodes:
+                return context.get("default_target", "No nodes available") if context else "No nodes available"
+            
+            # Handle single node case
+            if len(available_nodes) == 1:
+                return next(iter(available_nodes.keys()))
+            
+            input_lower = input_text.lower()
+            
+            # Algorithm-based keyword matching (simplified version of actual logic)
+            best_match = None
+            best_score = 0.0
+            
+            for node_name, node_info in available_nodes.items():
+                if not isinstance(node_info, dict):
+                    continue
+                    
+                # Get keywords from description and other fields
+                keywords = []
+                description = node_info.get("description", "").lower()
+                prompt = node_info.get("prompt", "").lower()
+                intent = node_info.get("intent", "").lower()
+                
+                # Combine text for keyword extraction
+                combined_text = f"{description} {prompt} {intent}"
+                keywords = combined_text.split()
+                
+                # Calculate match score
+                if keywords:
+                    matches = sum(1 for kw in keywords if kw in input_lower)
+                    score = matches / len(keywords) if keywords else 0.0
+                    
+                    # Boost for exact phrase matches
+                    if any(kw in input_lower for kw in keywords if len(kw) > 3):
+                        score += 0.3
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_match = node_name
+            
+            # Return best match or first available as fallback
+            return best_match or next(iter(available_nodes))
+        
+        def parse_node_keywords(node_info: Dict[str, Any]) -> List[str]:
+            """Mock keyword parsing from node information."""
+            keywords = []
+            
+            # Extract from standard fields
+            text_fields = [
+                node_info.get("description", ""),
+                node_info.get("prompt", ""),
+                node_info.get("intent", ""),
+                node_info.get("name", ""),
+            ]
+            
+            # Clean and combine all text
+            combined_text = " ".join(field for field in text_fields if field)
+            if combined_text:
+                text_keywords = combined_text.lower().replace(",", " ").replace(";", " ").split()
+                keywords.extend(text_keywords)
+            
+            # Remove duplicates and filter out short/common words
+            unique_keywords = list(set(keyword.strip() for keyword in keywords if keyword.strip()))
+            filtered_keywords = [kw for kw in unique_keywords if len(kw) > 2 and kw not in ["the", "and", "for", "with"]]
+            
+            return filtered_keywords
+        
+        def get_service_info() -> Dict[str, Any]:
+            """Mock service information."""
+            return {
+                "service": "MockOrchestratorService",
+                "prompt_manager_available": True,
+                "llm_service_configured": False,
+                "features_registry_configured": False,
+                "supported_strategies": ["algorithm", "llm", "tiered"],
+                "supported_filters": ["all", "nodeType:type", "node1|node2|..."],
+            }
+        
+        # Configure methods
+        mock_service.select_best_node.side_effect = select_best_node
+        mock_service.parse_node_keywords.side_effect = parse_node_keywords
+        mock_service.get_service_info.side_effect = get_service_info
+        
+        return mock_service
+
+    @staticmethod
     def create_mock_state_adapter_service() -> Mock:
         """
         Create a pure Mock object for StateAdapterService.
@@ -1167,6 +1283,11 @@ def create_agent_registry_service_mock() -> Mock:
 def create_graph_factory_service_mock() -> Mock:
     """Quick function to create a graph factory service mock."""
     return MockServiceFactory.create_mock_graph_factory_service()
+
+
+def create_orchestrator_service_mock() -> Mock:
+    """Quick function to create an orchestrator service mock."""
+    return MockServiceFactory.create_mock_orchestrator_service()
 
 
 # Usage examples and documentation
