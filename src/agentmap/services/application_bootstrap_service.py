@@ -116,6 +116,7 @@ class ApplicationBootstrapService:
             ("success", "agentmap.agents.builtins.success_agent.SuccessAgent"),
             ("input", "agentmap.agents.builtins.input_agent.InputAgent"),
             ("graph", "agentmap.agents.builtins.graph_agent.GraphAgent"),
+            ("human", "agentmap.agents.builtins.human_agent.HumanAgent"),
         ]
 
         registered_count = 0
@@ -1052,6 +1053,7 @@ class ApplicationBootstrapService:
                         "success",
                         "input",
                         "graph",
+                        "human",
                     ],
                 ),
                 "custom_agents": self._count_custom_agents(agent_types),
@@ -1110,7 +1112,8 @@ class ApplicationBootstrapService:
             "failure",
             "success",
             "input",
-            "graph",  # core
+            "graph",
+            "human",  # core
             "llm",
             "openai",
             "anthropic",

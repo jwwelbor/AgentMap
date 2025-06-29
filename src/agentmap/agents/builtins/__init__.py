@@ -15,6 +15,7 @@ from agentmap.agents.builtins.branching_agent import BranchingAgent
 from agentmap.agents.builtins.default_agent import DefaultAgent
 from agentmap.agents.builtins.echo_agent import EchoAgent
 from agentmap.agents.builtins.failure_agent import FailureAgent
+from agentmap.agents.builtins.human_agent import HumanAgent
 from agentmap.agents.builtins.input_agent import InputAgent
 from agentmap.agents.builtins.success_agent import SuccessAgent
 
@@ -27,6 +28,7 @@ __all__ = [
     "EchoAgent",
     "BranchingAgent",
     "FailureAgent",
+    "HumanAgent",
     "SuccessAgent",
     "InputAgent",
     "GraphAgent",

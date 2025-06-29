@@ -7,11 +7,13 @@ with existing interfaces while using GraphRunnerService.
 
 from pathlib import Path
 from typing import Optional
+import json
 
 import typer
 
 from agentmap.core.adapters import create_service_adapter, validate_run_parameters
 from agentmap.di import initialize_application, initialize_di
+from agentmap.infrastructure.interaction.cli_handler import CLIInteractionHandler
 
 
 def run_command(
@@ -323,4 +325,97 @@ def export_command(
 
     except Exception as e:
         typer.secho(f"❌ Export failed: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+
+def resume_command(
+    thread_id: str = typer.Argument(..., help="Thread ID to resume"),
+    response: str = typer.Argument(..., help="Response action (e.g., approve, reject, choose, respond, edit)"),
+    data: Optional[str] = typer.Option(
+        None, "--data", "-d", help="Additional data as JSON string"
+    ),
+    data_file: Optional[str] = typer.Option(
+        None, "--data-file", "-f", help="Path to JSON file containing additional data"
+    ),
+    config_file: Optional[str] = typer.Option(
+        None, "--config", "-c", help="Path to custom config file"
+    ),
+):
+    """Resume an interrupted workflow by providing thread ID and response data."""
+    try:
+        # Initialize DI container and get storage service
+        container = initialize_di(config_file)
+        storage_manager = container.storage_service_manager()
+        
+        # Check if storage is available
+        if not storage_manager:
+            typer.secho(
+                "❌ Storage services are not available. Please check your configuration.",
+                fg=typer.colors.RED
+            )
+            raise typer.Exit(code=1)
+        
+        # Get the default storage service (or json for structured data)
+        storage_service = storage_manager.get_service("json")
+        logging_service = container.logging_service()
+        logger = logging_service.get_logger("agentmap.cli.resume")
+
+        # Parse response data
+        response_data = None
+        if data:
+            try:
+                response_data = json.loads(data)
+            except json.JSONDecodeError as e:
+                typer.secho(
+                    f"❌ Invalid JSON in --data: {e}", fg=typer.colors.RED
+                )
+                raise typer.Exit(code=1)
+        elif data_file:
+            try:
+                with open(data_file, "r") as f:
+                    response_data = json.load(f)
+            except FileNotFoundError:
+                typer.secho(
+                    f"❌ Data file not found: {data_file}", fg=typer.colors.RED
+                )
+                raise typer.Exit(code=1)
+            except json.JSONDecodeError as e:
+                typer.secho(
+                    f"❌ Invalid JSON in file: {e}", fg=typer.colors.RED
+                )
+                raise typer.Exit(code=1)
+
+        # Create CLI interaction handler instance
+        handler = CLIInteractionHandler(storage_service)
+
+        # Log the resume attempt
+        logger.info(
+            f"Resuming thread '{thread_id}' with action '{response}' and data: {response_data}"
+        )
+
+        # Call handler.resume_execution()
+        result = handler.resume_execution(
+            thread_id=thread_id,
+            response_action=response,
+            response_data=response_data
+        )
+
+        # Display success message
+        typer.secho(
+            f"✅ Successfully resumed thread '{thread_id}' with action '{response}'",
+            fg=typer.colors.GREEN
+        )
+
+    except ValueError as e:
+        # Handle not found errors gracefully
+        typer.secho(f"❌ Error: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    except RuntimeError as e:
+        # Handle storage errors
+        typer.secho(f"❌ Storage error: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    except Exception as e:
+        # Handle unexpected errors
+        logger.error(f"Unexpected error in resume command: {e}")
+        typer.secho(f"❌ Unexpected error: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)

@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.models.execution_result import ExecutionResult
 from agentmap.services.execution_policy_service import ExecutionPolicyService
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
@@ -155,6 +156,9 @@ class GraphExecutionService:
             )
             return execution_result
 
+        except ExecutionInterruptedException:
+            # Re-raise ExecutionInterruptedException without wrapping it
+            raise
         except Exception as e:
             execution_time = time.time() - start_time
 
@@ -269,6 +273,9 @@ class GraphExecutionService:
             )
             return execution_result
 
+        except ExecutionInterruptedException:
+            # Re-raise ExecutionInterruptedException without wrapping it
+            raise
         except Exception as e:
             execution_time = time.time() - start_time
 
@@ -457,7 +464,22 @@ class GraphExecutionService:
         )
 
         # Execute the graph
-        final_state = compiled_graph.invoke(state)
+        try:
+            final_state = compiled_graph.invoke(state)
+        except ExecutionInterruptedException as e:
+            # Log interruption
+            self.logger.info(
+                f"[GraphExecutionService] Execution interrupted for human interaction in thread: {e.thread_id}"
+            )
+            
+            # Preserve exception data for checkpoint
+            # The exception already contains checkpoint_data that can be used for resumption
+            self.logger.debug(
+                f"[GraphExecutionService] Interruption checkpoint data preserved for thread: {e.thread_id}"
+            )
+            
+            # Re-raise exception for graph runner to handle
+            raise
 
         # Log final state info
         self.logger.debug(

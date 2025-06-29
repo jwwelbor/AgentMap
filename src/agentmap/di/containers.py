@@ -123,6 +123,25 @@ class ApplicationContainer(containers.DeclarativeContainer):
         llm_routing_service,
     )
 
+    # Authentication service for API security
+    @staticmethod
+    def _create_auth_service(app_config_service, logging_service):
+        """
+        Create authentication service with proper configuration injection.
+        
+        Returns auth service instance with loaded configuration.
+        """
+        from agentmap.services.auth_service import AuthService
+        
+        auth_config = app_config_service.get_auth_config()
+        return AuthService(auth_config, logging_service)
+    
+    auth_service = providers.Singleton(
+        _create_auth_service,
+        app_config_service,
+        logging_service,
+    )
+
     # Node Registry Service using string-based provider
     node_registry_service = providers.Singleton(
         "agentmap.services.node_registry_service.NodeRegistryService",
@@ -388,6 +407,18 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
+    # Graph Checkpoint Service for managing workflow execution checkpoints
+    graph_checkpoint_service = providers.Singleton(
+        "agentmap.services.graph_checkpoint_service.GraphCheckpointService",
+        providers.Callable(
+            lambda storage_manager: storage_manager.get_service("json")
+            if storage_manager
+            else None,
+            storage_service_manager,
+        ),
+        logging_service,
+    )
+
     # Application bootstrap service (coordinates agent registration and feature discovery)
     application_bootstrap_service = providers.Singleton(
         "agentmap.services.application_bootstrap_service.ApplicationBootstrapService",
@@ -434,6 +465,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         graph_assembly_service,
         prompt_manager_service,
         host_protocol_configuration_service,
+        graph_checkpoint_service,
     ):
         """Create GraphRunnerService with proper container injection."""
         from agentmap.services.graph_runner_service import GraphRunnerService
@@ -456,6 +488,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
             graph_assembly_service=graph_assembly_service,
             prompt_manager_service=prompt_manager_service,
             host_protocol_configuration_service=host_protocol_configuration_service,  # Pass the service, not container
+            graph_checkpoint_service=graph_checkpoint_service,
         )
 
     # Graph Runner Service - Simplified facade service for complete graph execution
@@ -478,6 +511,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         graph_assembly_service,
         prompt_manager_service,
         host_protocol_configuration_service,  # Pass the service provider
+        graph_checkpoint_service,
     )
 
     # Provider for checking service availability

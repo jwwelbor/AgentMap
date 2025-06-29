@@ -174,6 +174,46 @@ class PromptManagerServiceProtocol(Protocol):
         ...
 
 
+@runtime_checkable
+class GraphCheckpointServiceProtocol(Protocol):
+    """Protocol for graph checkpoint service interface used by agents."""
+
+    def save_checkpoint(
+        self,
+        thread_id: str,
+        node_name: str,
+        checkpoint_type: str,
+        metadata: Dict[str, Any],
+        execution_state: Dict[str, Any],
+    ) -> Any:
+        """
+        Save a graph execution checkpoint.
+
+        Args:
+            thread_id: Unique identifier for the execution thread
+            node_name: Name of the node where checkpoint occurs
+            checkpoint_type: Type of checkpoint
+            metadata: Type-specific metadata
+            execution_state: Current execution state data
+
+        Returns:
+            Result of the save operation
+        """
+        ...
+
+    def load_checkpoint(self, thread_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Load the latest checkpoint for a thread.
+
+        Args:
+            thread_id: Thread ID to load checkpoint for
+
+        Returns:
+            Checkpoint data or None if not found
+        """
+        ...
+
+
 # Agent capability protocols for service configuration
 @runtime_checkable
 class LLMCapableAgent(Protocol):
@@ -258,6 +298,74 @@ class PromptCapableAgent(Protocol):
         self, prompt_service: PromptManagerServiceProtocol
     ) -> None:
         """Configure prompt manager service for this agent."""
+        ...
+
+
+@runtime_checkable
+class CheckpointCapableAgent(Protocol):
+    """Protocol for agents that can use graph checkpoint services."""
+
+    def configure_checkpoint_service(
+        self, checkpoint_service: GraphCheckpointServiceProtocol
+    ) -> None:
+        """Configure graph checkpoint service for this agent."""
+        ...
+
+
+@runtime_checkable
+class FeaturesRegistryServiceProtocol(Protocol):
+    """Protocol for features registry service interface used by services."""
+
+    def has_fuzzywuzzy(self) -> bool:
+        """
+        Check if fuzzywuzzy is available for fuzzy string matching.
+        
+        Returns:
+            True if fuzzywuzzy is available, False otherwise
+        """
+        ...
+
+    def has_spacy(self) -> bool:
+        """
+        Check if spaCy is available with English model.
+        
+        Returns:
+            True if spaCy and en_core_web_sm model are available, False otherwise
+        """
+        ...
+
+    def get_nlp_capabilities(self) -> Dict[str, Any]:
+        """
+        Get available NLP capabilities summary.
+        
+        Returns:
+            Dictionary with NLP library availability and capabilities
+        """
+        ...
+
+    def is_feature_enabled(self, feature_name: str) -> bool:
+        """
+        Check if a feature is enabled.
+
+        Args:
+            feature_name: Name of the feature to check
+
+        Returns:
+            True if feature is enabled, False otherwise
+        """
+        ...
+
+    def is_provider_available(self, category: str, provider: str) -> bool:
+        """
+        Check if a specific provider is available and validated.
+
+        Args:
+            category: Provider category ('llm', 'storage')
+            provider: Provider name
+
+        Returns:
+            True if provider is available and validated, False otherwise
+        """
         ...
 
 

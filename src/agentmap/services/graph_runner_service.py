@@ -83,6 +83,7 @@ class GraphRunnerService:
         graph_assembly_service: GraphAssemblyService,
         prompt_manager_service: Any = None,  # PromptManagerService - optional for backward compatibility
         host_protocol_configuration_service: HostProtocolConfigurationService = None,  # Optional for host service injection
+        graph_checkpoint_service: Any = None,  # GraphCheckpointService - optional for human-in-the-loop
     ):
         """Initialize facade service with specialized service dependencies.
 
@@ -104,6 +105,7 @@ class GraphRunnerService:
             graph_assembly_service: Service for graph assembly
             prompt_manager_service: Service for prompt template resolution and formatting
             host_protocol_configuration_service: Service for host protocol configuration (optional)
+            graph_checkpoint_service: Service for graph execution checkpoints (optional)
         """
         # Core specialized services
         self.graph_definition = graph_definition_service
@@ -134,6 +136,9 @@ class GraphRunnerService:
         # Host service injection support (optional)
         self.host_protocol_configuration = host_protocol_configuration_service
         self._host_services_available = host_protocol_configuration_service is not None
+
+        # Graph checkpoint service (optional)
+        self.graph_checkpoint_service = graph_checkpoint_service
 
         self.logger.info("[GraphRunnerService] Initialized as simplified facade")
         self._log_service_status()
@@ -652,6 +657,7 @@ class GraphRunnerService:
             agent: Agent instance to configure services for
         """
         from agentmap.services.protocols import (
+            CheckpointCapableAgent,
             LLMCapableAgent,
             PromptCapableAgent,
             StorageCapableAgent,
@@ -695,6 +701,18 @@ class GraphRunnerService:
             else:
                 self.logger.debug(
                     f"[GraphRunnerService] Agent {agent.name} will use fallback prompt handling (no service available)"
+                )
+
+        if isinstance(agent, CheckpointCapableAgent):
+            if hasattr(self, 'graph_checkpoint_service') and self.graph_checkpoint_service:
+                agent.configure_checkpoint_service(self.graph_checkpoint_service)
+                self.logger.debug(
+                    f"[GraphRunnerService] ✅ Configured checkpoint service for {agent.name}"
+                )
+                core_services_configured += 1
+            else:
+                self.logger.debug(
+                    f"[GraphRunnerService] Graph checkpoint service not available for {agent.name}"
                 )
 
         # Future services - ready for when these services are available:
