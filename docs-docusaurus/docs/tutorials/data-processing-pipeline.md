@@ -4,6 +4,8 @@ title: Data Processing Pipeline
 description: Build an automated data pipeline that processes CSV files and generates insights
 ---
 
+import CSVTable from '@site/src/components/CSVTable';
+
 # Build a Data Processing Pipeline
 
 ## What We're Building
@@ -76,17 +78,19 @@ date,product,category,sales_amount,units_sold,customer_segment,region
 
 Create `data_pipeline.csv`:
 
-```csv
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
-DataPipeline,LoadData,,{"format": "records", "encoding": "utf-8"},csv_reader,ValidateData,ErrorHandler,collection,raw_data,,Load CSV data from file
+<CSVTable 
+  csvContent={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+DataPipeline,LoadData,,{'format': 'records', 'encoding': 'utf-8'},csv_reader,ValidateData,ErrorHandler,collection,raw_data,,Load CSV data from file
 DataPipeline,ValidateData,,Validate data structure and quality,custom:DataValidatorAgent,TransformData,ErrorHandler,raw_data,validation_result,,Validate data structure and check for issues
 DataPipeline,TransformData,,Clean and transform raw data,custom:DataTransformerAgent,AnalyzeData,ErrorHandler,raw_data|validation_result,transformed_data,,Clean and transform the data
-DataPipeline,AnalyzeData,,{"provider": "openai", "model": "gpt-4", "temperature": 0.3},llm,GenerateReport,ErrorHandler,transformed_data,analysis_insights,"Analyze this sales data and provide insights on trends, patterns, and key findings: {transformed_data}",Generate AI-powered data analysis
+DataPipeline,AnalyzeData,,{'provider': 'openai', 'model': 'gpt-4', 'temperature': 0.3},llm,GenerateReport,ErrorHandler,transformed_data,analysis_insights,Analyze this sales data and provide insights on trends patterns and key findings: {transformed_data},Generate AI-powered data analysis
 DataPipeline,GenerateReport,,Create formatted analysis report,custom:ReportGeneratorAgent,ExportResults,ErrorHandler,transformed_data|analysis_insights,formatted_report,,Generate comprehensive data report
-DataPipeline,ExportResults,,{"formats": ["csv", "json", "md"]},custom:DataExporterAgent,End,ErrorHandler,transformed_data|formatted_report,export_result,,Export results in multiple formats
+DataPipeline,ExportResults,,{'formats': ['csv', 'json', 'md']},custom:DataExporterAgent,End,ErrorHandler,transformed_data|formatted_report,export_result,,Export results in multiple formats
 DataPipeline,End,,Pipeline completed successfully,echo,,,export_result,final_output,,Display completion message
-DataPipeline,ErrorHandler,,Handle processing errors,echo,End,,error,error_message,,Handle and display errors
-```
+DataPipeline,ErrorHandler,,Handle processing errors,echo,End,,error,error_message,,Handle and display errors`}
+  title="Data Processing Pipeline Workflow"
+  filename="data_pipeline"
+/>
 
 ## Step 3: Generate Agent Templates
 

@@ -6,6 +6,8 @@ keywords: [workflow examples, AgentMap patterns, CSV workflow templates, linear 
 image: /img/agentmap-hero.png
 ---
 
+import CSVTable from '@site/src/components/CSVTable';
+
 # Example Workflows - Real-World Patterns & Templates
 
 ## Overview
@@ -41,13 +43,15 @@ This comprehensive guide provides **ready-to-use workflow patterns** demonstrati
 
 **Pattern**: Start → Process → Transform → Output
 
-```csv title="linear_workflow.csv"
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
-LinearFlow,Start,,Starting node,echo,Process,,"input",initial_data,,Capture initial input data
-LinearFlow,Process,,Processing node,default,,,"initial_data",processed_data,Processing: {initial_data},Transform the input data
-LinearFlow,Transform,,Transform processed data,default,End,,"processed_data",final_data,Transforming: {processed_data},Apply final transformations
-LinearFlow,End,,Final output node,echo,,,"final_data",output,,Display final results
-```
+<CSVTable 
+  csvContent={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+LinearFlow,Start,,Starting node,echo,Process,,input,initial_data,,Capture initial input data
+LinearFlow,Process,,Processing node,default,Transform,,initial_data,processed_data,Processing: {initial_data},Transform the input data
+LinearFlow,Transform,,Transform processed data,default,End,,processed_data,final_data,Transforming: {processed_data},Apply final transformations
+LinearFlow,End,,Final output node,echo,,,final_data,output,,Display final results`}
+  title="Linear Workflow Pattern"
+  filename="linear_workflow"
+/>
 
 **Real-World Applications**:
 - Data transformation pipelines
@@ -63,14 +67,16 @@ LinearFlow,End,,Final output node,echo,,,"final_data",output,,Display final resu
 
 **Pattern**: Input → Validate → Branch (Success/Failure) → Process/Handle → Output
 
-```csv title="branching_workflow.csv"
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
-BranchFlow,Start,,Starting node,echo,Validate,,"input",initial_data,,Capture and echo input
-BranchFlow,Validate,,Validate input data,default,Process,ErrorHandler,"initial_data",validation_result,Validating input: {initial_data},Check data validity and format
-BranchFlow,Process,,Process valid data,default,End,ErrorHandler,"initial_data",processed_data,Processing valid data: {initial_data},Transform validated data
-BranchFlow,End,,Completion node,echo,,,"processed_data",final_output,,Display successful results
-BranchFlow,ErrorHandler,,Handle validation errors,echo,End,,"initial_data",error_message,❌ Validation failed for: {initial_data},Provide error feedback to user
-```
+<CSVTable 
+  csvContent={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+BranchFlow,Start,,Starting node,echo,Validate,,input,initial_data,,Capture and echo input
+BranchFlow,Validate,,Validate input data,default,Process,ErrorHandler,initial_data,validation_result,Validating input: {initial_data},Check data validity and format
+BranchFlow,Process,,Process valid data,default,End,ErrorHandler,initial_data,processed_data,Processing valid data: {initial_data},Transform validated data
+BranchFlow,End,,Completion node,echo,,,processed_data,final_output,,Display successful results
+BranchFlow,ErrorHandler,,Handle validation errors,echo,End,,initial_data,error_message,❌ Validation failed for: {initial_data},Provide error feedback to user`}
+  title="Branching Workflow with Error Handling"
+  filename="branching_workflow"
+/>
 
 **Key Features**:
 - **Conditional Routing**: Success/failure paths based on validation

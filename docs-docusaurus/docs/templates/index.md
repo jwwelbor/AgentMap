@@ -20,7 +20,7 @@ Download these essential workflow templates to get started immediately:
 
 <div className="download-section">
 
-### 🌟 **Essential Starter Templates**
+### 🌟 **Starter Templates**
 
 import DownloadButton from '@site/src/components/DownloadButton';
 

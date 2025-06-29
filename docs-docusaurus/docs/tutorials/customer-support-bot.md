@@ -183,17 +183,17 @@ First, let's create a simple customer database:
 
 Create `support_bot.csv`:
 
-```csv
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+<CSVTable 
+  csvContent={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
 SupportBot,Welcome,,Display welcome message,default,GetCustomerInfo,End,,welcome_message,🤖 Welcome to Customer Support! I'm here to help you today.,Welcome customers to support chat
 SupportBot,GetCustomerInfo,,Get customer identification,input,LoadCustomerData,GetCustomerInfo,,customer_email,Please enter your email address:,Request customer email for lookup
 SupportBot,LoadCustomerData,,Load customer information,custom:CustomerLookupAgent,StartConversation,CustomerNotFound,customer_email,customer_data,,Look up customer in database
 SupportBot,CustomerNotFound,,Handle unregistered customers,echo,GetBasicInfo,End,customer_email,error_message,Customer not found. Please contact admin.,Handle customers not in system
 SupportBot,GetBasicInfo,,Get basic customer info,input,StartConversation,End,,basic_info,Please provide your name and describe your issue:,Collect basic info for new customers
-SupportBot,StartConversation,,{"memory_key": "conversation_history", "max_memory_messages": 20},default,GetUserInput,End,customer_data|basic_info|welcome_message,conversation_start,Great! I have your information. How can I help you today?,Start main conversation with context
+SupportBot,StartConversation,,{'memory_key': 'conversation_history', 'max_memory_messages': 20},default,GetUserInput,End,customer_data|basic_info|welcome_message,conversation_start,Great! I have your information. How can I help you today?,Start main conversation with context
 SupportBot,GetUserInput,,Get customer message,input,DetectIntent,EndConversation,,user_message,What can I help you with? (type 'quit' to end):,Get customer's message or issue
 SupportBot,DetectIntent,,Analyze customer intent,custom:IntentDetectionAgent,RouteConversation,GetUserInput,user_message|conversation_history,detected_intent,,Analyze customer message for intent
-SupportBot,RouteConversation,,{"routing_rules": {"billing": "ProcessBilling", "technical": "ProcessTechnical", "account": "ProcessAccount", "complaint": "ProcessComplaint", "default": "ProcessGeneral"}},orchestrator,ProcessRequest,GetUserInput,detected_intent|user_message|customer_data,routing_decision,,Route to appropriate support flow based on intent
+SupportBot,RouteConversation,,{'routing_rules': {'billing': 'ProcessBilling', 'technical': 'ProcessTechnical', 'account': 'ProcessAccount', 'complaint': 'ProcessComplaint', 'default': 'ProcessGeneral'}},orchestrator,ProcessRequest,GetUserInput,detected_intent|user_message|customer_data,routing_decision,,Route to appropriate support flow based on intent
 SupportBot,ProcessBilling,,Handle billing inquiries,custom:SupportResponseAgent,CheckSatisfaction,EscalateToHuman,user_message|detected_intent|customer_data|conversation_history|routing_decision,support_response,,Handle billing-specific requests
 SupportBot,ProcessTechnical,,Handle technical support,custom:SupportResponseAgent,CheckSatisfaction,EscalateToHuman,user_message|detected_intent|customer_data|conversation_history|routing_decision,support_response,,Handle technical support requests
 SupportBot,ProcessAccount,,Handle account management,custom:SupportResponseAgent,CheckSatisfaction,EscalateToHuman,user_message|detected_intent|customer_data|conversation_history|routing_decision,support_response,,Handle account-related requests
@@ -201,12 +201,14 @@ SupportBot,ProcessComplaint,,Handle customer complaints,custom:SupportResponseAg
 SupportBot,ProcessGeneral,,Handle general inquiries,custom:SupportResponseAgent,CheckSatisfaction,EscalateToHuman,user_message|detected_intent|customer_data|conversation_history|routing_decision,support_response,,Handle general information requests
 SupportBot,ProcessRequest,,Fallback processing node,custom:SupportResponseAgent,CheckSatisfaction,EscalateToHuman,user_message|detected_intent|customer_data|conversation_history|routing_decision,support_response,,Fallback support response processing
 SupportBot,EscalateToHuman,,Handle complex issues,echo,CheckSatisfaction,End,user_message|customer_data,escalation_message,This issue requires human assistance. A specialist will contact you within 24 hours.,Escalate complex issues to human agents
-SupportBot,CheckSatisfaction,,{"memory_key": "conversation_history", "max_memory_messages": 20, "provider": "openai", "temperature": 0.7},llm,ContinueConversation,End,support_response|escalation_message|conversation_history,satisfaction_check,Rate your experience (1-5) and let me know if there's anything else I can help with today: {support_response},Check customer satisfaction and offer continued help
+SupportBot,CheckSatisfaction,,{'memory_key': 'conversation_history', 'max_memory_messages': 20, 'provider': 'openai', 'temperature': 0.7},llm,ContinueConversation,End,support_response|escalation_message|conversation_history,satisfaction_check,Rate your experience (1-5) and let me know if there's anything else I can help with today: {support_response},Check customer satisfaction and offer continued help
 SupportBot,ContinueConversation,,Determine if conversation continues,custom:ConversationControlAgent,GetUserInput,LogConversation,satisfaction_check|user_message,continue_conversation,,Check if customer wants to continue
 SupportBot,LogConversation,,Log conversation for analysis,custom:ConversationLoggerAgent,EndConversation,End,customer_data|conversation_history|satisfaction_check,log_result,,Save conversation details for improvement
 SupportBot,EndConversation,,End conversation gracefully,echo,End,,log_result|customer_data,final_message,Thank you for contacting support! Have a great day.,Thank customer and end conversation
-SupportBot,End,,Conversation complete,echo,,,final_message,output,,Final output node
-```
+SupportBot,End,,Conversation complete,echo,,,final_message,output,,Final output node`}
+  title="Multi-Agent Customer Support Workflow"
+  filename="support_bot"
+/>
 
 ## Step 3: Generate and Implement Custom Agents
 

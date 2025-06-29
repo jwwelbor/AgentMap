@@ -116,7 +116,7 @@ This workflow demonstrates conditional branching based on validation results, wi
 ```csv title="workflows/branching_workflow.csv"
 GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
 BranchFlow,Start,,Starting node,echo,Validate,ErrorHandler,input,initial_data,
-BranchFlow,Validate,,{"validation_rules": ["required", "min_length:5"]},default,Process,HandleInvalid,initial_data,validation_result,Validating: {initial_data}
+BranchFlow,Validate,,{'validation_rules': ['required', 'min_length:5']},default,Process,HandleInvalid,initial_data,validation_result,Validating: {initial_data}
 BranchFlow,Process,,Process valid data,default,End,ErrorHandler,initial_data,processed_data,Processing valid data: {initial_data}
 BranchFlow,HandleInvalid,,Handle invalid input,default,RequestNew,ErrorHandler,initial_data,error_context,Invalid input: {initial_data}
 BranchFlow,RequestNew,,Request new input,input,Validate,ErrorHandler,,new_input,Please provide valid input (min 5 characters):
@@ -210,10 +210,10 @@ A sophisticated conversational workflow that maintains context across multiple i
 
 ```csv title="workflows/chat_workflow.csv"
 GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
-ChatFlow,UserInput,,{"memory_key":"chat_memory","max_memory_messages":10},input,Process,ErrorHandler,,user_message,💬 You: 
-ChatFlow,Process,,{"preserve_context": true},echo,Respond,ErrorHandler,user_message|chat_memory,processed_input,
-ChatFlow,Respond,,{"provider": "openai", "model": "gpt-4", "temperature": 0.7},llm,UpdateMemory,ErrorHandler,processed_input|chat_memory,ai_response,You are a helpful and friendly assistant. Previous conversation: {chat_memory}\n\nUser: {processed_input}
-ChatFlow,UpdateMemory,,{"memory_key":"chat_memory","append_format":"User: {user_message}\nAssistant: {ai_response}"},memory,Format,ErrorHandler,user_message|ai_response|chat_memory,updated_memory,
+ChatFlow,UserInput,,{'memory_key':'chat_memory','max_memory_messages':10},input,Process,ErrorHandler,,user_message,💬 You: 
+ChatFlow,Process,,{'preserve_context': True},echo,Respond,ErrorHandler,user_message|chat_memory,processed_input,
+ChatFlow,Respond,,{'provider': 'openai', 'model': 'gpt-4', 'temperature': 0.7},llm,UpdateMemory,ErrorHandler,processed_input|chat_memory,ai_response,You are a helpful and friendly assistant. Previous conversation: {chat_memory}\n\nUser: {processed_input}
+ChatFlow,UpdateMemory,,{'memory_key':'chat_memory','append_format':'User: {user_message}\nAssistant: {ai_response}'},memory,Format,ErrorHandler,user_message|ai_response|chat_memory,updated_memory,
 ChatFlow,Format,,Format the response,default,UserInput,ErrorHandler,ai_response|updated_memory,formatted_response,🤖 Assistant: {ai_response}
 ChatFlow,ErrorHandler,,Handle conversation errors,echo,UserInput,,error,error_message,❌ Error: {error}
 ```

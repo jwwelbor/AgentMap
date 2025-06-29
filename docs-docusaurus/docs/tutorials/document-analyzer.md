@@ -4,6 +4,8 @@ title: Document Analyzer
 description: Build an AI-powered document analyzer that extracts insights from PDFs and text files
 ---
 
+import CSVTable from '@site/src/components/CSVTable';
+
 # Build a Document Analyzer
 
 ## What We're Building
@@ -166,8 +168,8 @@ Next review: October 15, 2024
 
 Create `document_analyzer.csv`:
 
-```csv
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+<CSVTable 
+  csvContent={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
 DocAnalyzer,SelectDocument,,Get document path from user,input,DetectFileType,ErrorHandler,,document_path,Enter the path to your document (or press Enter for sample):,Get document file path from user
 DocAnalyzer,DetectFileType,,Detect and validate file type,custom:FileTypeDetectorAgent,ExtractText,ErrorHandler,document_path,file_info,,Detect file type and validate readability
 DocAnalyzer,ExtractText,,Extract text content from document,custom:TextExtractionAgent,ProcessMetadata,ErrorHandler,document_path|file_info,extracted_content,,Extract text and basic content from document
@@ -179,8 +181,10 @@ DocAnalyzer,GenerateSummary,,{"provider": "openai", "model": "gpt-4", "temperatu
 DocAnalyzer,CreateReport,,Compile comprehensive analysis report,custom:ReportGeneratorAgent,ExportResults,ErrorHandler,extracted_content|ai_analysis|entities_data|executive_summary|document_metadata,analysis_report,,Generate structured analysis report
 DocAnalyzer,ExportResults,,Export analysis results,custom:ResultsExporterAgent,End,ErrorHandler,analysis_report|document_metadata,export_results,,Export results in multiple formats
 DocAnalyzer,ErrorHandler,,Handle processing errors gracefully,echo,End,,error,error_message,,Display error information to user
-DocAnalyzer,End,,Analysis complete,echo,,,export_results|error_message,output,,Display final results and completion
-```
+DocAnalyzer,End,,Analysis complete,echo,,,export_results|error_message,output,,Display final results and completion`}
+  title="Document Analyzer Workflow"
+  filename="document_analyzer"
+/>
 
 ## Step 3: Generate and Implement Custom Agents
 

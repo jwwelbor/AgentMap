@@ -148,6 +148,7 @@ const config: Config = {
       '@docusaurus/plugin-client-redirects',
       {
         redirects: [
+          // Legacy documentation redirects - match actual file structure
           {
             from: '/usage/agentmap_cli_documentation.md',
             to: '/docs/reference/cli-commands',
@@ -158,15 +159,15 @@ const config: Config = {
           },
           {
             from: '/getting-started',
-            to: '/docs/getting-started/quick-start',
+            to: '/docs/getting-started',
           },
           {
             from: '/quickstart',
-            to: '/docs/getting-started/quick-start',
+            to: '/docs/getting-started',
           },
           {
             from: '/tutorials',
-            to: '/docs/tutorial/intro',
+            to: '/docs/tutorials/',
           },
           {
             from: '/examples',
@@ -174,11 +175,11 @@ const config: Config = {
           },
           {
             from: '/api',
-            to: '/docs/reference/agent-types',
+            to: '/docs/api',
           },
           {
             from: '/reference',
-            to: '/docs/reference/csv-schema',
+            to: '/docs/reference/',
           },
           {
             from: '/docs.md',
@@ -194,17 +195,24 @@ const config: Config = {
           },
           {
             from: '/agent-catalog',
-            to: '/docs/playground',
+            to: '/docs/reference/agent-catalog',
           },
-          // Legacy usage documentation redirects
+          
+          // Core features and overview redirects
           {
             from: '/usage/agentmap_features.md',
-            to: '/docs/overview/core-features',
+            to: '/docs/core-features',
           },
           {
             from: '/usage/agentmap_features',
-            to: '/docs/overview/core-features',
+            to: '/docs/core-features',
           },
+          {
+            from: '/features',
+            to: '/docs/core-features',
+          },
+          
+          // Reference documentation redirects
           {
             from: '/usage/agentmap_csv_schema_documentation.md',
             to: '/docs/reference/csv-schema',
@@ -221,46 +229,44 @@ const config: Config = {
             from: '/usage/agentmap_agent_types',
             to: '/docs/reference/agent-types',
           },
+          
+          // Tutorial and example redirects
           {
             from: '/usage/agentmap_example_workflows.md',
-            to: '/docs/tutorial/intro',
+            to: '/docs/tutorials/example-workflows',
           },
           {
             from: '/usage/agentmap_example_workflows',
-            to: '/docs/tutorial/intro',
+            to: '/docs/tutorials/example-workflows',
           },
+          
+          // Development guide redirects
           {
             from: '/usage/advanced_agent_types.md',
-            to: '/docs/guides/advanced/advanced-agent-types',
+            to: '/docs/guides/development/agents/advanced-agent-types',
           },
           {
             from: '/usage/advanced_agent_types',
-            to: '/docs/guides/advanced/advanced-agent-types',
+            to: '/docs/guides/development/agents/advanced-agent-types',
           },
           {
             from: '/usage/state_management_and_data_flow.md',
-            to: '/docs/guides/state-management',
+            to: '/docs/contributing/state-management',
           },
           {
             from: '/usage/state_management_and_data_flow',
-            to: '/docs/guides/state-management',
+            to: '/docs/contributing/state-management',
           },
           {
             from: '/usage/memory_management_in_agentmap.md',
-            to: '/docs/guides/advanced/memory-and-orchestration/memory-management',
+            to: '/docs/guides/development/agent-memory/memory-management',
           },
           {
             from: '/usage/memory_management_in_agentmap',
-            to: '/docs/guides/advanced/memory-and-orchestration/memory-management',
+            to: '/docs/guides/development/agent-memory/memory-management',
           },
-          {
-            from: '/usage/agentmap_execution_tracking.md',
-            to: '/docs/guides/operations/execution-tracking',
-          },
-          {
-            from: '/usage/agentmap_execution_tracking',
-            to: '/docs/guides/operations/execution-tracking',
-          },
+          
+          // CLI and tools redirects
           {
             from: '/usage/CLI_INSPECT_GRAPH_DOCS.md',
             to: '/docs/reference/cli-graph-inspector',
@@ -269,94 +275,110 @@ const config: Config = {
             from: '/usage/CLI_INSPECT_GRAPH_DOCS',
             to: '/docs/reference/cli-graph-inspector',
           },
+          
+          // Development patterns redirects
           {
             from: '/usage/TESTING_PATTERNS.md',
-            to: '/docs/guides/operations/testing-patterns',
+            to: '/docs/guides/development/testing',
           },
           {
             from: '/usage/TESTING_PATTERNS',
-            to: '/docs/guides/operations/testing-patterns',
+            to: '/docs/guides/development/testing',
           },
+          
+          // Storage and infrastructure redirects
           {
             from: '/usage/storage_services.md',
-            to: '/docs/guides/infrastructure/storage-services-overview',
+            to: '/docs/guides/development/services/storage/storage-services-overview',
           },
           {
             from: '/usage/storage_services',
-            to: '/docs/guides/infrastructure/storage-services-overview',
+            to: '/docs/guides/development/services/storage/storage-services-overview',
           },
           {
             from: '/usage/agentmap_cloud_storage.md',
-            to: '/docs/guides/infrastructure/cloud-storage-integration',
+            to: '/docs/guides/development/services/storage/cloud-storage-integration',
           },
           {
             from: '/usage/agentmap_cloud_storage',
-            to: '/docs/guides/infrastructure/cloud-storage-integration',
+            to: '/docs/guides/development/services/storage/cloud-storage-integration',
           },
+          
+          // Service integration redirects
           {
             from: '/usage/host-service-integration.md',
-            to: '/docs/guides/advanced/host-service-integration',
+            to: '/docs/guides/development/agents/host-service-integration',
           },
           {
             from: '/usage/host-service-integration',
-            to: '/docs/guides/advanced/host-service-integration',
+            to: '/docs/guides/development/agents/host-service-integration',
           },
           {
             from: '/usage/service_injection.md',
-            to: '/docs/guides/advanced/service-injection-patterns',
+            to: '/docs/contributing/service-injection',
           },
           {
             from: '/usage/service_injection',
-            to: '/docs/guides/advanced/service-injection-patterns',
+            to: '/docs/contributing/service-injection',
           },
+          
+          // Agent development redirects
           {
             from: '/usage/agent_contract.md',
-            to: '/docs/guides/advanced/agent-development-contract',
+            to: '/docs/guides/development/agents/agent-development',
           },
           {
             from: '/usage/agent_contract',
-            to: '/docs/guides/advanced/agent-development-contract',
+            to: '/docs/guides/development/agents/agent-development',
           },
+          
+          // Orchestration redirects
           {
             from: '/usage/orchestration_agent.md',
-            to: '/docs/guides/advanced/memory-and-orchestration/orchestration-patterns',
+            to: '/docs/guides/development/orchestration',
           },
           {
             from: '/usage/orchestration_agent',
-            to: '/docs/guides/advanced/memory-and-orchestration/orchestration-patterns',
+            to: '/docs/guides/development/orchestration',
           },
           {
             from: '/usage/prompt_management_in_agentmap.md',
-            to: '/docs/guides/advanced/memory-and-orchestration/prompt-management',
+            to: '/docs/guides/development/prompt-management',
           },
           {
             from: '/usage/prompt_management_in_agentmap',
-            to: '/docs/guides/advanced/memory-and-orchestration/prompt-management',
+            to: '/docs/guides/development/prompt-management',
           },
           {
             from: '/usage/langchain_memory_in_agentmap.md',
-            to: '/docs/guides/advanced/memory-and-orchestration/langchain-memory-integration',
+            to: '/docs/guides/development/agent-memory/langchain-memory-integration',
           },
           {
             from: '/usage/langchain_memory_in_agentmap',
-            to: '/docs/guides/advanced/memory-and-orchestration/langchain-memory-integration',
+            to: '/docs/guides/development/agent-memory/langchain-memory-integration',
           },
+          
+          // Service registry redirects
           {
             from: '/usage/host_service_registry.md',
-            to: '/docs/guides/infrastructure/service-registry-patterns',
+            to: '/docs/guides/development/services/service-registry-patterns',
           },
           {
             from: '/usage/host_service_registry',
-            to: '/docs/guides/infrastructure/service-registry-patterns',
+            to: '/docs/guides/development/services/service-registry-patterns',
           },
+          
+          // Quick start redirects
           {
             from: '/usage/agentmap-quickstart.md',
-            to: '/docs/getting-started/quick-start',
+            to: '/docs/getting-started',
           },
           {
             from: '/usage/agentmap-quickstart',
-            to: '/docs/getting-started/quick-start',
+            to: '/docs/getting-started',
           },
+          
+          // Index and general redirects
           {
             from: '/usage/index.md',
             to: '/docs/intro',
@@ -415,7 +437,7 @@ const config: Config = {
             return items.map((item) => {
               // Higher priority for key pages
               if (item.url.includes('/docs/intro') || 
-                  item.url.includes('/docs/getting-started/quick-start')) {
+                  item.url.includes('/docs/getting-started')) {
                 return {
                   ...item,
                   priority: 1.0,
@@ -512,8 +534,16 @@ const config: Config = {
           title: 'Docs',
           items: [
             {
-              label: 'Tutorial',
-              to: '/docs/intro',
+              label: 'Getting Started',
+              to: '/docs/getting-started',
+            },
+            {
+              label: 'Tutorials',
+              to: '/docs/tutorials/',
+            },
+            {
+              label: 'Reference',
+              to: '/docs/reference/',
             },
           ],
         },
@@ -523,6 +553,10 @@ const config: Config = {
             {
               label: 'GitHub',
               href: 'https://github.com/jwwelbor/AgentMap',
+            },
+            {
+              label: 'Discussions',
+              href: 'https://github.com/jwwelbor/AgentMap/discussions',
             },
           ],
         },
@@ -534,8 +568,12 @@ const config: Config = {
               to: '/blog',
             },
             {
-              label: 'GitHub',
-              href: 'https://github.com/jwwelbor/AgentMap',
+              label: 'API Reference',
+              to: '/docs/api',
+            },
+            {
+              label: 'Playground',
+              to: '/docs/playground',
             },
           ],
         },

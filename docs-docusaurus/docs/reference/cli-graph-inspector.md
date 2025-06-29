@@ -558,9 +558,9 @@ agentmap inspect-graph MyWorkflow          # Post-optimization check
 - [CLI Commands Reference](cli-commands.md) - Complete CLI command documentation
 - **[Agent Types Reference](agent-types.md)** - Available agent types and configurations
 - **[CSV Schema Reference](csv-schema.md)** - Workflow file format specification
-- **[Configuration Guide](../guides/infrastructure/index.md)** - Configuration options and setup
-- **[Execution Tracking](../guides/operations/execution-tracking.md)** - Advanced debugging techniques
-- **[Testing Patterns](../guides/operations/testing-patterns.md)** - Testing strategies for workflows
+- **[Configuration Guide](../guides/deploying/index.md)** - Configuration options and setup
+- **[Execution Tracking](../guides/deploying/monitoring.md)** - Advanced debugging techniques
+- **[Testing Patterns](../guides/development/testing.md)** - Testing strategies for workflows
 
 ## Related Tools
 

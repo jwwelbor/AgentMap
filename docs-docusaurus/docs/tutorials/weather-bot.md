@@ -6,6 +6,8 @@ keywords: [weather bot tutorial, API integration, custom agents, LLM integration
 image: /img/agentmap-hero.png
 ---
 
+import CSVTable from '@site/src/components/CSVTable';
+
 # Build an AI Weather Bot with API Integration
 
 ## What We're Building
@@ -54,15 +56,17 @@ graph TD
 
 Create a file called `weather_bot.csv`:
 
-```csv
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+<CSVTable 
+  csvContent={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
 WeatherFlow,GetLocation,,Get user location,input,FetchWeather,ErrorHandler,,location,Enter the city name for weather report:,Prompts user for city name
 WeatherFlow,FetchWeather,,Fetch weather data from API,custom:WeatherAPIAgent,GenerateReport,ErrorHandler,location,weather_data,,Fetches real weather data from OpenWeatherMap
-WeatherFlow,GenerateReport,,{"provider": "openai", "model": "gpt-3.5-turbo", "temperature": 0.7},llm,FormatOutput,ErrorHandler,weather_data|location,weather_report,Generate a friendly and informative weather report for {location} based on this data: {weather_data},Creates natural language weather report
+WeatherFlow,GenerateReport,,{'provider': 'openai', 'model': 'gpt-3.5-turbo', 'temperature': 0.7},llm,FormatOutput,ErrorHandler,weather_data|location,weather_report,Generate a friendly and informative weather report for {location} based on this data: {weather_data},Creates natural language weather report
 WeatherFlow,FormatOutput,,Format the final output,default,End,ErrorHandler,weather_report,final_report,✅ Weather Report Generated Successfully,Formats the final output message
 WeatherFlow,ErrorHandler,,Handle any errors gracefully,echo,End,,error,error_message,,Displays error messages to user
-WeatherFlow,End,,Complete workflow,echo,,,final_report|error_message,output,,Final output node
-```
+WeatherFlow,End,,Complete workflow,echo,,,final_report|error_message,output,,Final output node`}
+  title="Weather Bot Workflow"
+  filename="weather_bot"
+/>
 
 ## Step 2: Generate Custom Agent Template
 

@@ -6,30 +6,6 @@ keywords: [AgentMap tools, CSV workflow visualizer, workflow builder, AgentMap d
 image: /img/agentmap-hero.png
 ---
 
-# 📊 Interactive Workflow Visualizer
-
-Build and visualize AgentMap workflows with our interactive CSV-to-diagram converter.
-
-### Features:
-- **Visual Flow Diagrams** - See your workflow as a connected graph
-- **Agent Type Color Coding** - Different colors for input, LLM, branching, etc.
-- **Connection Validation** - Verify all node connections are valid
-- **Export Options** - Save diagrams as PNG or SVG
-
-### Example Use Case:
-```csv
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
-WeatherBot,GetLocation,,Get user location,input,FetchWeather,Error,,location,What city?,Start workflow
-WeatherBot,FetchWeather,,Fetch weather data,custom:WeatherAPI,GenerateReport,Error,location,weather_data,,Get weather
-WeatherBot,GenerateReport,,Create report,llm,End,Error,weather_data|location,report,Generate weather report for {location},Create report
-WeatherBot,Error,,Handle errors,echo,End,,error,error_msg,,Error handling
-WeatherBot,End,,Complete,echo,,,report|error_msg,result,,Finish
-```
-
-**↓ Becomes a visual diagram showing the flow from GetLocation → FetchWeather → GenerateReport → End**
-
----
-
 ## 🏗️ Workflow Builder
 
 **Coming Soon!** Build AgentMap workflows step-by-step with a visual interface.

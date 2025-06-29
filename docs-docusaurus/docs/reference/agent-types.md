@@ -404,21 +404,68 @@ ReportFlow,ExecutiveSummary,{"llm":"anthropic","temperature":0.3},Create executi
 
 ### OrchestratorAgent
 
-Dynamically routes user input to the most appropriate node in your workflow based on intent matching. Uses LLMs or algorithmic matching to determine which node best matches the user's request.
+Dynamically routes user input to the most appropriate node in your workflow based on intent matching. Uses advanced keyword parsing from CSV data combined with optional LLM analysis to determine which node best matches the user's request.
 
 - **Input Fields**: First field = available nodes, Second field = user input text
 - **Output Field**: Selected node name
-- **Prompt Usage**: Instructions for routing logic
+- **Prompt Usage**: Instructions for routing logic (used in LLM mode)
 - **Infrastructure Services**: Logger, ExecutionTracker, StateAdapter
-- **Business Services**: LLMService (when using LLM or tiered matching)
+- **Business Services**: OrchestratorService (for business logic delegation), LLMService (when using LLM or tiered matching)
 - **Protocol Implementation**: LLMCapableAgent (when using LLM modes)
 - **Built-in Routing**: Automatically navigates to selected node without separate routing function
 
 #### Key Features
+- **Enhanced Keyword Matching**: Intelligent parsing of keywords from CSV context data
 - **Multiple Matching Strategies**: Choose between LLM-based, algorithmic, or tiered matching
 - **Flexible Node Filtering**: Filter available nodes by type, specific list, or use all nodes
 - **Confidence Thresholds**: Configure when to use LLM vs. algorithmic matching
 - **Automatic Navigation**: Built-in routing to selected node
+- **CSV-Driven Configuration**: All settings configurable via CSV context
+
+#### CSV Keyword Integration
+
+The OrchestratorAgent now intelligently parses keywords from CSV node definitions for efficient algorithmic matching:
+
+**String Format (comma-separated):**
+```csv
+name,description,type,context
+auth_handler,Handle user authentication,security,"{""keywords"": ""login,authentication,signin,user,password""}"
+payment_processor,Process payment transactions,financial,"{""keywords"": ""payment,billing,transaction,money,pay,purchase""}"
+email_service,Send notification emails,communication,"{""keywords"": ""email,notification,message,send,notify,alert""}"
+```
+
+**Array Format (JSON list):**
+```csv
+name,description,type,context
+auth_handler,Handle user authentication,security,"{""keywords"": [""login"", ""authentication"", ""signin"", ""user"", ""password""]}"
+payment_processor,Process payment transactions,financial,"{""keywords"": [""payment"", ""billing"", ""transaction"", ""money""]}"
+email_service,Send notification emails,communication,"{""keywords"": [""email"", ""notification"", ""message"", ""send""]}"
+```
+
+**Enhanced Context Format:**
+```csv
+name,description,type,context
+smart_router,Intelligent request routing,orchestrator,"{""keywords"": [""route"", ""intelligent"", ""smart""], ""confidence_threshold"": 0.9, ""default_target"": ""fallback_node""}"
+data_analyzer,Advanced data analysis,analytics,"{""keywords"": ""analyze,data,statistics,insights,metrics"", ""intent"": ""Perform statistical analysis and generate insights""}"
+```
+
+#### Automatic Keyword Parsing
+
+The service automatically extracts keywords from multiple sources:
+
+1. **Primary**: `context.keywords` field (string or array format)
+2. **Secondary**: `description`, `prompt`, `intent` fields
+3. **Smart Filtering**: Removes short words (less than 3 chars) and common words ("the", "and", "for", "with")
+4. **Phrase Matching**: Boosts confidence for multi-word phrase matches
+5. **Deduplication**: Automatically removes duplicate keywords
+
+**Example Node Processing:**
+```csv
+name,description,prompt,intent,context
+user_auth,Handle user authentication and security,Validate user credentials,Security and login management,"{""keywords"": ""login,signin""}"
+```
+
+**Extracted Keywords:** `["login", "signin", "handle", "user", "authentication", "security", "validate", "credentials", "management"]`
 
 #### Context Configuration Options
 
@@ -473,17 +520,40 @@ DataProcessor,RouteDataOp,{"nodeType":"data_processor","matching_strategy":"algo
 Router,RouteRequest,{"matching_strategy":"tiered","confidence_threshold":0.9},Smart routing,orchestrator,DefaultHandler,ErrorHandler,available_nodes|user_input,selected_node,Route to the most appropriate node.
 ```
 
-#### Complete Workflow Example
+**Complete Workflow Example**
 
 ```csv
-Router,GetUserInput,,Get user request,input,RouteRequest,,message,user_input,What would you like to do?
-Router,RouteRequest,{"nodes":"all"},Route to appropriate node,orchestrator,DefaultHandler,ErrorHandler,available_nodes|user_input,selected_node,Route to the appropriate node
-Router,WeatherNode,,Get weather information,default,End,,location,weather,Getting weather for {location}
-Router,NewsNode,,Get latest news,default,End,,topic,news,Getting news about {topic}
-Router,DefaultHandler,,Handle unmatched requests,default,End,,user_input,response,I can't handle that request
-Router,ErrorHandler,,Handle errors,default,End,,error,error_message,An error occurred
-Router,End,,End workflow,echo,,,response|weather|news|error_message,final_output,
+Graph,Name,Context,Description,Agent,Success,Failure,Input,Output,Prompt
+CustomerService,GetUserInput,,Get user request,input,RouteRequest,,message,user_input,How can I help you today?
+
+# Define nodes with keyword-enhanced context
+CustomerService,AuthHelp,"{""keywords"": ""login,password,signin,account,access""}",Handle login issues,llm,SendResponse,ErrorHandler,user_input,auth_response,Help the user with authentication issues: {user_input}
+CustomerService,BillingHelp,"{""keywords"": [""billing"", ""payment"", ""invoice"", ""charge"", ""refund""]}",Handle billing questions,llm,SendResponse,ErrorHandler,user_input,billing_response,Assist with billing inquiry: {user_input}
+CustomerService,TechnicalSupport,"{""keywords"": ""bug,error,crash,technical,support,issue,problem""}",Technical support,llm,SendResponse,ErrorHandler,user_input,tech_response,Provide technical support for: {user_input}
+CustomerService,GeneralHelp,"{""keywords"": [""general"", ""help"", ""info"", ""question""]}",General assistance,llm,SendResponse,ErrorHandler,user_input,general_response,Provide general assistance: {user_input}
+
+# Orchestrator with tiered matching strategy
+CustomerService,RouteRequest,"{""matching_strategy"": ""tiered"", ""confidence_threshold"": 0.8, ""default_target"": ""GeneralHelp""}",Route to appropriate specialist,orchestrator,SendResponse,ErrorHandler,available_nodes|user_input,selected_node,Route the customer inquiry to the most appropriate specialist.
+
+# Response handling
+CustomerService,SendResponse,,Send response to customer,echo,End,,auth_response|billing_response|tech_response|general_response,final_response,
+CustomerService,ErrorHandler,,Handle errors,default,End,,error,error_message,I apologize, but I'm having trouble processing your request.
+CustomerService,End,,End conversation,echo,,,final_response|error_message,result,
 ```
+
+**How This Works:**
+
+1. **User Input**: "I forgot my password and can't log in"
+2. **Keyword Matching**: Orchestrator finds "password" and "login" keywords matching `AuthHelp` node
+3. **High Confidence**: Algorithm matching gives high confidence (>0.8), so no LLM call needed
+4. **Auto-Routing**: Automatically routes to `AuthHelp` node
+5. **Specialized Response**: AuthHelp node provides authentication-specific assistance
+
+**Performance Benefits:**
+- **Fast Routing**: Most requests route via keyword matching without LLM calls
+- **Cost Effective**: Only uses LLM for complex/ambiguous requests
+- **Accurate**: Keywords provide precise matching for common scenarios
+- **Fallback**: LLM ensures edge cases are handled gracefully
 
 ## Testing and Development
 

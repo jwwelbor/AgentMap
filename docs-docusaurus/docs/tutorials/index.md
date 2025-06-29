@@ -7,15 +7,58 @@ keywords: [AgentMap tutorials, agentic AI workflows, multi-agent systems, RAG AI
 
 # AgentMap Tutorials
 
-Master the art of building **autonomous multi-agent AI systems** with our comprehensive tutorial collection. Each tutorial is designed to teach specific patterns and capabilities while building real, working systems you can deploy and extend.
+Master the art of building **autonomous multi-agent AI systems** with our comprehensive tutorial collection. Learn how to create powerful AI workflows that solve real business problems, from simple automation to sophisticated autonomous systems.
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import CodeBlock from '@theme/CodeBlock';
 
 :::tip Start with the Interactive Playground
-🎮 **New to AgentMap?** Try our [Interactive Playground](/docs/playground) first to get hands-on experience with workflows before diving into these tutorials!
+🎮 **New to AgentMap?** Try our [Interactive Playground](/docs/playground) first to get hands-on experience with workflows, or jump directly to the [Quick Start Guide](../getting-started/quick-start) to build your first workflow in 5 minutes!
 :::
+
+---
+
+## What Can You Build with AgentMap? {#what-can-i-build}
+
+AgentMap empowers you to create **intelligent automation systems** that solve real business problems. Here's what our community is building:
+
+### 🏢 **Business Operations**
+- **Customer Support Automation** - Multi-agent systems handling 80% of customer inquiries
+- **Document Processing Pipelines** - Automated contract analysis and compliance checking
+- **Sales Lead Qualification** - AI-powered lead scoring and nurturing workflows
+- **Inventory Management** - Predictive restocking and supplier coordination
+- **HR Onboarding Systems** - Automated employee setup and training coordination
+
+### 📊 **Data & Analytics**
+- **Real-time Data Pipelines** - ETL workflows with intelligent error handling
+- **Business Intelligence Dashboards** - Automated report generation and distribution
+- **Financial Analysis Systems** - Budget monitoring and expense categorization
+- **Market Research Automation** - Competitor analysis and trend detection
+- **Quality Assurance Testing** - Automated testing and bug report generation
+
+### 🌐 **Content & Communication**
+- **Content Moderation Systems** - AI-powered content review and approval workflows
+- **Social Media Management** - Automated posting and engagement monitoring
+- **Email Marketing Automation** - Personalized campaign management
+- **Technical Documentation** - Automated API docs and user guide generation
+- **Multi-language Translation** - Real-time content localization pipelines
+
+### 🚀 **Advanced AI Applications**
+- **Recommendation Engines** - Personalized product and content suggestions
+- **Fraud Detection Systems** - Multi-layer security and anomaly detection
+- **Predictive Maintenance** - IoT data analysis and maintenance scheduling
+- **Healthcare Workflow Automation** - Patient data processing and care coordination
+- **Smart Home Integration** - Automated device management and optimization
+
+**💡 The AgentMap Advantage:**
+- **No-Code AI Workflows**: Build complex automation without programming expertise
+- **Infinite Scalability**: From simple 3-step workflows to 100+ agent orchestrations
+- **Production-Ready**: Deploy immediately with built-in error handling and monitoring
+- **Cost-Effective**: Reduce operational costs by 60-80% through intelligent automation
+- **Future-Proof**: Easily adapt workflows as your business needs evolve
+
+---
 
 ## Quick Reference Guide
 
@@ -401,7 +444,7 @@ based on the cost-benefit analysis presented.
 
 ---
 
-### Advanced API Orchestration
+### Advanced API Orchestration {#advanced-api-orchestration}
 
 **Master complex service integration** with intelligent routing, failover mechanisms, and real-time data synchronization across multiple external services.
 
@@ -480,7 +523,7 @@ OrderFlow,SendConfirmation,,Customer notification,email_sender,End,ErrorHandler,
 
 ## 🧠 Advanced Tutorials
 
-### RAG AI with Vector Search
+### RAG AI with Vector Search {#rag-ai-with-vector-search}
 
 **Build knowledge-aware AI systems** that combine retrieval-augmented generation with vector databases for contextual, accurate responses based on your data.
 
@@ -566,7 +609,7 @@ This comprehensive RAG tutorial is currently in development and will cover:
 
 ---
 
-### Autonomous Research System
+### Autonomous Research System {#autonomous-research-system}
 
 **Build truly autonomous multi-agent systems** that research topics independently, synthesize information from multiple sources, and generate comprehensive reports without human intervention.
 
@@ -676,8 +719,32 @@ This cutting-edge tutorial is being developed to showcase AgentMap's most sophis
 
 ### **For Advanced AI Systems**
 1. **[Multi-Agent Support](./customer-support-bot)** - Complex agent orchestration
-2. **[RAG Chatbot](./rag-chatbot)** - Knowledge-aware AI systems *(coming soon)*
-3. **[Research System](./multi-agent-research)** - Autonomous agent networks *(coming soon)*
+2. **[RAG Chatbot](#rag-ai-with-vector-search)** - Knowledge-aware AI systems *(coming soon)*
+3. **[Research System](#autonomous-research-system)** - Autonomous agent networks *(coming soon)*
+
+---
+
+## 🛠️ Core Learning Resources
+
+### **📖 Fundamentals**
+- **[Understanding Workflows](../guides/understanding-workflows)** - Interactive workflow concepts
+- **[CSV Schema Reference](../reference/csv-schema)** - Complete CSV format guide
+- **[State Management](../guides/state-management)** - Data flow between agents
+
+### **🤖 Agent Development**
+- **[Agent Types Reference](../reference/agent-types)** - Complete agent documentation
+- **[Advanced Agent Types](../guides/advanced/advanced-agent-types)** - Custom agent development
+- **[Agent Development Contract](../guides/advanced/agent-development-contract)** - Agent interface requirements
+
+### **🔧 Tools & Debugging**
+- **[Interactive Playground](../playground)** - Try building workflows live
+- **[CLI Commands](../reference/cli-commands)** - Command-line interface reference
+- **[CLI Graph Inspector](../reference/cli-graph-inspector)** - Debug and analyze workflows
+
+### **🏗️ Advanced Topics**
+- **[Service Injection Patterns](../guides/advanced/service-injection-patterns)** - Dependency injection
+- **[Memory Management](../guides/advanced/memory-and-orchestration/memory-management)** - Persistent state
+- **[Host Service Integration](../guides/advanced/host-service-integration)** - Custom services
 
 ---
 
@@ -744,5 +811,7 @@ Built something amazing with these tutorials? We'd love to feature your work! Sh
 **🎉 Start Your AgentMap Journey!**
 
 These tutorials will take you from AgentMap beginner to expert, with each one building on the concepts learned in previous tutorials. By the end, you'll have the skills to build sophisticated multi-agent AI systems that can transform business operations.
+
+**Ready to start building?** Jump to the [Quick Start Guide](../getting-started/quick-start) or explore the [Interactive Playground](../playground)!
 
 **[Begin with Weather Bot Tutorial →](./weather-bot)**

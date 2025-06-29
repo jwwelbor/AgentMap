@@ -16,24 +16,31 @@ const sidebars: SidebarsConfig = {
     // Introduction
     'intro',
     
-    // Overview - Core concepts and features
-    {
-      type: 'category', 
-      label: '📋 Overview',
-      items: [
-        'overview/core-features',
-      ],
-    },
+    // Overview - Core concepts and features  
+    'core-features',
     
     // Getting Started - First steps for new users
+    'getting-started',
+    
+    // Learning Paths - Structured learning journeys
     {
       type: 'category',
-      label: '🚀 Getting Started',
+      label: '🎓 Learning Paths',
       items: [
-        'getting-started/quick-start',
-        // These will be added when installation and first-workflow docs are created
-        // 'getting-started/installation',
-        // 'getting-started/first-workflow',
+        'guides/learning-paths/index',
+        'guides/learning-paths/agentmap-basics', 
+        'guides/learning-paths/understanding-workflows',
+        'guides/learning-paths/advanced-learning-path',
+        {
+          type: 'category',
+          label: 'Core Concepts',
+          items: [
+            'guides/learning-paths/core/fundamentals',
+            'guides/learning-paths/core/workflows', 
+            'guides/learning-paths/core/state-management',
+            'guides/learning-paths/core/csv-schema',
+          ],
+        },
       ],
     },
     
@@ -46,69 +53,84 @@ const sidebars: SidebarsConfig = {
       ],
     },
     
-    // Guides - Core development guides
+    // Guides - Development and deployment
     {
       type: 'category',
       label: '📖 Guides',
       items: [
-        'guides/index',
         {
           type: 'category',
-          label: '🚀 Basics',
+          label: '⚙️ Development',
           items: [
-            'guides/basics/index',
-          ],
-        },
-        'guides/understanding-workflows',
-        'guides/state-management',
-        {
-          type: 'category',
-          label: '🎯 Best Practices',
-          items: [
-            'guides/best-practices/index',
-          ],
-        },
-        {
-          type: 'category',
-          label: '🔧 Advanced',
-          items: [
-            'guides/advanced/index',
-            'guides/advanced/advanced-agent-types',
-            'guides/advanced/agent-development-contract',
-            'guides/advanced/host-service-integration',
+            'guides/development/index',
+            'guides/development/best-practices',
+            'guides/development/integrations',
+            'guides/development/orchestration',
+            'guides/development/prompt-management',
+            'guides/development/testing',
             {
               type: 'category',
-              label: 'Memory and Orchestration',
+              label: 'Agents',
               items: [
-                'guides/advanced/memory-and-orchestration/index',
-                'guides/advanced/memory-and-orchestration/memory-management',
-                'guides/advanced/memory-and-orchestration/langchain-memory-integration',
-                'guides/advanced/memory-and-orchestration/orchestration-patterns',
-                'guides/advanced/memory-and-orchestration/prompt-management',
+                'guides/development/agents/agent-development',
+                'guides/development/agents/custom-agents',
+                'guides/development/agents/advanced-agent-types',
+                'guides/development/agents/host-service-integration',
               ],
             },
-            'guides/advanced/service-injection-patterns',
+            {
+              type: 'category',
+              label: 'Agent Memory',
+              items: [
+                'guides/development/agent-memory/memory-management',
+                'guides/development/agent-memory/langchain-memory-integration',
+              ],
+            },
+            {
+              type: 'category',
+              label: 'Services',
+              items: [
+                'guides/development/services/service-registry-patterns',
+                {
+                  type: 'category',
+                  label: 'Storage',
+                  items: [
+                    'guides/development/services/storage/index',
+                    'guides/development/services/storage/storage-services-overview',
+                    'guides/development/services/storage/cloud-storage-integration',
+                  ],
+                },
+              ],
+            },
           ],
         },
         {
           type: 'category',
-          label: '🏗️ Infrastructure',
+          label: '🚀 Deployment',
           items: [
-            'guides/infrastructure/index',
-            'guides/infrastructure/cloud-storage-integration',
-            'guides/infrastructure/service-registry-patterns',
-            'guides/infrastructure/storage-services-overview',
+            'guides/deploying/index',
+            'guides/deploying/deployment',
+            'guides/deploying/monitoring',
           ],
         },
-        {
-          type: 'category',
-          label: '⚙️ Operations',
-          items: [
-            'guides/operations/index',
-            'guides/operations/execution-tracking',
-            'guides/operations/testing-patterns',
-          ],
-        },
+      ],
+    },
+    
+    // Tutorials - Step-by-step walkthroughs
+    {
+      type: 'category',
+      label: '📚 Tutorials',
+      items: [
+        'tutorials/index',
+        'tutorials/weather-bot',
+        'tutorials/data-processing-pipeline', 
+        'tutorials/customer-support-bot',
+        'tutorials/document-analyzer',
+        'tutorials/building-custom-agents',
+        'tutorials/api-integration',
+        'tutorials/rag-chatbot',
+        'tutorials/multi-agent-research',
+        'tutorials/example-workflows',
       ],
     },
     
@@ -128,10 +150,11 @@ const sidebars: SidebarsConfig = {
       items: [
         'reference/index',
         'reference/csv-schema',
-        'reference/cli-commands',
-        'reference/cli-graph-inspector',
         'reference/agent-types',
         'reference/agent-catalog',
+        'reference/service-catalog',
+        'reference/cli-commands',
+        'reference/cli-graph-inspector',
         'reference/configuration',
         'reference/dependency-injection',
       ],
@@ -142,20 +165,9 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: '🔌 API',
       items: [
-        'api/index',
+        'api',
       ],
     },
-    
-    // API Documentation (will be added when content is created)
-    // {
-    //   type: 'category',
-    //   label: '🔌 API',
-    //   items: [
-    //     'api/agent-api',
-    //     'api/service-api',
-    //     'api/python-api',
-    //   ],
-    // },
     
     // Tools - Development and debugging utilities
     {
@@ -164,50 +176,43 @@ const sidebars: SidebarsConfig = {
       items: [
         'tools/index',
         'playground',
-        'reference/cli-commands',
-        'reference/cli-graph-inspector',
       ],
     },
     
-    // Advanced Topics - Architecture and contribution
+    // Contributing - Architecture and contribution
     {
       type: 'category',
-      label: '🎯 Advanced',
+      label: '🤝 Contributing',
       items: [
-        {
-          type: 'category',
-          label: 'Architecture',
-          items: [
-            'advanced/architecture/clean-architecture-overview',
-            'advanced/architecture/dependency-injection',
-            'advanced/architecture/service-catalog',
-            // These will be added when additional architecture docs are created
-            // 'advanced/architecture/migration-guide',
-          ],
-        },
-        'contributing',
+        'contributing/index',
+        'contributing/clean-architecture-overview',
+        'contributing/dependency-injection',
+        'contributing/service-injection',
+        'contributing/state-management',
       ],
     },
   ],
 
-  // Tools sidebar for workflow building and utilities
-  toolsSidebar: [
-    'guides/understanding-workflows',
-    'playground',
+  // Tutorial sidebar for hands-on learning
+  tutorialSidebar: [
+    'tutorials/index',                    // Tutorial overview at the top
+    'tutorials/weather-bot',             // Basic API integration
+    'tutorials/data-processing-pipeline', // Data transformation
+    'tutorials/customer-support-bot',    // AI-powered routing
+    'tutorials/document-analyzer',       // Document processing
+    'tutorials/building-custom-agents',  // Custom agent development
+    'tutorials/api-integration',         // External service integration
+    'tutorials/rag-chatbot',            // RAG AI implementation
+    'tutorials/multi-agent-research',   // Multi-agent coordination
+    'tutorials/example-workflows',      // Comprehensive patterns
   ],
 
-  // Tutorial sidebar for the tutorial section
-  tutorialSidebar: [
-    'tutorial/intro',                    // Tutorial overview at the top
-    'tutorials/weather-bot',             // Individual tutorials
-    'tutorials/data-processing-pipeline',
-    'tutorials/customer-support-bot',
-    'tutorials/document-analyzer', 
-    'tutorials/api-integration',
-    'tutorials/example-workflows',       // Comprehensive workflow patterns and templates
-    // Additional tutorials will be added when content is created
-    // 'tutorials/rag-chatbot',
-    // 'tutorials/parallel-processing',
+  // Tools sidebar for utilities and development
+  toolsSidebar: [
+    'tools/index',
+    'playground',
+    'reference/cli-commands',
+    'reference/cli-graph-inspector',
   ],
 };
 

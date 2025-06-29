@@ -10,8 +10,23 @@ image: /img/agentmap-hero.png
 
 AgentMap uses CSV files to define **agentic AI workflows** as directed graphs where autonomous agents make decisions, route intelligently, and collaborate in multi-agent systems. Each row in the CSV represents an autonomous agent node that can reason, decide, and interact with other agents. This document explains how to structure CSV files for building sophisticated agentic AI systems.
 
+**⚠️ IMPORTANT: JSON Configuration Format**
+
+**AgentMap uses Python dictionary syntax for structured configuration in CSV files:**
+
+✅ **Correct**: `"{'provider': 'openai', 'temperature': 0.7}"`  
+❌ **Wrong**: `"{"provider": "openai", "temperature": 0.7}"` (breaks CSV parsing)
+
+**Why Python dict syntax?**
+- **CSV-friendly**: No comma conflicts or escaped quotes
+- **Readable**: Clean and easy to edit in spreadsheets
+- **Python-native**: AgentMap parses these as Python literals using `ast.literal_eval()`
+- **Tool compatible**: Works perfectly with Pandas, Excel, Google Sheets
+
+---
+
 :::tip Quick Start
-🚀 **New to AgentMap?** Start with our [Quick Start Guide](../getting-started/quick-start.md) to build your first workflow, then return here for detailed schema reference.
+🚀 **New to AgentMap?** Start with our [Quick Start Guide](../getting-started.md) to build your first workflow, then return here for detailed schema reference.
 :::
 
 :::info Why CSV for Agentic AI?
@@ -26,6 +41,7 @@ AgentMap uses CSV files to define **agentic AI workflows** as directed graphs wh
 import DownloadButton from '@site/src/components/DownloadButton';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import CSVTable from '@site/src/components/CSVTable';
 
 ## CSV Columns
 
@@ -67,12 +83,12 @@ MyFlow,End,,Complete the workflow,echo,,,result|error_message,output,,Final outp
   filename="agentmap_advanced_template.csv" 
   content={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
 AdvancedFlow,GetInput,,Collect user requirements,input,RouteByType,ErrorHandler,,requirements,Describe your task:,User input collection with validation
-AdvancedFlow,RouteByType,,{"analysis_type": "sentiment"|"summary"|"extraction"},routing,AnalyzeSentiment|CreateSummary|ExtractData,ErrorHandler,requirements,route_decision,,Dynamic routing based on task type
-AdvancedFlow,AnalyzeSentiment,,{"provider": "openai", "temperature": 0.3},llm,FormatResults,ErrorHandler,requirements,sentiment_analysis,Analyze the sentiment of this text: {requirements},Sentiment analysis with low temperature
-AdvancedFlow,CreateSummary,,{"provider": "anthropic", "model": "claude-3-sonnet", "max_tokens": 150},llm,FormatResults,ErrorHandler,requirements,summary,Create a concise summary of: {requirements},Text summarization with token limit
-AdvancedFlow,ExtractData,,{"provider": "openai", "temperature": 0.1},llm,FormatResults,ErrorHandler,requirements,extracted_data,Extract key entities and data from: {requirements},Data extraction with minimal creativity
-AdvancedFlow,FormatResults,,{"template": "markdown"},formatter,SaveResults,ErrorHandler,sentiment_analysis|summary|extracted_data,formatted_output,,Format results in markdown
-AdvancedFlow,SaveResults,,{"directory": "outputs", "timestamp": true},file_writer,End,ErrorHandler,formatted_output,save_path,results_{timestamp}.md,Save results to file with timestamp
+AdvancedFlow,RouteByType,,"{'analysis_type': 'sentiment'|'summary'|'extraction'}",routing,AnalyzeSentiment|CreateSummary|ExtractData,ErrorHandler,requirements,route_decision,,Dynamic routing based on task type
+AdvancedFlow,AnalyzeSentiment,,"{'provider': 'openai', 'temperature': 0.3}",llm,FormatResults,ErrorHandler,requirements,sentiment_analysis,Analyze the sentiment of this text: {requirements},Sentiment analysis with low temperature
+AdvancedFlow,CreateSummary,,"{'provider': 'anthropic', 'model': 'claude-3-sonnet', 'max_tokens': 150}",llm,FormatResults,ErrorHandler,requirements,summary,Create a concise summary of: {requirements},Text summarization with token limit
+AdvancedFlow,ExtractData,,"{'provider': 'openai', 'temperature': 0.1}",llm,FormatResults,ErrorHandler,requirements,extracted_data,Extract key entities and data from: {requirements},Data extraction with minimal creativity
+AdvancedFlow,FormatResults,,"{'template': 'markdown'}",formatter,SaveResults,ErrorHandler,sentiment_analysis|summary|extracted_data,formatted_output,,Format results in markdown
+AdvancedFlow,SaveResults,,"{'directory': 'outputs', 'timestamp': True}",file_writer,End,ErrorHandler,formatted_output,save_path,results_{timestamp}.md,Save results to file with timestamp
 AdvancedFlow,ErrorHandler,,Handle errors gracefully,echo,End,,error,error_message,,Comprehensive error handling
 AdvancedFlow,End,,Workflow completion,echo,,,formatted_output|save_path|error_message,final_output,,Final output with status`}>
   ⚙️ Download Advanced Template
@@ -85,12 +101,12 @@ AdvancedFlow,End,,Workflow completion,echo,,,formatted_output|save_path|error_me
   filename="agentmap_api_template.csv" 
   content={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
 APIFlow,GetQuery,,Collect search parameters,input,FetchData,ErrorHandler,,search_params,Enter search criteria:,User input for API query
-APIFlow,FetchData,,{"api_endpoint": "https://api.example.com", "method": "GET", "timeout": 30},custom:APIAgent,ProcessData,ErrorHandler,search_params,api_response,,External API data fetching
-APIFlow,ProcessData,,{"provider": "openai", "temperature": 0.5},llm,FormatOutput,ErrorHandler,api_response|search_params,processed_data,"Analyze this API data and provide insights: {api_response}",AI-powered data analysis
-APIFlow,FormatOutput,,{"format": "json", "pretty_print": true},formatter,SaveData,ErrorHandler,processed_data,formatted_json,,JSON formatting with pretty print
-APIFlow,SaveData,,{"storage_type": "local", "backup": true},data_store,End,ErrorHandler,formatted_json|search_params,storage_result,api_results/{search_params}_data.json,Persistent data storage
-APIFlow,ErrorHandler,,{"retry_count": 3, "fallback_message": "Service temporarily unavailable"},error_handler,End,,error,error_details,,Robust error handling with retry
-APIFlow,End,,{"include_metadata": true},summary,,,storage_result|formatted_json|error_details,final_result,,Comprehensive output with metadata`}>
+APIFlow,FetchData,,"{'api_endpoint': 'https://api.example.com', 'method': 'GET', 'timeout': 30}",custom:APIAgent,ProcessData,ErrorHandler,search_params,api_response,,External API data fetching
+APIFlow,ProcessData,,"{'provider': 'openai', 'temperature': 0.5}",llm,FormatOutput,ErrorHandler,api_response|search_params,processed_data,"Analyze this API data and provide insights: {api_response}",AI-powered data analysis
+APIFlow,FormatOutput,,"{'format': 'json', 'pretty_print': True}",formatter,SaveData,ErrorHandler,processed_data,formatted_json,,JSON formatting with pretty print
+APIFlow,SaveData,,"{'storage_type': 'local', 'backup': True}",data_store,End,ErrorHandler,formatted_json|search_params,storage_result,api_results/{search_params}_data.json,Persistent data storage
+APIFlow,ErrorHandler,,"{'retry_count': 3, 'fallback_message': 'Service temporarily unavailable'}",error_handler,End,,error,error_details,,Robust error handling with retry
+APIFlow,End,,"{'include_metadata': True}",summary,,,storage_result|formatted_json|error_details,final_result,,Comprehensive output with metadata`}>
   🔌 Download API Template
 </DownloadButton>
 
@@ -155,14 +171,16 @@ For complex routing patterns:
 
 ## Example CSV Structure
 
-```csv
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+<CSVTable 
+  csvContent={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
 WeatherFlow,GetLocation,,Get user location,input,FetchWeather,ErrorHandler,,location,Enter the city name:,Input node for weather workflow
-WeatherFlow,FetchWeather,,{"api_key": "env:WEATHER_API"},weather_api,GenerateReport,ErrorHandler,location,weather_data,,Fetches weather data from API
-WeatherFlow,GenerateReport,,{"provider": "openai"},llm,End,ErrorHandler,weather_data|location,report,Generate weather report for {location},Creates natural language weather report
+WeatherFlow,FetchWeather,,"{'api_key': 'env:WEATHER_API'}",weather_api,GenerateReport,ErrorHandler,location,weather_data,,Fetches weather data from API
+WeatherFlow,GenerateReport,,"{'provider': 'openai'}",llm,End,ErrorHandler,weather_data|location,report,Generate weather report for {location},Creates natural language weather report
 WeatherFlow,ErrorHandler,,Handle any errors,echo,End,,error,error_message,,Error handling node
-WeatherFlow,End,,Complete workflow,echo,,,report|error_message,output,,Final output node
-```
+WeatherFlow,End,,Complete workflow,echo,,,report|error_message,output,,Final output node`}
+  title="Complete Weather Workflow Example"
+  filename="weather_workflow_example"
+/>
 
 ## Best Practices
 
@@ -270,10 +288,10 @@ MyGraph,End,,config,echo,,,output,final,
 MyGraph,Node1,,{invalid json},agent,Next,,input,output,prompt
 ```
 
-**✅ Correct:** Valid JSON formatting
+**✅ Correct:** Valid Pydantic model syntax
 ```csv
-# Proper JSON syntax
-MyGraph,Node1,,"{""provider"": ""openai"", ""temperature"": 0.7}",llm,Next,,input,output,prompt
+# Proper Python dictionary syntax
+MyGraph,Node1,,"{'provider': 'openai', 'temperature': 0.7}",llm,Next,,input,output,prompt
 
 # Or simple text
 MyGraph,Node1,,Simple text description,agent,Next,,input,output,prompt
@@ -293,32 +311,44 @@ MyGraph,Node1,,Simple text description,agent,Next,,input,output,prompt
 ## Common Patterns
 
 ### Linear Flow
-```csv
+
+<CSVTable 
+  csvContent={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
 MyGraph,Start,,Initial node,input,Process,,data,user_input,Enter data:
 MyGraph,Process,,Process the data,transform,End,,user_input,result,
-MyGraph,End,,Final output,echo,,,result,output,
-```
+MyGraph,End,,Final output,echo,,,result,output,`}
+  title="Linear Flow Pattern"
+  filename="linear_flow_pattern"
+/>
 
 ### Conditional Branching
-```csv
+
+<CSVTable 
+  csvContent={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
 MyGraph,Decision,,Make decision,branching,Success,Failure,input,decision,
 MyGraph,Success,,Success path,echo,End,,decision,success_result,
 MyGraph,Failure,,Failure path,echo,End,,decision,failure_result,
-MyGraph,End,,Final output,echo,,,success_result|failure_result,output,
-```
+MyGraph,End,,Final output,echo,,,success_result|failure_result,output,`}
+  title="Conditional Branching Pattern"
+  filename="conditional_branching_pattern"
+/>
 
 ### Parallel Processing
-```csv
+
+<CSVTable 
+  csvContent={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
 MyGraph,Split,,Split work,default,TaskA|TaskB|TaskC,Error,data,tasks,
 MyGraph,TaskA,,Process A,worker_a,Join,Error,tasks,result_a,
 MyGraph,TaskB,,Process B,worker_b,Join,Error,tasks,result_b,
 MyGraph,TaskC,,Process C,worker_c,Join,Error,tasks,result_c,
 MyGraph,Join,,Combine results,summary,End,Error,result_a|result_b|result_c,final_result,
-MyGraph,End,,Output results,echo,,,final_result,output,
-```
+MyGraph,End,,Output results,echo,,,final_result,output,`}
+  title="Parallel Processing Pattern"
+  filename="parallel_processing_pattern"
+/>
 
 ## See Also
 
 - [CLI Commands Reference](cli-commands.md) - Command-line interface documentation
 - [Agent Types Reference](agent-types.md) - Available agent types and their configurations
-- [Quick Start Guide](../getting-started/quick-start.md) - Build your first workflow
+- [Quick Start Guide](../getting-started.md) - Build your first workflow

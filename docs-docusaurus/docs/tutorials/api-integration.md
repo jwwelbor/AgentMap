@@ -4,6 +4,8 @@ title: API Integration
 description: Build a data pipeline that fetches, transforms, and stores data from REST APIs
 ---
 
+import CSVTable from '@site/src/components/CSVTable';
+
 # Build an API Integration Pipeline
 
 ## What We're Building
@@ -156,8 +158,8 @@ pipeline:
 
 Create `api_integration.csv`:
 
-```csv
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+<CSVTable 
+  csvContent={`GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
 APIIntegration,StartPipeline,,Initialize pipeline with configuration,input,LoadConfig,ErrorHandler,,pipeline_start,Starting API Integration Pipeline - press Enter to continue:,Initialize the integration pipeline
 APIIntegration,LoadConfig,,Load API configuration and validate settings,custom:ConfigLoaderAgent,FetchWeatherData,ErrorHandler,pipeline_start,config_data,,Load and validate API configuration
 APIIntegration,FetchWeatherData,,Fetch weather data from OpenWeatherMap API,custom:WeatherAPIAgent,ValidateWeather,HandleAPIError,config_data,weather_data,,Fetch current weather data for configured locations
@@ -177,8 +179,10 @@ APIIntegration,SendNotifications,,Send completion notifications,custom:Notificat
 APIIntegration,HandleAPIError,,Handle API errors and use fallback data,custom:APIErrorHandlerAgent,UseFallbackData,ErrorHandler,error,error_handled,,Handle API errors gracefully
 APIIntegration,UseFallbackData,,Load sample data when APIs fail,custom:FallbackDataAgent,EnrichData,ErrorHandler,error_handled,fallback_data,,Use sample data when API calls fail
 APIIntegration,ErrorHandler,,Handle critical pipeline errors,echo,End,,error,error_message,,Display pipeline error information
-APIIntegration,End,,Pipeline complete,echo,,,notification_results|storage_results|error_message,output,,Display pipeline completion status and results
-```
+APIIntegration,End,,Pipeline complete,echo,,,notification_results|storage_results|error_message,output,,Display pipeline completion status and results`}
+  title="API Integration Pipeline Workflow"
+  filename="api_integration"
+/>
 
 ## Step 3: Generate and Implement Custom Agents
 
