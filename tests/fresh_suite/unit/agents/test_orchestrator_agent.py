@@ -62,9 +62,11 @@ class TestOrchestratorAgent(unittest.TestCase):
             context=context,
             logger=self.mock_logger,
             execution_tracker_service=self.mock_execution_tracking_service,
-            state_adapter_service=self.mock_state_adapter_service,
-            orchestrator_service=self.mock_orchestrator_service
+            state_adapter_service=self.mock_state_adapter_service
         )
+        
+        # Configure the orchestrator service using the proper method
+        agent.configure_orchestrator_service(self.mock_orchestrator_service)
         
         # Set the execution tracker instance on the agent
         agent.set_execution_tracker(self.mock_tracker)
@@ -123,9 +125,11 @@ class TestOrchestratorAgent(unittest.TestCase):
         """Test orchestrator with minimal configuration."""
         minimal_agent = OrchestratorAgent(
             name="minimal_orchestrator",
-            prompt="Simple orchestration",
-            orchestrator_service=self.mock_orchestrator_service
+            prompt="Simple orchestration"
         )
+        
+        # Configure the orchestrator service
+        minimal_agent.configure_orchestrator_service(self.mock_orchestrator_service)
         
         # Verify defaults
         self.assertEqual(minimal_agent.name, "minimal_orchestrator")

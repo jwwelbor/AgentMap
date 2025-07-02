@@ -39,6 +39,9 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         # Create a simple graph with orchestrator
         graph = Graph(name="test_graph")
         
+        # Import NodeRegistryUser to create a proper mock
+        from agentmap.services.node_registry_service import NodeRegistryUser
+        
         # Create mock agent instances
         mock_agents = {}
         for name in ["Start", "Orchestrator", "NodeA", "NodeB", "NodeC", "Error"]:
@@ -47,9 +50,9 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
             agent.__class__.__name__ = f"MockAgent_{name}"
             mock_agents[name] = agent
         
-        # Make the Orchestrator a NodeRegistryUser
-        mock_agents["Orchestrator"].__class__.__bases__ = (Mock(),)
-        mock_agents["Orchestrator"].__class__.__bases__[0].__name__ = "NodeRegistryUser"
+        # Make the orchestrator implement NodeRegistryUser by adding the node_registry attribute
+        mock_agents["Orchestrator"].node_registry = None
+        mock_agents["Orchestrator"].__class__.__name__ = "OrchestratorAgent"
         
         # Add nodes to graph
         nodes = {
@@ -71,35 +74,45 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         graph.nodes = nodes
         graph.entry_point = "Start"
         
-        # Mock NodeRegistryUser check
-        from agentmap.services.node_registry_service import NodeRegistryUser
+        # Mock the builder to avoid actual compilation
+        mock_builder = Mock()
+        self.assembly_service.builder = mock_builder
         
-        def is_node_registry_user(obj, cls):
-            return obj == mock_agents["Orchestrator"] and cls == NodeRegistryUser
+        # Mock compile to return a valid result
+        mock_builder.compile.return_value = Mock()
         
-        with unittest.mock.patch('isinstance', side_effect=lambda obj, cls: 
-            is_node_registry_user(obj, cls) if cls.__name__ == 'NodeRegistryUser' 
-            else isinstance(obj, cls)):
+        # Assemble the graph with a test registry
+        test_registry = {"NodeA": {}, "NodeB": {}, "NodeC": {}}
+        
+        # Patch isinstance to recognize our orchestrator as NodeRegistryUser
+        with unittest.mock.patch('agentmap.services.graph_assembly_service.isinstance') as mock_isinstance:
+            # Configure isinstance to return True for NodeRegistryUser check
+            def side_effect(obj, cls):
+                if obj == mock_agents["Orchestrator"] and cls == NodeRegistryUser:
+                    return True
+                return isinstance(obj, cls)
+            
+            mock_isinstance.side_effect = side_effect
             
             # Assemble the graph
-            compiled_graph = self.assembly_service.assemble_graph(graph)
+            compiled_graph = self.assembly_service.assemble_graph(graph, test_registry)
             
             # Verify orchestrator was identified
             self.assertIn("Orchestrator", self.assembly_service.orchestrator_nodes)
             
-            # Verify the builder has conditional edges for the orchestrator
-            # Note: We can't directly inspect the compiled graph, but we can verify
-            # the assembly service tracked it correctly
+            # Verify registry was injected
+            self.assertEqual(mock_agents["Orchestrator"].node_registry, test_registry)
+            
+            # Verify the injection stats
             self.assertEqual(self.assembly_service.injection_stats["orchestrators_found"], 1)
+            self.assertEqual(self.assembly_service.injection_stats["orchestrators_injected"], 1)
     
     def test_dynamic_router_returns_valid_destination(self):
         """Test that the dynamic router validates destinations."""
         # Create a mock state with __next_node set
-        mock_state = {"__next_node": "NodeB"}
-        self.mock_state_adapter.get_value.side_effect = lambda state, key, default=None: {
-            "__next_node": "NodeB",
-            "last_action_success": True
-        }.get(key, default)
+        mock_state = {"__next_node": "NodeB", "last_action_success": True}
+        self.mock_state_adapter.get_value.side_effect = lambda state, key, default=None: state.get(key, default)
+        self.mock_state_adapter.set_value.side_effect = lambda state, key, value: {**state, key: value}
         
         # Create nodes
         nodes = ["Start", "Orchestrator", "NodeA", "NodeB", "NodeC"]
@@ -108,7 +121,7 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         
         # Add the dynamic router
         self.assembly_service.orchestrator_nodes = ["Orchestrator"]
-        self.assembly_service._add_dynamic_router("Orchestrator", "Error")
+        self.assembly_service._add_dynamic_router("Orchestrator")
         
         # The dynamic router should have been added with conditional edges
         # We can't test the actual routing without running the graph,

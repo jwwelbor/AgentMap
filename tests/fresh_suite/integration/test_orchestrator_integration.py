@@ -55,7 +55,7 @@ execution:
         
         # Bootstrap the application
         bootstrap = self.container.application_bootstrap_service()
-        bootstrap.bootstrap()
+        bootstrap.bootstrap_application()
         
         # Get services we'll use
         self.graph_runner = self.container.graph_runner_service()

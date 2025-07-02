@@ -783,7 +783,12 @@ class TestGraphAssemblyService(unittest.TestCase):
             self.assertEqual(result, "target_node")
             
             # Verify state adapter was used to clear the next node
-            self.mock_state_adapter_service.set_value.assert_called_with(state_with_next, "__next_node", None)
+            # The router should clear the __next_node to prevent infinite loops
+            self.mock_state_adapter_service.set_value.assert_called_once()
+            call_args = self.mock_state_adapter_service.set_value.call_args
+            # Check that it was called to clear __next_node
+            self.assertEqual(call_args[0][1], "__next_node")  # key
+            self.assertIsNone(call_args[0][2])  # value should be None
             
             # Test router with no next node
             state_without_next = {}

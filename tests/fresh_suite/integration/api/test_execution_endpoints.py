@@ -31,15 +31,16 @@ class TestExecutionEndpoints(BaseAPIIntegrationTest):
         super().setUp()
         
         # Create a minimal valid CSV for testing execution
+        # Use simple names without underscores to avoid path validation issues
         self.execution_csv_content = '''GraphName,Node,Agent_Type,Prompt,Description,Input_Fields,Output_Field,Success_Next,Failure_Next
-test_execution,start,default,Start execution test,Test start node,input_data,output_data,end,
-test_execution,end,default,End execution test,Test end node,output_data,final_result,,
+testgraph,start,default,Start execution test,Test start node,input_data,output_data,end,
+testgraph,end,default,End execution test,Test end node,output_data,final_result,,
 '''
         # Note: The base class already configures the CSV repository correctly
         # The file will be created in {temp_dir}/csv_data/ which is where the system expects it
         self.execution_csv_path = self.create_test_csv_file(
             self.execution_csv_content,
-            "execution_test.csv"
+            "testworkflow.csv"
         )
         
         # Verify file was created correctly
@@ -112,10 +113,10 @@ test_execution,end,default,End execution test,Test end node,output_data,final_re
             class MockResult:
                 def __init__(self):
                     # ExecutionResult interface
-                    self.graph_name = 'test_execution'
+                    self.graph_name = 'testgraph'
                     self.final_state = {'final_result': 'test_output'}
                     self.execution_summary = ExecutionSummary(
-                        graph_name='test_execution',
+                        graph_name='testgraph',
                         final_output={'final_result': 'test_output'},
                         graph_success=True,
                         status='completed'
@@ -135,7 +136,7 @@ test_execution,end,default,End execution test,Test end node,output_data,final_re
             mock_run.return_value = mock_result
             
             response = self.client.post(
-                "/execution/execution_test/test_execution",
+                "/execution/testworkflow/testgraph",
                 json=request_data
             )
         
@@ -175,10 +176,10 @@ test_execution,end,default,End execution test,Test end node,output_data,final_re
             class MockFailureResult:
                 def __init__(self):
                     # ExecutionResult interface
-                    self.graph_name = 'test_execution'
+                    self.graph_name = 'testgraph'
                     self.final_state = {}
                     self.execution_summary = ExecutionSummary(
-                        graph_name='test_execution',
+                        graph_name='testgraph',
                         final_output=None,
                         graph_success=False,
                         status='failed'
@@ -198,7 +199,7 @@ test_execution,end,default,End execution test,Test end node,output_data,final_re
             mock_run.return_value = mock_result
             
             response = self.client.post(
-                "/execution/execution_test/test_execution",
+                "/execution/testworkflow/testgraph",
                 json=request_data
             )
         
@@ -259,7 +260,7 @@ test_execution,end,default,End execution test,Test end node,output_data,final_re
     def test_run_graph_legacy_success(self):
         """Test successful execution via legacy run endpoint."""
         request_data = {
-            "graph": "test_execution",
+            "graph": "testgraph",
             "csv": str(self.execution_csv_path),  # Use direct CSV path
             "state": {"input_data": "legacy_test_value"},
             "autocompile": True,
@@ -292,10 +293,10 @@ test_execution,end,default,End execution test,Test end node,output_data,final_re
                     self.final_state = {'final_result': 'legacy_output'}
                     self.metadata = {'execution_mode': 'legacy'}
                     # Additional attributes that might be expected
-                    self.graph_name = 'test_execution'
+                    self.graph_name = 'testgraph'
                     self.compiled_from = 'memory'
                     self.execution_summary = ExecutionSummary(
-                        graph_name='test_execution',
+                        graph_name='testgraph',
                         final_output={'final_result': 'legacy_output'},
                         graph_success=True,
                         status='completed'
@@ -316,8 +317,8 @@ test_execution,end,default,End execution test,Test end node,output_data,final_re
     def test_run_graph_legacy_with_workflow_lookup(self):
         """Test legacy endpoint with workflow repository lookup."""
         request_data = {
-            "workflow": "execution_test",  # Should lookup execution_test.csv in the configured repo
-            "graph": "test_execution",
+            "workflow": "testworkflow",  # Should lookup testworkflow.csv in the configured repo
+            "graph": "testgraph",
             "state": {"input_data": "workflow_lookup_test"}
         }
         
@@ -347,10 +348,10 @@ test_execution,end,default,End execution test,Test end node,output_data,final_re
                     self.final_state = {'final_result': 'workflow_lookup_output'}
                     self.metadata = {}
                     # Additional attributes that might be expected
-                    self.graph_name = 'test_execution'
+                    self.graph_name = 'testgraph'
                     self.compiled_from = 'memory'
                     self.execution_summary = ExecutionSummary(
-                        graph_name='test_execution',
+                        graph_name='testgraph',
                         final_output={'final_result': 'workflow_lookup_output'},
                         graph_success=True,
                         status='completed'
@@ -400,10 +401,10 @@ test_execution,end,default,End execution test,Test end node,output_data,final_re
                     self.final_state = {'final_result': 'minimal_output'}
                     self.metadata = {}
                     # Additional attributes that might be expected
-                    self.graph_name = 'test_execution'
+                    self.graph_name = 'testgraph'
                     self.compiled_from = 'memory'
                     self.execution_summary = ExecutionSummary(
-                        graph_name='test_execution',
+                        graph_name='testgraph',
                         final_output={'final_result': 'minimal_output'},
                         graph_success=True,
                         status='completed'
@@ -614,7 +615,7 @@ test_execution,end,default,End execution test,Test end node,output_data,final_re
             mock_run.side_effect = TimeoutError("Execution timeout")
             
             response = self.client.post(
-                "/execution/execution_test/test_execution",
+                "/execution/testworkflow/testgraph",
                 json=request_data
             )
         
@@ -641,7 +642,7 @@ test_execution,end,default,End execution test,Test end node,output_data,final_re
         
         # Test invalid graph name
         response = self.client.post(
-            "/execution/execution_test/invalid..graph..name",
+            "/execution/testworkflow/invalid..graph..name",
             json=request_data
         )
         
