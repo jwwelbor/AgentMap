@@ -681,9 +681,9 @@ class MockServiceFactory:
             """Mock LLM dependency check - default to available."""
             return (True, [])  # (has_dependencies, missing_dependencies)
         
-        def check_storage_dependencies() -> tuple:
+        def check_storage_dependencies(provider: Optional[str] = None) -> tuple:
             """Mock storage dependency check - default to available."""
-            return (True, [])
+            return (True, [])  # (has_dependencies, missing_dependencies)
         
         def get_installation_guide(service_type: str, category: str) -> str:
             """Mock installation guide."""

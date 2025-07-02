@@ -13,7 +13,10 @@ from agentmap.agents.base_agent import BaseAgent
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.models.human_interaction import HumanInteractionRequest, InteractionType
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
-from agentmap.services.protocols import CheckpointCapableAgent, GraphCheckpointServiceProtocol
+from agentmap.services.protocols import (
+    CheckpointCapableAgent,
+    GraphCheckpointServiceProtocol,
+)
 from agentmap.services.state_adapter_service import StateAdapterService
 
 
@@ -76,7 +79,9 @@ class HumanAgent(BaseAgent, CheckpointCapableAgent):
         # Services configured post-construction
         self._checkpoint_service: Optional[GraphCheckpointServiceProtocol] = None
 
-    def configure_checkpoint_service(self, checkpoint_service: GraphCheckpointServiceProtocol) -> None:
+    def configure_checkpoint_service(
+        self, checkpoint_service: GraphCheckpointServiceProtocol
+    ) -> None:
         """
         Configure graph checkpoint service for state persistence.
 
@@ -96,9 +101,7 @@ class HumanAgent(BaseAgent, CheckpointCapableAgent):
         Returns:
             Never returns - always raises ExecutionInterruptedException
         """
-        self.log_info(
-            f"[HumanAgent] {self.name} initiating human interaction"
-        )
+        self.log_info(f"[HumanAgent] {self.name} initiating human interaction")
 
         # Get thread ID from execution tracker or create new one
         thread_id = self._get_thread_id()
@@ -212,8 +215,6 @@ class HumanAgent(BaseAgent, CheckpointCapableAgent):
             # If formatting fails, return original prompt
             self.log_debug("Prompt formatting failed, using original prompt")
             return self.prompt
-
-
 
     def _get_child_service_info(self) -> Optional[Dict[str, Any]]:
         """

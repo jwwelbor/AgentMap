@@ -5,9 +5,9 @@ This module provides run-specific commands that maintain compatibility
 with existing interfaces while using GraphRunnerService.
 """
 
+import json
 from pathlib import Path
 from typing import Optional
-import json
 
 import typer
 
@@ -33,6 +33,12 @@ def run_command(
     config_file: Optional[str] = typer.Option(
         None, "--config", "-c", help="Path to custom config file"
     ),
+    pretty: bool = typer.Option(
+        False, "--pretty", "-p", help="Format output for better readability"
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show detailed execution info with --pretty"
+    ),
 ):
     """Run a graph with optional CSV, initial state, and autocompile support."""
     try:
@@ -43,6 +49,9 @@ def run_command(
         container = initialize_application(config_file)
         adapter = create_service_adapter(container)
         validation_service = container.validation_service
+        
+        # Get execution formatter service
+        formatter_service = container.execution_formatter_service()
 
         # Get services
         graph_runner_service, app_config_service, logging_service = (
@@ -80,7 +89,15 @@ def run_command(
             typer.secho(
                 "✅ Graph execution completed successfully", fg=typer.colors.GREEN
             )
-            print("✅ Output:", output["final_state"])
+
+            # Use pretty formatting if requested
+            if pretty:
+                formatted_output = formatter_service.format_execution_result(
+                    output["final_state"], verbose=verbose
+                )
+                print(formatted_output)
+            else:
+                print("✅ Output:", output["final_state"])
         else:
             typer.secho(
                 f"❌ Graph execution failed: {result.error}", fg=typer.colors.RED
@@ -330,7 +347,9 @@ def export_command(
 
 def resume_command(
     thread_id: str = typer.Argument(..., help="Thread ID to resume"),
-    response: str = typer.Argument(..., help="Response action (e.g., approve, reject, choose, respond, edit)"),
+    response: str = typer.Argument(
+        ..., help="Response action (e.g., approve, reject, choose, respond, edit)"
+    ),
     data: Optional[str] = typer.Option(
         None, "--data", "-d", help="Additional data as JSON string"
     ),
@@ -346,15 +365,15 @@ def resume_command(
         # Initialize DI container and get storage service
         container = initialize_di(config_file)
         storage_manager = container.storage_service_manager()
-        
+
         # Check if storage is available
         if not storage_manager:
             typer.secho(
                 "❌ Storage services are not available. Please check your configuration.",
-                fg=typer.colors.RED
+                fg=typer.colors.RED,
             )
             raise typer.Exit(code=1)
-        
+
         # Get the default storage service (or json for structured data)
         storage_service = storage_manager.get_service("json")
         logging_service = container.logging_service()
@@ -366,23 +385,17 @@ def resume_command(
             try:
                 response_data = json.loads(data)
             except json.JSONDecodeError as e:
-                typer.secho(
-                    f"❌ Invalid JSON in --data: {e}", fg=typer.colors.RED
-                )
+                typer.secho(f"❌ Invalid JSON in --data: {e}", fg=typer.colors.RED)
                 raise typer.Exit(code=1)
         elif data_file:
             try:
                 with open(data_file, "r") as f:
                     response_data = json.load(f)
             except FileNotFoundError:
-                typer.secho(
-                    f"❌ Data file not found: {data_file}", fg=typer.colors.RED
-                )
+                typer.secho(f"❌ Data file not found: {data_file}", fg=typer.colors.RED)
                 raise typer.Exit(code=1)
             except json.JSONDecodeError as e:
-                typer.secho(
-                    f"❌ Invalid JSON in file: {e}", fg=typer.colors.RED
-                )
+                typer.secho(f"❌ Invalid JSON in file: {e}", fg=typer.colors.RED)
                 raise typer.Exit(code=1)
 
         # Create CLI interaction handler instance
@@ -395,15 +408,13 @@ def resume_command(
 
         # Call handler.resume_execution()
         result = handler.resume_execution(
-            thread_id=thread_id,
-            response_action=response,
-            response_data=response_data
+            thread_id=thread_id, response_action=response, response_data=response_data
         )
 
         # Display success message
         typer.secho(
             f"✅ Successfully resumed thread '{thread_id}' with action '{response}'",
-            fg=typer.colors.GREEN
+            fg=typer.colors.GREEN,
         )
 
     except ValueError as e:

@@ -123,7 +123,7 @@ class TestApplicationBootstrapService(unittest.TestCase):
         """Test successful core agent registration."""
         # Mock agent class imports
         mock_agent_classes = []
-        for i in range(7):  # 7 core agents
+        for i in range(8):  # 8 core agents (including HumanAgent)
             mock_class = Mock()
             mock_class.__name__ = f"MockAgent{i}"
             mock_agent_classes.append(mock_class)
@@ -141,13 +141,14 @@ class TestApplicationBootstrapService(unittest.TestCase):
             call("failure", mock_agent_classes[3]),
             call("success", mock_agent_classes[4]),
             call("input", mock_agent_classes[5]),
-            call("graph", mock_agent_classes[6])
+            call("graph", mock_agent_classes[6]),
+            call("human", mock_agent_classes[7])
         ]
         self.mock_agent_registry_service.register_agent.assert_has_calls(expected_calls)
         
         # Verify success logging
         logger_calls = self.service.logger.calls
-        self.assertTrue(any("Registered 7/7 core agents" in call[1] 
+        self.assertTrue(any("Registered 8/8 core agents" in call[1] 
                           for call in logger_calls if call[0] == "info"))
     
     @patch('agentmap.services.application_bootstrap_service.ApplicationBootstrapService._import_agent_class')
@@ -172,7 +173,7 @@ class TestApplicationBootstrapService(unittest.TestCase):
         
         # Verify partial success logging
         logger_calls = self.service.logger.calls
-        self.assertTrue(any("Registered 2/7 core agents" in call[1] 
+        self.assertTrue(any("Registered 2/8 core agents" in call[1] 
                           for call in logger_calls if call[0] == "info"))
     
     def test_discover_and_register_llm_agents_success(self):
@@ -517,7 +518,7 @@ class TestApplicationBootstrapService(unittest.TestCase):
         mock_summary = {
             "total_agents_registered": 10,
             "agent_breakdown": {
-                "core_agents": 7,
+                "core_agents": 8,
                 "custom_agents": 1,  # ← Add the missing custom_agents field
                 "llm_agents": 2,
                 "storage_agents": 1,
@@ -551,7 +552,7 @@ class TestApplicationBootstrapService(unittest.TestCase):
                               for call in logger_calls if call[0] == "info"))
             self.assertTrue(any("Total agents registered: 10" in call[1] 
                               for call in logger_calls if call[0] == "info"))
-            self.assertTrue(any("Core agents: 7" in call[1] 
+            self.assertTrue(any("Core agents: 8" in call[1] 
                               for call in logger_calls if call[0] == "info"))
             self.assertTrue(any("Custom agents: 1" in call[1] 
                               for call in logger_calls if call[0] == "info"))

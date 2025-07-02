@@ -49,21 +49,9 @@ class CLIInteractionHandler:
         """
         # Display header
         typer.echo("")
-        typer.secho(
-            "=" * 60,
-            fg=typer.colors.CYAN,
-            bold=True
-        )
-        typer.secho(
-            "🤝 Human Interaction Required",
-            fg=typer.colors.YELLOW,
-            bold=True
-        )
-        typer.secho(
-            "=" * 60,
-            fg=typer.colors.CYAN,
-            bold=True
-        )
+        typer.secho("=" * 60, fg=typer.colors.CYAN, bold=True)
+        typer.secho("🤝 Human Interaction Required", fg=typer.colors.YELLOW, bold=True)
+        typer.secho("=" * 60, fg=typer.colors.CYAN, bold=True)
         typer.echo("")
 
         # Display request details
@@ -99,14 +87,10 @@ class CLIInteractionHandler:
 
         # Display resume command example
         typer.secho("To resume execution:", fg=typer.colors.BLUE, bold=True)
-        
+
         if request.interaction_type == InteractionType.APPROVAL:
-            typer.echo(
-                f"  agentmap resume {request.thread_id} --action approve"
-            )
-            typer.echo(
-                f"  agentmap resume {request.thread_id} --action reject"
-            )
+            typer.echo(f"  agentmap resume {request.thread_id} --action approve")
+            typer.echo(f"  agentmap resume {request.thread_id} --action reject")
         elif request.interaction_type == InteractionType.CHOICE:
             typer.echo(
                 f'  agentmap resume {request.thread_id} --action choose --data \'{"choice": 1}\''
@@ -125,18 +109,11 @@ class CLIInteractionHandler:
             )
 
         typer.echo("")
-        typer.secho(
-            "=" * 60,
-            fg=typer.colors.CYAN,
-            bold=True
-        )
+        typer.secho("=" * 60, fg=typer.colors.CYAN, bold=True)
         typer.echo("")
 
     def resume_execution(
-        self,
-        thread_id: str,
-        response_action: str,
-        response_data: Optional[Any] = None
+        self, thread_id: str, response_action: str, response_data: Optional[Any] = None
     ) -> HumanInteractionResponse:
         """
         Resume workflow execution with a human response.
@@ -159,24 +136,24 @@ class CLIInteractionHandler:
         try:
             # Load thread data from storage
             thread_data = self.storage_service.read(
-                collection="threads",
-                document_id=thread_id
+                collection="threads", document_id=thread_id
             )
-            
+
             if not thread_data:
                 raise ValueError(f"Thread '{thread_id}' not found in storage")
 
             # Find the pending interaction request
             request_id = thread_data.get("pending_interaction_id")
             if not request_id:
-                raise ValueError(f"No pending interaction found for thread '{thread_id}'")
+                raise ValueError(
+                    f"No pending interaction found for thread '{thread_id}'"
+                )
 
             # Load the interaction request
             request_data = self.storage_service.read(
-                collection=self.collection_name,
-                document_id=str(request_id)
+                collection=self.collection_name, document_id=str(request_id)
             )
-            
+
             if not request_data:
                 raise ValueError(f"Interaction request '{request_id}' not found")
 
@@ -184,7 +161,7 @@ class CLIInteractionHandler:
             response = HumanInteractionResponse(
                 request_id=UUID(request_id),
                 action=response_action,
-                data=response_data or {}
+                data=response_data or {},
             )
 
             # Save the response to storage
@@ -194,10 +171,10 @@ class CLIInteractionHandler:
                     "request_id": str(response.request_id),
                     "action": response.action,
                     "data": response.data,
-                    "timestamp": response.timestamp.isoformat()
+                    "timestamp": response.timestamp.isoformat(),
                 },
                 document_id=str(response.request_id),
-                mode=WriteMode.WRITE
+                mode=WriteMode.WRITE,
             )
 
             if not save_result.success:
@@ -209,19 +186,21 @@ class CLIInteractionHandler:
                 data={
                     "status": "resuming",
                     "pending_interaction_id": None,
-                    "last_response_id": str(response.request_id)
+                    "last_response_id": str(response.request_id),
                 },
                 document_id=thread_id,
-                mode=WriteMode.UPDATE
+                mode=WriteMode.UPDATE,
             )
 
             if not update_result.success:
-                raise RuntimeError(f"Failed to update thread status: {update_result.error}")
+                raise RuntimeError(
+                    f"Failed to update thread status: {update_result.error}"
+                )
 
             # Display success message
             typer.secho(
                 f"✅ Response saved. Thread '{thread_id}' marked for resumption.",
-                fg=typer.colors.GREEN
+                fg=typer.colors.GREEN,
             )
 
             # Call _resume_graph_execution (placeholder for now)
@@ -230,16 +209,11 @@ class CLIInteractionHandler:
             return response
 
         except Exception as e:
-            typer.secho(
-                f"❌ Failed to resume execution: {str(e)}",
-                fg=typer.colors.RED
-            )
+            typer.secho(f"❌ Failed to resume execution: {str(e)}", fg=typer.colors.RED)
             raise
 
     def _resume_graph_execution(
-        self,
-        thread_id: str,
-        response: HumanInteractionResponse
+        self, thread_id: str, response: HumanInteractionResponse
     ) -> None:
         """
         Resume graph execution after human interaction.

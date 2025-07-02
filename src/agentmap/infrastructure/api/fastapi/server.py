@@ -3,6 +3,9 @@ FastAPI server using services through dependency injection.
 
 This module provides FastAPI endpoints that maintain compatibility with
 existing API interfaces while using the new service architecture.
+
+Refactored to follow clean architecture patterns with proper separation
+of infrastructure concerns.
 """
 
 import sys
@@ -16,13 +19,8 @@ from pydantic import BaseModel
 
 from agentmap.core.adapters import create_service_adapter
 from agentmap.di import ApplicationContainer, initialize_di
-
-# Import all router modules
-from agentmap.core.api.execution_routes import router as execution_router
-from agentmap.core.api.graph_routes import router as graph_router
-from agentmap.core.api.info_routes import router as info_router
-from agentmap.core.api.validation_routes import router as validation_router
-from agentmap.core.api.workflow_routes import router as workflow_router
+from agentmap.infrastructure.api.fastapi.dependencies import FastAPIDependencyAdapter
+from agentmap.infrastructure.api.fastapi.middleware.auth import FastAPIAuthAdapter
 
 
 # Legacy Response Models (for backward compatibility)
@@ -35,24 +33,21 @@ class AgentsInfoResponse(BaseModel):
     install_instructions: Dict[str, str]
 
 
-# Dependency injection for FastAPI
-def get_container() -> ApplicationContainer:
-    """Get DI container for FastAPI dependency injection."""
-    return initialize_di()
-
-
-def get_service_adapter(container: ApplicationContainer = Depends(get_container)):
-    """Get service adapter for FastAPI dependency injection."""
-    return create_service_adapter(container)
-
-
 class FastAPIServer:
-    """FastAPI server using services through DI."""
+    """FastAPI server using services through DI with clean architecture."""
 
     def __init__(self, container: Optional[ApplicationContainer] = None):
-        """Initialize FastAPI server."""
+        """Initialize FastAPI server with proper adapters."""
         self.container = container or initialize_di()
         self.adapter = create_service_adapter(self.container)
+
+        # Create dependency adapter for FastAPI-specific dependency injection
+        self.dependency_adapter = FastAPIDependencyAdapter(self.container)
+
+        # Create auth adapter for FastAPI-specific authentication
+        auth_service = self.container.auth_service()
+        self.auth_adapter = FastAPIAuthAdapter(auth_service)
+
         self.app = self.create_app()
 
     def create_app(self) -> FastAPI:
@@ -72,15 +67,12 @@ class FastAPIServer:
             },
             openapi_tags=self._get_openapi_tags(),
             servers=[
-                {
-                    "url": "http://localhost:8000",
-                    "description": "Development server"
-                },
+                {"url": "http://localhost:8000", "description": "Development server"},
                 {
                     "url": "https://api.agentmap.dev",
-                    "description": "Production server (if hosted)"
-                }
-            ]
+                    "description": "Production server (if hosted)",
+                },
+            ],
         )
 
         # CORS middleware
@@ -160,41 +152,62 @@ Error responses include detailed validation information and suggestions for reso
                 "description": "Workflow execution and resumption endpoints",
                 "externalDocs": {
                     "description": "Execution Guide",
-                    "url": "https://github.com/Agentic-Insights/AgentMap/docs/execution"
-                }
+                    "url": "https://github.com/Agentic-Insights/AgentMap/docs/execution",
+                },
             },
             {
                 "name": "Workflow Management",
-                "description": "Browse and inspect workflows in the CSV repository"
+                "description": "Browse and inspect workflows in the CSV repository",
             },
             {
                 "name": "Validation",
-                "description": "Validate CSV workflow definitions and configuration files"
+                "description": "Validate CSV workflow definitions and configuration files",
             },
             {
                 "name": "Graph Operations",
-                "description": "Graph compilation, scaffolding, and management"
+                "description": "Graph compilation, scaffolding, and management",
             },
             {
                 "name": "Information & Diagnostics",
-                "description": "System information, health checks, and diagnostics"
+                "description": "System information, health checks, and diagnostics",
             },
             {
                 "name": "Authentication",
-                "description": "Authentication and authorization endpoints"
-            }
+                "description": "Authentication and authorization endpoints",
+            },
         ]
 
     def _add_routes(self, app: FastAPI):
         """Add all routes to the FastAPI app using modular routers."""
-        
+
+        # Store adapters in app state for routes to access
+        app.state.dependency_adapter = self.dependency_adapter
+        app.state.auth_adapter = self.auth_adapter
+
+        # Import routers from infrastructure layer
+        from agentmap.infrastructure.api.fastapi.routes.execution import (
+            router as execution_router,
+        )
+        from agentmap.infrastructure.api.fastapi.routes.graph import (
+            router as graph_router,
+        )
+        from agentmap.infrastructure.api.fastapi.routes.info import (
+            router as info_router,
+        )
+        from agentmap.infrastructure.api.fastapi.routes.validation import (
+            router as validation_router,
+        )
+        from agentmap.infrastructure.api.fastapi.routes.workflow import (
+            router as workflow_router,
+        )
+
         # Include all router modules
         app.include_router(execution_router)
         app.include_router(workflow_router)
         app.include_router(validation_router)
         app.include_router(graph_router)
         app.include_router(info_router)
-        
+
         # Keep legacy endpoints for backward compatibility
         @app.get("/agents/available", response_model=AgentsInfoResponse)
         async def list_available_agents():
@@ -205,7 +218,9 @@ Error responses include detailed validation information and suggestions for reso
 
             return AgentsInfoResponse(
                 core_agents=True,  # Always available
-                llm_agents=self.container.features_registry_service().is_feature_enabled("llm"),
+                llm_agents=self.container.features_registry_service().is_feature_enabled(
+                    "llm"
+                ),
                 storage_agents=is_storage_enabled(),
                 install_instructions={
                     "llm": "pip install agentmap[llm]",
@@ -213,13 +228,13 @@ Error responses include detailed validation information and suggestions for reso
                     "all": "pip install agentmap[all]",
                 },
             )
-        
+
         @app.get(
             "/health",
             summary="Health Check",
             description="Basic health check endpoint for monitoring and load balancing",
             response_description="Health status information",
-            tags=["Information & Diagnostics"]
+            tags=["Information & Diagnostics"],
         )
         async def health_check():
             """
@@ -241,10 +256,10 @@ Error responses include detailed validation information and suggestions for reso
             **Authentication:** None required
             """
             return {
-                "status": "healthy", 
+                "status": "healthy",
                 "service": "agentmap-api",
                 "timestamp": datetime.now().isoformat(),
-                "version": "2.0"
+                "version": "2.0",
             }
 
         @app.get(
@@ -252,7 +267,7 @@ Error responses include detailed validation information and suggestions for reso
             summary="API Information",
             description="Get comprehensive API information including available endpoints, authentication options, and getting started guide",
             response_description="API information and endpoint documentation",
-            tags=["Information & Diagnostics"]
+            tags=["Information & Diagnostics"],
         )
         async def root():
             """
@@ -279,57 +294,57 @@ Error responses include detailed validation information and suggestions for reso
                     "modes": ["public", "api_key", "bearer_token"],
                     "headers": {
                         "api_key": "X-API-Key: your-api-key",
-                        "bearer_token": "Authorization: Bearer your-token"
+                        "bearer_token": "Authorization: Bearer your-token",
                     },
-                    "embedded_mode": "Authentication disabled for embedded sub-applications"
+                    "embedded_mode": "Authentication disabled for embedded sub-applications",
                 },
                 "endpoints": {
                     "/workflows": {
                         "description": "Workflow management and repository operations",
                         "methods": ["GET"],
-                        "auth_required": False
+                        "auth_required": False,
                     },
                     "/execution": {
                         "description": "Workflow execution and resumption",
                         "methods": ["POST"],
                         "auth_required": False,
-                        "rate_limit": "60/minute"
+                        "rate_limit": "60/minute",
                     },
                     "/validation": {
                         "description": "CSV and configuration validation",
                         "methods": ["POST"],
                         "auth_required": False,
-                        "rate_limit": "120/minute"
+                        "rate_limit": "120/minute",
                     },
                     "/graph": {
                         "description": "Graph compilation, scaffolding, and operations",
                         "methods": ["GET", "POST"],
-                        "auth_required": False
+                        "auth_required": False,
                     },
                     "/info": {
                         "description": "System information and diagnostics",
                         "methods": ["GET", "DELETE"],
                         "auth_required": False,
-                        "rate_limit": "300/minute"
-                    }
+                        "rate_limit": "300/minute",
+                    },
                 },
                 "quick_start": {
                     "1_check_health": "GET /health",
                     "2_list_workflows": "GET /workflows",
                     "3_run_workflow": "POST /execution/{workflow}/{graph}",
-                    "4_get_diagnostics": "GET /info/diagnose"
+                    "4_get_diagnostics": "GET /info/diagnose",
                 },
                 "documentation": {
                     "interactive_docs": "/docs",
                     "redoc": "/redoc",
                     "openapi_schema": "/openapi.json",
-                    "github": "https://github.com/Agentic-Insights/AgentMap"
+                    "github": "https://github.com/Agentic-Insights/AgentMap",
                 },
                 "repository_structure": {
                     "description": "Workflows stored as CSV files in configured repository",
                     "example_path": "csv_repository/my_workflow.csv",
-                    "csv_format": "Each CSV contains GraphName, NodeName, AgentType, etc."
-                }
+                    "csv_format": "Each CSV contains GraphName, NodeName, AgentType, etc.",
+                },
             }
 
 
@@ -350,28 +365,28 @@ def create_fastapi_app(container: Optional[ApplicationContainer] = None) -> Fast
 def create_sub_application(
     container: Optional[ApplicationContainer] = None,
     title: str = "AgentMap API",
-    prefix: str = ""
+    prefix: str = "",
 ) -> FastAPI:
     """
     Create FastAPI app configured for mounting as a sub-application.
-    
+
     This function creates a FastAPI app suitable for mounting with app.mount()
     in larger applications. It includes all AgentMap functionality but allows
     customization of the title and path prefix.
-    
+
     Args:
         container: Optional DI container
         title: API title for OpenAPI docs
         prefix: URL prefix for the sub-application
-        
+
     Returns:
         FastAPI app instance configured for sub-application mounting
-        
+
     Example:
         ```python
         # In host application
-        from agentmap.core.api.fastapi_server import create_sub_application
-        
+        from agentmap.infrastructure.api.fastapi.server import create_sub_application
+
         main_app = FastAPI(title="My Application")
         agentmap_app = create_sub_application(title="AgentMap Integration")
         main_app.mount("/agentmap", agentmap_app)
@@ -380,7 +395,12 @@ def create_sub_application(
     # Create container if not provided
     if container is None:
         container = initialize_di()
-    
+
+    # Create adapters
+    dependency_adapter = FastAPIDependencyAdapter(container)
+    auth_service = container.auth_service()
+    auth_adapter = FastAPIAuthAdapter(auth_service)
+
     # Create FastAPI app with custom configuration for sub-application
     app = FastAPI(
         title=title,
@@ -388,9 +408,9 @@ def create_sub_application(
         version="2.0",
         openapi_url=f"{prefix}/openapi.json" if prefix else "/openapi.json",
         docs_url=f"{prefix}/docs" if prefix else "/docs",
-        redoc_url=f"{prefix}/redoc" if prefix else "/redoc"
+        redoc_url=f"{prefix}/redoc" if prefix else "/redoc",
     )
-    
+
     # Note: CORS middleware typically should be configured by the host application
     # to avoid conflicts. If needed for standalone sub-app usage:
     app.add_middleware(
@@ -399,20 +419,36 @@ def create_sub_application(
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
-    # Add all router modules
+
+    # Store adapters in app state
+    app.state.dependency_adapter = dependency_adapter
+    app.state.auth_adapter = auth_adapter
+
+    # Import and add all router modules from infrastructure layer
+    from agentmap.infrastructure.api.fastapi.routes.execution import (
+        router as execution_router,
+    )
+    from agentmap.infrastructure.api.fastapi.routes.graph import router as graph_router
+    from agentmap.infrastructure.api.fastapi.routes.info import router as info_router
+    from agentmap.infrastructure.api.fastapi.routes.validation import (
+        router as validation_router,
+    )
+    from agentmap.infrastructure.api.fastapi.routes.workflow import (
+        router as workflow_router,
+    )
+
     app.include_router(execution_router)
-    app.include_router(workflow_router) 
+    app.include_router(workflow_router)
     app.include_router(validation_router)
     app.include_router(graph_router)
     app.include_router(info_router)
-    
+
     # Add basic health check and info endpoints
     @app.get("/health")
     async def health_check():
         """Health check endpoint for sub-application."""
         return {"status": "healthy", "service": "agentmap-sub-api"}
-    
+
     @app.get("/")
     async def sub_app_root():
         """Root endpoint for sub-application."""
@@ -423,13 +459,13 @@ def create_sub_application(
             "routes": {
                 "/workflows": "Workflow management and repository operations",
                 "/execution": "Workflow execution and resumption",
-                "/validation": "CSV and configuration validation", 
+                "/validation": "CSV and configuration validation",
                 "/graph": "Graph compilation, scaffolding, and operations",
-                "/info": "System information and diagnostics"
+                "/info": "System information and diagnostics",
             },
-            "docs": f"{prefix}/docs" if prefix else "/docs"
+            "docs": f"{prefix}/docs" if prefix else "/docs",
         }
-    
+
     return app
 
 

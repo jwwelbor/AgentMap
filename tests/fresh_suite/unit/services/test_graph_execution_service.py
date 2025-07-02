@@ -1041,6 +1041,79 @@ class TestGraphExecutionService(unittest.TestCase):
         self.assertIn("__execution_summary", result.final_state)
         self.assertIn("__policy_success", result.final_state)
         self.assertEqual(result.final_state["result"], "empty_state_processed")
+    
+    def test_execute_with_execution_interrupted_exception(self):
+        """Test graph execution handles ExecutionInterruptedException correctly."""
+        # Import the exception class
+        from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
+        
+        # Prepare test data
+        graph_def = {
+            "human_agent": Mock(name="human_agent", context={"instance": Mock()})
+        }
+        initial_state = {"user_id": "user123", "requires_input": True}
+        graph_name = "human_interaction_graph"
+        
+        # Configure execution tracking
+        mock_tracker = Mock()
+        self.mock_execution_tracking_service.create_tracker.side_effect = None
+        self.mock_execution_tracking_service.create_tracker.return_value = mock_tracker
+        
+        # Configure graph assembly
+        mock_compiled_graph = Mock()
+        self.mock_graph_assembly_service.assemble_graph.side_effect = None
+        self.mock_graph_assembly_service.assemble_graph.return_value = mock_compiled_graph
+        
+        # Configure graph execution to raise ExecutionInterruptedException
+        thread_id = "thread-456"
+        interaction_request = {"type": "user_input", "prompt": "Please provide input"}
+        checkpoint_data = {
+            "state": initial_state,
+            "node": "human_agent",
+            "timestamp": "2025-06-28T10:00:00"
+        }
+        interruption_exception = ExecutionInterruptedException(
+            thread_id=thread_id,
+            interaction_request=interaction_request,
+            checkpoint_data=checkpoint_data
+        )
+        mock_compiled_graph.invoke.side_effect = interruption_exception
+        
+        # Mock agent instances to have set_execution_tracker method
+        for node_name, node in graph_def.items():
+            if node.context and "instance" in node.context:
+                node.context["instance"].set_execution_tracker = Mock()
+        
+        # Execute test and expect the exception to be re-raised
+        with self.assertRaises(ExecutionInterruptedException) as context:
+            self.service.execute_from_definition(graph_def, initial_state, graph_name)
+        
+        # Verify the correct exception was re-raised
+        raised_exception = context.exception
+        self.assertEqual(raised_exception.thread_id, thread_id)
+        self.assertEqual(raised_exception.interaction_request, interaction_request)
+        self.assertEqual(raised_exception.checkpoint_data, checkpoint_data)
+        
+        # Verify graph execution was attempted
+        mock_compiled_graph.invoke.assert_called_once_with(initial_state)
+        
+        # Verify interruption was logged
+        logger_calls = self.mock_logger.calls
+        info_calls = [call for call in logger_calls if call[0] == "info"]
+        self.assertTrue(any(
+            "Execution interrupted for human interaction in thread: thread-456" in call[1] 
+            for call in info_calls
+        ))
+        
+        # Verify debug logging about checkpoint preservation
+        debug_calls = [call for call in logger_calls if call[0] == "debug"]
+        self.assertTrue(any(
+            "Interruption checkpoint data preserved for thread: thread-456" in call[1] 
+            for call in debug_calls
+        ))
+        
+        # Verify execution tracker was set up
+        self.mock_execution_tracking_service.create_tracker.assert_called_once()
 
 
 if __name__ == '__main__':

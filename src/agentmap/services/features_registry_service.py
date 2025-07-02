@@ -279,23 +279,25 @@ class FeaturesRegistryService:
     def has_fuzzywuzzy(self) -> bool:
         """
         Check if fuzzywuzzy is available for fuzzy string matching.
-        
+
         Returns:
             True if fuzzywuzzy is available, False otherwise
         """
         try:
             import fuzzywuzzy
             from fuzzywuzzy import fuzz
-            
+
             # Test basic functionality
             test_score = fuzz.ratio("test", "test")
             if test_score == 100:  # Basic validation
                 self.logger.debug("[FeaturesRegistryService] fuzzywuzzy is available")
                 return True
             else:
-                self.logger.debug("[FeaturesRegistryService] fuzzywuzzy failed basic test")
+                self.logger.debug(
+                    "[FeaturesRegistryService] fuzzywuzzy failed basic test"
+                )
                 return False
-                
+
         except ImportError:
             self.logger.debug("[FeaturesRegistryService] fuzzywuzzy not available")
             return False
@@ -306,30 +308,36 @@ class FeaturesRegistryService:
     def has_spacy(self) -> bool:
         """
         Check if spaCy is available with English model.
-        
+
         Returns:
             True if spaCy and en_core_web_sm model are available, False otherwise
         """
         try:
             import spacy
-            
+
             # Check if English model is available
             nlp = spacy.load("en_core_web_sm")
-            
+
             # Test basic functionality
             doc = nlp("test sentence")
             if len(doc) > 0:  # Basic validation
-                self.logger.debug("[FeaturesRegistryService] spaCy with en_core_web_sm is available")
+                self.logger.debug(
+                    "[FeaturesRegistryService] spaCy with en_core_web_sm is available"
+                )
                 return True
             else:
                 self.logger.debug("[FeaturesRegistryService] spaCy failed basic test")
                 return False
-                
+
         except ImportError:
-            self.logger.debug("[FeaturesRegistryService] spaCy or en_core_web_sm not available")
+            self.logger.debug(
+                "[FeaturesRegistryService] spaCy or en_core_web_sm not available"
+            )
             return False
         except OSError:
-            self.logger.debug("[FeaturesRegistryService] spaCy en_core_web_sm model not installed")
+            self.logger.debug(
+                "[FeaturesRegistryService] spaCy en_core_web_sm model not installed"
+            )
             return False
         except Exception as e:
             self.logger.debug(f"[FeaturesRegistryService] spaCy error: {e}")
@@ -338,7 +346,7 @@ class FeaturesRegistryService:
     def get_nlp_capabilities(self) -> Dict[str, Any]:
         """
         Get available NLP capabilities summary.
-        
+
         Returns:
             Dictionary with NLP library availability and capabilities
         """
@@ -347,24 +355,24 @@ class FeaturesRegistryService:
             "spacy_available": self.has_spacy(),
             "enhanced_matching": False,
             "fuzzy_threshold_default": 80,
-            "supported_features": []
+            "supported_features": [],
         }
-        
+
         # Add supported features based on available libraries
         if capabilities["fuzzywuzzy_available"]:
             capabilities["supported_features"].append("fuzzy_string_matching")
             capabilities["supported_features"].append("typo_tolerance")
-            
+
         if capabilities["spacy_available"]:
             capabilities["supported_features"].append("advanced_tokenization")
             capabilities["supported_features"].append("keyword_extraction")
             capabilities["supported_features"].append("lemmatization")
-            
+
         # Enhanced matching available if either library is present
         capabilities["enhanced_matching"] = (
             capabilities["fuzzywuzzy_available"] or capabilities["spacy_available"]
         )
-        
+
         self.logger.debug(f"[FeaturesRegistryService] NLP capabilities: {capabilities}")
         return capabilities
 

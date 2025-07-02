@@ -313,13 +313,24 @@ class CheckpointCapableAgent(Protocol):
 
 
 @runtime_checkable
+class OrchestrationCapableAgent(Protocol):
+    """Protocol for agents that can use orchestration services."""
+
+    def configure_orchestrator_service(
+        self, orchestrator_service: Any  # OrchestratorService
+    ) -> None:
+        """Configure orchestrator service for this agent."""
+        ...
+
+
+@runtime_checkable
 class FeaturesRegistryServiceProtocol(Protocol):
     """Protocol for features registry service interface used by services."""
 
     def has_fuzzywuzzy(self) -> bool:
         """
         Check if fuzzywuzzy is available for fuzzy string matching.
-        
+
         Returns:
             True if fuzzywuzzy is available, False otherwise
         """
@@ -328,7 +339,7 @@ class FeaturesRegistryServiceProtocol(Protocol):
     def has_spacy(self) -> bool:
         """
         Check if spaCy is available with English model.
-        
+
         Returns:
             True if spaCy and en_core_web_sm model are available, False otherwise
         """
@@ -337,7 +348,7 @@ class FeaturesRegistryServiceProtocol(Protocol):
     def get_nlp_capabilities(self) -> Dict[str, Any]:
         """
         Get available NLP capabilities summary.
-        
+
         Returns:
             Dictionary with NLP library availability and capabilities
         """

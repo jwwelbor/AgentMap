@@ -152,8 +152,11 @@ class GraphAssemblyService:
             self.logger.debug(
                 f"Adding dynamic routers for {len(self.orchestrator_nodes)} orchestrator nodes"
             )
-            for node_name in self.orchestrator_nodes:
-                self._add_dynamic_router(node_name)
+            for orch_node_name in self.orchestrator_nodes:
+                # Get the node's failure edge if it exists
+                node = graph.nodes.get(orch_node_name)
+                failure_target = node.edges.get("failure") if node else None
+                self._add_dynamic_router(orch_node_name, failure_target)
 
         return self.compile()
 
@@ -204,6 +207,18 @@ class GraphAssemblyService:
             node_name: Source node name
             edges: Dictionary of edge conditions to target nodes
         """
+        # For orchestrator nodes, we handle edges differently
+        # They use dynamic routing for main flow but may have failure edges
+        if node_name in self.orchestrator_nodes:
+            # Only process failure edges for orchestrator nodes
+            if edges and "failure" in edges:
+                failure_target = edges["failure"]
+                self.logger.debug(
+                    f"Adding failure edge for orchestrator '{node_name}' → {failure_target}"
+                )
+                # We'll handle this in the dynamic router
+            return
+
         if not edges:
             return
 
@@ -282,18 +297,50 @@ class GraphAssemblyService:
         self.builder.add_conditional_edges(source, wrapped)
         self.logger.debug(f"[{source}] → routed by function '{func_name}'")
 
-    def _add_dynamic_router(self, node_name: str) -> None:
-        """Add dynamic routing for orchestrator nodes."""
+    def _add_dynamic_router(
+        self, node_name: str, failure_target: Optional[str] = None
+    ) -> None:
+        """Add dynamic routing for orchestrator nodes.
+
+        Args:
+            node_name: Name of the orchestrator node
+            failure_target: Optional failure target node
+        """
+        self.logger.debug(f"[{node_name}] → adding dynamic router for orchestrator")
+        if failure_target:
+            self.logger.debug(f"  Failure target: {failure_target}")
 
         def dynamic_router(state):
+            # First check if there was an error/failure
+            if failure_target:
+                last_success = self.state_adapter.get_value(
+                    state, "last_action_success", True
+                )
+                if not last_success:
+                    self.logger.debug(
+                        f"Orchestrator '{node_name}' routing to failure target: {failure_target}"
+                    )
+                    return failure_target
+
+            # Normal dynamic routing based on __next_node
             next_node = self.state_adapter.get_value(state, "__next_node")
             if next_node:
-                self.state_adapter.set_value(state, "__next_node", None)
+                # Return the next node without validation
+                # The orchestrator may route to nodes passed dynamically at runtime
+                self.logger.debug(f"Orchestrator '{node_name}' routing to: {next_node}")
                 return next_node
+
+            # No next_node set
             return None
 
-        self.builder.add_conditional_edges(node_name, dynamic_router)
-        self.logger.debug(f"[{node_name}] → dynamic router added")
+        # For orchestrators, we need to handle dynamic routing differently
+        # The orchestrator can route to ANY node, including ones passed at runtime
+        # So we use a path_map=None to allow any destination
+        self.builder.add_conditional_edges(
+            node_name, dynamic_router, path_map=None  # Allow any destination
+        )
+
+        self.logger.debug(f"[{node_name}] → dynamic router added with open routing")
 
     def compile(self) -> Any:
         """

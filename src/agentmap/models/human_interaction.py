@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 class InteractionType(Enum):
     """Types of human interactions supported by the system."""
+
     APPROVAL = "approval"
     EDIT = "edit"
     CHOICE = "choice"
@@ -17,6 +18,7 @@ class InteractionType(Enum):
 @dataclass
 class HumanInteractionRequest:
     """Represents a request for human interaction in a workflow."""
+
     id: UUID = field(default_factory=uuid4)
     thread_id: str = ""
     node_name: str = ""
@@ -31,6 +33,7 @@ class HumanInteractionRequest:
 @dataclass
 class HumanInteractionResponse:
     """Represents a human's response to an interaction request."""
+
     request_id: UUID
     action: str = ""
     data: Dict[str, Any] = field(default_factory=dict)

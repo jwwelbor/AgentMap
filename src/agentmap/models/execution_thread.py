@@ -7,6 +7,7 @@ from uuid import UUID
 @dataclass
 class ExecutionThread:
     """Represents a workflow execution thread that can be paused and resumed."""
+
     id: str = ""
     graph_name: str = ""
     status: str = ""

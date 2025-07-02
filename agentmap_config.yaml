@@ -8,6 +8,7 @@ paths:
   custom_agents: "agentmap/custom_agents"
   functions: "agentmap/custom_functions"
   compiled_graphs: "agentmap/compiled_graphs"
+  csv_repository: "workflows"  # Directory for storing workflow CSV files
 
 # Memory configuration
 memory:

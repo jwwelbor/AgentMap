@@ -159,21 +159,21 @@ class GraphCheckpointService:
                 checkpoints = [checkpoints]
 
             # Sort by timestamp (newest first)
-            checkpoints.sort(
-                key=lambda x: x.get("timestamp", ""), reverse=True
-            )
+            checkpoints.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
 
             # Return summary info
             summaries = []
             for cp in checkpoints:
-                summaries.append({
-                    "thread_id": cp.get("thread_id"),
-                    "node_name": cp.get("node_name"),
-                    "checkpoint_type": cp.get("checkpoint_type"),
-                    "timestamp": cp.get("timestamp"),
-                    "has_metadata": bool(cp.get("metadata")),
-                    "has_execution_state": bool(cp.get("execution_state")),
-                })
+                summaries.append(
+                    {
+                        "thread_id": cp.get("thread_id"),
+                        "node_name": cp.get("node_name"),
+                        "checkpoint_type": cp.get("checkpoint_type"),
+                        "timestamp": cp.get("timestamp"),
+                        "has_metadata": bool(cp.get("metadata")),
+                        "has_execution_state": bool(cp.get("execution_state")),
+                    }
+                )
 
             return summaries
 
@@ -274,7 +274,9 @@ class GraphCheckpointService:
             )
 
             if result.success:
-                self.logger.info(f"Checkpoint metadata updated for thread_id={thread_id}")
+                self.logger.info(
+                    f"Checkpoint metadata updated for thread_id={thread_id}"
+                )
 
             return result
 

@@ -8,11 +8,14 @@ and configuration using the new service architecture.
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from agentmap.core.adapters import create_service_adapter
 from agentmap.di import ApplicationContainer
+from agentmap.infrastructure.api.fastapi.middleware.auth import require_admin_permission
+from agentmap.services.auth_service import AuthContext
 
 
 # Response models
@@ -42,16 +45,18 @@ class CacheOperationResponse(BaseModel):
     file_path: Optional[str] = None
 
 
-def get_container() -> ApplicationContainer:
-    """Get DI container for dependency injection."""
-    from agentmap.di import initialize_di
-
-    return initialize_di()
+# Import shared dependencies from the dependencies module
+from agentmap.infrastructure.api.fastapi.dependencies import get_container
 
 
 def get_adapter(container: ApplicationContainer = Depends(get_container)):
     """Get service adapter for dependency injection."""
     return create_service_adapter(container)
+
+
+def get_auth_service(container: ApplicationContainer = Depends(get_container)):
+    """Get AuthService through DI container."""
+    return container.auth_service()
 
 
 def get_features_service(container: ApplicationContainer = Depends(get_container)):
@@ -66,25 +71,119 @@ def get_dependency_checker_service(
     return container.dependency_checker_service()
 
 
+# Create security scheme for bearer tokens
+security = HTTPBearer(auto_error=False)
+
+
+def get_admin_auth_dependency():
+    """Create admin auth dependency function for info routes."""
+
+    def admin_auth_dependency(
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+        container: ApplicationContainer = Depends(get_container),
+    ) -> AuthContext:
+        try:
+            auth_service = container.auth_service()
+        except Exception as e:
+            # Handle auth service creation errors gracefully
+            raise HTTPException(
+                status_code=503,
+                detail=f"Authentication service unavailable: {str(e)}",
+            )
+
+        # Check if authentication is disabled
+        if not auth_service.is_authentication_enabled():
+            return AuthContext(
+                authenticated=True,
+                auth_method="disabled",
+                user_id="system",
+                permissions=["admin"],
+            )
+
+        # Check if endpoint is public
+        public_endpoints = auth_service.get_public_endpoints()
+        path = request.url.path
+        for pattern in public_endpoints:
+            if pattern.endswith("*") and path.startswith(pattern[:-1]):
+                return AuthContext(
+                    authenticated=True,
+                    auth_method="public",
+                    user_id="public",
+                    permissions=["read"],
+                )
+            elif pattern == path:
+                return AuthContext(
+                    authenticated=True,
+                    auth_method="public",
+                    user_id="public",
+                    permissions=["read"],
+                )
+
+        # Extract credentials
+        token = None
+        if credentials and credentials.credentials:
+            token = credentials.credentials
+        elif request.headers.get("x-api-key"):
+            token = request.headers.get("x-api-key")
+        elif request.query_params.get("api_key"):
+            token = request.query_params.get("api_key")
+
+        if not token:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Validate token (try API key first, then JWT)
+        auth_context = auth_service.validate_api_key(token)
+        if not auth_context.authenticated:
+            auth_context = auth_service.validate_jwt(token)
+        if not auth_context.authenticated:
+            auth_context = auth_service.validate_supabase_token(token)
+
+        if not auth_context.authenticated:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authentication credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Check admin permission
+        if "admin" not in auth_context.permissions:
+            raise HTTPException(
+                status_code=403,
+                detail="Insufficient permissions. Admin access required.",
+            )
+
+        return auth_context
+
+    return admin_auth_dependency
+
+
 # Create router
 router = APIRouter(prefix="/info", tags=["Information & Diagnostics"])
 
 
 @router.get("/config")
-async def get_configuration(adapter=Depends(get_adapter)):
-    """Get current configuration values."""
+async def get_configuration(
+    auth_context: AuthContext = Depends(get_admin_auth_dependency()),
+    container: ApplicationContainer = Depends(get_container),
+):
+    """Get current AgentMap configuration (Admin only)."""
     try:
-        _, app_config_service, _ = adapter.initialize_services()
-        config_data = app_config_service.get_all()
+        app_config_service = container.app_config_service()
+        configuration = app_config_service.get_all()
 
-        return {"configuration": config_data, "status": "success"}
-
+        return {"configuration": configuration, "status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get configuration: {e}")
 
 
 @router.get("/diagnose", response_model=DiagnosticResponse)
 async def diagnose_system(
+    auth_context: AuthContext = Depends(get_admin_auth_dependency()),
     features_service=Depends(get_features_service),
     dependency_checker=Depends(get_dependency_checker_service),
 ):
@@ -108,7 +207,10 @@ async def diagnose_system(
 
 
 @router.get("/cache", response_model=CacheInfoResponse)
-async def get_cache_info(container: ApplicationContainer = Depends(get_container)):
+async def get_cache_info(
+    auth_context: AuthContext = Depends(get_admin_auth_dependency()),
+    container: ApplicationContainer = Depends(get_container),
+):
     """Get validation cache information and statistics."""
     try:
         validation_cache_service = container.validation_cache_service()
@@ -136,6 +238,7 @@ async def get_cache_info(container: ApplicationContainer = Depends(get_container
 async def clear_cache(
     file_path: Optional[str] = None,
     cleanup_expired: bool = False,
+    auth_context: AuthContext = Depends(get_admin_auth_dependency()),
     container: ApplicationContainer = Depends(get_container),
 ):
     """Clear validation cache entries."""
@@ -166,15 +269,18 @@ async def clear_cache(
 
 
 @router.get("/version")
-async def get_version():
+async def get_version(auth_context: AuthContext = Depends(get_admin_auth_dependency())):
     """Get AgentMap version information."""
-    from agentmap import __version__
+    from agentmap._version import __version__
 
     return {"agentmap_version": __version__, "api_version": "2.0"}
 
 
 @router.get("/paths")
-async def get_system_paths(adapter=Depends(get_adapter)):
+async def get_system_paths(
+    auth_context: AuthContext = Depends(get_admin_auth_dependency()),
+    adapter=Depends(get_adapter),
+):
     """Get system paths and directory information."""
     try:
         _, app_config_service, _ = adapter.initialize_services()
@@ -191,7 +297,10 @@ async def get_system_paths(adapter=Depends(get_adapter)):
 
 
 @router.get("/features")
-async def get_feature_status(features_service=Depends(get_features_service)):
+async def get_feature_status(
+    auth_context: AuthContext = Depends(get_admin_auth_dependency()),
+    features_service=Depends(get_features_service),
+):
     """Get status of optional features and dependencies."""
     try:
         # Build feature status using FeaturesRegistryService
@@ -237,7 +346,10 @@ async def get_feature_status(features_service=Depends(get_features_service)):
 
 
 @router.get("/health/detailed")
-async def detailed_health_check(adapter=Depends(get_adapter)):
+async def detailed_health_check(
+    auth_context: AuthContext = Depends(get_admin_auth_dependency()),
+    adapter=Depends(get_adapter),
+):
     """Detailed health check including service status."""
     try:
         # Test service initialization

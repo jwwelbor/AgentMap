@@ -116,27 +116,36 @@ class ExecutionTrackingService:
             for node in tracker.node_executions:
                 exec_data = {
                     "node_name": node.node_name,
-                    "start_time": node.start_time.isoformat() if node.start_time else None,
+                    "start_time": (
+                        node.start_time.isoformat() if node.start_time else None
+                    ),
                     "end_time": node.end_time.isoformat() if node.end_time else None,
                     "success": node.success,
                     "duration": node.duration,
                     "error": node.error,
                 }
-                
+
                 # Include inputs/outputs if tracking is enabled
                 if tracker.track_inputs and node.inputs is not None:
                     exec_data["inputs"] = node.inputs
                 if tracker.track_outputs and node.output is not None:
                     exec_data["output"] = node.output
-                    
+
                 # Handle subgraph tracker recursively
-                if hasattr(node, "subgraph_execution_tracker") and node.subgraph_execution_tracker:
-                    exec_data["subgraph_tracker"] = self.serialize_tracker(node.subgraph_execution_tracker)
-                    
+                if (
+                    hasattr(node, "subgraph_execution_tracker")
+                    and node.subgraph_execution_tracker
+                ):
+                    exec_data["subgraph_tracker"] = self.serialize_tracker(
+                        node.subgraph_execution_tracker
+                    )
+
                 serialized_executions.append(exec_data)
 
             return {
-                "start_time": tracker.start_time.isoformat() if tracker.start_time else None,
+                "start_time": (
+                    tracker.start_time.isoformat() if tracker.start_time else None
+                ),
                 "end_time": tracker.end_time.isoformat() if tracker.end_time else None,
                 "node_executions": serialized_executions,
                 "node_execution_counts": dict(tracker.node_execution_counts),
@@ -174,10 +183,10 @@ class ExecutionTrackingService:
                 tracker.start_time = datetime.fromisoformat(data["start_time"])
             if data.get("end_time"):
                 tracker.end_time = datetime.fromisoformat(data["end_time"])
-            
+
             tracker.overall_success = data.get("overall_success", True)
             tracker.node_execution_counts = data.get("node_execution_counts", {})
-            
+
             # Set optional attributes if present
             if data.get("graph_name"):
                 tracker.graph_name = data["graph_name"]
@@ -188,28 +197,34 @@ class ExecutionTrackingService:
             for exec_data in data.get("node_executions", []):
                 node = NodeExecution(
                     node_name=exec_data["node_name"],
-                    start_time=datetime.fromisoformat(exec_data["start_time"]) if exec_data.get("start_time") else None,
+                    start_time=(
+                        datetime.fromisoformat(exec_data["start_time"])
+                        if exec_data.get("start_time")
+                        else None
+                    ),
                     inputs=exec_data.get("inputs") if tracker.track_inputs else None,
                 )
-                
+
                 # Restore completion data
                 node.success = exec_data.get("success")
                 if exec_data.get("end_time"):
                     node.end_time = datetime.fromisoformat(exec_data["end_time"])
                 node.duration = exec_data.get("duration")
                 node.error = exec_data.get("error")
-                
+
                 if tracker.track_outputs:
                     node.output = exec_data.get("output")
-                    
+
                 # Handle subgraph tracker recursively
                 if "subgraph_tracker" in exec_data:
-                    node.subgraph_execution_tracker = self.deserialize_tracker(exec_data["subgraph_tracker"])
-                    
+                    node.subgraph_execution_tracker = self.deserialize_tracker(
+                        exec_data["subgraph_tracker"]
+                    )
+
                 tracker.node_executions.append(node)
 
             return tracker
-            
+
         except Exception as e:
             self.logger.error(f"Error deserializing tracker: {str(e)}")
             return None

@@ -11,11 +11,15 @@ from typing import Any, Dict, Optional, Tuple
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.orchestrator_service import OrchestratorService
-from agentmap.services.protocols import LLMCapableAgent, LLMServiceProtocol
+from agentmap.services.protocols import (
+    LLMCapableAgent,
+    LLMServiceProtocol,
+    OrchestrationCapableAgent,
+)
 from agentmap.services.state_adapter_service import StateAdapterService
 
 
-class OrchestratorAgent(BaseAgent, LLMCapableAgent):
+class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
     """
     Agent that orchestrates workflow by selecting the best matching node based on input.
 
@@ -35,20 +39,17 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent):
         logger: Optional[logging.Logger] = None,
         execution_tracker_service: Optional[ExecutionTrackingService] = None,
         state_adapter_service: Optional[StateAdapterService] = None,
-        # Business service for delegation
-        orchestrator_service: Optional[OrchestratorService] = None,
     ):
         """
         Initialize orchestrator agent as data container with service delegation.
 
         Args:
             name: Name of the agent node
-            prompt: Prompt or instruction  
+            prompt: Prompt or instruction
             context: Additional context including orchestration configuration
             logger: Logger instance for logging operations
             execution_tracker_service: ExecutionTrackingService instance for tracking
             state_adapter_service: StateAdapterService instance for state operations
-            orchestrator_service: OrchestratorService for business logic delegation
         """
         # Call BaseAgent constructor (infrastructure services only)
         super().__init__(
@@ -65,7 +66,9 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent):
 
         # Orchestration configuration (data properties only)
         self.selection_criteria = context.get("selection_criteria", [])
-        self.matching_strategy = self._validate_strategy(context.get("matching_strategy", "tiered"))
+        self.matching_strategy = self._validate_strategy(
+            context.get("matching_strategy", "tiered")
+        )
         self.confidence_threshold = float(context.get("confidence_threshold", 0.8))
         self.node_filter = self._parse_node_filter(context)
         self.default_target = context.get("default_target", None)
@@ -74,8 +77,10 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent):
         self.llm_type = context.get("llm_type", "openai")
         self.temperature = float(context.get("temperature", 0.2))
 
-        # Business service for delegation
-        self.orchestrator_service = orchestrator_service
+        # Business service for delegation (will be injected via protocol)
+        self.orchestrator_service = (
+            None  # Will be configured via configure_orchestrator_service()
+        )
 
         # Node Registry - will be injected separately (not part of standard protocols yet)
         self.node_registry = None
@@ -89,7 +94,7 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent):
     def _validate_strategy(self, strategy: str) -> str:
         """Validate matching strategy and provide safe fallback."""
         valid_strategies = ["algorithm", "llm", "tiered"]
-        
+
         if strategy in valid_strategies:
             return strategy
         else:
@@ -127,18 +132,35 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent):
             llm_service: LLM service instance to configure
         """
         self._llm_service = llm_service
-        
+
         # Also configure the orchestrator service if available
         if self.orchestrator_service:
             self.orchestrator_service.llm_service = llm_service
-            
+
         if self._logger:
             self.log_debug("LLM service configured")
+
+    def configure_orchestrator_service(
+        self, orchestrator_service: OrchestratorService
+    ) -> None:
+        """
+        Configure orchestrator service for this agent.
+
+        This method is called by GraphRunnerService during agent setup
+        following the protocol-based dependency injection pattern.
+
+        Args:
+            orchestrator_service: OrchestratorService instance for business logic delegation
+        """
+        self.orchestrator_service = orchestrator_service
+
+        if self._logger:
+            self.log_debug("Orchestrator service configured")
 
     def process(self, inputs: Dict[str, Any]) -> str:
         """
         Process inputs and select the best matching node.
-        
+
         Delegates all business logic to OrchestratorService.
         """
         if not self.orchestrator_service:
@@ -182,10 +204,10 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent):
                 llm_config=llm_config,
                 context=context,
             )
-            
+
             self.log_info(f"Selected node: '{selected_node}'")
             return selected_node
-            
+
         except Exception as e:
             self.log_error(f"Error in orchestration: {e}")
             return self.default_target or str(e)
@@ -271,7 +293,7 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent):
     def get_service_info(self) -> Dict[str, Any]:
         """Get information about agent configuration and service delegation."""
         base_info = super().get_service_info()
-        
+
         orchestrator_info = {
             "orchestration_config": {
                 "matching_strategy": self.matching_strategy,
@@ -282,6 +304,6 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent):
             },
             "orchestrator_service_configured": self.orchestrator_service is not None,
         }
-        
+
         base_info.update(orchestrator_info)
         return base_info

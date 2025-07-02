@@ -128,14 +128,14 @@ class ApplicationContainer(containers.DeclarativeContainer):
     def _create_auth_service(app_config_service, logging_service):
         """
         Create authentication service with proper configuration injection.
-        
+
         Returns auth service instance with loaded configuration.
         """
         from agentmap.services.auth_service import AuthService
-        
+
         auth_config = app_config_service.get_auth_config()
         return AuthService(auth_config, logging_service)
-    
+
     auth_service = providers.Singleton(
         _create_auth_service,
         app_config_service,
@@ -352,11 +352,25 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
+    # Execution Formatter Service for formatting graph execution results (development/testing)
+    execution_formatter_service = providers.Singleton(
+        "agentmap.services.execution_formatter_service.ExecutionFormatterService"
+    )
+
     # PromptManagerService for external template management
     prompt_manager_service = providers.Singleton(
         "agentmap.services.prompt_manager_service.PromptManagerService",
         app_config_service,
         logging_service,
+    )
+
+    # OrchestratorService for node selection and orchestration business logic
+    orchestrator_service = providers.Singleton(
+        "agentmap.services.orchestrator_service.OrchestratorService",
+        prompt_manager_service,
+        logging_service,
+        llm_service,
+        features_registry_service,
     )
 
     # IndentedTemplateComposer for clean template composition with internal template loading
@@ -411,9 +425,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
     graph_checkpoint_service = providers.Singleton(
         "agentmap.services.graph_checkpoint_service.GraphCheckpointService",
         providers.Callable(
-            lambda storage_manager: storage_manager.get_service("json")
-            if storage_manager
-            else None,
+            lambda storage_manager: (
+                storage_manager.get_service("json") if storage_manager else None
+            ),
             storage_service_manager,
         ),
         logging_service,
@@ -464,6 +478,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         dependency_checker_service,
         graph_assembly_service,
         prompt_manager_service,
+        orchestrator_service,
         host_protocol_configuration_service,
         graph_checkpoint_service,
     ):
@@ -487,6 +502,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
             dependency_checker_service=dependency_checker_service,
             graph_assembly_service=graph_assembly_service,
             prompt_manager_service=prompt_manager_service,
+            orchestrator_service=orchestrator_service,
             host_protocol_configuration_service=host_protocol_configuration_service,  # Pass the service, not container
             graph_checkpoint_service=graph_checkpoint_service,
         )
@@ -510,6 +526,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         dependency_checker_service,
         graph_assembly_service,
         prompt_manager_service,
+        orchestrator_service,
         host_protocol_configuration_service,  # Pass the service provider
         graph_checkpoint_service,
     )

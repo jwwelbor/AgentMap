@@ -14,21 +14,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from agentmap.core.adapters import create_service_adapter
-from agentmap.core.api.common_validation import (
+from agentmap.di import ApplicationContainer
+from agentmap.infrastructure.api.fastapi.validation.common_validation import (
     ErrorHandler,
     RequestValidator,
-    ValidatedStateExecutionRequest,
     ValidatedResumeWorkflowRequest,
+    ValidatedStateExecutionRequest,
     validate_request_size,
 )
-from agentmap.di import ApplicationContainer
 from agentmap.infrastructure.interaction.cli_handler import CLIInteractionHandler
 
 
 # Request models (enhanced with validation)
 class StateExecutionRequest(ValidatedStateExecutionRequest):
     """Request model for path-based execution with just state."""
-    
+
     class Config:
         schema_extra = {
             "example": {
@@ -36,28 +36,39 @@ class StateExecutionRequest(ValidatedStateExecutionRequest):
                     "user_input": "Process customer inquiry about pricing",
                     "customer_id": "CUST-12345",
                     "priority": "high",
-                    "metadata": {
-                        "source": "api",
-                        "timestamp": "2024-01-15T10:30:00Z"
-                    }
+                    "metadata": {"source": "api", "timestamp": "2024-01-15T10:30:00Z"},
                 },
                 "autocompile": True,
-                "execution_id": "exec-2024-0115-001"
+                "execution_id": "exec-2024-0115-001",
             },
-            "description": "Execute a workflow graph with initial state and optional compilation"
+            "description": "Execute a workflow graph with initial state and optional compilation",
         }
 
 
 class GraphRunRequest(BaseModel):
     """Legacy request model for running a graph with all parameters."""
 
-    graph: Optional[str] = Field(None, description="Graph name to execute (defaults to first graph in CSV)")
-    csv: Optional[str] = Field(None, description="Direct CSV file path (alternative to workflow parameter)")
-    workflow: Optional[str] = Field(None, description="Workflow name for repository lookup (alternative to csv parameter)")
-    state: Dict[str, Any] = Field(default={}, description="Initial state variables passed to the graph")
-    autocompile: bool = Field(default=False, description="Whether to automatically compile the graph if missing")
-    execution_id: Optional[str] = Field(None, description="Optional execution tracking identifier")
-    
+    graph: Optional[str] = Field(
+        None, description="Graph name to execute (defaults to first graph in CSV)"
+    )
+    csv: Optional[str] = Field(
+        None, description="Direct CSV file path (alternative to workflow parameter)"
+    )
+    workflow: Optional[str] = Field(
+        None,
+        description="Workflow name for repository lookup (alternative to csv parameter)",
+    )
+    state: Dict[str, Any] = Field(
+        default={}, description="Initial state variables passed to the graph"
+    )
+    autocompile: bool = Field(
+        default=False,
+        description="Whether to automatically compile the graph if missing",
+    )
+    execution_id: Optional[str] = Field(
+        None, description="Optional execution tracking identifier"
+    )
+
     class Config:
         schema_extra = {
             "example": {
@@ -66,18 +77,18 @@ class GraphRunRequest(BaseModel):
                 "state": {
                     "ticket_id": "TICKET-7890",
                     "customer_message": "I need help with my order",
-                    "urgency": "medium"
+                    "urgency": "medium",
                 },
                 "autocompile": True,
-                "execution_id": "legacy-exec-001"
+                "execution_id": "legacy-exec-001",
             },
-            "description": "Legacy endpoint supporting flexible parameter combinations for backward compatibility"
+            "description": "Legacy endpoint supporting flexible parameter combinations for backward compatibility",
         }
 
 
 class ResumeWorkflowRequest(ValidatedResumeWorkflowRequest):
     """Request model for resuming an interrupted workflow."""
-    
+
     class Config:
         schema_extra = {
             "example": {
@@ -86,10 +97,10 @@ class ResumeWorkflowRequest(ValidatedResumeWorkflowRequest):
                 "response_data": {
                     "user_decision": "approved",
                     "comments": "Looks good, proceed with processing",
-                    "reviewer_id": "USER-456"
-                }
+                    "reviewer_id": "USER-456",
+                },
             },
-            "description": "Resume a paused workflow by providing user response or decision"
+            "description": "Resume a paused workflow by providing user response or decision",
         }
 
 
@@ -97,13 +108,23 @@ class ResumeWorkflowRequest(ValidatedResumeWorkflowRequest):
 class GraphRunResponse(BaseModel):
     """Response model for graph execution."""
 
-    success: bool = Field(..., description="Whether the graph execution completed successfully")
-    output: Optional[Dict[str, Any]] = Field(None, description="Final state and output data from successful execution")
+    success: bool = Field(
+        ..., description="Whether the graph execution completed successfully"
+    )
+    output: Optional[Dict[str, Any]] = Field(
+        None, description="Final state and output data from successful execution"
+    )
     error: Optional[str] = Field(None, description="Error message if execution failed")
-    execution_id: Optional[str] = Field(None, description="Unique identifier for this execution")
-    execution_time: Optional[float] = Field(None, description="Total execution time in seconds")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional execution metadata and statistics")
-    
+    execution_id: Optional[str] = Field(
+        None, description="Unique identifier for this execution"
+    )
+    execution_time: Optional[float] = Field(
+        None, description="Total execution time in seconds"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None, description="Additional execution metadata and statistics"
+    )
+
     class Config:
         schema_extra = {
             "examples": [
@@ -115,16 +136,16 @@ class GraphRunResponse(BaseModel):
                             "final_response": "Customer inquiry has been processed successfully",
                             "ticket_status": "resolved",
                             "resolution_time": "00:03:45",
-                            "assigned_agent": "AI-Agent-Support"
+                            "assigned_agent": "AI-Agent-Support",
                         },
                         "execution_id": "exec-2024-0115-001",
                         "execution_time": 3.45,
                         "metadata": {
                             "nodes_executed": 7,
                             "llm_calls_made": 3,
-                            "total_tokens": 1250
-                        }
-                    }
+                            "total_tokens": 1250,
+                        },
+                    },
                 },
                 {
                     "name": "Failed Execution",
@@ -136,10 +157,10 @@ class GraphRunResponse(BaseModel):
                         "execution_time": 0.15,
                         "metadata": {
                             "error_node": "process_inquiry",
-                            "error_type": "AgentNotFound"
-                        }
-                    }
-                }
+                            "error_type": "AgentNotFound",
+                        },
+                    },
+                },
             ]
         }
 
@@ -147,12 +168,16 @@ class GraphRunResponse(BaseModel):
 class ResumeWorkflowResponse(BaseModel):
     """Response model for workflow resumption."""
 
-    success: bool = Field(..., description="Whether the workflow resumption was successful")
+    success: bool = Field(
+        ..., description="Whether the workflow resumption was successful"
+    )
     thread_id: str = Field(..., description="Thread ID that was resumed")
-    response_action: str = Field(..., description="The response action that was processed")
+    response_action: str = Field(
+        ..., description="The response action that was processed"
+    )
     message: str = Field(..., description="Human-readable status message")
     error: Optional[str] = Field(None, description="Error message if resumption failed")
-    
+
     class Config:
         schema_extra = {
             "examples": [
@@ -163,8 +188,8 @@ class ResumeWorkflowResponse(BaseModel):
                         "thread_id": "thread-uuid-12345",
                         "response_action": "approve",
                         "message": "Successfully resumed thread 'thread-uuid-12345' with action 'approve'",
-                        "error": None
-                    }
+                        "error": None,
+                    },
                 },
                 {
                     "name": "Failed Resumption",
@@ -173,34 +198,20 @@ class ResumeWorkflowResponse(BaseModel):
                         "thread_id": "thread-uuid-67890",
                         "response_action": "reject",
                         "message": "Failed to resume workflow",
-                        "error": "Thread 'thread-uuid-67890' not found or already completed"
-                    }
-                }
+                        "error": "Thread 'thread-uuid-67890' not found or already completed",
+                    },
+                },
             ]
         }
 
 
-def get_container() -> ApplicationContainer:
-    """Get DI container for dependency injection."""
-    from agentmap.di import initialize_di
-
-    return initialize_di()
-
-
-def get_service_adapter(container: ApplicationContainer = Depends(get_container)):
-    """Get service adapter for dependency injection."""
-    return create_service_adapter(container)
-
-
-def get_app_config_service(container: ApplicationContainer = Depends(get_container)):
-    """Get AppConfigService through DI container."""
-    return container.app_config_service()
-
-
-def get_storage_service_manager(container: ApplicationContainer = Depends(get_container)):
-    """Get StorageServiceManager through DI container."""
-    return container.storage_service_manager()
-
+# Import dependency injection functions from shared dependencies module
+from agentmap.infrastructure.api.fastapi.dependencies import (
+    get_app_config_service,
+    get_container,
+    get_service_adapter,
+    get_storage_service_manager,
+)
 
 # Create router
 router = APIRouter(prefix="/execution", tags=["Execution"])
@@ -214,42 +225,41 @@ _validate_graph_name = RequestValidator.validate_graph_name
 def _resolve_workflow_path(workflow_name: str, app_config_service) -> Path:
     """
     Resolve workflow name to full CSV file path.
-    
+
     Args:
         workflow_name: Name of the workflow
         app_config_service: Configuration service instance
-        
+
     Returns:
         Path to the workflow CSV file
-        
+
     Raises:
         HTTPException: If workflow file not found
     """
     # Validate workflow name
     clean_name = _validate_workflow_name(workflow_name)
-    
+
     # Get CSV repository path from configuration
     csv_repository = app_config_service.get_csv_repository_path()
-    
+
     # Add .csv extension if not present
-    if not clean_name.endswith('.csv'):
-        clean_name += '.csv'
-    
+    if not clean_name.endswith(".csv"):
+        clean_name += ".csv"
+
     # Build full path
     workflow_path = csv_repository / clean_name
-    
+
     # Check if file exists
     if not workflow_path.exists():
         raise HTTPException(
-            status_code=404, 
-            detail=f"Workflow file not found: {clean_name}"
+            status_code=404, detail=f"Workflow file not found: {clean_name}"
         )
-    
+
     return workflow_path
 
 
 @router.post(
-    "/{workflow}/{graph}", 
+    "/{workflow}/{graph}",
     response_model=GraphRunResponse,
     summary="Execute Workflow Graph",
     description="Run a specific graph from a workflow stored in the CSV repository",
@@ -263,17 +273,17 @@ def _resolve_workflow_path(workflow_name: str, app_config_service) -> Path:
                         "success": True,
                         "output": {"result": "Task completed"},
                         "execution_id": "exec-123",
-                        "execution_time": 2.5
+                        "execution_time": 2.5,
                     }
                 }
-            }
+            },
         },
         400: {"description": "Invalid workflow/graph names or request parameters"},
         404: {"description": "Workflow file or graph not found"},
         413: {"description": "Request payload too large (max 5MB)"},
-        500: {"description": "Internal execution error"}
+        500: {"description": "Internal execution error"},
     },
-    tags=["Execution"]
+    tags=["Execution"],
 )
 @validate_request_size(max_size=RequestValidator.MAX_JSON_SIZE)
 async def run_workflow_graph(
@@ -346,20 +356,27 @@ async def run_workflow_graph(
     - Bearer Token: `Authorization: Bearer token` (optional)
     - Public access allowed for embedded usage
     """
+    logger = None  # Initialize logger to None
+
     try:
         # Enhanced validation
         validated_workflow = _validate_workflow_name(workflow)
         validated_graph = _validate_graph_name(graph)
-        
+
         # Resolve workflow path with size validation
         workflow_path = _resolve_workflow_path(validated_workflow, app_config_service)
-        
+
         # Validate CSV file size
-        RequestValidator.validate_file_path(workflow_path, RequestValidator.MAX_CSV_SIZE)
-        
+        RequestValidator.validate_file_path(
+            workflow_path, RequestValidator.MAX_CSV_SIZE
+        )
+
         # Get services
         graph_runner_service, _, logging_service = adapter.initialize_services()
-        logger = logging_service.get_logger("agentmap.api.execution")
+
+        # Safely get logger, handling None logging_service
+        if logging_service is not None:
+            logger = logging_service.get_logger("agentmap.api.execution")
 
         # Create run options
         run_options = adapter.create_run_options(
@@ -370,9 +387,17 @@ async def run_workflow_graph(
             execution_id=request.execution_id,
         )
 
-        logger.info(f"API executing workflow '{validated_workflow}' graph '{validated_graph}'")
+        if logger:
+            logger.info(
+                f"API executing workflow '{validated_workflow}' graph '{validated_graph}'"
+            )
 
         # Execute graph with timeout handling
+        if graph_runner_service is None:
+            raise HTTPException(
+                status_code=503, detail="Graph runner service not available"
+            )
+
         try:
             result = graph_runner_service.run_graph(run_options)
         except TimeoutError:
@@ -380,7 +405,7 @@ async def run_workflow_graph(
                 error_message="Execution timeout",
                 error_code="TIMEOUT",
                 status_code=408,
-                detail="Graph execution exceeded maximum allowed time"
+                detail="Graph execution exceeded maximum allowed time",
             )
 
         # Convert to response format
@@ -389,16 +414,16 @@ async def run_workflow_graph(
             return GraphRunResponse(
                 success=True,
                 output=output_data["final_state"],
-                execution_id=result.execution_id,
-                execution_time=result.execution_time,
+                execution_id=request.execution_id,  # Pass through from request
+                execution_time=result.total_duration,
                 metadata=output_data["metadata"],
             )
         else:
             return GraphRunResponse(
                 success=False,
-                error=result.error_message,
-                execution_id=result.execution_id,
-                execution_time=result.execution_time,
+                error=result.error,
+                execution_id=request.execution_id,  # Pass through from request
+                execution_time=result.total_duration,
             )
 
     except HTTPException:
@@ -409,14 +434,14 @@ async def run_workflow_graph(
     except FileNotFoundError as e:
         raise ErrorHandler.handle_file_not_found(str(e), "workflow")
     except Exception as e:
-        if 'logging_service' in locals():
-            logger = logging_service.get_logger("agentmap.api.execution")
+        # Safely log error only if logger is available
+        if logger:
             logger.error(f"API execution error: {e}")
         raise ErrorHandler.handle_service_error("execution", e)
 
 
 @router.post(
-    "/run", 
+    "/run",
     response_model=GraphRunResponse,
     summary="Execute Graph (Legacy)",
     description="Legacy endpoint for running graphs with flexible parameter support",
@@ -425,13 +450,13 @@ async def run_workflow_graph(
         200: {"description": "Graph executed successfully"},
         400: {"description": "Invalid request parameters"},
         404: {"description": "Workflow or CSV file not found"},
-        500: {"description": "Internal execution error"}
+        500: {"description": "Internal execution error"},
     },
     tags=["Execution"],
-    deprecated=False  # Still supported for backward compatibility
+    deprecated=False,  # Still supported for backward compatibility
 )
 async def run_graph_legacy(
-    request: GraphRunRequest, 
+    request: GraphRunRequest,
     adapter=Depends(get_service_adapter),
     app_config_service=Depends(get_app_config_service),
 ):
@@ -472,10 +497,15 @@ async def run_graph_legacy(
     
     **Authentication:** Same as other execution endpoints
     """
+    logger = None  # Initialize logger to None
+
     try:
         # Get services
         graph_runner_service, _, logging_service = adapter.initialize_services()
-        logger = logging_service.get_logger("agentmap.api.execution")
+
+        # Safely get logger, handling None logging_service
+        if logging_service is not None:
+            logger = logging_service.get_logger("agentmap.api.execution")
 
         # Determine CSV path - priority: csv parameter, workflow lookup, default config
         csv_path = None
@@ -495,9 +525,15 @@ async def run_graph_legacy(
             execution_id=request.execution_id,
         )
 
-        logger.info(f"API executing graph: {request.graph or 'default'}")
+        if logger:
+            logger.info(f"API executing graph: {request.graph or 'default'}")
 
         # Execute graph
+        if graph_runner_service is None:
+            raise HTTPException(
+                status_code=503, detail="Graph runner service not available"
+            )
+
         result = graph_runner_service.run_graph(run_options)
 
         # Convert to response format
@@ -506,16 +542,16 @@ async def run_graph_legacy(
             return GraphRunResponse(
                 success=True,
                 output=output_data["final_state"],
-                execution_id=result.execution_id,
-                execution_time=result.execution_time,
+                execution_id=request.execution_id,  # Pass through from request
+                execution_time=result.total_duration,
                 metadata=output_data["metadata"],
             )
         else:
             return GraphRunResponse(
                 success=False,
-                error=result.error_message,
-                execution_id=result.execution_id,
-                execution_time=result.execution_time,
+                error=result.error,
+                execution_id=request.execution_id,  # Pass through from request
+                execution_time=result.total_duration,
             )
 
     except HTTPException:
@@ -526,12 +562,14 @@ async def run_graph_legacy(
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"API execution error: {e}")
+        # Safely log error only if logger is available
+        if logger:
+            logger.error(f"API execution error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post(
-    "/resume", 
+    "/resume",
     response_model=ResumeWorkflowResponse,
     summary="Resume Interrupted Workflow",
     description="Resume a paused workflow by providing user response or decision",
@@ -540,9 +578,9 @@ async def run_graph_legacy(
         200: {"description": "Workflow resumed successfully"},
         400: {"description": "Invalid thread ID or response action"},
         404: {"description": "Thread not found or already completed"},
-        503: {"description": "Storage services unavailable"}
+        503: {"description": "Storage services unavailable"},
     },
-    tags=["Execution"]
+    tags=["Execution"],
 )
 async def resume_workflow(
     request: ResumeWorkflowRequest,
@@ -601,32 +639,38 @@ async def resume_workflow(
     
     **Authentication:** Required - workflows contain sensitive state data
     """
+    logger = None  # Initialize logger to None
+
     try:
         # Check if storage is available
         if not storage_manager:
             raise HTTPException(
-                status_code=503, 
-                detail="Storage services are not available. Please check your configuration."
+                status_code=503,
+                detail="Storage services are not available. Please check your configuration.",
             )
 
         # Get the JSON storage service for structured data
         storage_service = storage_manager.get_service("json")
         logging_service = container.logging_service()
-        logger = logging_service.get_logger("agentmap.api.resume")
+
+        # Safely get logger, handling None logging_service
+        if logging_service is not None:
+            logger = logging_service.get_logger("agentmap.api.resume")
 
         # Create CLI interaction handler instance
         handler = CLIInteractionHandler(storage_service)
 
         # Log the resume attempt
-        logger.info(
-            f"Resuming thread '{request.thread_id}' with action '{request.response_action}'"
-        )
+        if logger:
+            logger.info(
+                f"Resuming thread '{request.thread_id}' with action '{request.response_action}'"
+            )
 
         # Call handler.resume_execution()
         result = handler.resume_execution(
             thread_id=request.thread_id,
             response_action=request.response_action,
-            response_data=request.response_data
+            response_data=request.response_data,
         )
 
         # Return success response
@@ -634,9 +678,12 @@ async def resume_workflow(
             success=True,
             thread_id=request.thread_id,
             response_action=request.response_action,
-            message=f"Successfully resumed thread '{request.thread_id}' with action '{request.response_action}'"
+            message=f"Successfully resumed thread '{request.thread_id}' with action '{request.response_action}'",
         )
 
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except ValueError as e:
         # Handle not found errors gracefully
         raise HTTPException(status_code=404, detail=str(e))
@@ -645,5 +692,7 @@ async def resume_workflow(
         raise HTTPException(status_code=503, detail=f"Storage error: {e}")
     except Exception as e:
         # Handle unexpected errors
-        logger.error(f"Unexpected error in resume endpoint: {e}")
+        # Safely log error only if logger is available
+        if logger:
+            logger.error(f"Unexpected error in resume endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")

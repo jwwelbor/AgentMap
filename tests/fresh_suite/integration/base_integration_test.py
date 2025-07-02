@@ -174,6 +174,7 @@ class BaseIntegrationTest(unittest.TestCase):
             },
             "paths": {
                 "csv_data": str(Path(self.temp_dir) / "csv_data"),
+                "csv_repository": str(Path(self.temp_dir) / "csv_data"),
                 "compiled_graphs": str(Path(self.temp_dir) / "compiled"),
                 "custom_agents": str(Path(self.temp_dir) / "custom_agents"),
                 "functions": str(Path(self.temp_dir) / "functions")

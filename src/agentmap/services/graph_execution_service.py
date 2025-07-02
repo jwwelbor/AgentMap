@@ -471,13 +471,13 @@ class GraphExecutionService:
             self.logger.info(
                 f"[GraphExecutionService] Execution interrupted for human interaction in thread: {e.thread_id}"
             )
-            
+
             # Preserve exception data for checkpoint
             # The exception already contains checkpoint_data that can be used for resumption
             self.logger.debug(
                 f"[GraphExecutionService] Interruption checkpoint data preserved for thread: {e.thread_id}"
             )
-            
+
             # Re-raise exception for graph runner to handle
             raise
 

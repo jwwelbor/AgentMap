@@ -82,6 +82,7 @@ class GraphRunnerService:
         dependency_checker_service: DependencyCheckerService,
         graph_assembly_service: GraphAssemblyService,
         prompt_manager_service: Any = None,  # PromptManagerService - optional for backward compatibility
+        orchestrator_service: Any = None,  # OrchestratorService - optional for backward compatibility
         host_protocol_configuration_service: HostProtocolConfigurationService = None,  # Optional for host service injection
         graph_checkpoint_service: Any = None,  # GraphCheckpointService - optional for human-in-the-loop
     ):
@@ -104,6 +105,7 @@ class GraphRunnerService:
             dependency_checker_service: Service for dependency validation
             graph_assembly_service: Service for graph assembly
             prompt_manager_service: Service for prompt template resolution and formatting
+            orchestrator_service: Service for orchestration business logic (optional)
             host_protocol_configuration_service: Service for host protocol configuration (optional)
             graph_checkpoint_service: Service for graph execution checkpoints (optional)
         """
@@ -123,6 +125,7 @@ class GraphRunnerService:
         self.dependency_checker = dependency_checker_service
         self.graph_assembly_service = graph_assembly_service
         self.prompt_manager_service = prompt_manager_service
+        self.orchestrator_service = orchestrator_service
 
         # Infrastructure services
         self.logger = logging_service.get_class_logger(self)
@@ -593,6 +596,11 @@ class GraphRunnerService:
             "description": node.description or "",
         }
 
+        # Add CSV context data if available
+        if hasattr(node, "context") and node.context:
+            # Merge CSV context with basic context
+            context.update(node.context)
+
         self.logger.debug(
             f"[GraphRunnerService] Instantiating {agent_cls.__name__} as node '{node.name}'"
         )
@@ -659,6 +667,7 @@ class GraphRunnerService:
         from agentmap.services.protocols import (
             CheckpointCapableAgent,
             LLMCapableAgent,
+            OrchestrationCapableAgent,
             PromptCapableAgent,
             StorageCapableAgent,
         )
@@ -704,7 +713,10 @@ class GraphRunnerService:
                 )
 
         if isinstance(agent, CheckpointCapableAgent):
-            if hasattr(self, 'graph_checkpoint_service') and self.graph_checkpoint_service:
+            if (
+                hasattr(self, "graph_checkpoint_service")
+                and self.graph_checkpoint_service
+            ):
                 agent.configure_checkpoint_service(self.graph_checkpoint_service)
                 self.logger.debug(
                     f"[GraphRunnerService] ✅ Configured checkpoint service for {agent.name}"
@@ -713,6 +725,18 @@ class GraphRunnerService:
             else:
                 self.logger.debug(
                     f"[GraphRunnerService] Graph checkpoint service not available for {agent.name}"
+                )
+
+        if isinstance(agent, OrchestrationCapableAgent):
+            if self.orchestrator_service:
+                agent.configure_orchestrator_service(self.orchestrator_service)
+                self.logger.debug(
+                    f"[GraphRunnerService] ✅ Configured orchestrator service for {agent.name}"
+                )
+                core_services_configured += 1
+            else:
+                self.logger.debug(
+                    f"[GraphRunnerService] Orchestrator service not available for {agent.name}"
                 )
 
         # Future services - ready for when these services are available:
