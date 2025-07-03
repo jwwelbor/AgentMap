@@ -15,11 +15,11 @@ const redirects = [
   // Old getting started redirects  
   {
     from: '/getting-started',
-    to: '/docs/getting-started/quick-start',
+    to: '/docs/getting-started',
   },
   {
     from: '/quickstart',
-    to: '/docs/getting-started/quick-start',
+    to: '/docs/getting-started',
   },
   
   // Old tutorial redirects

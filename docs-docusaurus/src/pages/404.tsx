@@ -8,7 +8,7 @@ import styles from './index.module.css';
 const popularLinks = [
   {
     title: '🚀 Quick Start Guide',
-    href: '/docs/getting-started/quick-start',
+    href: '/docs/getting-started',
     description: 'Build your first AI workflow in 5 minutes',
   },
   {
@@ -147,7 +147,7 @@ export default function NotFound(): JSX.Element {
                   'button button--primary button--lg',
                   styles.getStarted,
                 )}
-                to="/docs/getting-started/quick-start"
+                to="/docs/getting-started"
               >
                 Get Started Now →
               </Link>

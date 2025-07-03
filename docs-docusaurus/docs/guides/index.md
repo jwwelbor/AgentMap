@@ -118,12 +118,12 @@ Complete production deployment:
 - **[AgentMap Basics](./learning-paths/agentmap-basics)** - Essential concepts and first steps
 - **[Understanding Workflows](./learning-paths/understanding-workflows)** - Workflow design and execution
 - **[Advanced Learning Path](./learning-paths/advanced-learning-path)** - Sophisticated patterns and techniques
-- **[Core Fundamentals](./learning-paths/core/)** - Deep dive into core concepts
+- **[Core Fundamentals](./learning-paths/core/fundamentals)** - Deep dive into core concepts
 
 ### Development
 - **[Memory & Orchestration](./development/)** - Advanced workflow coordination
-- **[Agent Development](./development/agents/)** - Custom agent creation and patterns
-- **[Services](./development/services/)** - Infrastructure and business services
+- **[Agent Development](./development/agents/agent-development)** - Custom agent creation and patterns
+- **[Services](./development/services/service-registry-patterns)** - Infrastructure and business services
 - **[Best Practices](./development/best-practices)** - Production-ready development
 
 ### Deployment
@@ -177,8 +177,8 @@ agentmap profile --csv workflow.csv --profile-memory
 
 ### **For AI/ML Engineers**
 1. **[Learning Paths](./learning-paths/)** - Understand AgentMap concepts (30 min)
-2. **[Memory Management](./development/agent-memory/)** - Advanced AI patterns (45 min)
-3. **[Custom Agents](./development/agents/)** - Specialized AI development (60 min)
+2. **[Memory Management](./development/agent-memory/memory-management)** - Advanced AI patterns (45 min)
+3. **[Custom Agents](./development/agents/agent-development)** - Specialized AI development (60 min)
 4. **[Production Deployment](./deploying/)** - Scale AI workflows (45 min)
 
 ### **For Software Developers**

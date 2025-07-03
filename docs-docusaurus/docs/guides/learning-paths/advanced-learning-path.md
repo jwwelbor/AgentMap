@@ -195,7 +195,7 @@ agentmap test --csv workflow.csv --load-test --stress-test
 ### **Architecture**
 - **Clean Architecture Overview** - System design principles
 - **Service Catalog** - Complete service reference
-- **[Infrastructure Services](/docs/guides/development/services/)** - Enterprise infrastructure patterns
+- **[Infrastructure Services](../development/services/service-registry-patterns)** - Enterprise infrastructure patterns
 
 ### **Operations**
 - **[Testing Patterns](/docs/guides/development/testing)** - Quality assurance strategies
