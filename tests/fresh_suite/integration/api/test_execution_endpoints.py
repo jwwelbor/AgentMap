@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch, Mock, MagicMock
 
 from tests.fresh_suite.integration.api.base_api_integration_test import BaseAPIIntegrationTest
+from tests.utils.test_isolation_helpers import ensure_file_exists, ci_robust_test
 
 
 class TestExecutionEndpoints(BaseAPIIntegrationTest):
@@ -43,9 +44,18 @@ testgraph,end,default,End execution test,Test end node,output_data,final_result,
             "testworkflow.csv"
         )
         
-        # Verify file was created correctly
+        # Verify file was created correctly - critical for CI
         self.assertTrue(self.execution_csv_path.exists(), 
                        f"Test CSV file should exist at: {self.execution_csv_path}")
+        
+        # Additional validation to ensure file is readable and non-empty
+        self.assertGreater(self.execution_csv_path.stat().st_size, 0,
+                          "Test CSV file should not be empty")
+        
+        # Verify the CSV content is correct
+        csv_content = self.execution_csv_path.read_text(encoding='utf-8')
+        self.assertIn('testgraph', csv_content, "CSV should contain testgraph")
+        self.assertIn('testworkflow', str(self.execution_csv_path), "File should be named testworkflow.csv")
     
     def create_mock_adapter(self):
         """Create a properly configured mock service adapter."""
@@ -596,6 +606,10 @@ testgraph,end,default,End execution test,Test end node,output_data,final_result,
     
     def test_execution_timeout_handling(self):
         """Test execution timeout handling."""
+        # Ensure CSV file exists before test starts - this is critical for CI
+        self.assertTrue(self.execution_csv_path.exists(), 
+                       f"Test CSV file must exist at: {self.execution_csv_path}")
+        
         request_data = {
             "state": {"input_data": "timeout_test"},
             "autocompile": False
@@ -604,15 +618,19 @@ testgraph,end,default,End execution test,Test end node,output_data,final_result,
         # Create mock adapter
         mock_adapter = self.create_mock_adapter()
         
-        # Mock the graph runner service to simulate timeout
+        # Mock the graph runner service to simulate timeout AND ensure path validation succeeds
         with patch.object(
             self.container.graph_runner_service(), 
             'run_graph'
         ) as mock_run, \
-        patch('src.agentmap.core.adapters.create_service_adapter') as mock_create_adapter:
+        patch('src.agentmap.core.adapters.create_service_adapter') as mock_create_adapter, \
+        patch('agentmap.infrastructure.api.fastapi.routes.execution._resolve_workflow_path') as mock_resolve_path:
             
             mock_create_adapter.return_value = mock_adapter
             mock_run.side_effect = TimeoutError("Execution timeout")
+            
+            # Mock path resolution to return valid path and bypass file existence checks
+            mock_resolve_path.return_value = self.execution_csv_path
             
             response = self.client.post(
                 "/execution/testworkflow/testgraph",
@@ -629,7 +647,9 @@ testgraph,end,default,End execution test,Test end node,output_data,final_result,
     
     def test_execution_path_validation(self):
         """Test workflow and graph name validation."""
-        # Test invalid workflow name with path traversal
+        # Ensure CSV exists for validation tests - important for CI
+        ensure_file_exists(self.execution_csv_path, "Execution test CSV")
+        
         request_data = {"state": {"input_data": "test"}}
         
         response = self.client.post(
