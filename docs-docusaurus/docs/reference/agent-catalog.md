@@ -31,7 +31,7 @@ Explore all available AgentMap agent types in this interactive catalog. Use the 
 
 ### Next Steps
 
-- **[Quick Start Guide](../getting-started/quick-start)** - Build your first workflow using these agents
+- **[Quick Start Guide](/docs/getting-started)** - Build your first workflow using these agents
 - **[CSV Schema Reference](./csv-schema)** - Learn the complete CSV format for defining workflows
 - **[CLI Commands](./cli-commands)** - Use scaffolding to generate custom agent templates
 - **[Agent Development](../tutorials/building-custom-agents)** - Create your own custom agents
@@ -88,8 +88,7 @@ Analysis,ExtractEntities,{"task_type":"analysis","routing_enabled":true},Extract
 Analysis,AnalyzeSentiment,{"provider":"anthropic"},Analyze sentiment,llm,GenerateInsights,Error,raw_data|entities,sentiment,Analyze the sentiment of this content: {raw_data}
 Analysis,GenerateInsights,{"temperature":0.3},Generate insights,llm,CreateReport,Error,entities|sentiment|raw_data,insights,Based on entities {entities} and sentiment {sentiment}, generate key insights about: {raw_data}
 Analysis,CreateReport,{"llm":"anthropic"},Create final report,summary,SaveReport,Error,entities|sentiment|insights,executive_report,Create a comprehensive executive report combining all analysis
-Analysis,SaveReport,,Save final report,file_writer,End,Error,executive_report,saved_report,reports/analysis_report.md
-Analysis,End,,Analysis complete,echo,,,saved_report,completion_status,
+Analysis,SaveReport,,Save final report,file_writer,End,Error,executive_report,saved_report,reports/analysis_report Analysis,End,,Analysis complete,echo,,,saved_report,completion_status,
 ```
 
 ### Interactive Schema Validator

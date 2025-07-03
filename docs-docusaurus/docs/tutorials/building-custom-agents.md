@@ -639,4 +639,4 @@ class AgentLoader:
         return agents
 ```
 
-For more advanced agent development patterns and examples, see the [Agent Development Contract Guide](/docs/guides/advanced/agent-development-contract).
+For more advanced agent development patterns and examples, see the [Agent Development Contract Guide](/docs/guides/development/agents/agent-development-contract).

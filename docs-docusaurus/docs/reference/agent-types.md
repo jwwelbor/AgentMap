@@ -7,8 +7,8 @@ description: Complete reference for all available AgentMap agent types
 # Agent Types Reference
 
 > **Related Documentation**: 
-> - [Clean Architecture Overview](../advanced/architecture/clean-architecture-overview.md) - System architecture and design patterns
-> - [Service Catalog](../advanced/architecture/service-catalog.md) - Available services and protocols
+> - [Clean Architecture Overview](../contributing/clean-architecture-overview) - System architecture and design patterns
+> - [Service Catalog](../reference/service-catalog) - Available services and protocols
 
 AgentMap includes several built-in agent types for different purposes. Each agent type uses the modern protocol-based dependency injection pattern with infrastructure services injected via constructor and business services configured post-construction.
 
@@ -634,8 +634,8 @@ agent = EchoAgent(
 
 ## See Also
 
-- [CSV Schema Reference](csv-schema.md) - CSV workflow format documentation
-- [CLI Commands Reference](cli-commands.md) - Command-line interface documentation
-- [Quick Start Guide](../getting-started/quick-start.md) - Build your first workflow
-- [Understanding Workflows](../guides/understanding-workflows.md) - Core concepts and workflow patterns
-- [Clean Architecture Overview](../advanced/architecture/clean-architecture-overview.md) - System architecture
+- [CSV Schema Reference](csv-schema) - CSV workflow format documentation
+- [CLI Commands Reference](cli-commands) - Command-line interface documentation
+- [Quick Start Guide](../getting-started) - Build your first workflow
+- [Understanding Workflows](/docs/guides/learning-paths/understanding-workflows) - Core concepts and workflow patterns
+- [Clean Architecture Overview](../contributing/clean-architecture-overview) - System architecture

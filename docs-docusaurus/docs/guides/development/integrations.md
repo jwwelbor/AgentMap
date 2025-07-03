@@ -732,9 +732,9 @@ DataPipeline,End,,Complete workflow,echo,,,analysis|error_message,result,,Workfl
 ## Related Documentation
 
 ### **Core Concepts**
-- **[Custom Agent Development](./custom-agents)** - Building agents that use integrations
-- **[Service Injection](./service-injection)** - Understanding dependency injection patterns
-- **[Memory Management](./memory-management)** - Basic memory concepts
+- **[Custom Agent Development](/docs/guides/development/agents/custom-agents)** - Building agents that use integrations
+- **[Service Injection](/docs/contributing/service-injection)** - Understanding dependency injection patterns
+- **[Memory Management](/docs/guides/development/agent-memory/memory-management)** - Basic memory concepts
 
 ### **Advanced Topics**
 - **[Orchestration Patterns](./orchestration)** - Dynamic routing with memory
@@ -742,9 +742,9 @@ DataPipeline,End,,Complete workflow,echo,,,analysis|error_message,result,,Workfl
 - **[Best Practices](./best-practices)** - Development guidelines
 
 ### **Production**
-- **[Deployment](../production/deployment)** - Deploying integrated workflows
-- **[Monitoring](../production/monitoring)** - Monitoring integrations
-- **[Security](../production/security)** - Securing integrated systems
+- **[Deployment](/docs/guides/deploying/deployment)** - Deploying integrated workflows
+- **[Monitoring](/docs/guides/deploying/monitoring)** - Monitoring integrations
+- **[Security](/docs/guides/deploying/deployment)** - Securing integrated systems
 
 ---
 

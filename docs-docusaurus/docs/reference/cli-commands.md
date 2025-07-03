@@ -549,24 +549,24 @@ agentmap deploy --build ./dist/MyWorkflow/ --target production
 ## Related Documentation
 
 ### 🚀 **Getting Started**
-- **[Quick Start Guide](../getting-started/quick-start)**: Build your first workflow in 5 minutes
-- **[Understanding Workflows](../guides/understanding-workflows)**: Core workflow concepts and patterns
+- **[Quick Start Guide](../getting-started)**: Build your first workflow in 5 minutes
+- **[Understanding Workflows](/docs/guides/learning-paths/understanding-workflows)**: Core workflow concepts and patterns
 - **[CSV Schema Reference](csv-schema)**: Complete CSV workflow format specification
 
 ### 🔧 **CLI Tools & Debugging**
 - **[CLI Graph Inspector](cli-graph-inspector)**: Advanced graph analysis and debugging
 - **[Interactive Playground](../playground)**: Test workflows in your browser
-- **[Execution Tracking](../guides/operations/execution-tracking)**: Performance monitoring and debugging
+- **[Execution Tracking](/docs/guides/deploying/monitoring)**: Performance monitoring and debugging
 
 ### 🤖 **Agent Development**
 - **[Agent Types Reference](agent-types)**: Available agent types and configurations
-- **[Advanced Agent Types](../guides/advanced/advanced-agent-types)**: Custom agent development
-- **[Agent Development Contract](../guides/advanced/agent-development-contract)**: Agent interface requirements
+- **[Advanced Agent Types](/docs/guides/development/agents/advanced-agent-types)**: Custom agent development
+- **[Agent Development Contract](/docs/guides/development/agents/agent-development)**: Agent interface requirements
 
 ### 🏗️ **Advanced Operations**
-- **[Service Injection Patterns](../guides/advanced/service-injection-patterns)**: Dependency injection in agents
-- **[Host Service Integration](../guides/advanced/host-service-integration)**: Custom service integration
-- **[Testing Patterns](../guides/operations/testing-patterns)**: Testing strategies for CLI workflows
+- **[Service Injection Patterns](../contributing/service-injection)**: Dependency injection in agents
+- **[Host Service Integration](/docs/guides/development/agents/host-service-integration)**: Custom service integration
+- **[Testing Patterns](/docs/guides/development/testing)**: Testing strategies for CLI workflows
 
 ### 📚 **Tutorials & Examples**
 - **[Weather Bot Tutorial](../tutorials/weather-bot)**: Complete CLI workflow example

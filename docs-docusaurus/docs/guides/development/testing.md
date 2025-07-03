@@ -736,7 +736,7 @@ The goal is clean, maintainable tests that focus on interface behavior rather th
 
 ## See Also
 
-- [Execution Tracking](../production/monitoring.md) - Monitoring and debugging workflows
-- [CLI Commands Reference](../../reference/cli-commands.md) - CLI testing targets
-- [Infrastructure Guide](../infrastructure/index.md) - Configuration testing patterns
-- [Quick Start Guide](../../getting-started/quick-start.md) - Basic workflow testing
+- [Execution Tracking](/docs/guides/deploying/monitoring) - Monitoring and debugging workflows
+- [CLI Commands Reference](/docs/reference/cli-commands) - CLI testing targets
+- [Infrastructure Guide](/docs/guides/deploying/) - Configuration testing patterns
+- [Quick Start Guide](/docs/getting-started) - Basic workflow testing

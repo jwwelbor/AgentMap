@@ -18,7 +18,7 @@ sidebar_position: 3
 AgentMap's Host Service Integration allows you to extend AgentMap with your own custom services and agents while leveraging AgentMap's dependency injection system. This enables host applications to define domain-specific services that are automatically injected into compatible agents.
 
 :::info Related Documentation
-- [Service Injection Patterns](./service-injection-patterns) - AgentMap's built-in protocol-based dependency injection system
+- [Service Injection Patterns](/docs/contributing/service-injection) - AgentMap's built-in protocol-based dependency injection system
 - [Agent Development Contract](./agent-development-contract) - Required agent interface and patterns
 - [Advanced Agent Types](./advanced-agent-types) - Context configuration for services
 :::
@@ -28,7 +28,7 @@ AgentMap's Host Service Integration allows you to extend AgentMap with your own 
 Before implementing host service integration, you should be familiar with:
 
 - **AgentMap Fundamentals**: Basic workflow creation and agent development
-- **Service Injection Patterns**: Read [Service Injection Patterns](./service-injection-patterns) to understand AgentMap's built-in DI system
+- **Service Injection Patterns**: Read [Service Injection Patterns](/docs/contributing/service-injection) to understand AgentMap's built-in DI system
 - **Agent Contract**: Review [Agent Development Contract](./agent-development-contract) for required patterns
 - **Python Protocols**: Understanding of `typing.Protocol` and `@runtime_checkable` decorator
 
@@ -906,7 +906,7 @@ After implementing host service integration:
 
 ### Advanced Topics
 1. **Registry Management**: Learn about advanced service registry patterns
-2. **Built-in Service Patterns**: Study [Service Injection Patterns](./service-injection-patterns) for AgentMap's internal patterns
+2. **Built-in Service Patterns**: Study [Service Injection Patterns](/docs/contributing/service-injection) for AgentMap's internal patterns
 3. **Agent Development**: Master [Agent Development Contract](./agent-development-contract) for advanced agent patterns
 4. **Context Configuration**: Explore [Advanced Agent Types](./advanced-agent-types) for service-specific configuration
 
@@ -917,5 +917,5 @@ After implementing host service integration:
 4. **Storage Integration**: Combine with data storage operations
 
 :::tip Complete Examples
-For hands-on learning, check out the [Tutorial: Building Custom Agents](../../tutorials/building-custom-agents) which includes complete working examples of host service integration patterns.
+For hands-on learning, check out the [Tutorial: Building Custom Agents](/docs/tutorials/building-custom-agents) which includes complete working examples of host service integration patterns.
 :::

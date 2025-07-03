@@ -239,9 +239,9 @@ Summarizer,CreateSummary,,,openai,Next,Error,weather_data,summary,"Summarize: {w
 ## 📚 Next Steps
 
 ### **Continue Learning**
-1. **[Understanding Workflows](../understanding-workflows)** - Deep dive into workflow patterns
-2. **[State Management](../state-management)** - Advanced state handling techniques
-3. **[CSV Schema Reference](../../reference/csv-schema)** - Complete CSV format documentation
+1. **[Understanding Workflows](/docs/guides/learning-paths/understanding-workflows)** - Deep dive into workflow patterns
+2. **[State Management](/docs/guides/learning-paths/core/state-management)** - Advanced state handling techniques
+3. **[CSV Schema Reference](/docs/reference/csv-schema)** - Complete CSV format documentation
 
 ### **Build Something Real**
 1. **[Weather Bot Tutorial](../../tutorials/weather-bot)** - Your first complete workflow
@@ -249,9 +249,9 @@ Summarizer,CreateSummary,,,openai,Next,Error,weather_data,summary,"Summarize: {w
 3. **[Customer Support Bot](../../tutorials/customer-support-bot)** - Multi-agent coordination
 
 ### **Advanced Topics**
-1. **[Custom Agent Development](../advanced/agent-development-contract)** - Build your own agents
-2. **[Memory Management](../advanced/memory-and-orchestration/memory-management)** - Conversational AI
-3. **[Service Integration](../advanced/host-service-integration)** - Enterprise integration patterns
+1. **[Custom Agent Development](/docs/guides/development/agents/agent-development)** - Build your own agents
+2. **[Memory Management](/docs/guides/development/agent-memory/memory-management)** - Conversational AI
+3. **[Service Integration](/docs/guides/development/agents/host-service-integration)** - Enterprise integration patterns
 
 ---
 
@@ -286,6 +286,6 @@ Summarizer,CreateSummary,,,openai,Next,Error,weather_data,summary,"Summarize: {w
 
 ---
 
-*Ready to build your first workflow? Start with our [Quick Start Guide](../../getting-started/quick-start) or dive into the [Weather Bot Tutorial](../../tutorials/weather-bot)!*
+*Ready to build your first workflow? Start with our [Quick Start Guide](/docs/getting-started) or dive into the [Weather Bot Tutorial](/docs/tutorials/weather-bot)!*
 
 **Last updated: June 27, 2025**

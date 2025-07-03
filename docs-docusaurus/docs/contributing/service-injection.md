@@ -18,9 +18,9 @@ sidebar_position: 4
 This guide explains AgentMap's protocol-based dependency injection system, which provides clean separation between infrastructure and business services while maintaining flexibility and testability.
 
 :::info Related Documentation
-- [Agent Development Contract](./agent-development-contract) - Required agent interface and patterns
-- [Advanced Agent Types](./advanced-agent-types) - Context configuration for services
-- [Reference: Agent Types](../../reference/agent-types) - Built-in agents using service injection
+- [Agent Development Contract](/docs/guides/development/agents/agent-development-contract) - Required agent interface and patterns
+- [Advanced Agent Types](/docs/guides/development/agents/advanced-agent-types) - Context configuration for services
+- [Reference: Agent Types](/docs/reference/agent-types) - Built-in agents using service injection
 :::
 
 ## Architecture Overview
@@ -861,11 +861,11 @@ The service injection system provides a robust, flexible foundation for agent de
 
 After understanding service injection:
 
-1. **Learn Agent Contract**: Read [Agent Development Contract](./agent-development-contract) for required patterns and interfaces
-2. **Configure Service Context**: Explore [Advanced Agent Types](./advanced-agent-types) for service-specific configuration options
-3. **Study Built-in Examples**: Review [Reference: Agent Types](../../reference/agent-types) to see service injection in practice
-4. **Build Custom Agents**: Check [Tutorial: Building Custom Agents](../../tutorials/building-custom-agents) for complete development examples with service injection
-5. **Host Integration**: Learn [Host Service Integration](./host-service-integration) for extending AgentMap with custom services
+1. **Learn Agent Contract**: Read [Agent Development Contract](/docs/guides/development/agents/agent-development-contract) for required patterns and interfaces
+2. **Configure Service Context**: Explore [Advanced Agent Types](/docs/guides/development/agents/advanced-agent-types) for service-specific configuration options
+3. **Study Built-in Examples**: Review [Reference: Agent Types](/docs/reference/agent-types) to see service injection in practice
+4. **Build Custom Agents**: Check [Tutorial: Building Custom Agents](/docs/tutorials/building-custom-agents) for complete development examples with service injection
+5. **Host Integration**: Learn [Host Service Integration](/docs/guides/development/agents/host-service-integration) for extending AgentMap with custom services
 
 :::tip Service Development
 The service injection system is designed to be extensible. Start with AgentMap's built-in services and gradually add your own domain-specific services using the same patterns.

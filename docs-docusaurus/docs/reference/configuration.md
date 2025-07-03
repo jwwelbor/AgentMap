@@ -384,4 +384,4 @@ new_config = migrate_config(old_config, target_version='2.0')
 save_config(new_config, 'agentmap.config.json')
 ```
 
-For detailed configuration examples and use cases, see the [Agent Development Guide](../guides/advanced/agent-development-contract) and [Service Injection Patterns](../guides/advanced/service-injection-patterns).
+For detailed configuration examples and use cases, see the [Agent Development Guide](/docs/guides/development/agents/agent-development) and [Service Injection Patterns](/docs/contributing/service-injection).

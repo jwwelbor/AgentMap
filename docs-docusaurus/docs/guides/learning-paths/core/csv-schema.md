@@ -370,22 +370,22 @@ RetryBot,End,,,echo,,,success_output|failure_output,final_result,,
 ### **Core Concepts**
 - **[Fundamentals](./fundamentals)** - Basic AgentMap concepts and philosophy
 - **[Workflows](./workflows)** - Workflow design patterns and best practices
-- **[State Management](./state-management)** - How data flows between agents
+- **[State Management](/docs/guides/learning-paths/core/state-management)** - How data flows between agents
 
 ### **Complete Reference**
-- **[CSV Schema Reference](../../reference/csv-schema)** - Complete specification with all options
-- **[Agent Types Reference](../../reference/agent-types)** - All available agent types and configurations
-- **[CLI Commands](../../reference/cli-commands)** - Command-line tools for CSV workflows
+- **[CSV Schema Reference](/docs/reference/csv-schema)** - Complete specification with all options
+- **[Agent Types Reference](/docs/reference/agent-types)** - All available agent types and configurations
+- **[CLI Commands](/docs/reference/cli-commands)** - Command-line tools for CSV workflows
 
 ### **Development**
-- **[Custom Agents](../development/custom-agents)** - Building your own agent types
-- **[Testing Strategies](../development/testing)** - Testing CSV workflows effectively
-- **[Best Practices](../development/best-practices)** - Development patterns and guidelines
+- **[Custom Agents](/docs/guides/development/agents/custom-agents)** - Building your own agent types
+- **[Testing Strategies](/docs/guides/development/testing)** - Testing CSV workflows effectively
+- **[Best Practices](/docs/guides/development/best-practices)** - Development patterns and guidelines
 
 ### **Tools & Tutorials**
-- **[Interactive Playground](../../playground)** - Test CSV workflows in your browser
-- **[Quick Start Guide](../../getting-started/quick-start)** - Build your first workflow
-- **[Weather Bot Tutorial](../../tutorials/weather-bot)** - Complete example walkthrough
+- **[Interactive Playground](/docs/playground)** - Test CSV workflows in your browser
+- **[Quick Start Guide](/docs/getting-started)** - Build your first workflow
+- **[Weather Bot Tutorial](/docs/tutorials/weather-bot)** - Complete example walkthrough
 
 ---
 

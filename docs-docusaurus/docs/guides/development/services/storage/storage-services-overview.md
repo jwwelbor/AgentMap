@@ -574,8 +574,7 @@ DocFlow,ErrorHandler,,Handle errors,Echo,End,,"error",error_message,Error: {erro
 GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
 DocFlow,ReadDoc,,"{'format': 'structured'}",file_reader,ProcessDoc,ErrorHandler,"",document,documents/input.pdf
 DocFlow,ProcessDoc,,Process document,openai,SaveSummary,ErrorHandler,"document",summary,Summarize this document: {document.content}
-DocFlow,SaveSummary,,,file_writer,End,ErrorHandler,"summary",result,output/summary.md
-DocFlow,End,,Completion,Echo,,,"result",final_message,Document processed successfully
+DocFlow,SaveSummary,,,file_writer,End,ErrorHandler,"summary",result,output/summary DocFlow,End,,Completion,Echo,,,"result",final_message,Document processed successfully
 DocFlow,ErrorHandler,,Handle errors,Echo,End,,"error",error_message,Error: {error}
 ```
 
@@ -869,13 +868,13 @@ process_document(doc["content"], doc["metadata"])
 
 ## Related Documentation
 
-- [Cloud Storage Integration](./cloud-storage-integration.md) - Extend storage to cloud providers
-- [Service Registry Patterns](./service-registry-patterns.md) - Host service integration
-- [Agent Development Guide](/docs/guides/advanced/agent-development) - Building storage-capable agents
+- [Cloud Storage Integration](/docs/guides/development/services/storage/cloud-storage-integration) - Extend storage to cloud providers
+- [Service Registry Patterns](/docs/guides/development/services/service-registry-patterns) - Host service integration
+- [Agent Development Guide](/docs/guides/development/agents/agent-development) - Building storage-capable agents
 - [Configuration Reference](/docs/reference/configuration) - Complete configuration options
 
 :::tip Next Steps
 
-The storage services provide a consistent, powerful foundation for data operations in AgentMap workflows while maintaining flexibility for different use cases and requirements. Consider implementing [cloud storage integration](./cloud-storage-integration.md) for production deployments.
+The storage services provide a consistent, powerful foundation for data operations in AgentMap workflows while maintaining flexibility for different use cases and requirements. Consider implementing [cloud storage integration](/docs/guides/development/services/storage/cloud-storage-integration) for production deployments.
 
 :::

@@ -34,7 +34,7 @@ function WhatCanIBuild() {
     {
       title: '💼 Business Automator',
       description: 'Streamline invoicing, reporting, and customer communication',
-      link: '/docs/guides/understanding-workflows'
+      link: '/docs/guides/learning-paths/understanding-workflows'
     }
   ];
 

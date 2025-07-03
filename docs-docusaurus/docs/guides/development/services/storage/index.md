@@ -4,7 +4,7 @@ This section covers AgentMap's infrastructure components, including storage serv
 
 ## Available Guides
 
-### [Storage Services Overview](./storage-services-overview.md)
+### [Storage Services Overview](/docs/guides/development/services/storage/storage-services-overview)
 Learn about AgentMap's unified storage service system supporting CSV, JSON, and file operations with consistent APIs and behavior patterns.
 
 **Key Topics:**
@@ -15,7 +15,7 @@ Learn about AgentMap's unified storage service system supporting CSV, JSON, and 
 - Query and filtering capabilities
 - Performance optimization strategies
 
-### [Cloud Storage Integration](./cloud-storage-integration.md)
+### [Cloud Storage Integration](/docs/guides/development/services/storage/cloud-storage-integration)
 Extend AgentMap to major cloud storage providers including Azure Blob Storage, AWS S3, and Google Cloud Storage.
 
 **Key Topics:**
@@ -26,7 +26,7 @@ Extend AgentMap to major cloud storage providers including Azure Blob Storage, A
 - Error handling and troubleshooting
 - Performance optimization for cloud operations
 
-### [Service Registry Patterns](./service-registry-patterns.md)
+### [Service Registry Patterns](/docs/guides/development/services/service-registry-patterns)
 Integrate AgentMap with existing application infrastructure through protocol-based service discovery and dependency injection.
 
 **Key Topics:**
@@ -199,9 +199,9 @@ graph TB
 ## Related Documentation
 
 - [Configuration Reference](/docs/reference/configuration) - Complete configuration options
-- [Agent Development Guide](/docs/guides/advanced/agent-development) - Building storage-capable agents
-- [Security Guide](/docs/guides/advanced/security) - Security best practices
-- [Performance Optimization](/docs/guides/advanced/performance) - Optimization strategies
+- [Agent Development Guide](/docs/guides/development/agents/agent-development) - Building storage-capable agents
+- [Security Guide](/docs/guides/deploying/deployment) - Security best practices
+- [Performance Optimization](/docs/guides/deploying/monitoring) - Optimization strategies
 
 ---
 

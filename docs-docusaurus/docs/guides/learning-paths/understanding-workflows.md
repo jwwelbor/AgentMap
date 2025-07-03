@@ -13,7 +13,7 @@ import WorkflowVisualizer from '@site/src/components/WorkflowVisualizer';
 AgentMap **agentic AI workflows** are autonomous multi-agent systems defined using simple CSV files. Unlike traditional workflows, these are **intelligent agent networks** where each agent can reason, make decisions, and collaborate with other agents. This guide helps you understand how to build sophisticated agentic AI systems through interactive visualizations.
 
 :::tip Try Workflows Live!
-🎮 **Ready to build your own?** Jump straight to our [Interactive Playground](../playground) to create and test workflows with live simulation!
+🎮 **Ready to build your own?** Jump straight to our [Interactive Playground](/docs/playground) to create and test workflows with live simulation!
 :::
 
 ## Interactive Workflow Builder
@@ -195,30 +195,30 @@ Each template showcases different aspects of workflow design and can serve as st
 ## Related Documentation
 
 ### 🚀 **Getting Started**
-- **[Quick Start Guide](../getting-started/quick-start)**: Build your first workflow in 5 minutes
-- **[CSV Schema Reference](../reference/csv-schema)**: Complete workflow format specification
-- **[Agent Types Reference](../reference/agent-types)**: Complete list of available agents
+- **[Quick Start Guide](/docs/getting-started)**: Build your first workflow in 5 minutes
+- **[CSV Schema Reference](/docs/reference/csv-schema)**: Complete workflow format specification
+- **[Agent Types Reference](/docs/reference/agent-types)**: Complete list of available agents
 
 ### 📖 **Core Concepts**
-- **[State Management](./state-management)**: How data flows between agents
-- **[Advanced Agent Types](./advanced/advanced-agent-types)**: Custom agent development
-- **[Agent Development Contract](./advanced/agent-development-contract)**: Building your own agents
+- **[State Management](./core/state-management)**: How data flows between agents
+- **[Advanced Agent Types](/docs/guides/development/agents/advanced-agent-types)**: Custom agent development
+- **[Agent Development Contract](/docs/guides/development/agents/agent-development-contract)**: Building your own agents
 
 ### 💻 **Tools & Development**
-- **[CLI Commands](../reference/cli-commands)**: Command-line interface for AgentMap
-- **[CLI Graph Inspector](../reference/cli-graph-inspector)**: Debug and analyze workflows
-- **[Interactive Playground](../playground)**: Test workflows in your browser
+- **[CLI Commands](/docs/reference/cli-commands)**: Command-line interface for AgentMap
+- **[CLI Graph Inspector](/docs/reference/cli-graph-inspector)**: Debug and analyze workflows
+- **[Interactive Playground](/docs/playground)**: Test workflows in your browser
 
 ### 🏗️ **Advanced Topics**
-- **[Memory Management](./advanced/memory-and-orchestration/memory-management)**: Persistent state across workflow runs
-- **[Service Injection](./advanced/service-injection-patterns)**: Dependency injection patterns
-- **[Host Service Integration](./advanced/host-service-integration)**: Custom service integration
+- **[Memory Management](/docs/guides/development/agent-memory/memory-management)**: Persistent state across workflow runs
+- **[Service Injection](/docs/contributing/service-injection)**: Dependency injection patterns
+- **[Host Service Integration](/docs/guides/development/agents/host-service-integration)**: Custom service integration
 
 ### 📚 **Tutorials & Examples**
-- **[Weather Bot Tutorial](../tutorials/weather-bot)**: API integration with error handling
-- **[Data Processing Pipeline](../tutorials/data-processing-pipeline)**: ETL workflow patterns
-- **[Customer Support Bot](../tutorials/customer-support-bot)**: Multi-intent classification
-- **[Example Workflows](../examples/)**: Real-world workflow patterns
+- **[Weather Bot Tutorial](/docs/tutorials/weather-bot)**: API integration with error handling
+- **[Data Processing Pipeline](/docs/tutorials/data-processing-pipeline)**: ETL workflow patterns
+- **[Customer Support Bot](/docs/tutorials/customer-support-bot)**: Multi-intent classification
+- **[Example Workflows](/docs/examples/)**: Real-world workflow patterns
 
 ---
 

@@ -11,7 +11,7 @@ Comprehensive guide for deploying, monitoring, and maintaining AgentMap workflow
 
 ## 🏭 Production Operations
 
-### **[Execution Tracking](../development/execution-tracking)**
+### **[Execution Tracking](./monitoring)**
 **Performance monitoring and debugging for production workflows**
 
 - **Real-time Monitoring**: Track workflow execution in real-time with detailed metrics
@@ -27,7 +27,7 @@ Comprehensive guide for deploying, monitoring, and maintaining AgentMap workflow
 - Resource usage optimization and capacity planning
 - Production debugging and troubleshooting
 
-### **[Testing Patterns](./testing-patterns)**
+### **[Testing Patterns](/docs/guides/development/testing)**
 **Comprehensive testing strategies for reliable AgentMap workflows**
 
 - **Unit Testing**: Test individual agents and components in isolation
@@ -230,19 +230,18 @@ Stay current with operational best practices and emerging technologies:
 ## 📚 Related Documentation
 
 ### **Core Operations**
-- **[Execution Tracking](./execution-tracking)** - Detailed monitoring and debugging guide
-- **[Testing Patterns](./testing-patterns)** - Comprehensive testing strategies
-- **[Performance Guide](../advanced/performance)** - Advanced performance optimization
-- **[Security Patterns](../advanced/security)** - Enterprise security implementations
+- **[Execution Tracking](./monitoring)** - Detailed monitoring and debugging guide
+- **[Testing Patterns](/docs/guides/development/testing)** - Comprehensive testing strategies
+- **[Security Patterns](./deployment)** - Enterprise security implementations
 
 ### **Infrastructure**
-- **[Infrastructure Services](../infrastructure/)** - Enterprise infrastructure patterns
-- **[Cloud Integration](../infrastructure/cloud-storage-integration)** - Cloud deployment strategies
-- **[Service Registry](../infrastructure/service-registry-patterns)** - Service discovery and management
+- **[Infrastructure Services](/docs/guides/development/services/storage/)** - Enterprise infrastructure patterns
+- **[Cloud Integration](/docs/guides/development/services/storage/cloud-storage-integration)** - Cloud deployment strategies
+- **[Service Registry](/docs/guides/development/services/service-registry-patterns)** - Service discovery and management
 
 ### **Development**
-- **[Best Practices](../best-practices/)** - Production-ready development patterns
-- **[Advanced Development](../advanced/)** - Sophisticated development techniques
+- **[Best Practices](../development/best-practices)** - Production-ready development patterns
+- **[Advanced Development](../development/)** - Sophisticated development techniques
 - **[Architecture Guide](../../contributing/clean-architecture-overview)** - System architecture principles
 
 ---
@@ -250,16 +249,16 @@ Stay current with operational best practices and emerging technologies:
 ## 🚀 Getting Started with Operations
 
 ### **For New Operations Teams**
-1. **[Start with Execution Tracking](./execution-tracking)** - Set up basic monitoring
-2. **[Implement Testing Patterns](./testing-patterns)** - Establish quality assurance
-3. **[Deploy Monitoring](./execution-tracking)** - Production observability
-4. **[Optimize Performance](../advanced/performance)** - Scale efficiently
+1. **[Start with Execution Tracking](./monitoring)** - Set up basic monitoring
+2. **[Implement Testing Patterns](/docs/guides/development/testing)** - Establish quality assurance
+3. **[Deploy Monitoring](./monitoring)** - Production observability
+4. **[Deploy to Production](./deployment)** - Scale efficiently
 
 ### **For Experienced Teams**
-1. **[Advanced Monitoring](./execution-tracking)** - Sophisticated observability
-2. **[Enterprise Testing](./testing-patterns)** - Comprehensive quality assurance
-3. **[Security Operations](../advanced/security)** - Enterprise security patterns
-4. **[Continuous Improvement](./execution-tracking)** - Operational excellence
+1. **[Advanced Monitoring](./monitoring)** - Sophisticated observability
+2. **[Enterprise Testing](/docs/guides/development/testing)** - Comprehensive quality assurance
+3. **[Security Operations](./deployment)** - Enterprise security patterns
+4. **[Continuous Improvement](./monitoring)** - Operational excellence
 
 ---
 

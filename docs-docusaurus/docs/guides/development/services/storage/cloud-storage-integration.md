@@ -840,10 +840,10 @@ gcp:
 
 ## Related Documentation
 
-- [Storage Services Overview](./storage-services-overview.md) - Core storage service concepts
-- [Service Registry Patterns](./service-registry-patterns.md) - Host service integration
+- [Storage Services Overview](/docs/guides/development/services/storage/storage-services-overview) - Core storage service concepts
+- [Service Registry Patterns](/docs/guides/development/services/service-registry-patterns) - Host service integration
 - [Configuration Reference](/docs/reference/configuration) - Complete configuration options
-- [Security Guide](/docs/guides/advanced/security) - Security best practices
+- [Security Guide](/docs/guides/deploying/deployment) - Security best practices
 
 :::tip Production Deployment
 

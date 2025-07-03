@@ -1410,9 +1410,9 @@ if __name__ == "__main__":
 
 ## Related Documentation
 
-- [Performance Optimization](/docs/guides/production/performance) - Optimize AgentMap for high performance
-- [Security Best Practices](/docs/guides/production/security) - Secure your AgentMap deployment
-- [Monitoring & Observability](/docs/guides/production/monitoring) - Monitor AgentMap in production
+- [Performance Optimization](/docs/guides/deploying/monitoring) - Optimize AgentMap for high performance
+- [Security Best Practices](/docs/guides/deploying/deployment) - Secure your AgentMap deployment
+- [Monitoring & Observability](/docs/guides/deploying/monitoring) - Monitor AgentMap in production
 - [Configuration Reference](/docs/reference/configuration) - Complete configuration options
 
 :::tip Next Steps

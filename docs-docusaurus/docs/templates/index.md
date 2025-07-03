@@ -312,7 +312,7 @@ When modifying templates, document your changes:
 Need assistance with templates?
 
 - **Documentation**: Check the [Agent Types Reference](/docs/reference/agent-types) for detailed agent documentation
-- **Quick Start**: Review the [Quick Start Guide](/docs/getting-started/quick-start) for AgentMap basics
+- **Quick Start**: Review the [Quick Start Guide](/docs/getting-started) for AgentMap basics
 - **Examples**: Explore additional examples in the [Examples Directory](/docs/examples)
 - **Community**: Join discussions in our community forums
 

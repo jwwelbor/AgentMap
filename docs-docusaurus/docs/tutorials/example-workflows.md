@@ -144,7 +144,7 @@ DocFlow,End,,Workflow complete,echo,,,"completion_message|error_message",final_o
 
 **Supported File Types**:
 - PDF documents
-- Text files (.txt, .md)
+- Text files (.txt, )
 - Word documents (.docx)
 - CSV and structured data
 
@@ -395,19 +395,19 @@ agentmap inspect --csv your_workflow.csv --verbose
 ## 🔗 Related Documentation
 
 ### 📖 **Core Concepts**
-- **[Understanding Workflows](../guides/understanding-workflows)**: Learn workflow fundamentals
+- **[Understanding Workflows](/docs/guides/learning-paths/understanding-workflows)**: Learn workflow fundamentals
 - **[CSV Schema Reference](../reference/csv-schema)**: Complete format specification
-- **[State Management](../guides/state-management)**: Data flow between agents
+- **[State Management](/docs/guides/learning-paths/core/state-management)**: Data flow between agents
 
 ### 🤖 **Agent Development**
 - **[Agent Types Reference](../reference/agent-types)**: All available agent types
-- **[Advanced Agent Types](../guides/advanced/advanced-agent-types)**: Custom agent development
-- **[Agent Development Contract](../guides/advanced/agent-development-contract)**: Agent interface requirements
+- **[Advanced Agent Types](/docs/guides/development/agents/advanced-agent-types)**: Custom agent development
+- **[Agent Development Contract](/docs/guides/development/agents/agent-development)**: Agent interface requirements
 
 ### 🏗️ **Advanced Patterns**
-- **[Memory Management](../guides/advanced/memory-and-orchestration/memory-management)**: Persistent state patterns
-- **[Orchestration Patterns](../guides/advanced/memory-and-orchestration/orchestration-patterns)**: Complex workflow coordination
-- **[Service Injection](../guides/advanced/service-injection-patterns)**: Dependency injection patterns
+- **[Memory Management](/docs/guides/development/agent-memory/memory-management)**: Persistent state patterns
+- **[Orchestration Patterns](/docs/guides/development/orchestration)**: Complex workflow coordination
+- **[Service Injection](/docs/contributing/service-injection)**: Dependency injection patterns
 
 ### 🔧 **Tools & Development**
 - **[CLI Commands](../reference/cli-commands)**: Complete command reference
@@ -455,4 +455,4 @@ agentmap inspect --csv your_workflow.csv --verbose
 ### **🚀 Next Steps**
 - **Explore [Interactive Playground](../playground)**: Test these patterns in your browser
 - **Build [Weather Bot](./weather-bot)**: Complete tutorial with custom agents
-- **Learn [Advanced Patterns](../guides/advanced/memory-and-orchestration/orchestration-patterns)**: Complex coordination techniques
+- **Learn [Advanced Patterns](/docs/guides/development/orchestration)**: Complex coordination techniques

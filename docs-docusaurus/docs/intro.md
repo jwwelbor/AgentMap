@@ -16,7 +16,7 @@ AgentMap makes it incredibly easy to create autonomous multi-agent AI systems us
 
 Ready to build your first AI workflow? Our quick start guide will have you up and running with a working weather bot in under 10 minutes.
 
-**[👉 Start the Quick Start Guide](./getting-started/quick-start)**
+**[👉 Start the Quick Start Guide](./getting-started)**
 
 ## ✨ What Makes AgentMap Special?
 
@@ -52,7 +52,7 @@ Orchestrate OpenAI, Anthropic, and Google models with memory management, routing
 
 ## 🧭 Navigation Guide
 
-### 🏃‍♂️ **[Quick Start](./getting-started/quick-start)** 
+### 🏃‍♂️ **[Quick Start](./getting-started)** 
 Build your first workflow in 5 minutes with our step-by-step guide.
 
 ### 📚 **[Tutorials](./tutorials)**
@@ -65,9 +65,9 @@ Deep dive into AgentMap features with comprehensive examples and explanations:
 
 ### 📖 **[Guides](./guides/)**
 Detailed documentation on specific topics:
-- **[Understanding Workflows](./guides/understanding-workflows)** - Core concepts and patterns
-- **[Advanced Features](./guides/advanced/)** - Memory, routing, and optimization
-- **[Best Practices](./guides/best-practices/)** - Production-ready workflows
+- **[Understanding Workflows](/docs/guides/learning-paths/understanding-workflows)** - Core concepts and patterns
+- **[Advanced Features](/docs/guides/development/)** - Memory, routing, and optimization
+- **[Best Practices](/docs/guides/development/best-practices)** - Production-ready workflows
 
 ### 🔧 **[Reference](./reference)**
 Complete API and configuration documentation:
@@ -80,12 +80,12 @@ Complete API and configuration documentation:
 For developers new to AgentMap, we recommend this learning progression:
 
 ### **1. Quick Start** (5 minutes)
-Build your first working workflow with our [Quick Start Guide](./getting-started/quick-start)
+Build your first working workflow with our [Quick Start Guide](./getting-started)
 
 ### **2. Core Concepts** (15 minutes)
 Understand the fundamentals:
-- **[Core Features](./overview/core-features)** - AgentMap capabilities and architecture
-- **[Understanding Workflows](./guides/understanding-workflows)** - How workflows work
+- **[Core Features](./core-features)** - AgentMap capabilities and architecture
+- **[Understanding Workflows](/docs/guides/learning-paths/understanding-workflows)** - How workflows work
 - **[CSV Schema](./reference/csv-schema)** - Workflow definition format
 
 ### **3. Hands-On Practice** (30 minutes)
@@ -96,16 +96,16 @@ Build real workflows with tutorials:
 
 ### **4. Advanced Topics** (60 minutes)
 Dive deeper into AgentMap:
-- **[Agent Development Contract](./guides/advanced/agent-development-contract)** - Custom agent creation
-- **[State Management](./guides/state-management)** - Data flow patterns
-- **[Memory Management](./guides/advanced/memory-and-orchestration/memory-management)** - Conversational AI and persistence
-- **[Infrastructure Services](./guides/infrastructure/storage-services-overview)** - File, database, and cloud operations
+- **[Agent Development Contract](/docs/guides/development/agents/agent-development)** - Custom agent creation
+- **[State Management](./contributing/state-management)** - Data flow patterns
+- **[Memory Management](/docs/guides/development/agent-memory/memory-management)** - Conversational AI and persistence
+- **[Infrastructure Services](/docs/guides/development/services/storage/storage-services-overview)** - File, database, and cloud operations
 
 ### **5. Production Deployment**
 Prepare for real-world use:
-- **[Execution Tracking](./guides/operations/execution-tracking)** - Performance monitoring and debugging
-- **[Testing Workflows](./guides/operations/testing-patterns)** - Quality assurance
-- **[Host Service Integration](./guides/advanced/host-service-integration)** - Enterprise integration
+- **[Execution Tracking](/docs/guides/deploying/monitoring)** - Performance monitoring and debugging
+- **[Testing Workflows](/docs/guides/development/testing)** - Quality assurance
+- **[Host Service Integration](/docs/guides/development/agents/host-service-integration)** - Enterprise integration
 
 ## 🏗️ Key Architecture Concepts
 
@@ -124,7 +124,7 @@ The [Dependency Injection](./reference/dependency-injection) system provides:
 - **Protocol-Based Injection**: Services injected based on interface implementation
 
 ### **Agent Development Patterns**
-The [Agent Development Contract](./guides/advanced/agent-development-contract) framework defines:
+The [Agent Development Contract](/docs/guides/development/agents/agent-development) framework defines:
 - Modern constructor patterns with infrastructure service injection
 - Protocol-based business service configuration  
 - Debugging hooks and service information methods
@@ -133,32 +133,32 @@ The [Agent Development Contract](./guides/advanced/agent-development-contract) f
 ## 📚 Complete Documentation Index
 
 ### **Core Concepts**
-- **[Core Features](./overview/core-features)** - Overview of AgentMap capabilities and features
+- **[Core Features](./core-features)** - Overview of AgentMap capabilities and features
 - **[CSV Schema](./reference/csv-schema)** - Complete CSV schema reference
-- **[State Management](./guides/state-management)** - How data flows between agents
+- **[State Management](/docs/guides/learning-paths/core/state-management)** - How data flows between agents
 
 ### **Agent Development**
-- **[Agent Development Contract](./guides/advanced/agent-development-contract)** - Required interface and patterns for all agents
-- **[Service Injection Patterns](./guides/advanced/service-injection-patterns)** - Protocol-based dependency injection system
+- **[Agent Development Contract](/docs/guides/development/agents/agent-development)** - Required interface and patterns for all agents
+- **[Service Injection Patterns](./contributing/service-injection)** - Protocol-based dependency injection system
 - **[Agent Types Reference](./reference/agent-types)** - Built-in agent types and basic usage
-- **[Advanced Agent Types](./guides/advanced/advanced-agent-types)** - Advanced agents and comprehensive context configuration
+- **[Advanced Agent Types](/docs/guides/development/agents/advanced-agent-types)** - Advanced agents and comprehensive context configuration
 
 ### **Workflow Management**
-- **[Memory Management](./guides/advanced/memory-and-orchestration/memory-management)** - Template system and conversation management
-- **[Orchestration Patterns](./guides/advanced/memory-and-orchestration/orchestration-patterns)** - Dynamic workflow routing and orchestration
+- **[Memory Management](/docs/guides/development/agent-memory/memory-management)** - Template system and conversation management
+- **[Orchestration Patterns](/docs/guides/development/orchestration)** - Dynamic workflow routing and orchestration
 - **[Example Workflows](./examples/)** - Complete workflow examples
 
 ### **Operations and Tools**
 - **[CLI Commands](./reference/cli-commands)** - Command-line interface and tools
 - **[CLI Graph Inspector](./reference/cli-graph-inspector)** - Debug and analyze workflows
-- **[Execution Tracking](./guides/operations/execution-tracking)** - Performance monitoring and debugging
-- **[Infrastructure Services](./guides/infrastructure/storage-services-overview)** - Unified storage operations for CSV, files, and data
-- **[Cloud Storage Integration](./guides/infrastructure/cloud-storage-integration)** - Cloud storage integration
+- **[Execution Tracking](/docs/guides/deploying/monitoring)** - Performance monitoring and debugging
+- **[Infrastructure Services](/docs/guides/development/services/storage/storage-services-overview)** - Unified storage operations for CSV, files, and data
+- **[Cloud Storage Integration](/docs/guides/development/services/storage/cloud-storage-integration)** - Cloud storage integration
 
 ### **Advanced Topics**
-- **[Host Service Integration](./guides/advanced/host-service-integration)** - Extend AgentMap with custom services and agents
-- **[Service Registry Patterns](./guides/infrastructure/service-registry-patterns)** - Registry patterns for managing services
-- **[Testing Workflows](./guides/operations/testing-patterns)** - Testing patterns and best practices
+- **[Host Service Integration](/docs/guides/development/agents/host-service-integration)** - Extend AgentMap with custom services and agents
+- **[Service Registry Patterns](/docs/guides/development/services/service-registry-patterns)** - Registry patterns for managing services
+- **[Testing Workflows](/docs/guides/development/testing)** - Testing patterns and best practices
 
 ## 🤝 Community & Support
 
@@ -170,4 +170,4 @@ The [Agent Development Contract](./guides/advanced/agent-development-contract) f
 
 **Ready to start building?** 🎉
 
-**[Begin Quick Start Guide →](./getting-started/quick-start)**
+**[Begin Quick Start Guide →](./getting-started)**

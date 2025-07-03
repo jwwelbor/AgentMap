@@ -12,7 +12,7 @@ import WorkflowVisualizer from '@site/src/components/WorkflowVisualizer';
 AgentMap **workflows** are intelligent multi-agent systems defined using simple CSV files. These are autonomous agent networks where each agent can reason, make decisions, and collaborate with other agents. This guide helps you understand how to build sophisticated AI workflows through interactive visualizations.
 
 :::tip Try Workflows Live!
-🎮 **Ready to build your own?** Jump straight to our [Interactive Playground](../../playground) to create and test workflows with live simulation!
+🎮 **Ready to build your own?** Jump straight to our [Interactive Playground](/docs/playground) to create and test workflows with live simulation!
 :::
 
 ## Interactive Workflow Builder
@@ -288,25 +288,25 @@ OptimizedFlow,Error,,Handle errors efficiently,echo,End,,error,error_message,,Fa
 ## Related Documentation
 
 ### **Continue Learning**
-- **[State Management](./state-management)** - How data flows between agents
+- **[State Management](/docs/guides/learning-paths/core/state-management)** - How data flows between agents
 - **[CSV Schema Deep Dive](./csv-schema)** - Complete CSV format specification
 - **[Fundamentals](./fundamentals)** - Core AgentMap concepts
 
 ### **Development**
-- **[Custom Agent Development](../development/custom-agents)** - Building your own agents
-- **[Service Integration](../development/service-injection)** - Enterprise integration patterns
-- **[Memory Management](../development/memory-management)** - Conversational AI workflows
+- **[Custom Agent Development](/docs/guides/development/agents/custom-agents)** - Building your own agents
+- **[Service Integration](/docs/contributing/service-injection)** - Enterprise integration patterns
+- **[Memory Management](/docs/guides/development/agent-memory/memory-management)** - Conversational AI workflows
 
 ### **Tools & Testing**
-- **[CLI Commands](../../reference/cli-commands)** - Command-line interface for AgentMap
-- **[Interactive Playground](../../playground)** - Test workflows in your browser
-- **[Testing Strategies](../development/testing)** - Development testing approaches
+- **[CLI Commands](/docs/reference/cli-commands)** - Command-line interface for AgentMap
+- **[Interactive Playground](/docs/playground)** - Test workflows in your browser
+- **[Testing Strategies](/docs/guides/development/testing)** - Development testing approaches
 
 ### **Tutorials & Examples**
-- **[Weather Bot Tutorial](../../tutorials/weather-bot)** - API integration with error handling
-- **[Data Processing Pipeline](../../tutorials/data-processing-pipeline)** - ETL workflow patterns
-- **[Customer Support Bot](../../tutorials/customer-support-bot)** - Multi-intent classification
-- **[Example Workflows](../../examples/)** - Real-world workflow patterns
+- **[Weather Bot Tutorial](/docs/tutorials/weather-bot)** - API integration with error handling
+- **[Data Processing Pipeline](/docs/tutorials/data-processing-pipeline)** - ETL workflow patterns
+- **[Customer Support Bot](/docs/tutorials/customer-support-bot)** - Multi-intent classification
+- **[Example Workflows](/docs/examples/)** - Real-world workflow patterns
 
 ---
 

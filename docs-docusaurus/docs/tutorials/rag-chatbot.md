@@ -1049,4 +1049,4 @@ services:
 
 This comprehensive RAG chatbot tutorial demonstrates AgentMap's power for building sophisticated AI systems. The modular agent architecture makes it easy to customize, test, and scale your chatbot for production use.
 
-For more advanced RAG patterns and optimizations, see the [Multi-Agent Research Tutorial](/docs/tutorials/multi-agent-research) and [Advanced Agent Development Guide](/docs/guides/advanced/agent-development).
+For more advanced RAG patterns and optimizations, see the [Multi-Agent Research Tutorial](/docs/tutorials/multi-agent-research) and [Advanced Agent Development Guide](/docs/guides/development/agents/agent-development).

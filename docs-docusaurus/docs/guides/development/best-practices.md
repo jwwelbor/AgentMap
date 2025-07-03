@@ -992,19 +992,19 @@ class MonitoredAgent(BaseAgent):
 ## Related Documentation
 
 ### **Core Development**
-- **[Custom Agent Development](./custom-agents)** - Building custom agents
-- **[Service Injection](./service-injection)** - Dependency injection patterns
+- **[Custom Agent Development](/docs/guides/development/agents/custom-agents)** - Building custom agents
+- **[Service Injection](/docs/contributing/service-injection)** - Dependency injection patterns
 - **[Testing Strategies](./testing)** - Comprehensive testing approaches
 
 ### **Advanced Topics**
 - **[Integration Patterns](./integrations)** - External system integration
-- **[Memory Management](./memory-management)** - Conversation and state management
+- **[Memory Management](/docs/guides/development/agent-memory/memory-management)** - Conversation and state management
 - **[Orchestration Patterns](./orchestration)** - Dynamic workflow routing
 
 ### **Production**
-- **[Deployment](../production/deployment)** - Production deployment strategies
-- **[Monitoring](../production/monitoring)** - Production monitoring and alerting
-- **[Security](../production/security)** - Security implementation patterns
+- **[Deployment](/docs/guides/deploying/deployment)** - Production deployment strategies
+- **[Monitoring](/docs/guides/deploying/monitoring)** - Production monitoring and alerting
+- **[Security](/docs/guides/deploying/deployment)** - Security implementation patterns
 
 ---
 

@@ -1524,4 +1524,4 @@ Issues Encountered: {len(research['issues_encountered'])}
 
 This comprehensive multi-agent research system demonstrates AgentMap's capability to orchestrate complex, collaborative AI workflows. The system can be extended with additional specialized agents, enhanced communication protocols, and more sophisticated analysis capabilities.
 
-For integration with real APIs and databases, see the [Building Custom Agents Tutorial](/docs/tutorials/building-custom-agents) and [Advanced Agent Development Guide](/docs/guides/advanced/agent-development).
+For integration with real APIs and databases, see the [Building Custom Agents Tutorial](/docs/tutorials/building-custom-agents) and [Advanced Agent Development Guide](/docs/guides/development/agents/agent-development).

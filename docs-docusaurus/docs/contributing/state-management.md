@@ -395,7 +395,7 @@ ErrorFlow,FinalFailure,echo,,,error,final_output,"Processing failed after retry"
 
 ## Related Documentation
 
-- **[Agent Development](../guides/development/agents/agent-development.md)**: Creating custom agents that work with state
-- **[Memory Management](../guides/development/agent-memory/memory-management.md)**: Managing conversational state and persistence
-- **[Execution Tracking](../guides/deploying/monitoring.md)**: Execution tracking and debugging workflows
-- **[Service Injection](./service-injection.md)**: Service architecture and injection patterns
+- **[Agent Development](/docs/guides/development/agents/agent-development)**: Creating custom agents that work with state
+- **[Memory Management](/docs/guides/development/agent-memory/memory-management)**: Managing conversational state and persistence
+- **[Execution Tracking](/docs/guides/deploying/monitoring)**: Execution tracking and debugging workflows
+- **[Service Injection](/docs/contributing/service-injection)**: Service architecture and injection patterns

@@ -3,9 +3,9 @@
 This document defines the interface and behavior that all agents in the AgentMap ecosystem must follow. This contract ensures extensibility and configurability through a clean architecture pattern with protocol-based dependency injection.
 
 > **Related Documentation**: 
-> - [Service Injection](service_injection.md) - Complete guide to the dependency injection system
-> - [Advanced Agent Types](advanced_agent_types.md) - Context configuration reference and advanced patterns
-> - [AgentMap Agent Types](agentmap_agent_types.md) - Built-in agent types and basic usage
+> - [Service Injection](/docs/contributing/service-injection) - Complete guide to the dependency injection system
+> - [Advanced Agent Types](/docs/guides/development/agents/advanced-agent-types) - Context configuration reference and advanced patterns
+> - [AgentMap Agent Types](/docs/reference/agent-types) - Built-in agent types and basic usage
 
 ## Architecture Overview
 
@@ -565,6 +565,6 @@ The modern AgentMap architecture provides clean separation of concerns, type-saf
 
 After understanding the agent contract:
 
-1. **Deep Dive into Service Injection**: Read [Service Injection](host_service_integration.md) for comprehensive dependency injection examples
-2. **Explore Context Configuration**: Check [Advanced Agent Types](advanced_agent_types.md) for detailed context configuration options
+1. **Deep Dive into Service Injection**: Read [Service Injection](/docs/guides/development/agents/host-service-integration) for comprehensive dependency injection examples
+2. **Explore Context Configuration**: Check [Advanced Agent Types](/docs/guides/development/agents/advanced-agent-types) for detailed context configuration options
 4. **Custom Agent Development**: See `custom-agents.md` for modern development patterns and examples

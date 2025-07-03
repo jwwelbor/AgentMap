@@ -20,8 +20,8 @@ This guide covers AgentMap's most sophisticated agents and provides comprehensiv
 
 :::info Related Documentation
 - [Agent Development Contract](./agent-development-contract) - Agent interface requirements and patterns
-- [Service Injection Patterns](./service-injection-patterns) - Dependency injection system for services
-- [Reference: Agent Types](../../reference/agent-types) - Basic agent types and usage patterns
+- [Service Injection Patterns](/docs/contributing/service-injection) - Dependency injection system for services
+- [Reference: Agent Types](/docs/reference/agent-types) - Basic agent types and usage patterns
 :::
 
 ## GraphAgent

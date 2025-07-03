@@ -1728,12 +1728,12 @@ ChatFlow,ErrorHandler,,Handle conversation errors,echo,UserInput,,error,error_me
 
 After working through these examples, explore these advanced topics:
 
-- **[Advanced Agent Types](../reference/agent-types.md)**: Learn about specialized agents
-- **[CSV Schema Reference](../reference/csv-schema.md)**: Master the CSV format
-- **[Testing Patterns](../guides/operations/testing-patterns.md)**: Test your workflows
-- **[Advanced Agent Types](../guides/advanced/advanced-agent-types.md)**: Scale your workflows with advanced patterns
+- **[Advanced Agent Types](../reference/agent-types)**: Learn about specialized agents
+- **[CSV Schema Reference](../reference/csv-schema)**: Master the CSV format
+- **[Testing Patterns](/docs/contributing/testing-patterns)**: Test your workflows
+- **[Advanced Agent Types](/docs/guides/development/agents/advanced-agent-types)**: Scale your workflows with advanced patterns
 - **[Interactive Playground](/docs/playground)**: Experiment with these patterns
 
 :::tip Get Help
-💬 **Need assistance?** Join our [Discord community](https://discord.gg/agentmap) or check the [CLI Graph Inspector](../reference/cli-graph-inspector.md) for debugging tools and techniques.
+💬 **Need assistance?** Join our [Discord community](https://discord.gg/agentmap) or check the [CLI Graph Inspector](../reference/cli-graph-inspector) for debugging tools and techniques.
 :::

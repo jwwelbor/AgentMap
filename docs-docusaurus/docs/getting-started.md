@@ -295,8 +295,7 @@ NewsFlow,CollectResults,,"{'format': '{key}:\n{value}\n'}",summary,AnalyzeNews,E
 NewsFlow,AnalyzeNews,,"{'provider': 'anthropic', 'model': 'claude-3-sonnet-20240229', 'temperature': 0.3}",llm,GenerateSummary,ErrorHandler,all_articles|topic,news_analysis,Analyze these news articles about {topic} and identify key themes and sentiment
 NewsFlow,GenerateSummary,,"{'llm': 'anthropic', 'temperature': 0.5}",summary,FormatReport,ErrorHandler,all_articles|news_analysis,executive_summary,Create a concise executive summary about {topic}
 NewsFlow,FormatReport,,Format final report,default,SaveReport,ErrorHandler,executive_summary|news_analysis,formatted_report,News Aggregation Complete
-NewsFlow,SaveReport,,"{'format': 'markdown'}",file_writer,End,ErrorHandler,formatted_report|topic,save_result,news_reports/{topic}_report.md
-NewsFlow,ErrorHandler,,Handle errors,echo,End,,error,error_message,
+NewsFlow,SaveReport,,"{'format': 'markdown'}",file_writer,End,ErrorHandler,formatted_report|topic,save_result,news_reports/{topic}_report NewsFlow,ErrorHandler,,Handle errors,echo,End,,error,error_message,
 NewsFlow,End,,Complete workflow,echo,,,formatted_report|save_result|error_message,output,`}
   title="Multi-Source News Aggregator Workflow"
   filename="news_aggregator"
@@ -392,10 +391,10 @@ RAG,Answer,,"{'provider': 'openai', 'temperature': 0.3}",llm,End,,query|search_r
 
 ## Next Steps
 
-- Explore [Agent Types Reference](../reference/agent-types.md) for more agent options
-- Learn about [CSV Schema Reference](../reference/csv-schema.md) for advanced CSV features
-- Read the [Testing Patterns](../guides/development/testing.md) guide for testing workflows
-- Check [Infrastructure Guide](../guides/deploying/index.md) for setup and configuration options
+- Explore [Agent Types Reference](/docs/reference/agent-types) for more agent options
+- Learn about [CSV Schema Reference](/docs/reference/csv-schema) for advanced CSV features
+- Read the [Testing Patterns](/docs/guides/development/testing) guide for testing workflows
+- Check [Infrastructure Guide](/docs/guides/deploying/) for setup and configuration options
 
 ## Download All Examples
 
@@ -486,8 +485,8 @@ python --version
 
 ### Getting Help
 
-- **Documentation**: [Complete AgentMap Docs](../intro.md)
-- **Examples**: [More Examples](../examples/)
+- **Documentation**: [Complete AgentMap Docs](/docs/intro)
+- **Examples**: [More Examples](/docs/examples)
 - **Community**: [Discord Server](https://discord.gg/agentmap)
 - **Issues**: [GitHub Issues](https://github.com/agentic-labs/agentmap/issues)
 
@@ -496,5 +495,5 @@ python --version
 This quick start guide provides the foundation for building powerful workflows with AgentMap. Start simple and gradually add complexity as you become familiar with the patterns!
 
 :::tip Next Steps
-🚀 **Ready for more?** Check out our [Complete Example Workflows](../examples/) for advanced patterns including parallel processing, API integrations, and data pipelines!
+🚀 **Ready for more?** Check out our [Complete Example Workflows](/docs/examples) for advanced patterns including parallel processing, API integrations, and data pipelines!
 :::

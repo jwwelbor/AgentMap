@@ -406,10 +406,10 @@ Router,Handler2,,openai,user_input|chat_history,response,"I handle type 2 reques
 
 ## Related Guides
 
-- [Memory Management](./memory-management) - Basic memory concepts for orchestrated workflows
-- [LangChain Memory Integration](./langchain-memory-integration) - Advanced memory with orchestration
+- [Memory Management](/docs/guides/development/agent-memory/memory-management) - Basic memory concepts for orchestrated workflows
+- [LangChain Memory Integration](/docs/guides/development/agent-memory/langchain-memory-integration) - Advanced memory with orchestration
 - [Prompt Management](./prompt-management) - Managing prompts in orchestrated workflows
-- [Agent Development Contract](../agent-development-contract) - Building custom orchestration agents
+- [Agent Development Contract](/docs/guides/development/agents/agent-development-contract) - Building custom orchestration agents
 
 ## Conclusion
 

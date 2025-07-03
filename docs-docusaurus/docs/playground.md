@@ -33,7 +33,7 @@ While we build these visual tools, explore AgentMap through our comprehensive do
 ### 🚀 **Quick Start**
 Get up and running with your first workflow in 5 minutes.
 
-**[→ Quick Start Guide](./getting-started/quick-start)**
+**[→ Quick Start Guide](/docs/getting-started)**
 
 ### 📖 **Complete Tutorials**
 Step-by-step guides for building real workflows:

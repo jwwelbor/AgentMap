@@ -1227,8 +1227,7 @@ The company is well-positioned for achieving the ambitious $20M annual revenue t
 
 === EXPORT RESULTS ===
 ✅ Analysis saved to: outputs/document_analysis_20240625_143022.json
-✅ Summary report: outputs/analysis_report_20240625_143022.md
-✅ Entity data: outputs/entities_20240625_143022.csv
+✅ Summary report: outputs/analysis_report_20240625_143022 ✅ Entity data: outputs/entities_20240625_143022.csv
 
 Analysis complete! 📋
 ```

@@ -159,17 +159,17 @@ All reference documents include extensive cross-references to related topics:
 ## 📚 Related Documentation
 
 ### **Learning Resources**
-- **[Quick Start Guide](../getting-started/quick-start)** - Get started with AgentMap basics
+- **[Quick Start Guide](/docs/getting-started)** - Get started with AgentMap basics
 - **[Tutorials](../tutorials/)** - Step-by-step learning guides
 - **[Examples](../examples/)** - Real-world workflow examples
 
 ### **Development Guides**
 - **[Guides](../guides/)** - Comprehensive development documentation
-- **[Advanced Topics](../guides/advanced/)** - Sophisticated development patterns
-- **[Best Practices](../guides/best-practices/)** - Production-ready patterns
+- **[Development Guides](../guides/development/)** - Sophisticated development patterns
+- **[Best Practices](../guides/development/best-practices)** - Production-ready patterns
 
 ### **Architecture**
-- **[Architecture Overview](../advanced/architecture/clean-architecture-overview)** - System design principles
+- **[Architecture Overview](/docs/contributing/clean-architecture-overview)** - System design principles
 - **[API Documentation](../api/)** - API specifications and integration guides
 
 ---

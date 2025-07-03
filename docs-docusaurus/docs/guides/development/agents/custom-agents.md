@@ -19,9 +19,9 @@ sidebar_position: 1
 This document defines the interface and behavior that all agents in the AgentMap ecosystem must follow. This contract ensures extensibility and configurability through a clean architecture pattern with protocol-based dependency injection.
 
 :::info Related Documentation
-- [Service Injection Patterns](./service-injection-patterns) - Complete guide to the dependency injection system
+- [Service Injection Patterns](/docs/contributing/service-injection) - Complete guide to the dependency injection system
 - [Advanced Agent Types](./advanced-agent-types) - Context configuration reference and advanced patterns
-- [Reference: Agent Types](../../reference/agent-types) - Built-in agent types and basic usage
+- [Reference: Agent Types](/docs/reference/agent-types) - Built-in agent types and basic usage
 :::
 
 ## Architecture Overview
@@ -582,7 +582,7 @@ The modern AgentMap architecture provides clean separation of concerns, type-saf
 
 After understanding the agent contract:
 
-1. **Deep Dive into Service Injection**: Read [Service Injection Patterns](./service-injection-patterns) for comprehensive dependency injection examples
+1. **Deep Dive into Service Injection**: Read [Service Injection Patterns](/docs/contributing/service-injection) for comprehensive dependency injection examples
 2. **Explore Context Configuration**: Check [Advanced Agent Types](./advanced-agent-types) for detailed context configuration options
-3. **Study Built-in Implementations**: Review [Reference: Agent Types](../../reference/agent-types) for practical examples
-4. **Custom Agent Development**: See [Tutorial: Building Custom Agents](../../tutorials/building-custom-agents) for modern development patterns and examples
+3. **Study Built-in Implementations**: Review [Reference: Agent Types](/docs/reference/agent-types) for practical examples
+4. **Custom Agent Development**: See [Tutorial: Building Custom Agents](/docs/tutorials/building-custom-agents) for modern development patterns and examples

@@ -407,14 +407,14 @@ class StateCleanerAgent(BaseAgent):
 - **[CSV Schema](./csv-schema)** - Complete CSV format guide
 
 ### **Development**
-- **[Custom Agents](../development/custom-agents)** - Building agents that work with state
-- **[Memory Management](../development/memory-management)** - Advanced conversational state
-- **[Service Integration](../development/service-injection)** - Enterprise state patterns
+- **[Custom Agents](/docs/guides/development/agents/custom-agents)** - Building agents that work with state
+- **[Memory Management](/docs/guides/development/agent-memory/memory-management)** - Advanced conversational state
+- **[Service Integration](/docs/contributing/service-injection)** - Enterprise state patterns
 
 ### **Operations**  
-- **[Execution Tracking](../production/monitoring)** - Monitoring state evolution
-- **[Performance Optimization](../production/performance)** - Optimizing state performance
-- **[Testing Strategies](../development/testing)** - Testing state management
+- **[Execution Tracking](/docs/guides/deploying/monitoring)** - Monitoring state evolution
+- **[Performance Optimization](/docs/guides/deploying/monitoring)** - Optimizing state performance
+- **[Testing Strategies](/docs/guides/development/testing)** - Testing state management
 
 ---
 

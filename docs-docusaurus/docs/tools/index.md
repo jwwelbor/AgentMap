@@ -372,8 +372,8 @@ For detailed documentation on specific tools:
 
 - **[CLI Commands Reference](../reference/cli-commands)** - Complete command reference
 - **[CLI Graph Inspector](../reference/cli-graph-inspector)** - Graph analysis and debugging
-- **[Testing Patterns](../guides/operations/testing-patterns)** - Testing strategies and best practices
-- **[Execution Tracking](../guides/operations/execution-tracking)** - Monitoring and performance analysis
+- **[Testing Patterns](/docs/guides/development/testing)** - Testing strategies and best practices
+- **[Execution Tracking](/docs/guides/deploying/monitoring)** - Monitoring and performance analysis
 
 ---
 

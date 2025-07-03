@@ -519,4 +519,4 @@ container.register('user_service', UserService,
                   email_service=container.get('email_service'))
 ```
 
-For more advanced dependency injection patterns and examples, see the [Service Injection Patterns Guide](/docs/guides/advanced/service-injection-patterns).
+For more advanced dependency injection patterns and examples, see the [Service Injection Patterns Guide](/docs/contributing/service-injection).

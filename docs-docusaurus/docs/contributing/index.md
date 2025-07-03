@@ -247,7 +247,7 @@ Your PR must include:
 - [ ] **Documentation** - Update relevant docs
 - [ ] **Passing CI** - All automated checks must pass
 - [ ] **Code review** - At least one approval required
-- [ ] **Changelog entry** - Add to CHANGELOG.md if applicable
+- [ ] **Changelog entry** - Add to CHANGELOG if applicable
 
 #### 4. PR Template
 Use this template for your pull requests:
@@ -271,7 +271,7 @@ Brief description of changes and motivation.
 ## Documentation
 - [ ] Code comments updated
 - [ ] Documentation updated
-- [ ] CHANGELOG.md updated (if applicable)
+- [ ] CHANGELOG updated (if applicable)
 
 ## Checklist
 - [ ] Code follows project style guidelines
@@ -479,7 +479,7 @@ We follow semantic versioning (MAJOR.MINOR.PATCH):
 ### Release Checklist
 - [ ] All tests passing
 - [ ] Documentation updated
-- [ ] CHANGELOG.md updated
+- [ ] CHANGELOG updated
 - [ ] Version number bumped
 - [ ] Release notes prepared
 - [ ] Security review completed
@@ -487,19 +487,19 @@ We follow semantic versioning (MAJOR.MINOR.PATCH):
 ## 📚 Learning Resources
 
 ### Getting Started
-- **[Quick Start Guide](./getting-started/quick-start)** - Build your first workflow
-- **[Core Concepts](./overview/core-features)** - Understand AgentMap fundamentals
-- **[Architecture Overview](./advanced/architecture/clean-architecture-overview)** - System design patterns
+- **[Quick Start Guide](../getting-started)** - Build your first workflow
+- **[Core Concepts](../core-features)** - Understand AgentMap fundamentals
+- **[Architecture Overview](./clean-architecture-overview)** - System design patterns
 
 ### Advanced Topics
-- **[Agent Development Contract](./guides/advanced/agent-development-contract)** - Build custom agents
-- **[Service Injection Patterns](./guides/advanced/service-injection-patterns)** - DI system usage
-- **[Memory Management](./guides/advanced/memory-and-orchestration/memory-management)** - State and context
+- **[Agent Development Contract](/docs/guides/development/agents/agent-development)** - Build custom agents
+- **[Service Injection Patterns](/docs/contributing/service-injection)** - DI system usage
+- **[Memory Management](/docs/guides/development/agent-memory/memory-management)** - State and context
 
 ### Examples and Tutorials
-- **[Tutorial Collection](./tutorials/)** - Step-by-step tutorials
-- **[Example Workflows](./examples/)** - Real-world implementations
-- **[Best Practices](./guides/best-practices/)** - Proven patterns and approaches
+- **[Tutorial Collection](../tutorials/)** - Step-by-step tutorials
+- **[Example Workflows](../examples/)** - Real-world implementations
+- **[Best Practices](/docs/guides/development/best-practices)** - Proven patterns and approaches
 
 ## ❓ Frequently Asked Questions
 
@@ -519,7 +519,7 @@ A: We aim to provide initial feedback within 48 hours. Complex changes may requi
 
 ### Technical Questions
 **Q: How do I add a new agent type?**
-A: See our [Agent Development Contract](./guides/advanced/agent-development-contract) guide for comprehensive instructions.
+A: See our [Agent Development Contract](/docs/guides/development/agents/agent-development) guide for comprehensive instructions.
 
 **Q: Can I contribute integrations for new LLM providers?**
 A: Absolutely! New LLM integrations are always welcome. Follow our service patterns for consistency.

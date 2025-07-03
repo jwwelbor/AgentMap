@@ -1391,9 +1391,9 @@ def debug_agent_configuration(agent, registry):
 
 ## Related Documentation
 
-- [Storage Services Overview](./storage-services-overview.md) - Core storage service concepts
-- [Cloud Storage Integration](./cloud-storage-integration.md) - Cloud storage for services
-- [Agent Development Guide](/docs/guides/advanced/agent-development) - Building service-capable agents
+- [Storage Services Overview](/docs/guides/development/services/storage/storage-services-overview) - Core storage service concepts
+- [Cloud Storage Integration](/docs/guides/development/services/storage/cloud-storage-integration) - Cloud storage for services
+- [Agent Development Guide](/docs/guides/development/agents/agent-development) - Building service-capable agents
 - [Dependency Injection](/docs/reference/dependency-injection) - DI container patterns
 
 :::tip Next Steps

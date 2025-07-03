@@ -20,7 +20,7 @@ AgentMap's primary API is through the CLI, which provides complete workflow mana
 - **Code Generation**: Scaffold custom agents and project templates
 - **Testing Tools**: Validate and benchmark workflows
 
-**Complete CLI Reference**: [CLI Commands Documentation](../reference/cli-commands)
+**Complete CLI Reference**: [CLI Commands Documentation](/docs/reference/cli-commands)
 
 ### Python Integration
 For Python applications, AgentMap can be integrated programmatically:
@@ -67,7 +67,7 @@ MyFlow,Process,,LLM processing,openai,End,Error,user_input,response,You are help
 MyFlow,End,,Complete,echo,,,response,result,
 ```
 
-**Complete Format Reference**: [CSV Schema Documentation](../reference/csv-schema)
+**Complete Format Reference**: [CSV Schema Documentation](/docs/reference/csv-schema)
 
 ### Custom Agent Development
 Extend AgentMap with custom business logic:
@@ -81,7 +81,7 @@ class CustomAgent(BaseAgent):
         return {"result": "processed"}
 ```
 
-**Development Guide**: [Agent Development Contract](../guides/advanced/agent-development-contract)
+**Development Guide**: [Agent Development Contract](/docs/guides/development/agents/agent-development)
 
 ### CLI Tools
 ```bash
@@ -100,15 +100,15 @@ agentmap run --graph MyFlow --csv workflow.csv
 ## 📖 Related Documentation
 
 ### Current Documentation
-- **[CSV Schema Reference](../reference/csv-schema)** - Complete workflow definition format
-- **[Agent Development Contract](../guides/advanced/agent-development-contract)** - Custom agent development patterns
-- **[CLI Commands Reference](../reference/cli-commands)** - Complete command-line interface
-- **[Architecture Overview](../advanced/architecture/clean-architecture-overview)** - System design principles
+- **[CSV Schema Reference](/docs/reference/csv-schema)** - Complete workflow definition format
+- **[Agent Development Contract](/docs/guides/development/agents/agent-development)** - Custom agent development patterns
+- **[CLI Commands Reference](/docs/reference/cli-commands)** - Complete command-line interface
+- **[Architecture Overview](/docs/contributing/clean-architecture-overview)** - System design principles
 
 ### Development Resources
-- **[Quick Start Guide](../getting-started/quick-start)** - Get started with AgentMap
-- **[Weather Bot Tutorial](../tutorials/weather-bot)** - Build your first custom agent
-- **[Contributing Guide](../contributing)** - How to contribute to AgentMap
+- **[Quick Start Guide](/docs/getting-started)** - Get started with AgentMap
+- **[Weather Bot Tutorial](/docs/tutorials/weather-bot)** - Build your first custom agent
+- **[Contributing Guide](/docs/contributing)** - How to contribute to AgentMap
 
 ---
 

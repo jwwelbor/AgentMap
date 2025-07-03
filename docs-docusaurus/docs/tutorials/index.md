@@ -14,7 +14,7 @@ import TabItem from '@theme/TabItem';
 import CodeBlock from '@theme/CodeBlock';
 
 :::tip Start with the Interactive Playground
-🎮 **New to AgentMap?** Try our [Interactive Playground](/docs/playground) first to get hands-on experience with workflows, or jump directly to the [Quick Start Guide](../getting-started/quick-start) to build your first workflow in 5 minutes!
+🎮 **New to AgentMap?** Try our [Interactive Playground](/docs/playground) first to get hands-on experience with workflows, or jump directly to the [Quick Start Guide](../getting-started) to build your first workflow in 5 minutes!
 :::
 
 ---
@@ -727,14 +727,14 @@ This cutting-edge tutorial is being developed to showcase AgentMap's most sophis
 ## 🛠️ Core Learning Resources
 
 ### **📖 Fundamentals**
-- **[Understanding Workflows](../guides/understanding-workflows)** - Interactive workflow concepts
+- **[Understanding Workflows](/docs/guides/learning-paths/understanding-workflows)** - Interactive workflow concepts
 - **[CSV Schema Reference](../reference/csv-schema)** - Complete CSV format guide
-- **[State Management](../guides/state-management)** - Data flow between agents
+- **[State Management](../contributing/state-management)** - Data flow between agents
 
 ### **🤖 Agent Development**
 - **[Agent Types Reference](../reference/agent-types)** - Complete agent documentation
-- **[Advanced Agent Types](../guides/advanced/advanced-agent-types)** - Custom agent development
-- **[Agent Development Contract](../guides/advanced/agent-development-contract)** - Agent interface requirements
+- **[Advanced Agent Types](/docs/guides/development/agents/advanced-agent-types)** - Custom agent development
+- **[Agent Development Contract](/docs/guides/development/agents/agent-development)** - Agent interface requirements
 
 ### **🔧 Tools & Debugging**
 - **[Interactive Playground](../playground)** - Try building workflows live
@@ -742,9 +742,9 @@ This cutting-edge tutorial is being developed to showcase AgentMap's most sophis
 - **[CLI Graph Inspector](../reference/cli-graph-inspector)** - Debug and analyze workflows
 
 ### **🏗️ Advanced Topics**
-- **[Service Injection Patterns](../guides/advanced/service-injection-patterns)** - Dependency injection
-- **[Memory Management](../guides/advanced/memory-and-orchestration/memory-management)** - Persistent state
-- **[Host Service Integration](../guides/advanced/host-service-integration)** - Custom services
+- **[Service Injection Patterns](../contributing/service-injection)** - Dependency injection
+- **[Memory Management](/docs/guides/development/agent-memory/memory-management)** - Persistent state
+- **[Host Service Integration](/docs/guides/development/agents/host-service-integration)** - Custom services
 
 ---
 
@@ -776,19 +776,17 @@ cd AgentMap-Examples
 Once you've completed these tutorials, explore these advanced topics:
 
 ### **📚 Deep Dive Documentation**
-- **[Agent Development Contract](../guides/advanced/agent-development-contract)** - Master custom agent creation
-- **[Memory Management](../guides/advanced/memory-and-orchestration/memory-management)** - Build conversational AI systems
-- **[Service Injection Patterns](../guides/advanced/service-injection-patterns)** - Enterprise-grade dependency injection
+- **[Agent Development Contract](/docs/guides/development/agents/agent-development)** - Master custom agent creation
+- **[Memory Management](/docs/guides/development/agent-memory/memory-management)** - Build conversational AI systems
+- **[Service Injection Patterns](../contributing/service-injection)** - Enterprise-grade dependency injection
 
 ### **🛠️ Development Tools**
 - **[CLI Graph Inspector](../reference/cli-graph-inspector)** - Debug and optimize your workflows
-- **[Testing Patterns](../guides/operations/testing-patterns)** - Ensure production reliability
-- **[Performance Optimization](../guides/advanced/performance)** - Scale your systems efficiently
-
+- **[Testing Patterns](/docs/guides/development/testing)** - Ensure production reliability
 ### **🏭 Production Deployment**
-- **[Infrastructure Services](../guides/infrastructure/storage-services-overview)** - Enterprise storage and data management
-- **[Execution Tracking](../guides/operations/execution-tracking)** - Monitor and analyze system performance
-- **[Host Service Integration](../guides/advanced/host-service-integration)** - Extend AgentMap with custom services
+- **[Infrastructure Services](/docs/guides/development/services/storage/storage-services-overview)** - Enterprise storage and data management
+- **[Execution Tracking](/docs/guides/deploying/monitoring)** - Monitor and analyze system performance
+- **[Host Service Integration](/docs/guides/development/agents/host-service-integration)** - Extend AgentMap with custom services
 
 ---
 
@@ -812,6 +810,6 @@ Built something amazing with these tutorials? We'd love to feature your work! Sh
 
 These tutorials will take you from AgentMap beginner to expert, with each one building on the concepts learned in previous tutorials. By the end, you'll have the skills to build sophisticated multi-agent AI systems that can transform business operations.
 
-**Ready to start building?** Jump to the [Quick Start Guide](../getting-started/quick-start) or explore the [Interactive Playground](../playground)!
+**Ready to start building?** Jump to the [Quick Start Guide](../getting-started) or explore the [Interactive Playground](../playground)!
 
 **[Begin with Weather Bot Tutorial →](./weather-bot)**

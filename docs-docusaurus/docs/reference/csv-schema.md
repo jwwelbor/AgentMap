@@ -26,7 +26,7 @@ AgentMap uses CSV files to define **agentic AI workflows** as directed graphs wh
 ---
 
 :::tip Quick Start
-🚀 **New to AgentMap?** Start with our [Quick Start Guide](../getting-started.md) to build your first workflow, then return here for detailed schema reference.
+🚀 **New to AgentMap?** Start with our [Quick Start Guide](../getting-started) to build your first workflow, then return here for detailed schema reference.
 :::
 
 :::info Why CSV for Agentic AI?
@@ -349,6 +349,6 @@ MyGraph,End,,Output results,echo,,,final_result,output,`}
 
 ## See Also
 
-- [CLI Commands Reference](cli-commands.md) - Command-line interface documentation
-- [Agent Types Reference](agent-types.md) - Available agent types and their configurations
-- [Quick Start Guide](../getting-started.md) - Build your first workflow
+- [CLI Commands Reference](cli-commands) - Command-line interface documentation
+- [Agent Types Reference](agent-types) - Available agent types and their configurations
+- [Quick Start Guide](../getting-started) - Build your first workflow

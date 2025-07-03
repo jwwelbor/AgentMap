@@ -563,17 +563,17 @@ graph_builder = container.graph_builder_service()
 
 ### **🏗️ Architecture**
 - **[Clean Architecture Overview](./clean-architecture-overview)** - Overall architecture principles and patterns
-- **[Service Catalog](./service-catalog)** - Complete service reference and interfaces
+- **[Service Catalog](../reference/service-catalog)** - Complete service reference and interfaces
 
 ### **🔧 Development Patterns**
-- **[Service Injection Patterns](../../guides/advanced/service-injection-patterns)** - Advanced injection patterns
-- **[Agent Development Contract](../../guides/advanced/agent-development-contract)** - Agent interface requirements
-- **[Testing Patterns](../../guides/operations/testing-patterns)** - Testing strategies and guidelines
+- **[Service Injection Patterns](/docs/contributing/service-injection)** - Advanced injection patterns
+- **[Agent Development Contract](/docs/guides/development/agents/agent-development)** - Agent interface requirements
+- **[Testing Patterns](/docs/guides/development/testing)** - Testing strategies and guidelines
 
 ### **📖 Core Concepts**
-- **[Understanding Workflows](../../guides/understanding-workflows)** - Workflow fundamentals
-- **[State Management](../../guides/state-management)** - Data flow between components
-- **[Advanced Agent Types](../../guides/advanced/advanced-agent-types)** - Custom agent development
+- **[Understanding Workflows](/docs/guides/learning-paths/understanding-workflows)** - Workflow fundamentals
+- **[State Management](/docs/guides/learning-paths/core/state-management)** - Data flow between components
+- **[Advanced Agent Types](/docs/guides/development/agents/advanced-agent-types)** - Custom agent development
 
 ## Summary
 

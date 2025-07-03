@@ -479,15 +479,15 @@ curl -O https://raw.githubusercontent.com/jwwelbor/AgentMap-Examples/main/weathe
 ## Related Documentation
 
 ### 📖 **Core Concepts**
-- **[Understanding Workflows](../guides/understanding-workflows)**: Learn workflow fundamentals with interactive examples
+- **[Understanding Workflows](/docs/guides/learning-paths/understanding-workflows)**: Learn workflow fundamentals with interactive examples
 - **[CSV Schema Reference](../reference/csv-schema)**: Complete workflow format specification
-- **[State Management](../guides/state-management)**: How data flows between agents
+- **[State Management](../contributing/state-management)**: How data flows between agents
 
 ### 🤖 **Agent Development**
 - **[Agent Types Reference](../reference/agent-types)**: Complete list of available agents
-- **[Advanced Agent Types](../guides/advanced/advanced-agent-types)**: Build custom agents
-- **[Agent Development Contract](../guides/advanced/agent-development-contract)**: Agent interface requirements
-- **[Service Injection Patterns](../guides/advanced/service-injection-patterns)**: Dependency injection in custom agents
+- **[Advanced Agent Types](/docs/guides/development/agents/advanced-agent-types)**: Build custom agents
+- **[Agent Development Contract](/docs/guides/development/agents/agent-development)**: Agent interface requirements
+- **[Service Injection Patterns](../contributing/service-injection)**: Dependency injection in custom agents
 
 ### 🔧 **Tools & Development**
 - **[CLI Commands](../reference/cli-commands)**: Complete command-line reference
@@ -502,15 +502,15 @@ curl -O https://raw.githubusercontent.com/jwwelbor/AgentMap-Examples/main/weathe
 - **[Example Workflows](./example-workflows)**: Real-world workflow patterns and templates
 
 ### 🏗️ **Advanced Topics**
-- **[Memory Management](../guides/advanced/memory-and-orchestration/memory-management)**: Persistent state across runs
-- **[Testing Patterns](../guides/operations/testing-patterns)**: Testing and quality assurance
-- **[Performance Optimization](../guides/advanced/performance)**: Scale workflows efficiently
+- **[Memory Management](/docs/guides/development/agent-memory/memory-management)**: Persistent state across runs
+- **[Testing Patterns](/docs/guides/development/testing)**: Testing and quality assurance
+- **[Performance Optimization](/docs/guides/deploying/deployment)**: Scale workflows efficiently
 
 ## Troubleshooting
 
 Having issues? Check our comprehensive resources:
 - **[CLI Graph Inspector](../reference/cli-graph-inspector)**: Diagnose workflow issues
-- **[Testing Patterns](../guides/operations/testing-patterns)**: Validate your workflows
+- **[Testing Patterns](/docs/guides/development/testing)**: Validate your workflows
 - **[Community Discussions](https://github.com/jwwelbor/AgentMap/discussions)**: Get help from the community
 
 ---

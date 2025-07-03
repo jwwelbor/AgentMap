@@ -14,19 +14,19 @@ Master advanced AgentMap patterns for building sophisticated, production-grade A
 ### **🤖 Custom Agent Development**
 Build specialized agents tailored to your specific business needs:
 
-#### **[Agent Development Contract](./agent-development-contract)**
+#### **[Agent Development Contract](../development/agents/agent-development)**
 - Modern constructor patterns with infrastructure service injection
 - Protocol-based business service configuration  
 - Debugging hooks and service information methods
 - Complete implementation examples with real-world patterns
 
-#### **[Advanced Agent Types](./advanced-agent-types)**
+#### **[Advanced Agent Types](../development/agents/advanced-agent-types)**
 - Comprehensive context configuration and advanced agent capabilities
 - Complex agent coordination patterns
 - High-performance agent implementations
 - Specialized agent types for enterprise scenarios
 
-#### **[Host Service Integration](./host-service-integration)**
+#### **Host Service Integration**
 - Extend AgentMap with custom services and agents
 - Enterprise system integration patterns
 - Custom service development and registration
@@ -35,25 +35,25 @@ Build specialized agents tailored to your specific business needs:
 ### **🧠 Memory & Orchestration**
 Advanced workflow coordination and state management:
 
-#### **[Memory Management](./memory-and-orchestration/memory-management)**
+#### **[Memory Management](../development/agent-memory/memory-management)**
 - Conversational AI and context persistence
 - Template systems and conversation management
 - Advanced memory patterns for complex workflows
 - Performance optimization for memory-intensive workflows
 
-#### **[Orchestration Patterns](./memory-and-orchestration/orchestration-patterns)**
+#### **Orchestration Patterns**
 - Dynamic workflow routing and coordination
 - Multi-agent system orchestration
 - Complex decision trees and conditional flows
 - Event-driven workflow patterns
 
-#### **[LangChain Integration](./memory-and-orchestration/langchain-memory-integration)**
+#### **LangChain Integration**
 - Advanced memory features with LangChain compatibility
 - Hybrid memory management strategies
 - Integration with external memory stores
 - Advanced conversation patterns
 
-#### **[Prompt Management](./memory-and-orchestration/prompt-management)**
+#### **Prompt Management**
 - Template systems and prompt optimization
 - Dynamic prompt generation and versioning
 - Context-aware prompt adaptation
@@ -62,19 +62,19 @@ Advanced workflow coordination and state management:
 ### **🏗️ Architecture & Performance**
 Enterprise-grade architecture and optimization:
 
-#### **[Service Injection Patterns](./service-injection-patterns)**
+#### **[Service Injection Patterns](../../contributing/service-injection)**
 - DI container patterns and lifecycle management
 - Protocol-based service configuration
 - Graceful degradation for optional services
 - Service registry and discovery patterns
 
-#### **[Performance Optimization](./performance)**
+#### **Performance Optimization**
 - Scale workflows efficiently with advanced caching
 - Resource optimization and memory management
 - Parallel execution and load balancing strategies
 - Performance monitoring and bottleneck identification
 
-#### **[Security Patterns](./security)**
+#### **Security Patterns**
 - Enterprise security implementations
 - Secure credential management and encryption
 - Access control and authorization patterns
@@ -85,19 +85,19 @@ Enterprise-grade architecture and optimization:
 ## 🎓 Learning Path for Advanced Development
 
 ### **Level 1: Custom Agent Mastery**
-1. **[Agent Development Contract](./agent-development-contract)** - Learn the foundational patterns
-2. **[Advanced Agent Types](./advanced-agent-types)** - Build sophisticated agents
-3. **[Host Service Integration](./host-service-integration)** - Extend the framework
+1. **[Agent Development Contract](../development/agents/agent-development)** - Learn the foundational patterns
+2. **[Advanced Agent Types](../development/agents/advanced-agent-types)** - Build sophisticated agents
+3. **Host Service Integration** - Extend the framework
 
 ### **Level 2: Workflow Orchestration**
-1. **[Memory Management](./memory-and-orchestration/memory-management)** - State and context
-2. **[Orchestration Patterns](./memory-and-orchestration/orchestration-patterns)** - Complex coordination
-3. **[Service Injection](./service-injection-patterns)** - Enterprise architecture
+1. **[Memory Management](../development/agent-memory/memory-management)** - State and context
+2. **Orchestration Patterns** - Complex coordination
+3. **[Service Injection](../../contributing/service-injection)** - Enterprise architecture
 
 ### **Level 3: Production Excellence**
-1. **[Performance Optimization](./performance)** - Scale efficiently
-2. **[Security Patterns](./security)** - Enterprise-grade security
-3. **[Testing Strategies](../operations/testing-patterns)** - Quality assurance
+1. **Performance Optimization** - Scale efficiently
+2. **Security Patterns** - Enterprise-grade security
+3. **[Testing Strategies](/docs/guides/development/testing)** - Quality assurance
 
 ---
 
@@ -188,19 +188,19 @@ agentmap test --csv workflow.csv --load-test --stress-test
 ## 📚 Related Documentation
 
 ### **Foundations**
-- **[Basic Concepts](../basics/)** - Start with the fundamentals
+- **Getting Started** - Start with the fundamentals
 - **[Core Guides](../)** - Master the essentials
-- **[Best Practices](../best-practices/)** - Production-ready patterns
+- **[Best Practices](../development/best-practices)** - Production-ready patterns
 
 ### **Architecture**
-- **[Clean Architecture Overview](../../advanced/architecture/clean-architecture-overview)** - System design principles
-- **[Service Catalog](../../advanced/architecture/service-catalog)** - Complete service reference
-- **[Infrastructure Services](../infrastructure/)** - Enterprise infrastructure patterns
+- **Clean Architecture Overview** - System design principles
+- **Service Catalog** - Complete service reference
+- **[Infrastructure Services](/docs/guides/development/services/)** - Enterprise infrastructure patterns
 
 ### **Operations**
-- **[Testing Patterns](../operations/testing-patterns)** - Quality assurance strategies
-- **[Execution Tracking](../operations/execution-tracking)** - Performance monitoring
-- **[Deployment Strategies](../operations/)** - Production deployment patterns
+- **[Testing Patterns](/docs/guides/development/testing)** - Quality assurance strategies
+- **[Execution Tracking](../deploying/monitoring)** - Performance monitoring
+- **[Deployment Strategies](../deploying/)** - Production deployment patterns
 
 ---
 
@@ -223,13 +223,13 @@ agentmap test --csv workflow.csv --load-test --stress-test
 Ready to dive into advanced AgentMap development?
 
 ### **Start with Custom Agents**
-**[Begin with Agent Development Contract →](./agent-development-contract)**
+**[Begin with Agent Development Contract →](../development/agents/agent-development)**
 
 ### **Master Advanced Patterns**
-**[Explore Service Injection Patterns →](./service-injection-patterns)**
+**[Explore Service Injection Patterns →](../../contributing/service-injection)**
 
 ### **Build Production Systems**
-**[Learn Performance Optimization →](./performance)**
+**Learn Performance Optimization** - Scale efficiently
 
 ---
 

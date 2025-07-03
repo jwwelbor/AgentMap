@@ -592,10 +592,10 @@ dynamic_support: |
 
 ## Related Guides
 
-- [Memory Management](./memory-management) - Using prompts with memory systems
-- [LangChain Memory Integration](./langchain-memory-integration) - Advanced memory and prompt integration
-- [Orchestration Patterns](../orchestration) - Prompts for dynamic routing
-- [Agent Development Contract](../agent-development-contract) - Custom agent prompt patterns
+- [Memory Management](/docs/guides/development/agent-memory/memory-management) - Using prompts with memory systems
+- [LangChain Memory Integration](/docs/guides/development/agent-memory/langchain-memory-integration) - Advanced memory and prompt integration
+- [Orchestration Patterns](/docs/guides/development/orchestration) - Prompts for dynamic routing
+- [Agent Development Contract](/docs/guides/development/agents/agent-development-contract) - Custom agent prompt patterns
 
 ## Conclusion
 

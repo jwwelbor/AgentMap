@@ -27,7 +27,7 @@ Deploy, monitor, and scale your AgentMap workflows in production environments.
 
 ## 🚀 Getting Started Guides
 
-### **[Basic Concepts](./basics/)**
+### **Getting Started**
 Learn the fundamental building blocks of AgentMap:
 - Workflows and agent orchestration
 - CSV schema fundamentals  
@@ -47,7 +47,7 @@ Deep dive into workflow design patterns:
 **Perfect for**: Understanding workflow architecture  
 **Time to complete**: 30 minutes
 
-### **[State Management](./state-management)**
+### **[State Management](/docs/guides/learning-paths/core/state-management)**
 Master data flow between agents:
 - State evolution patterns
 - Field specification techniques
@@ -61,69 +61,69 @@ Master data flow between agents:
 
 ## 🎯 Advanced Development
 
-### **[Custom Agent Development](./advanced/)**
+### **Custom Agent Development**
 Build sophisticated custom agents for your specific needs:
 
-#### **[Agent Development Contract](./advanced/agent-development-contract)**
+#### **[Agent Development Contract](../development/agents/agent-development)**
 - Modern constructor patterns with infrastructure injection
 - Protocol-based business service configuration
 - Debugging hooks and service information methods
 - Complete implementation examples
 
-#### **[Service Injection Patterns](./advanced/service-injection-patterns)**
+#### **[Service Injection Patterns](../../contributing/service-injection)**
 - DI container patterns and lifecycle management
 - Protocol-based service configuration
 - Graceful degradation for optional services
 - Service registry and discovery patterns
 
-#### **[Memory & Orchestration](./advanced/memory-and-orchestration/)**
+#### **Memory & Orchestration**
 Advanced workflow coordination:
-- **[Memory Management](./advanced/memory-and-orchestration/memory-management)** - Conversational AI and context persistence
-- **[Orchestration Patterns](./advanced/memory-and-orchestration/orchestration-patterns)** - Dynamic workflow routing
-- **[LangChain Integration](./advanced/memory-and-orchestration/langchain-memory-integration)** - Advanced memory features
-- **[Prompt Management](./advanced/memory-and-orchestration/prompt-management)** - Template systems and prompt optimization
+- **[Memory Management](../development/agent-memory/memory-management)** - Conversational AI and context persistence
+- **Orchestration Patterns** - Dynamic workflow routing
+- **LangChain Integration** - Advanced memory features
+- **Prompt Management** - Template systems and prompt optimization
 
-#### **[Specialized Agent Types](./advanced/)**
-- **[Advanced Agent Types](./advanced/advanced-agent-types)** - Comprehensive context configuration
-- **[Host Service Integration](./advanced/host-service-integration)** - Extend AgentMap with custom services
-- **[Performance Optimization](./advanced/performance)** - Scale workflows efficiently
-- **[Security Patterns](./advanced/security)** - Enterprise security implementations
+#### **Specialized Agent Types**
+- **[Advanced Agent Types](../development/agents/advanced-agent-types)** - Comprehensive context configuration
+- **Host Service Integration** - Extend AgentMap with custom services
+- **Performance Optimization** - Scale workflows efficiently
+- **Security Patterns** - Enterprise security implementations
 
 ---
 
 ## 🏗️ Infrastructure & Operations
 
-### **[Infrastructure Services](./infrastructure/)**
+### **Infrastructure Services**
 Enterprise-grade storage and data management:
 
-#### **[Storage Services Overview](./infrastructure/storage-services-overview)**
+#### **[Storage Services Overview](/docs/guides/development/services/storage/storage-services-overview)**
 - Unified storage operations for CSV, files, and data
 - Cloud storage integration patterns
 - Database connectivity and data persistence
 - File system abstraction layers
 
-#### **[Cloud Storage Integration](./infrastructure/cloud-storage-integration)**
+#### **[Cloud Storage Integration](/docs/guides/development/services/storage/cloud-storage-integration)**
 - AWS S3, Azure Blob, Google Cloud Storage
 - Authentication and access management
 - Performance optimization for cloud operations
 - Backup and disaster recovery patterns
 
-#### **[Service Registry Patterns](./infrastructure/service-registry-patterns)**
+#### **[Service Registry Patterns](/docs/guides/development/services/service-registry-patterns)**
 - Dynamic service discovery and registration
 - Load balancing and failover mechanisms
 - Health checking and monitoring integration
 - Multi-environment configuration management
 
-### **[Operations](./operations/)**
+### **Operations**
 Production deployment and monitoring:
 
-#### **[Execution Tracking](./operations/execution-tracking)**
+#### **[Execution Tracking](../deploying/monitoring)**
 - Performance monitoring and debugging
 - Workflow analytics and optimization
 - Error tracking and alerting
 - Resource usage monitoring
 
-#### **[Testing Patterns](./operations/testing-patterns)**
+#### **[Testing Patterns](/docs/guides/development/testing)**
 - Unit testing for custom agents
 - Integration testing for workflows
 - End-to-end testing strategies
@@ -134,22 +134,22 @@ Production deployment and monitoring:
 ## 🎓 Learning Paths
 
 ### **For New AgentMap Developers**
-1. **[Basic Concepts](./basics/)** - Understand fundamentals (20 min)
+1. **Getting Started** - Understand fundamentals (20 min)
 2. **[Understanding Workflows](./understanding-workflows)** - Learn workflow patterns (30 min)
-3. **[State Management](./state-management)** - Master data flow (25 min)
-4. **[Weather Bot Tutorial](../tutorials/weather-bot)** - Build your first workflow (30 min)
+3. **[State Management](/docs/guides/learning-paths/core/state-management)** - Master data flow (25 min)
+4. **[Weather Bot Tutorial](../../tutorials/weather-bot)** - Build your first workflow (30 min)
 
 ### **For Building Production Systems**
-1. **[Agent Development Contract](./advanced/agent-development-contract)** - Custom agent patterns
-2. **[Service Injection](./advanced/service-injection-patterns)** - Enterprise architecture
-3. **[Infrastructure Services](./infrastructure/storage-services-overview)** - Data management
-4. **[Operations Guide](./operations/execution-tracking)** - Production deployment
+1. **[Agent Development Contract](../development/agents/agent-development)** - Custom agent patterns
+2. **[Service Injection](../../contributing/service-injection)** - Enterprise architecture
+3. **[Infrastructure Services](/docs/guides/development/services/storage/storage-services-overview)** - Data management
+4. **[Operations Guide](../deploying/monitoring)** - Production deployment
 
 ### **For Advanced AI Workflows**
-1. **[Memory Management](./advanced/memory-and-orchestration/memory-management)** - Conversational AI
-2. **[Orchestration Patterns](./advanced/memory-and-orchestration/orchestration-patterns)** - Dynamic routing
-3. **[Performance Optimization](./advanced/performance)** - Scale efficiently
-4. **[Multi-Agent Tutorial](../tutorials/customer-support-bot)** - Complex coordination
+1. **[Memory Management](../development/agent-memory/memory-management)** - Conversational AI
+2. **Orchestration Patterns** - Dynamic routing
+3. **Performance Optimization** - Scale efficiently
+4. **[Multi-Agent Tutorial](../../tutorials/customer-support-bot)** - Complex coordination
 
 ---
 
@@ -250,7 +250,7 @@ agentmap profile --csv workflow.csv --profile-memory
 - **[Issue Tracker](https://github.com/jwwelbor/AgentMap/issues)** - Bug reports and feature requests
 
 ### **Contribute**
-- **[Contributing Guide](../contributing)** - How to contribute to AgentMap
+- **[Contributing Guide](../../contributing)** - How to contribute to AgentMap
 - **[Example Repository](https://github.com/jwwelbor/AgentMap-Examples)** - Share your workflows
 - **[Documentation](https://github.com/jwwelbor/AgentMap/tree/main/docs)** - Improve the docs
 
@@ -261,16 +261,16 @@ agentmap profile --csv workflow.csv --profile-memory
 Ready to dive deeper? Choose your path:
 
 ### **Build Your First Workflow**
-**[🚀 Quick Start Guide](../getting-started/quick-start)** - Get running in 5 minutes
+**[🚀 Quick Start Guide](../../getting-started)** - Get running in 5 minutes
 
 ### **Learn Through Examples**
-**[📚 Tutorials](../tutorials/)** - Step-by-step workflow building
+**[📚 Tutorials](../../tutorials)** - Step-by-step workflow building
 
 ### **Explore Advanced Features** 
-**[🔧 Advanced Guides](./advanced/)** - Custom agents and enterprise patterns
+**[🔧 Advanced Guides](../development)** - Custom agents and enterprise patterns
 
 ### **Deploy to Production**
-**[🏭 Operations Guide](./operations/)** - Monitoring and scaling
+**[🏭 Operations Guide](../deploying)** - Monitoring and scaling
 
 ---
 

@@ -230,19 +230,19 @@ Smart,Classifier,func:choose_specialist,Route to specialized agents,default,,,us
 ## Next Steps
 
 :::tip Ready to Get Started?
-- **Quick Start**: Begin with our [5-minute tutorial](../getting-started.md)
-- **Build Your First Workflow**: Follow the [quick start guide](../getting-started.md)
-- **Explore Examples**: Check out [example workflows](../examples/)
+- **Quick Start**: Begin with our [5-minute tutorial](/docs/getting-started)
+- **Build Your First Workflow**: Follow the [quick start guide](/docs/getting-started)
+- **Explore Examples**: Check out [example workflows](/docs/examples/)
 :::
 
 :::info Deep Dive Topics
-- **[State Management](../guides/learning-paths/core/state-management.md)**: Understand data flow between agents
-- **[Agent Development](../guides/development/agents/agent-development.md)**: Create custom agents
-- **[Infrastructure Guide](../guides/deploying/index.md)**: Work with files, databases and cloud storage
+- **[State Management](/docs/guides/learning-paths/core/state-management)**: Understand data flow between agents
+- **[Agent Development](/docs/guides/development/agents/agent-development)**: Create custom agents
+- **[Infrastructure Guide](/docs/guides/deploying/)**: Work with files, databases and cloud storage
 :::
 
 ## Related Documentation
 
-- **[CSV Schema Reference](../reference/csv-schema.md)**: Complete schema documentation
-- **[Agent Types Reference](../reference/agent-types.md)**: All available agent types
-- **[CLI Commands](../reference/cli-commands.md)**: Command-line tools and options
+- **[CSV Schema Reference](/docs/reference/csv-schema)**: Complete schema documentation
+- **[Agent Types Reference](/docs/reference/agent-types)**: All available agent types
+- **[CLI Commands](/docs/reference/cli-commands)**: Command-line tools and options

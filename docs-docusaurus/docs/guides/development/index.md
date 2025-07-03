@@ -89,8 +89,8 @@ Advanced,Generalist,,claude,user_input|session_memory,response,yaml:workflows.ya
 
 ## Getting Started
 
-1. **[Memory Management](./memory-management)**: Start with basic conversation memory
-2. **[LangChain Memory Integration](./langchain-memory-integration)**: Explore advanced memory strategies
+1. **[Memory Management](/docs/guides/development/agent-memory/memory-management)**: Start with basic conversation memory
+2. **[LangChain Memory Integration](/docs/guides/development/agent-memory/langchain-memory-integration)**: Explore advanced memory strategies
 3. **[Orchestration Patterns](./orchestration)**: Add intelligent routing to your workflows
 4. **[Prompt Management](./prompt-management)**: Organize your prompts for reusability
 
