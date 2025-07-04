@@ -42,17 +42,27 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         # Import NodeRegistryUser to create a proper mock
         from agentmap.services.node_registry_service import NodeRegistryUser
         
-        # Create mock agent instances
+        # Create mock agent instances - ENSURE they DON'T accidentally implement NodeRegistryUser
         mock_agents = {}
-        for name in ["Start", "Orchestrator", "NodeA", "NodeB", "NodeC", "Error"]:
+        for name in ["Start", "NodeA", "NodeB", "NodeC", "Error"]:
             agent = Mock()
             agent.run = Mock(return_value={})
             agent.__class__.__name__ = f"MockAgent_{name}"
+            # CRITICAL: Don't add node_registry attribute to non-orchestrator mocks
             mock_agents[name] = agent
         
-        # Make the orchestrator implement NodeRegistryUser by adding the node_registry attribute
-        mock_agents["Orchestrator"].node_registry = None
-        mock_agents["Orchestrator"].__class__.__name__ = "OrchestratorAgent"
+        # Create PROPER orchestrator mock that implements NodeRegistryUser consistently
+        class MockOrchestratorAgent:
+            """Proper orchestrator mock that reliably implements NodeRegistryUser."""
+            def __init__(self):
+                self.node_registry: Dict[str, Dict[str, Any]] = {}  # Proper type annotation
+                
+            def run(self, state):
+                return {"result": "orchestrator_output"}
+        
+        # Use the real class, not a Mock - this ensures isinstance works consistently
+        orchestrator_agent = MockOrchestratorAgent()
+        mock_agents["Orchestrator"] = orchestrator_agent
         
         # Add nodes to graph
         nodes = {
@@ -84,28 +94,24 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         # Assemble the graph with a test registry
         test_registry = {"NodeA": {}, "NodeB": {}, "NodeC": {}}
         
-        # Patch isinstance to recognize our orchestrator as NodeRegistryUser
-        with unittest.mock.patch('agentmap.services.graph_assembly_service.isinstance') as mock_isinstance:
-            # Configure isinstance to return True for NodeRegistryUser check
-            def side_effect(obj, cls):
-                if obj == mock_agents["Orchestrator"] and cls == NodeRegistryUser:
-                    return True
-                return isinstance(obj, cls)
-            
-            mock_isinstance.side_effect = side_effect
-            
-            # Assemble the graph
-            compiled_graph = self.assembly_service.assemble_graph(graph, test_registry)
-            
-            # Verify orchestrator was identified
-            self.assertIn("Orchestrator", self.assembly_service.orchestrator_nodes)
-            
-            # Verify registry was injected
-            self.assertEqual(mock_agents["Orchestrator"].node_registry, test_registry)
-            
-            # Verify the injection stats
-            self.assertEqual(self.assembly_service.injection_stats["orchestrators_found"], 1)
-            self.assertEqual(self.assembly_service.injection_stats["orchestrators_injected"], 1)
+        # NO NEED TO PATCH isinstance - use real implementation
+        compiled_graph = self.assembly_service.assemble_graph(graph, test_registry)
+        
+        # Verify ONLY the orchestrator was identified (not all 6 nodes)
+        self.assertIn("Orchestrator", self.assembly_service.orchestrator_nodes)
+        self.assertEqual(len(self.assembly_service.orchestrator_nodes), 1)
+        
+        # Verify registry was injected
+        self.assertEqual(mock_agents["Orchestrator"].node_registry, test_registry)
+        
+        # Verify the injection stats - THIS SHOULD NOW BE 1, not 6
+        self.assertEqual(self.assembly_service.injection_stats["orchestrators_found"], 1)
+        self.assertEqual(self.assembly_service.injection_stats["orchestrators_injected"], 1)
+        
+        # Verify that non-orchestrator agents weren't detected as orchestrators
+        # (The important thing is correct detection, not attribute presence)
+        for name in ["Start", "NodeA", "NodeB", "NodeC", "Error"]:
+            self.assertNotIn(name, self.assembly_service.orchestrator_nodes)
     
     def test_dynamic_router_returns_valid_destination(self):
         """Test that the dynamic router validates destinations."""
