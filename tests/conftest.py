@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 import pytest
 
-from tests.utils.mock_factory import MockServiceFactory
+from tests.utils.mock_service_factory import MockServiceFactory
 from tests.utils.base_test import TestDataFactory
 
 
@@ -49,7 +49,7 @@ def mock_config_service():
 @pytest.fixture
 def mock_app_config_service():
     """Provide a mock AppConfigService."""
-    return MockServiceFactory.create_app_config_service()
+    return MockServiceFactory.create_mock_app_config_service()
 
 
 @pytest.fixture

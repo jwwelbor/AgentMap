@@ -13,7 +13,7 @@ from agentmap.services.execution_tracking_service import ExecutionTrackingServic
 from agentmap.models.execution_summary import ExecutionSummary
 from agentmap.models.execution_tracker import ExecutionTracker, NodeExecution
 
-from tests.utils.mock_factory import MockServiceFactory
+from tests.utils.mock_service_factory import MockServiceFactory
 
 
 class TestExecutionTrackingServiceEnhanced(unittest.TestCase):

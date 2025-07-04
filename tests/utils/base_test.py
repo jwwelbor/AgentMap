@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional, Type, Union
 from unittest.mock import Mock, patch
 import pytest
 
-from tests.utils.mock_factory import MockServiceFactory, ServiceMockBuilder
+from tests.utils.mock_service_factory import MockServiceFactory, ServiceMockBuilder
 
 
 class BaseUnitTest:
@@ -31,10 +31,10 @@ class BaseUnitTest:
     def setup_mocks(self):
         """Override this method to set up specific mocks for your test class."""
         # Default mocks that most tests will need
-        self.mock_logging_service = self.mock_factory.create_logging_service()
-        self.mock_execution_tracker = self.mock_factory.create_execution_tracker()
-        self.mock_config_service = self.mock_factory.create_config_service()
-        self.mock_app_config_service = self.mock_factory.create_app_config_service()
+        self.mock_logging_service = self.mock_factory.create_mock_logging_service()
+        self.mock_execution_tracker = self.mock_factory.create_mock_execution_tracker()
+        self.mock_config_service = self.mock_factory.create_mock_app_config_service()
+        self.mock_app_config_service = self.mock_factory.create_mock_app_config_service()
         
         # Common test logger
         self.test_logger = self.mock_logging_service.get_logger("test")

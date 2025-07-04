@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from agentmap.di import initialize_application
-from tests.utils.service_interface_auditor import ServiceInterfaceAuditor
+from tests.utils.enhanced_service_auditor import EnhancedServiceInterfaceAuditor
 
 
 class BaseIntegrationTest(unittest.TestCase):
@@ -42,7 +42,7 @@ class BaseIntegrationTest(unittest.TestCase):
         self.container = initialize_application(str(self.test_config_path))
         
         # Initialize service interface auditor for validation
-        self.service_auditor = ServiceInterfaceAuditor()
+        self.service_auditor = EnhancedServiceInterfaceAuditor()
         
         # Set up specific services (to be overridden by subclasses)
         self.setup_services()

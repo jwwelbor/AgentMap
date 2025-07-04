@@ -3,12 +3,13 @@ Test utilities package for AgentMap.
 
 This package contains reusable testing utilities including:
 - MockServiceFactory: Mock service creation and configuration
+- EnhancedServiceInterfaceAuditor: Service interface analysis and test generation
 - Path mocking utilities: Safe mocking of pathlib.Path operations
-- Service interface auditing: Validation of mock completeness
 """
 
 # Re-export commonly used utilities for convenience
 from .mock_service_factory import MockServiceFactory
+from .enhanced_service_auditor import EnhancedServiceInterfaceAuditor
 from .path_mocking_utils import (
     PathOperationsMocker,
     PathExistsMocker, 
@@ -24,6 +25,9 @@ from .path_mocking_utils import (
 __all__ = [
     # Mock service factory
     'MockServiceFactory',
+    
+    # Service interface auditing
+    'EnhancedServiceInterfaceAuditor',
     
     # Path mocking utilities
     'PathOperationsMocker',

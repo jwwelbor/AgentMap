@@ -21,7 +21,7 @@ from agentmap.di import (
     bootstrap_agents
 )
 from agentmap.di.containers import ApplicationContainer
-from tests.utils.service_interface_auditor import ServiceInterfaceAuditor
+from tests.utils.enhanced_service_auditor import EnhancedServiceInterfaceAuditor
 
 
 class TestDIContainerCore(unittest.TestCase):
@@ -37,7 +37,7 @@ class TestDIContainerCore(unittest.TestCase):
         # Create temporary directory for test configs
         self.temp_dir = tempfile.mkdtemp()
         self.test_config_path = self._create_test_config()
-        self.service_auditor = ServiceInterfaceAuditor()
+        self.service_auditor = EnhancedServiceInterfaceAuditor()
     
     def tearDown(self):
         """Clean up test fixtures."""

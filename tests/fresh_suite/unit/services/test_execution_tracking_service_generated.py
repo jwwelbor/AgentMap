@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import Mock
 
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
-from tests.utils.mock_factory import MockServiceFactory
+from tests.utils.mock_service_factory import MockServiceFactory
 
 
 class TestExecutionTrackingService(unittest.TestCase):

@@ -15,7 +15,7 @@ from agentmap.services.logging_service import LoggingService
 from agentmap.services.execution_tracking_service import ExecutionTrackingService, NodeExecution
 from agentmap.models.execution_summary import ExecutionSummary
 from tests.utils.migration_utils import MockLoggingService
-from tests.utils.mock_factory import MockServiceFactory
+from tests.utils.mock_service_factory import MockServiceFactory
 
 
 class TestExecutionTrackingService(unittest.TestCase):
@@ -24,7 +24,7 @@ class TestExecutionTrackingService(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures with mocked dependencies."""
         # Use MockServiceFactory for consistent mock behavior
-        self.mock_app_config_service = MockServiceFactory.create_app_config_service({
+        self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service({
             "tracking": {
                 "enabled": True,
                 "track_inputs": False,

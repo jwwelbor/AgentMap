@@ -325,6 +325,8 @@ class GraphAssemblyService:
             # Normal dynamic routing based on __next_node
             next_node = self.state_adapter.get_value(state, "__next_node")
             if next_node:
+                # Clear the __next_node to prevent infinite loops
+                self.state_adapter.set_value(state, "__next_node", None)
                 # Return the next node without validation
                 # The orchestrator may route to nodes passed dynamically at runtime
                 self.logger.debug(f"Orchestrator '{node_name}' routing to: {next_node}")

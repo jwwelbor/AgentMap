@@ -347,7 +347,7 @@ class EnhancedServiceInterfaceAuditor:
             'from unittest.mock import Mock, patch',
             '',
             f'from {service_info.module_path} import {service_info.class_name}',
-            'from tests.utils.mock_factory import MockServiceFactory',
+            'from tests.utils.mock_service_factory import MockServiceFactory',
             'from agentmap.migration_utils import MockLoggingService, MockAppConfigService',
             '',
             '',

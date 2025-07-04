@@ -119,6 +119,52 @@ class RequestValidator:
         return path
 
     @classmethod
+    def validate_system_file_path(
+        cls, file_path: Union[str, Path], max_size: Optional[int] = None
+    ) -> Path:
+        """
+        Validate system-resolved file path for existence and size only.
+        
+        This method is for paths that have already been validated and resolved
+        by the system (e.g., from _resolve_workflow_path). It skips path traversal
+        checks since the path construction is controlled by the system.
+
+        Args:
+            file_path: System-resolved path to validate
+            max_size: Maximum file size in bytes (optional)
+
+        Returns:
+            Validated Path object
+
+        Raises:
+            HTTPException: If file doesn't exist or is too large
+        """
+        if not file_path:
+            raise HTTPException(status_code=400, detail="File path cannot be empty")
+
+        # Convert to Path object
+        path = Path(file_path)
+
+        # Check if file exists
+        if not path.exists():
+            raise HTTPException(status_code=404, detail=f"File not found: {path}")
+
+        # Check if it's actually a file
+        if not path.is_file():
+            raise HTTPException(status_code=400, detail=f"Path is not a file: {path}")
+
+        # Check file size if limit specified
+        if max_size:
+            file_size = path.stat().st_size
+            if file_size > max_size:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File too large: {file_size} bytes (max {max_size} bytes)",
+                )
+
+        return path
+
+    @classmethod
     def validate_workflow_name(cls, name: str) -> str:
         """
         Validate workflow name for safety and compliance.

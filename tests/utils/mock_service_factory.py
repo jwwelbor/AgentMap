@@ -1169,6 +1169,131 @@ def create_graph_factory_service_mock() -> Mock:
     return MockServiceFactory.create_mock_graph_factory_service()
 
 
+class ServiceMockBuilder:
+    """
+    Builder pattern for creating customized service mocks.
+    
+    This allows tests to easily customize specific behaviors
+    while keeping the rest of the mock behavior standard.
+    Ported from mock_factory.py for backward compatibility.
+    """
+    
+    def __init__(self, service_type: str):
+        self.service_type = service_type
+        self.customizations = {}
+    
+    def with_config(self, config: Dict[str, Any]) -> 'ServiceMockBuilder':
+        """Add custom configuration to the mock."""
+        self.customizations['config'] = config
+        return self
+    
+    def with_method_return(self, method_name: str, return_value: Any) -> 'ServiceMockBuilder':
+        """Set a specific return value for a method."""
+        if 'method_returns' not in self.customizations:
+            self.customizations['method_returns'] = {}
+        self.customizations['method_returns'][method_name] = return_value
+        return self
+    
+    def with_side_effect(self, method_name: str, side_effect: Any) -> 'ServiceMockBuilder':
+        """Set a side effect for a method."""
+        if 'side_effects' not in self.customizations:
+            self.customizations['side_effects'] = {}
+        self.customizations['side_effects'][method_name] = side_effect
+        return self
+    
+    def build(self) -> Mock:
+        """Build the customized mock service using new factory methods."""
+        # Map service types to new factory method names
+        service_mapping = {
+            'config_service': 'create_mock_app_config_service',
+            'app_config_service': 'create_mock_app_config_service', 
+            'logging_service': 'create_mock_logging_service',
+            'llm_service': 'create_mock_llm_service',
+            'node_registry_service': 'create_mock_node_registry_service',
+            'execution_tracker': 'create_mock_execution_tracker',
+            'storage_service_manager': 'create_mock_storage_service_manager',
+            'graph_definition_service': 'create_mock_graph_definition_service',
+            'graph_execution_service': 'create_mock_graph_execution_service',
+            'compilation_service': 'create_mock_compilation_service',
+            'graph_bundle_service': 'create_mock_graph_bundle_service',
+            'execution_policy_service': 'create_mock_execution_policy_service',
+            'state_adapter_service': 'create_mock_state_adapter_service',
+            'dependency_checker_service': 'create_mock_dependency_checker_service',
+            'graph_assembly_service': 'create_mock_graph_assembly_service',
+            'csv_graph_parser_service': 'create_mock_csv_graph_parser_service',
+            'execution_tracking_service': 'create_mock_execution_tracking_service',
+            'agent_registry_service': 'create_mock_agent_registry_service',
+            'graph_factory_service': 'create_mock_graph_factory_service'
+        }
+        
+        # Get the correct factory method name
+        factory_method_name = service_mapping.get(self.service_type)
+        if not factory_method_name:
+            # Try the old naming convention for backward compatibility
+            factory_method_name = f"create_{self.service_type}"
+            if not hasattr(MockServiceFactory, factory_method_name):
+                # Try the new naming convention
+                factory_method_name = f"create_mock_{self.service_type}"
+        
+        # Create base mock
+        if hasattr(MockServiceFactory, factory_method_name):
+            factory_method = getattr(MockServiceFactory, factory_method_name)
+            
+            # Handle config parameter for services that accept it
+            if factory_method_name in ['create_mock_app_config_service', 'create_mock_execution_tracker']:
+                mock = factory_method(self.customizations.get('config'))
+            else:
+                mock = factory_method()
+        else:
+            # Fallback to basic Mock if factory method not found
+            mock = Mock()
+        
+        # Apply method customizations
+        if 'method_returns' in self.customizations:
+            for method, return_value in self.customizations['method_returns'].items():
+                mock_method = getattr(mock, method)
+                mock_method.side_effect = None  # Clear any existing side_effect
+                mock_method.return_value = return_value
+        
+        if 'side_effects' in self.customizations:
+            for method, side_effect in self.customizations['side_effects'].items():
+                mock_method = getattr(mock, method)
+                mock_method.return_value = None  # Clear any existing return_value
+                mock_method.side_effect = side_effect
+        
+        return mock
+
+
+# Backward compatibility functions for old mock_factory.py patterns
+def mock_config_service(**kwargs) -> Mock:
+    """Quick function to create a config service mock (backward compatibility)."""
+    return MockServiceFactory.create_mock_app_config_service(kwargs)
+
+def mock_logging_service(logger_name: str = "test") -> Mock:
+    """Quick function to create a logging service mock (backward compatibility)."""
+    return MockServiceFactory.create_mock_logging_service(logger_name)
+
+def mock_llm_service(**provider_configs) -> Mock:
+    """Quick function to create an LLM service mock (backward compatibility)."""
+    return MockServiceFactory.create_mock_llm_service()
+
+def mock_app_config_service(**config_overrides) -> Mock:
+    """Quick function to create an app config service mock (backward compatibility)."""
+    return MockServiceFactory.create_mock_app_config_service(config_overrides)
+
+def mock_node_registry_service() -> Mock:
+    """Quick function to create a node registry service mock (backward compatibility)."""
+    return MockServiceFactory.create_mock_node_registry_service()
+
+def mock_execution_tracker() -> Mock:
+    """Quick function to create an execution tracker mock (backward compatibility)."""
+    return MockServiceFactory.create_mock_execution_tracker()
+
+def mock_storage_service_manager() -> Mock:
+    """Quick function to create a storage service manager mock (backward compatibility)."""
+    return MockServiceFactory.create_mock_storage_service_manager()
+
+
 # Usage examples and documentation
 """
 Usage Patterns and Examples:

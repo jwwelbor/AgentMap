@@ -366,8 +366,8 @@ async def run_workflow_graph(
         # Resolve workflow path with size validation
         workflow_path = _resolve_workflow_path(validated_workflow, app_config_service)
 
-        # Validate CSV file size
-        RequestValidator.validate_file_path(
+        # Validate resolved CSV file size (skips path traversal checks since path is system-resolved)
+        RequestValidator.validate_system_file_path(
             workflow_path, RequestValidator.MAX_CSV_SIZE
         )
 
