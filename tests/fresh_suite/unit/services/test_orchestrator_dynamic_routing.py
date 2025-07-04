@@ -24,7 +24,7 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         self.mock_function_resolution = Mock()
         self.mock_graph_factory = Mock()
         
-        # Create service
+        # Create service with fresh state
         self.assembly_service = GraphAssemblyService(
             app_config_service=self.mock_config,
             logging_service=self.mock_logging,
@@ -33,6 +33,14 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
             function_resolution_service=self.mock_function_resolution,
             graph_factory_service=self.mock_graph_factory,
         )
+        
+        # CRITICAL: Ensure clean state for each test
+        self.assembly_service.orchestrator_nodes = []
+        self.assembly_service.injection_stats = {
+            "orchestrators_found": 0,
+            "orchestrators_injected": 0,
+            "injection_failures": 0
+        }
     
     def test_orchestrator_dynamic_routing_with_all_nodes(self):
         """Test that orchestrator can route to all nodes in the graph."""
@@ -42,13 +50,21 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         # Import NodeRegistryUser to create a proper mock
         from agentmap.services.node_registry_service import NodeRegistryUser
         
-        # Create mock agent instances - ENSURE they DON'T accidentally implement NodeRegistryUser
+        # Create mock agent instances with explicit specs to prevent protocol detection
+        # Use create_autospec to create constrained mocks that don't implement NodeRegistryUser
+        from unittest.mock import create_autospec
+        
+        class BasicAgent:
+            """Basic agent class that explicitly does NOT implement NodeRegistryUser."""
+            def run(self, state):
+                return {"result": "output"}
+        
         mock_agents = {}
         for name in ["Start", "NodeA", "NodeB", "NodeC", "Error"]:
-            agent = Mock()
-            agent.run = Mock(return_value={})
+            # Use create_autospec to ensure mock only has BasicAgent attributes
+            agent = create_autospec(BasicAgent, instance=True)
+            agent.run.return_value = {}
             agent.__class__.__name__ = f"MockAgent_{name}"
-            # CRITICAL: Don't add node_registry attribute to non-orchestrator mocks
             mock_agents[name] = agent
         
         # Create PROPER orchestrator mock that implements NodeRegistryUser consistently

@@ -152,17 +152,22 @@ class TestGraphAssemblyService(unittest.TestCase):
     
     def test_assemble_graph_basic_workflow(self):
         """Test assemble_graph() creates valid LangGraph from node definitions."""
-        # Create mock nodes with agent instances
-        mock_agent1 = Mock()
-        mock_agent1.run = Mock(return_value={"result": "agent1_output"})
-        mock_agent1.__class__.__name__ = "DefaultAgent"
-        # CRITICAL FIX: Ensure mock doesn't accidentally implement NodeRegistryUser
-        # Don't add node_registry attribute unless intentionally creating an orchestrator
+        # Create mock nodes with agent instances using autospec to prevent protocol detection
+        from unittest.mock import create_autospec
         
-        mock_agent2 = Mock()
-        mock_agent2.run = Mock(return_value={"result": "agent2_output"})
+        class BasicAgent:
+            """Basic agent that explicitly does NOT implement NodeRegistryUser."""
+            def run(self, state):
+                return {"result": "output"}
+        
+        # Use create_autospec to ensure mocks don't accidentally implement NodeRegistryUser
+        mock_agent1 = create_autospec(BasicAgent, instance=True)
+        mock_agent1.run.return_value = {"result": "agent1_output"}
+        mock_agent1.__class__.__name__ = "DefaultAgent"
+        
+        mock_agent2 = create_autospec(BasicAgent, instance=True)
+        mock_agent2.run.return_value = {"result": "agent2_output"}
         mock_agent2.__class__.__name__ = "DefaultAgent"
-        # CRITICAL FIX: Ensure mock doesn't accidentally implement NodeRegistryUser
         
         # Create nodes with agent instances in context
         node1 = Node(name="node1", agent_type="default")
