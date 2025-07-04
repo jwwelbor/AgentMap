@@ -124,7 +124,7 @@ class RequestValidator:
     ) -> Path:
         """
         Validate system-resolved file path for existence and size only.
-        
+
         This method is for paths that have already been validated and resolved
         by the system (e.g., from _resolve_workflow_path). It skips path traversal
         checks since the path construction is controlled by the system.

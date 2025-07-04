@@ -91,6 +91,91 @@ Override behaviour via `side_effect` functions, not `return_value`, because the 
 
 ---
 
+## 6.1&nbsp;. Python 3.11 Mock Protocol Detection Issue ⚠️
+
+**CRITICAL:** This is a recurring issue that causes tests to pass locally (Python 3.12+) but fail on CI (Python 3.11).
+
+### The Problem
+
+Python 3.11's `isinstance()` checking with `@runtime_checkable` protocols is more aggressive with `Mock` objects:
+
+```python
+@runtime_checkable
+class NodeRegistryUser(Protocol):
+    node_registry: Dict[str, Dict[str, Any]]
+```
+
+**Python 3.11**: `Mock()` objects can accidentally implement protocols due to dynamic attribute access
+**Python 3.12+**: More conservative protocol detection
+
+### Symptoms
+- Tests pass locally but fail on CI with confusing errors
+- Unexpected orchestrator detection (6 instead of 1)
+- `add_edge` not called because mocks detected as orchestrators
+- Error: `AssertionError: Expected 'add_edge' to be called once. Called 0 times.`
+
+### ❌ BROKEN Pattern (causes CI failures):
+```python
+# DON'T DO THIS - Mock can accidentally implement NodeRegistryUser
+mock_agent = Mock()
+mock_agent.run = Mock(return_value={"result": "output"})
+# isinstance(mock_agent, NodeRegistryUser) might return True on Python 3.11!
+```
+
+### ✅ FIXED Pattern (works on all Python versions):
+```python
+# DO THIS - Use create_autospec for constrained mocks
+from unittest.mock import create_autospec
+
+class BasicAgent:
+    """Basic agent that explicitly does NOT implement NodeRegistryUser."""
+    def run(self, state):
+        return {"result": "output"}
+
+# Constrained mock - only has BasicAgent attributes
+mock_agent = create_autospec(BasicAgent, instance=True)
+mock_agent.run.return_value = {"result": "output"}
+# isinstance(mock_agent, NodeRegistryUser) will always be False
+```
+
+### For Real Protocol Implementations:
+```python
+# When you actually NEED a NodeRegistryUser, use a real class
+class MockOrchestratorAgent:
+    def __init__(self):
+        self.node_registry: Dict[str, Dict[str, Any]] = {}  # Proper type
+        
+    def run(self, state):
+        return {"result": "orchestrator_output"}
+
+# Use the real class, not Mock
+orchestrator = MockOrchestratorAgent()
+```
+
+### Key Rules:
+1. **Use `create_autospec()` for non-protocol mocks** (agents, services)
+2. **Use real classes for protocol implementations** (orchestrators)
+3. **Ensure test isolation** - reset service state between tests
+4. **Watch for CI vs local differences** - usually indicates this issue
+
+### Test Isolation Pattern:
+```python
+def setUp(self):
+    # ... create service ...
+    
+    # CRITICAL: Ensure clean state for each test
+    self.assembly_service.orchestrator_nodes = []
+    self.assembly_service.injection_stats = {
+        "orchestrators_found": 0,
+        "orchestrators_injected": 0,
+        "injection_failures": 0
+    }
+```
+
+**Remember:** If tests pass locally but fail on CI with protocol-related errors, this is likely the issue!
+
+---
+
 ## 7&nbsp;. Advanced Patterns  
 * **Stateful mocks** via closures to count calls.  
 * **Exception testing**: raise from the mock, assert proper logging and wrapping.  
@@ -132,6 +217,7 @@ Cover success, error, and end‑to‑end workflows; assert no stack traces leak 
 | Imports         | `migration_utils.MockLoggingService`     | `MockServiceFactory` + Path utilities               |
 | Path mocking    | Direct `Path.exists = Mock()`            | `PathOperationsMocker` / `mock_compilation_currency`|
 | Auth tests      | Header bypass checks                     | Config‑driven tests with `set_app_container`        |
+| Protocol mocks  | `Mock()` objects                         | `create_autospec()` for non-protocols               |
 
 ---
 
@@ -140,6 +226,7 @@ Cover success, error, and end‑to‑end workflows; assert no stack traces leak 
 * Mixed `@patch` plus container swapping.  
 * Adding business logic to **ConfigService**.  
 * Writing tests that validate *insecure* behaviour.  
+* **Using `Mock()` for agents** - use `create_autospec()` instead (Python 3.11 compatibility)  
 
 ---
 
@@ -147,6 +234,8 @@ Cover success, error, and end‑to‑end workflows; assert no stack traces leak 
 * **“AttributeError: WindowsPath attribute ‘exists’ is read‑only”** → use the utilities, not direct assignment.  
 * **Mock call mismatch** → print `mock.method.call_args_list`.  
 * **Factory config override ignored** → replace side‑effect, not return‑value.  
+* **Tests pass locally but fail on CI** → likely Python 3.11 Mock protocol detection issue (see section 6.1)
+* **Unexpected orchestrator count** → check for accidental `NodeRegistryUser` protocol implementation  
 
 ---
 
@@ -159,7 +248,8 @@ Organise tests by behaviour, reset mocks between tests, and feed **realistic dat
 When adding a new service:  
 1. Start with factory mocks.  
 2. Copy the canonical test template.  
-3. Document any new pattern here to keep the guide authoritative.  
+3. **Use `create_autospec()` for agent mocks** to avoid protocol detection issues.
+4. Document any new pattern here to keep the guide authoritative.  
 
 ---
 
@@ -170,6 +260,8 @@ When adding a new service:
 - [ ] No security bypass tests; configuration decides auth.  
 - [ ] Leverage `BaseCLITest` for CLI, realistic temp files, and service mocks.  
 - [ ] Maintain clean separation of infra vs domain logic.  
+- [ ] **Use `create_autospec()` for agent mocks** to prevent Python 3.11 protocol detection issues.
+- [ ] Reset service state in `setUp()` for test isolation.
 - [ ] Keep this guide updated with new patterns.
 
 *Follow these consolidated patterns to keep the AgentMap test suite fast, reliable, secure, and maintainable.*

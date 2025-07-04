@@ -49,7 +49,7 @@ def run_command(
         container = initialize_application(config_file)
         adapter = create_service_adapter(container)
         validation_service = container.validation_service
-        
+
         # Get execution formatter service
         formatter_service = container.execution_formatter_service()
 
