@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 
 from fastapi.testclient import TestClient
 
-from src.agentmap.infrastructure.api.fastapi.server import create_fastapi_app
+from agentmap.infrastructure.api.fastapi.server import create_fastapi_app
 from tests.fresh_suite.integration.base_integration_test import BaseIntegrationTest
 
 
