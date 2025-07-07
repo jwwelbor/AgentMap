@@ -39,11 +39,17 @@ class CSVValidationService:
             "Failure_Next",
         }
         self.all_columns = self.required_columns | self.optional_columns
-        
+
         # Column alias mapping for flexible column naming
         self.column_aliases = {
             # Primary name -> acceptable aliases
-            "GraphName": ["graph_name", "Graph", "WorkflowName", "workflow_name", "workflow"],
+            "GraphName": [
+                "graph_name",
+                "Graph",
+                "WorkflowName",
+                "workflow_name",
+                "workflow",
+            ],
             "Node": ["node_name", "NodeName", "Step", "StepName", "name"],
             "AgentType": ["agent_type", "Agent", "Type"],
             "Prompt": ["prompt", "Instructions", "Template", "prompt_template"],
@@ -51,11 +57,21 @@ class CSVValidationService:
             "Input_Fields": ["input_fields", "Inputs", "InputFields"],
             "Output_Field": ["output_field", "Output", "OutputField"],
             "Edge": ["edge", "next_node", "NextNode", "Target", "next"],
-            "Success_Next": ["success_next", "next_on_success", "SuccessTarget", "on_success"],
-            "Failure_Next": ["failure_next", "next_on_failure", "FailureTarget", "on_failure"],
-            "Context": ["context", "Config", "Configuration"]
+            "Success_Next": [
+                "success_next",
+                "next_on_success",
+                "SuccessTarget",
+                "on_success",
+            ],
+            "Failure_Next": [
+                "failure_next",
+                "next_on_failure",
+                "FailureTarget",
+                "on_failure",
+            ],
+            "Context": ["context", "Config", "Configuration"],
         }
-        
+
         self.logger = logging_service.get_logger("agentmap.csv_validation")
 
     def validate_file(self, csv_path: Path) -> ValidationResult:
@@ -432,12 +448,12 @@ class CSVValidationService:
             DataFrame with normalized column names
         """
         rename_map = {}
-        
+
         for col in df.columns:
             # Check if this column matches any alias (case-insensitive)
             col_lower = col.lower()
             normalized = False
-            
+
             for primary_name, aliases in self.column_aliases.items():
                 # Check if it's already the primary name (case-insensitive)
                 if col_lower == primary_name.lower():
@@ -445,21 +461,19 @@ class CSVValidationService:
                         rename_map[col] = primary_name
                     normalized = True
                     break
-                    
+
                 # Check aliases (case-insensitive)
                 for alias in aliases:
                     if col_lower == alias.lower():
                         rename_map[col] = primary_name
                         normalized = True
                         break
-                        
+
                 if normalized:
                     break
-        
+
         if rename_map:
-            self.logger.info(
-                f"Normalizing column names: {rename_map}"
-            )
+            self.logger.info(f"Normalizing column names: {rename_map}")
             df = df.rename(columns=rename_map)
-            
+
         return df
