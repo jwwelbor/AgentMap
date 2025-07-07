@@ -7,7 +7,7 @@ import CSVTable from './CSVTable';
  */
 const CSVTableExample: React.FC = () => {
   // Correct Python dictionary syntax example
-  const correctSampleCSV = `GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+  const correctSampleCSV = `graph_name,node_name,next_node,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt
 WeatherBot,GetWeather,,Get current weather data,input,AnalyzeWeather,,location,weather_data,Enter your location (e.g. New York City):
 WeatherBot,AnalyzeWeather,,"{'provider': 'openai', 'temperature': 0.7, 'model': 'gpt-3.5-turbo'}",llm,FormatNotification,ErrorHandler,weather_data,analysis,Analyze this weather data and provide practical advice: {weather_data}
 WeatherBot,FormatNotification,,Format the final notification,echo,End,,analysis,notification,
@@ -15,14 +15,14 @@ WeatherBot,End,,Weather notification complete,echo,,,notification,final_message,
 WeatherBot,ErrorHandler,,Handle errors gracefully,echo,End,,error,error_message,Unable to get weather data. Please try again later.`;
 
   // Example with validation issues (JSON syntax instead of Python dict)
-  const invalidSampleCSV = `GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+  const invalidSampleCSV = `graph_name,node_name,next_node,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt
 ChatBot,GetInput,,Get user input,input,ProcessInput,,message,user_message,Enter your message:
 ChatBot,ProcessInput,,"{"provider": "openai", "temperature": 0.7, "enabled": true}",llm,RespondToUser,ErrorHandler,user_message,ai_response,You are a helpful assistant. Respond to: {user_message}
 ChatBot,RespondToUser,,Display the response,echo,GetInput,,ai_response,final_response,
 ChatBot,ErrorHandler,,Handle any errors,echo,GetInput,,error,error_message,Sorry, something went wrong.`;
 
   // Advanced workflow with proper Python dictionary syntax
-  const advancedWorkflowCSV = `GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+  const advancedWorkflowCSV = `graph_name,node_name,next_node,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt
 AdvancedFlow,GetInput,,Collect user requirements,input,RouteByType,ErrorHandler,,requirements,Describe your task:,User input collection
 AdvancedFlow,RouteByType,,"{'analysis_types': ['sentiment', 'summary', 'extraction']}",routing,AnalyzeSentiment|CreateSummary|ExtractData,ErrorHandler,requirements,route_decision,,Dynamic routing
 AdvancedFlow,AnalyzeSentiment,,"{'provider': 'openai', 'temperature': 0.3, 'max_tokens': 150}",llm,FormatResults,ErrorHandler,requirements,sentiment_analysis,Analyze sentiment: {requirements},Sentiment analysis

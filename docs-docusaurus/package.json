@@ -12,7 +12,14 @@
     "serve": "docusaurus serve",
     "write-translations": "docusaurus write-translations",
     "write-heading-ids": "docusaurus write-heading-ids",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "check-links": "node scripts/check-links.js",
+    "add-ids": "node scripts/add-document-ids.js",
+    "update-links": "node scripts/update-links-to-ids.js",
+    "fix-links": "node scripts/fix-broken-links.js",
+    "fix-corrupted": "node scripts/fix-corrupted-urls.js",
+    "convert-to-ids": "node scripts/convert-links-to-ids.js",
+    "final-cleanup": "node scripts/final-link-cleanup.js"
   },
   "dependencies": {
     "@docusaurus/core": "^3.0.0",

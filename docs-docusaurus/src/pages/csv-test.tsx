@@ -3,7 +3,7 @@ import Layout from '@theme/Layout';
 import CSVTable from '@site/src/components/CSVTable';
 
 export default function CSVTest(): JSX.Element {
-  const testCSV = `GraphName,Node,AgentType,Success_Next,Input_Fields,Output_Field
+  const testCSV = `graph_name,node_name,agent_type,next_on_success,input_fields,output_field
 TestFlow,Start,input,Process,user_input,data
 TestFlow,Process,default,End,data,result
 TestFlow,End,echo,,,output`;

@@ -165,7 +165,7 @@ const parseCSV = (csvText: string, validatePydantic = false): ParsedCSVData => {
       }
       
       // Check for required headers
-      const requiredHeaders = ['GraphName', 'Node'];
+      const requiredHeaders = ['graph_name', 'next_node'];
       requiredHeaders.forEach(required => {
         if (!headers.find(h => h === required)) {
           validationIssues.push({

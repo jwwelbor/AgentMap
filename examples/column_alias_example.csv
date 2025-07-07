@@ -1,0 +1,5 @@
+graph_name,node_name,agent,next_on_success,on_failure,prompt_template
+MyWorkflow,Start,input,ProcessData,HandleError,Enter your data:
+MyWorkflow,ProcessData,default,ShowResult,HandleError,Process the input data
+MyWorkflow,ShowResult,echo,,,Display the result
+MyWorkflow,HandleError,echo,,,Error occurred

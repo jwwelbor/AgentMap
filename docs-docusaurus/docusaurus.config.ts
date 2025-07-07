@@ -151,27 +151,27 @@ const config: Config = {
           // Legacy documentation redirects - match actual file structure
           {
             from: '/usage/agentmap_cli_documentation.md',
-            to: '/docs/reference/cli-commands',
+            to: '/docs/deployment/cli-commands',
           },
           {
             from: '/usage/agentmap_cli_documentation',
-            to: '/docs/reference/cli-commands',
+            to: '/docs/deployment/cli-commands',
           },
           {
             from: '/getting-started',
-            to: '/docs/getting-started',
+            to: '/docs/intro',
           },
           {
             from: '/quickstart',
-            to: '/docs/getting-started',
+            to: '/docs/intro',
           },
           {
             from: '/tutorials',
-            to: '/docs/tutorials/',
+            to: '/docs/guides/learning/',
           },
           {
             from: '/examples',
-            to: '/docs/examples/',
+            to: '/docs/templates/',
           },
           {
             from: '/api',
@@ -191,7 +191,7 @@ const config: Config = {
           },
           {
             from: '/agents',
-            to: '/docs/playground',
+            to: '/docs/reference/agent-catalog',
           },
           {
             from: '/agent-catalog',
@@ -233,11 +233,11 @@ const config: Config = {
           // Tutorial and example redirects
           {
             from: '/usage/agentmap_example_workflows.md',
-            to: '/docs/tutorials/example-workflows',
+            to: '/docs/templates/',
           },
           {
             from: '/usage/agentmap_example_workflows',
-            to: '/docs/tutorials/example-workflows',
+            to: '/docs/templates/',
           },
           
           // Development guide redirects
@@ -269,11 +269,11 @@ const config: Config = {
           // CLI and tools redirects
           {
             from: '/usage/CLI_INSPECT_GRAPH_DOCS.md',
-            to: '/docs/reference/cli-graph-inspector',
+            to: '/docs/deployment/cli-graph-inspector',
           },
           {
             from: '/usage/CLI_INSPECT_GRAPH_DOCS',
-            to: '/docs/reference/cli-graph-inspector',
+            to: '/docs/deployment/cli-graph-inspector',
           },
           
           // Development patterns redirects
@@ -289,11 +289,11 @@ const config: Config = {
           // Storage and infrastructure redirects
           {
             from: '/usage/storage_services.md',
-            to: '/docs/guides/development/services/storage/storage-services-overview',
+            to: '/docs/reference/services/storage-services-overview',
           },
           {
             from: '/usage/storage_services',
-            to: '/docs/guides/development/services/storage/storage-services-overview',
+            to: '/docs/reference/services/storage-services-overview',
           },
           {
             from: '/usage/agentmap_cloud_storage.md',
@@ -371,11 +371,11 @@ const config: Config = {
           // Quick start redirects
           {
             from: '/usage/agentmap-quickstart.md',
-            to: '/docs/getting-started',
+            to: '/docs/intro',
           },
           {
             from: '/usage/agentmap-quickstart',
-            to: '/docs/getting-started',
+            to: '/docs/intro',
           },
           
           // Index and general redirects
@@ -489,95 +489,95 @@ const config: Config = {
     //   insights: true, // Enable search analytics
     // },
     
-    navbar: {
-      title: 'AgentMap',
-      logo: {
-        alt: 'AgentMap Logo',
-        src: 'img/secret_agent.png',
+      navbar: {
+        title: 'AgentMap',
+        logo: {
+          alt: 'AgentMap Logo',
+          src: 'img/secret_agent.png',
+        },
+        items: [
+          {
+            to: '/docs/intro',
+            label: 'Documentation',
+            position: 'left',
+          },
+          {
+            type: 'docSidebar',
+            sidebarId: 'agentmapSidebar',   // ← matches key in sidebars.ts
+            position: 'left',
+            label: 'Docs',
+          },
+          // {
+          //   type: 'docSidebar',
+          //   sidebarId: 'tutorialSidebar',
+          //   position: 'left',
+          //   label: 'Tutorials',
+          // },
+          {to: '/blog', label: 'Blog', position: 'left'},
+          // Version dropdown (ready for activation when versioning is enabled)
+          // {
+          //   type: 'docsVersionDropdown',
+          //   position: 'left',
+          //   dropdownActiveClassDisabled: true,
+          // },
+          {
+            href: 'https://github.com/jwwelbor/AgentMap',
+            label: 'GitHub',
+            position: 'right',
+          },
+        ],
       },
-      items: [
-        {
-          to: '/docs/intro',
-          label: 'Documentation',
-          position: 'left',
-        },
-        {
-          type: 'docSidebar',
-          sidebarId: 'tutorialSidebar',
-          position: 'left',
-          label: 'Tutorials',
-        },
-        {
-          type: 'docSidebar',
-          sidebarId: 'toolsSidebar',
-          position: 'left',
-          label: 'Tools',
-        },
-        {to: '/blog', label: 'Blog', position: 'left'},
-        // Version dropdown (ready for activation when versioning is enabled)
-        // {
-        //   type: 'docsVersionDropdown',
-        //   position: 'left',
-        //   dropdownActiveClassDisabled: true,
-        // },
-        {
-          href: 'https://github.com/jwwelbor/AgentMap',
-          label: 'GitHub',
-          position: 'right',
-        },
-      ],
-    },
-    footer: {
-      style: 'dark',
-      links: [
-        {
-          title: 'Docs',
-          items: [
-            {
-              label: 'Getting Started',
-              to: '/docs/getting-started',
-            },
-            {
-              label: 'Tutorials',
-              to: '/docs/tutorials/',
-            },
-            {
-              label: 'Reference',
-              to: '/docs/reference/',
-            },
-          ],
-        },
-        {
-          title: 'Community',
-          items: [
-            {
-              label: 'GitHub',
-              href: 'https://github.com/jwwelbor/AgentMap',
-            },
-            {
-              label: 'Discussions',
-              href: 'https://github.com/jwwelbor/AgentMap/discussions',
-            },
-          ],
-        },
-        {
-          title: 'More',
-          items: [
-            {
-              label: 'Blog',
-              to: '/blog',
-            },
-            {
-              label: 'API Reference',
-              to: '/docs/api',
-            },
-            {
-              label: 'Playground',
-              to: '/docs/playground',
-            },
-          ],
-        },
-      ],
+      footer: {
+         style: 'dark',
+      //   links: [
+      //     {
+      //       title: 'Docs',
+      //       items: [
+      //         {
+      //           label: 'Introduction',
+      //           to: '/docs/intro',
+      //         },
+      //         {
+      //           label: 'Learning',
+      //           to: '/docs/guides/learning/',
+      //         },
+      //         {
+      //           label: 'Reference',
+      //           to: '/docs/reference/',
+      //         },
+      //       ],
+      //     },
+      //     {
+      //       title: 'Community',
+      //       items: [
+      //         {
+      //           label: 'GitHub',
+      //           href: 'https://github.com/jwwelbor/AgentMap',
+      //         },
+      //         {
+      //           label: 'Discussions',
+      //           href: 'https://github.com/jwwelbor/AgentMap/discussions',
+      //         },
+      //       ],
+      //     },
+      //     {
+      //       title: 'More',
+      //       items: [
+      //         {
+      //           label: 'Blog',
+      //           to: '/blog',
+      //         },
+      //         {
+      //           label: 'API Reference',
+      //           to: '/docs/api',
+      //         },
+      //         {
+      //           label: 'Examples',
+      //           to: '/docs/templates/',
+      //         },
+      //       ],
+      //     },
+      //   ],
       copyright: `Copyright © ${new Date().getFullYear()} AgentMap. Built with Docusaurus.`,
     },
     prism: {

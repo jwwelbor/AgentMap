@@ -76,3 +76,58 @@
   justify-self: start;
   margin: 0;
 }
+
+/* Loading and error states */
+.downloadButton.loading {
+  background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+  cursor: wait;
+  opacity: 0.8;
+}
+
+.downloadButton.error {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  cursor: not-allowed;
+}
+
+.downloadButton.error:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  transform: none;
+}
+
+.downloadButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.downloadButton:disabled:hover {
+  transform: none;
+}
+
+/* Spinner animation */
+.spinner {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+  font-size: 1.1em;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Dark mode loading and error states */
+[data-theme='dark'] .downloadButton.loading {
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+}
+
+[data-theme='dark'] .downloadButton.error {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+}
+
+[data-theme='dark'] .downloadButton.error:hover {
+  background: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%);
+}

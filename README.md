@@ -20,7 +20,7 @@ from langchain_openai import ChatOpenAI
 
 **AgentMap Approach** - Simple CSV for complex workflows:
 ```csv
-GraphName,Node,AgentType,Input_Fields,Output_Field,Prompt,Success_Next
+graph_name,node_name,agent_type,input_fields,output_field,prompt,next_on_success
 ChatBot,GetInput,input,,user_input,How can I help you?,Respond
 ChatBot,Respond,openai,user_input|memory,response,You are a helpful assistant: {user_input},GetInput
 ```
@@ -88,7 +88,7 @@ pip install -e ".[all]"
 
 Create `hello_world.csv`:
 ```csv
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+graph_name,node_name,next_node,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt
 HelloWorld,Start,,Starting node,echo,Process,,input,initial_data,
 HelloWorld,Process,,Process the greeting,openai,End,,initial_data,processed_greeting,"Make this greeting more enthusiastic: {initial_data}"
 HelloWorld,End,,Final response,echo,,,processed_greeting,final_output,
@@ -129,35 +129,35 @@ AgentMap workflows are defined using CSV files with the following columns:
 
 | Column | Required | Description | Examples |
 |--------|----------|-------------|----------|
-| `GraphName` | ✅ | Workflow identifier | `ChatBot`, `DocumentProcessor` |
+| `graph_name` | ✅ | Workflow identifier | `ChatBot`, `DocumentProcessor` |
 | `Node` | ✅ | Unique node name within graph | `GetInput`, `ProcessData`, `SaveResults` |
-| `Edge` | ❌ | Direct connection to next node | `NextNode`, `func:custom_router` |
+| `next_node` | ❌ | Direct connection to next node | `NextNode`, `func:custom_router` |
 | `Context` | ❌ | Node configuration (JSON or text) | `{"memory_key":"chat_history"}` |
-| `AgentType` | ❌ | Type of agent to use | `openai`, `claude`, `csv_reader` |
-| `Success_Next` | ❌ | Next node on success | `ProcessData`, `Success\|Backup` |
-| `Failure_Next` | ❌ | Next node on failure | `ErrorHandler`, `Retry` |
-| `Input_Fields` | ❌ | State fields to extract as input | `user_input\|context\|memory` |
-| `Output_Field` | ❌ | Field to store agent output | `response`, `processed_data` |
-| `Prompt` | ❌ | Agent prompt or configuration | `"You are helpful: {input}"`, `prompt:system_instructions` |
+| `agent_type` | ❌ | Type of agent to use | `openai`, `claude`, `csv_reader` |
+| `next_on_success` | ❌ | Next node on success | `ProcessData`, `Success\|Backup` |
+| `next_on_failure` | ❌ | Next node on failure | `ErrorHandler`, `Retry` |
+| `input_fields` | ❌ | State fields to extract as input | `user_input\|context\|memory` |
+| `output_field` | ❌ | Field to store agent output | `response`, `processed_data` |
+| `prompt` | ❌ | Agent prompt or configuration | `"You are helpful: {input}"`, `prompt:system_instructions` |
 | `Description` | ❌ | Documentation for the node | `"Validates user input format"` |
 
 ### Advanced Routing Patterns
 
 **Conditional Branching:**
 ```csv
-GraphName,Node,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field
+graph_name,node_name,agent_type,next_on_success,next_on_failure,input_fields,output_field
 DataFlow,Validate,branching,Transform,ErrorHandler,raw_data,validation_result
 ```
 
 **Multiple Targets:**
 ```csv
-GraphName,Node,AgentType,Success_Next,Input_Fields,Output_Field
+graph_name,node_name,agent_type,next_on_success,input_fields,output_field
 Parallel,Distribute,default,ProcessA|ProcessB|ProcessC,data,distributed_tasks
 ```
 
 **Function-Based Routing:**
 ```csv
-GraphName,Node,Edge,AgentType,Input_Fields,Output_Field
+graph_name,node_name,next_node,agent_type,input_fields,output_field
 Smart,Classifier,func:choose_specialist,default,user_query,classification
 ```
 
@@ -197,7 +197,7 @@ ChatBot,Respond,openai,user_message|chat_memory,response,"You are helpful. Human
 
 **Context Configuration:**
 ```csv
-GraphName,Node,Context,AgentType,Input_Fields,Output_Field,Prompt
+graph_name,node_name,context,agent_type,input_fields,output_field,prompt
 Advanced,Analyze,"{\"memory_key\":\"analysis_history\",\"max_memory_messages\":10,\"model\":\"gpt-4\",\"temperature\":0.2}",openai,data|analysis_history,insights,"Analyze this data: {data}"
 ```
 
@@ -213,14 +213,14 @@ AgentMap provides intelligent LLM routing capabilities through a unified `llm` a
 
 **Basic Unified Agent Usage:**
 ```csv
-GraphName,Node,AgentType,Input_Fields,Output_Field,Prompt
+graph_name,node_name,agent_type,input_fields,output_field,prompt
 SmartFlow,Process,llm,user_input,response,"You are a helpful assistant: {user_input}"
 SmartFlow,Analyze,llm,data,analysis,"Analyze this data: {data}"
 ```
 
 **Advanced Routing Configuration:**
 ```csv
-GraphName,Node,Context,AgentType,Input_Fields,Output_Field,Prompt
+graph_name,node_name,context,agent_type,input_fields,output_field,prompt
 OptimizedFlow,ComplexTask,"{\"routing_strategy\":\"cost_optimized\",\"max_cost_per_request\":0.05,\"fallback_providers\":[\"openai\",\"claude\"],\"memory_key\":\"conversation\"}",llm,complex_input|conversation,detailed_output,"Provide detailed analysis: {complex_input}"
 OptimizedFlow,SimpleTask,"{\"routing_strategy\":\"speed_first\",\"preferred_providers\":[\"openai\",\"gemini\"]}",llm,simple_input,quick_response,"Quick response to: {simple_input}"
 ```
@@ -340,7 +340,7 @@ llm:
 
 **Error Handling in Workflows:**
 ```csv
-GraphName,Node,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+graph_name,node_name,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt
 RobustFlow,MainProcess,"{\"fallback_providers\":[\"openai\",\"claude\",\"gemini\"],\"max_retries\":2}",llm,Success,HandleLLMFailure,user_input,response,"Process: {user_input}"
 RobustFlow,HandleLLMFailure,echo,FallbackProcess,,error,fallback_message,"LLM service temporarily unavailable"
 RobustFlow,FallbackProcess,default,Success,,user_input,response,"Fallback processing for: {user_input}"
@@ -369,7 +369,7 @@ llm:
 
 **Cost-Aware Routing in CSV:**
 ```csv
-GraphName,Node,Context,AgentType,Input_Fields,Output_Field,Prompt
+graph_name,node_name,context,agent_type,input_fields,output_field,prompt
 BudgetFlow,ExpensiveTask,"{\"max_cost\":0.05,\"budget_category\":\"analysis\"}",llm,complex_data,results,"Detailed analysis: {complex_data}"
 BudgetFlow,CheapTask,"{\"max_cost\":0.01,\"prefer_free\":true}",llm,simple_query,answer,"Quick answer: {simple_query}"
 ```
@@ -400,7 +400,7 @@ MigrationFlow,UpdatedProcess,llm,data,result1,"Process with OpenAI: {data}"  # S
 
 **Multi-Model Workflow:**
 ```csv
-GraphName,Node,Context,AgentType,Input_Fields,Output_Field,Prompt
+graph_name,node_name,context,agent_type,input_fields,output_field,prompt
 MultiModel,QuickFilter,"{\"routing_strategy\":\"speed_first\",\"task_type\":\"simple\"}",llm,user_query,filtered_query,"Extract key intent from: {user_query}"
 MultiModel,DeepAnalysis,"{\"routing_strategy\":\"quality_first\",\"task_type\":\"complex\",\"min_model_tier\":\"high\"}",llm,filtered_query|context,detailed_analysis,"Provide comprehensive analysis: {filtered_query}"
 MultiModel,Summary,"{\"routing_strategy\":\"cost_optimized\",\"task_type\":\"simple\"}",llm,detailed_analysis,summary,"Summarize: {detailed_analysis}"
@@ -408,13 +408,13 @@ MultiModel,Summary,"{\"routing_strategy\":\"cost_optimized\",\"task_type\":\"sim
 
 **Context-Aware Routing:**
 ```csv
-GraphName,Node,Context,AgentType,Input_Fields,Output_Field,Prompt
+graph_name,node_name,context,agent_type,input_fields,output_field,prompt
 ContextAware,Router,"{\"context_aware\":true,\"routing_factors\":[\"content_length\",\"complexity\",\"urgency\"]}",llm,user_input|context_metadata,routed_response,"Respond appropriately: {user_input}"
 ```
 
 **A/B Testing Integration:**
 ```csv
-GraphName,Node,Context,AgentType,Input_Fields,Output_Field,Prompt
+graph_name,node_name,context,agent_type,input_fields,output_field,prompt
 ABTest,VariantA,"{\"routing_strategy\":\"quality_first\",\"ab_test_group\":\"A\"}",llm,user_input,response_a,"High-quality response: {user_input}"
 ABTest,VariantB,"{\"routing_strategy\":\"cost_optimized\",\"ab_test_group\":\"B\"}",llm,user_input,response_b,"Cost-optimized response: {user_input}"
 ```
@@ -518,7 +518,7 @@ RouterFlow,OrderStatus,openai,user_input,response,"I handle order status inquiri
 
 **Advanced Configuration:**
 ```csv
-GraphName,Node,Context,AgentType,Input_Fields,Output_Field,Prompt
+graph_name,node_name,context,agent_type,input_fields,output_field,prompt
 SmartRouter,MainRouter,"{\"matching_strategy\":\"tiered\",\"confidence_threshold\":0.8,\"node_filter\":\"ProductInfo|TechSupport\"}",orchestrator,available_nodes|user_input,next_node,"Intelligently route user queries"
 ```
 
@@ -647,7 +647,7 @@ json:
 - AWS S3: `s3://bucket/path/file.json`  
 - GCP: `gs://bucket/path/file.json`
 
-### Prompt Management
+### prompt Management
 
 Centralized prompt management with multiple reference types:
 
@@ -660,20 +660,20 @@ data_analyst: "You are a data analyst. Analyze the following data..."
 
 **Usage in CSV:**
 ```csv
-GraphName,Node,AgentType,Input_Fields,Output_Field,Prompt
+graph_name,node_name,agent_type,input_fields,output_field,prompt
 Analysis,Analyze,openai,data,insights,prompt:data_analyst
 Support,Respond,claude,user_query,response,prompt:customer_service
 ```
 
 **File-Based Prompts:**
 ```csv
-GraphName,Node,AgentType,Prompt
+graph_name,node_name,agent_type,prompt
 Complex,LongAnalysis,openai,file:prompts/detailed_analysis.txt
 ```
 
 **YAML Key References:**
 ```csv
-GraphName,Node,AgentType,Prompt
+graph_name,node_name,agent_type,prompt
 Multi,Specialized,claude,yaml:prompts/specialists.yaml#technical_support
 ```
 
@@ -709,7 +709,7 @@ llm:
     api_key: "env:GOOGLE_API_KEY"
     model: "gemini-pro"
 
-# Prompt management
+# prompt management
 prompts:
   directory: "prompts"
   registry_file: "prompts/registry.yaml"
@@ -751,7 +751,7 @@ export AGENTMAP_CSV_PATH="workflows/main.csv"
 **Use Case:** Basic data processing pipeline
 
 ```csv
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+graph_name,node_name,next_node,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt
 DataPipeline,LoadData,,Load CSV data,csv_reader,ValidateData,HandleError,collection,raw_data
 DataPipeline,ValidateData,,Validate data format,branching,TransformData,HandleError,raw_data,validation_result
 DataPipeline,TransformData,,Transform data,default,SaveResults,HandleError,raw_data,processed_data,"Clean and transform data"
@@ -773,7 +773,7 @@ result = run_graph(
 **Use Case:** Multi-turn customer service bot
 
 ```csv
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+graph_name,node_name,next_node,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt
 CustomerBot,Welcome,,Welcome message,default,GetQuery,,user,welcome_message,"Welcome! How can I help you today?",GetQuery
 CustomerBot,GetQuery,,Get user query,input,ClassifyIntent,,welcome_message,user_query,"How can I help you?",ClassifyIntent
 CustomerBot,ClassifyIntent,,"{\"memory_key\":\"conversation_history\",\"max_memory_messages\":10}",claude,RouteQuery,HandleError,user_query|conversation_history,intent_classification,"Classify this customer query into: product_info, technical_support, billing, general. Query: {user_query}",RouteQuery
@@ -791,7 +791,7 @@ CustomerBot,HandleError,,Handle errors,echo,GetQuery,,error,error_message
 **Use Case:** Intelligent document analysis and summarization
 
 ```csv
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+graph_name,node_name,next_node,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt
 DocProcessor,LoadDocument,,"{\"should_split\":true,\"chunk_size\":1500,\"chunk_overlap\":200}",file_reader,AnalyzeStructure,HandleError,document_path,document_chunks
 DocProcessor,AnalyzeStructure,,Analyze document structure,openai,ExtractEntities,HandleError,document_chunks,structure_analysis,"Analyze the structure and main topics of these document chunks: {document_chunks}"
 DocProcessor,ExtractEntities,,Extract key entities,openai,GenerateSummary,HandleError,document_chunks,entities,"Extract key entities (people, organizations, dates, locations) from: {document_chunks}"
@@ -807,7 +807,7 @@ DocProcessor,HandleError,,Handle processing errors,echo,End,,error,error_message
 **Use Case:** Process documents from cloud storage with vector database integration
 
 ```csv
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+graph_name,node_name,next_node,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt
 CloudProcessor,LoadFromCloud,,Load document from cloud storage,cloud_json_reader,ProcessDocument,HandleError,cloud_path,document_data
 CloudProcessor,ProcessDocument,,"{\"should_split\":true,\"chunk_size\":1000}",file_reader,StoreVectors,HandleError,document_data,processed_chunks
 CloudProcessor,StoreVectors,,Store in vector database,vector_writer,AnalyzeContent,HandleError,processed_chunks,vector_storage_result
@@ -824,7 +824,7 @@ CloudProcessor,HandleError,,Handle any errors,echo,End,,error,error_message
 **Use Case:** Dynamic routing based on user intent
 
 ```csv
-GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+graph_name,node_name,next_node,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt
 SmartRouter,MainOrchestrator,,"{\"matching_strategy\":\"tiered\",\"confidence_threshold\":0.8}",orchestrator,ExecuteHandler,HandleError,available_nodes|user_input,selected_handler,"Analyze user input and select the most appropriate handler"
 SmartRouter,ProductSpecialist,,Product information handler,openai,GatherFeedback,HandleError,user_input,specialist_response,"I am a product specialist. User query: {user_input}. Context: I help with product features, pricing, comparisons, and availability."
 SmartRouter,TechnicalSupport,,Technical support handler,openai,GatherFeedback,HandleError,user_input,specialist_response,"I am technical support. User query: {user_input}. Context: I help with troubleshooting, setup, configuration, and technical issues."
@@ -1256,8 +1256,8 @@ for step in result.get("execution_steps", []):
 
 **1. CSV Format Errors**
 ```
-Error: InvalidEdgeDefinitionError
-Solution: Don't use both Edge and Success_Next/Failure_Next in the same row
+Error: Invalidnext_nodeDefinitionError
+Solution: Don't use both next_node and next_on_success/next_on_failure in the same row
 ```
 
 **2. Agent Not Found**
@@ -1273,7 +1273,7 @@ Solution:
 ```
 Error: Memory serialization failed
 Solution:
-- Check memory_key is included in Input_Fields
+- Check memory_key is included in input_fields
 - Verify memory configuration syntax
 - Ensure consistent memory_key across nodes
 ```

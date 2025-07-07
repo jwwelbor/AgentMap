@@ -1,0 +1,4 @@
+graph_name,node_name,next_node,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt
+TestBranching,Start,,Start node_name,Success,SuccessPath,FailurePath,input,startOutput,Start prompt
+TestBranching,SuccessPath,,Success Path,Default,,,startOutput,finalOutput,Success reached
+TestBranching,FailurePath,,Failure Path,Default,,,startOutput,finalOutput,Failure reached

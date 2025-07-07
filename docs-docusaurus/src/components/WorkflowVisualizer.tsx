@@ -37,7 +37,7 @@ const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     name: 'Simple Weather Bot',
     description: 'Basic weather information retrieval workflow',
     category: 'Beginner',
-    csv: `GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+    csv: `graph_name,node_name,next_node,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt,description
 WeatherBot,GetLocation,,Get user location,input,FetchWeather,Error,,location,Enter your city:,Get user location
 WeatherBot,FetchWeather,,Fetch weather data,llm,DisplayWeather,Error,location,weather_data,Get current weather for {location},Fetch weather information
 WeatherBot,DisplayWeather,,Display weather info,echo,End,Error,weather_data,result,,Display weather results
@@ -48,7 +48,7 @@ WeatherBot,End,,Workflow complete,echo,,,result|error_message,output,,End of wor
     name: 'Data Processing Pipeline',
     description: 'CSV data processing and analysis workflow',
     category: 'Intermediate',
-    csv: `GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+    csv: `graph_name,node_name,next_node,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt,description
 DataPipeline,LoadData,,Load CSV data,csv_reader,ValidateData,HandleError,file_path,raw_data,,Load data from CSV file
 DataPipeline,ValidateData,,Validate data quality,custom:DataValidatorAgent,ProcessData,HandleError,raw_data,validated_data,,Validate data integrity
 DataPipeline,ProcessData,,Process and analyze data,custom:DataProcessorAgent,GenerateReport,HandleError,validated_data,processed_data,,Analyze and transform data
@@ -61,7 +61,7 @@ DataPipeline,End,,Pipeline complete,echo,,,save_result|error_message,output,,End
     name: 'Customer Support Bot',
     description: 'Multi-intent customer service workflow',
     category: 'Advanced',
-    csv: `GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+    csv: `graph_name,node_name,next_node,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt,description
 SupportBot,GetMessage,,Get customer message,input,ClassifyIntent,Error,,customer_message,What can I help you with today?,Get customer inquiry
 SupportBot,ClassifyIntent,,Classify customer intent,llm,RouteToHandler,Error,customer_message,intent,Classify this customer message into one of: billing, technical, general: {customer_message},Determine customer intent
 SupportBot,RouteToHandler,,Route to appropriate handler,branching,HandleBilling|HandleTechnical|HandleGeneral,Error,intent,routing_decision,,Route based on intent classification
@@ -76,7 +76,7 @@ SupportBot,End,,Complete interaction,echo,,,feedback,output,,End customer intera
     name: 'API Integration Pipeline',
     description: 'Multi-source data integration workflow',
     category: 'Expert',
-    csv: `GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt,Description
+    csv: `graph_name,node_name,next_node,context,agent_type,next_on_success,next_on_failure,input_fields,output_field,prompt,description
 APIIntegration,LoadConfig,,Load API configuration,custom:ConfigLoaderAgent,FetchWeatherData,HandleError,config_path,api_config,,Load API keys and settings
 APIIntegration,FetchWeatherData,,Fetch weather data,custom:WeatherAPIAgent,FetchStockData,HandleAPIError,api_config,weather_data,,Get current weather data
 APIIntegration,FetchStockData,,Fetch stock market data,custom:StockAPIAgent,FetchNewsData,HandleAPIError,api_config,stock_data,,Get stock market information
@@ -486,8 +486,8 @@ function parseCSVToWorkflow(csvText: string): ParsedWorkflow {
 
   const headerLine = lines[0];
   const expectedHeaders = [
-    'GraphName', 'Node', 'Edge', 'Context', 'AgentType', 
-    'Success_Next', 'Failure_Next', 'Input_Fields', 'Output_Field', 'Prompt', 'Description'
+    'graph_name', 'node_name', 'next_node', 'context', 'agent_type', 
+    'next_on_success', 'next_on_failure', 'input_fields', 'output_field', 'prompt', 'Description'
   ];
 
   const headers = headerLine.split(',').map(h => h.trim());
@@ -517,8 +517,8 @@ function parseCSVToWorkflow(csvText: string): ParsedWorkflow {
       });
 
       // Set graph name from first node
-      if (!graphName && nodeData.GraphName) {
-        graphName = nodeData.GraphName;
+      if (!graphName && nodeData.graph_name) {
+        graphName = nodeData.graph_name;
       }
 
       // Validate required fields
@@ -527,20 +527,20 @@ function parseCSVToWorkflow(csvText: string): ParsedWorkflow {
         continue;
       }
 
-      if (!nodeData.AgentType) {
-        errors.push(`Row ${i + 1}: AgentType is required for node '${nodeData.Node}'`);
+      if (!nodeData.agent_type) {
+        errors.push(`Row ${i + 1}: agent_type is required for node '${nodeData.Node}'`);
         continue;
       }
 
       const node: ParsedNode = {
-        name: nodeData.Node,
-        graphName: nodeData.GraphName || '',
+        name: nodeData.node_name,
+        graphName: nodeData.graph_name || '',
         context: nodeData.Context || '',
-        agentType: nodeData.AgentType,
-        successNext: nodeData.Success_Next || '',
-        failureNext: nodeData.Failure_Next || '',
-        inputFields: nodeData.Input_Fields || '',
-        outputField: nodeData.Output_Field || '',
+        agentType: nodeData.agent_type,
+        successNext: nodeData.next_on_success || '',
+        failureNext: nodeData.next_on_failure || '',
+        inputFields: nodeData.input_fields || '',
+        outputField: nodeData.output_field || '',
         prompt: nodeData.Prompt || '',
         description: nodeData.Description || ''
       };
@@ -553,7 +553,7 @@ function parseCSVToWorkflow(csvText: string): ParsedWorkflow {
           const trimmedNext = nextNode.trim();
           if (trimmedNext) {
             connections.push({
-              from: node.name,
+              from: node.node_name,
               to: trimmedNext,
               type: 'success'
             });
@@ -566,7 +566,7 @@ function parseCSVToWorkflow(csvText: string): ParsedWorkflow {
           const trimmedNext = nextNode.trim();
           if (trimmedNext) {
             connections.push({
-              from: node.name,
+              from: node.node_name,
               to: trimmedNext,
               type: 'failure'
             });
@@ -637,12 +637,12 @@ function generateMermaidDiagram(workflow: ParsedWorkflow): string {
 
   // Add nodes with styling
   workflow.nodes.forEach(node => {
-    const nodeId = sanitizeNodeId(node.name);
+    const nodeId = sanitizeNodeId(node.node_name);
     const agentType = getAgentTypeKey(node.agentType);
     const color = AGENT_TYPE_COLORS[agentType] || AGENT_TYPE_COLORS.unknown;
     
     // Create node with description
-    const label = node.description || node.name;
+    const label = node.description || node.node_name;
     lines.push(`    ${nodeId}["${label}"]`);
     
     // Add styling

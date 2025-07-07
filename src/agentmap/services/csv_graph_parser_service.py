@@ -45,6 +45,22 @@ class CSVGraphParserService:
         }
         self.all_columns = self.required_columns | self.optional_columns
 
+        # Column alias mapping for flexible column naming
+        self.column_aliases = {
+            # Primary name -> acceptable aliases
+            "GraphName": ["graph_name", "Graph", "WorkflowName", "workflow_name", "workflow"],
+            "Node": ["node_name", "NodeName", "Step", "StepName", "name"],
+            "AgentType": ["agent_type", "Agent", "Type"],
+            "Prompt": ["prompt", "Instructions", "Template", "prompt_template"],
+            "Description": ["description", "desc", "Details"],
+            "Input_Fields": ["input_fields", "Inputs", "InputFields"],
+            "Output_Field": ["output_field", "Output", "OutputField"],
+            "Edge": ["edge", "next_node", "NextNode", "Target", "next"],
+            "Success_Next": ["success_next", "next_on_success", "SuccessTarget", "on_success"],
+            "Failure_Next": ["failure_next", "next_on_failure", "FailureTarget", "on_failure"],
+            "Context": ["context", "Config", "Configuration"]
+        }
+
         self.logger.info("[CSVGraphParserService] Initialized")
 
     def parse_csv_to_graph_spec(self, csv_path: Path) -> GraphSpec:
@@ -75,6 +91,9 @@ class CSVGraphParserService:
         try:
             # Use pandas for robust CSV reading (pattern from CSVValidationService)
             df = pd.read_csv(csv_path)
+
+            # Normalize column names to canonical form
+            df = self._normalize_columns(df)
 
             # Validate basic structure
             self._validate_csv_structure(df, csv_path)
@@ -134,6 +153,9 @@ class CSVGraphParserService:
         try:
             # Load CSV with pandas (proven pattern)
             df = pd.read_csv(csv_path)
+
+            # Normalize column names to canonical form
+            df = self._normalize_columns(df)
 
             # Validate structure
             self._validate_dataframe_structure(df, result)
@@ -392,3 +414,46 @@ class CSVGraphParserService:
                 result.add_error(
                     f"Unexpected error validating row: {e}", line_number=line_number
                 )
+
+    def _normalize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Normalize column names to canonical form using case-insensitive matching.
+
+        Args:
+            df: DataFrame with potentially non-standard column names
+
+        Returns:
+            DataFrame with normalized column names
+        """
+        rename_map = {}
+        
+        for col in df.columns:
+            # Check if this column matches any alias (case-insensitive)
+            col_lower = col.lower()
+            normalized = False
+            
+            for primary_name, aliases in self.column_aliases.items():
+                # Check if it's already the primary name (case-insensitive)
+                if col_lower == primary_name.lower():
+                    if col != primary_name:
+                        rename_map[col] = primary_name
+                    normalized = True
+                    break
+                    
+                # Check aliases (case-insensitive)
+                for alias in aliases:
+                    if col_lower == alias.lower():
+                        rename_map[col] = primary_name
+                        normalized = True
+                        break
+                        
+                if normalized:
+                    break
+        
+        if rename_map:
+            self.logger.info(
+                f"[CSVGraphParserService] Normalizing column names: {rename_map}"
+            )
+            df = df.rename(columns=rename_map)
+            
+        return df

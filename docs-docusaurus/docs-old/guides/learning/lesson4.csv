@@ -1,0 +1,116 @@
+workflow,node,description,type,next_node,error_node,input_fields,output_field,prompt,context
+DocumentProcessing,LoadDocument,Load document for processing,file_reader,ClassifyDocument,ErrorHandler,,document_content,data/sample_document.txt,"{""format"": ""structured""}"
+DocumentProcessing,ClassifyDocument,AI-powered document classification,llm,RouteToProcessor,ErrorHandler,document_content,classification_result,"You are a document classification expert. Analyze this document and classify it into ONE of these categories:
+
+- CONTRACT: Legal agreements, terms of service, NDAs, partnerships
+- INVOICE: Bills, receipts, purchase orders, financial documents  
+- REPORT: Business reports, analytics, research documents, presentations
+- EMAIL: Email communications, correspondence, messages
+- RESUME: CVs, job applications, professional profiles
+- OTHER: Any document that doesn't fit the above categories
+
+Also determine the urgency level (HIGH, MEDIUM, LOW) and extract key metadata.
+
+Document content: {document_content}
+
+Respond in this exact JSON format:
+{
+  ""category"": ""[CATEGORY]"",
+  ""confidence"": [0.0-1.0],
+  ""urgency"": ""[HIGH/MEDIUM/LOW]"",
+  ""key_topics"": [""topic1"", ""topic2"", ""topic3""],
+  ""estimated_processing_time"": ""[time estimate]"",
+  ""summary"": ""[brief document summary]""
+}","{""provider"": ""anthropic"", ""model"": ""claude-3-sonnet-20240229"", ""temperature"": 0.2}"
+DocumentProcessing,RouteToProcessor,Route to specialized processor based on document type,orchestrator,ContractProcessor,ErrorHandler,"document_content,classification_result",processor_selection,,"{""nodes"": ""ContractProcessor|InvoiceProcessor|ReportProcessor|EmailProcessor|GeneralProcessor""}"
+DocumentProcessing,ContractProcessor,Specialized contract analysis,contract_analyzer,ConsolidateResults,ErrorHandler,"document_content,classification_result",contract_analysis,,"{""analysis_depth"": ""detailed"", ""legal_focus"": true, ""risk_assessment"": true}"
+DocumentProcessing,InvoiceProcessor,Specialized invoice processing,invoice_analyzer,ConsolidateResults,ErrorHandler,"document_content,classification_result",invoice_analysis,,"{""extract_amounts"": true, ""validate_data"": true, ""tax_analysis"": true}"
+DocumentProcessing,ReportProcessor,Specialized report analysis,report_analyzer,ConsolidateResults,ErrorHandler,"document_content,classification_result",report_analysis,,"{""extract_metrics"": true, ""trend_analysis"": true, ""insights_generation"": true}"
+DocumentProcessing,EmailProcessor,Specialized email processing,email_analyzer,ConsolidateResults,ErrorHandler,"document_content,classification_result",email_analysis,,"{""sentiment_analysis"": true, ""action_items"": true, ""priority_detection"": true}"
+DocumentProcessing,GeneralProcessor,General purpose document analysis,llm,ConsolidateResults,ErrorHandler,"document_content,classification_result",general_analysis,"You are a document analysis expert. Provide a comprehensive analysis of this document:
+
+Document Classification: {classification_result}
+Document Content: {document_content}
+
+Provide analysis in this format:
+
+## 📄 Document Summary
+[Concise overview of the document]
+
+## 🎯 Key Findings
+- [Important finding 1]
+- [Important finding 2]
+- [Important finding 3]
+
+## 📊 Structure Analysis
+- **Type**: [Document type and format]
+- **Length**: [Approximate word/page count]
+- **Complexity**: [Simple/Medium/Complex]
+
+## 🔍 Content Insights
+[Detailed analysis of content, themes, and important elements]
+
+## ⚠️ Flags & Concerns
+[Any issues, inconsistencies, or areas requiring attention]
+
+## 📋 Recommended Actions
+[Specific next steps or recommendations]","{""provider"": ""anthropic"", ""model"": ""claude-3-sonnet-20240229"", ""temperature"": 0.4}"
+DocumentProcessing,ConsolidateResults,Combine all analysis results,results_consolidator,GenerateFinalReport,ErrorHandler,"contract_analysis,invoice_analysis,report_analysis,email_analysis,general_analysis,classification_result",consolidated_results,,"{""include_metadata"": true, ""generate_summary"": true}"
+DocumentProcessing,GenerateFinalReport,Generate comprehensive final report,llm,SaveResults,ErrorHandler,consolidated_results,final_report,"You are a senior analyst creating a comprehensive document processing report. 
+
+Analysis Results: {consolidated_results}
+
+Create a professional executive report in this format:
+
+# 📋 DOCUMENT PROCESSING REPORT
+
+## Executive Summary
+[High-level overview and key conclusions]
+
+## 📊 Processing Details
+- **Document Type**: [Type and confidence level]
+- **Processing Time**: [Estimated time]
+- **Urgency Level**: [Priority assessment]
+
+## 🔍 Detailed Analysis
+[Comprehensive analysis from specialist processors]
+
+## 📈 Key Insights & Findings
+[Most important discoveries and insights]
+
+## ⚠️ Risk Assessment
+[Potential issues, concerns, or red flags]
+
+## 📋 Recommended Actions
+[Specific, actionable next steps]
+
+## 🎯 Conclusion
+[Final assessment and overall recommendation]
+
+---
+*Report generated by AgentMap Document Processing System*","{""provider"": ""anthropic"", ""model"": ""claude-3-sonnet-20240229"", ""temperature"": 0.3}"
+DocumentProcessing,SaveResults,Save all results and notify completion,file_writer,NotifyCompletion,ErrorHandler,final_report,save_result,data/processing_report.md,"{""mode"": ""write""}"
+DocumentProcessing,NotifyCompletion,Send completion notification,echo,End,,"save_result",notification,"🎉 **Document Processing Complete!**
+
+Your document has been successfully processed through our multi-agent analysis system.
+
+📄 **Processing Summary**:
+- Document successfully classified and routed
+- Specialized analysis completed
+- Comprehensive report generated
+
+📁 **Results Location**: data/processing_report.md
+
+🚀 **Next Steps**: Review the detailed analysis report for insights and recommendations.",
+DocumentProcessing,ErrorHandler,Handle processing errors with detailed logging,echo,End,,error,error_message,"❌ **Processing Error**
+
+Error Details: {error}
+
+🔧 **Troubleshooting Tips**:
+1. Check that all agent files are present
+2. Verify document format and content
+3. Ensure all dependencies are installed
+4. Review agent configurations
+
+Please resolve the error and try again.",
+DocumentProcessing,End,Workflow completion,echo,,,notification,completion,✨ Multi-agent document processing completed successfully!,

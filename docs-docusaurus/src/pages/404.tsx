@@ -23,7 +23,7 @@ const popularLinks = [
   },
   {
     title: '💡 Examples',
-    href: '/docs/examples',
+    href: '/docs/templates',
     description: 'Real-world workflow examples',
   },
   {

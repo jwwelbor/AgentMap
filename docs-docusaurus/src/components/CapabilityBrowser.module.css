@@ -1,0 +1,466 @@
+/* CapabilityBrowser.module.css */
+
+.capabilityBrowser {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.header h1 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(135deg, #2196F3 0%, #9C27B0 50%, #FF9800 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.header p {
+  font-size: 1.1rem;
+  color: var(--ifm-color-emphasis-700);
+  margin-bottom: 0;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.searchContainer {
+  display: flex;
+  justify-content: center;
+}
+
+.searchInput {
+  width: 100%;
+  max-width: 500px;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  border: 2px solid var(--ifm-color-emphasis-300);
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.searchInput:focus {
+  border-color: var(--ifm-color-primary);
+  box-shadow: 0 0 0 3px var(--ifm-color-primary-lightest);
+}
+
+.categoryFilters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.categoryButton {
+  padding: 0.5rem 1rem;
+  border: 2px solid;
+  border-radius: 20px;
+  background: transparent;
+  color: var(--ifm-font-color-base);
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.categoryButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.categoryButton.active {
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.capabilityGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.capabilityCard {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 12px;
+  padding: 1.5rem;
+  background: var(--ifm-background-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.capabilityCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.categoryBadge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 0.4rem 0.8rem;
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-bottom-left-radius: 8px;
+}
+
+.capabilityHeader {
+  margin-bottom: 1rem;
+  padding-top: 0.5rem;
+}
+
+.capabilityHeader h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.4rem;
+  color: var(--ifm-color-primary);
+}
+
+.serviceInterface {
+  margin-bottom: 0.5rem;
+}
+
+.serviceInterface code {
+  background: var(--ifm-color-emphasis-200);
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ifm-color-emphasis-800);
+}
+
+.description {
+  color: var(--ifm-color-emphasis-700);
+  line-height: 1.5;
+  margin-bottom: 1.5rem;
+}
+
+.capabilityDetails {
+  margin-bottom: 1.5rem;
+}
+
+.detailRow {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1rem;
+  gap: 0.4rem;
+}
+
+.detailRow strong {
+  color: var(--ifm-color-emphasis-800);
+  font-size: 0.9rem;
+}
+
+.tagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.methodTag {
+  background: var(--ifm-color-success-lightest);
+  color: var(--ifm-color-success-dark);
+  padding: 0.2rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: 1px solid var(--ifm-color-success-light);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+}
+
+.contextTag {
+  background: var(--ifm-color-warning-lightest);
+  color: var(--ifm-color-warning-dark);
+  padding: 0.2rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: 1px solid var(--ifm-color-warning-light);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+}
+
+.protocolTag {
+  background: var(--ifm-color-info-lightest);
+  color: var(--ifm-color-info-dark);
+  padding: 0.2rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: 1px solid var(--ifm-color-info-light);
+  font-style: italic;
+}
+
+.implementationSection,
+.usageSection {
+  border-top: 1px solid var(--ifm-color-emphasis-300);
+  padding-top: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.sectionHeader strong {
+  color: var(--ifm-color-emphasis-800);
+  font-size: 0.9rem;
+}
+
+.copyButton {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+  border: 1px solid var(--ifm-color-primary);
+  background: transparent;
+  color: var(--ifm-color-primary);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.copyButton:hover {
+  background: var(--ifm-color-primary);
+  color: white;
+}
+
+.codeExample {
+  background: var(--ifm-code-background);
+  padding: 1rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  line-height: 1.4;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.configExample {
+  background: var(--ifm-code-background);
+  padding: 0.8rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  line-height: 1.4;
+  background-color: var(--ifm-color-emphasis-100);
+}
+
+.noResults {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--ifm-color-emphasis-600);
+}
+
+.noResults p {
+  margin-bottom: 0.5rem;
+}
+
+.footer {
+  text-align: center;
+  padding: 1.5rem;
+  border-top: 1px solid var(--ifm-color-emphasis-300);
+  color: var(--ifm-color-emphasis-600);
+  font-size: 0.9rem;
+}
+
+.footer a {
+  color: var(--ifm-color-primary);
+  text-decoration: none;
+}
+
+.footer a:hover {
+  text-decoration: underline;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .capabilityBrowser {
+    padding: 1rem;
+  }
+  
+  .header h1 {
+    font-size: 2rem;
+  }
+  
+  .capabilityGrid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  
+  .capabilityCard {
+    padding: 1rem;
+  }
+  
+  .controls {
+    gap: 1rem;
+  }
+  
+  .categoryFilters {
+    gap: 0.3rem;
+  }
+  
+  .categoryButton {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.9rem;
+  }
+  
+  .sectionHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .codeExample,
+  .configExample {
+    font-size: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .searchInput {
+    padding: 0.6rem 0.8rem;
+    font-size: 0.9rem;
+  }
+  
+  .capabilityHeader h3 {
+    font-size: 1.2rem;
+  }
+  
+  .detailRow {
+    margin-bottom: 0.8rem;
+  }
+  
+  .categoryButton {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+  }
+  
+  .tagList {
+    gap: 0.2rem;
+  }
+  
+  .methodTag,
+  .contextTag,
+  .protocolTag {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.4rem;
+  }
+  
+  .implementationSection,
+  .usageSection {
+    margin-bottom: 1rem;
+  }
+}
+
+/* Dark mode adjustments */
+[data-theme='dark'] .capabilityCard {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme='dark'] .capabilityCard:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme='dark'] .codeExample,
+[data-theme='dark'] .configExample {
+  background: var(--ifm-background-surface-color);
+}
+
+[data-theme='dark'] .configExample {
+  background-color: var(--ifm-color-emphasis-200);
+}
+
+/* Loading and animation states */
+.capabilityCard {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Focus indicators for accessibility */
+.searchInput:focus,
+.categoryButton:focus,
+.copyButton:focus {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .capabilityCard {
+    border-width: 2px;
+  }
+  
+  .categoryBadge {
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+  
+  .methodTag,
+  .contextTag,
+  .protocolTag {
+    border-width: 2px;
+  }
+}
+
+/* Print styles */
+@media print {
+  .capabilityBrowser {
+    padding: 0;
+  }
+  
+  .controls {
+    display: none;
+  }
+  
+  .capabilityGrid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .capabilityCard {
+    border: 2px solid #000;
+    break-inside: avoid;
+    margin-bottom: 1rem;
+  }
+  
+  .copyButton {
+    display: none;
+  }
+  
+  .codeExample,
+  .configExample {
+    max-height: none;
+    overflow: visible;
+  }
+}

@@ -26,7 +26,7 @@ try:
     from langchain_openai import OpenAIEmbeddings
 except ImportError:
     try:
-        from langchain.embeddings import OpenAIEmbeddings
+        from langchain_community.embeddings import OpenAIEmbeddings
     except ImportError:
         OpenAIEmbeddings = None
 

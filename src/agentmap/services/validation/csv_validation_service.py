@@ -39,6 +39,23 @@ class CSVValidationService:
             "Failure_Next",
         }
         self.all_columns = self.required_columns | self.optional_columns
+        
+        # Column alias mapping for flexible column naming
+        self.column_aliases = {
+            # Primary name -> acceptable aliases
+            "GraphName": ["graph_name", "Graph", "WorkflowName", "workflow_name", "workflow"],
+            "Node": ["node_name", "NodeName", "Step", "StepName", "name"],
+            "AgentType": ["agent_type", "Agent", "Type"],
+            "Prompt": ["prompt", "Instructions", "Template", "prompt_template"],
+            "Description": ["description", "desc", "Details"],
+            "Input_Fields": ["input_fields", "Inputs", "InputFields"],
+            "Output_Field": ["output_field", "Output", "OutputField"],
+            "Edge": ["edge", "next_node", "NextNode", "Target", "next"],
+            "Success_Next": ["success_next", "next_on_success", "SuccessTarget", "on_success"],
+            "Failure_Next": ["failure_next", "next_on_failure", "FailureTarget", "on_failure"],
+            "Context": ["context", "Config", "Configuration"]
+        }
+        
         self.logger = logging_service.get_logger("agentmap.csv_validation")
 
     def validate_file(self, csv_path: Path) -> ValidationResult:
@@ -76,6 +93,9 @@ class CSVValidationService:
         try:
             # Load CSV with pandas
             df = pd.read_csv(csv_path)
+
+            # Normalize column names to canonical form
+            df = self._normalize_columns(df)
 
             # Run all validation checks
             self._validate_structure(df, result)
@@ -400,3 +420,46 @@ class CSVValidationService:
             result.add_info(
                 f"Found {len(unique_agent_types)} unique agent types: {', '.join(sorted(unique_agent_types))}"
             )
+
+    def _normalize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Normalize column names to canonical form using case-insensitive matching.
+
+        Args:
+            df: DataFrame with potentially non-standard column names
+
+        Returns:
+            DataFrame with normalized column names
+        """
+        rename_map = {}
+        
+        for col in df.columns:
+            # Check if this column matches any alias (case-insensitive)
+            col_lower = col.lower()
+            normalized = False
+            
+            for primary_name, aliases in self.column_aliases.items():
+                # Check if it's already the primary name (case-insensitive)
+                if col_lower == primary_name.lower():
+                    if col != primary_name:
+                        rename_map[col] = primary_name
+                    normalized = True
+                    break
+                    
+                # Check aliases (case-insensitive)
+                for alias in aliases:
+                    if col_lower == alias.lower():
+                        rename_map[col] = primary_name
+                        normalized = True
+                        break
+                        
+                if normalized:
+                    break
+        
+        if rename_map:
+            self.logger.info(
+                f"Normalizing column names: {rename_map}"
+            )
+            df = df.rename(columns=rename_map)
+            
+        return df
