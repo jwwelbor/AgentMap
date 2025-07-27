@@ -1,0 +1,38 @@
+name: Documentation Quality Check
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'docs-docusaurus/**' ]
+  pull_request:
+    branches: [ main ]
+    paths: [ 'docs-docusaurus/**' ]
+
+jobs:
+  check-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: docs-docusaurus/package-lock.json
+      
+      - name: Install dependencies
+        run: |
+          cd docs-docusaurus
+          npm ci
+      
+      - name: Validate documentation
+        run: |
+          cd docs-docusaurus
+          npm run build
+          echo "✅ Documentation builds successfully - no broken links!"
+      
+      - name: Check for redirect conflicts
+        run: |
+          cd docs-docusaurus
+          node scripts/validate-redirects.js

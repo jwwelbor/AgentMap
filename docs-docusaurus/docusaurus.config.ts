@@ -307,11 +307,11 @@ const config: Config = {
           // Service integration redirects
           {
             from: '/usage/host-service-integration.md',
-            to: '/docs/guides/development/agents/host-service-integration',
+            to: '/docs/guides/development/services/host-service-integration',
           },
           {
             from: '/usage/host-service-integration',
-            to: '/docs/guides/development/agents/host-service-integration',
+            to: '/docs/guides/development/services/host-service-integration',
           },
           {
             from: '/usage/service_injection.md',
@@ -358,14 +358,14 @@ const config: Config = {
             to: '/docs/guides/development/agent-memory/langchain-memory-integration',
           },
           
-          // Service registry redirects
+          // Service registry redirects (redirect to general service integration)
           {
             from: '/usage/host_service_registry.md',
-            to: '/docs/guides/development/services/service-registry-patterns',
+            to: '/docs/guides/development/service-integration',
           },
           {
             from: '/usage/host_service_registry',
-            to: '/docs/guides/development/services/service-registry-patterns',
+            to: '/docs/guides/development/service-integration',
           },
           
           // Quick start redirects

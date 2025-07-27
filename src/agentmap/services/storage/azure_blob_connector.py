@@ -7,7 +7,7 @@ interface for reading and writing JSON files in Azure Blob Storage.
 
 from typing import Any, Dict
 
-from agentmap.agents.builtins.storage.blob.base_connector import BlobStorageConnector
+from agentmap.services.storage.base_connector import BlobStorageConnector
 from agentmap.exceptions import StorageConnectionError, StorageOperationError
 
 

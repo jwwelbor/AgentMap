@@ -282,6 +282,103 @@ class MemoryCapableAgent(Protocol):
 
 
 @runtime_checkable
+class BlobStorageServiceProtocol(Protocol):
+    """Protocol for blob storage service interface used by agents."""
+
+    def read_blob(self, uri: str, **kwargs) -> bytes:
+        """
+        Read blob from storage.
+
+        Args:
+            uri: URI of the blob to read (azure://, s3://, gs://, or local path)
+            **kwargs: Provider-specific parameters
+
+        Returns:
+            Blob content as bytes
+        """
+        ...
+
+    def write_blob(self, uri: str, data: bytes, **kwargs) -> Dict[str, Any]:
+        """
+        Write blob to storage.
+
+        Args:
+            uri: URI where the blob should be written
+            data: Blob content as bytes
+            **kwargs: Provider-specific parameters
+
+        Returns:
+            Write result with operation details
+        """
+        ...
+
+    def blob_exists(self, uri: str) -> bool:
+        """
+        Check if a blob exists.
+
+        Args:
+            uri: URI to check
+
+        Returns:
+            True if the blob exists, False otherwise
+        """
+        ...
+
+    def list_blobs(self, prefix: str, **kwargs) -> List[str]:
+        """
+        List blobs with given prefix.
+
+        Args:
+            prefix: URI prefix to search (e.g., "azure://container/path/")
+            **kwargs: Provider-specific parameters
+
+        Returns:
+            List of blob URIs
+        """
+        ...
+
+    def delete_blob(self, uri: str, **kwargs) -> Dict[str, Any]:
+        """
+        Delete a blob.
+
+        Args:
+            uri: URI of the blob to delete
+            **kwargs: Provider-specific parameters
+
+        Returns:
+            Delete result with operation details
+        """
+        ...
+
+    def get_available_providers(self) -> List[str]:
+        """
+        Get list of available storage providers.
+
+        Returns:
+            List of provider names that are available
+        """
+        ...
+
+    def health_check(self) -> Dict[str, Any]:
+        """
+        Perform health check on blob storage service.
+
+        Returns:
+            Health check results for all providers
+        """
+        ...
+
+
+@runtime_checkable
+class BlobStorageCapableAgent(Protocol):
+    """Protocol for agents that can use blob storage services."""
+
+    def configure_blob_storage_service(self, blob_service: BlobStorageServiceProtocol) -> None:
+        """Configure blob storage service for this agent."""
+        ...
+
+
+@runtime_checkable
 class DatabaseCapableAgent(Protocol):
     """Protocol for agents that can use database services."""
 

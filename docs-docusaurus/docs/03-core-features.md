@@ -70,17 +70,38 @@ AgentMap is a sophisticated **agentic AI orchestration framework** that transfor
 
 ## 🛠️ Developer Experience
 
-### Powerful CLI System
-- Workflow execution with state management
-- Auto-scaffolding for custom agents and functions
-- Graph compilation and export capabilities
-- Configuration management and validation
+### Service-Aware Scaffolding System
+AgentMap's **most powerful productivity feature** - an intelligent code generation system that analyzes CSV workflows and automatically creates service-integrated agent classes:
 
-### Scaffolding & Code Generation
-- Automatic generation of custom agent boilerplate
-- Function template creation with proper signatures
-- Documentation generation with context-aware comments
-- Best practice templates and examples
+- **Service-aware code generation**: Automatically detects service requirements from CSV context and generates agents with proper LLM, storage, vector, and memory service integration
+- **Multi-architecture support**: Unified storage vs. separate service protocols based on requirements analysis
+- **Template system**: Sophisticated IndentedTemplateComposer with modular agent and function templates
+- **Agent registry integration**: Conflict detection to avoid scaffolding existing agents
+- **Complete workflow integration**: Scaffold → customize → test → deploy development cycle
+
+**Supported Services**: LLM (OpenAI, Anthropic, Google), Storage (CSV, JSON, File, Vector, Memory), Node Registry
+
+**Example Usage**:
+```bash
+# Service-aware scaffolding with automatic service detection
+agentmap scaffold --graph IntelligentWorkflow
+
+# Generated agents with service integration
+class DataAnalyzerAgent(BaseAgent, LLMCapableAgent, StorageCapableAgent):
+    # Automatic service injection and usage examples included
+```
+
+### Powerful CLI System
+- Workflow execution with state management and real-time feedback
+- Advanced scaffolding commands with service integration
+- Graph compilation and export capabilities
+- Interactive configuration management and comprehensive validation
+
+### Advanced Code Generation
+- **Context-aware templates**: Service requirements parsed from CSV context fields
+- **Protocol integration**: Automatic inheritance from LLMCapableAgent, StorageCapableAgent, etc.
+- **Usage examples**: Generated code includes service integration examples and best practices
+- **Function scaffolding**: Complete routing function generation with context-aware logic
 
 ### Development Tools
 - Hot reloading for rapid development cycles

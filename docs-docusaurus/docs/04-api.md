@@ -1,13 +1,13 @@
 ---
 sidebar_position: 1
 title: AgentMap API Reference
-description: API reference for AgentMap framework including CLI tools and planned FastAPI integration for host applications.
+description: API reference for AgentMap framework including CLI tools and production-ready FastAPI server for host applications.
 keywords: [AgentMap API, CLI API, FastAPI integration, host application integration, AgentMap documentation]
 ---
 
 # AgentMap API Reference
 
-API documentation for AgentMap framework. Currently, AgentMap provides a comprehensive CLI interface for workflow management. A FastAPI integration for host applications is planned.
+API documentation for AgentMap framework. AgentMap provides both a comprehensive CLI interface and a production-ready FastAPI server for workflow management and host application integration.
 
 ## 🛠️ Current API Surface
 
@@ -20,7 +20,7 @@ AgentMap's primary API is through the CLI, which provides complete workflow mana
 - **Code Generation**: Scaffold custom agents and project templates
 - **Testing Tools**: Validate and benchmark workflows
 
-**Complete CLI Reference**: [CLI Commands Documentation](/docs/deployment/cli-commands)
+**Complete CLI Reference**: [CLI Commands Documentation](/docs/deployment/04-cli-commands)
 
 ### Python Integration
 For Python applications, AgentMap can be integrated programmatically:
@@ -37,21 +37,41 @@ result = agent_map.run_workflow(
 )
 ```
 
-## 🚧 Planned: FastAPI Integration
+## ✅ FastAPI Server (Available Now)
 
-A FastAPI-based API server is planned for integrating AgentMap workflows into host applications:
+AgentMap includes a production-ready FastAPI server for integrating workflows into host applications:
 
-### Planned Endpoints
-- `POST /workflows/{workflow_name}/execute` - Execute workflows via HTTP
-- `GET /workflows/{workflow_name}/status` - Check workflow status
-- `POST /workflows/validate` - Validate workflow definitions
+### Quick Start
+```bash
+# Install AgentMap with FastAPI dependencies
+pip install agentmap[fastapi]
+
+# Start the server
+agentmap-server --host 0.0.0.0 --port 8000
+
+# Or using Python module
+python -m agentmap.server_cli
+```
+
+### Available Endpoints
+- `POST /execute` - Execute workflows via HTTP
+- `GET /workflows` - List available workflows
+- `GET /workflows/{workflow_name}` - Get workflow details
+- `POST /validation/csv` - Validate workflow definitions
 - `GET /health` - Service health check
+- `GET /docs` - Interactive API documentation
+- `GET /redoc` - Alternative API documentation
 
 ### Use Cases
 - **Microservice Integration**: Embed AgentMap in larger applications
 - **Webhook Endpoints**: Trigger workflows from external events
 - **Service Mesh**: Deploy workflows as independent services
 - **API Gateway**: Expose workflows through standardized REST API
+
+### Documentation Links
+- **[FastAPI Standalone Deployment](/docs/deployment/fastapi-standalone)** - Complete deployment guide
+- **[FastAPI Integration Guide](/docs/deployment/fastapi-integration)** - Integrate with existing apps
+- **[CLI Commands Reference](/docs/deployment/cli-commands)** - Command-line interface
 
 ---
 
@@ -112,19 +132,8 @@ agentmap run --graph MyFlow --csv workflow.csv
 
 ---
 
-## 🚀 FastAPI Integration Timeline
-
-The FastAPI integration is planned for a future release. It will enable:
-
-- **HTTP Workflow Execution**: Trigger workflows via REST endpoints
-- **Host Application Integration**: Embed AgentMap in larger systems
-- **Microservice Architecture**: Deploy workflows as independent services
-- **Event-Driven Processing**: React to webhooks and external events
-
-**Stay Updated**: [Watch AgentMap on GitHub](https://github.com/jwwelbor/AgentMap) for announcements about the FastAPI integration.
-
 ---
 
-*Last updated: June 27, 2025*  
-*Current Version: CLI-based workflow execution*  
-*Planned: FastAPI integration for host applications*
+*Last updated: July 25, 2025*  
+*Current Version: CLI and FastAPI server for workflow execution*  
+*Status: Full implementation with production-ready FastAPI server available*

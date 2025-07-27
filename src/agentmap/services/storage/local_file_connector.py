@@ -8,7 +8,7 @@ interface, serving as a fallback when cloud storage is not specified.
 import os
 from typing import Any, Dict
 
-from agentmap.agents.builtins.storage.blob.base_connector import BlobStorageConnector
+from agentmap.services.storage.base_connector import BlobStorageConnector
 
 
 class LocalFileConnector(BlobStorageConnector):

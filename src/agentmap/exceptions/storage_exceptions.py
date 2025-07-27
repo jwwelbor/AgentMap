@@ -23,3 +23,6 @@ class StorageConfigurationError(AgentMapException):
 
 class StorageAuthenticationError(AgentMapException):
     """Exception raised when there is an error authenticating with the storage system."""
+
+class StorageServiceError(AgentMapException):
+    """Exception raised when there is an error performing a storage service."""

@@ -12,6 +12,154 @@ keywords: [agent development, custom agents, AgentMap development, agent pattern
 
 This comprehensive guide covers advanced agent development patterns in AgentMap, including sophisticated architectures, performance optimization, and integration strategies for building production-ready agent systems.
 
+## Scaffolding-First Development Workflow
+
+:::tip Recommended Approach
+The **fastest way to develop custom agents** is to use AgentMap's service-aware scaffolding system first, then customize the generated code. This approach reduces development time by 90% and ensures proper service integration patterns.
+:::
+
+### 1. Design with Service Requirements
+
+Start by designing your CSV workflow with explicit service requirements:
+
+```csv
+graph_name,node_name,agent_type,context,description,input_fields,output_field,prompt
+AdvancedWorkflow,DataProcessor,AdvancedDataAgent,"{""services"": [""llm"", ""vector"", ""storage""]}","AI-powered data processing",raw_data|query,processed_result,"Analyze {raw_data} for {query}"
+AdvancedWorkflow,Validator,ValidationAgent,"{""services"": [""storage""]}","Validate processed data",processed_result,validation_status,"Validate: {processed_result}"
+```
+
+### 2. Generate Agent Foundation
+
+Use scaffolding to create service-integrated agent foundations:
+
+```bash
+agentmap scaffold --graph AdvancedWorkflow
+```
+
+**Generated Foundation (AdvancedDataAgent):**
+```python
+from agentmap.agents.base_agent import BaseAgent
+from agentmap.services.protocols import LLMCapableAgent, VectorCapableAgent, StorageCapableAgent
+from typing import Dict, Any
+
+class AdvancedDataAgent(BaseAgent, LLMCapableAgent, VectorCapableAgent, StorageCapableAgent):
+    """
+    AI-powered data processing with LLM, vector, and storage capabilities
+    
+    Available Services:
+    - self.llm_service: LLM service for calling language models
+    - self.vector_service: Vector storage service for similarity search and embeddings
+    - self.storage_service: Generic storage service (supports all storage types)
+    """
+    
+    def __init__(self):
+        super().__init__()
+        # Service attributes (automatically injected during graph building)
+        self.llm_service: LLMServiceProtocol = None
+        self.vector_service: Any = None  # Vector storage service
+        self.storage_service: StorageServiceProtocol = None
+    
+    def process(self, inputs: Dict[str, Any]) -> Any:
+        # Generated foundation with service integration examples
+        raw_data_value = inputs.get("raw_data")
+        query_value = inputs.get("query")
+        
+        # Ready to customize with your logic
+        return "Your AdvancedDataAgent implementation here"
+```
+
+### 3. Enhance with Advanced Patterns
+
+Build upon the scaffolded foundation with advanced agent patterns:
+
+```python
+class AdvancedDataAgent(BaseAgent, LLMCapableAgent, VectorCapableAgent, StorageCapableAgent):
+    def __init__(self):
+        super().__init__()
+        # Scaffolded service attributes
+        self.llm_service: LLMServiceProtocol = None
+        self.vector_service: Any = None
+        self.storage_service: StorageServiceProtocol = None
+        
+        # Advanced customizations
+        self.cache = {}
+        self.processing_pipeline = []
+        self.validation_rules = []
+    
+    def process(self, inputs: Dict[str, Any]) -> Any:
+        raw_data = inputs.get("raw_data")
+        query = inputs.get("query")
+        
+        # 1. Vector search for relevant context
+        context = self._get_relevant_context(query)
+        
+        # 2. LLM analysis with context
+        analysis = self._analyze_with_llm(raw_data, query, context)
+        
+        # 3. Storage and caching
+        self._store_results(analysis, raw_data, query)
+        
+        return analysis
+    
+    def _get_relevant_context(self, query: str) -> list:
+        """Use vector service to find relevant context"""
+        if hasattr(self, 'vector_service') and self.vector_service:
+            return self.vector_service.search(
+                collection="knowledge_base",
+                query=query,
+                limit=5
+            )
+        return []
+    
+    def _analyze_with_llm(self, data: str, query: str, context: list) -> str:
+        """Enhanced LLM analysis with context"""
+        if not (hasattr(self, 'llm_service') and self.llm_service):
+            return f"Basic analysis of {data} for {query}"
+        
+        # Build enriched prompt with context
+        context_text = "\n".join([item.get("content", "") for item in context])
+        enhanced_prompt = f"""
+        Data to analyze: {data}
+        Query: {query}
+        Relevant context: {context_text}
+        
+        Provide detailed analysis incorporating the context.
+        """
+        
+        response = self.llm_service.call_llm(
+            provider="anthropic",
+            messages=[{"role": "user", "content": enhanced_prompt}],
+            model="claude-3-opus-20240229"
+        )
+        
+        return response.get("content", "Analysis failed")
+    
+    def _store_results(self, analysis: str, raw_data: str, query: str):
+        """Store analysis results for future reference"""
+        if hasattr(self, 'storage_service') and self.storage_service:
+            result_data = {
+                "timestamp": datetime.now().isoformat(),
+                "raw_data": raw_data,
+                "query": query,
+                "analysis": analysis,
+                "metadata": {"agent": "AdvancedDataAgent", "version": "1.0"}
+            }
+            
+            self.storage_service.write(
+                "json", 
+                f"analysis_results/{hash(query)}.json", 
+                result_data
+            )
+```
+
+### 4. Benefits of Scaffolding-First Approach
+
+- **🚀 Rapid Development**: Generate complete agent structures in seconds
+- **🔧 Service Integration**: Automatic protocol inheritance and service injection
+- **📝 Documentation**: Generated code includes comprehensive documentation and examples
+- **✅ Best Practices**: Templates follow AgentMap conventions and patterns
+- **🔄 Iterative Enhancement**: Easy to enhance scaffolded foundation with advanced patterns
+
 ## AgentMap Agent Architecture
 
 ### Core Agent Pattern

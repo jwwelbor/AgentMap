@@ -104,6 +104,14 @@ __all__ = [
     "DocumentResult",
 ]
 
+# Import blob storage service for completeness
+from .blob_storage_service import BlobStorageService
+
+# Add blob storage service to exports
+__all__.append("BlobStorageService")
+
+
+
 
 def register_all_providers(manager: "StorageServiceManager") -> None:
     """

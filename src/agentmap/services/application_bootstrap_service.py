@@ -890,7 +890,7 @@ class ApplicationBootstrapService:
         Register agents for a specific storage type.
 
         Args:
-            storage_type: Storage type name (csv, json, file, vector, etc.)
+            storage_type: Storage type name (csv, json, file, vector, blob, etc.)
 
         Returns:
             Number of agents registered for this storage type
@@ -928,6 +928,46 @@ class ApplicationBootstrapService:
                 (
                     "vector_writer",
                     "agentmap.agents.builtins.storage.vector.VectorWriterAgent",
+                ),
+            ],
+            "blob": [
+                (
+                    "blob_reader",
+                    "agentmap.agents.builtins.storage.blob.BlobReaderAgent",
+                ),
+                (
+                    "blob_writer",
+                    "agentmap.agents.builtins.storage.blob.BlobWriterAgent",
+                ),
+            ],
+            "azure_blob": [
+                (
+                    "blob_reader",
+                    "agentmap.agents.builtins.storage.blob.BlobReaderAgent",
+                ),
+                (
+                    "blob_writer",
+                    "agentmap.agents.builtins.storage.blob.BlobWriterAgent",
+                ),
+            ],
+            "aws_s3": [
+                (
+                    "blob_reader",
+                    "agentmap.agents.builtins.storage.blob.BlobReaderAgent",
+                ),
+                (
+                    "blob_writer",
+                    "agentmap.agents.builtins.storage.blob.BlobWriterAgent",
+                ),
+            ],
+            "gcp_storage": [
+                (
+                    "blob_reader",
+                    "agentmap.agents.builtins.storage.blob.BlobReaderAgent",
+                ),
+                (
+                    "blob_writer",
+                    "agentmap.agents.builtins.storage.blob.BlobWriterAgent",
                 ),
             ],
         }
@@ -1071,7 +1111,7 @@ class ApplicationBootstrapService:
                     ],
                 ),
                 "storage_agents": self._count_agents_by_prefix(
-                    agent_types, ["csv_", "json_", "file_", "vector_"]
+                    agent_types, ["csv_", "json_", "file_", "vector_", "blob_"]
                 ),
                 "mixed_agents": self._count_agents_by_prefix(
                     agent_types, ["summary", "orchestrator"]
@@ -1125,7 +1165,8 @@ class ApplicationBootstrapService:
             "csv_",
             "json_",
             "file_",
-            "vector_",  # storage
+            "vector_",
+            "blob_",  # storage
             "summary",
             "orchestrator",  # mixed
         ]

@@ -215,6 +215,9 @@ QAGraph,Generate,{"model": "gemini-1.0-pro"},Generate content,gemini,Next,,promp
 
 All storage agents implement the `StorageCapableAgent` protocol and require storage service configuration.
 
+> **Related Documentation**: 
+> - [Blob Storage Agents](agents/blob-storage-agents) - Cloud storage connectors for Azure, AWS, GCP and local file systems
+
 ### CSVReaderAgent and CSVWriterAgent
 
 Read from and write to CSV files using the unified storage system.
@@ -276,14 +279,48 @@ Work with vector databases and embeddings for semantic search and document retri
 **Context Configuration Options:**
 ```python
 context = {
+    # Basic configuration
     "input_fields": ["query", "documents"],
     "output_field": "search_results",
+    
+    # Vector store provider configuration
+    "provider": "chroma",           # Vector store type: "chroma" or "faiss"
+    "embedding_model": "text-embedding-ada-002",  # OpenAI embeddings model
+    
+    # Storage location configuration
+    "persist_directory": "./vector_db",   # Where to store vector databases
+    "collection_name": "documents",      # Collection within vector store
+    
+    # Search parameters
+    "similarity_threshold": 0.8,     # Minimum similarity score (0-1)
+    "max_results": 10,              # Maximum results to return (k value)
+    "metadata_keys": ["source", "date"],  # Metadata fields to include in results
+    
+    # Advanced storage options
+    "should_persist": True,         # Whether to persist after writing
+    "store_key": "_vector_store"    # Internal cache key for vector store
+}
+```
+
+#### Vector Store Provider Options
+
+**Chroma Vector Store**
+```python
+context = {
     "provider": "chroma",
     "embedding_model": "text-embedding-ada-002",
-    "persist_directory": "./vector_db",
-    "collection_name": "documents",
-    "similarity_threshold": 0.8,
-    "max_results": 10
+    "persist_directory": "./chroma_db",
+    "collection_name": "documents"
+}
+```
+
+**FAISS Vector Store**
+```python
+context = {
+    "provider": "faiss",
+    "embedding_model": "text-embedding-ada-002",
+    "persist_directory": "./faiss_index",
+    "collection_name": "embeddings"
 }
 ```
 
@@ -291,6 +328,11 @@ context = {
 ```csv
 VectorGraph,LoadDocs,{"provider": "chroma", "embedding_model": "text-embedding-ada-002"},Load documents into vector store,vector_writer,Search,,documents,load_result,
 VectorGraph,Search,{"similarity_threshold": 0.8, "max_results": 5},Search for similar documents,vector_reader,Process,,query,search_results,
+```
+
+**Advanced Search Example:**
+```csv
+VectorGraph,SearchDocs,{"provider": "faiss", "metadata_keys": ["source", "date", "author"], "max_results": 15},Semantic search with metadata filtering,vector_reader,ProcessResults,,query,search_results,
 ```
 
 ## File Agents
@@ -339,6 +381,37 @@ The FileWriterAgent writes content to various text-based formats with different 
 **CSV Example:**
 ```csv
 DocGraph,WriteFile,{"mode": "write", "encoding": "utf-8"},Write document,file_writer,Next,,data,result,path/to/output.txt
+```
+
+## Blob Storage Agents
+
+AgentMap includes specialized agents for accessing various cloud storage providers through a unified interface. For detailed documentation, see [Blob Storage Agents](agents/blob-storage-agents).
+
+### Cloud Storage Connectors
+
+The following connectors are available:
+
+- **Azure Blob Storage**: Access and manage Azure Blob Storage containers
+- **AWS S3**: Read from and write to S3 buckets with full AWS integration
+- **Google Cloud Storage**: Interact with GCP storage buckets
+- **Local File System**: Use the same interface for local file operations
+
+Each connector implements the unified storage protocol, allowing seamless switching between providers.
+
+**Context Configuration Example:**
+```python
+context = {
+    "provider": "azure",                       # azure, aws, gcp, local
+    "connection_string": "env:AZURE_STORAGE",  # Environment variable reference
+    "container": "documents",                  # Container/bucket name
+    "path_prefix": "data/",                    # Optional path prefix
+    "cache_ttl": 300                           # Cache time-to-live in seconds
+}
+```
+
+**CSV Usage Example:**
+```csv
+StorageGraph,ReadBlob,{"provider": "aws", "bucket": "company-data"},Read from S3,blob_reader,Process,,path,document,reports/monthly/july.pdf
 ```
 
 ## Specialized Agents
@@ -558,6 +631,73 @@ CustomerService,End,,End conversation,echo,,,final_response|error_message,result
 - **Accurate**: Keywords provide precise matching for common scenarios
 - **Fallback**: LLM ensures edge cases are handled gracefully
 
+## Dynamic Agent Discovery
+
+### Custom Agent Discovery
+
+AgentMap includes a dynamic agent discovery system that automatically finds and registers custom agents:
+
+- **Discovery Location**: Custom agents are discovered from the `custom_agents/` directory
+- **Naming Convention**: Class name must end with `Agent` (e.g., `MyCustomAgent`)
+- **Agent Type**: Automatically generated from class name (e.g., `MyCustomAgent` → `my_custom`)
+- **Registration**: Happens automatically during application bootstrap
+
+**Custom Agent Example:**
+```python
+# custom_agents/analysis_agent.py
+from agentmap.agents.base_agent import BaseAgent
+from typing import Dict, Any
+
+class AnalysisAgent(BaseAgent):
+    """Custom agent for data analysis tasks."""
+    
+    def process(self, inputs: Dict[str, Any]) -> Any:
+        # Custom processing logic
+        return processed_result
+```
+
+Once created, this agent will be automatically discovered and registered as type `"analysis"` in the agent registry.
+
+### Host Protocol Discovery
+
+The system also supports dynamic discovery of host-defined protocols:
+
+- **Protocol Location**: Host application can specify protocol folders via configuration
+- **Protocol Detection**: Classes that follow protocol naming conventions are discovered
+- **Protocol Registration**: Discovered protocols are registered with the host service registry
+- **Implementation**: Host application can later provide implementations for these protocols
+
+**Protocol Discovery Configuration:**
+```python
+# Host application configuration
+config = {
+    "protocol_discovery": {
+        "enabled": True,
+        "paths": ["./protocols", "./extensions/protocols"],
+        "exclude_patterns": ["*_test.py", "*_mock.py"]
+    }
+}
+```
+
+**Custom Protocol Example:**
+```python
+# protocols/data_processing_protocol.py
+from typing import Protocol, Dict, Any
+
+class DataProcessingCapableAgent(Protocol):
+    """Protocol for agents that can process specialized data formats."""
+    
+    def configure_data_processor(self, processor_service: Any) -> None:
+        """Configure the data processor service."""
+        pass
+        
+    def process_data(self, data: Dict[str, Any]) -> Any:
+        """Process data using the configured processor."""
+        pass
+```
+
+Agents that implement this protocol will automatically be discoverable by the host application's service registry.
+
 ## Testing and Development
 
 ### Testing Agents
@@ -582,6 +722,8 @@ class CustomAgent(BaseAgent):
         # Your custom logic here
         return processed_result
 ```
+
+Place your custom agent in the `custom_agents/` directory to have it automatically discovered and registered.
 
 Use the scaffolding system to generate templates:
 

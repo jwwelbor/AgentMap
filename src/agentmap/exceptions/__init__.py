@@ -26,6 +26,7 @@ from agentmap.exceptions.storage_exceptions import (
     StorageConfigurationError,
     StorageConnectionError,
     StorageOperationError,
+    StorageServiceError,
 )
 from agentmap.exceptions.validation_exceptions import ValidationException
 
@@ -48,5 +49,6 @@ __all__ = [
     "StorageConnectionError",
     "StorageConfigurationError",
     "StorageOperationError",
+    "StorageServiceError",
     "ValidationException",  # for backwards compatibility and consistency
 ]

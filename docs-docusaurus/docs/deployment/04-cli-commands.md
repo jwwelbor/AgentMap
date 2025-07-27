@@ -45,128 +45,209 @@ Options:
 
 ## Scaffolding Commands
 
-The scaffolding functionality is one of AgentMap's most powerful features, allowing you to quickly generate starter code for custom agents and functions.
+AgentMap's **service-aware scaffolding system** is a sophisticated code generation feature that automatically creates custom agent classes and routing functions from CSV definitions. It analyzes CSV context to detect service requirements and generates complete, working code with automatic service integration.
 
-### Scaffold Agents and Functions
+### Core Scaffolding Command
 
 ```bash
 agentmap scaffold [OPTIONS]
 ```
 
-Options:
-- `--graph`, `-g`: Graph name to scaffold agents for
-- `--csv`: CSV path override
+**Options:**
+- `--graph`, `-g`: Graph name to scaffold agents for (optional - defaults to all graphs)
+- `--csv`: CSV path override (uses config default if not specified)
+- `--output`, `-o`: Custom directory for agent output (overrides config)
+- `--functions`, `-f`: Custom directory for function output (overrides config)
 - `--config`, `-c`: Path to custom config file
 
-### How Scaffolding Works
+### Service-Aware Code Generation
 
-The scaffolding command:
-1. Analyzes your CSV file to find agent types and functions that aren't built-in
-2. Generates Python files for each custom agent and function
-3. Places them in the configured directories (default: `agentmap/agents/custom` and `agentmap/functions`)
+The scaffolding system automatically detects service requirements from CSV context and generates agents with proper service integration:
 
-Example:
-
+**Example CSV with Service Context:**
 ```csv
-MyGraph,WeatherNode,,Get weather data,Weather,NextNode,,location,weather,Get weather for {location}
+GraphName,Node,Edge,Description,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Context
+IntelligentWorkflow,ProcessData,,"Analyze data using LLM",DataAnalyzer,FormatOutput,HandleError,data|query,analysis,"{""services"": [""llm"", ""storage""]}"
 ```
 
-Running `agentmap scaffold` will generate:
-- `agentmap/agents/custom/weather_agent.py` - A starter agent implementation
-
-### Scaffold Output
-
-For custom agents, the scaffold generates:
-
+**Generated Agent with Service Integration:**
 ```python
 from agentmap.agents.base_agent import BaseAgent
+from agentmap.services.protocols import LLMCapableAgent, StorageCapableAgent
 from typing import Dict, Any
 
-class WeatherAgent(BaseAgent):
+class DataAnalyzerAgent(BaseAgent, LLMCapableAgent, StorageCapableAgent):
     """
-    Get weather data
+    Analyze data using LLM with storage and LLM capabilities
     
-    Node: WeatherNode
-    Expected input fields: location
-    Expected output field: weather
-    Default prompt: Get weather for {location}
+    Node: ProcessData
+    Expected input fields: data, query
+    Expected output field: analysis
+    
+    Available Services:
+    - self.llm_service: LLM service for calling language models
+    - self.storage_service: Generic storage service (supports all storage types)
     """
+    
+    def __init__(self):
+        super().__init__()
+        
+        # Service attributes (automatically injected during graph building)
+        self.llm_service: LLMServiceProtocol = None
+        self.storage_service: StorageServiceProtocol = None
+    
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
-        Process the inputs and return the output value.
+        Process the inputs and return the analysis result.
         
         Args:
-            inputs (dict): Contains the input values with keys: location
+            inputs (dict): Contains input values with keys: data, query
             
         Returns:
-            The value for weather
+            The analysis result
         """
-        # Access input fields directly from inputs dictionary
-        location = inputs.get("location")
+        # Access input fields
+        data_value = inputs.get("data")
+        query_value = inputs.get("query")
         
-        # Implement your agent logic here
-        # ...
+        # LLM SERVICE:
+        if hasattr(self, 'llm_service') and self.llm_service:
+            response = self.llm_service.call_llm(
+                provider="openai",  # or "anthropic", "google"
+                messages=[{"role": "user", "content": query_value}],
+                model="gpt-4"  # optional
+            )
+            analysis_result = response.get("content")
         
-        # Return just the output value (not the whole state)
-        return "Your WeatherAgent implementation here"
+        # STORAGE SERVICE:
+        if hasattr(self, 'storage_service') and self.storage_service:
+            # Save analysis for future reference
+            self.storage_service.write("json", "analysis_results.json", {
+                "query": query_value,
+                "analysis": analysis_result,
+                "timestamp": "2024-01-01T00:00:00Z"
+            })
+        
+        return analysis_result
 ```
 
-For functions, it generates:
+### Supported Service Types
 
+The scaffolding system supports multiple service architectures and automatically chooses the appropriate approach:
+
+**Unified Storage Services:**
+- `"storage"` - Generic storage service supporting all storage types (CSV, JSON, File, Vector, Memory)
+
+**Separate Service Protocols:**
+- `"llm"` - Language model services (OpenAI, Anthropic, Google)
+- `"csv"` - CSV file operations
+- `"json"` - JSON file operations  
+- `"file"` - General file operations
+- `"vector"` - Vector search and embeddings
+- `"memory"` - In-memory data storage
+- `"node_registry"` - Access to graph node metadata for dynamic routing
+
+### Service Context Configuration
+
+Specify service requirements in your CSV using the Context field:
+
+**JSON Format:**
+```csv
+Context
+"{""services"": [""llm"", ""storage""]}"
+"{""services"": [""llm"", ""vector"", ""memory""]}"
+"{""services"": [""csv"", ""json""]}"
+```
+
+**String Format:**
+```csv
+Context
+"services: llm|storage"
+"services: vector|memory|llm"
+```
+
+### Service Architecture Auto-Detection
+
+The system automatically chooses the appropriate service architecture:
+
+**Unified Architecture** (when `"storage"` is requested):
 ```python
-from typing import Dict, Any
-
-def choose_route(state: Any, success_node="SuccessPath", failure_node="FailurePath") -> str:
-    """
-    Decision function to route between success and failure nodes.
+class Agent(BaseAgent, StorageCapableAgent):
+    def __init__(self):
+        self.storage_service: StorageServiceProtocol = None
     
-    Args:
-        state: The current graph state
-        success_node (str): Node to route to on success
-        failure_node (str): Node to route to on failure
-        
-    Returns:
-        str: Name of the next node to execute
-    
-    Node: DecisionNode
-    Node Context: Decision node description
-    
-    Available in state:
-    - input: Input from previous node
-    """
-    # TODO: Implement routing logic
-    # Determine whether to return success_node or failure_node
-    
-    # Example implementation (replace with actual logic):
-    if state.get("last_action_success", True):
-        return success_node
-    else:
-        return failure_node
+    def process(self, inputs):
+        # Access any storage type through unified interface
+        data = self.storage_service.read("csv", "input.csv")
+        result = self.storage_service.write("json", "output.json", processed_data)
 ```
 
-### Custom Scaffolding Directories
-
-You can customize the directories where scaffolds are generated:
-
-```yaml
-### In agentmap_config.yaml
-paths:
-  custom_agents: "path/to/custom/agents"
-  functions: "path/to/functions"
+**Separate Architecture** (when specific types are requested):
+```python
+class Agent(BaseAgent, CSVCapableAgent, VectorCapableAgent):
+    def __init__(self):
+        self.csv_service: Any = None  # CSV storage service
+        self.vector_service: Any = None  # Vector storage service
+    
+    def process(self, inputs):
+        # Use specific service interfaces
+        csv_data = self.csv_service.read("data.csv")
+        similar_docs = self.vector_service.search(collection="docs", query="query")
 ```
 
-Or override them with environment variables:
+### Agent Registry Integration
+
+The scaffolding system integrates with AgentRegistryService to:
+- **Avoid conflicts**: Only scaffolds agents that aren't already registered
+- **Smart detection**: Checks both built-in and custom agent types
+- **Efficient workflow**: Focuses on creating only needed custom agents
+
 ```bash
-export AGENTMAP_CUSTOM_AGENTS_PATH="path/to/custom/agents"
-export AGENTMAP_FUNCTIONS_PATH="path/to/functions"
+# Example output
+$ agentmap scaffold --graph MyWorkflow
+✅ Scaffolded 3 agents/functions.
+📊 Service integration: 2 with services, 1 basic agents
+📁 Created files:
+    data_analyzer_agent.py
+    report_generator_agent.py
+    routing_function.py
+
+# Skipped already registered agents
+ℹ️  Skipped 2 built-in agents (InputAgent, OutputAgent)
 ```
 
-### Best Practices for Scaffolding
+### Advanced Usage Examples
 
-1. **Write clear Context descriptions** - These become class docstrings
-2. **Use descriptive Node names** - These are used in error messages and logs
-3. **Specify input_fields and output_field** - These generate typed method signatures
-4. **Include helpful Prompts** - These provide guidance in the scaffolded code
+**Multi-Service Agent Scaffolding:**
+```bash
+# CSV with complex service requirements
+GraphName,Node,Context
+AIWorkflow,ProcessData,"{""services"": [""llm"", ""vector"", ""storage"", ""memory""]}"
+
+# Generated agent inherits multiple protocols
+class ProcessDataAgent(BaseAgent, LLMCapableAgent, VectorCapableAgent, StorageCapableAgent, MemoryCapableAgent):
+    # Automatic service integration for all requested services
+```
+
+**Custom Output Directories:**
+```bash
+# Scaffold to custom directories
+agentmap scaffold --output ./custom_agents --functions ./custom_functions
+
+# Environment variable override
+export AGENTMAP_CUSTOM_AGENTS_PATH="./my_agents"
+export AGENTMAP_FUNCTIONS_PATH="./my_functions"
+agentmap scaffold
+```
+
+**Graph-Specific Scaffolding:**
+```bash
+# Scaffold only agents for specific graph
+agentmap scaffold --graph ProductionWorkflow
+
+# Scaffold with custom CSV
+agentmap scaffold --csv ./workflows/special_workflow.csv
+```
 
 ## Export and Compile Commands
 
@@ -179,10 +260,39 @@ agentmap export -g graph_name -o output.py
 Options:
 - `--graph`, `-g`: Graph name to export
 - `--output`, `-o`: Output file path
-- `--format`, `-f`: Format (python, pickle, source)
+- `--format`, `-f`: Export format (python, source, debug, documentation)
 - `--csv`: CSV path override
-- `--state-schema`, `-s`: State schema type
+- `--state-schema`, `-s`: State schema type (dict, pydantic:ModelName, custom)
 - `--config`, `-c`: Path to custom config file
+
+**Supported Export Formats:**
+- **python**: Complete executable Python code with imports (production ready)
+- **source**: Basic code template for prototyping and scaffolding
+- **debug**: Enhanced format with metadata and debugging information
+- **documentation**: Generate Markdown or HTML documentation
+
+**Note:** For pickle persistence, use the compile command instead. The export command focuses on human-readable formats.
+
+**Examples:**
+```bash
+# Export production-ready Python code
+agentmap export --graph MyWorkflow --format python --output workflow.py
+
+# Export basic source template
+agentmap export --graph MyWorkflow --format source --output template.py
+
+# Export with debug information for development
+agentmap export --graph MyWorkflow --format debug --output analysis.py
+
+# Generate workflow documentation
+agentmap export --graph MyWorkflow --format documentation --output docs.md
+
+# Export with custom state schema
+agentmap export --graph MyWorkflow --format python \
+  --state-schema "pydantic:MyStateModel" --output workflow.py
+```
+
+For comprehensive export format documentation, see the **[Export Formats Guide](../guides/deployment/export-formats)** and **[Export Reference](../reference/export-reference)**.
 
 ### Compile Graphs
 
@@ -197,16 +307,44 @@ Options:
 - `--state-schema`, `-s`: State schema type
 - `--config`, `-c`: Path to custom config file
 
-## Storage Configuration
+## Validation Commands
+
+AgentMap provides several commands to validate workflows and configurations. For detailed information, see the [Validation Commands](./08-cli-validation) documentation.
 
 ```bash
-agentmap storage-config [OPTIONS]
+# Validate CSV workflow files
+agentmap validate-csv --csv workflow.csv
+
+# Validate configuration
+agentmap validate-config --config custom_config.yaml
+
+# Validate both CSV and configuration
+agentmap validate-all
+
+# Manage validation cache
+agentmap validate-cache --stats
 ```
 
-Options:
-- `--init`, `-i`: Initialize a default storage configuration file
-- `--path`, `-p`: Path to storage config file
-- `--config`, `-c`: Path to custom config file
+## Diagnostic Commands
+
+Use the diagnose command to check system health and dependencies. For detailed information, see the [Diagnostic Commands](./09-cli-diagnostics) documentation.
+
+```bash
+# Check system health
+agentmap diagnose
+```
+
+## Resume Workflows
+
+Resume interrupted workflows with the resume command. For detailed information, see the [Workflow Resume Commands](./10-cli-resume) documentation.
+
+```bash
+# Resume a workflow with approval
+agentmap resume thread_12345 approve
+
+# Resume with additional data
+agentmap resume thread_12345 respond --data '{"user_response": "Yes, proceed"}'
+```
 
 ## Common Usage Patterns
 
@@ -319,11 +457,17 @@ agentmap run --graph TestFlow --autocompile
 # ✅ Compilation completed
 # ✅ Graph execution completed
 
-# Export for inspection
-agentmap export --graph TestFlow --format source --output ./debug/
+# Export for inspection with debug information
+agentmap export --graph TestFlow --format debug --output ./debug/
 # Expected output:
-# ✅ Graph exported to: ./debug/TestFlow_source.py
-# ℹ️  Review the generated code for debugging
+# ✅ Graph exported to: ./debug/TestFlow_debug.py
+# ℹ️  Review the generated code and metadata for debugging
+
+# Export basic source template
+agentmap export --graph TestFlow --format source --output ./templates/
+# Expected output:
+# ✅ Graph exported to: ./templates/TestFlow_source.py
+# ℹ️  Use as starting point for custom implementation
 ```
 
 ## Environment Variables

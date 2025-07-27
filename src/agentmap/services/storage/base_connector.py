@@ -105,6 +105,42 @@ class BlobStorageConnector(ABC):
             True if the blob exists, False otherwise
         """
 
+    def list_blobs(self, prefix: str, **kwargs) -> list[str]:
+        """
+        List blobs with given prefix.
+
+        Args:
+            prefix: URI prefix to search
+            **kwargs: Provider-specific parameters
+
+        Returns:
+            List of blob URIs
+
+        Note:
+            Default implementation returns empty list.
+            Subclasses should override if they support listing.
+        """
+        self.log_warning(f"list_blobs not implemented for {self.__class__.__name__}")
+        return []
+
+    def delete_blob(self, uri: str) -> None:
+        """
+        Delete a blob.
+
+        Args:
+            uri: URI of the blob to delete
+
+        Raises:
+            StorageOperationError: If delete is not supported
+
+        Note:
+            Default implementation raises error.
+            Subclasses should override if they support deletion.
+        """
+        raise StorageOperationError(
+            f"delete_blob not implemented for {self.__class__.__name__}"
+        )
+
     def parse_uri(self, uri: str) -> Dict[str, str]:
         """
         Parse a blob URI into components.
@@ -142,6 +178,30 @@ class BlobStorageConnector(ABC):
             path = path[1:]
 
         return {"scheme": scheme, "container": container, "path": path}
+
+    def log_debug(self, message: str) -> None:
+        """Log debug message."""
+        # Default implementation does nothing
+        # Subclasses can override to integrate with logging
+        pass
+
+    def log_info(self, message: str) -> None:
+        """Log info message."""
+        # Default implementation does nothing
+        # Subclasses can override to integrate with logging
+        pass
+
+    def log_warning(self, message: str) -> None:
+        """Log warning message."""
+        # Default implementation does nothing
+        # Subclasses can override to integrate with logging
+        pass
+
+    def log_error(self, message: str) -> None:
+        """Log error message."""
+        # Default implementation does nothing
+        # Subclasses can override to integrate with logging
+        pass
 
     def resolve_env_value(self, value: str) -> str:
         """
@@ -252,26 +312,26 @@ def get_connector_for_uri(
 
     # Lazy imports to avoid circular dependencies and allow optional installations
     if uri.startswith("azure://"):
-        from agentmap.agents.builtins.storage.blob.azure_blob_connector import (
+        from agentmap.services.storage.azure_blob_connector import (
             AzureBlobConnector,
         )
 
         return AzureBlobConnector(config.get("providers", {}).get("azure", {}))
     elif uri.startswith("s3://"):
-        from agentmap.agents.builtins.storage.blob.aws_s3_connector import (
+        from agentmap.services.storage.aws_s3_connector import (
             AWSS3Connector,
         )
 
         return AWSS3Connector(config.get("providers", {}).get("aws", {}))
     elif uri.startswith("gs://"):
-        from agentmap.agents.builtins.storage.blob.gcp_storage_connector import (
+        from agentmap.services.storage.gcp_storage_connector import (
             GCPStorageConnector,
         )
 
         return GCPStorageConnector(config.get("providers", {}).get("gcp", {}))
     else:
         # Default to local file connector if no scheme or unrecognized
-        from agentmap.agents.builtins.storage.blob.local_file_connector import (
+        from agentmap.services.storage.local_file_connector import (
             LocalFileConnector,
         )
 

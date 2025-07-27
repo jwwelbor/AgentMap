@@ -8,7 +8,7 @@ interface for reading and writing JSON files in Google Cloud Storage buckets.
 import os
 from typing import Any, Dict, Tuple
 
-from agentmap.agents.builtins.storage.blob.base_connector import BlobStorageConnector
+from agentmap.services.storage.base_connector import BlobStorageConnector
 from agentmap.exceptions import StorageConnectionError, StorageOperationError
 
 

@@ -85,6 +85,7 @@ class GraphRunnerService:
         orchestrator_service: Any = None,  # OrchestratorService - optional for backward compatibility
         host_protocol_configuration_service: HostProtocolConfigurationService = None,  # Optional for host service injection
         graph_checkpoint_service: Any = None,  # GraphCheckpointService - optional for human-in-the-loop
+        blob_storage_service: Any = None,  # BlobStorageService - optional for blob storage operations
     ):
         """Initialize facade service with specialized service dependencies.
 
@@ -108,6 +109,7 @@ class GraphRunnerService:
             orchestrator_service: Service for orchestration business logic (optional)
             host_protocol_configuration_service: Service for host protocol configuration (optional)
             graph_checkpoint_service: Service for graph execution checkpoints (optional)
+            blob_storage_service: Service for blob storage operations (optional)
         """
         # Core specialized services
         self.graph_definition = graph_definition_service
@@ -142,6 +144,9 @@ class GraphRunnerService:
 
         # Graph checkpoint service (optional)
         self.graph_checkpoint_service = graph_checkpoint_service
+
+        # Blob storage service (optional)
+        self.blob_storage_service = blob_storage_service
 
         self.logger.info("[GraphRunnerService] Initialized as simplified facade")
         self._log_service_status()
@@ -665,6 +670,7 @@ class GraphRunnerService:
             agent: Agent instance to configure services for
         """
         from agentmap.services.protocols import (
+            BlobStorageCapableAgent,
             CheckpointCapableAgent,
             LLMCapableAgent,
             OrchestrationCapableAgent,
@@ -737,6 +743,18 @@ class GraphRunnerService:
             else:
                 self.logger.debug(
                     f"[GraphRunnerService] Orchestrator service not available for {agent.name}"
+                )
+
+        if isinstance(agent, BlobStorageCapableAgent):
+            if self.blob_storage_service:
+                agent.configure_blob_storage_service(self.blob_storage_service)
+                self.logger.debug(
+                    f"[GraphRunnerService] ✅ Configured blob storage service for {agent.name}"
+                )
+                core_services_configured += 1
+            else:
+                self.logger.debug(
+                    f"[GraphRunnerService] Blob storage service not available for {agent.name}"
                 )
 
         # Future services - ready for when these services are available:

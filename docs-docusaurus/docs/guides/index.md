@@ -77,6 +77,50 @@ Learn how to deploy, monitor, and maintain AgentMap workflows in production envi
 
 ---
 
+### ⚙️ [Administration](./administration/)
+**System administration, maintenance, and cache management**
+
+Comprehensive administrative guides for managing AgentMap deployments, including cache management, system maintenance, performance monitoring, and operational procedures.
+
+**What You'll Learn:**
+- Cache management and optimization strategies
+- System maintenance and cleanup procedures
+- Performance monitoring and troubleshooting
+- Administrative best practices and procedures
+- Multi-user environment management
+
+**Perfect For:**
+- System administrators
+- DevOps and operations teams
+- Cache management and optimization
+- System maintenance and monitoring
+
+**Time Investment:** 2-4 hours for comprehensive administration setup
+
+---
+
+### ⚡ [Performance](./performance/)
+**Performance optimization, cache tuning, and system efficiency**
+
+Advanced performance optimization strategies through intelligent cache management, system tuning, and development workflow optimization for maximum AgentMap efficiency.
+
+**What You'll Learn:**
+- Cache-based performance optimization (20-100x improvements)
+- Development workflow efficiency optimization
+- System-level performance tuning strategies
+- Performance monitoring and analysis techniques
+- Environment-specific optimization approaches
+
+**Perfect For:**
+- Performance optimization requirements
+- Development team efficiency improvement
+- System performance tuning and analysis
+- Large-scale deployment optimization
+
+**Time Investment:** 1-3 hours for significant performance improvements
+
+---
+
 ## 🎯 Choose Your Path
 
 ### **New to AgentMap?**
@@ -87,6 +131,12 @@ Learn how to deploy, monitor, and maintain AgentMap workflows in production envi
 
 ### **Deploying to Production?**
 **Review [Deploying](./deploying/)** for monitoring, testing, security, and operational best practices.
+
+### **Managing System Performance?**
+**Explore [Performance](./performance/)** for cache optimization and performance tuning strategies.
+
+### **Administering AgentMap Systems?**
+**Check [Administration](./administration/)** for cache management, maintenance, and operational procedures.
 
 ---
 
@@ -130,6 +180,16 @@ Complete production deployment:
 - **[Monitoring](./deploying/monitoring)** - Execution tracking and performance analysis
 - **[Deployment](./deploying/deployment)** - Production deployment strategies
 - **[Testing](./development/testing)** - Quality assurance and testing patterns
+
+### Administration
+- **[Cache Management](./administration/cache-management)** - Administrative cache procedures and optimization
+- **System Maintenance** - Regular maintenance and operational procedures (coming soon)
+- **Multi-User Management** - User management and environment setup (coming soon)
+
+### Performance
+- **[Performance Optimization](./performance/optimization)** - Cache-based performance improvements
+- **Development Efficiency** - Workflow optimization for faster iterations (coming soon)
+- **System Tuning** - Resource optimization and scaling strategies (coming soon)
 
 ---
 
@@ -190,8 +250,9 @@ agentmap profile --csv workflow.csv --profile-memory
 ### **For DevOps/Operations**
 1. **[Core Concepts](./learning-paths/)** - Understanding AgentMap (20 min)
 2. **[Deployment Guide](./deploying/)** - Production deployment (60 min)
-3. **[Monitoring Setup](./deploying/monitoring)** - Operational excellence (45 min)
-4. **[Performance Optimization](./deploying/monitoring)** - Scaling strategies (30 min)
+3. **[Administration](./administration/)** - System administration and cache management (45 min)
+4. **[Performance Optimization](./performance/)** - Performance tuning and optimization (30 min)
+5. **[Monitoring Setup](./deploying/monitoring)** - Operational excellence (45 min)
 
 ### **For Product Managers**
 1. **[AgentMap Overview](./learning-paths/agentmap-basics)** - Capabilities and benefits (15 min)
@@ -281,6 +342,12 @@ Choose your next step based on your goals:
 
 ### **Deploy to Production**
 **[🚀 Review Deployment Guide →](./deploying/)**
+
+### **Optimize Performance**
+**[⚡ Explore Performance Guide →](./performance/)**
+
+### **Administer Systems**
+**[⚙️ Check Administration Guide →](./administration/)**
 
 ### **See AgentMap in Action**
 **[🎮 Try Tutorials →](../tutorials/)**

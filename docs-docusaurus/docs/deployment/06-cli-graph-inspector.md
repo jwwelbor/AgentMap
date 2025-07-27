@@ -11,6 +11,20 @@ keywords: [CLI inspector, graph debugging, deployment validation, troubleshootin
   <span>📍 <a href="/docs/intro">AgentMap</a> → <a href="/docs/deployment">Deployment</a> → <strong>CLI Graph Inspector</strong></span>
 </div>
 
+:::warning Implementation Status
+
+**⚠️ DEVELOPMENT IN PROGRESS**: While the CLI command structure is fully implemented, some core inspection methods are not yet available. The command will fail at runtime until the following methods are implemented:
+
+- `get_agent_resolution_status()` in GraphRunnerService
+- `_load_graph_definition_for_execution()` in GraphRunnerService  
+- `get_service_info()` on agent instances
+
+**Current Status**: Documentation reflects intended functionality. Implementation gaps prevent actual usage.
+
+**For Developers**: See [Implementation Notes](#implementation-notes) section below for detailed technical requirements.
+
+:::
+
 The AgentMap CLI Graph Inspector is a powerful diagnostic tool that provides deep insights into your workflow graphs, agent configurations, service dependencies, and execution readiness. This tool is essential for deployment validation, helping you understand how your graphs are structured, identify potential issues before deployment, and optimize performance for production environments.
 
 ## Overview
@@ -553,9 +567,126 @@ agentmap run --graph MyWorkflow --profile  # If available
 agentmap inspect-graph MyWorkflow          # Post-optimization check
 ```
 
+## Implementation Notes
+
+:::info For Developers
+
+This section provides technical details about implementation gaps that need to be addressed before the graph inspector can function properly.
+
+:::
+
+### Required Method Implementations
+
+The following methods are called by the CLI but not yet implemented:
+
+#### 1. GraphRunnerService.get_agent_resolution_status()
+
+```python
+def get_agent_resolution_status(self, graph_def: dict) -> dict:
+    """
+    Analyze agent resolution status for all nodes in the graph.
+    
+    Args:
+        graph_def: Graph definition dictionary from CSV parsing
+        
+    Returns:
+        dict: {
+            'total_nodes': int,
+            'resolved_nodes': int, 
+            'resolution_rate': float,
+            'node_status': {
+                'node_name': {
+                    'resolvable': bool,
+                    'agent_type': str,
+                    'error': str | None,
+                    'services': dict,
+                    'protocols': dict
+                }
+            }
+        }
+    """
+    # Implementation needed
+    pass
+```
+
+#### 2. GraphRunnerService._load_graph_definition_for_execution()
+
+```python
+def _load_graph_definition_for_execution(self, csv_path: str, graph_name: str) -> tuple[dict, str]:
+    """
+    Load and validate graph definition from CSV file.
+    
+    Args:
+        csv_path: Path to CSV workflow file
+        graph_name: Name of the graph to load
+        
+    Returns:
+        tuple: (graph_definition_dict, resolved_graph_name)
+        
+    Raises:
+        GraphLoadError: If graph cannot be loaded or validated
+    """
+    # Implementation needed
+    pass
+```
+
+#### 3. Agent.get_service_info()
+
+```python
+def get_service_info(self) -> dict:
+    """
+    Get service availability and status for this agent.
+    
+    Returns:
+        dict: {
+            'llm': {'available': bool, 'provider': str | None, 'error': str | None},
+            'storage': {'available': bool, 'types': list[str], 'error': str | None},
+            'validation': {'available': bool, 'schemas': list[str], 'error': str | None},
+            # ... other services as applicable
+        }
+    """
+    # Implementation needed on base agent classes
+    pass
+```
+
+### Implementation Priorities
+
+1. **High Priority**: `_load_graph_definition_for_execution()` - Core functionality blocker
+2. **High Priority**: `get_agent_resolution_status()` - Main inspection logic
+3. **Medium Priority**: `get_service_info()` - Service status details
+
+### Testing Approach
+
+Once implemented, test with:
+
+```bash
+# Test basic functionality
+agentmap inspect-graph TestGraph
+
+# Test error handling
+agentmap inspect-graph NonExistentGraph
+
+# Test specific node inspection
+agentmap inspect-graph TestGraph --node TestNode
+
+# Test service inspection
+agentmap inspect-graph TestGraph --services --protocols
+```
+
+### Integration Requirements
+
+The inspector integrates with:
+- **CSV Parser**: For graph definition loading
+- **Agent Registry**: For agent type resolution
+- **Service Manager**: For service availability checking
+- **Configuration System**: For custom config file support
+
 ## See Also
 
-- [CLI Commands Reference](deployment/cli-commands) - Complete CLI command documentation
+- [CLI Commands Reference](./04-cli-commands) - Complete CLI command documentation
+- [CLI Validation Commands](./08-cli-validation) - Workflow validation tools
+- [Diagnostic Commands](./09-cli-diagnostics) - System health and troubleshooting
+- [Workflow Resume Commands](./10-cli-resume) - Resuming interrupted workflows
 - **[Agent Types Reference](reference/agent-types)** - Available agent types and configurations
 - **[CSV Schema Reference](reference/csv-schema)** - Workflow file format specification
 - **[Configuration Guide](/docs/deployment/)** - Configuration options and setup

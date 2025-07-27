@@ -657,11 +657,12 @@ agentmap analyze-performance \
 
 ## Next Steps
 
-- **[CLI Commands Reference](deployment/cli-commands)**: Complete CLI command documentation
-- **[CLI Graph Inspector](deployment/cli-graph-inspector)**: Advanced debugging and validation
-- **[Configuration Reference](./configuration)**: Detailed configuration options
-- **[FastAPI Deployment](./fastapi-standalone)**: Web API deployment option
-- **[Monitoring Guide](./monitoring)**: Production monitoring and observability
+- **[CLI Commands Reference](./04-cli-commands)**: Complete CLI command documentation
+- **[CLI Graph Inspector](./06-cli-graph-inspector)**: Advanced debugging and validation
+- **[Configuration Reference](./01-configuration)**: Detailed configuration options
+- **[FastAPI Deployment](./02-fastapi-standalone)**: Web API deployment option
+- **[CLI Validation Commands](./08-cli-validation)**: Workflow validation tools
+- **[Diagnostic Commands](./09-cli-diagnostics)**: System health and troubleshooting
 
 ## Related Resources
 

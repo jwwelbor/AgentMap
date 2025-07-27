@@ -889,6 +889,78 @@ class TestHostProtocolDiscovery(unittest.TestCase):
         self.assertEqual(result[0]["class"], "DatabaseServiceProtocol")
         self.assertEqual(result[1]["name"], "email_service")
         self.assertEqual(result[1]["status"], "implemented")
+    
+    def test_register_storage_type_agents_blob(self):
+        """Test registration of blob storage agents."""
+        # Mock agent registration
+        with patch.object(self.service, '_register_agent_if_available', return_value=True) as mock_register:
+            
+            # Execute blob storage registration
+            result = self.service._register_storage_type_agents("blob")
+            
+            # Verify blob agents were registered
+            expected_calls = [
+                call("blob_reader", "agentmap.agents.builtins.storage.blob.BlobReaderAgent"),
+                call("blob_writer", "agentmap.agents.builtins.storage.blob.BlobWriterAgent")
+            ]
+            mock_register.assert_has_calls(expected_calls)
+            
+            # Verify return count
+            self.assertEqual(result, 2)
+    
+    def test_register_storage_type_agents_azure_blob(self):
+        """Test registration of Azure blob storage agents."""
+        # Mock agent registration
+        with patch.object(self.service, '_register_agent_if_available', return_value=True) as mock_register:
+            
+            # Execute Azure blob storage registration
+            result = self.service._register_storage_type_agents("azure_blob")
+            
+            # Verify blob agents were registered with correct paths
+            expected_calls = [
+                call("blob_reader", "agentmap.agents.builtins.storage.blob.BlobReaderAgent"),
+                call("blob_writer", "agentmap.agents.builtins.storage.blob.BlobWriterAgent")
+            ]
+            mock_register.assert_has_calls(expected_calls)
+            
+            # Verify return count
+            self.assertEqual(result, 2)
+    
+    def test_register_storage_type_agents_aws_s3(self):
+        """Test registration of AWS S3 blob storage agents."""
+        # Mock agent registration
+        with patch.object(self.service, '_register_agent_if_available', return_value=True) as mock_register:
+            
+            # Execute AWS S3 storage registration
+            result = self.service._register_storage_type_agents("aws_s3")
+            
+            # Verify blob agents were registered with correct paths
+            expected_calls = [
+                call("blob_reader", "agentmap.agents.builtins.storage.blob.BlobReaderAgent"),
+                call("blob_writer", "agentmap.agents.builtins.storage.blob.BlobWriterAgent")
+            ]
+            mock_register.assert_has_calls(expected_calls)
+            
+            # Verify return count
+            self.assertEqual(result, 2)
+    
+    def test_register_storage_type_agents_gcp_storage(self):
+        """Test registration of Google Cloud Storage blob agents."""
+        # Mock agent registration
+        with patch.object(self.service, '_register_agent_if_available', return_value=True) as mock_register:
+            
+            # Execute GCP storage registration
+            result = self.service._register_storage_type_agents("gcp_storage")
+            
+            # Verify blob agents were registered with correct paths
+            expected_calls = [
+                call("blob_reader", "agentmap.agents.builtins.storage.blob.BlobReaderAgent"),
+                call("blob_writer", "agentmap.agents.builtins.storage.blob.BlobWriterAgent")
+            ]
+            mock_register.assert_has_calls(expected_calls)
+            
+            # Verify return count
+            self.assertEqual(result, 2)
 
 
 if __name__ == '__main__':

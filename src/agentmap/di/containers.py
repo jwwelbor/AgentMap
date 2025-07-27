@@ -149,9 +149,30 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
+    # Blob Storage Service for cloud blob operations
+    @staticmethod
+    def _create_blob_storage_service(app_config_service, logging_service):
+        """
+        Create blob storage service with graceful failure handling.
+
+        Returns None if creation fails, allowing the application to continue
+        without blob storage features.
+        """
+        try:
+            from agentmap.services.storage.blob_storage_service import BlobStorageService
+            return BlobStorageService(app_config_service, logging_service)
+        except Exception as e:
+            logger = logging_service.get_logger("agentmap.blob_storage")
+            logger.warning(f"Blob storage service disabled: {e}")
+            return None
+
+    blob_storage_service = providers.Singleton(
+        _create_blob_storage_service, app_config_service, logging_service
+    )
+
     # Storage Service Manager with graceful failure handling
     @staticmethod
-    def _create_storage_service_manager(storage_config_service, logging_service):
+    def _create_storage_service_manager(storage_config_service, logging_service, blob_storage_service):
         """
         Create storage service manager with graceful failure handling.
 
@@ -169,7 +190,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
             from agentmap.services.storage.manager import StorageServiceManager
 
-            return StorageServiceManager(storage_config_service, logging_service)
+            return StorageServiceManager(storage_config_service, logging_service, blob_storage_service)
         except Exception as e:
             # Import the specific exception to check for it
             from agentmap.exceptions.service_exceptions import (
@@ -186,7 +207,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
                 raise
 
     storage_service_manager = providers.Singleton(
-        _create_storage_service_manager, storage_config_service, logging_service
+        _create_storage_service_manager, storage_config_service, logging_service, blob_storage_service
     )
 
     # LEVEL 1: Utility Services (no business logic dependencies)
@@ -481,6 +502,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         orchestrator_service,
         host_protocol_configuration_service,
         graph_checkpoint_service,
+        blob_storage_service,
     ):
         """Create GraphRunnerService with proper container injection."""
         from agentmap.services.graph_runner_service import GraphRunnerService
@@ -505,6 +527,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
             orchestrator_service=orchestrator_service,
             host_protocol_configuration_service=host_protocol_configuration_service,  # Pass the service, not container
             graph_checkpoint_service=graph_checkpoint_service,
+            blob_storage_service=blob_storage_service,
         )
 
     # Graph Runner Service - Simplified facade service for complete graph execution
@@ -529,6 +552,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         orchestrator_service,
         host_protocol_configuration_service,  # Pass the service provider
         graph_checkpoint_service,
+        blob_storage_service,
     )
 
     # Provider for checking service availability

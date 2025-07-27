@@ -157,6 +157,185 @@ The Description field is useful for:
 - Documenting expected inputs and outputs
 - Adding notes for other developers
 
+## Service Configuration for Scaffolding
+
+:::tip Service-Aware Scaffolding
+AgentMap's **service-aware scaffolding system** automatically detects service requirements from the Context field and generates agents with proper service integration. This dramatically accelerates custom agent development.
+:::
+
+### Service Configuration Syntax
+
+Use the Context field to specify service requirements for custom agents that will be scaffolded:
+
+**JSON Format (Recommended):**
+```csv
+Context
+"{""services"": [""llm"", ""storage""]}"
+"{""services"": [""llm"", ""vector"", ""memory""]}"
+"{""services"": [""csv"", ""json"", ""file""]}"
+```
+
+**String Format (Alternative):**
+```csv
+Context
+"services: llm|storage"
+"services: vector|memory|llm"
+"services: csv|json"
+```
+
+### Supported Services
+
+**LLM Services:**
+- `"llm"` - Multi-provider LLM service (OpenAI, Anthropic, Google)
+
+**Storage Services:**
+
+*Unified Storage Architecture:*
+- `"storage"` - Generic storage service supporting all types (CSV, JSON, File, Vector, Memory)
+
+*Separate Service Architecture:*
+- `"csv"` - CSV file operations
+- `"json"` - JSON file operations  
+- `"file"` - General file operations
+- `"vector"` - Vector search and embeddings
+- `"memory"` - In-memory data storage
+
+**Other Services:**
+- `"node_registry"` - Access to graph node metadata for dynamic routing
+
+### Service Configuration Examples
+
+<CSVTable 
+  csvContent={`graph_name,node_name,agent_type,context,description,input_fields,output_field,prompt
+AIWorkflow,Analyzer,IntelligentAnalyzer,"{""services"": [""llm""]}","AI-powered analysis agent",user_query,analysis,"Analyze: {user_query}"
+AIWorkflow,DataProcessor,DataHandler,"{""services"": [""llm"", ""storage""]}","Process and store data",raw_data,processed_data,"Process: {raw_data}"
+AIWorkflow,SearchAgent,DocumentRetriever,"{""services"": [""vector""]}","Semantic document search",search_query,relevant_docs,"Find docs for: {search_query}"
+AIWorkflow,RAGAgent,SmartResponder,"{""services"": [""llm"", ""vector"", ""storage""]}","RAG-based response generation",question,answer,"Answer: {question}"`}
+  title="Service Configuration Examples"
+  filename="service_configuration_examples"
+/>
+
+### Generated Agent Structure
+
+When you run `agentmap scaffold`, the system analyzes the Context field and generates agents with proper service integration:
+
+**Example: LLM + Storage Service Configuration**
+```csv
+graph_name,node_name,agent_type,context
+SmartWorkflow,DataAnalyzer,IntelligentProcessor,"{""services"": [""llm"", ""storage""]}"
+```
+
+**Generated Agent Code:**
+```python
+from agentmap.agents.base_agent import BaseAgent
+from agentmap.services.protocols import LLMCapableAgent, StorageCapableAgent
+from typing import Dict, Any
+
+class IntelligentProcessorAgent(BaseAgent, LLMCapableAgent, StorageCapableAgent):
+    """
+    Generated agent with LLM and storage capabilities
+    
+    Available Services:
+    - self.llm_service: LLM service for calling language models
+    - self.storage_service: Generic storage service (supports all storage types)
+    """
+    
+    def __init__(self):
+        super().__init__()
+        # Service attributes (automatically injected during graph building)
+        self.llm_service: LLMServiceProtocol = None
+        self.storage_service: StorageServiceProtocol = None
+    
+    def process(self, inputs: Dict[str, Any]) -> Any:
+        # Generated foundation with service integration examples
+        # Ready to customize with your logic
+        return "Your IntelligentProcessor implementation here"
+```
+
+### Service Architecture Selection
+
+The scaffolding system automatically chooses the optimal service architecture:
+
+**Unified Architecture** (when `"storage"` is requested):
+```csv
+Context
+"{""services"": [""storage""]}"
+```
+Generates: `class Agent(BaseAgent, StorageCapableAgent)`
+- Single service interface for all storage types
+- Access CSV, JSON, File, Vector, Memory through one service
+
+**Separate Architecture** (when specific types are requested):
+```csv
+Context
+"{""services"": [""csv"", ""vector"", ""memory""]}"
+```
+Generates: `class Agent(BaseAgent, CSVCapableAgent, VectorCapableAgent, MemoryCapableAgent)`
+- Dedicated service interfaces for each type
+- Type-specific operations and optimizations
+
+### Multi-Service Agent Configuration
+
+**Comprehensive AI Agent:**
+```csv
+graph_name,node_name,agent_type,context
+AdvancedWorkflow,AIProcessor,ComprehensiveAgent,"{""services"": [""llm"", ""vector"", ""storage"", ""memory"", ""node_registry""]}"
+```
+
+**Generated:**
+```python
+class ComprehensiveAgent(BaseAgent, LLMCapableAgent, VectorCapableAgent, StorageCapableAgent, MemoryCapableAgent, NodeRegistryUser):
+    # All service capabilities integrated
+    # Ready for complex multi-service workflows
+```
+
+### Best Practices for Service Configuration
+
+**✅ Recommended:**
+```csv
+# Clear, specific service requirements
+Context
+"{""services"": [""llm"", ""storage""]}"
+
+# Multi-service for complex agents
+Context
+"{""services"": [""llm"", ""vector"", ""memory""]}"
+
+# Unified storage for multiple formats
+Context
+"{""services"": [""storage""]}"
+```
+
+**❌ Avoid:**
+```csv
+# Unclear or missing service specs
+Context
+"some services needed"
+
+# Redundant service combinations
+Context
+"{""services"": [""storage"", ""csv"", ""json""]}"
+
+# Invalid service names
+Context
+"{""services"": [""unknown_service""]}"
+```
+
+### Service Integration Workflow
+
+1. **Design**: Specify service requirements in CSV Context field
+2. **Scaffold**: Run `agentmap scaffold` to generate service-integrated agents
+3. **Customize**: Enhance generated agents with your specific logic
+4. **Test**: Validate service integration and functionality
+5. **Deploy**: Use compiled agents in production workflows
+
+```bash
+# Complete workflow
+agentmap scaffold --graph MyWorkflow        # Generate service-integrated agents
+agentmap run --graph MyWorkflow              # Test with generated agents
+agentmap compile --graph MyWorkflow         # Compile for production
+```
+
 ### input_fields and output_field
 
 These fields control data flow between nodes:
