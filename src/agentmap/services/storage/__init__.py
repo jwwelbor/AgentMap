@@ -111,8 +111,6 @@ from .blob_storage_service import BlobStorageService
 __all__.append("BlobStorageService")
 
 
-
-
 def register_all_providers(manager: "StorageServiceManager") -> None:
     """
     Register all available storage service providers.

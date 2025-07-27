@@ -159,7 +159,10 @@ class ApplicationContainer(containers.DeclarativeContainer):
         without blob storage features.
         """
         try:
-            from agentmap.services.storage.blob_storage_service import BlobStorageService
+            from agentmap.services.storage.blob_storage_service import (
+                BlobStorageService,
+            )
+
             return BlobStorageService(app_config_service, logging_service)
         except Exception as e:
             logger = logging_service.get_logger("agentmap.blob_storage")
@@ -172,7 +175,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # Storage Service Manager with graceful failure handling
     @staticmethod
-    def _create_storage_service_manager(storage_config_service, logging_service, blob_storage_service):
+    def _create_storage_service_manager(
+        storage_config_service, logging_service, blob_storage_service
+    ):
         """
         Create storage service manager with graceful failure handling.
 
@@ -190,7 +195,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
             from agentmap.services.storage.manager import StorageServiceManager
 
-            return StorageServiceManager(storage_config_service, logging_service, blob_storage_service)
+            return StorageServiceManager(
+                storage_config_service, logging_service, blob_storage_service
+            )
         except Exception as e:
             # Import the specific exception to check for it
             from agentmap.exceptions.service_exceptions import (
@@ -207,7 +214,10 @@ class ApplicationContainer(containers.DeclarativeContainer):
                 raise
 
     storage_service_manager = providers.Singleton(
-        _create_storage_service_manager, storage_config_service, logging_service, blob_storage_service
+        _create_storage_service_manager,
+        storage_config_service,
+        logging_service,
+        blob_storage_service,
     )
 
     # LEVEL 1: Utility Services (no business logic dependencies)

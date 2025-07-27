@@ -26,7 +26,10 @@ class StorageServiceManager:
     """
 
     def __init__(
-        self, configuration: AppConfigService, logging_service: LoggingService, blob_storage_service: Optional[Any] = None
+        self,
+        configuration: AppConfigService,
+        logging_service: LoggingService,
+        blob_storage_service: Optional[Any] = None,
     ):
         """
         Initialize the storage service manager.
@@ -250,11 +253,11 @@ class StorageServiceManager:
         providers = set()
         providers.update(self._service_classes.keys())
         providers.update(self._factories.keys())
-        
+
         # Include blob storage if available
         if self.has_blob_storage():
             providers.add("blob")
-            
+
         return sorted(list(providers))
 
     def is_provider_available(self, provider_name: str) -> bool:
@@ -269,7 +272,7 @@ class StorageServiceManager:
         """
         if provider_name == "blob":
             return self.has_blob_storage()
-            
+
         return (
             provider_name in self._service_classes or provider_name in self._factories
         )
@@ -354,7 +357,9 @@ class StorageServiceManager:
                 # Add health status for blob storage
                 if self.blob_storage_service:
                     try:
-                        provider_info["healthy"] = self.blob_storage_service.health_check()
+                        provider_info["healthy"] = (
+                            self.blob_storage_service.health_check()
+                        )
                     except Exception:
                         provider_info["healthy"] = False
             else:
@@ -367,7 +372,9 @@ class StorageServiceManager:
                 # Add health status if service is cached
                 if provider in self._services:
                     try:
-                        provider_info["healthy"] = self._services[provider].health_check()
+                        provider_info["healthy"] = self._services[
+                            provider
+                        ].health_check()
                     except Exception:
                         provider_info["healthy"] = False
 
@@ -378,7 +385,7 @@ class StorageServiceManager:
     def _register_blob_storage_integration(self) -> None:
         """
         Register blob storage service integration if available.
-        
+
         This allows the storage manager to provide access to blob storage
         capabilities through the standard storage service interface.
         """
@@ -387,12 +394,14 @@ class StorageServiceManager:
             self._services["blob"] = self.blob_storage_service
             self._logger.info("Blob storage service integrated with storage manager")
         else:
-            self._logger.info("Blob storage service not available - blob operations disabled")
+            self._logger.info(
+                "Blob storage service not available - blob operations disabled"
+            )
 
     def has_blob_storage(self) -> bool:
         """
         Check if blob storage capabilities are available.
-        
+
         Returns:
             True if blob storage service is available
         """
@@ -401,7 +410,7 @@ class StorageServiceManager:
     def get_blob_storage_service(self) -> Optional[Any]:
         """
         Get the blob storage service if available.
-        
+
         Returns:
             Blob storage service instance or None if not available
         """

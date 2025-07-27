@@ -7,8 +7,8 @@ interface for reading and writing JSON files in S3 buckets.
 
 from typing import Any, Dict, Tuple
 
-from agentmap.services.storage.base_connector import BlobStorageConnector
 from agentmap.exceptions import StorageConnectionError, StorageOperationError
+from agentmap.services.storage.base_connector import BlobStorageConnector
 
 
 class AWSS3Connector(BlobStorageConnector):

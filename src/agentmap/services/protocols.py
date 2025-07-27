@@ -373,7 +373,9 @@ class BlobStorageServiceProtocol(Protocol):
 class BlobStorageCapableAgent(Protocol):
     """Protocol for agents that can use blob storage services."""
 
-    def configure_blob_storage_service(self, blob_service: BlobStorageServiceProtocol) -> None:
+    def configure_blob_storage_service(
+        self, blob_service: BlobStorageServiceProtocol
+    ) -> None:
         """Configure blob storage service for this agent."""
         ...
 

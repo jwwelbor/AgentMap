@@ -10,11 +10,6 @@ and leverages existing blob connector infrastructure.
 import json
 from typing import Any, Dict, List, Optional, Type
 
-from agentmap.services.storage.base_connector import (
-    BlobStorageConnector,
-    get_connector_for_uri,
-    normalize_json_uri,
-)
 from agentmap.exceptions import (
     StorageConnectionError,
     StorageOperationError,
@@ -23,6 +18,11 @@ from agentmap.exceptions import (
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.protocols import BlobStorageServiceProtocol
+from agentmap.services.storage.base_connector import (
+    BlobStorageConnector,
+    get_connector_for_uri,
+    normalize_json_uri,
+)
 
 
 class BlobStorageService(BlobStorageServiceProtocol):
@@ -107,7 +107,9 @@ class BlobStorageService(BlobStorageServiceProtocol):
 
             self._provider_factories["azure"] = AzureBlobConnector
             self._available_providers["azure"] = self._check_azure_availability()
-            self._logger.debug(f"Azure provider available: {self._available_providers['azure']}")
+            self._logger.debug(
+                f"Azure provider available: {self._available_providers['azure']}"
+            )
         except ImportError as e:
             self._logger.debug(f"Azure provider not available: {e}")
             self._available_providers["azure"] = False
@@ -120,7 +122,9 @@ class BlobStorageService(BlobStorageServiceProtocol):
 
             self._provider_factories["s3"] = AWSS3Connector
             self._available_providers["s3"] = self._check_s3_availability()
-            self._logger.debug(f"S3 provider available: {self._available_providers['s3']}")
+            self._logger.debug(
+                f"S3 provider available: {self._available_providers['s3']}"
+            )
         except ImportError as e:
             self._logger.debug(f"S3 provider not available: {e}")
             self._available_providers["s3"] = False
@@ -133,7 +137,9 @@ class BlobStorageService(BlobStorageServiceProtocol):
 
             self._provider_factories["gs"] = GCPStorageConnector
             self._available_providers["gs"] = self._check_gcs_availability()
-            self._logger.debug(f"GCS provider available: {self._available_providers['gs']}")
+            self._logger.debug(
+                f"GCS provider available: {self._available_providers['gs']}"
+            )
         except ImportError as e:
             self._logger.debug(f"GCS provider not available: {e}")
             self._available_providers["gs"] = False
@@ -159,6 +165,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
         """Check if Azure Blob Storage SDK is available."""
         try:
             import azure.storage.blob  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -168,6 +175,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
         """Check if AWS S3 SDK is available."""
         try:
             import boto3  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -177,6 +185,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
         """Check if Google Cloud Storage SDK is available."""
         try:
             import google.cloud.storage  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -285,14 +294,14 @@ class BlobStorageService(BlobStorageServiceProtocol):
         try:
             connector = self._get_connector(uri)
             connector.write_blob(uri, data)
-            
+
             result = {
                 "success": True,
                 "uri": uri,
                 "size": len(data),
                 "provider": self._get_provider_from_uri(uri),
             }
-            
+
             self._logger.debug(f"Successfully wrote blob: {uri}")
             return result
         except Exception as e:
@@ -335,15 +344,13 @@ class BlobStorageService(BlobStorageServiceProtocol):
 
         try:
             connector = self._get_connector(prefix)
-            
+
             # Check if connector has list_blobs method
-            if hasattr(connector, 'list_blobs'):
+            if hasattr(connector, "list_blobs"):
                 blobs = connector.list_blobs(prefix, **kwargs)
             else:
                 # Fallback for connectors without list support
-                self._logger.warning(
-                    f"Connector for {prefix} doesn't support listing"
-                )
+                self._logger.warning(f"Connector for {prefix} doesn't support listing")
                 blobs = []
 
             self._logger.debug(f"Found {len(blobs)} blobs with prefix: {prefix}")
@@ -367,22 +374,20 @@ class BlobStorageService(BlobStorageServiceProtocol):
 
         try:
             connector = self._get_connector(uri)
-            
+
             # Check if connector has delete_blob method
-            if hasattr(connector, 'delete_blob'):
+            if hasattr(connector, "delete_blob"):
                 connector.delete_blob(uri)
             else:
                 # Fallback error for connectors without delete support
-                raise StorageOperationError(
-                    f"Delete operation not supported for {uri}"
-                )
+                raise StorageOperationError(f"Delete operation not supported for {uri}")
 
             result = {
                 "success": True,
                 "uri": uri,
                 "provider": self._get_provider_from_uri(uri),
             }
-            
+
             self._logger.debug(f"Successfully deleted blob: {uri}")
             return result
         except Exception as e:
@@ -403,10 +408,10 @@ class BlobStorageService(BlobStorageServiceProtocol):
         """
         # Normalize URI to ensure .json extension
         uri = normalize_json_uri(uri)
-        
+
         try:
             data = self.read_blob(uri, **kwargs)
-            return json.loads(data.decode('utf-8'))
+            return json.loads(data.decode("utf-8"))
         except json.JSONDecodeError as e:
             self._logger.error(f"Failed to parse JSON from {uri}: {e}")
             raise StorageOperationError(f"Invalid JSON in blob: {str(e)}") from e
@@ -425,9 +430,9 @@ class BlobStorageService(BlobStorageServiceProtocol):
         """
         # Normalize URI to ensure .json extension
         uri = normalize_json_uri(uri)
-        
+
         try:
-            json_bytes = json.dumps(data, indent=2).encode('utf-8')
+            json_bytes = json.dumps(data, indent=2).encode("utf-8")
             return self.write_blob(uri, json_bytes, **kwargs)
         except (TypeError, ValueError) as e:
             self._logger.error(f"Failed to serialize JSON for {uri}: {e}")
@@ -467,18 +472,16 @@ class BlobStorageService(BlobStorageServiceProtocol):
                         test_uri = f"{provider}://test/health-check"
                         if provider in ["file", "local"]:
                             test_uri = "/tmp/health-check"
-                        
+
                         connector = self._get_connector(test_uri)
                         provider_health["healthy"] = True
                     except Exception as e:
-                        self._logger.debug(
-                            f"Health check failed for {provider}: {e}"
-                        )
+                        self._logger.debug(f"Health check failed for {provider}: {e}")
                         provider_health["healthy"] = False
                         provider_health["error"] = str(e)
 
             results["providers"][provider] = provider_health
-            
+
             # Overall health is false if any configured provider is unhealthy
             if provider_health["configured"] and not provider_health["healthy"]:
                 results["healthy"] = False
@@ -512,7 +515,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
         if provider:
             if provider not in self._available_providers:
                 raise ValueError(f"Unknown provider: {provider}")
-            
+
             return {
                 provider: {
                     "available": self._available_providers.get(provider, False),
@@ -528,9 +531,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
             for prov in self._available_providers:
                 info[prov] = {
                     "available": self._available_providers.get(prov, False),
-                    "configured": bool(
-                        self._config.get("providers", {}).get(prov, {})
-                    ),
+                    "configured": bool(self._config.get("providers", {}).get(prov, {})),
                     "cached": prov in self._connectors,
                 }
             return info
