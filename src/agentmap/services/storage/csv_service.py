@@ -3,6 +3,13 @@ CSV Storage Service implementation for AgentMap.
 
 This module provides a concrete implementation of the storage service
 for CSV files using pandas, following existing CSV agent patterns.
+
+Configuration Integration:
+- Uses StorageConfigService for domain-specific configuration access
+- Leverages named domain methods: get_csv_config(), get_csv_data_path(), etc.
+- Supports collection-specific configuration via get_collection_config()
+- Implements fail-fast behavior when CSV storage is disabled
+- Follows established configuration architecture patterns
 """
 
 import os
@@ -24,6 +31,12 @@ class CSVStorageService(BaseStorageService):
 
     Provides storage operations for CSV files with support for
     reading, writing, querying, and filtering data.
+
+    Configuration Pattern:
+    - Uses StorageConfigService named domain methods instead of generic access
+    - Leverages get_csv_config(), get_csv_data_path(), is_csv_storage_enabled()
+    - Supports collection-specific configuration via get_collection_config()
+    - Follows configuration architecture patterns from docs/contributing/architecture/configuration-patterns.md
     """
 
     def _initialize_client(self) -> Any:
@@ -39,14 +52,16 @@ class CSVStorageService(BaseStorageService):
         Raises:
             OSError: If base directory cannot be created or accessed
         """
-        base_dir = self._config.get_option("base_directory", "./data")
-        encoding = self._config.get_option("encoding", "utf-8")
+        # Use StorageConfigService named domain methods instead of generic access
+        csv_config = self.configuration.get_csv_config()
 
-        # Ensure base directory exists - fail fast if we can't create it
-        try:
-            os.makedirs(base_dir, exist_ok=True)
-        except (OSError, PermissionError) as e:
-            raise OSError(f"Cannot create base directory '{base_dir}': {e}")
+        # Use the path accessor with business logic (already ensures directory exists)
+        base_dir = str(self.configuration.get_csv_data_path())
+        encoding = csv_config.get("encoding", "utf-8")
+
+        # Additional validation for fail-fast behavior
+        if not self.configuration.is_csv_storage_enabled():
+            raise OSError("CSV storage is not enabled in configuration")
 
         return {
             "base_directory": base_dir,
@@ -100,6 +115,9 @@ class CSVStorageService(BaseStorageService):
         """
         Get full file path for a collection.
 
+        Uses StorageConfigService collection configuration when available,
+        falls back to default behavior for absolute paths or unconfigured collections.
+
         Args:
             collection: Collection name (can be relative or absolute path)
 
@@ -109,6 +127,12 @@ class CSVStorageService(BaseStorageService):
         if os.path.isabs(collection):
             return collection
 
+        # Check if collection is configured in StorageConfigService
+        if self.configuration.has_collection("csv", collection):
+            # Use the configured collection file path
+            return str(self.configuration.get_collection_file_path(collection))
+
+        # Fallback to default behavior for unconfigured collections
         base_dir = self.client["base_directory"]
 
         # Ensure .csv extension
@@ -914,23 +938,36 @@ class CSVStorageService(BaseStorageService):
 
     def list_collections(self) -> List[str]:
         """
-        List all CSV files in the base directory.
+        List all CSV collections.
+
+        Returns both configured collections from StorageConfigService
+        and CSV files found in the base directory.
 
         Returns:
-            List of CSV file names
+            List of collection names (configured collections + CSV file names)
         """
         try:
+            collections = set()
+
+            # Add configured collections from StorageConfigService
+            try:
+                configured_collections = self.configuration.list_collections("csv")
+                collections.update(configured_collections)
+            except Exception as e:
+                self._logger.debug(f"Could not get configured collections: {e}")
+
+            # Add CSV files found in base directory
             base_dir = self.client["base_directory"]
+            if os.path.exists(base_dir):
+                for item in os.listdir(base_dir):
+                    if item.lower().endswith(".csv"):
+                        # Remove .csv extension for collection name
+                        collection_name = (
+                            item[:-4] if item.lower().endswith(".csv") else item
+                        )
+                        collections.add(collection_name)
 
-            if not os.path.exists(base_dir):
-                return []
-
-            csv_files = []
-            for item in os.listdir(base_dir):
-                if item.lower().endswith(".csv"):
-                    csv_files.append(item)
-
-            return sorted(csv_files)
+            return sorted(list(collections))
 
         except Exception as e:
             self._logger.debug(f"Error listing collections: {e}")

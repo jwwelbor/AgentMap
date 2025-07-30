@@ -7,7 +7,7 @@ handling provider registration, service instantiation, and lifecycle management.
 
 from typing import Any, Dict, List, Optional, Type
 
-from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.protocols import StorageService, StorageServiceFactory
@@ -27,7 +27,7 @@ class StorageServiceManager:
 
     def __init__(
         self,
-        configuration: AppConfigService,
+        configuration: StorageConfigService,
         logging_service: LoggingService,
         blob_storage_service: Optional[Any] = None,
     ):
@@ -35,7 +35,7 @@ class StorageServiceManager:
         Initialize the storage service manager.
 
         Args:
-            configuration: Application configuration service
+            configuration: Storage configuration service for storage-specific config access
             logging_service: Logging service for creating loggers
             blob_storage_service: Optional blob storage service for cloud storage operations
         """
@@ -210,7 +210,8 @@ class StorageServiceManager:
         """
         try:
             factory = self._factories[provider_name]
-            config_data = self.configuration.get_value(f"storage.{provider_name}", {})
+            # Use storage-specific configuration methods instead of generic access
+            config_data = self.configuration.get_provider_config(provider_name)
 
             service = factory.create_service(provider_name, config_data)
 
@@ -236,10 +237,21 @@ class StorageServiceManager:
             Default StorageService instance
         """
         if self._default_provider is None:
-            self._default_provider = self.configuration.get_value(
-                "storage.default_provider",
-                "csv",  # Fallback to CSV as it's most commonly available
-            )
+            # Determine default provider using storage-specific logic
+            if self.configuration.is_csv_storage_enabled():
+                self._default_provider = "csv"
+            elif self.configuration.has_vector_storage():
+                self._default_provider = self.configuration.get_default_provider(
+                    "vector"
+                )
+            elif self.configuration.has_kv_storage():
+                self._default_provider = self.configuration.get_default_provider("kv")
+            else:
+                # Fallback to CSV as most basic storage
+                self._default_provider = "csv"
+                self._logger.warning(
+                    "No storage types enabled, falling back to CSV provider"
+                )
 
         return self.get_service(self._default_provider)
 

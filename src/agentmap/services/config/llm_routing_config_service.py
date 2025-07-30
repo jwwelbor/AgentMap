@@ -5,6 +5,9 @@ This module provides configuration management for the matrix-based LLM routing
 system, including provider × complexity matrix, task types, and routing policies.
 """
 
+import asyncio
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agentmap.services.config.app_config_service import AppConfigService
@@ -23,15 +26,22 @@ class LLMRoutingConfigService:
     """
 
     def __init__(
-        self, app_config_service: AppConfigService, logging_service: LoggingService
+        self,
+        app_config_service: AppConfigService,
+        logging_service: LoggingService,
+        availability_cache_service=None,
     ):
         """
         Initialize routing configuration from dictionary.
 
         Args:
-            config_dict: Configuration dictionary from YAML or defaults
+            app_config_service: Application configuration service
+            logging_service: Logging service
+            availability_cache_service: Optional unified availability cache service
         """
         self._logger = logging_service.get_class_logger(self)
+        self._app_config_service = app_config_service
+        self._availability_cache_service = availability_cache_service
         self.config_dict = app_config_service.get_routing_config()
         self.enabled = self.config_dict.get("enabled", False)
         self.routing_matrix = self._load_routing_matrix(self.config_dict)
@@ -362,6 +372,234 @@ class LLMRoutingConfigService:
             Cache TTL in seconds
         """
         return self.performance.get("cache_ttl", 300)
+
+    def _get_cached_availability(self, provider: str) -> Optional[Dict[str, Any]]:
+        """
+        Get cached availability using unified cache service.
+
+        Args:
+            provider: Provider name to check
+
+        Returns:
+            Cached availability data or None if not found/invalid
+        """
+        if not self._availability_cache_service:
+            return None
+
+        try:
+            return self._availability_cache_service.get_availability(
+                "llm_provider", provider.lower()
+            )
+        except Exception as e:
+            self._logger.debug(f"Cache lookup failed for llm_provider.{provider}: {e}")
+            return None
+
+    def _set_cached_availability(self, provider: str, result: Dict[str, Any]) -> bool:
+        """
+        Set cached availability using unified cache service.
+
+        Args:
+            provider: Provider name
+            result: Availability result data to cache
+
+        Returns:
+            True if successfully cached, False otherwise
+        """
+        if not self._availability_cache_service:
+            return False
+
+        try:
+            return self._availability_cache_service.set_availability(
+                "llm_provider", provider.lower(), result
+            )
+        except Exception as e:
+            self._logger.debug(f"Cache set failed for llm_provider.{provider}: {e}")
+            return False
+
+    async def get_provider_availability(self, provider: str) -> Dict[str, Any]:
+        """
+        Get availability status for a specific provider.
+
+        Args:
+            provider: Provider name to check
+
+        Returns:
+            Dictionary with availability status and metadata
+        """
+        # Try cache first
+        cached_result = self._get_cached_availability(provider)
+        if cached_result:
+            self._logger.debug(f"Using cached availability for provider: {provider}")
+            return cached_result
+
+        # Fallback to basic availability check without actual validation
+        # (Real validation should be done by LLM services and cached)
+        is_configured = self.is_provider_available(provider)
+        result = {
+            "enabled": is_configured,
+            "validation_passed": is_configured,  # Assume configured = working for routing config
+            "last_error": None if is_configured else "Provider not in routing matrix",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "warnings": (
+                ["Basic availability check - no validation performed"]
+                if not self._availability_cache_service
+                else []
+            ),
+            "performance_metrics": {"validation_duration": 0.0},
+            "validation_results": {"routing_matrix_configured": is_configured},
+        }
+
+        # Cache the result for future use
+        self._set_cached_availability(provider, result)
+
+        return result
+
+    async def validate_all_providers(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Validate availability of all configured providers.
+
+        Returns:
+            Dictionary mapping provider names to availability status
+        """
+        results = {}
+        for provider in self.get_available_providers():
+            try:
+                results[provider] = await self.get_provider_availability(provider)
+            except Exception as e:
+                self._logger.error(
+                    f"Failed to get availability for provider {provider}: {e}"
+                )
+                results[provider] = {
+                    "enabled": False,
+                    "validation_passed": False,
+                    "last_error": f"Validation exception: {str(e)}",
+                    "checked_at": datetime.now(timezone.utc).isoformat(),
+                    "warnings": [],
+                    "performance_metrics": {"validation_duration": 0.0},
+                    "validation_results": {},
+                }
+        return results
+
+    async def is_provider_available_async(self, provider: str) -> bool:
+        """
+        Async version of provider availability check with caching.
+
+        Args:
+            provider: Provider name to check
+
+        Returns:
+            True if provider is available and working
+        """
+        try:
+            availability = await self.get_provider_availability(provider)
+            return availability.get("enabled", False) and availability.get(
+                "validation_passed", False
+            )
+        except Exception as e:
+            self._logger.error(f"Failed async availability check for {provider}: {e}")
+            return False
+
+    def clear_provider_cache(self, provider: Optional[str] = None):
+        """
+        Clear availability cache for specific provider or all providers.
+
+        Args:
+            provider: Provider name to clear, or None for all providers
+        """
+        if self._availability_cache_service:
+            if provider:
+                self._availability_cache_service.invalidate_cache(
+                    "llm_provider", provider.lower()
+                )
+                self._logger.info(
+                    f"Cleared availability cache for provider: {provider}"
+                )
+            else:
+                self._availability_cache_service.invalidate_cache("llm_provider")
+                self._logger.info("Cleared availability cache for all providers")
+        else:
+            self._logger.warning(
+                "Cannot clear cache - unified availability cache service not available"
+            )
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """
+        Get availability cache statistics and health information.
+
+        Returns:
+            Dictionary with cache statistics
+        """
+        if self._availability_cache_service:
+            try:
+                cache_stats = self._availability_cache_service.get_cache_stats()
+                # Filter for LLM provider data
+                categories = cache_stats.get("categories", {})
+                llm_provider_count = categories.get("llm_provider", 0)
+
+                return {
+                    "cache_exists": cache_stats.get("cache_exists", False),
+                    "cache_enabled": True,
+                    "total_providers": len(self.get_available_providers()),
+                    "cached_providers": llm_provider_count,
+                    "unified_cache_stats": cache_stats,
+                }
+            except Exception as e:
+                self._logger.warning(f"Failed to get cache stats: {e}")
+                return {
+                    "cache_exists": False,
+                    "cache_enabled": True,
+                    "error": str(e),
+                    "total_providers": len(self.get_available_providers()),
+                }
+        else:
+            return {
+                "cache_exists": False,
+                "cache_enabled": False,
+                "total_providers": len(self.get_available_providers()),
+                "cached_providers": 0,
+            }
+
+    def get_provider_routing_validation(self) -> List[str]:
+        """
+        Validate provider routing matrix configuration.
+
+        Returns:
+            List of validation error messages
+        """
+        errors = []
+
+        try:
+            # Get all providers from routing matrix
+            available_providers = self.get_available_providers()
+
+            # Get provider configurations
+            llm_config = self._app_config_service.get_section("llm", {})
+            providers_config = llm_config.get("providers", {})
+
+            # Validate each provider in routing matrix has configuration
+            for provider in available_providers:
+                if provider not in providers_config:
+                    errors.append(
+                        f"Provider '{provider}' in routing matrix but missing from LLM configuration"
+                    )
+                else:
+                    provider_config = providers_config[provider]
+                    if not provider_config.get("api_key"):
+                        errors.append(
+                            f"Provider '{provider}' missing API key configuration"
+                        )
+
+            # Check for configured providers not in routing matrix
+            for provider in providers_config:
+                if provider not in available_providers:
+                    errors.append(
+                        f"Provider '{provider}' configured but not in routing matrix"
+                    )
+
+        except Exception as e:
+            errors.append(f"Provider routing validation failed: {str(e)}")
+
+        return errors
 
 
 # def get_routing_matrix(config_path: Optional[Union[str, Path]] = None) -> Dict[str, Dict[str, str]]:

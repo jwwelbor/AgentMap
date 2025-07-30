@@ -10,7 +10,7 @@ import os
 import shutil
 from typing import Any, Dict, List, Optional
 
-from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.types import StorageResult, WriteMode
@@ -59,7 +59,7 @@ class VectorStorageService(BaseStorageService):
     def __init__(
         self,
         provider_name: str,
-        configuration: AppConfigService,
+        configuration: StorageConfigService,
         logging_service: LoggingService,
     ):
         """Initialize VectorStorageService with configuration service (following BaseStorageService pattern)."""
@@ -78,14 +78,15 @@ class VectorStorageService(BaseStorageService):
         Returns:
             Configuration dict for vector operations
         """
+        # Get vector configuration using StorageConfigService
+        vector_config = self.configuration.get_vector_config()
+
         # Get configuration values with defaults
-        store_key = self._config.get_option("store_key", "_vector_store")
-        persist_directory = self._config.get_option(
-            "persist_directory", "./.vectorstore"
-        )
-        provider = self._config.get_option("provider", "chroma")
-        embedding_model = self._config.get_option("embedding_model", "openai")
-        k = self._config.get_option("k", 4)
+        store_key = vector_config.get("store_key", "_vector_store")
+        persist_directory = str(self.configuration.get_vector_data_path())
+        provider = vector_config.get("provider", "chroma")
+        embedding_model = vector_config.get("embedding_model", "openai")
+        k = vector_config.get("k", 4)
 
         # Ensure k is an integer
         if isinstance(k, str):

@@ -36,14 +36,16 @@ class TestCSVStorageService(unittest.TestCase):
         
         # Create mock services using MockServiceFactory
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
-        self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service({
-            "storage": {
-                "csv": {
-                    "provider": "csv",
-                    "options": {
-                        "base_directory": self.temp_dir,
-                        "encoding": "utf-8"
-                    }
+        
+        # Use StorageConfigService mock instead of AppConfigService for CSV storage
+        self.mock_storage_config_service = MockServiceFactory.create_mock_storage_config_service({
+            "csv": {
+                "enabled": True,
+                "default_directory": self.temp_dir,
+                "encoding": "utf-8",
+                "collections": {
+                    "test_collection": {"filename": "test_collection.csv"},
+                    "users": {"filename": "users.csv"}
                 }
             }
         })
@@ -51,7 +53,7 @@ class TestCSVStorageService(unittest.TestCase):
         # Create CSVStorageService with mocked dependencies
         self.service = CSVStorageService(
             provider_name="csv",
-            configuration=self.mock_app_config_service,
+            configuration=self.mock_storage_config_service,
             logging_service=self.mock_logging_service
         )
         
@@ -90,7 +92,7 @@ class TestCSVStorageService(unittest.TestCase):
         """Test that service initializes correctly with all dependencies."""
         # Verify dependencies are stored
         self.assertEqual(self.service.provider_name, "csv")
-        self.assertEqual(self.service.configuration, self.mock_app_config_service)
+        self.assertEqual(self.service.configuration, self.mock_storage_config_service)
         self.assertIsNotNone(self.service._logger)
         
         # Verify base directory was created
@@ -811,23 +813,23 @@ class TestCSVStorageService(unittest.TestCase):
     
     def test_list_collections(self):
         """Test collection (CSV file) listing."""
-        # Initially no collections
+        # Initially should include configured collections from StorageConfigService
         collections = self.service.list_collections()
-        self.assertEqual(len(collections), 0)
+        self.assertEqual(len(collections), 2)  # test_collection and users from mock config
+        self.assertIn("test_collection", collections)
+        self.assertIn("users", collections)
         
         # Create some CSV files
         test_df = self._create_sample_dataframe()
-        file_names = ["users.csv", "products.csv", "orders.csv"]
+        file_names = ["products.csv", "orders.csv"]  # Don't create users.csv as it's already configured
         
         for file_name in file_names:
             self._create_test_csv_file(file_name, test_df)
         
-        # Should list all CSV files
+        # Should list all collections (configured + CSV files found)
         collections = self.service.list_collections()
-        self.assertEqual(len(collections), 3)
-        
-        for file_name in file_names:
-            self.assertIn(file_name, collections)
+        expected_collections = {"test_collection", "users", "products", "orders"}
+        self.assertEqual(set(collections), expected_collections)
         
         # Should be sorted
         self.assertEqual(collections, sorted(collections))

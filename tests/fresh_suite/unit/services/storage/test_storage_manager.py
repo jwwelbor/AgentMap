@@ -98,20 +98,24 @@ class TestStorageServiceManager(unittest.TestCase):
         """Set up test fixtures with mocked dependencies."""
         # Create mock services using MockServiceFactory
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
-        self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service({
-            "storage": {
-                "default_provider": "memory",
-                "memory": {"options": {"base_directory": "/tmp/memory"}},
-                "csv": {"options": {"base_directory": "/tmp/csv"}},
-                "json": {"options": {"base_directory": "/tmp/json"}}
-            }
+        self.mock_storage_config_service = MockServiceFactory.create_mock_storage_config_service({
+            "csv": {
+                "enabled": True,
+                "default_directory": "/tmp/csv",
+                "collections": {
+                    "memory": {"filename": "memory.csv"},
+                    "test": {"filename": "test.csv"}
+                }
+            },
+            "vector": {"enabled": False},
+            "kv": {"enabled": False}
         })
         
         # Patch auto-registration to avoid import issues in tests
         with patch.object(StorageServiceManager, '_auto_register_providers'):
             # Create StorageServiceManager with mocked dependencies
             self.manager = StorageServiceManager(
-                configuration=self.mock_app_config_service,
+                configuration=self.mock_storage_config_service,
                 logging_service=self.mock_logging_service
             )
         
@@ -130,7 +134,7 @@ class TestStorageServiceManager(unittest.TestCase):
     def test_manager_initialization(self):
         """Test that manager initializes correctly with all dependencies."""
         # Verify dependencies are stored
-        self.assertEqual(self.manager.configuration, self.mock_app_config_service)
+        self.assertEqual(self.manager.configuration, self.mock_storage_config_service)
         self.assertEqual(self.manager.logging_service, self.mock_logging_service)
         self.assertIsNotNone(self.manager._logger)
         
@@ -149,7 +153,7 @@ class TestStorageServiceManager(unittest.TestCase):
         """Test successful auto-registration of providers."""
         # Create manager with real auto-registration
         manager = StorageServiceManager(
-            configuration=self.mock_app_config_service,
+            configuration=self.mock_storage_config_service,
             logging_service=self.mock_logging_service
         )
         
@@ -165,7 +169,7 @@ class TestStorageServiceManager(unittest.TestCase):
         
         # Should not fail even if auto-registration fails
         manager = StorageServiceManager(
-            configuration=self.mock_app_config_service,
+            configuration=self.mock_storage_config_service,
             logging_service=self.mock_logging_service
         )
         
@@ -181,7 +185,7 @@ class TestStorageServiceManager(unittest.TestCase):
         
         # Should not fail even if auto-registration fails
         manager = StorageServiceManager(
-            configuration=self.mock_app_config_service,
+            configuration=self.mock_storage_config_service,
             logging_service=self.mock_logging_service
         )
         
@@ -359,15 +363,15 @@ class TestStorageServiceManager(unittest.TestCase):
     
     def test_get_default_service(self):
         """Test getting default service."""
-        # Register default provider
-        self.manager.register_provider("memory", MockStorageService)
+        # Register csv provider (which is the determined default based on StorageConfigService)
+        self.manager.register_provider("csv", MockStorageService)
         
         # Get default service
         service = self.manager.get_default_service()
         
-        # Should return memory service (configured as default)
+        # Should return csv service (determined as default by StorageConfigService)
         self.assertIsInstance(service, MockStorageService)
-        self.assertEqual(service.provider_name, "memory")
+        self.assertEqual(service.provider_name, "csv")
     
     def test_get_default_service_not_configured(self):
         """Test getting default service when no default provider is configured."""
@@ -400,20 +404,34 @@ class TestStorageServiceManager(unittest.TestCase):
     
     def test_get_default_service_configured_but_unavailable(self):
         """Test getting default service when configured provider is not available."""
-        # The default provider is configured as "memory" in setUp but we won't register it
-        # This should fail with a clear error, not fall back to another provider
+        # Create a config that disables CSV but enables vector storage to test unavailable scenario
+        mock_config_no_csv = MockServiceFactory.create_mock_storage_config_service({
+            "csv": {"enabled": False},
+            "vector": {"enabled": True, "provider": "local"},
+            "kv": {"enabled": False}
+        })
+        
+        # Create a new manager with this config
+        with patch.object(StorageServiceManager, '_auto_register_providers'):
+            test_manager = StorageServiceManager(
+                configuration=mock_config_no_csv,
+                logging_service=self.mock_logging_service
+            )
         
         # Register a different provider to show it doesn't fall back
-        self.manager.register_provider("csv", MockStorageService)
+        test_manager.register_provider("memory", MockStorageService)
         
-        # Should fail because "memory" is configured but not available
+        # Should fail because vector storage is enabled but "local" provider is not registered
         with self.assertRaises(StorageServiceNotAvailableError) as context:
-            self.manager.get_default_service()
+            test_manager.get_default_service()
         
         error_msg = str(context.exception)
-        self.assertIn("memory", error_msg)
+        self.assertIn("local", error_msg)
         self.assertIn("not registered", error_msg)
-        self.assertIn("Available providers: csv", error_msg)
+        self.assertIn("Available providers: memory", error_msg)
+        
+        # Clean up
+        test_manager.shutdown()
     
     def test_get_default_service_not_available(self):
         """Test getting default service when not available."""
@@ -727,7 +745,8 @@ class TestStorageServiceManager(unittest.TestCase):
         self.manager.register_provider("failing", FailingStorageService)
         
         # Register the default provider so get_default_service() works
-        self.manager.register_provider("memory", MockStorageService)
+        # The StorageConfigService determines "csv" as the default provider
+        self.manager.register_provider("csv", MockStorageService)
         
         # Get healthy service (should work)
         healthy_service = self.manager.get_service("healthy")
@@ -768,7 +787,7 @@ class TestStorageServiceManager(unittest.TestCase):
         service = self.manager.get_service("config_test")
         
         # Verify configuration was passed to service
-        self.assertEqual(service.configuration, self.mock_app_config_service)
+        self.assertEqual(service.configuration, self.mock_storage_config_service)
         
         # Configuration should be used for provider-specific settings
         # This is tested through the service's behavior

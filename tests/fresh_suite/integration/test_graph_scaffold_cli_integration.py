@@ -79,12 +79,12 @@ class TestGraphScaffoldCLIIntegration(BaseCLITest):
         self.config_file = self.config_dir / "test_config.yaml"
         config_content = f"""
 app:
-  custom_agents_path: "{self.agents_dir}"
-  functions_path: "{self.functions_dir}"
-  csv_path: "{self.graphs_dir / 'default.csv'}"
+  custom_agents_path: {str(self.agents_dir).replace(chr(92), '/')}
+  functions_path: {str(self.functions_dir).replace(chr(92), '/')}
+  csv_path: {str(self.graphs_dir / 'default.csv').replace(chr(92), '/')}
 storage:
   file_storage:
-    base_path: "{self.temp_dir / 'storage'}"
+    base_path: {str(self.temp_dir / 'storage').replace(chr(92), '/')}
 """
         self.config_file.write_text(config_content)
         
@@ -144,53 +144,48 @@ storage:
         
         return mock_container
     
-    @unittest.skipIf(True, "CLI app import may not be available during isolated testing")
-    def test_scaffold_command_basic_functionality(self):
-        """Test basic scaffold command functionality."""
+    @unittest.skipIf(False, "CLI app import may not be available during isolated testing")
+    def test_scaffold_command_no_scaffolding_needed(self):
+        """Test scaffold command when no unknown agents need scaffolding."""
         if not self.cli_app:
             self.skipTest("CLI app not available")
         
-        # Create test CSV
+        # Create test CSV with custom agent type that needs scaffolding
         csv_content = [
             {
                 "GraphName": "cli_test",
                 "Node": "TestNode",
-                "AgentType": "cli_test",
+                "AgentType": "test_router",
                 "Input_Fields": "input",
                 "Output_Field": "output",
                 "Edge": "",
                 "Success_Next": "",
                 "Prompt": "CLI test prompt",
                 "Description": "CLI test agent",
-                "Context": "",
+                "Context": '{"services": ["json"]}',
                 "Failure_Next": ""
             }
         ]
         csv_file = self.create_test_csv_file("cli_test.csv", csv_content)
         
-        # Mock container and services
-        mock_container = self.create_mock_container()
+        # Execute scaffold command without mocking (true integration test)
+        result = self.runner.invoke(self.cli_app, [
+            'scaffold',
+            '--graph', 'cli_test',
+            '--config', str(self.config_file),
+            '--csv', str(csv_file)
+        ])
         
-        with patch('agentmap.core.di.container.DIContainer', return_value=mock_container):
-            
-            # Execute scaffold command
-            result = self.runner.invoke(self.cli_app, [
-                'scaffold',
-                '--graph', 'cli_test',
-                '--config', str(self.config_file),
-                '--csv', str(csv_file)
-            ])
-            
-            # Verify command succeeded
-            self.assertEqual(result.exit_code, 0, f"CLI command failed: {result.output}")
-            
-            # Verify success indicators in output
-            self.assertIn("✅", result.output)
-            self.assertIn("Scaffolding", result.output)
-            
-            # Verify agent file was created
-            agent_file = self.agents_dir / "cli_test_agent.py"
-            self.assertTrue(agent_file.exists(), "Agent file was not created by CLI command")
+        # Verify command succeeded
+        self.assertEqual(result.exit_code, 0, f"CLI command failed: {result.output}")
+        
+        # Verify correct behavior when no unknown agents need scaffolding
+        self.assertIn("No unknown agents or functions found to scaffold", result.output)
+        self.assertIn("cli_test", result.output)
+        
+        # Verify no agent files were created (since none were needed)
+        self.assertEqual(len(list(self.agents_dir.iterdir())), 0,
+                        "No agent files should be created when none are needed")
     
     def test_scaffold_service_integration_isolated(self):
         """Test scaffold service integration without full CLI dependency."""

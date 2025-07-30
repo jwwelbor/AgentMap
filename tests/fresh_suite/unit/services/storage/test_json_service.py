@@ -35,13 +35,15 @@ class TestJSONStorageService(unittest.TestCase):
         
         # Create mock services using MockServiceFactory
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
-        self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service({
-            "storage": {
-                "json": {
-                    "options": {
-                        "base_directory": self.temp_dir,
-                        "encoding": "utf-8",
-                        "indent": 2
+        self.mock_storage_config_service = MockServiceFactory.create_mock_storage_config_service({
+            "json": {
+                "enabled": True,
+                "default_directory": self.temp_dir,
+                "encoding": "utf-8",
+                "indent": 2,
+                "collections": {
+                    "test_collection": {
+                        "filename": "test_collection.json"
                     }
                 }
             }
@@ -50,7 +52,7 @@ class TestJSONStorageService(unittest.TestCase):
         # Create JSONStorageService with mocked dependencies
         self.service = JSONStorageService(
             provider_name="json",
-            configuration=self.mock_app_config_service,
+            configuration=self.mock_storage_config_service,
             logging_service=self.mock_logging_service
         )
         
@@ -80,7 +82,7 @@ class TestJSONStorageService(unittest.TestCase):
         """Test that service initializes correctly with all dependencies."""
         # Verify dependencies are stored
         self.assertEqual(self.service.provider_name, "json")
-        self.assertEqual(self.service.configuration, self.mock_app_config_service)
+        self.assertEqual(self.service.configuration, self.mock_storage_config_service)
         self.assertIsNotNone(self.service._logger)
         
         # Verify base directory was created
@@ -121,13 +123,11 @@ class TestJSONStorageService(unittest.TestCase):
     def test_health_check_with_inaccessible_directory(self):
         """Test health check fails with inaccessible directory."""
         # Create service with directory that cannot be created
-        bad_config = MockServiceFactory.create_mock_app_config_service({
-            "storage": {
-                "json": {
-                    "options": {
-                        "base_directory": "/protected/directory"
-                    }
-                }
+        bad_config = MockServiceFactory.create_mock_storage_config_service({
+            "json": {
+                "enabled": True,
+                "default_directory": "/protected/directory",
+                "collections": {}
             }
         })
         
@@ -146,13 +146,11 @@ class TestJSONStorageService(unittest.TestCase):
         
         # Now test with a service where directory creation succeeds but access fails
         with patch('agentmap.services.storage.json_service.os.access', return_value=False):  # Simulate no write access
-            accessible_config = MockServiceFactory.create_mock_app_config_service({
-                "storage": {
-                    "json": {
-                        "options": {
-                            "base_directory": self.temp_dir  # Use existing directory
-                        }
-                    }
+            accessible_config = MockServiceFactory.create_mock_storage_config_service({
+                "json": {
+                    "enabled": True,
+                    "default_directory": self.temp_dir,  # Use existing directory
+                    "collections": {}
                 }
             })
             
@@ -846,22 +844,25 @@ class TestJSONStorageService(unittest.TestCase):
         self.assertEqual(self.service.count(collection, {"type": "B"}), 2)
     
     def test_list_collections(self):
-        """Test collection listing."""
-        # Initially no collections
+        """Test collection listing includes both configured and discovered collections."""
+        # Initially should include configured collection from mock config
         collections = self.service.list_collections()
-        self.assertEqual(len(collections), 0)
+        self.assertIn("test_collection", collections)  # From mock config
         
         # Create some collections
         collection_names = ["users", "posts", "settings"]
         for collection in collection_names:
             self.service.write(collection, {"test": "data"}, "doc1")
         
-        # Should list all collections
+        # Should list all collections (configured + discovered)
         collections = self.service.list_collections()
-        self.assertEqual(len(collections), 3)
         
+        # Should include configured collection
+        self.assertIn("test_collection", collections)
+        
+        # Should include discovered collections (without .json extension)
         for collection in collection_names:
-            self.assertIn(f"{collection}.json", collections)
+            self.assertIn(collection, collections)  # Names without .json extension
     
     # =============================================================================
     # 9. Error Handling Tests

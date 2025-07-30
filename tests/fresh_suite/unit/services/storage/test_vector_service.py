@@ -33,24 +33,22 @@ class TestVectorStorageService(unittest.TestCase):
         
         # Create mock services using MockServiceFactory
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
-        self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service({
-            "storage": {
-                "vector": {
-                    "provider": "chroma",
-                    "options": {
-                        "persist_directory": self.temp_dir,
-                        "embedding_model": "openai",
-                        "k": 4,
-                        "store_key": "_vector_store"
-                    }
-                }
+        self.mock_storage_config_service = MockServiceFactory.create_mock_storage_config_service({
+            "vector": {
+                "enabled": True,
+                "provider": "chroma",
+                "default_directory": self.temp_dir,
+                "embedding_model": "openai",
+                "k": 4,
+                "store_key": "_vector_store",
+                "collections": {"embeddings": {"filename": "embeddings.db"}}
             }
         })
         
         # Create VectorStorageService with mocked dependencies
         self.service = VectorStorageService(
             provider_name="vector",
-            configuration=self.mock_app_config_service,
+            configuration=self.mock_storage_config_service,
             logging_service=self.mock_logging_service
         )
         
@@ -117,14 +115,11 @@ class TestVectorStorageService(unittest.TestCase):
     def test_health_check_with_inaccessible_directory(self):
         """Test health check fails with inaccessible directory."""
         # Create service with non-existent directory that can't be created
-        bad_config = MockServiceFactory.create_mock_app_config_service({
-            "storage": {
-                "vector": {
-                    "provider": "chroma",
-                    "options": {
-                        "persist_directory": "/root/protected/directory"
-                    }
-                }
+        bad_config = MockServiceFactory.create_mock_storage_config_service({
+            "vector": {
+                "enabled": True,
+                "provider": "chroma",
+                "default_directory": "/root/protected/directory"
             }
         })
         
@@ -865,14 +860,11 @@ class TestVectorStorageService(unittest.TestCase):
     def test_invalid_configuration(self):
         """Test service with invalid configuration."""
         # Test with missing required configuration
-        bad_config = MockServiceFactory.create_mock_app_config_service({
-            "storage": {
-                "vector": {
-                    "provider": "chroma",
-                    "options": {
-                        # Missing other configuration options
-                    }
-                }
+        bad_config = MockServiceFactory.create_mock_storage_config_service({
+            "vector": {
+                "enabled": True,
+                "provider": "chroma"
+                # Missing other configuration options
             }
         })
         

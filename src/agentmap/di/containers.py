@@ -34,14 +34,107 @@ class ApplicationContainer(containers.DeclarativeContainer):
         config_path,
     )
 
+    # Logging service factory that creates AND initializes the service
+    @staticmethod
+    def _create_and_initialize_logging_service(app_config_service):
+        """
+        Create and initialize LoggingService.
+
+        This factory ensures the LoggingService is properly initialized
+        after creation, which is required before other services can use it.
+        """
+        from agentmap.services.logging_service import LoggingService
+
+        logging_config = app_config_service.get_logging_config()
+        service = LoggingService(logging_config)
+        service.initialize()  # Critical: initialize before returning
+        return service
+
+    logging_service = providers.Singleton(
+        _create_and_initialize_logging_service, app_config_service
+    )
+
+    # CACHE MANAGEMENT LAYER: Availability Cache Managers
+    # =======================================================================
+    # Cache managers must be initialized early to prevent duplicate cache
+    # generation and ensure thread safety across services.
+    # =======================================================================
+
+    # Cache Management Service (coordinates all cache managers)
+    # Unified Availability Cache Service (replaces separate cache implementations)
+    @staticmethod
+    def _create_availability_cache_service(app_config_service, logging_service):
+        """
+        Create unified availability cache service.
+
+        Args:
+            app_config_service: Application configuration service for cache paths
+            logging_service: Logging service for error reporting
+        """
+        from pathlib import Path
+
+        from agentmap.services.config.availability_cache_service import (
+            AvailabilityCacheService,
+        )
+
+        try:
+            # Get cache directory from app config
+            cache_dir = app_config_service.get_value(
+                "cache.availability_cache_directory", "data/cache"
+            )
+            cache_path = Path(cache_dir) / "unified_availability.json"
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+            logger = logging_service.get_logger("agentmap.availability_cache")
+
+            service = AvailabilityCacheService(
+                cache_file_path=cache_path, logger=logger
+            )
+
+            # Register common config files for automatic invalidation
+            try:
+                config_files = [
+                    app_config_service.get_config_file_path(),
+                    app_config_service.get_storage_config_path(),
+                ]
+                for config_file in config_files:
+                    if config_file and Path(config_file).exists():
+                        service.register_config_file(config_file)
+            except Exception:
+                pass  # Gracefully handle missing config files
+
+            logger.info("Unified availability cache service initialized")
+            return service
+
+        except Exception as e:
+            logger = logging_service.get_logger("agentmap.availability_cache")
+            logger.warning(f"Failed to initialize availability cache service: {e}")
+            return None
+
+    availability_cache_service = providers.Singleton(
+        _create_availability_cache_service,
+        app_config_service,
+        logging_service,
+    )
+
+    # Cache management is now handled by the unified AvailabilityCacheService
+    # No separate cache management service needed
+
     # Domain layer: StorageConfigService (optional storage configuration)
     @staticmethod
-    def _create_storage_config_service(config_service, app_config_service):
+    def _create_storage_config_service(
+        config_service, app_config_service, availability_cache_service
+    ):
         """
         Create storage config service with graceful failure handling.
 
         Returns None if StorageConfigurationNotAvailableException occurs,
         allowing the application to continue without storage configuration.
+
+        Args:
+            config_service: Infrastructure configuration service
+            app_config_service: Application configuration service
+            availability_cache_service: Unified availability cache service
         """
         try:
             from agentmap.services.config.storage_config_service import (
@@ -49,7 +142,10 @@ class ApplicationContainer(containers.DeclarativeContainer):
             )
 
             storage_config_path = app_config_service.get_storage_config_path()
-            return StorageConfigService(config_service, storage_config_path)
+
+            return StorageConfigService(
+                config_service, storage_config_path, availability_cache_service
+            )
         except Exception as e:
             # Import the specific exception to check for it
             from agentmap.exceptions.service_exceptions import (
@@ -64,7 +160,10 @@ class ApplicationContainer(containers.DeclarativeContainer):
                 raise
 
     storage_config_service = providers.Singleton(
-        _create_storage_config_service, config_service, app_config_service
+        _create_storage_config_service,
+        config_service,
+        app_config_service,
+        availability_cache_service,
     )
 
     # Logging service factory that creates AND initializes the service
@@ -87,11 +186,31 @@ class ApplicationContainer(containers.DeclarativeContainer):
         _create_and_initialize_logging_service, app_config_service
     )
 
-    # Domain layer: AppConfigService (main application configuration)
+    # LLM Routing Config Service with unified cache integration
+    @staticmethod
+    def _create_llm_routing_config_service(
+        app_config_service, logging_service, availability_cache_service
+    ):
+        """
+        Create LLM routing config service with unified cache integration.
+
+        Integrates with unified availability cache service for LLM provider availability caching.
+        """
+        from agentmap.services.config.llm_routing_config_service import (
+            LLMRoutingConfigService,
+        )
+
+        service = LLMRoutingConfigService(
+            app_config_service, logging_service, availability_cache_service
+        )
+
+        return service
+
     llm_routing_config_service = providers.Singleton(
-        "agentmap.services.config.llm_routing_config_service.LLMRoutingConfigService",
+        _create_llm_routing_config_service,
         app_config_service,
         logging_service,
+        availability_cache_service,
     )
 
     # LLM Service using string-based provider
@@ -149,6 +268,29 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
+    # Dependency Checker Service with unified cache integration
+    @staticmethod
+    def _create_dependency_checker_service(
+        logging_service, features_registry_service, availability_cache_service
+    ):
+        """
+        Create dependency checker service with unified cache integration.
+
+        Args:
+            logging_service: Logging service
+            features_registry_service: Features registry service
+            availability_cache_service: Unified availability cache service
+        """
+        from agentmap.services.dependency_checker_service import (
+            DependencyCheckerService,
+        )
+
+        service = DependencyCheckerService(
+            logging_service, features_registry_service, availability_cache_service
+        )
+
+        return service
+
     # Blob Storage Service for cloud blob operations
     @staticmethod
     def _create_blob_storage_service(app_config_service, logging_service):
@@ -181,11 +323,12 @@ class ApplicationContainer(containers.DeclarativeContainer):
         """
         Create storage service manager with graceful failure handling.
 
-        Returns None if storage_config_service is None or if any exception occurs,
-        allowing the application to continue without storage features.
+        Returns None if storage_config_service is None, allowing the application to continue
+        without storage features. Uses storage_config_service for construction following
+        the established configuration patterns.
         """
         try:
-            # If storage config service is None, storage is not available
+            # Check if storage config service is available for graceful degradation
             if storage_config_service is None:
                 logger = logging_service.get_logger("agentmap.storage")
                 logger.info(
@@ -215,7 +358,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     storage_service_manager = providers.Singleton(
         _create_storage_service_manager,
-        storage_config_service,
+        storage_config_service,  # Use storage_config_service as primary configuration
         logging_service,
         blob_storage_service,
     )
@@ -433,11 +576,12 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
-    # Dependency checker service (with features registry coordination)
+    # Dependency checker service (with unified cache integration)
     dependency_checker_service = providers.Singleton(
-        "agentmap.services.dependency_checker_service.DependencyCheckerService",
+        _create_dependency_checker_service,
         logging_service,
         features_registry_service,
+        availability_cache_service,
     )
 
     # Host Service Registry for managing host service registration
@@ -913,6 +1057,54 @@ class ApplicationContainer(containers.DeclarativeContainer):
                 logger.error(f"Failed to clear host services: {e}")
             except:
                 pass
+
+    def get_cache_status(self) -> Dict[str, Any]:
+        """
+        Get comprehensive cache status from unified availability cache service.
+
+        Returns:
+            Dictionary with cache status information or error details.
+        """
+        try:
+            cache_service = self.availability_cache_service()
+            if cache_service and hasattr(cache_service, "get_cache_stats"):
+                return {
+                    "unified_availability_cache": cache_service.get_cache_stats(),
+                    "cache_type": "unified_availability_cache",
+                    "cache_available": True,
+                }
+            else:
+                return {
+                    "error": "Unified availability cache service not available",
+                    "cache_available": False,
+                }
+        except Exception as e:
+            return {
+                "error": f"Failed to get cache status: {e}",
+                "cache_available": False,
+            }
+
+    def invalidate_all_caches(self) -> bool:
+        """
+        Invalidate all availability caches for fresh validation.
+
+        Returns:
+            True if caches were invalidated successfully, False otherwise.
+        """
+        try:
+            cache_service = self.availability_cache_service()
+            if cache_service and hasattr(cache_service, "invalidate_cache"):
+                cache_service.invalidate_cache()  # Invalidate entire cache
+                return True
+            else:
+                return False
+        except Exception as e:
+            try:
+                logger = self.logging_service().get_logger("agentmap.di.cache")
+                logger.error(f"Failed to invalidate caches: {e}")
+            except:
+                pass
+            return False
 
 
 # Factory functions for optional service creation

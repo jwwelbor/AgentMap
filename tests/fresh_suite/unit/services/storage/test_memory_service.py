@@ -19,7 +19,7 @@ from unittest.mock import Mock, patch
 from typing import Dict, Any, List
 
 from agentmap.services.storage.memory_service import MemoryStorageService
-from agentmap.services.storage.types import WriteMode, StorageResult
+from agentmap.services.storage.types import WriteMode, StorageResult, StorageConfig
 from tests.utils.mock_service_factory import MockServiceFactory
 
 
@@ -30,12 +30,30 @@ class TestMemoryStorageService(unittest.TestCase):
         """Set up test fixtures with mocked dependencies."""
         # Create mock services using MockServiceFactory
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
-        self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service()
+        self.mock_storage_config_service = MockServiceFactory.create_mock_storage_config_service()
+        
+        # CRITICAL FIX: Patch StorageConfig.from_dict to return a mock with correct get_option behavior
+        def mock_storage_config_from_dict(config_data: Dict[str, Any]) -> Mock:
+            """Create a mock StorageConfig that properly exposes configuration values."""
+            mock_config = Mock()
+            
+            def get_option(key: str, default: Any = None) -> Any:
+                """Mock get_option method that returns the correct configuration values."""
+                return config_data.get(key, default)
+            
+            mock_config.get_option.side_effect = get_option
+            # Also store the raw config data for any other access patterns
+            mock_config._config_data = config_data
+            return mock_config
+        
+        # Apply the patch
+        self.storage_config_patch = patch.object(StorageConfig, 'from_dict', side_effect=mock_storage_config_from_dict)
+        self.storage_config_patch.start()
         
         # Create MemoryStorageService with mocked dependencies
         self.service = MemoryStorageService(
             provider_name="memory",
-            configuration=self.mock_app_config_service,
+            configuration=self.mock_storage_config_service,
             logging_service=self.mock_logging_service
         )
         
@@ -44,6 +62,9 @@ class TestMemoryStorageService(unittest.TestCase):
     
     def tearDown(self):
         """Clean up after each test."""
+        # Stop the StorageConfig patch
+        self.storage_config_patch.stop()
+        
         # Clear all memory storage
         if hasattr(self.service, '_storage'):
             self.service._storage.clear()
@@ -57,7 +78,7 @@ class TestMemoryStorageService(unittest.TestCase):
         """Test that service initializes correctly with all dependencies."""
         # Verify dependencies are stored
         self.assertEqual(self.service.provider_name, "memory")
-        self.assertEqual(self.service.configuration, self.mock_app_config_service)
+        self.assertEqual(self.service.configuration, self.mock_storage_config_service)
         self.assertIsNotNone(self.service._logger)
         
         # Verify internal storage structures are initialized
@@ -393,25 +414,25 @@ class TestMemoryStorageService(unittest.TestCase):
     
     def test_collection_limits(self):
         """Test collection count limits."""
-        # Mock configuration with low limit
-        def mock_get_value(key, default=None):
-            if key == "storage.memory":
-                return {
-                    "provider": "memory",
-                    "options": {
-                        "max_collections": 2
-                    }
-                }
-            return default
+        # Create mock storage config service with low limit
+        memory_config_override = {
+            "memory": {
+                "enabled": True,
+                "max_collections": 2,
+                "persistence": False,
+                "collections": {}
+            }
+        }
         
-        self.mock_app_config_service.get_value.side_effect = mock_get_value
+        mock_limited_storage_config = MockServiceFactory.create_mock_storage_config_service(memory_config_override)
         
         # Create new service with limit
         limited_service = MemoryStorageService(
             provider_name="memory",
-            configuration=self.mock_app_config_service,
+            configuration=mock_limited_storage_config,
             logging_service=self.mock_logging_service
         )
+        
         
         # Should be able to create up to limit
         result1 = limited_service.write("collection1", {"data": "1"}, "doc1")
@@ -427,23 +448,22 @@ class TestMemoryStorageService(unittest.TestCase):
     
     def test_document_limits(self):
         """Test document count limits per collection."""
-        # Mock configuration with low limit
-        def mock_get_value(key, default=None):
-            if key == "storage.memory":
-                return {
-                    "provider": "memory",
-                    "options": {
-                        "max_documents_per_collection": 2
-                    }
-                }
-            return default
+        # Create mock storage config service with low limit
+        memory_config_override = {
+            "memory": {
+                "enabled": True,
+                "max_documents_per_collection": 2,
+                "persistence": False,
+                "collections": {}
+            }
+        }
         
-        self.mock_app_config_service.get_value.side_effect = mock_get_value
+        mock_limited_storage_config = MockServiceFactory.create_mock_storage_config_service(memory_config_override)
         
         # Create new service with limit
         limited_service = MemoryStorageService(
             provider_name="memory",
-            configuration=self.mock_app_config_service,
+            configuration=mock_limited_storage_config,
             logging_service=self.mock_logging_service
         )
         
@@ -612,23 +632,22 @@ class TestMemoryStorageService(unittest.TestCase):
             temp_path = temp_file.name
         
         try:
-            # Mock configuration with persistence file
-            def mock_get_value(key, default=None):
-                if key == "storage.memory":
-                    return {
-                        "provider": "memory",
-                        "options": {
-                            "persistence_file": temp_path
-                        }
-                    }
-                return default
+            # Create mock storage config service with persistence file
+            memory_config_override = {
+                "memory": {
+                    "enabled": True,
+                    "persistence_file": temp_path,
+                    "max_collections": 100,
+                    "collections": {}
+                }
+            }
             
-            self.mock_app_config_service.get_value.side_effect = mock_get_value
+            mock_persistent_storage_config = MockServiceFactory.create_mock_storage_config_service(memory_config_override)
             
             # Create service with persistence
             persistent_service = MemoryStorageService(
                 provider_name="memory",
-                configuration=self.mock_app_config_service,
+                configuration=mock_persistent_storage_config,
                 logging_service=self.mock_logging_service
             )
             
@@ -646,7 +665,7 @@ class TestMemoryStorageService(unittest.TestCase):
             # Create new service instance that should load the data
             new_service = MemoryStorageService(
                 provider_name="memory",
-                configuration=self.mock_app_config_service,
+                configuration=mock_persistent_storage_config,
                 logging_service=self.mock_logging_service
             )
             

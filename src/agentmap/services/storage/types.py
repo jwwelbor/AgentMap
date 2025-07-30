@@ -5,8 +5,22 @@ This module maintains backward compatibility by re-exporting types that have bee
 moved to their proper locations in the architecture.
 
 Pure data types have been moved to models.storage.
-Exceptions remain in services.storage.exceptions.
+Exceptions have been consolidated in exceptions.storage_exceptions.
 """
+
+# Import exceptions from consolidated storage exceptions
+from agentmap.exceptions.storage_exceptions import (
+    StorageConfigurationError,
+    StorageConnectionError,
+    StorageError,
+    StorageNotFoundError,
+    StoragePermissionError,
+    StorageProviderError,
+    StorageServiceConfigurationError,
+    StorageServiceError,
+    StorageServiceNotAvailableError,
+    StorageValidationError,
+)
 
 # Import pure data types from models (where they belong)
 from agentmap.models.storage import (
@@ -19,20 +33,6 @@ from agentmap.models.storage import (
     StorageOperation,
     StorageResult,
     WriteMode,
-)
-
-# Import exceptions from services (where they belong)
-from agentmap.services.storage.exceptions import (
-    StorageConfigurationError,
-    StorageConnectionError,
-    StorageError,
-    StorageNotFoundError,
-    StoragePermissionError,
-    StorageProviderError,
-    StorageServiceConfigurationError,
-    StorageServiceError,
-    StorageServiceNotAvailableError,
-    StorageValidationError,
 )
 
 # Re-export everything for backward compatibility

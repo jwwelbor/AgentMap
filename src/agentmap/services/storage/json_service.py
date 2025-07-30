@@ -3,6 +3,13 @@ JSON Storage Service implementation for AgentMap.
 
 This module provides a concrete implementation of the storage service
 for JSON files, with support for path-based operations and nested documents.
+
+Configuration Integration:
+- Uses StorageConfigService for domain-specific configuration access
+- Leverages named domain methods: get_json_config(), get_json_data_path(), etc.
+- Supports collection-specific configuration via get_collection_config()
+- Implements fail-fast behavior when JSON storage is disabled
+- Follows established configuration architecture patterns
 """
 
 import contextlib
@@ -21,6 +28,12 @@ class JSONStorageService(BaseStorageService):
 
     Provides storage operations for JSON files with support for
     path-based access, nested documents, and query filtering.
+
+    Configuration Pattern:
+    - Uses StorageConfigService named domain methods instead of generic access
+    - Leverages get_json_config(), get_json_data_path(), is_json_storage_enabled()
+    - Supports collection-specific configuration via get_collection_config()
+    - Follows configuration architecture patterns from docs/contributing/architecture/configuration-patterns.md
     """
 
     # NOTE: This method is included for backward compatibility
@@ -43,17 +56,25 @@ class JSONStorageService(BaseStorageService):
 
         Returns:
             Configuration dict for JSON operations
-        """
-        base_dir = self._config.get_option("base_directory", "./data")
-        encoding = self._config.get_option("encoding", "utf-8")
 
-        # Ensure base directory exists
-        os.makedirs(base_dir, exist_ok=True)
+        Raises:
+            OSError: If base directory cannot be created or accessed
+        """
+        # Use StorageConfigService named domain methods instead of generic access
+        json_config = self.configuration.get_json_config()
+
+        # Use the path accessor with business logic (already ensures directory exists)
+        base_dir = str(self.configuration.get_json_data_path())
+        encoding = json_config.get("encoding", "utf-8")
+
+        # Additional validation for fail-fast behavior
+        if not self.configuration.is_json_storage_enabled():
+            raise OSError("JSON storage is not enabled in configuration")
 
         return {
             "base_directory": base_dir,
             "encoding": encoding,
-            "indent": self._config.get_option("indent", 2),
+            "indent": json_config.get("indent", 2),
         }
 
     def _perform_health_check(self) -> bool:
@@ -93,6 +114,9 @@ class JSONStorageService(BaseStorageService):
         """
         Get full file path for a collection.
 
+        Uses configured collection paths when available, with fallback to default behavior.
+        Enhanced with StorageConfigService collection support.
+
         Args:
             collection: Collection name (can be relative or absolute path)
 
@@ -102,6 +126,14 @@ class JSONStorageService(BaseStorageService):
         if os.path.isabs(collection):
             return collection
 
+        # Check if this collection has specific configuration
+        if self.configuration.has_collection("json", collection):
+            collection_path = self.configuration.get_json_collection_file_path(
+                collection
+            )
+            return str(collection_path)
+
+        # Default behavior: use base directory
         base_dir = self.client["base_directory"]
 
         # Ensure .json extension
@@ -1275,26 +1307,40 @@ class JSONStorageService(BaseStorageService):
 
     def list_collections(self, **kwargs) -> List[str]:
         """
-        List all JSON files in the base directory.
+        List all JSON collections, including both configured collections and discovered files.
+
+        Enhanced with StorageConfigService integration to include:
+        - Configured collections from StorageConfigService
+        - JSON files found in the data directory
 
         Args:
             **kwargs: Additional parameters
 
         Returns:
-            List of JSON file names
+            List of JSON collection names (without .json extension for configured collections)
         """
         try:
+            collections = set()
+
+            # Add configured collections from StorageConfigService
+            try:
+                configured_collections = self.configuration.list_collections("json")
+                collections.update(configured_collections)
+            except Exception as e:
+                self._logger.debug(f"Could not load configured JSON collections: {e}")
+
+            # Add JSON files found in directory
             base_dir = self.client["base_directory"]
+            if os.path.exists(base_dir):
+                for item in os.listdir(base_dir):
+                    if item.lower().endswith(".json"):
+                        # Remove .json extension for consistency with configured collections
+                        collection_name = (
+                            item[:-5] if item.lower().endswith(".json") else item
+                        )
+                        collections.add(collection_name)
 
-            if not os.path.exists(base_dir):
-                return []
-
-            json_files = []
-            for item in os.listdir(base_dir):
-                if item.lower().endswith(".json"):
-                    json_files.append(item)
-
-            return sorted(json_files)
+            return sorted(list(collections))
 
         except Exception as e:
             self._logger.debug(f"Error listing collections: {e}")

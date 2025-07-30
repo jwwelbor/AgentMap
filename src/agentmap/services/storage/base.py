@@ -8,7 +8,7 @@ following the Template Method pattern and established service patterns.
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.protocols import StorageService
 from agentmap.services.storage.types import (
@@ -33,7 +33,7 @@ class BaseStorageService(StorageService, ABC):
     def __init__(
         self,
         provider_name: str,
-        configuration: AppConfigService,
+        configuration: StorageConfigService,
         logging_service: LoggingService,
     ):
         """
@@ -41,7 +41,7 @@ class BaseStorageService(StorageService, ABC):
 
         Args:
             provider_name: Name of the storage provider
-            configuration: Application configuration service
+            configuration: Storage configuration service for storage-specific config access
             logging_service: Logging service for creating loggers
         """
         self.provider_name = provider_name
@@ -74,27 +74,55 @@ class BaseStorageService(StorageService, ABC):
     # Template method pattern for configuration loading
     def _load_provider_config(self) -> StorageConfig:
         """
-        Load provider-specific configuration.
+        Load provider-specific configuration using StorageConfigService methods.
 
         Returns:
             StorageConfig for this provider
         """
         try:
-            config_data = self.configuration.get_value(
-                f"storage.{self.provider_name}", {}
-            )
-            if not config_data:
-                # Try fallback configuration paths
-                config_data = self.configuration.get_value(
-                    f"storage.providers.{self.provider_name}", {}
-                )
+            # Use storage-specific configuration methods instead of generic access
+            if self.provider_name in ["firebase", "mongodb", "supabase", "local"]:
+                # Use named provider methods for known providers
+                method_name = f"get_{self.provider_name}_config"
+                if hasattr(self.configuration, method_name):
+                    config_data = getattr(self.configuration, method_name)()
+                else:
+                    config_data = self.configuration.get_provider_config(
+                        self.provider_name
+                    )
+            else:
+                # Use generic provider method for other providers
+                config_data = self.configuration.get_provider_config(self.provider_name)
+
+            # Fallback to storage type configs if provider config is empty
+            if not config_data and self.provider_name in [
+                "csv",
+                "vector",
+                "memory",
+                "file",
+                "kv",
+            ]:
+                storage_type_method = f"get_{self.provider_name}_config"
+                if hasattr(self.configuration, storage_type_method):
+                    config_data = getattr(self.configuration, storage_type_method)()
+                    self._logger.debug(
+                        f"[{self.provider_name}] Using storage type config as fallback"
+                    )
 
             # Add provider name if not present
             if "provider" not in config_data:
                 config_data["provider"] = self.provider_name
 
+            # Check if provider is configured and enabled
+            if not self.configuration.is_provider_configured(self.provider_name):
+                self._logger.warning(
+                    f"[{self.provider_name}] Provider is not properly configured or disabled"
+                )
+
             config = StorageConfig.from_dict(config_data)
-            self._logger.debug(f"[{self.provider_name}] Loaded configuration")
+            self._logger.debug(
+                f"[{self.provider_name}] Loaded configuration using StorageConfigService"
+            )
             return config
         except Exception as e:
             self._logger.error(

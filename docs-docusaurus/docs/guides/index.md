@@ -77,27 +77,7 @@ Learn how to deploy, monitor, and maintain AgentMap workflows in production envi
 
 ---
 
-### ⚙️ [Administration](./administration/)
-**System administration, maintenance, and cache management**
 
-Comprehensive administrative guides for managing AgentMap deployments, including cache management, system maintenance, performance monitoring, and operational procedures.
-
-**What You'll Learn:**
-- Cache management and optimization strategies
-- System maintenance and cleanup procedures
-- Performance monitoring and troubleshooting
-- Administrative best practices and procedures
-- Multi-user environment management
-
-**Perfect For:**
-- System administrators
-- DevOps and operations teams
-- Cache management and optimization
-- System maintenance and monitoring
-
-**Time Investment:** 2-4 hours for comprehensive administration setup
-
----
 
 ### ⚡ [Performance](./performance/)
 **Performance optimization, cache tuning, and system efficiency**
@@ -135,8 +115,7 @@ Advanced performance optimization strategies through intelligent cache managemen
 ### **Managing System Performance?**
 **Explore [Performance](./performance/)** for cache optimization and performance tuning strategies.
 
-### **Administering AgentMap Systems?**
-**Check [Administration](./administration/)** for cache management, maintenance, and operational procedures.
+
 
 ---
 
@@ -181,10 +160,7 @@ Complete production deployment:
 - **[Deployment](./deploying/deployment)** - Production deployment strategies
 - **[Testing](./development/testing)** - Quality assurance and testing patterns
 
-### Administration
-- **[Cache Management](./administration/cache-management)** - Administrative cache procedures and optimization
-- **System Maintenance** - Regular maintenance and operational procedures (coming soon)
-- **Multi-User Management** - User management and environment setup (coming soon)
+
 
 ### Performance
 - **[Performance Optimization](./performance/optimization)** - Cache-based performance improvements
@@ -250,7 +226,7 @@ agentmap profile --csv workflow.csv --profile-memory
 ### **For DevOps/Operations**
 1. **[Core Concepts](./learning-paths/)** - Understanding AgentMap (20 min)
 2. **[Deployment Guide](./deploying/)** - Production deployment (60 min)
-3. **[Administration](./administration/)** - System administration and cache management (45 min)
+3. **[Cache Management](../deployment/cache-management)** - System administration and cache management (45 min)
 4. **[Performance Optimization](./performance/)** - Performance tuning and optimization (30 min)
 5. **[Monitoring Setup](./deploying/monitoring)** - Operational excellence (45 min)
 
@@ -346,8 +322,8 @@ Choose your next step based on your goals:
 ### **Optimize Performance**
 **[⚡ Explore Performance Guide →](./performance/)**
 
-### **Administer Systems**
-**[⚙️ Check Administration Guide →](./administration/)**
+### **Manage Cache & Operations**
+**[⚙️ Check Cache Management →](../deployment/cache-management)**
 
 ### **See AgentMap in Action**
 **[🎮 Try Tutorials →](../tutorials/)**

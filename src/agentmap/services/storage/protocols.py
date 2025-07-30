@@ -271,27 +271,6 @@ class StorageCapableAgent(Protocol):
         ...
 
 
-# ===== GENERIC PROTOCOL (kept for backward compatibility if needed) =====
-
-# @runtime_checkable
-# class StorageServiceUser(Protocol):
-#     """
-#     Generic protocol for agents that use storage services.
-
-#     This is kept for backward compatibility, but specific service user
-#     protocols should be preferred for new implementations.
-#     """
-#     storage_service: Optional[StorageService] = None
-
-
-# Legacy compatibility - these might be referenced in existing code
-# CSVServiceUser = CSVCapableAgent
-# JSONServiceUser = JSONCapableAgent
-# FileServiceUser = FileCapableAgent
-# VectorServiceUser = VectorCapableAgent
-# MemoryServiceUser = MemoryCapableAgent
-
-
 @runtime_checkable
 class StorageServiceFactory(Protocol):
     """

@@ -194,6 +194,320 @@ class MockServiceFactory:
         return mock_service
     
     @staticmethod
+    def create_mock_storage_config_service(config_overrides: Optional[Dict[str, Any]] = None) -> Mock:
+        """
+        Create a pure Mock object that replaces StorageConfigService.
+        
+        This Mock provides the same interface as StorageConfigService with
+        storage-specific configuration methods and fail-fast behavior.
+        
+        Args:
+            config_overrides: Optional dict to override default config values
+            
+        Returns:
+            Mock object with all storage config service methods
+            
+        Example:
+            config = {"csv": {"enabled": True, "collections": {"users": {}}}}
+            mock_config = MockServiceFactory.create_mock_storage_config_service(config)
+            csv_config = mock_config.get_csv_config()  # Returns enabled CSV config
+        """
+        mock_service = Mock()
+        
+        # Default storage configurations
+        defaults = {
+            "csv": {
+                "enabled": True,
+                "default_directory": "data/csv",
+                "collections": {
+                    "workflows": {"filename": "workflows.csv"},
+                    "users": {"filename": "users.csv"}
+                }
+            },
+            "json": {
+                "enabled": True,
+                "default_directory": "data/json",
+                "encoding": "utf-8",
+                "indent": 2,
+                "collections": {
+                    "test_collection": {"filename": "test_collection.json"},
+                    "documents": {"filename": "documents.json"}
+                }
+            },
+            "vector": {
+                "enabled": True,
+                "provider": "local", 
+                "default_directory": "data/vector",
+                "collections": {"embeddings": {"filename": "embeddings.db"}}
+            },
+            "memory": {
+                "enabled": True,
+                "max_collections": 100,
+                "persistence": False,
+                "collections": {"cache": {}, "sessions": {}}
+            },
+            "file": {
+                "enabled": True,
+                "base_directory": "data/files",
+                "encoding": "utf-8",
+                "allow_binary": True,
+                "include_metadata": True,
+                "collections": {"documents": {"directory": "documents"}, "uploads": {"directory": "uploads"}}
+            },
+            "kv": {
+                "enabled": False,
+                "provider": "memory",
+                "collections": {}
+            },
+            "providers": {
+                "firebase": {"enabled": False},
+                "mongodb": {"enabled": False},
+                "supabase": {"enabled": False}
+            }
+        }
+        
+        # Apply overrides
+        if config_overrides:
+            for key, value in config_overrides.items():
+                if isinstance(value, dict) and key in defaults:
+                    defaults[key].update(value)
+                else:
+                    defaults[key] = value
+        
+        # Configure storage-specific methods (following configuration patterns)
+        mock_service.get_csv_config.return_value = defaults["csv"]
+        mock_service.get_json_config.return_value = defaults["json"]
+        mock_service.get_vector_config.return_value = defaults["vector"]
+        
+        # Memory config needs special handling for StorageConfig.from_dict()
+        def get_memory_config() -> Dict[str, Any]:
+            memory_config = defaults["memory"]
+            # Return in the format StorageConfig expects
+            return {
+                "provider": "memory",
+                "max_collections": memory_config.get("max_collections", 100),
+                "max_documents_per_collection": memory_config.get("max_documents_per_collection", 10000),
+                "persistence_file": memory_config.get("persistence_file"),
+                "enabled": memory_config.get("enabled", True)
+            }
+        
+        mock_service.get_memory_config.side_effect = get_memory_config
+        
+        # File config needs special handling for StorageConfig.from_dict()
+        def get_file_config() -> Dict[str, Any]:
+            file_config = defaults["file"]
+            # Return in the format StorageConfig expects with proper override handling
+            return {
+                "provider": "file",
+                "base_directory": file_config.get("base_directory", "data/files"),
+                "encoding": file_config.get("encoding", "utf-8"),
+                "allow_binary": file_config.get("allow_binary", True),
+                "include_metadata": file_config.get("include_metadata", True),
+                "enabled": file_config.get("enabled", True),
+                "chunk_size": file_config.get("chunk_size", 1000),
+                "chunk_overlap": file_config.get("chunk_overlap", 200),
+                "should_split": file_config.get("should_split", False),
+                "newline": file_config.get("newline"),
+                "max_file_size": file_config.get("max_file_size")
+            }
+        
+        mock_service.get_file_config.side_effect = get_file_config
+        
+        # CRITICAL FIX: Add get_option method for direct StorageConfig interface compatibility
+        # This handles cases where StorageConfig.from_dict() may not work as expected
+        def get_option(key: str, default: Any = None) -> Any:
+            """Get option value for StorageConfig interface compatibility."""
+            # This method allows the mock to work as both StorageConfigService and StorageConfig
+            file_config = defaults["file"]
+            return file_config.get(key, default)
+        
+        mock_service.get_option.side_effect = get_option
+        
+        mock_service.get_kv_config.return_value = defaults["kv"]
+        
+        # Provider-specific methods
+        def get_provider_config(provider_name: str) -> Dict[str, Any]:
+            """Get configuration for a specific provider."""
+            # Handle memory as a storage type, not just a provider
+            if provider_name == "memory":
+                # Return memory config in the format StorageConfig expects
+                memory_config = defaults["memory"]
+                # Flatten the config for StorageConfig.from_dict()
+                return {
+                    "provider": "memory",
+                    "max_collections": memory_config.get("max_collections", 100),
+                    "max_documents_per_collection": memory_config.get("max_documents_per_collection", 10000),
+                    "persistence_file": memory_config.get("persistence_file"),
+                    "enabled": memory_config.get("enabled", True)
+                }
+            # Handle file as a storage type, not just a provider
+            elif provider_name == "file":
+                # Return file config in the format StorageConfig expects
+                file_config = defaults["file"]
+                # Flatten the config for StorageConfig.from_dict()
+                return {
+                    "provider": "file",
+                    "base_directory": file_config.get("base_directory", "data/files"),
+                    "encoding": file_config.get("encoding", "utf-8"),
+                    "allow_binary": file_config.get("allow_binary", True),
+                    "include_metadata": file_config.get("include_metadata", True),
+                    "enabled": file_config.get("enabled", True)
+                }
+            return defaults["providers"].get(provider_name, {})
+        
+        mock_service.get_provider_config.side_effect = get_provider_config
+        
+        # Provider-specific named methods
+        mock_service.get_firebase_config.return_value = defaults["providers"]["firebase"]
+        mock_service.get_mongodb_config.return_value = defaults["providers"]["mongodb"]
+        mock_service.get_supabase_config.return_value = defaults["providers"]["supabase"]
+        
+        # Boolean accessor methods
+        def is_csv_storage_enabled() -> bool:
+            """Check if CSV storage is configured and enabled."""
+            csv_config = defaults["csv"]
+            return csv_config.get("enabled", True) and bool(csv_config.get("collections"))
+        
+        def is_json_storage_enabled() -> bool:
+            """Check if JSON storage is configured and enabled."""
+            json_config = defaults["json"]
+            return json_config.get("enabled", True) and bool(json_config.get("collections"))
+        
+        def is_vector_storage_enabled() -> bool:
+            """Check if vector storage is configured and enabled."""
+            vector_config = defaults["vector"]
+            return vector_config.get("enabled", False)
+        
+        def is_memory_storage_enabled() -> bool:
+            """Check if memory storage is configured and enabled."""
+            memory_config = defaults["memory"]
+            return memory_config.get("enabled", False)
+        
+        def is_file_storage_enabled() -> bool:
+            """Check if file storage is configured and enabled."""
+            file_config = defaults["file"]
+            return file_config.get("enabled", False)
+        
+        def has_vector_storage() -> bool:
+            """Check if vector storage is available."""
+            return defaults["vector"].get("enabled", False)
+        
+        def has_kv_storage() -> bool:
+            """Check if key-value storage is available."""
+            return defaults["kv"].get("enabled", False)
+        
+        def is_provider_configured(provider: str) -> bool:
+            """Check if a specific storage provider is configured."""
+            return defaults["providers"].get(provider, {}).get("enabled", False)
+        
+        mock_service.is_csv_storage_enabled.side_effect = is_csv_storage_enabled
+        mock_service.is_json_storage_enabled.side_effect = is_json_storage_enabled
+        mock_service.is_vector_storage_enabled.side_effect = is_vector_storage_enabled
+        mock_service.is_memory_storage_enabled.side_effect = is_memory_storage_enabled
+        mock_service.is_file_storage_enabled.side_effect = is_file_storage_enabled
+        mock_service.has_vector_storage.side_effect = has_vector_storage
+        mock_service.has_kv_storage.side_effect = has_kv_storage
+        mock_service.is_provider_configured.side_effect = is_provider_configured
+        
+        # Path accessor methods
+        def get_csv_data_path() -> Path:
+            """Get the CSV data directory path."""
+            csv_config = defaults["csv"]
+            return Path(csv_config.get("default_directory", "data/csv"))
+        
+        def get_json_data_path() -> Path:
+            """Get the JSON data directory path."""
+            json_config = defaults["json"]
+            return Path(json_config.get("default_directory", "data/json"))
+        
+        def get_vector_data_path() -> Path:
+            """Get the vector data directory path."""
+            vector_config = defaults["vector"] 
+            return Path(vector_config.get("default_directory", "data/vector"))
+        
+        def get_file_data_path() -> Path:
+            """Get the file data directory path."""
+            file_config = defaults["file"]
+            return Path(file_config.get("base_directory", "data/files"))
+        
+        def get_collection_file_path(collection_name: str) -> Path:
+            """Get the full file path for a CSV collection."""
+            csv_path = get_csv_data_path()
+            collections = defaults["csv"].get("collections", {})
+            collection_config = collections.get(collection_name, {})
+            filename = collection_config.get("filename", f"{collection_name}.csv")
+            return csv_path / filename
+        
+        def get_json_collection_file_path(collection_name: str) -> Path:
+            """Get the full file path for a JSON collection."""
+            json_path = get_json_data_path()
+            collections = defaults["json"].get("collections", {})
+            collection_config = collections.get(collection_name, {})
+            filename = collection_config.get("filename", f"{collection_name}.json")
+            return json_path / filename
+        
+        mock_service.get_csv_data_path.side_effect = get_csv_data_path
+        mock_service.get_json_data_path.side_effect = get_json_data_path
+        mock_service.get_vector_data_path.side_effect = get_vector_data_path
+        mock_service.get_file_data_path.side_effect = get_file_data_path
+        mock_service.get_collection_file_path.side_effect = get_collection_file_path
+        mock_service.get_json_collection_file_path.side_effect = get_json_collection_file_path
+        
+        # Collection methods
+        def list_collections(storage_type: str = "csv") -> List[str]:
+            """List available collections for a storage type."""
+            config = defaults.get(storage_type, {})
+            collections = config.get("collections", {})
+            return list(collections.keys())
+        
+        def get_collection_config(storage_type: str, collection_name: str) -> Dict[str, Any]:
+            """Get configuration for a specific collection."""
+            config = defaults.get(storage_type, {})
+            collections = config.get("collections", {})
+            return collections.get(collection_name, {})
+        
+        def has_collection(storage_type: str, collection_name: str) -> bool:
+            """Check if a collection exists in the configuration."""
+            config = defaults.get(storage_type, {})
+            collections = config.get("collections", {})
+            return collection_name in collections
+        
+        mock_service.list_collections.side_effect = list_collections
+        mock_service.get_collection_config.side_effect = get_collection_config
+        mock_service.has_collection.side_effect = has_collection
+        
+        # Default provider methods
+        def get_default_provider(storage_type: str) -> str:
+            """Get default provider for a storage type."""
+            providers_map = {
+                "csv": "csv",
+                "vector": "local",
+                "kv": "memory"
+            }
+            return providers_map.get(storage_type, "unknown")
+        
+        mock_service.get_default_provider.side_effect = get_default_provider
+        
+        # Add get_value method for generic config access with nested path support
+        def get_value(key: str, default: Any = None) -> Any:
+            """Get value with support for nested paths like 'csv.enabled'."""
+            if '.' in key:
+                # Handle nested keys like 'csv.enabled'
+                keys = key.split('.')
+                current = defaults
+                for k in keys:
+                    if isinstance(current, dict) and k in current:
+                        current = current[k]
+                    else:
+                        return default
+                return current
+            return defaults.get(key, default)
+        
+        mock_service.get_value.side_effect = get_value
+        
+        return mock_service
+    
+    @staticmethod
     def create_mock_node_registry_service() -> Mock:
         """
         Create a pure Mock object that replaces MockNodeRegistryService.
@@ -1092,6 +1406,11 @@ def create_logging_service_mock(logger_name: str = "test") -> Mock:
 def create_app_config_service_mock(**config_overrides) -> Mock:
     """Quick function to create an app config service mock."""
     return MockServiceFactory.create_mock_app_config_service(config_overrides)
+
+
+def create_storage_config_service_mock(**config_overrides) -> Mock:
+    """Quick function to create a storage config service mock."""
+    return MockServiceFactory.create_mock_storage_config_service(config_overrides)
 
 
 def create_node_registry_service_mock() -> Mock:
