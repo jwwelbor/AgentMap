@@ -363,7 +363,7 @@ class DependencyCheckerService:
 Based on comprehensive performance analysis, the unified cache delivers:
 
 **Cache Hit Performance**:
-- **P95 latency**: <5ms across all categories
+- **P95 latency**: &lt;5ms across all categories
 - **Average access time**: 2-3ms for cache hits
 - **Memory overhead**: 38-43% reduction vs separate caches
 
@@ -375,7 +375,7 @@ Based on comprehensive performance analysis, the unified cache delivers:
 **I/O Efficiency**:
 - **File operations**: 75% fewer I/O operations than separate files
 - **Atomic writes**: Zero data corruption in concurrent testing
-- **Cache invalidation**: <50ms for all invalidation types
+- **Cache invalidation**: &lt;50ms for all invalidation types
 
 ### Scalability Patterns
 
