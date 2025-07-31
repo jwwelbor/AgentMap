@@ -408,8 +408,11 @@ storage:
 storage_config_path: "{storage_config_path_str}"
 """
         
+        # Use forward slashes for all paths to avoid Windows YAML escaping issues
+        csv_data_path_str = f"{self.temp_dir}/csv_data".replace('\\', '/')
+        
         storage_config_content = f"""csv:
-  default_directory: "{self.temp_dir}/csv_data"
+  default_directory: "{csv_data_path_str}"
   collections: {{}}
 
 vector:
@@ -419,6 +422,23 @@ vector:
 kv:
   default_provider: "local"
   collections: {{}}
+
+blob:
+  default_provider: "file"
+  providers:
+    azure:
+      connection_string: "DefaultEndpointsProtocol=https;AccountName=test;AccountKey=test"
+    s3:
+      access_key: "AKIATEST"
+      secret_key: "testsecretkey"
+      region: "us-east-1"
+    gs:
+      credentials_path: "/path/to/credentials.json"
+      project_id: "test-project" 
+    file:
+      base_directory: "{blob_data_path_str}"
+    local:
+      base_directory: "{blob_data_path_str}"
 """
         
         with open(config_path, 'w') as f:

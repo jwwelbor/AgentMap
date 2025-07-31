@@ -240,11 +240,11 @@ class StorageServiceManager:
             # Determine default provider using storage-specific logic
             if self.configuration.is_csv_storage_enabled():
                 self._default_provider = "csv"
-            elif self.configuration.has_vector_storage():
+            elif self.configuration.is_vector_storage_enabled():
                 self._default_provider = self.configuration.get_default_provider(
                     "vector"
                 )
-            elif self.configuration.has_kv_storage():
+            elif self.configuration.is_kv_storage_enabled():
                 self._default_provider = self.configuration.get_default_provider("kv")
             else:
                 # Fallback to CSV as most basic storage
@@ -267,7 +267,7 @@ class StorageServiceManager:
         providers.update(self._factories.keys())
 
         # Include blob storage if available
-        if self.has_blob_storage():
+        if self.is_blob_storage_enabled():
             providers.add("blob")
 
         return sorted(list(providers))
@@ -283,7 +283,7 @@ class StorageServiceManager:
             True if provider is available
         """
         if provider_name == "blob":
-            return self.has_blob_storage()
+            return self.is_blob_storage_enabled()
 
         return (
             provider_name in self._service_classes or provider_name in self._factories
@@ -353,7 +353,7 @@ class StorageServiceManager:
         else:
             providers_to_check = self.list_available_providers()
             # Include blob storage in the list if available
-            if self.has_blob_storage() and "blob" not in providers_to_check:
+            if self.is_blob_storage_enabled() and "blob" not in providers_to_check:
                 providers_to_check.append("blob")
 
         info = {}
@@ -362,7 +362,7 @@ class StorageServiceManager:
             if provider == "blob":
                 # Special handling for blob storage
                 provider_info = {
-                    "available": self.has_blob_storage(),
+                    "available": self.is_blob_storage_enabled(),
                     "cached": True,  # Blob storage is always cached when available
                     "type": "blob_service",
                 }
@@ -410,7 +410,7 @@ class StorageServiceManager:
                 "Blob storage service not available - blob operations disabled"
             )
 
-    def has_blob_storage(self) -> bool:
+    def is_blob_storage_enabled(self) -> bool:
         """
         Check if blob storage capabilities are available.
 

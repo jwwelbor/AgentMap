@@ -293,7 +293,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # Blob Storage Service for cloud blob operations
     @staticmethod
-    def _create_blob_storage_service(app_config_service, logging_service):
+    def _create_blob_storage_service(storage_config_service, logging_service):
         """
         Create blob storage service with graceful failure handling.
 
@@ -301,18 +301,26 @@ class ApplicationContainer(containers.DeclarativeContainer):
         without blob storage features.
         """
         try:
+            # Check if storage config service is available for graceful degradation
+            if storage_config_service is None:
+                logger = logging_service.get_logger("agentmap.blob_storage")
+                logger.info(
+                    "Storage configuration not available - blob storage service disabled"
+                )
+                return None
+
             from agentmap.services.storage.blob_storage_service import (
                 BlobStorageService,
             )
 
-            return BlobStorageService(app_config_service, logging_service)
+            return BlobStorageService(storage_config_service, logging_service)
         except Exception as e:
             logger = logging_service.get_logger("agentmap.blob_storage")
             logger.warning(f"Blob storage service disabled: {e}")
             return None
 
     blob_storage_service = providers.Singleton(
-        _create_blob_storage_service, app_config_service, logging_service
+        _create_blob_storage_service, storage_config_service, logging_service
     )
 
     # Storage Service Manager with graceful failure handling

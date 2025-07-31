@@ -15,7 +15,7 @@ from agentmap.exceptions import (
     StorageOperationError,
     StorageServiceError,
 )
-from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.protocols import BlobStorageServiceProtocol
 from agentmap.services.storage.base_connector import (
@@ -40,14 +40,14 @@ class BlobStorageService(BlobStorageServiceProtocol):
 
     def __init__(
         self,
-        configuration: AppConfigService,
+        configuration: StorageConfigService,
         logging_service: LoggingService,
     ):
         """
         Initialize the blob storage service.
 
         Args:
-            configuration: Application configuration service
+            configuration: Storage configuration service
             logging_service: Logging service for creating loggers
         """
         self.configuration = configuration
@@ -73,19 +73,13 @@ class BlobStorageService(BlobStorageServiceProtocol):
 
     def _load_blob_config(self) -> Dict[str, Any]:
         """
-        Load blob storage configuration from app config.
+        Load blob storage configuration from storage config service.
 
         Returns:
             Configuration dictionary for blob storage
         """
         try:
-            # Try multiple configuration paths for flexibility
-            config = self.configuration.get_value("storage.blob", {})
-            if not config:
-                config = self.configuration.get_value("blob_storage", {})
-            if not config:
-                config = self.configuration.get_value("cloud_storage", {})
-
+            config = self.configuration.get_blob_config()
             self._logger.debug(f"Loaded blob storage configuration: {config}")
             return config
         except Exception as e:
@@ -461,7 +455,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
 
             if available:
                 # Check if provider is configured
-                provider_config = self._config.get("providers", {}).get(provider, {})
+                provider_config = self.configuration.get_blob_provider_config(provider)
                 if provider in ["file", "local"] or provider_config:
                     provider_health["configured"] = True
 
@@ -520,7 +514,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
                 provider: {
                     "available": self._available_providers.get(provider, False),
                     "configured": bool(
-                        self._config.get("providers", {}).get(provider, {})
+                        self.configuration.get_blob_provider_config(provider)
                     ),
                     "cached": provider in self._connectors,
                 }
@@ -531,7 +525,9 @@ class BlobStorageService(BlobStorageServiceProtocol):
             for prov in self._available_providers:
                 info[prov] = {
                     "available": self._available_providers.get(prov, False),
-                    "configured": bool(self._config.get("providers", {}).get(prov, {})),
+                    "configured": bool(
+                        self.configuration.get_blob_provider_config(prov)
+                    ),
                     "cached": prov in self._connectors,
                 }
             return info

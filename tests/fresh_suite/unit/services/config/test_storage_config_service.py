@@ -38,12 +38,14 @@ class TestStorageConfigService(unittest.TestCase):
                 }
             },
             'vector': {
+                'default_directory': 'data/vector',
                 'default_provider': 'local',
                 'collections': {
                     'embeddings': {'dimension': 768}
                 }
             },
             'kv': {
+                'default_directory': 'data/kv',
                 'default_provider': 'local',
                 'collections': {
                     'cache': {'ttl': 3600}
@@ -59,6 +61,27 @@ class TestStorageConfigService(unittest.TestCase):
                 'default_directory': 'data/files',
                 'collections': {
                     'attachments': {}
+                }
+            },
+            'blob': {
+                'default_directory': 'data/blob',
+                'default_provider': 'file',
+                'providers': {
+                    'azure': {
+                        'connection_string': 'DefaultEndpointsProtocol=https;AccountName=test;AccountKey=test==;EndpointSuffix=core.windows.net',
+                        'container_name': 'blobs'
+                    },
+                    's3': {
+                        'bucket_name': 'test-bucket',
+                        'region': 'us-east-1'
+                    },
+                    'gcs': {
+                        'bucket_name': 'test-gcs-bucket',
+                        'project_id': 'test-project'
+                    },
+                    'file': {
+                        'base_path': 'data/blob/files'
+                    }
                 }
             }
         }
@@ -158,6 +181,7 @@ class TestStorageConfigService(unittest.TestCase):
         result = self.storage_config_service.get_vector_config()
         
         expected = {
+            'default_directory': 'data/vector',
             'default_provider': 'local',
             'collections': {
                 'embeddings': {'dimension': 768}
@@ -171,9 +195,38 @@ class TestStorageConfigService(unittest.TestCase):
         result = self.storage_config_service.get_kv_config()
         
         expected = {
+            'default_directory': 'data/kv',
             'default_provider': 'local',
             'collections': {
                 'cache': {'ttl': 3600}
+            }
+        }
+        
+        self.assertEqual(result, expected)
+    
+    def test_get_blob_config(self):
+        """Test getting blob storage configuration."""
+        result = self.storage_config_service.get_blob_config()
+        
+        expected = {
+            'default_directory': 'data/blob',
+            'default_provider': 'file',
+            'providers': {
+                'azure': {
+                    'connection_string': 'DefaultEndpointsProtocol=https;AccountName=test;AccountKey=test==;EndpointSuffix=core.windows.net',
+                    'container_name': 'blobs'
+                },
+                's3': {
+                    'bucket_name': 'test-bucket',
+                    'region': 'us-east-1'
+                },
+                'gcs': {
+                    'bucket_name': 'test-gcs-bucket',
+                    'project_id': 'test-project'
+                },
+                'file': {
+                    'base_path': 'data/blob/files'
+                }
             }
         }
         
@@ -195,6 +248,43 @@ class TestStorageConfigService(unittest.TestCase):
         
         # Test non-existing provider
         result = self.storage_config_service.get_provider_config('missing')
+        self.assertEqual(result, {})
+    
+    def test_get_blob_provider_config(self):
+        """Test getting blob provider-specific configuration."""
+        # Test Azure provider
+        result = self.storage_config_service.get_blob_provider_config('azure')
+        expected = {
+            'connection_string': 'DefaultEndpointsProtocol=https;AccountName=test;AccountKey=test==;EndpointSuffix=core.windows.net',
+            'container_name': 'blobs'
+        }
+        self.assertEqual(result, expected)
+        
+        # Test S3 provider
+        result = self.storage_config_service.get_blob_provider_config('s3')
+        expected = {
+            'bucket_name': 'test-bucket',
+            'region': 'us-east-1'
+        }
+        self.assertEqual(result, expected)
+        
+        # Test GCS provider
+        result = self.storage_config_service.get_blob_provider_config('gcs')
+        expected = {
+            'bucket_name': 'test-gcs-bucket',
+            'project_id': 'test-project'
+        }
+        self.assertEqual(result, expected)
+        
+        # Test file provider
+        result = self.storage_config_service.get_blob_provider_config('file')
+        expected = {
+            'base_path': 'data/blob/files'
+        }
+        self.assertEqual(result, expected)
+        
+        # Test non-existing provider
+        result = self.storage_config_service.get_blob_provider_config('missing')
         self.assertEqual(result, {})
     
     def test_get_value(self):
@@ -272,10 +362,13 @@ class TestStorageConfigService(unittest.TestCase):
         self.assertIn('kv_collections', result)
         
         # Check specific values
-        self.assertEqual(set(result['storage_types']), {'csv', 'vector', 'kv', 'json', 'file'})
-        self.assertEqual(result['storage_type_count'], 5)
+        self.assertEqual(set(result['storage_types']), {'csv', 'vector', 'kv', 'json', 'file', 'blob'})
+        self.assertEqual(result['storage_type_count'], 6)
         self.assertEqual(set(result['csv_collections']), {'users', 'products'})
         self.assertEqual(result['vector_collections'], ['embeddings'])
+        self.assertEqual(set(result['blob_providers']), {'azure', 's3', 'gcs', 'file'})
+        self.assertEqual(result['blob_provider_count'], 4)
+        self.assertEqual(result['blob_default_provider'], 'file')
     
     def test_validate_storage_config(self):
         """Test storage configuration validation."""
@@ -308,6 +401,7 @@ class TestStorageConfigService(unittest.TestCase):
         self.assertGreater(len(result['warnings']), 0)
         self.assertTrue(any('vector' in warning for warning in result['warnings']))
         self.assertTrue(any('kv' in warning for warning in result['warnings']))
+        self.assertTrue(any('blob' in warning for warning in result['warnings']))
     
     def test_validate_storage_config_invalid_structure(self):
         """Test validation with invalid configuration structure."""
@@ -327,6 +421,98 @@ class TestStorageConfigService(unittest.TestCase):
         # Should have errors for invalid structure
         self.assertGreater(len(result['errors']), 0)
         self.assertTrue(any('must be a dictionary' in error for error in result['errors']))
+    
+    def test_validate_blob_config(self):
+        """Test blob storage configuration validation."""
+        result = self.storage_config_service.validate_blob_config()
+        
+        self.assertIsInstance(result, dict)
+        self.assertIn('valid', result)
+        self.assertIn('warnings', result)
+        self.assertIn('errors', result)
+        self.assertIn('summary', result)
+        
+        # Should be valid for our test configuration
+        self.assertTrue(result['valid'])
+        self.assertEqual(result['errors'], [])
+        
+        # Check summary details
+        summary = result['summary']
+        self.assertTrue(summary['blob_enabled'])
+        self.assertEqual(summary['providers_count'], 4)
+        self.assertEqual(summary['default_provider'], 'file')
+    
+    def test_validate_blob_config_invalid_structure(self):
+        """Test blob validation with invalid configuration structure."""
+        # Set up config with invalid structure
+        self.mock_config_service.load_config.return_value = {
+            'blob': 'invalid_string_instead_of_dict'
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        result = service.validate_blob_config()
+        
+        # Should have errors for invalid structure
+        self.assertFalse(result['valid'])
+        self.assertGreater(len(result['errors']), 0)
+        self.assertTrue(any('not properly structured' in error for error in result['errors']))
+    
+    def test_validate_blob_config_missing_default_provider(self):
+        """Test blob validation with missing default provider."""
+        # Set up config with invalid default provider
+        self.mock_config_service.load_config.return_value = {
+            'blob': {
+                'default_directory': 'data/blob',
+                'default_provider': 'nonexistent',
+                'providers': {
+                    'file': {'base_path': 'data/blob/files'}
+                }
+            }
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        result = service.validate_blob_config()
+        
+        # Should have errors for missing default provider
+        self.assertFalse(result['valid'])
+        self.assertGreater(len(result['errors']), 0)
+        self.assertTrue(any('not configured in providers section' in error for error in result['errors']))
+    
+    def test_validate_blob_config_unknown_provider(self):
+        """Test blob validation with unknown provider."""
+        # Set up config with unknown provider
+        self.mock_config_service.load_config.return_value = {
+            'blob': {
+                'default_directory': 'data/blob',
+                'providers': {
+                    'unknown_provider': {'config': 'value'},
+                    'file': {'base_path': 'data/blob/files'}
+                }
+            }
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        result = service.validate_blob_config()
+        
+        # Should have warnings for unknown provider
+        self.assertTrue(result['valid'])  # Still valid, just warnings
+        self.assertGreater(len(result['warnings']), 0)
+        self.assertTrue(any('Unknown blob provider' in warning for warning in result['warnings']))
     
     def test_replace_logger(self):
         """Test replacing bootstrap logger."""
@@ -391,7 +577,7 @@ class TestStorageConfigService(unittest.TestCase):
         cached_result = {"enabled": True}
         self.mock_availability_cache_service.get_availability.return_value = cached_result
         
-        result = self.storage_config_service.has_vector_storage()
+        result = self.storage_config_service.is_vector_storage_enabled()
         self.assertTrue(result)
         self.mock_availability_cache_service.get_availability.assert_called_with("storage", "vector")
         
@@ -399,7 +585,7 @@ class TestStorageConfigService(unittest.TestCase):
         self.mock_availability_cache_service.reset_mock()
         self.mock_availability_cache_service.get_availability.return_value = None
         
-        result = self.storage_config_service.has_vector_storage()
+        result = self.storage_config_service.is_vector_storage_enabled()
         self.assertTrue(result)  # Vector is configured in setUp
         self.mock_availability_cache_service.set_availability.assert_called_once()
     
@@ -409,7 +595,7 @@ class TestStorageConfigService(unittest.TestCase):
         cached_result = {"enabled": False}
         self.mock_availability_cache_service.get_availability.return_value = cached_result
         
-        result = self.storage_config_service.has_kv_storage()
+        result = self.storage_config_service.is_kv_storage_enabled()
         self.assertFalse(result)
         self.mock_availability_cache_service.get_availability.assert_called_with("storage", "kv")
         
@@ -417,7 +603,7 @@ class TestStorageConfigService(unittest.TestCase):
         self.mock_availability_cache_service.reset_mock()
         self.mock_availability_cache_service.get_availability.return_value = None
         
-        result = self.storage_config_service.has_kv_storage()
+        result = self.storage_config_service.is_kv_storage_enabled()
         self.assertTrue(result)  # KV is configured in setUp
         self.mock_availability_cache_service.set_availability.assert_called_once()
     
@@ -437,6 +623,24 @@ class TestStorageConfigService(unittest.TestCase):
         
         result = self.storage_config_service.is_json_storage_enabled()
         self.assertTrue(result)  # JSON is configured in setUp
+        self.mock_availability_cache_service.set_availability.assert_called_once()
+    
+    def test_is_blob_storage_enabled_cache_scenarios(self):
+        """Test blob storage availability with cache scenarios."""
+        # Test cache hit scenario
+        cached_result = {"enabled": True}
+        self.mock_availability_cache_service.get_availability.return_value = cached_result
+        
+        result = self.storage_config_service.is_blob_storage_enabled()
+        self.assertTrue(result)
+        self.mock_availability_cache_service.get_availability.assert_called_with("storage", "blob")
+        
+        # Reset mock and test cache miss
+        self.mock_availability_cache_service.reset_mock()
+        self.mock_availability_cache_service.get_availability.return_value = None
+        
+        result = self.storage_config_service.is_blob_storage_enabled()
+        self.assertTrue(result)  # Blob is configured in setUp
         self.mock_availability_cache_service.set_availability.assert_called_once()
     
     def test_cache_service_unavailable_fallback(self):
@@ -468,6 +672,272 @@ class TestStorageConfigService(unittest.TestCase):
         
         # Cache should have been attempted but failed gracefully
         self.mock_availability_cache_service.get_availability.assert_called_once_with("storage", "csv")
+    
+    def test_is_storage_type_enabled(self):
+        """Test checking if storage types are enabled."""
+        # Test all configured storage types
+        self.assertTrue(self.storage_config_service.is_storage_type_enabled('csv'))
+        self.assertTrue(self.storage_config_service.is_storage_type_enabled('vector'))
+        self.assertTrue(self.storage_config_service.is_storage_type_enabled('kv'))
+        self.assertTrue(self.storage_config_service.is_storage_type_enabled('json'))
+        self.assertTrue(self.storage_config_service.is_storage_type_enabled('blob'))
+        self.assertTrue(self.storage_config_service.is_storage_type_enabled('file'))
+        
+        # Test non-configured storage type
+        self.assertFalse(self.storage_config_service.is_storage_type_enabled('missing'))
+    
+    def test_is_storage_type_enabled_disabled_storage(self):
+        """Test storage type checking with explicitly disabled storage."""
+        # Set up config with disabled CSV storage (which does check enabled field)
+        self.mock_config_service.load_config.return_value = {
+            'csv': {
+                'enabled': False,
+                'default_directory': 'data/csv'
+            }
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        # Should return False for explicitly disabled CSV storage
+        self.assertFalse(service.is_storage_type_enabled('csv'))
+    
+    def test_is_storage_type_enabled_blob_with_empty_config(self):
+        """Test blob storage type checking with empty configuration."""
+        # Set up config with empty blob storage (is_blob_storage_enabled now checks enabled field)
+        self.mock_config_service.load_config.return_value = {
+            'blob': {}  # Empty config missing default_directory, should return False
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        # Should return False for empty blob config (no default_directory)
+        self.assertFalse(service.is_storage_type_enabled('blob'))
+    
+    def test_is_storage_type_enabled_blob_with_populated_config(self):
+        """Test blob storage type checking with populated configuration."""
+        # Set up config with populated blob storage
+        self.mock_config_service.load_config.return_value = {
+            'blob': {
+                'default_directory': 'data/blob',
+                'providers': {'file': {'base_path': 'data/blob/files'}}
+            }
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        # Should return True for populated blob config
+        self.assertTrue(service.is_storage_type_enabled('blob'))
+    
+    def test_is_storage_type_enabled_missing_blob_config(self):
+        """Test blob storage type checking with missing configuration."""
+        # Set up config without blob storage
+        self.mock_config_service.load_config.return_value = {
+            'csv': {'default_directory': 'data/csv'}
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        # Should return False for missing blob config
+        self.assertFalse(service.is_storage_type_enabled('blob'))
+    
+    def test_get_blob_data_path(self):
+        """Test getting blob data directory path."""
+        # Mock Path operations to avoid actually creating directories
+        with patch('pathlib.Path.mkdir') as mock_mkdir:
+            result = self.storage_config_service.get_blob_data_path()
+            
+            # Should return correct path (normalize for cross-platform compatibility)
+            self.assertEqual(str(result), os.path.normpath('data/blob'))
+            
+            # Should attempt to create directory since blob is enabled
+            mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+    
+    def test_get_blob_data_path_with_empty_config(self):
+        """Test getting blob data path when blob storage config is empty."""
+        # Set up config with empty blob storage (is_blob_storage_enabled returns False for {})
+        self.mock_config_service.load_config.return_value = {
+            'blob': {}  # Empty config, is_blob_storage_enabled() returns False
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        # Mock Path operations to verify directory creation is not attempted
+        with patch('pathlib.Path.mkdir') as mock_mkdir:
+            result = service.get_blob_data_path()
+            
+            # Should return default path (normalize for cross-platform compatibility)
+            self.assertEqual(str(result), os.path.normpath('data/blob'))
+            
+            # Should not attempt to create directory since blob config is empty
+            mock_mkdir.assert_not_called()
+    
+    def test_get_blob_data_path_with_enabled_false(self):
+        """Test getting blob data path when blob has enabled=false but config exists."""
+        # Set up config with enabled=false but non-empty config
+        # Note: is_blob_storage_enabled() now properly checks the enabled field
+        self.mock_config_service.load_config.return_value = {
+            'blob': {
+                'enabled': False,  # This field is now respected by is_blob_storage_enabled()
+                'default_directory': 'data/blob'
+            }
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        # Mock Path operations - directory creation should NOT be attempted since enabled=False
+        with patch('pathlib.Path.mkdir') as mock_mkdir:
+            result = service.get_blob_data_path()
+            
+            # Should return correct path (normalize for cross-platform compatibility)
+            self.assertEqual(str(result), os.path.normpath('data/blob'))
+            
+            # Should NOT attempt to create directory since is_blob_storage_enabled() returns False
+            # (because enabled=False is explicitly set)
+            mock_mkdir.assert_not_called()
+
+    def test_has_vector_storage_with_enabled_false(self):
+        """Test vector storage availability when explicitly disabled."""
+        # Set up config with enabled=false
+        self.mock_config_service.load_config.return_value = {
+            'vector': {
+                'enabled': False,
+                'default_directory': 'data/vector',
+                'default_provider': 'local'
+            }
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        # Should return False when explicitly disabled
+        self.assertFalse(service.is_vector_storage_enabled())
+
+    def test_has_vector_storage_missing_default_directory(self):
+        """Test vector storage availability when default_directory is missing."""
+        # Set up config without default_directory
+        self.mock_config_service.load_config.return_value = {
+            'vector': {
+                'default_provider': 'local'
+                # Missing default_directory
+            }
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        # Should return False when default_directory is missing
+        self.assertFalse(service.is_vector_storage_enabled())
+
+    def test_has_kv_storage_with_enabled_false(self):
+        """Test KV storage availability when explicitly disabled."""
+        # Set up config with enabled=false
+        self.mock_config_service.load_config.return_value = {
+            'kv': {
+                'enabled': False,
+                'default_directory': 'data/kv',
+                'default_provider': 'local'
+            }
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        # Should return False when explicitly disabled
+        self.assertFalse(service.is_kv_storage_enabled())
+
+    def test_has_kv_storage_missing_default_directory(self):
+        """Test KV storage availability when default_directory is missing."""
+        # Set up config without default_directory
+        self.mock_config_service.load_config.return_value = {
+            'kv': {
+                'default_provider': 'local'
+                # Missing default_directory
+            }
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        # Should return False when default_directory is missing
+        self.assertFalse(service.is_kv_storage_enabled())
+
+    def test_is_blob_storage_enabled_with_enabled_false(self):
+        """Test blob storage availability when explicitly disabled."""
+        # Set up config with enabled=false
+        self.mock_config_service.load_config.return_value = {
+            'blob': {
+                'enabled': False,
+                'default_directory': 'data/blob',
+                'default_provider': 'file'
+            }
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        # Should return False when explicitly disabled
+        self.assertFalse(service.is_blob_storage_enabled())
+
+    def test_is_blob_storage_enabled_missing_default_directory(self):
+        """Test blob storage availability when default_directory is missing."""
+        # Set up config without default_directory
+        self.mock_config_service.load_config.return_value = {
+            'blob': {
+                'default_provider': 'file',
+                'providers': {
+                    'file': {'base_path': 'data/blob/files'}
+                }
+                # Missing default_directory
+            }
+        }
+        
+        service = StorageConfigService(
+            config_service=self.mock_config_service,
+            storage_config_path=self.config_path,
+            availability_cache_service=self.mock_availability_cache_service
+        )
+        
+        # Should return False when default_directory is missing
+        self.assertFalse(service.is_blob_storage_enabled())
 
 
 if __name__ == '__main__':

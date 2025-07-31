@@ -259,6 +259,41 @@ class MockServiceFactory:
                 "provider": "memory",
                 "collections": {}
             },
+            "blob": {
+                "enabled": True,
+                "default_provider": "azure",
+                "default_directory": "data/blobs",
+                "providers": {
+                    "azure": {
+                        "account_name": "test_account",
+                        "account_key": "test_key",
+                        "container_name": "test-container",
+                        "enabled": True
+                    },
+                    "s3": {
+                        "access_key_id": "test_access_key",
+                        "secret_access_key": "test_secret_key",
+                        "bucket_name": "test-bucket",
+                        "region": "us-east-1",
+                        "enabled": False
+                    },
+                    "gcs": {
+                        "project_id": "test-project",
+                        "bucket_name": "test-bucket",
+                        "credentials_file": "path/to/credentials.json",
+                        "enabled": False
+                    },
+                    "file": {
+                        "base_directory": "data/blobs",
+                        "create_directories": True,
+                        "enabled": True
+                    }
+                },
+                "collections": {
+                    "documents": {"container": "documents"},
+                    "uploads": {"container": "uploads"}
+                }
+            },
             "providers": {
                 "firebase": {"enabled": False},
                 "mongodb": {"enabled": False},
@@ -325,6 +360,48 @@ class MockServiceFactory:
         
         mock_service.get_kv_config.return_value = defaults["kv"]
         
+        # Blob config methods
+        mock_service.get_blob_config.return_value = defaults["blob"]
+        
+        def is_blob_storage_enabled() -> bool:
+            """Check if blob storage is configured and enabled."""
+            blob_config = defaults["blob"]
+            return blob_config.get("enabled", False)
+        
+        def get_blob_provider_config(provider: str) -> Dict[str, Any]:
+            """Get configuration for a specific blob provider."""
+            blob_config = defaults["blob"]
+            providers = blob_config.get("providers", {})
+            return providers.get(provider, {})
+        
+        def validate_blob_config() -> Dict[str, Any]:
+            """Validate blob configuration and return validation summary."""
+            blob_config = defaults["blob"]
+            enabled_providers = []
+            disabled_providers = []
+            
+            providers = blob_config.get("providers", {})
+            for provider_name, provider_config in providers.items():
+                if provider_config.get("enabled", False):
+                    enabled_providers.append(provider_name)
+                else:
+                    disabled_providers.append(provider_name)
+            
+            return {
+                "valid": True,
+                "enabled": blob_config.get("enabled", False),
+                "enabled_providers": enabled_providers,
+                "disabled_providers": disabled_providers,
+                "default_provider": blob_config.get("default_provider"),
+                "total_providers": len(providers),
+                "collections_count": len(blob_config.get("collections", {})),
+                "summary": f"Blob storage {'enabled' if blob_config.get('enabled') else 'disabled'} with {len(enabled_providers)} provider(s) active"
+            }
+        
+        mock_service.is_blob_storage_enabled.side_effect = is_blob_storage_enabled
+        mock_service.get_blob_provider_config.side_effect = get_blob_provider_config
+        mock_service.validate_blob_config.side_effect = validate_blob_config
+        
         # Provider-specific methods
         def get_provider_config(provider_name: str) -> Dict[str, Any]:
             """Get configuration for a specific provider."""
@@ -353,6 +430,11 @@ class MockServiceFactory:
                     "include_metadata": file_config.get("include_metadata", True),
                     "enabled": file_config.get("enabled", True)
                 }
+            # Handle blob providers (azure, s3, gcs, file)
+            elif provider_name in ["azure", "s3", "gcs"]:
+                blob_config = defaults["blob"]
+                providers = blob_config.get("providers", {})
+                return providers.get(provider_name, {})
             return defaults["providers"].get(provider_name, {})
         
         mock_service.get_provider_config.side_effect = get_provider_config
@@ -396,18 +478,41 @@ class MockServiceFactory:
             """Check if key-value storage is available."""
             return defaults["kv"].get("enabled", False)
         
+        def is_blob_storage_enabled() -> bool:
+            """Check if blob storage is configured and enabled."""
+            blob_config = defaults["blob"]
+            return blob_config.get("enabled", False)
+        
         def is_provider_configured(provider: str) -> bool:
             """Check if a specific storage provider is configured."""
             return defaults["providers"].get(provider, {}).get("enabled", False)
+        
+        def is_storage_type_enabled(storage_type: str) -> bool:
+            """Check if a specific storage type is enabled."""
+            storage_map = {
+                "csv": is_csv_storage_enabled,
+                "json": is_json_storage_enabled,
+                "vector": is_vector_storage_enabled,
+                "memory": is_memory_storage_enabled,
+                "file": is_file_storage_enabled,
+                "kv": lambda: defaults["kv"].get("enabled", False),
+                "blob": is_blob_storage_enabled
+            }
+            check_function = storage_map.get(storage_type)
+            if check_function:
+                return check_function()
+            return False
         
         mock_service.is_csv_storage_enabled.side_effect = is_csv_storage_enabled
         mock_service.is_json_storage_enabled.side_effect = is_json_storage_enabled
         mock_service.is_vector_storage_enabled.side_effect = is_vector_storage_enabled
         mock_service.is_memory_storage_enabled.side_effect = is_memory_storage_enabled
         mock_service.is_file_storage_enabled.side_effect = is_file_storage_enabled
+        mock_service.is_blob_storage_enabled.side_effect = is_blob_storage_enabled
         mock_service.has_vector_storage.side_effect = has_vector_storage
         mock_service.has_kv_storage.side_effect = has_kv_storage
         mock_service.is_provider_configured.side_effect = is_provider_configured
+        mock_service.is_storage_type_enabled.side_effect = is_storage_type_enabled
         
         # Path accessor methods
         def get_csv_data_path() -> Path:
@@ -430,6 +535,11 @@ class MockServiceFactory:
             file_config = defaults["file"]
             return Path(file_config.get("base_directory", "data/files"))
         
+        def get_blob_data_path() -> Path:
+            """Get the blob data directory path."""
+            blob_config = defaults["blob"]
+            return Path(blob_config.get("default_directory", "data/blobs"))
+        
         def get_collection_file_path(collection_name: str) -> Path:
             """Get the full file path for a CSV collection."""
             csv_path = get_csv_data_path()
@@ -450,6 +560,7 @@ class MockServiceFactory:
         mock_service.get_json_data_path.side_effect = get_json_data_path
         mock_service.get_vector_data_path.side_effect = get_vector_data_path
         mock_service.get_file_data_path.side_effect = get_file_data_path
+        mock_service.get_blob_data_path.side_effect = get_blob_data_path
         mock_service.get_collection_file_path.side_effect = get_collection_file_path
         mock_service.get_json_collection_file_path.side_effect = get_json_collection_file_path
         
@@ -482,7 +593,8 @@ class MockServiceFactory:
             providers_map = {
                 "csv": "csv",
                 "vector": "local",
-                "kv": "memory"
+                "kv": "memory",
+                "blob": "azure"
             }
             return providers_map.get(storage_type, "unknown")
         

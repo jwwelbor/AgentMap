@@ -169,6 +169,15 @@ class StorageConfigService:
         """
         return self._config_data.get("json", {})
 
+    def get_blob_config(self) -> Dict[str, Any]:
+        """
+        Get blob storage configuration.
+
+        Returns:
+            Dictionary containing blob storage configuration
+        """
+        return self._config_data.get("blob", {})
+
     def get_provider_config(self, provider: str) -> Dict[str, Any]:
         """
         Get configuration for a specific storage provider.
@@ -286,6 +295,19 @@ class StorageConfigService:
                 summary[f"{storage_type}_collections"] = collections
                 summary[f"{storage_type}_collection_count"] = len(collections)
 
+        # Add blob storage information if configured
+        if "blob" in self._config_data:
+            blob_config = self._config_data["blob"]
+            if isinstance(blob_config, dict):
+                providers = blob_config.get("providers", {})
+                summary["blob_providers"] = (
+                    list(providers.keys()) if isinstance(providers, dict) else []
+                )
+                summary["blob_provider_count"] = (
+                    len(providers) if isinstance(providers, dict) else 0
+                )
+                summary["blob_default_provider"] = blob_config.get("default_provider")
+
         return summary
 
     # Provider-specific named methods following configuration patterns
@@ -334,12 +356,25 @@ class StorageConfigService:
         """
         return self.get_provider_config("json")
 
+    def get_blob_provider_config(self, provider: str) -> Dict[str, Any]:
+        """
+        Get blob storage provider configuration for specific providers.
+
+        Args:
+            provider: Blob storage provider name ("azure", "s3", "gcs", "file")
+
+        Returns:
+            Dictionary containing blob provider-specific configuration
+        """
+        blob_config = self.get_blob_config()
+        return blob_config.get("providers", {}).get(provider, {})
+
     def _get_cached_availability(self, storage_type: str) -> Optional[Dict[str, Any]]:
         """
         Get cached availability using unified cache service.
 
         Args:
-            storage_type: Storage type to check ("csv", "vector", "kv", "json")
+            storage_type: Storage type to check ("csv", "vector", "kv", "json", "blob")
 
         Returns:
             Cached availability data or None if not found/invalid
@@ -362,7 +397,7 @@ class StorageConfigService:
         Set cached availability using unified cache service.
 
         Args:
-            storage_type: Storage type ("csv", "vector", "kv", "json")
+            storage_type: Storage type ("csv", "vector", "kv", "json", "blob")
             result: Availability result data to cache
 
         Returns:
@@ -425,12 +460,12 @@ class StorageConfigService:
         except Exception:
             return False
 
-    def has_vector_storage(self) -> bool:
+    def is_vector_storage_enabled(self) -> bool:
         """
-        Check if vector storage is available.
+        Check if vector storage is available and enabled.
 
         Returns:
-            True if vector storage is configured.
+            True if vector storage is configured and enabled.
         """
         # Try cache first
         cached_result = self._get_cached_availability("vector")
@@ -441,17 +476,30 @@ class StorageConfigService:
         # Fallback to direct config check
         try:
             vector_config = self.get_vector_config()
-            enabled = bool(vector_config)
+            if not isinstance(vector_config, dict):
+                enabled = False
+            elif vector_config.get("enabled") is False:
+                # Check if explicitly disabled first
+                enabled = False
+            elif not vector_config.get("default_directory"):
+                # Must have a default_directory to be considered configured
+                enabled = False
+            else:
+                enabled = True
 
             # Cache the result
             result = {
                 "enabled": enabled,
                 "validation_passed": enabled,
-                "last_error": None if enabled else "Vector storage not configured",
+                "last_error": (
+                    None if enabled else "Vector storage not properly configured"
+                ),
                 "checked_at": "direct_config_check",
                 "warnings": [],
                 "performance_metrics": {"validation_duration": 0.0},
-                "validation_results": {"config_present": enabled},
+                "validation_results": {
+                    "config_present": isinstance(vector_config, dict)
+                },
             }
             self._set_cached_availability("vector", result)
 
@@ -459,12 +507,12 @@ class StorageConfigService:
         except Exception:
             return False
 
-    def has_kv_storage(self) -> bool:
+    def is_kv_storage_enabled(self) -> bool:
         """
-        Check if key-value storage is available.
+        Check if key-value storage is available and enabled.
 
         Returns:
-            True if key-value storage is configured.
+            True if key-value storage is configured and enabled.
         """
         # Try cache first
         cached_result = self._get_cached_availability("kv")
@@ -475,17 +523,28 @@ class StorageConfigService:
         # Fallback to direct config check
         try:
             kv_config = self.get_kv_config()
-            enabled = bool(kv_config)
+            if not isinstance(kv_config, dict):
+                enabled = False
+            elif kv_config.get("enabled") is False:
+                # Check if explicitly disabled first
+                enabled = False
+            elif not kv_config.get("default_directory"):
+                # Must have a default_directory to be considered configured
+                enabled = False
+            else:
+                enabled = True
 
             # Cache the result
             result = {
                 "enabled": enabled,
                 "validation_passed": enabled,
-                "last_error": None if enabled else "KV storage not configured",
+                "last_error": (
+                    None if enabled else "KV storage not properly configured"
+                ),
                 "checked_at": "direct_config_check",
                 "warnings": [],
                 "performance_metrics": {"validation_duration": 0.0},
-                "validation_results": {"config_present": enabled},
+                "validation_results": {"config_present": isinstance(kv_config, dict)},
             }
             self._set_cached_availability("kv", result)
 
@@ -538,6 +597,51 @@ class StorageConfigService:
         except Exception:
             return False
 
+    def is_blob_storage_enabled(self) -> bool:
+        """
+        Check if blob storage is available and enabled.
+
+        Returns:
+            True if blob storage is configured and enabled.
+        """
+        # Try cache first
+        cached_result = self._get_cached_availability("blob")
+        if cached_result:
+            self._logger.debug("Using cached availability for blob storage")
+            return cached_result.get("enabled", False)
+
+        # Fallback to direct config check
+        try:
+            blob_config = self.get_blob_config()
+            if not isinstance(blob_config, dict):
+                enabled = False
+            elif blob_config.get("enabled") is False:
+                # Check if explicitly disabled first
+                enabled = False
+            elif not blob_config.get("default_directory"):
+                # Must have a default_directory to be considered configured
+                enabled = False
+            else:
+                enabled = True
+
+            # Cache the result
+            result = {
+                "enabled": enabled,
+                "validation_passed": enabled,
+                "last_error": (
+                    None if enabled else "Blob storage not properly configured"
+                ),
+                "checked_at": "direct_config_check",
+                "warnings": [],
+                "performance_metrics": {"validation_duration": 0.0},
+                "validation_results": {"config_present": isinstance(blob_config, dict)},
+            }
+            self._set_cached_availability("blob", result)
+
+            return enabled
+        except Exception:
+            return False
+
     def is_provider_configured(self, provider: str) -> bool:
         """
         Check if a specific storage provider is configured.
@@ -556,7 +660,7 @@ class StorageConfigService:
         Check if a storage type is enabled.
 
         Args:
-            storage_type: Type of storage ("csv", "vector", "kv", "json", "file")
+            storage_type: Type of storage ("csv", "vector", "kv", "json", "blob", "file")
 
         Returns:
             True if storage type is enabled
@@ -564,11 +668,13 @@ class StorageConfigService:
         if storage_type == "csv":
             return self.is_csv_storage_enabled()
         elif storage_type == "vector":
-            return self.has_vector_storage()
+            return self.is_vector_storage_enabled()
         elif storage_type == "kv":
-            return self.has_kv_storage()
+            return self.is_kv_storage_enabled()
         elif storage_type == "json":
             return self.is_json_storage_enabled()
+        elif storage_type == "blob":
+            return self.is_blob_storage_enabled()
         elif storage_type == "file":
             # File storage follows same pattern as CSV/JSON
             try:
@@ -646,7 +752,7 @@ class StorageConfigService:
         data_path = Path(vector_config.get("default_directory", "data/vector"))
 
         # Business logic: ensure directory exists if enabled
-        if self.has_vector_storage():
+        if self.is_vector_storage_enabled():
             try:
                 data_path.mkdir(parents=True, exist_ok=True)
                 self._logger.debug(
@@ -670,7 +776,7 @@ class StorageConfigService:
         data_path = Path(kv_config.get("default_directory", "data/kv"))
 
         # Business logic: ensure directory exists if enabled
-        if self.has_kv_storage():
+        if self.is_kv_storage_enabled():
             try:
                 data_path.mkdir(parents=True, exist_ok=True)
                 self._logger.debug(
@@ -721,6 +827,30 @@ class StorageConfigService:
         collection_config = self.get_collection_config("json", collection_name)
         filename = collection_config.get("filename", f"{collection_name}.json")
         return json_path / filename
+
+    def get_blob_data_path(self) -> Path:
+        """
+        Get the blob data directory path.
+
+        Returns:
+            Path to blob data directory
+        """
+        blob_config = self.get_blob_config()
+        data_path = Path(blob_config.get("default_directory", "data/blob"))
+
+        # Business logic: ensure directory exists if enabled
+        if self.is_blob_storage_enabled():
+            try:
+                data_path.mkdir(parents=True, exist_ok=True)
+                self._logger.debug(
+                    f"[StorageConfigService] Blob data path ensured: {data_path}"
+                )
+            except Exception as e:
+                self._logger.warning(
+                    f"[StorageConfigService] Could not create blob data directory {data_path}: {e}"
+                )
+
+        return data_path
 
     # Enhanced validation methods following configuration patterns
     def validate_csv_config(self) -> Dict[str, Any]:
@@ -833,7 +963,7 @@ class StorageConfigService:
 
         vector_config = self.get_vector_config()
 
-        if self.has_vector_storage():
+        if self.is_vector_storage_enabled():
             # Check for provider configuration
             provider = vector_config.get("default_provider")
             if not provider:
@@ -854,7 +984,7 @@ class StorageConfigService:
             "warnings": warnings,
             "errors": errors,
             "summary": {
-                "vector_enabled": self.has_vector_storage(),
+                "vector_enabled": self.is_vector_storage_enabled(),
                 "provider": vector_config.get("default_provider"),
                 "collections_count": len(vector_config.get("collections", {})),
             },
@@ -872,7 +1002,7 @@ class StorageConfigService:
 
         kv_config = self.get_kv_config()
 
-        if self.has_kv_storage():
+        if self.is_kv_storage_enabled():
             # Check for provider configuration
             provider = kv_config.get("default_provider")
             if not provider:
@@ -888,7 +1018,7 @@ class StorageConfigService:
             "warnings": warnings,
             "errors": errors,
             "summary": {
-                "kv_enabled": self.has_kv_storage(),
+                "kv_enabled": self.is_kv_storage_enabled(),
                 "provider": kv_config.get("default_provider"),
                 "data_path": str(self.get_kv_data_path()),
             },
@@ -992,6 +1122,100 @@ class StorageConfigService:
                 },
             }
 
+    def validate_blob_config(self) -> Dict[str, Any]:
+        """
+        Validate blob storage configuration.
+
+        Returns:
+            Dictionary with validation status similar to other validation methods
+        """
+        warnings = []
+        errors = []
+
+        try:
+            blob_config = self.get_blob_config()
+
+            # Skip validation if blob config is not a dictionary (handled by parent validation)
+            if not isinstance(blob_config, dict):
+                return {
+                    "valid": False,
+                    "warnings": warnings,
+                    "errors": ["Blob configuration is not properly structured"],
+                    "summary": {
+                        "blob_enabled": False,
+                        "providers_count": 0,
+                        "data_path": "unknown",
+                    },
+                }
+
+            # Validate blob storage is available
+            if not self.is_blob_storage_enabled():
+                if blob_config.get("enabled") is False:
+                    warnings.append("Blob storage is explicitly disabled")
+                else:
+                    warnings.append("Blob storage configuration may be incomplete")
+            else:
+                # Validate directory exists if blob is enabled
+                try:
+                    data_path = self.get_blob_data_path()
+                    if not data_path.exists():
+                        warnings.append(
+                            f"Blob data directory does not exist: {data_path}"
+                        )
+                except Exception as e:
+                    warnings.append(f"Could not validate blob data path: {e}")
+
+            # Validate providers configuration
+            providers = blob_config.get("providers", {})
+            if isinstance(providers, dict):
+                for provider_name, provider_config in providers.items():
+                    if not isinstance(provider_config, dict):
+                        errors.append(
+                            f"Blob provider '{provider_name}' configuration must be a dictionary"
+                        )
+                    elif provider_name not in ["azure", "s3", "gcs", "file"]:
+                        warnings.append(
+                            f"Unknown blob provider '{provider_name}'. Supported providers: azure, s3, gcs, file"
+                        )
+            elif providers:
+                errors.append("Blob providers configuration must be a dictionary")
+
+            # Validate default provider if specified
+            default_provider = blob_config.get("default_provider")
+            if default_provider and default_provider not in providers:
+                errors.append(
+                    f"Default blob provider '{default_provider}' is not configured in providers section"
+                )
+
+            return {
+                "valid": len(errors) == 0,
+                "warnings": warnings,
+                "errors": errors,
+                "summary": {
+                    "blob_enabled": self.is_blob_storage_enabled(),
+                    "providers_count": (
+                        len(providers) if isinstance(providers, dict) else 0
+                    ),
+                    "default_provider": default_provider,
+                    "data_path": (
+                        str(self.get_blob_data_path())
+                        if self.is_blob_storage_enabled()
+                        else "not configured"
+                    ),
+                },
+            }
+        except Exception as e:
+            return {
+                "valid": False,
+                "warnings": warnings,
+                "errors": [f"Error validating blob configuration: {e}"],
+                "summary": {
+                    "blob_enabled": False,
+                    "providers_count": 0,
+                    "data_path": "validation error",
+                },
+            }
+
     def validate_all_storage_config(self) -> Dict[str, Any]:
         """
         Validate all storage configuration sections.
@@ -1003,7 +1227,7 @@ class StorageConfigService:
         all_errors = []
 
         # First check for missing storage types (for backward compatibility)
-        expected_types = ["csv", "vector", "kv", "json"]
+        expected_types = ["csv", "vector", "kv", "json", "blob"]
         for storage_type in expected_types:
             if storage_type not in self._config_data:
                 all_warnings.append(
@@ -1051,6 +1275,11 @@ class StorageConfigService:
                 all_warnings.extend(json_result.get("warnings", []))
                 all_errors.extend(json_result.get("errors", []))
 
+            if "blob" in self._config_data:
+                blob_result = self.validate_blob_config()
+                all_warnings.extend(blob_result.get("warnings", []))
+                all_errors.extend(blob_result.get("errors", []))
+
         return {
             "valid": len(all_errors) == 0,
             "warnings": all_warnings,
@@ -1059,7 +1288,7 @@ class StorageConfigService:
                 "total_storage_types": len(
                     [
                         t
-                        for t in ["csv", "vector", "kv", "json"]
+                        for t in ["csv", "vector", "kv", "json", "blob"]
                         if t in self._config_data
                         and isinstance(self._config_data[t], dict)
                     ]
@@ -1101,6 +1330,16 @@ class StorageConfigService:
                     else {
                         "json_enabled": False,
                         "collections_count": 0,
+                        "data_path": "not configured",
+                    }
+                ),
+                "blob": (
+                    self.validate_blob_config().get("summary", {})
+                    if "blob" in self._config_data
+                    and isinstance(self._config_data.get("blob"), dict)
+                    else {
+                        "blob_enabled": False,
+                        "providers_count": 0,
                         "data_path": "not configured",
                     }
                 ),

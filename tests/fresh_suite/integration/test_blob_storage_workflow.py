@@ -146,7 +146,7 @@ kv:
         
         if storage_manager is not None:
             # Should be able to check for blob storage
-            has_blob = storage_manager.has_blob_storage()
+            has_blob = storage_manager.is_blob_storage_enabled()
             
             if has_blob:
                 # Should be able to get blob storage service
@@ -761,15 +761,18 @@ kv:
     
     def test_blob_storage_configuration_flexibility(self):
         """Test blob storage configuration flexibility."""
-        # Test with different configuration structures
+        # Test with different blob configuration structures
         config_variations = [
-            {"storage": {"blob": {"providers": {"file": {}}}}},
-            {"blob_storage": {"providers": {"file": {}}}},
-            {"cloud_storage": {"providers": {"file": {}}}},
+            {"blob": {"providers": {"file": {}}}},
+            {"blob": {"providers": {"azure": {"connection_string": "test"}}}},
+            {"blob": {"providers": {"s3": {"access_key": "test", "secret_key": "test"}}}},
         ]
         
         for config_data in config_variations:
-            mock_config = MockServiceFactory.create_mock_app_config_service(config_data)
+            # Create mock StorageConfigService with blob configuration
+            mock_config = Mock()
+            mock_config.get_blob_config.return_value = config_data.get("blob", {})
+            
             mock_logging = MockServiceFactory.create_mock_logging_service()
             
             # Should create service successfully

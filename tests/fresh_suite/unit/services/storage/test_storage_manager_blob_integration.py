@@ -97,7 +97,7 @@ kv:
         # If storage manager was created successfully, check blob integration
         if storage_manager is not None:
             # Check if blob storage is available
-            has_blob = storage_manager.has_blob_storage()
+            has_blob = storage_manager.is_blob_storage_enabled()
             
             # If blob storage is available, verify integration
             if has_blob:
@@ -140,7 +140,7 @@ kv:
         
         # Assert
         self.assertIsNotNone(storage_manager)
-        self.assertFalse(storage_manager.has_blob_storage())
+        self.assertFalse(storage_manager.is_blob_storage_enabled())
         self.assertIsNone(storage_manager.get_blob_storage_service())
         
         # Blob should not be in available providers
@@ -171,7 +171,7 @@ kv:
         
         # Assert
         self.assertIsNotNone(storage_manager)
-        self.assertTrue(storage_manager.has_blob_storage())
+        self.assertTrue(storage_manager.is_blob_storage_enabled())
         self.assertEqual(storage_manager.get_blob_storage_service(), mock_blob_service)
         
         # Blob should be in available providers
@@ -210,7 +210,7 @@ kv:
         
         # Assert
         self.assertIsNotNone(storage_manager)
-        self.assertTrue(storage_manager.has_blob_storage())
+        self.assertTrue(storage_manager.is_blob_storage_enabled())
         
         # Should handle health check failure gracefully
         blob_info = storage_manager.get_service_info("blob")
@@ -257,10 +257,10 @@ kv:
             # Note: These might not be the same instance due to provider patterns,
             # but both should be valid blob storage services
             self.assertIsNotNone(manager_blob_service)
-            self.assertTrue(storage_manager.has_blob_storage())
+            self.assertTrue(storage_manager.is_blob_storage_enabled())
         elif storage_manager is not None:
             # If storage manager exists but blob service is None (graceful degradation)
-            self.assertFalse(storage_manager.has_blob_storage())
+            self.assertFalse(storage_manager.is_blob_storage_enabled())
         # If both are None, that's also valid (complete graceful degradation)
 
 
