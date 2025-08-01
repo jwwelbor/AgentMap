@@ -605,6 +605,20 @@ class TestCacheCorruptionScenarios(unittest.TestCase):
             # Make file read-only
             os.chmod(self.cache_file, 0o444)
             
+            # FIXED: Check if permission change actually took effect
+            # Some CI environments (containers, root access) may not enforce this
+            try:
+                # Try to write a small test to see if permissions are enforced
+                with open(self.cache_file, 'a') as f:
+                    f.write('')  # Empty write to test permissions
+                
+                # If we reach here, permissions aren't enforced in this environment
+                self.skipTest("File permissions not enforced in this environment (CI container/root access)")
+                
+            except (PermissionError, OSError):
+                # Permissions are enforced - proceed with test
+                pass
+            
             # Attempt to write should fail gracefully
             new_data = {"updated": "data"}
             success = self.cache.save_cache(new_data)

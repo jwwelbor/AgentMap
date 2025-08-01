@@ -754,6 +754,20 @@ class TestAvailabilityCacheService(unittest.TestCase):
             # Make cache file read-only
             self.cache_file_path.chmod(0o444)
             
+            # FIXED: Check if permission change actually took effect
+            # Some CI environments (containers, root access) may not enforce this
+            try:
+                # Try to write a small test to see if permissions are enforced
+                with open(self.cache_file_path, 'a') as f:
+                    f.write('')  # Empty write to test permissions
+                
+                # If we reach here, permissions aren't enforced in this environment
+                self.skipTest("File permissions not enforced in this environment (CI container/root access)")
+                
+            except (PermissionError, OSError):
+                # Permissions are enforced - proceed with test
+                pass
+            
             # Write operation should fail but not crash
             success = self.cache_service.set_availability("test", "key2", self.sample_results["success"])
             self.assertFalse(success)
