@@ -220,8 +220,9 @@ class DependencyCheckerService:
             # Check specific provider
             result, missing = self._validate_llm_provider(provider)
 
-            # Update registry with validation result
+            # Update registry with validation result AND availability
             self.features_registry.set_provider_validated("llm", provider, result)
+            self.features_registry.set_provider_available("llm", provider, result)
             if not result:
                 self.features_registry.record_missing_dependencies(
                     f"llm.{provider}", missing
@@ -239,8 +240,11 @@ class DependencyCheckerService:
             for provider_name in ["openai", "anthropic", "google"]:
                 available, missing = self._validate_llm_provider(provider_name)
 
-                # Update registry for each provider
+                # Update registry for each provider - SET BOTH validated AND available
                 self.features_registry.set_provider_validated(
+                    "llm", provider_name, available
+                )
+                self.features_registry.set_provider_available(
                     "llm", provider_name, available
                 )
 
@@ -286,8 +290,11 @@ class DependencyCheckerService:
             # Check specific storage type
             result, missing = self._validate_storage_type(storage_type)
 
-            # Update registry with validation result
+            # Update registry with validation result AND availability
             self.features_registry.set_provider_validated(
+                "storage", storage_type, result
+            )
+            self.features_registry.set_provider_available(
                 "storage", storage_type, result
             )
             if not result:
@@ -303,8 +310,9 @@ class DependencyCheckerService:
             # Check core storage dependencies (CSV is always required)
             result, missing = self._validate_storage_type("csv")
 
-            # Update registry
+            # Update registry - SET BOTH validated AND available
             self.features_registry.set_provider_validated("storage", "csv", result)
+            self.features_registry.set_provider_available("storage", "csv", result)
             if not result:
                 self.features_registry.record_missing_dependencies("storage", missing)
 
@@ -361,8 +369,11 @@ class DependencyCheckerService:
                 is_available, missing = self._validate_llm_provider(provider)
                 results[provider] = is_available
 
-                # Update registry
+                # Update registry - CRITICAL FIX: Set both validated AND available
                 self.features_registry.set_provider_validated(
+                    "llm", provider, is_available
+                )
+                self.features_registry.set_provider_available(
                     "llm", provider, is_available
                 )
                 if not is_available:
@@ -375,8 +386,11 @@ class DependencyCheckerService:
                 is_available, missing = self._validate_storage_type(storage_type)
                 results[storage_type] = is_available
 
-                # Update registry
+                # Update registry - CRITICAL FIX: Set both validated AND available  
                 self.features_registry.set_provider_validated(
+                    "storage", storage_type, is_available
+                )
+                self.features_registry.set_provider_available(
                     "storage", storage_type, is_available
                 )
                 if not is_available:

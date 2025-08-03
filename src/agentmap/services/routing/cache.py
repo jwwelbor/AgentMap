@@ -44,7 +44,6 @@ class RoutingCache:
     with configurable TTL and maximum cache size.
     """
 
-    @inject
     def __init__(
         self,
         logging_service: LoggingService,  # injected

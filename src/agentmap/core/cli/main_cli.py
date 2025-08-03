@@ -13,6 +13,7 @@ from agentmap._version import __version__
 from agentmap.core.cli.diagnostic_commands import (
     config_cmd,
     diagnose_cmd,
+    init_config_command,
     inspect_graph_cmd,
     validate_cache_cmd,
 )
@@ -74,6 +75,7 @@ app.command("resume")(resume_command)
 # ============================================================================
 
 app.command("config")(config_cmd)
+app.command("init-config")(init_config_command)
 
 # ============================================================================
 # VALIDATION COMMANDS
