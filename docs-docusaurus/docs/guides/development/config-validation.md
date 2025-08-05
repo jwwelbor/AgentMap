@@ -262,7 +262,7 @@ llm:
 
 # Known models by provider:
 # OpenAI: gpt-3.5-turbo, gpt-4, gpt-4-turbo-preview, gpt-4o
-# Anthropic: claude-3-sonnet-20240229, claude-3-opus-20240229, claude-3-haiku-20240307  
+# Anthropic: claude-3-5-sonnet-20241022, claude-3-opus-20240229, claude-3-haiku-20240307  
 # Google: gemini-1.0-pro, gemini-1.5-pro-latest, gemini-pro
 ```
 
@@ -471,7 +471,7 @@ llm:
     temperature: 0.7
   anthropic:
     api_key: "sk-ant-..."  
-    model: "claude-3-sonnet-20240229"
+    model: "claude-3-5-sonnet-20241022"
     temperature: 0.5
   google:
     api_key: "AIza..."

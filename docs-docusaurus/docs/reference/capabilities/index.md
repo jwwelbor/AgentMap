@@ -106,7 +106,7 @@ class MyLLMAgent(BaseAgent, LLMCapableAgent):
         response = self.llm_service.call_llm(
             provider="anthropic",
             messages=messages,
-            model="claude-3-sonnet-20240229"
+            model="claude-3-5-sonnet-20241022"
         )
         return response
 ```
@@ -116,7 +116,7 @@ class MyLLMAgent(BaseAgent, LLMCapableAgent):
 # CSV context field
 context = {
     'provider': 'anthropic',
-    'model': 'claude-3-sonnet-20240229',
+    'model': 'claude-3-5-sonnet-20241022',
     'temperature': 0.3,
     'memory_key': 'conversation',
     'max_memory_messages': 10,

@@ -4,6 +4,8 @@
 csv:
   # Default directory for CSV files if not specified
   default_directory: "data/csv"
+  # Enable automatic CSV file creation on write operations
+  auto_create_files: true
   
   # Named CSV collections
   collections:

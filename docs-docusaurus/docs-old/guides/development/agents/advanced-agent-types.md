@@ -283,7 +283,7 @@ For direct control over LLM provider and model selection:
 ```json title="Direct Provider Configuration"
 {
   "provider": "anthropic",
-  "model": "claude-3-sonnet-20240229",
+  "model": "claude-3-5-sonnet-20241022",
   "temperature": 0.7,
   "max_tokens": 1000,
   "api_key": "your-api-key"
@@ -416,7 +416,7 @@ SummaryAgent operates in two modes: basic concatenation and LLM-powered summariz
 ```json title="LLM Summary Configuration"
 {
   "llm": "anthropic",
-  "model": "claude-3-sonnet-20240229",
+  "model": "claude-3-5-sonnet-20241022",
   "temperature": 0.3
 }
 ```

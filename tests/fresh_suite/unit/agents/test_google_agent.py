@@ -465,7 +465,7 @@ class TestGoogleAgent(unittest.TestCase):
         """Test how GoogleAgent handles context field overrides."""
         original_context = {
             "provider": "anthropic",  # Should be overridden
-            "model": "claude-3-sonnet-20240229",  # Should be preserved
+            "model": "claude-3-5-sonnet-20241022",  # Should be preserved
             "temperature": 0.1,       # Should be preserved
             "custom_field": "preserved",  # Should be preserved
             "routing_enabled": False
@@ -480,7 +480,7 @@ class TestGoogleAgent(unittest.TestCase):
         
         # Verify provider override but other fields preserved
         self.assertEqual(agent.provider, "google")
-        self.assertEqual(agent.model, "claude-3-sonnet-20240229")  # Non-Google model preserved
+        self.assertEqual(agent.model, "claude-3-5-sonnet-20241022")  # Non-Google model preserved
         self.assertEqual(agent.temperature, 0.1)
         self.assertEqual(agent.context.get("custom_field"), "preserved")
         self.assertFalse(agent.routing_enabled)

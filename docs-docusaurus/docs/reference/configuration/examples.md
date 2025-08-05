@@ -83,7 +83,7 @@ routing:
   routing_matrix:
     anthropic:
       low: "claude-3-haiku-20240307"
-      medium: "claude-3-sonnet-20240229"
+      medium: "claude-3-5-sonnet-20241022"
     openai:
       low: "gpt-3.5-turbo"
       medium: "gpt-4-turbo"
@@ -225,7 +225,7 @@ llm:
     temperature: 0.3
   anthropic:
     api_key: "env:ANTHROPIC_API_KEY"
-    model: "claude-3-sonnet-20240229"
+    model: "claude-3-5-sonnet-20241022"
     temperature: 0.3
   google:
     api_key: "env:GOOGLE_API_KEY"
@@ -239,7 +239,7 @@ routing:
   routing_matrix:
     anthropic:
       low: "claude-3-haiku-20240307"
-      medium: "claude-3-sonnet-20240229"
+      medium: "claude-3-5-sonnet-20241022"
       high: "claude-3-opus-20240229"
       critical: "claude-3-opus-20240229"
     openai:
@@ -539,7 +539,7 @@ routing:
   routing_matrix:
     anthropic:
       low: "claude-3-haiku-20240307"
-      medium: "claude-3-sonnet-20240229"
+      medium: "claude-3-5-sonnet-20241022"
       high: "claude-3-opus-20240229"
       critical: "claude-3-opus-20240229"
     openai:

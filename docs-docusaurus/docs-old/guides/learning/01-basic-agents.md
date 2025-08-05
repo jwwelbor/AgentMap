@@ -45,7 +45,7 @@ import DownloadButton from '@site/src/components/DownloadButton';
   filename="lesson1.csv"
   content={`graph_name,node_name,description,agent_type,next_node,error_node,input_fields,output_field,prompt,context
 PersonalGoals,GetGoal,Collect user's personal goal,input,AnalyzeGoal,ErrorHandler,,goal,What personal goal would you like to work on this year? Please be specific:,
-PersonalGoals,AnalyzeGoal,AI analysis of the goal,llm,SaveGoal,ErrorHandler,goal,analysis,"You are a personal development coach. Analyze this goal and provide: 1) Why this goal is valuable 2) Three specific action steps 3) One potential challenge and how to overcome it. Goal: {goal}","{""provider"": ""anthropic"", ""model"": ""claude-3-sonnet-20240229"", ""temperature"": 0.3}"
+PersonalGoals,AnalyzeGoal,AI analysis of the goal,llm,SaveGoal,ErrorHandler,goal,analysis,"You are a personal development coach. Analyze this goal and provide: 1) Why this goal is valuable 2) Three specific action steps 3) One potential challenge and how to overcome it. Goal: {goal}","{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.3}"
 PersonalGoals,SaveGoal,Save goal and analysis to CSV,csv_writer,ThankUser,ErrorHandler,"goal,analysis",save_result,data/personal_goals.csv,"{""format"": ""records"", ""mode"": ""append""}"
 PersonalGoals,ThankUser,Thank user and show summary,echo,End,,"save_result",final_message,Thank you! Your goal and AI analysis have been saved. You can view your goals database at data/personal_goals.csv,
 PersonalGoals,ErrorHandler,Handle any errors,echo,End,,error,error_message,Sorry there was an error: {error},
@@ -93,7 +93,7 @@ PersonalGoals,GetGoal,Collect user's personal goal,input,AnalyzeGoal,ErrorHandle
 
 ### LLMAgent  
 ```csv
-PersonalGoals,AnalyzeGoal,AI analysis of the goal,llm,SaveGoal,ErrorHandler,goal,analysis,"You are a personal development coach...","{""provider"": ""anthropic"", ""model"": ""claude-3-sonnet-20240229"", ""temperature"": 0.3}"
+PersonalGoals,AnalyzeGoal,AI analysis of the goal,llm,SaveGoal,ErrorHandler,goal,analysis,"You are a personal development coach...","{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.3}"
 ```
 
 **Purpose**: Uses AI to analyze and provide insights
@@ -199,12 +199,12 @@ Experiment with the context parameters:
 
 **More Creative Analysis** (higher temperature):
 ```json
-{"provider": "anthropic", "model": "claude-3-sonnet-20240229", "temperature": 0.8}
+{"provider": "anthropic", "model": "claude-3-5-sonnet-20241022", "temperature": 0.8}
 ```
 
 **More Focused Analysis** (lower temperature):
 ```json
-{"provider": "anthropic", "model": "claude-3-sonnet-20240229", "temperature": 0.1}
+{"provider": "anthropic", "model": "claude-3-5-sonnet-20241022", "temperature": 0.1}
 ```
 
 ### Exercise 3: Change the Output File

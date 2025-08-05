@@ -71,7 +71,7 @@ openai_config = {
 ```python
 anthropic_config = {
     'provider': 'anthropic',
-    'model': 'claude-3-sonnet-20240229',
+    'model': 'claude-3-5-sonnet-20241022',
     'temperature': 0.3,
     'max_tokens': 4096,
     'api_key': 'your-api-key'
@@ -209,7 +209,7 @@ llm:
       timeout: 30
     anthropic:
       api_key: "${ANTHROPIC_API_KEY}"
-      default_model: "claude-3-sonnet-20240229"
+      default_model: "claude-3-5-sonnet-20241022"
       timeout: 30
     google:
       api_key: "${GOOGLE_API_KEY}"
@@ -291,7 +291,7 @@ class MyLLMAgent(BaseAgent, LLMCapableAgent):
 ```csv
 workflow,node,description,type,next_node,error_node,input_fields,output_field,prompt,context
 ChatBot,Welcome,Welcome message,input,Chat,Error,,message,Welcome! Ask me anything:,
-ChatBot,Chat,Chat with AI,llm,Chat,Error,message,response,You are a helpful assistant,"{""provider"": ""anthropic"", ""model"": ""claude-3-sonnet-20240229"", ""temperature"": 0.7}"
+ChatBot,Chat,Chat with AI,llm,Chat,Error,message,response,You are a helpful assistant,"{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.7}"
 ```
 
 ## Advanced Features

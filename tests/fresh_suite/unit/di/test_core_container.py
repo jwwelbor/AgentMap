@@ -60,7 +60,7 @@ class TestDIContainerCore(unittest.TestCase):
 llm:
   anthropic:
     api_key: "test_key"
-    model: "claude-3-sonnet-20240229"
+    model: "claude-3-5-sonnet-20241022"
     temperature: 0.7
   openai:
     api_key: "test_key"  
@@ -366,7 +366,7 @@ kv:
 llm:
   anthropic:
     api_key: "test_key"
-    model: "claude-3-sonnet-20240229"
+    model: "claude-3-5-sonnet-20241022"
 """)
         
         # Act - Container should still initialize even without storage config

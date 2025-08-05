@@ -57,7 +57,7 @@ import DownloadButton from '@site/src/components/DownloadButton';
 SmartGoals,GetGoal,Collect user's personal goal,input,ClassifyGoal,ErrorHandler,,goal,What goal would you like to achieve? Please describe it in detail with any relevant context about your situation:,
 SmartGoals,ClassifyGoal,AI classifies the goal category,llm,RouteToCoach,ErrorHandler,goal,goal_category,"You are a goal classification expert. Analyze this goal and classify it into ONE category: HEALTH (fitness nutrition mental-health), CAREER (professional job business), LEARNING (education skills knowledge), FINANCIAL (money investment savings), PERSONAL (relationships hobbies lifestyle), or OTHER.
 
-Respond with ONLY the category name. Goal: {goal}","{""provider"": ""anthropic"", ""model"": ""claude-3-sonnet-20240229"", ""temperature"": 0.1}"
+Respond with ONLY the category name. Goal: {goal}","{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.1}"
 SmartGoals,RouteToCoach,Route to specialized coach based on category,orchestrator,HealthCoach,ErrorHandler,"goal,goal_category",coach_selection,,"{""nodes"": ""HealthCoach|CareerCoach|LearningCoach|GeneralCoach""}"
 SmartGoals,HealthCoach,Specialized health and fitness coaching,llm,SaveAnalysis,ErrorHandler,"goal,goal_category",detailed_analysis,"🏃‍♀️ **FITNESS & WELLNESS COACH**
 
@@ -86,7 +86,7 @@ I'm your personal fitness and wellness coach! Let me help you achieve your healt
 ## 📊 Success Metrics
 [Specific, measurable indicators of progress]
 
-Remember: Small consistent actions compound into extraordinary results! 💪","{""provider"": ""anthropic"", ""model"": ""claude-3-sonnet-20240229"", ""temperature"": 0.4}"
+Remember: Small consistent actions compound into extraordinary results! 💪","{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.4}"
 SmartGoals,CareerCoach,Specialized career and professional coaching,llm,SaveAnalysis,ErrorHandler,"goal,goal_category",detailed_analysis,"💼 **CAREER ADVANCEMENT COACH**
 
 I'm your career development strategist! Let's turn your professional aspirations into a strategic action plan.
@@ -120,7 +120,7 @@ I'm your career development strategist! Let's turn your professional aspirations
 ## 📊 Success Indicators
 [Concrete metrics for career progress]
 
-Your career is a marathon, not a sprint - let's build sustainable momentum! 🚀","{""provider"": ""anthropic"", ""model"": ""claude-3-sonnet-20240229"", ""temperature"": 0.3}"
+Your career is a marathon, not a sprint - let's build sustainable momentum! 🚀","{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.3}"
 SmartGoals,LearningCoach,Specialized education and learning coaching,llm,SaveAnalysis,ErrorHandler,"goal,goal_category",detailed_analysis,"📚 **LEARNING & EDUCATION MENTOR**
 
 I'm your learning optimization specialist! Let's design a personalized education strategy that maximizes retention and application.
@@ -154,7 +154,7 @@ I'm your learning optimization specialist! Let's design a personalized education
 ## 📊 Progress Tracking
 [Specific milestones and assessment methods]
 
-Remember: The best learning happens when you actively apply what you're studying! 🎓","{""provider"": ""anthropic"", ""model"": ""claude-3-sonnet-20240229"", ""temperature"": 0.3}"
+Remember: The best learning happens when you actively apply what you're studying! 🎓","{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.3}"
 SmartGoals,GeneralCoach,General purpose life coaching,llm,SaveAnalysis,ErrorHandler,"goal,goal_category",detailed_analysis,"🌟 **HOLISTIC LIFE COACH**
 
 I'm your personal development guide! Let's create a comprehensive approach to achieving your goal that integrates all aspects of your life.
@@ -189,7 +189,7 @@ I'm your personal development guide! Let's create a comprehensive approach to ac
 ## 📊 Holistic Success Metrics
 [Multi-dimensional progress indicators]
 
-Your goal is part of your larger life story - let's make it a chapter worth writing! ✨","{""provider"": ""anthropic"", ""model"": ""claude-3-sonnet-20240229"", ""temperature"": 0.5}"
+Your goal is part of your larger life story - let's make it a chapter worth writing! ✨","{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.5}"
 SmartGoals,SaveAnalysis,Save goal analysis to specialized database,csv_writer,ThankUser,ErrorHandler,"goal,goal_category,detailed_analysis",save_result,data/smart_goals_analysis.csv,"{""format"": ""records"", ""mode"": ""append""}"
 SmartGoals,ThankUser,Provide completion summary,echo,End,,"save_result",final_message,"🎉 **Goal Analysis Complete!**
 
@@ -244,7 +244,7 @@ This allows one prompt template to work with any user input while maintaining pe
 
 ### Goal Classification Agent
 ```csv
-SmartGoals,ClassifyGoal,AI classifies the goal category,llm,RouteToCoach,ErrorHandler,goal,goal_category,"You are a goal classification expert...","{""provider"": ""anthropic"", ""model"": ""claude-3-sonnet-20240229"", ""temperature"": 0.1}"
+SmartGoals,ClassifyGoal,AI classifies the goal category,llm,RouteToCoach,ErrorHandler,goal,goal_category,"You are a goal classification expert...","{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.1}"
 ```
 
 **Why Temperature 0.1?**
@@ -377,7 +377,7 @@ I'm your personal finance strategist! Let's turn your financial goal into a conc
 ## 📈 Success Metrics
 [Specific financial KPIs to track]
 
-Remember: Building wealth is about consistent, smart decisions over time! 💪","{""provider"": ""anthropic"", ""model"": ""claude-3-sonnet-20240229"", ""temperature"": 0.3}"
+Remember: Building wealth is about consistent, smart decisions over time! 💪","{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.3}"
 ```
 
 ### Exercise 2: Modify Classification Logic
@@ -394,12 +394,12 @@ Try different temperature settings for the coaches:
 
 **More Creative Health Coach** (temperature 0.6):
 ```json
-{"provider": "anthropic", "model": "claude-3-sonnet-20240229", "temperature": 0.6}
+{"provider": "anthropic", "model": "claude-3-5-sonnet-20241022", "temperature": 0.6}
 ```
 
 **More Precise Career Coach** (temperature 0.2):
 ```json
-{"provider": "anthropic", "model": "claude-3-sonnet-20240229", "temperature": 0.2}
+{"provider": "anthropic", "model": "claude-3-5-sonnet-20241022", "temperature": 0.2}
 ```
 
 ## Step 8: Advanced Prompting Techniques

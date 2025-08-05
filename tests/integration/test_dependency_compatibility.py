@@ -12,7 +12,11 @@ import importlib
 from unittest.mock import patch, MagicMock
 from typing import List, Dict, Any
 import subprocess
-import pkg_resources
+try:
+    from importlib.metadata import version, PackageNotFoundError
+except ImportError:
+    # Fallback for Python < 3.8
+    from importlib_metadata import version, PackageNotFoundError
 
 
 class TestDependencyCompatibility:
@@ -45,30 +49,30 @@ class TestDependencyCompatibility:
     def test_langgraph_version_compatibility(self):
         """Test that installed LangGraph version is in compatible range."""
         try:
-            import langgraph
-            version = langgraph.__version__
+            import langgraph  # Verify package can be imported
+            version_string = version('langgraph')
             
             # Parse version components
-            major, minor, patch = map(int, version.split('.'))
+            major, minor, patch = map(int, version_string.split('.'))
             
             # Test version constraints based on our pyproject.toml
             # langgraph = ">=0.3.5,<0.4.0"
             assert major == 0, f"Major version should be 0, got {major}"
-            assert minor == 3, f"Minor version should be 3, got {minor} (version {version})"
-            assert patch >= 5, f"Patch version should be >= 5, got {patch} (version {version})"
+            assert minor == 3, f"Minor version should be 3, got {minor} (version {version_string})"
+            assert patch >= 5, f"Patch version should be >= 5, got {patch} (version {version_string})"
             
         except ImportError:
             pytest.fail("LangGraph is not installed")
-        except AttributeError:
-            pytest.fail("LangGraph version not accessible")
+        except PackageNotFoundError:
+            pytest.fail("LangGraph package metadata not accessible")
     
     def test_problematic_langgraph_versions_blocked(self):
         """Test that we detect and block problematic LangGraph versions."""
         problematic_versions = ['0.5.0', '0.5.1', '0.6.0', '0.6.1']
         
         try:
-            import langgraph
-            current_version = langgraph.__version__
+            import langgraph  # Verify package can be imported
+            current_version = version('langgraph')
             
             if current_version in problematic_versions:
                 pytest.fail(
@@ -77,7 +81,7 @@ class TestDependencyCompatibility:
                     f"Please downgrade to a version in range >=0.3.5,<0.4.0"
                 )
                 
-        except ImportError:
+        except (ImportError, PackageNotFoundError):
             # If LangGraph isn't installed, that's fine for this test
             pass
     
@@ -136,8 +140,6 @@ class TestDependencyVersionDetection:
     
     def test_get_installed_package_versions(self):
         """Test we can detect installed package versions."""
-        import pkg_resources
-        
         # Get key dependencies
         key_packages = [
             'langgraph', 'langchain-core', 'langchain', 
@@ -147,9 +149,8 @@ class TestDependencyVersionDetection:
         versions = {}
         for package in key_packages:
             try:
-                dist = pkg_resources.get_distribution(package)
-                versions[package] = dist.version
-            except pkg_resources.DistributionNotFound:
+                versions[package] = version(package)
+            except PackageNotFoundError:
                 versions[package] = None
         
         # Verify we found LangGraph (should be installed)
@@ -177,18 +178,18 @@ class TestDependencyVersionDetection:
         
         # Check LangGraph version
         try:
-            import langgraph
-            version = langgraph.__version__
-            major, minor, patch = map(int, version.split('.'))
+            import langgraph  # Verify package can be imported
+            version_string = version('langgraph')
+            major, minor, patch = map(int, version_string.split('.'))
             
             if major == 0 and minor >= 5:
                 critical_issues.append(
-                    f"LangGraph {version} may cause MRO errors. "
+                    f"LangGraph {version_string} may cause MRO errors. "
                     f"Recommended: downgrade to 0.3.x"
                 )
             elif major == 0 and minor == 4 and patch >= 1:
                 warnings.append(
-                    f"LangGraph {version} is in transition range - monitor for issues"
+                    f"LangGraph {version_string} is in transition range - monitor for issues"
                 )
                 
         except Exception as e:
@@ -196,8 +197,8 @@ class TestDependencyVersionDetection:
         
         # Check for known problematic combinations
         try:
-            import pydantic
-            pydantic_version = pydantic.__version__
+            import pydantic  # Verify package can be imported
+            pydantic_version = version('pydantic')
             
             # Add other compatibility checks here as needed
             

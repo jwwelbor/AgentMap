@@ -26,6 +26,8 @@ Storage configuration is defined in a separate YAML file (typically `agentmap_co
 # CSV storage configuration
 csv:
   default_directory: "data/csv"
+  # Enable automatic CSV file creation on write operations
+  auto_create_files: false
   collections:
     users: "data/csv/users.csv"
     products: "data/csv/products.csv"
@@ -100,6 +102,9 @@ csv:
   # Optional: Global encoding setting
   encoding: "utf-8"
   
+  # File creation behavior
+  auto_create_files: false  # Enable automatic CSV file creation on write operations
+  
   # Named CSV collections
   collections:
     # Simple filename mapping
@@ -161,6 +166,28 @@ csv:
     stocks:
       path: "data/csv/stocks.csv"
       id_field: "ticker_symbol"
+```
+
+### CSV Auto-Creation Behavior
+
+CSV Storage Service can automatically create CSV files that don't exist when write operations are performed. This behavior is controlled by the `auto_create_files` configuration option:
+
+```yaml
+csv:
+  default_directory: "data/csv"
+  auto_create_files: true  # Enable automatic CSV file creation on write
+```
+
+**Key Features:**
+- When `auto_create_files: true`, missing CSV files are automatically created during write operations
+- When `auto_create_files: false` (default), write operations to non-existent files will fail with a clear error message
+- File structure is determined by the data being written
+- Directories are always created automatically regardless of this setting
+- Default value is `false` for backward compatibility
+
+**Example Error Message (when disabled):**
+```
+CSV file does not exist: data/csv/new_file.csv. Enable auto_create_files: true in CSV config to create automatically.
 ```
 
 ### CSV ID Field Detection

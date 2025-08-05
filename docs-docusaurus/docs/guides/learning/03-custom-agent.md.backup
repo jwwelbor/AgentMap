@@ -109,7 +109,7 @@ Return a JSON array with this format:
     \"suspicious\": [true/false],
     \"reason\": \"[explanation for categorization/flags]\"
   }
-]",{\"provider\": \"anthropic\", \"model\": \"claude-3-sonnet-20240229\", \"temperature\": 0.2}
+]",{\"provider\": \"anthropic\", \"model\": \"claude-3-5-sonnet-20241022\", \"temperature\": 0.2}
 ExpenseValidation,GenerateReport,Generate validation summary report,echo,SaveReport,ErrorHandler,categorized_expenses,final_report,"📊 **EXPENSE VALIDATION REPORT**
 
 {categorized_expenses}

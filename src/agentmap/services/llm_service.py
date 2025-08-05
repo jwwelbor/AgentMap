@@ -132,7 +132,7 @@ class LLMService:
                 "api_key": os.environ.get("OPENAI_API_KEY", ""),
             },
             "anthropic": {
-                "model": "claude-3-sonnet-20240229",
+                "model": "claude-3-5-sonnet-20241022",
                 "temperature": 0.7,
                 "api_key": os.environ.get("ANTHROPIC_API_KEY", ""),
             },

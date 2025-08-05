@@ -107,7 +107,7 @@ class BaseIntegrationTest(unittest.TestCase):
             "llm": {
                 "anthropic": {
                     "api_key": "test_key_anthropic",
-                    "model": "claude-3-sonnet-20240229",
+                    "model": "claude-3-5-sonnet-20241022",
                     "temperature": 0.7
                 },
                 "openai": {
@@ -151,7 +151,7 @@ class BaseIntegrationTest(unittest.TestCase):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-sonnet-20240229",
+                        "medium": "claude-3-5-sonnet-20241022",
                         "high": "claude-3-opus-20240229",
                         "critical": "claude-3-opus-20240229"
                     },
@@ -186,6 +186,7 @@ class BaseIntegrationTest(unittest.TestCase):
         storage_config_data = {
             "csv": {
                 "default_directory": str(Path(self.temp_dir) / "csv_data"),
+                "auto_create_files": True,
                 "collections": {}
             },
             "vector": {

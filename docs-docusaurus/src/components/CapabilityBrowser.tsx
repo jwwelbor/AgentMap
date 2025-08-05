@@ -31,7 +31,7 @@ const CAPABILITIES: Capability[] = [
     usageExample: `# CSV Configuration
 context = {
     "provider": "anthropic",
-    "model": "claude-3-sonnet-20240229", 
+    "model": "claude-3-5-sonnet-20241022", 
     "temperature": 0.3,
     "routing_enabled": True
 }`,

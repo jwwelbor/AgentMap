@@ -460,6 +460,16 @@ class StorageConfigService:
         except Exception:
             return False
 
+    def is_csv_auto_create_enabled(self) -> bool:
+        """
+        Check if CSV auto-creation is enabled for write operations.
+
+        Returns:
+            True if CSV auto-creation is enabled, False otherwise
+        """
+        csv_config = self.get_csv_config()
+        return csv_config.get('auto_create_files', False)
+
     def is_vector_storage_enabled(self) -> bool:
         """
         Check if vector storage is available and enabled.

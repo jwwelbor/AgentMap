@@ -55,7 +55,7 @@ class TestHostProtocolIntegration(unittest.TestCase):
 llm:
   anthropic:
     api_key: "test_key"
-    model: "claude-3-sonnet-20240229"
+    model: "claude-3-5-sonnet-20241022"
     
 host_application:
   enabled: true
@@ -173,7 +173,7 @@ host_application:
 llm:
   anthropic:
     api_key: "test_key"
-    model: "claude-3-sonnet-20240229"
+    model: "claude-3-5-sonnet-20241022"
     
 host_application:
   enabled: false

@@ -128,7 +128,7 @@ const AGENTS: Agent[] = [
     inputFields: 'Used to format the prompt template',
     outputField: 'LLM response',
     promptUsage: 'Used as prompt template',
-    csvExample: 'QAGraph,Summarize,{"model": "claude-3-sonnet-20240229"},Summarize text,claude,Next,,text,summary,Summarize this text in 3 bullet points: {text}',
+    csvExample: 'QAGraph,Summarize,{"model": "claude-3-5-sonnet-20241022"},Summarize text,claude,Next,,text,summary,Summarize this text in 3 bullet points: {text}',
     contextOptions: ['model', 'temperature', 'max_tokens'],
     protocols: ['LLMCapableAgent'],
     businessServices: ['LLMService (Anthropic)']

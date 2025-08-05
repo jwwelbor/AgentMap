@@ -339,7 +339,7 @@ class MyLLMAgent(BaseAgent, LLMCapableAgent):
         
         # Configuration from context
         self.provider = self.context.get("provider", "anthropic")
-        self.model = self.context.get("model", "claude-3-sonnet-20240229")
+        self.model = self.context.get("model", "claude-3-5-sonnet-20241022")
         self.temperature = self.context.get("temperature", 0.7)
         self.routing_enabled = self.context.get("routing_enabled", False)
     

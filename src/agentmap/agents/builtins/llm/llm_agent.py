@@ -189,11 +189,11 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
             provider = self.provider_name
 
         defaults = {
-            "anthropic": "claude-3-sonnet-20240229",
+            "anthropic": "claude-3-5-sonnet-20241022",
             "openai": "gpt-3.5-turbo",
             "google": "gemini-1.0-pro",
         }
-        return defaults.get(provider, "claude-3-sonnet-20240229")
+        return defaults.get(provider, "claude-3-5-sonnet-20241022")
 
     def _resolve_prompt(self, prompt: str) -> str:
         """

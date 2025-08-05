@@ -192,7 +192,7 @@ class TestLLMProviderValidationStrategy(unittest.TestCase):
         self.provider_config = {
             "api_key": "test_anthropic_key",
             "base_url": "https://api.anthropic.com",
-            "model": "claude-3-sonnet-20240229",
+            "model": "claude-3-5-sonnet-20241022",
             "max_tokens": 4000
         }
         self.strategy = LLMProviderValidationStrategy("anthropic", self.provider_config)
@@ -252,7 +252,7 @@ class TestLLMProviderValidationStrategy(unittest.TestCase):
         valid_config = {
             "api_key": "test_key",
             "base_url": "https://api.anthropic.com",
-            "model": "claude-3-sonnet-20240229"
+            "model": "claude-3-5-sonnet-20241022"
         }
         result = self.strategy._validate_configuration(valid_config)
         self.assertTrue(result["valid"])
@@ -261,7 +261,7 @@ class TestLLMProviderValidationStrategy(unittest.TestCase):
         # Test invalid configuration (missing api_key)
         invalid_config = {
             "base_url": "https://api.anthropic.com",
-            "model": "claude-3-sonnet-20240229"
+            "model": "claude-3-5-sonnet-20241022"
         }
         result = self.strategy._validate_configuration(invalid_config)
         self.assertFalse(result["valid"])
@@ -301,7 +301,7 @@ class TestLLMProviderValidationStrategy(unittest.TestCase):
     def test_model_availability_check(self):
         """Test model availability checking."""
         # Standard model should be available
-        available_result = self.strategy._check_model_availability("claude-3-sonnet-20240229")
+        available_result = self.strategy._check_model_availability("claude-3-5-sonnet-20241022")
         self.assertTrue(available_result["available"])
         
         # Unknown model should be flagged

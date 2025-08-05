@@ -63,7 +63,7 @@ OPENAI_API_BASE=https://api.openai.com/v1
 ANTHROPIC_API_KEY=sk-ant-api03-1234567890abcdef1234567890abcdef12345678
 
 # Optional: Default model override
-ANTHROPIC_DEFAULT_MODEL=claude-3-sonnet-20240229
+ANTHROPIC_DEFAULT_MODEL=claude-3-5-sonnet-20241022
 
 # Optional: API base URL
 ANTHROPIC_API_BASE=https://api.anthropic.com
@@ -92,7 +92,7 @@ llm:
     model: "env:OPENAI_DEFAULT_MODEL:gpt-3.5-turbo"  # With fallback
   anthropic:
     api_key: "env:ANTHROPIC_API_KEY"
-    model: "env:ANTHROPIC_DEFAULT_MODEL:claude-3-sonnet-20240229"
+    model: "env:ANTHROPIC_DEFAULT_MODEL:claude-3-5-sonnet-20241022"
   google:
     api_key: "env:GOOGLE_API_KEY"
     model: "env:GOOGLE_DEFAULT_MODEL:gemini-1.0-pro"

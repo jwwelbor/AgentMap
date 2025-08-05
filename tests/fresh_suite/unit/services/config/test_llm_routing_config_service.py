@@ -32,7 +32,7 @@ class TestLlmRoutingConfigService(unittest.TestCase):
             'routing_matrix': {
                 'anthropic': {
                     'low': 'claude-3-haiku-20240307',
-                    'medium': 'claude-3-sonnet-20240229',
+                    'medium': 'claude-3-5-sonnet-20241022',
                     'high': 'claude-3-opus-20240229',
                     'critical': 'claude-3-opus-20240229'
                 },
@@ -102,7 +102,7 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         """Test getting model for specific provider and complexity."""
         # Test valid provider and complexity
         result = self.llm_routing_service.get_model_for_complexity('anthropic', 'medium')
-        self.assertEqual(result, 'claude-3-sonnet-20240229')
+        self.assertEqual(result, 'claude-3-5-sonnet-20241022')
         
         result = self.llm_routing_service.get_model_for_complexity('openai', 'high')
         self.assertEqual(result, 'gpt-4')
@@ -323,7 +323,7 @@ class TestLlmRoutingConfigService(unittest.TestCase):
             'routing_matrix': {
                 'ANTHROPIC': {
                     'LOW': 'claude-3-haiku-20240307',
-                    'MEDIUM': 'claude-3-sonnet-20240229'
+                    'MEDIUM': 'claude-3-5-sonnet-20241022'
                 }
             },
             'task_types': {},

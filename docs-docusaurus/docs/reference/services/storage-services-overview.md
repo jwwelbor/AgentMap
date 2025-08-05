@@ -57,6 +57,7 @@ storage:
 - Write DataFrames, dictionaries, or lists of dictionaries  
 - Query and filter data with pandas-style operations
 - Update and append operations with merge capabilities
+- Automatic file creation on write (when enabled via `auto_create_files: true`)
 
 </TabItem>
 </Tabs>

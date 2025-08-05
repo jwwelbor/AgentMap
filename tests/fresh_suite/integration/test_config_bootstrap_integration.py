@@ -94,7 +94,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "bootstrap_test_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 }
             },
             "routing": {
@@ -102,7 +102,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-sonnet-20240229",
+                        "medium": "claude-3-5-sonnet-20241022",
                         "high": "claude-3-opus-20240229",
                         "critical": "claude-3-opus-20240229"
                     }
@@ -179,7 +179,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
         
         # Verify app config provides processed configuration
         llm_config = bootstrap_app_config.get_llm_config("anthropic")
-        self.assertEqual(llm_config['model'], "claude-3-sonnet-20240229")
+        self.assertEqual(llm_config['model'], "claude-3-5-sonnet-20241022")
         
         routing_config = bootstrap_app_config.get_routing_config()
         self.assertTrue(routing_config['enabled'])
@@ -223,7 +223,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "logging_test_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 }
             }
         }
@@ -286,7 +286,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "dependency_test_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 },
                 "openai": {
                     "api_key": "openai_dependency_key",
@@ -298,7 +298,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-sonnet-20240229",
+                        "medium": "claude-3-5-sonnet-20241022",
                         "high": "claude-3-opus-20240229",
                         "critical": "claude-3-opus-20240229"
                     },
@@ -417,7 +417,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "no_storage_test_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 }
             },
             "routing": {
@@ -462,7 +462,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
         
         # Verify functionality still works
         llm_config = degraded_app_config.get_llm_config("anthropic")
-        self.assertEqual(llm_config['model'], "claude-3-sonnet-20240229")
+        self.assertEqual(llm_config['model'], "claude-3-5-sonnet-20241022")
         
         routing_config = degraded_app_config.get_routing_config()
         self.assertTrue(routing_config['enabled'])
@@ -487,7 +487,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "invalid_routing_test_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 }
             },
             "routing": {
@@ -575,7 +575,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "partial_failure_test_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 }
             },
             "storage_config_path": "/invalid/path/that/does/not/exist.yaml"
@@ -616,7 +616,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
         
         # Application should be functional despite partial failures
         llm_config = partial_app_config.get_llm_config("anthropic")
-        self.assertEqual(llm_config['model'], "claude-3-sonnet-20240229")
+        self.assertEqual(llm_config['model'], "claude-3-5-sonnet-20241022")
     
     # =============================================================================
     # 3. Configuration Hot-Reloading Tests
@@ -695,7 +695,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "updated_key",
-                    "model": "claude-3-sonnet-20240229",  # Updated model
+                    "model": "claude-3-5-sonnet-20241022",  # Updated model
                     "temperature": 0.7  # Updated temperature
                 },
                 "openai": {  # Added new provider
@@ -708,7 +708,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-sonnet-20240229",
+                        "medium": "claude-3-5-sonnet-20241022",
                         "high": "claude-3-opus-20240229",
                         "critical": "claude-3-opus-20240229"
                     }
@@ -729,7 +729,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
         
         # Verify configuration hot-reload worked
         updated_llm_config = reloaded_app_config.get_llm_config("anthropic")
-        self.assertEqual(updated_llm_config['model'], "claude-3-sonnet-20240229")
+        self.assertEqual(updated_llm_config['model'], "claude-3-5-sonnet-20241022")
         self.assertEqual(updated_llm_config['temperature'], 0.7)
         
         # New provider should be available
@@ -750,7 +750,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "dependency_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 }
             },
             "routing": {
@@ -758,7 +758,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-sonnet-20240229",
+                        "medium": "claude-3-5-sonnet-20241022",
                         "high": "claude-3-opus-20240229", 
                         "critical": "claude-3-opus-20240229"
                     }
@@ -794,7 +794,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "dependency_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 },
                 "openai": {  # Add new provider
                     "api_key": "new_provider_key",
@@ -806,7 +806,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-sonnet-20240229",
+                        "medium": "claude-3-5-sonnet-20241022",
                         "high": "claude-3-opus-20240229",
                         "critical": "claude-3-opus-20240229"
                     },
@@ -941,7 +941,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "concurrent_test_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 }
             },
             "routing": {
@@ -1001,7 +1001,7 @@ class TestConfigBootstrapIntegration(BaseIntegrationTest):
         
         # Verify all workers got consistent results
         models = [result['model'] for result in results]
-        self.assertTrue(all(model == "claude-3-sonnet-20240229" for model in models),
+        self.assertTrue(all(model == "claude-3-5-sonnet-20241022" for model in models),
                        "All workers should get consistent configuration")
         
         print(f"\\nConcurrent bootstrap test: {len(results)}/{num_workers} workers succeeded")

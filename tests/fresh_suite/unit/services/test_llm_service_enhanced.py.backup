@@ -56,7 +56,7 @@ class TestLLMServiceEnhanced(unittest.TestCase):
         
         # Test Anthropic defaults
         anthropic_defaults = self.service._get_provider_defaults("anthropic")
-        self.assertEqual(anthropic_defaults["model"], "claude-3-sonnet-20240229")
+        self.assertEqual(anthropic_defaults["model"], "claude-3-5-sonnet-20241022")
         self.assertEqual(anthropic_defaults["temperature"], 0.7)
         
         # Test Google defaults
@@ -921,7 +921,7 @@ class TestLLMServiceEnhanced(unittest.TestCase):
         # Mock routing decision
         mock_decision = Mock()
         mock_decision.provider = "anthropic"
-        mock_decision.model = "claude-3-sonnet-20240229"
+        mock_decision.model = "claude-3-5-sonnet-20241022"
         mock_decision.complexity = "medium"
         mock_decision.confidence = 0.92
         self.mock_routing_service.route_request.return_value = mock_decision
@@ -969,7 +969,7 @@ class TestLLMServiceEnhanced(unittest.TestCase):
             self.assertEqual(create_call_args[0], "anthropic")  # Routed provider
             
             config_used = create_call_args[1]
-            self.assertEqual(config_used["model"], "claude-3-sonnet-20240229")  # Routed model
+            self.assertEqual(config_used["model"], "claude-3-5-sonnet-20241022")  # Routed model
 
 
 if __name__ == '__main__':

@@ -36,7 +36,7 @@ class TestAnthropicAgent(unittest.TestCase):
             "input_fields": ["prompt", "context"],
             "output_field": "response",
             "description": "Test Anthropic agent",
-            "model": "claude-3-sonnet-20240229",
+            "model": "claude-3-5-sonnet-20241022",
             "temperature": 0.5,
             "max_tokens": 2000
         }
@@ -144,7 +144,7 @@ class TestAnthropicAgent(unittest.TestCase):
         
         # Should use Anthropic default model
         self.assertEqual(agent.provider, "anthropic")
-        self.assertEqual(agent.model, "claude-3-sonnet-20240229")
+        self.assertEqual(agent.model, "claude-3-5-sonnet-20241022")
         self.assertEqual(agent.temperature, 0.7)  # Default temperature
     
     def test_anthropic_agent_initialization_with_custom_model(self):
@@ -166,7 +166,7 @@ class TestAnthropicAgent(unittest.TestCase):
     def test_anthropic_agent_initialization_with_anthropic_specific_models(self):
         """Test AnthropicAgent with various Anthropic model configurations."""
         anthropic_models = [
-            "claude-3-sonnet-20240229",
+            "claude-3-5-sonnet-20241022",
             "claude-3-opus-20240229",
             "claude-3-haiku-20240307",
             "claude-2.1",
@@ -189,7 +189,7 @@ class TestAnthropicAgent(unittest.TestCase):
             "output_field": "answer",
             "description": "Test Anthropic agent",
             "provider": "openai",  # Should be overridden
-            "model": "claude-3-sonnet-20240229",
+            "model": "claude-3-5-sonnet-20241022",
             "temperature": 0.6,
             "routing_enabled": False
         }
@@ -202,7 +202,7 @@ class TestAnthropicAgent(unittest.TestCase):
         # Verify other context fields were preserved
         self.assertEqual(agent.input_fields, ["question", "background", "memory"])  # memory added by LLMAgent
         self.assertEqual(agent.output_field, "answer")
-        self.assertEqual(agent.model, "claude-3-sonnet-20240229")
+        self.assertEqual(agent.model, "claude-3-5-sonnet-20241022")
         self.assertEqual(agent.temperature, 0.6)
         self.assertFalse(agent.routing_enabled)
     
@@ -226,7 +226,7 @@ class TestAnthropicAgent(unittest.TestCase):
         # Verify call parameters include Anthropic provider
         kwargs = call_args.kwargs
         self.assertEqual(kwargs["provider"], "anthropic")
-        self.assertEqual(kwargs["model"], "claude-3-sonnet-20240229")
+        self.assertEqual(kwargs["model"], "claude-3-5-sonnet-20241022")
         self.assertEqual(kwargs["temperature"], 0.5)
         self.assertEqual(kwargs["max_tokens"], 2000)
         
@@ -358,7 +358,7 @@ class TestAnthropicAgent(unittest.TestCase):
         if "llm_configuration" in service_info:
             llm_config = service_info["llm_configuration"]
             self.assertEqual(llm_config["provider_name"], "anthropic")
-            self.assertEqual(llm_config["model"], "claude-3-sonnet-20240229")
+            self.assertEqual(llm_config["model"], "claude-3-5-sonnet-20241022")
     
     def test_anthropic_agent_get_service_info_without_llm_service(self):
         """Test service information when LLM service is not configured."""
@@ -436,7 +436,7 @@ class TestAnthropicAgent(unittest.TestCase):
         context = {
             "routing_enabled": False,
             "provider": "openai",  # Should be overridden
-            "model": "claude-3-sonnet-20240229"
+            "model": "claude-3-5-sonnet-20241022"
         }
         
         agent = self.create_anthropic_agent(context=context)
@@ -444,7 +444,7 @@ class TestAnthropicAgent(unittest.TestCase):
         # Should force Anthropic provider regardless of routing settings
         self.assertEqual(agent.provider, "anthropic")
         self.assertFalse(agent.routing_enabled)
-        self.assertEqual(agent.model, "claude-3-sonnet-20240229")
+        self.assertEqual(agent.model, "claude-3-5-sonnet-20241022")
     
     def test_anthropic_agent_minimal_initialization(self):
         """Test AnthropicAgent with minimal configuration."""
@@ -458,7 +458,7 @@ class TestAnthropicAgent(unittest.TestCase):
         self.assertEqual(minimal_agent.name, "minimal_anthropic")
         self.assertEqual(minimal_agent.prompt, "I am Claude.")
         self.assertEqual(minimal_agent.provider, "anthropic")
-        self.assertEqual(minimal_agent.model, "claude-3-sonnet-20240229")
+        self.assertEqual(minimal_agent.model, "claude-3-5-sonnet-20241022")
         self.assertEqual(minimal_agent.temperature, 0.7)
         self.assertIsNone(minimal_agent.max_tokens)
     

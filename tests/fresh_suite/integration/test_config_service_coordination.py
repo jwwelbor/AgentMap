@@ -224,7 +224,7 @@ class TestConfigServiceCoordination(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "test_anthropic_key",
-                    "model": "claude-3-sonnet-20240229",
+                    "model": "claude-3-5-sonnet-20241022",
                     "temperature": 0.7
                 },
                 "openai": {
@@ -238,7 +238,7 @@ class TestConfigServiceCoordination(BaseIntegrationTest):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-sonnet-20240229",
+                        "medium": "claude-3-5-sonnet-20241022",
                         "high": "claude-3-opus-20240229",
                         "critical": "claude-3-opus-20240229"
                     }
@@ -306,7 +306,7 @@ class TestConfigServiceCoordination(BaseIntegrationTest):
         env_override = {
             "llm": {
                 "anthropic": {
-                    "model": "claude-3-sonnet-20240229",  # Override
+                    "model": "claude-3-5-sonnet-20241022",  # Override
                     "api_key": "env_specific_key"  # Addition
                 }
             },
@@ -331,7 +331,7 @@ class TestConfigServiceCoordination(BaseIntegrationTest):
         # AppConfigService would handle merging in real scenario
         # Here we test that both can be loaded correctly
         self.assertEqual(base_loaded['llm']['anthropic']['model'], "claude-3-haiku-20240307")
-        self.assertEqual(env_loaded['llm']['anthropic']['model'], "claude-3-sonnet-20240229")
+        self.assertEqual(env_loaded['llm']['anthropic']['model'], "claude-3-5-sonnet-20241022")
         
         # Verify infrastructure layer doesn't merge automatically
         self.assertNotEqual(base_loaded, env_loaded,
@@ -494,7 +494,7 @@ class TestConfigServiceCoordination(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "test_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 }
             },
             "routing": {
@@ -502,7 +502,7 @@ class TestConfigServiceCoordination(BaseIntegrationTest):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-sonnet-20240229",
+                        "medium": "claude-3-5-sonnet-20241022",
                         "high": "claude-3-opus-20240229",
                         "critical": "claude-3-opus-20240229"
                     }
@@ -547,7 +547,7 @@ class TestConfigServiceCoordination(BaseIntegrationTest):
         self.assertEqual(logging_config['version'], 1)
         
         llm_config = pipeline_app_config.get_llm_config("anthropic")
-        self.assertEqual(llm_config['model'], "claude-3-sonnet-20240229")
+        self.assertEqual(llm_config['model'], "claude-3-5-sonnet-20241022")
         
         # Step 3: StorageConfigService (if available)
         storage_path = pipeline_app_config.get_storage_config_path()

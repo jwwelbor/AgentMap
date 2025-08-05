@@ -108,14 +108,14 @@ class TestLLMAgent(unittest.TestCase):
         self.assertEqual(minimal_agent.name, "minimal_llm")
         self.assertEqual(minimal_agent.prompt, "Simple prompt")
         self.assertEqual(minimal_agent.provider, "anthropic")  # Default provider
-        self.assertEqual(minimal_agent.model, "claude-3-sonnet-20240229")  # Default model
+        self.assertEqual(minimal_agent.model, "claude-3-5-sonnet-20241022")  # Default model
         self.assertEqual(minimal_agent.temperature, 0.7)  # Default temperature
         self.assertIsNone(minimal_agent.max_tokens)  # Default max_tokens
     
     def test_agent_initialization_with_different_providers(self):
         """Test LLMAgent with different LLM providers."""
         providers_config = [
-            ("anthropic", "claude-3-sonnet-20240229", 0.5),
+            ("anthropic", "claude-3-5-sonnet-20241022", 0.5),
             ("google", "gemini-1.0-pro", 0.3),
             ("openai", "gpt-4-turbo", 0.8)
         ]

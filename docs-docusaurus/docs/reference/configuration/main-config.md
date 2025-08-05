@@ -32,7 +32,7 @@ llm:
     temperature: 0.7
   anthropic:
     api_key: "env:ANTHROPIC_API_KEY"
-    model: "claude-3-sonnet-20240229"
+    model: "claude-3-5-sonnet-20241022"
     temperature: 0.7
   google:
     api_key: "env:GOOGLE_API_KEY"
@@ -152,7 +152,7 @@ llm:
     
   anthropic:
     api_key: "env:ANTHROPIC_API_KEY"
-    model: "claude-3-sonnet-20240229"
+    model: "claude-3-5-sonnet-20241022"
     temperature: 0.7
     
   google:
@@ -170,7 +170,7 @@ llm:
 
 **Anthropic Models:**
 - `claude-3-haiku-20240307` - Ultra-fast, cost-effective
-- `claude-3-sonnet-20240229` - Balanced performance
+- `claude-3-5-sonnet-20241022` - Balanced performance
 - `claude-3-opus-20240229` - Highest capability
 
 **Google Models:**
@@ -200,7 +200,7 @@ routing:
   routing_matrix:
     anthropic:
       low: "claude-3-haiku-20240307"
-      medium: "claude-3-sonnet-20240229"
+      medium: "claude-3-5-sonnet-20241022"
       high: "claude-3-opus-20240229"
       critical: "claude-3-opus-20240229"
     

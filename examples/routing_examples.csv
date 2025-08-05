@@ -2,7 +2,7 @@ GraphName,Node,AgentType,Context,Input_Fields,Output_Field,Success_Next,Failure_
 RoutingExample,UserInput,input,,,"user_query",LLMResponse,,,What would you like to know?
 
 # Legacy mode - works exactly as before
-RoutingExample,LLMResponse,anthropic,"{""model"":""claude-3-sonnet-20240229"",""temperature"":0.7}","user_query","response",RoutingResponse,,You are a helpful AI assistant. User question: {user_query}
+RoutingExample,LLMResponse,anthropic,"{""model"":""claude-3-5-sonnet-20241022"",""temperature"":0.7}","user_query","response",RoutingResponse,,You are a helpful AI assistant. User question: {user_query}
 
 # Modern routing mode - intelligent provider/model selection
 RoutingExample,RoutingResponse,llm,"{""routing_enabled"":true,""task_type"":""general"",""provider_preference"":[""anthropic"",""openai""]}","response","final_response",End,,Please provide a follow-up question based on this response: {response}

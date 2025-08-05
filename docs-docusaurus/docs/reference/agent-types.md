@@ -138,7 +138,7 @@ context = {
     
     # Legacy mode (Direct provider specification)
     "provider": "anthropic",
-    "model": "claude-3-sonnet-20240229", 
+    "model": "claude-3-5-sonnet-20241022", 
     "temperature": 0.7,
     "max_tokens": 1000,
     
@@ -160,7 +160,7 @@ QAGraph,Question,{"routing_enabled": true, "task_type": "analysis"},Ask a questi
 
 **Legacy Provider Mode:**
 ```csv
-QAGraph,Question,{"provider": "anthropic", "model": "claude-3-sonnet-20240229"},Ask a question,llm,Answer,,question,response,Answer this question: {question}
+QAGraph,Question,{"provider": "anthropic", "model": "claude-3-5-sonnet-20241022"},Ask a question,llm,Answer,,question,response,Answer this question: {question}
 ```
 
 ### OpenAIAgent (aliases: gpt, chatgpt)
@@ -192,7 +192,7 @@ Backward compatibility wrapper for LLMAgent with Anthropic provider.
 
 **CSV Example:**
 ```csv
-QAGraph,Summarize,{"model": "claude-3-sonnet-20240229"},Summarize text,claude,Next,,text,summary,Summarize this text in 3 bullet points: {text}
+QAGraph,Summarize,{"model": "claude-3-5-sonnet-20241022"},Summarize text,claude,Next,,text,summary,Summarize this text in 3 bullet points: {text}
 ```
 
 ### GoogleAgent (alias: gemini)
@@ -468,7 +468,7 @@ Uses an LLM to create an intelligent summary of the inputs.
 ```python
 context = {
     "llm": "anthropic",               # LLM provider ("openai", "anthropic", "google")
-    "model": "claude-3-sonnet-20240229",  # Specific model to use (optional)
+    "model": "claude-3-5-sonnet-20241022",  # Specific model to use (optional)
     "temperature": 0.3                # Temperature for generation (optional)
 }
 ```

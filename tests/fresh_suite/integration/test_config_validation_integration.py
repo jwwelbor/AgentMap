@@ -67,7 +67,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "valid_key",
-                    "model": "claude-3-sonnet-20240229",
+                    "model": "claude-3-5-sonnet-20241022",
                     "temperature": 0.7
                 },
                 "openai": {
@@ -88,7 +88,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-sonnet-20240229", 
+                        "medium": "claude-3-5-sonnet-20241022", 
                         "high": "claude-3-opus-20240229",
                         "critical": "claude-3-opus-20240229"
                     },
@@ -207,7 +207,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "test_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 },
                 "openai": {
                     "api_key": "test_openai_key",
@@ -219,7 +219,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-sonnet-20240229",
+                        "medium": "claude-3-5-sonnet-20241022",
                         "high": "claude-3-opus-20240229",
                         "critical": "claude-3-opus-20240229"
                     },
@@ -378,7 +378,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "test_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 }
             },
             "routing": {
@@ -422,7 +422,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "test_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 }
             },
             "routing": {
@@ -480,7 +480,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "test_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 }
             },
             # Missing routing config - LlmRoutingConfigService should use defaults
@@ -518,7 +518,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
         
         # But other services should continue to work
         llm_config = app_config.get_llm_config("anthropic")
-        self.assertEqual(llm_config['model'], "claude-3-sonnet-20240229")
+        self.assertEqual(llm_config['model'], "claude-3-5-sonnet-20241022")
     
     # =============================================================================
     # 3. Error Propagation Integration Tests
@@ -672,7 +672,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "test_key",
-                    "model": "claude-3-sonnet-20240229"
+                    "model": "claude-3-5-sonnet-20241022"
                 },
                 "openai": {
                     "api_key": "test_openai_key",
@@ -684,7 +684,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-sonnet-20240229",
+                        "medium": "claude-3-5-sonnet-20241022",
                         "high": "claude-3-opus-20240229",
                         "critical": "claude-3-opus-20240229"
                     }
