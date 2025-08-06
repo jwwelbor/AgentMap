@@ -17,6 +17,9 @@ from agentmap.infrastructure.interaction.cli_handler import CLIInteractionHandle
 
 
 def run_command(
+    csv_file: Optional[str] = typer.Argument(
+        None, help="CSV file path (shorthand for --csv)"
+    ),
     graph: Optional[str] = typer.Option(
         None, "--graph", "-g", help="Graph name to run"
     ),
@@ -40,8 +43,15 @@ def run_command(
         False, "--verbose", "-v", help="Show detailed execution info with --pretty"
     ),
 ):
-    """Run a graph with optional CSV, initial state, and autocompile support."""
+    """Run a graph with optional CSV, initial state, and autocompile support.
+
+    Supports shorthand: agentmap run file.csv is equivalent to agentmap run --csv file.csv
+    """
     try:
+        # Handle shorthand CSV file argument - positional takes precedence over --csv option
+        if csv_file is not None:
+            csv = csv_file
+
         # Validate parameters early
         validate_run_parameters(csv=csv, state=state)
 

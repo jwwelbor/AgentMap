@@ -468,7 +468,7 @@ class StorageConfigService:
             True if CSV auto-creation is enabled, False otherwise
         """
         csv_config = self.get_csv_config()
-        return csv_config.get('auto_create_files', False)
+        return csv_config.get("auto_create_files", False)
 
     def is_vector_storage_enabled(self) -> bool:
         """

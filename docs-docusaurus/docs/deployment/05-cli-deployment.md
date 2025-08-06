@@ -13,6 +13,46 @@ keywords: [CLI deployment, command line deployment, batch processing, automation
 
 The AgentMap CLI provides a simple, powerful way to deploy and run workflows directly from the command line. This approach is ideal for development, testing, automation scripts, batch processing, and production scenarios that don't require web API interfaces.
 
+## Configuration Management
+
+AgentMap CLI uses **automatic configuration discovery** to simplify deployment workflows:
+
+### Configuration Precedence
+1. **Explicit `--config` flag** (Highest priority)
+2. **`agentmap_config.yaml` in current directory** (Auto-discovered)
+3. **System defaults** (Fallback)
+
+### Recommended Deployment Pattern
+
+**Development:**
+```bash
+# Initialize project-specific config
+agentmap init-config
+edit agentmap_config.yaml  # Configure for development
+
+# Run workflows (automatically uses local config)
+agentmap run --csv workflow.csv
+agentmap scaffold --csv workflow.csv
+```
+
+**Production:**
+```bash
+# Deploy with environment-specific config
+cp configs/production.yaml agentmap_config.yaml
+agentmap run --csv production_workflow.csv
+
+# Or use explicit config
+agentmap run --config configs/production.yaml --csv workflow.csv
+```
+
+### Configuration Discovery Logging
+AgentMap shows which configuration source is active:
+```
+[2024-08-06 10:30:15] INFO: Using configuration from: auto-discovered: /app/agentmap_config.yaml
+[2024-08-06 10:30:15] INFO: Using configuration from: explicit config: /configs/prod.yaml
+[2024-08-06 10:30:15] INFO: Using configuration from: system defaults
+```
+
 ## Quick Start
 
 ### 1. Installation

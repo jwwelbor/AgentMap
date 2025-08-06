@@ -473,10 +473,10 @@ class CSVStorageService(BaseStorageService):
 
             if not file_existed and not self.configuration.is_csv_auto_create_enabled():
                 return self._create_error_result(
-                    'write',
-                    f'CSV file does not exist: {file_path}. Enable auto_create_files: true in CSV config to create automatically.',
+                    "write",
+                    f"CSV file does not exist: {file_path}. Enable auto_create_files: true in CSV config to create automatically.",
                     collection=collection,
-                    file_path=file_path
+                    file_path=file_path,
                 )
 
             # Convert data to DataFrame

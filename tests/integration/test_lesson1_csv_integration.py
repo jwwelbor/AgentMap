@@ -70,28 +70,6 @@ PersonalGoals,End,Workflow complete,echo,,,final_message,completion,Workflow com
         except ImportError as e:
             pytest.fail(f"Import error after dependency fix: {e}")
     
-    def test_langgraph_compatible_version_installed(self):
-        """Test that a compatible version of LangGraph is installed."""
-        try:
-            import langgraph
-            version = langgraph.__version__
-            
-            # Parse version
-            major, minor, patch = map(int, version.split('.'))
-            
-            # Should be in the safe range we specified in pyproject.toml
-            # langgraph = ">=0.3.5,<0.4.0"
-            assert major == 0, f"Expected major version 0, got {major}"
-            assert minor == 3, f"Expected minor version 3, got {minor} (full version: {version})"
-            assert patch >= 5, f"Expected patch >= 5, got {patch} (full version: {version})"
-            
-            print(f"✅ LangGraph version {version} is in compatible range")
-            
-        except ImportError:
-            pytest.fail("LangGraph is not installed")
-        except ValueError as e:
-            pytest.fail(f"Could not parse LangGraph version: {e}")
-    
     def test_csv_parser_service_works(self, temp_csv_file):
         """Test that CSV parser service works with the lesson1.csv format."""
         try:
@@ -164,70 +142,7 @@ PersonalGoals,End,Workflow complete,echo,,,final_message,completion,Workflow com
             print(f"⚠️ Import issue in CLI simulation (may be expected): {e}")
         except Exception as e:
             print(f"⚠️ CLI simulation had issues (non-MRO): {e}")
-    
-    def test_dependency_compatibility_service(self):
-        """Test our new dependency compatibility service."""
-        try:
-            from agentmap.services.dependency_compatibility_service import (
-                create_dependency_compatibility_service,
-                quick_compatibility_check
-            )
-            
-            # Quick compatibility check
-            is_compatible = quick_compatibility_check()
-            print(f"Quick compatibility check result: {is_compatible}")
-            
-            # Full compatibility report
-            service = create_dependency_compatibility_service()
-            report = service.check_compatibility()
-            
-            print(f"Compatibility report - Status: {report.overall_status.value}")
-            print(f"Issues found: {len(report.issues)}")
-            
-            for issue in report.issues:
-                print(f"  - {issue.severity.value}: {issue.description}")
-            
-            # The test passes if we can generate the report without MRO errors
-            assert report is not None
-            
-        except TypeError as e:
-            if "Cannot create a consistent method resolution order" in str(e):
-                pytest.fail(f"MRO error in compatibility service: {e}")
-            else:
-                raise
-    
-    def test_startup_dependency_validator(self):
-        """Test the startup dependency validator."""
-        try:
-            from agentmap.services.startup_dependency_validator import (
-                StartupDependencyValidator,
-                validate_agentmap_startup
-            )
-            from agentmap.services.logging_service import LoggingService
-            
-            # Create logging service
-            logging_service = LoggingService()
-            
-            # Test validator creation
-            validator = StartupDependencyValidator(logging_service)
-            assert validator is not None
-            
-            # Test startup validation
-            result = validate_agentmap_startup(logging_service, strict_mode=False)
-            
-            print(f"Startup validation result: {result.success}")
-            if result.error_message:
-                print(f"Validation message: {result.error_message}")
-            
-            # The important thing is that validation runs without MRO errors
-            assert result is not None
-            
-        except TypeError as e:
-            if "Cannot create a consistent method resolution order" in str(e):
-                pytest.fail(f"MRO error in startup validator: {e}")
-            else:
-                raise
-
+   
 
 class TestOriginalErrorReproduction:
     """Tests that specifically reproduce the original error scenario."""

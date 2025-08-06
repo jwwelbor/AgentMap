@@ -5,8 +5,6 @@ This module provides the complete CLI interface that maintains compatibility
 with existing command interfaces while using the new service architecture.
 """
 
-import sys
-
 import typer
 
 from agentmap._version import __version__
@@ -40,7 +38,8 @@ def version_callback(value: bool):
 
 
 app = typer.Typer(
-    help="AgentMap: Build and deploy LangGraph workflows from CSV files for fun and profit!\n\nMain Commands: run, scaffold, compile, export\nDiagnostics: diagnose, inspect-graph, config, validate-*"
+    name="agentmap",
+    help="AgentMap: Build and deploy LangGraph workflows from CSV files for fun and profit!\n\nMain Commands: run, scaffold, compile, export\nDiagnostics: diagnose, inspect-graph, config, validate-*\n\nShorthand: agentmap run file.csv [options] = agentmap run --csv file.csv [options]",
 )
 
 
@@ -56,7 +55,11 @@ def main(
         help="Show version and exit",
     )
 ):
-    """AgentMap CLI with service-based architecture."""
+    """AgentMap CLI with service-based architecture.
+
+    Supports shorthand syntax: agentmap run file.csv is equivalent to agentmap run --csv file.csv
+    """
+    pass
 
 
 # ============================================================================

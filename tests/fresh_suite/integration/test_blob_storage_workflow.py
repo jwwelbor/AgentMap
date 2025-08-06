@@ -837,9 +837,12 @@ class TestBlobStorageGracefulDegradation(unittest.TestCase):
         })
         self.mock_logging = MockServiceFactory.create_mock_logging_service()
     
-    @patch('agentmap.services.storage.azure_blob_connector', side_effect=ImportError("azure not found"))
-    def test_graceful_degradation_azure_missing(self, mock_azure_import):
+    @patch('agentmap.services.storage.blob_storage_service.BlobStorageService._check_azure_availability')
+    def test_graceful_degradation_azure_missing(self, mock_azure_availability):
         """Test graceful degradation when Azure SDK is missing."""
+        # Mock Azure availability to return False
+        mock_azure_availability.return_value = False
+        
         # Service should still initialize
         service = BlobStorageService(
             configuration=self.mock_config,
@@ -857,9 +860,12 @@ class TestBlobStorageGracefulDegradation(unittest.TestCase):
         health = service.health_check()
         self.assertFalse(health['providers']['azure']['available'])
     
-    @patch('agentmap.services.storage.aws_s3_connector', side_effect=ImportError("boto3 not found"))
-    def test_graceful_degradation_s3_missing(self, mock_s3_import):
+    @patch('agentmap.services.storage.blob_storage_service.BlobStorageService._check_s3_availability')
+    def test_graceful_degradation_s3_missing(self, mock_s3_availability):
         """Test graceful degradation when AWS S3 SDK is missing."""
+        # Mock S3 availability to return False
+        mock_s3_availability.return_value = False
+        
         # Service should still initialize
         service = BlobStorageService(
             configuration=self.mock_config,
@@ -873,9 +879,12 @@ class TestBlobStorageGracefulDegradation(unittest.TestCase):
         # Local file should still be available
         self.assertIn('file', providers)
     
-    @patch('agentmap.services.storage.gcp_storage_connector', side_effect=ImportError("google.cloud.storage not found"))
-    def test_graceful_degradation_gcs_missing(self, mock_gcs_import):
+    @patch('agentmap.services.storage.blob_storage_service.BlobStorageService._check_gcs_availability')
+    def test_graceful_degradation_gcs_missing(self, mock_gcs_availability):
         """Test graceful degradation when Google Cloud Storage SDK is missing."""
+        # Mock GCS availability to return False
+        mock_gcs_availability.return_value = False
+        
         # Service should still initialize
         service = BlobStorageService(
             configuration=self.mock_config,
@@ -889,11 +898,19 @@ class TestBlobStorageGracefulDegradation(unittest.TestCase):
         # Local file should still be available
         self.assertIn('file', providers)
     
+    @patch('agentmap.services.storage.blob_storage_service.BlobStorageService._check_azure_availability')
+    @patch('agentmap.services.storage.blob_storage_service.BlobStorageService._check_s3_availability')
+    @patch('agentmap.services.storage.blob_storage_service.BlobStorageService._check_gcs_availability')
     @patch('agentmap.services.storage.azure_blob_connector', side_effect=ImportError("azure not found"))
     @patch('agentmap.services.storage.aws_s3_connector', side_effect=ImportError("boto3 not found"))
     @patch('agentmap.services.storage.gcp_storage_connector', side_effect=ImportError("google.cloud.storage not found"))
-    def test_graceful_degradation_all_cloud_missing(self, mock_gcs, mock_s3, mock_azure):
+    def test_graceful_degradation_all_cloud_missing(self, mock_gcs, mock_s3, mock_azure, mock_gcs_availability, mock_s3_availability, mock_azure_availability):
         """Test graceful degradation when all cloud SDKs are missing."""
+        # Mock all availability checks to return False
+        mock_azure_availability.return_value = False
+        mock_s3_availability.return_value = False
+        mock_gcs_availability.return_value = False
+        
         # Service should still initialize
         service = BlobStorageService(
             configuration=self.mock_config,

@@ -386,7 +386,7 @@ class DependencyCheckerService:
                 is_available, missing = self._validate_storage_type(storage_type)
                 results[storage_type] = is_available
 
-                # Update registry - CRITICAL FIX: Set both validated AND available  
+                # Update registry - CRITICAL FIX: Set both validated AND available
                 self.features_registry.set_provider_validated(
                     "storage", storage_type, is_available
                 )

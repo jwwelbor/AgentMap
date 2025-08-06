@@ -9,6 +9,50 @@ keywords: [YAML configuration, LLM providers, routing, memory management, execut
 
 The main configuration file (`agentmap_config.yaml`) contains all core AgentMap settings including LLM providers, intelligent routing, memory management, execution policies, and performance optimization. This guide covers every configuration option with examples and best practices.
 
+## 📁 Configuration File Loading
+
+AgentMap uses **automatic configuration discovery** with the following precedence order:
+
+### 1. Explicit `--config` flag (Highest Priority)
+```bash
+agentmap run --config /path/to/custom_config.yaml
+```
+Explicitly specified config files take absolute precedence.
+
+### 2. `agentmap_config.yaml` in current directory (Auto-Discovered)
+```bash
+# Place agentmap_config.yaml in your working directory
+cd /your/project
+agentmap run  # Automatically discovers and uses ./agentmap_config.yaml
+```
+If no explicit config is provided, AgentMap automatically checks for `agentmap_config.yaml` in the current working directory.
+
+### 3. System defaults (Lowest Priority)
+```bash
+# If no config file found, uses built-in defaults
+agentmap run
+```
+When no config file is found, AgentMap uses sensible system defaults.
+
+### Configuration Discovery Logging
+AgentMap always logs which configuration source is being used:
+```
+[2024-08-06 10:30:15] INFO: Using configuration from: auto-discovered: /project/agentmap_config.yaml
+```
+
+### Quick Setup
+1. **Initialize config template**:
+   ```bash
+   agentmap init-config
+   ```
+
+2. **Edit the generated `agentmap_config.yaml`**
+
+3. **Run commands without `--config` flag**:
+   ```bash
+   agentmap run --csv examples/lesson1.csv
+   ```
+
 ## 📋 Complete Configuration Structure
 
 ```yaml

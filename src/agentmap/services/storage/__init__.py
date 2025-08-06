@@ -104,6 +104,14 @@ __all__ = [
     "DocumentResult",
 ]
 
+# Import connector modules so they can be patched in tests
+from . import (
+    aws_s3_connector,
+    azure_blob_connector,
+    gcp_storage_connector,
+    local_file_connector,
+)
+
 # Import blob storage service for completeness
 from .blob_storage_service import BlobStorageService
 

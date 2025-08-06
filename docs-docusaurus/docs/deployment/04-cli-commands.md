@@ -13,6 +13,53 @@ keywords: [CLI commands, command line, deployment, scaffolding, graph execution]
 
 AgentMap provides a command-line interface (CLI) for deploying and managing workflows, with powerful scaffolding capabilities for custom agents and functions. The CLI is ideal for development, testing, automation scripts, and production deployments that don't require web API interfaces.
 
+## Configuration Loading
+
+AgentMap uses a **hierarchical configuration system** with automatic discovery:
+
+### Configuration Precedence Order
+
+1. **Explicit `--config` flag** (Highest Priority)
+   ```bash
+   agentmap run --config /path/to/custom.yaml
+   ```
+
+2. **`agentmap_config.yaml` in current directory** (Auto-Discovered)
+   ```bash
+   # If agentmap_config.yaml exists in current directory, automatically used
+   agentmap run
+   ```
+
+3. **System defaults** (Lowest Priority)
+   ```bash
+   # If no config file found, uses built-in defaults
+   agentmap run
+   ```
+
+### Configuration Discovery Logging
+
+AgentMap shows which configuration source is being used:
+
+```bash
+[2024-08-06 10:30:15] INFO: Using configuration from: explicit config: /path/to/config.yaml
+[2024-08-06 10:30:15] INFO: Using configuration from: auto-discovered: /current/dir/agentmap_config.yaml
+[2024-08-06 10:30:15] INFO: Using configuration from: system defaults
+```
+
+### Quick Start with Local Config
+
+1. Copy configuration template to your working directory:
+   ```bash
+   agentmap init-config
+   ```
+
+2. Edit `agentmap_config.yaml` as needed
+
+3. Run commands without specifying `--config`:
+   ```bash
+   agentmap run --csv examples/lesson1.csv
+   ```
+
 ## Installation
 
 ```bash

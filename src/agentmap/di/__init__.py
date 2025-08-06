@@ -10,10 +10,27 @@ This module manages:
 - Graceful degradation for optional services
 """
 
+import os
 from pathlib import Path
 from typing import Optional
 
 from .containers import ApplicationContainer, create_optional_service, safe_get_service
+
+
+def discover_config_file() -> Optional[str]:
+    """
+    Discover agentmap_config.yaml in the current working directory.
+
+    Returns:
+        Path to agentmap_config.yaml if found in cwd, None otherwise
+    """
+    config_filename = "agentmap_config.yaml"
+    cwd_config_path = Path.cwd() / config_filename
+
+    if cwd_config_path.exists() and cwd_config_path.is_file():
+        return str(cwd_config_path)
+
+    return None
 
 
 def initialize_di(config_file: Optional[str] = None) -> ApplicationContainer:
@@ -25,29 +42,58 @@ def initialize_di(config_file: Optional[str] = None) -> ApplicationContainer:
     all necessary services.
 
     Args:
-        config_file: Optional path to custom config file override
+        config_file: Optional path to custom config file override.
+                    If None, automatically discovers agentmap_config.yaml in cwd.
 
     Returns:
         ApplicationContainer: Fully configured DI container ready for use
 
     Example:
-        # CLI usage
+        # CLI usage with explicit config
         container = initialize_di("/path/to/config.yaml")
         graph_runner = container.graph_runner_service()
 
-        # FastAPI usage
+        # Automatic config discovery
         container = initialize_di()
         dependency_checker = container.dependency_checker_service()
     """
+    import logging
+
     # Create the main DI container
     container = ApplicationContainer()
 
-    # Override config path if provided
+    # Determine which config file to use with precedence:
+    # 1. Explicit config_file parameter (highest priority)
+    # 2. agentmap_config.yaml in current working directory
+    # 3. Default (no config file - uses system defaults)
+    actual_config_path = None
+    config_source = "system defaults"
+
     if config_file:
+        # Explicit config file provided - validate it exists
         config_path = Path(config_file)
         if not config_path.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
-        container.config_path.override(str(config_path))
+        actual_config_path = str(config_path)
+        config_source = f"explicit config: {actual_config_path}"
+    else:
+        # Try auto-discovery
+        discovered_config = discover_config_file()
+        if discovered_config:
+            actual_config_path = discovered_config
+            config_source = f"auto-discovered: {actual_config_path}"
+
+    # Set up bootstrap logging to show config discovery result
+    bootstrap_logger = logging.getLogger("agentmap.bootstrap")
+    if not bootstrap_logger.handlers:
+        logging.basicConfig(
+            level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s"
+        )
+    bootstrap_logger.info(f"Using configuration from: {config_source}")
+
+    # Override config path in container if we have one
+    if actual_config_path:
+        container.config_path.override(actual_config_path)
 
     # Optional: Wire the container for faster service resolution
     # This pre-resolves dependencies but can be skipped for lazy initialization
@@ -145,7 +191,8 @@ def initialize_application(config_file: Optional[str] = None) -> ApplicationCont
     application startup when agents are needed.
 
     Args:
-        config_file: Optional path to custom config file override
+        config_file: Optional path to custom config file override.
+                    If None, automatically discovers agentmap_config.yaml in cwd.
 
     Returns:
         ApplicationContainer: Fully configured DI container with agents registered
@@ -155,11 +202,11 @@ def initialize_application(config_file: Optional[str] = None) -> ApplicationCont
         container = initialize_application("/path/to/config.yaml")
         graph_runner = container.graph_runner_service()  # Agents are available
 
-        # API server startup
+        # API server startup with auto-discovery
         container = initialize_application()
         # All agents registered and ready for graph execution
     """
-    # Step 1: Initialize DI container (existing functionality)
+    # Step 1: Initialize DI container with config auto-discovery
     container = initialize_di(config_file)
 
     # Step 2: Bootstrap agents (new functionality)
@@ -210,6 +257,7 @@ def bootstrap_agents(container: ApplicationContainer) -> None:
 
 __all__ = [
     "ApplicationContainer",
+    "discover_config_file",
     "initialize_di",
     "initialize_di_for_testing",
     "initialize_application",
