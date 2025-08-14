@@ -5,7 +5,6 @@ Business logic services for AgentMap.
 This module contains services that implement business use cases:
 - GraphBuilderService: CSV parsing to domain models
 - GraphRunnerService: Graph execution orchestration
-- CompilationService: Graph compilation and caching
 - GraphAssemblyService: StateGraph assembly from domain models
 - GraphOutputService: Graph export in various formats
 - FunctionResolutionService: Dynamic function loading and reference extraction
@@ -28,7 +27,7 @@ from .agent_registry_service import AgentRegistryService
 
 # Application Services
 from .application_bootstrap_service import ApplicationBootstrapService
-from .compilation_service import CompilationService
+
 
 # Configuration Services
 from .config import AppConfigService, ConfigService, StorageConfigService
@@ -80,7 +79,7 @@ from .validation.validation_service import ValidationService
 __all__ = [
     # Core Graph Services
     "GraphDefinitionService",
-    "CompilationService",
+
     "GraphRunnerService",
     "GraphAssemblyService",
     "GraphOutputService",

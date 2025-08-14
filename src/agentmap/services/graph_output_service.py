@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Union
 
 from agentmap.models.graph import Graph
 from agentmap.services.agent_registry_service import AgentRegistryService
-from agentmap.services.compilation_service import CompilationOptions, CompilationService
+from agentmap.services.graph_definition_service import GraphDefinitionService
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.function_resolution_service import FunctionResolutionService
 from agentmap.services.logging_service import LoggingService
@@ -47,7 +47,7 @@ class GraphOutputService:
     This service handles format-specific output operations for graphs,
     including Python code generation and source code export. It focuses
     specifically on human-readable formats while GraphBundleService handles
-    persistence and CompilationService handles the compilation pipeline.
+    persistence.
 
     Responsibilities:
     - Python code generation for graphs
@@ -57,7 +57,6 @@ class GraphOutputService:
 
     Does NOT handle:
     - Pickle persistence (GraphBundleService responsibility)
-    - Graph compilation (CompilationService responsibility)
     - CSV parsing (GraphBuilderService responsibility)
     """
 
@@ -67,7 +66,7 @@ class GraphOutputService:
         logging_service: LoggingService,
         function_resolution_service: FunctionResolutionService,
         agent_registry_service: AgentRegistryService,
-        compilation_service: Optional[CompilationService] = None,
+        graph_definition_service: GraphDefinitionService,
     ):
         """Initialize output service with dependency injection."""
         self.compiled_graphs_path = app_config_service.get_compiled_graphs_path()
@@ -77,7 +76,8 @@ class GraphOutputService:
         self.logger = logging_service.get_class_logger(self)
         self.function_resolution = function_resolution_service
         self.agent_registry = agent_registry_service
-        self.compilation_service = compilation_service
+        self.graph_definition = graph_definition_service
+
         self.logger.info("[GraphOutputService] Initialized")
 
     def export_graph(
@@ -329,27 +329,12 @@ class GraphOutputService:
         Raises:
             ValueError: If graph not found or compilation dependencies unavailable
         """
-        if self.compilation_service is None:
-            raise ValueError(
-                "CompilationService not available - cannot export graph. "
-                "Graph export requires CompilationService to be properly registered."
-            )
 
         try:
-            # Use CompilationService to get access to GraphDefinitionService
-            compilation_result = self.compilation_service.compile_graph(
-                graph_name,
-                CompilationOptions(csv_path=self.csv_path, include_source=False),
-            )
 
-            if not compilation_result.success:
-                raise ValueError(
-                    f"Failed to compile graph for export '{graph_name}': {compilation_result.error}"
-                )
-
-            # Get the Graph domain model through GraphDefinitionService (via CompilationService)
+            # Get the Graph domain model through GraphDefinitionService
             graph_domain_model = (
-                self.compilation_service.graph_definition.build_from_csv(
+                self.graph_definition.build_from_csv(
                     self.csv_path, graph_name
                 )
             )
@@ -603,7 +588,6 @@ class GraphOutputService:
         """
         return {
             "service": "GraphOutputService",
-            "compilation_service_available": self.compilation_service is not None,
             "function_resolution_available": self.function_resolution is not None,
             "compiled_graphs_path": str(self.compiled_graphs_path),
             "csv_path": str(self.csv_path),

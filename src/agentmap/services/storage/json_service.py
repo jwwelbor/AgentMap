@@ -36,6 +36,23 @@ class JSONStorageService(BaseStorageService):
     - Follows configuration architecture patterns from docs/contributing/architecture/configuration-patterns.md
     """
 
+    def __init__(
+        self,
+        provider_name: str,
+        configuration,  # StorageConfigService (avoid circular import)
+        logging_service,  # LoggingService (avoid circular import)
+    ):
+        """
+        Initialize JSONStorageService.
+
+        Args:
+            provider_name: Name of the storage provider
+            configuration: Storage configuration service
+            logging_service: Logging service for creating loggers
+        """
+        # Call parent's __init__ with the provided provider_name
+        super().__init__(provider_name, configuration, logging_service)
+
     # NOTE: This method is included for backward compatibility
     # The base class uses health_check(), but some code expects is_healthy()
     def is_healthy(self) -> bool:

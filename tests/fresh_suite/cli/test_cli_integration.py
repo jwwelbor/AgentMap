@@ -225,7 +225,7 @@ class TestCommandHelp(SimpleCLITestBase):
     def test_all_commands_have_help(self):
         """Test that all main commands show help."""
         commands = [
-            "run", "compile", "scaffold", "export",
+            "run", "scaffold", "export",
             "validate-csv", "validate-config", "validate-all",
             "config", "diagnose", "validate-cache"
         ]
@@ -248,7 +248,7 @@ class TestInvalidCommands(SimpleCLITestBase):
     
     def test_invalid_option_common_commands(self):
         """Test invalid options on common commands."""
-        commands_to_test = ["run", "compile", "validate-csv"]
+        commands_to_test = ["run", "validate-csv"]
         
         for command in commands_to_test:
             with self.subTest(command=command):

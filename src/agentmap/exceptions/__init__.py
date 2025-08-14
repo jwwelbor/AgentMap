@@ -11,6 +11,7 @@ from agentmap.exceptions.base_exceptions import ConfigurationException
 from agentmap.exceptions.graph_exceptions import (
     GraphBuildingError,
     InvalidEdgeDefinitionError,
+    BundleLoadError
 )
 from agentmap.exceptions.service_exceptions import (
     FunctionResolutionException,
@@ -35,6 +36,7 @@ from agentmap.exceptions.storage_exceptions import (
     StorageServiceNotAvailableError,
     StorageValidationError,
 )
+
 from agentmap.exceptions.validation_exceptions import ValidationException
 
 # Re-export at module level
@@ -42,6 +44,7 @@ __all__ = [
     "AgentError",
     "AgentNotFoundError",
     "AgentInitializationError",
+    "BundleLoadError",
     "CollectionNotFoundError",
     "ConfigurationException",
     "DocumentNotFoundError",

@@ -79,9 +79,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
         try:
             # Get cache directory from app config
-            cache_dir = app_config_service.get_value(
-                "cache.availability_cache_directory", "data/cache"
-            )
+            cache_dir = app_config_service.get_cache_path() or "agentmap_data/cache"
             cache_path = Path(cache_dir) / "unified_availability.json"
             cache_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -293,7 +291,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # Blob Storage Service for cloud blob operations
     @staticmethod
-    def _create_blob_storage_service(storage_config_service, logging_service):
+    def _create_blob_storage_service(
+        storage_config_service, logging_service, availability_cache_service
+    ):
         """
         Create blob storage service with graceful failure handling.
 
@@ -309,19 +309,66 @@ class ApplicationContainer(containers.DeclarativeContainer):
                 )
                 return None
 
+            # Check if availability cache service is available
+            if availability_cache_service is None:
+                logger = logging_service.get_logger("agentmap.blob_storage")
+                logger.warning(
+                    "Availability cache service not available - blob storage service disabled"
+                )
+                return None
+
             from agentmap.services.storage.blob_storage_service import (
                 BlobStorageService,
             )
 
-            return BlobStorageService(storage_config_service, logging_service)
+            return BlobStorageService(
+                storage_config_service, logging_service, availability_cache_service
+            )
         except Exception as e:
             logger = logging_service.get_logger("agentmap.blob_storage")
             logger.warning(f"Blob storage service disabled: {e}")
             return None
 
     blob_storage_service = providers.Singleton(
-        _create_blob_storage_service, storage_config_service, logging_service
+        _create_blob_storage_service,
+        storage_config_service,
+        logging_service,
+        availability_cache_service,
     )
+
+    # Blob Storage Service for json operations
+    @staticmethod
+    def _create_json_storage_service(storage_config_service, logging_service):
+        """
+        Create json storage service with graceful failure handling.
+
+        Returns None if creation fails, allowing the application to continue
+        without json storage features.
+        """
+        try:
+            # Check if storage config service is available for graceful degradation
+            if storage_config_service is None:
+                logger = logging_service.get_logger("agentmap.json_storage")
+                logger.info(
+                    "Storage configuration not available - json storage service disabled"
+                )
+                return None
+
+            from agentmap.services.storage.json_service import (
+                JSONStorageService
+            )
+
+            return JSONStorageService("json", storage_config_service, logging_service)
+        except Exception as e:
+            logger = logging_service.get_logger("agentmap.json_storage")
+            logger.warning(f"Blob storage service disabled: {e}")
+            return None
+
+    json_storage_service = providers.Singleton(
+        _create_json_storage_service, storage_config_service, logging_service
+    )
+
+
 
     # Storage Service Manager with graceful failure handling
     @staticmethod
@@ -415,6 +462,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         "agentmap.services.features_registry_service.FeaturesRegistryService",
         features_registry_model,
         logging_service,
+        availability_cache_service,
     )
 
     # Agent registry service (operates on global agent model)
@@ -475,37 +523,15 @@ class ApplicationContainer(containers.DeclarativeContainer):
         app_config_service,  # 2nd: app_config_service
         csv_graph_parser_service,  # 3rd: csv_parser
         graph_factory_service,  # 4th: graph_factory
+
     )
 
-    # Graph Bundle Service for graph bundle operations
-    graph_bundle_service = providers.Singleton(
-        "agentmap.services.graph_bundle_service.GraphBundleService",
-        providers.Callable(
-            lambda logging_service: logging_service.get_logger("agentmap.graph_bundle"),
-            logging_service,
-        ),
-    )
-
-    # Compilation Service for graph compilation and auto-compile capabilities
-    compilation_service = providers.Singleton(
-        "agentmap.services.compilation_service.CompilationService",
+    # Graph Preparation Service for preparing graph definitions for execution
+    graph_preparation_service = providers.Singleton(
+        "agentmap.services.graph_preparation_service.GraphPreparationService",
         graph_definition_service,
-        logging_service,
-        app_config_service,
         node_registry_service,
-        graph_bundle_service,
-        graph_assembly_service,
-        function_resolution_service,
-    )
-
-    # Graph Output Service for exporting graphs in human-readable formats
-    graph_output_service = providers.Singleton(
-        "agentmap.services.graph_output_service.GraphOutputService",
-        app_config_service,
         logging_service,
-        function_resolution_service,
-        agent_registry_service,
-        compilation_service,
     )
 
     # ExecutionTrackingService for creating clean ExecutionTracker instances
@@ -519,18 +545,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
     execution_policy_service = providers.Singleton(
         "agentmap.services.execution_policy_service.ExecutionPolicyService",
         app_config_service,
-        logging_service,
-    )
-
-    # Graph Execution Service for clean execution orchestration
-    graph_execution_service = providers.Singleton(
-        "agentmap.services.graph_execution_service.GraphExecutionService",
-        execution_tracking_service,
-        execution_policy_service,
-        state_adapter_service,
-        graph_assembly_service,
-        graph_bundle_service,
-        graph_factory_service,
         logging_service,
     )
 
@@ -584,6 +598,74 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
+    # LEVEL 5.5: Analyzer Services (depend on agent factory and container)
+    # ======================================================================
+    # These services analyze requirements and dependencies without instantiating
+    # agents or services, providing metadata for graph execution planning.
+    # ======================================================================
+
+    # ProtocolBasedRequirementsAnalyzer for analyzing graph requirements from agent protocols
+    protocol_requirements_analyzer = providers.Singleton(
+        "agentmap.services.protocol_requirements_analyzer.ProtocolBasedRequirementsAnalyzer",
+        csv_graph_parser_service,
+        agent_factory_service,
+        logging_service,
+    )
+
+
+
+
+    # DIContainerAnalyzer is not registered in the DI container
+    # It's created on-demand by GraphBundleService to avoid circular dependency
+
+    # Graph Bundle Service for graph bundle operations
+    graph_bundle_service = providers.Singleton(
+        "agentmap.services.graph_bundle_service.GraphBundleService",
+        providers.Callable(
+            lambda logging_service: logging_service.get_logger("agentmap.graph_bundle"),
+            logging_service,
+        ),
+        logging_service,
+        protocol_requirements_analyzer,
+        None,  # di_container_analyzer - will be created on-demand
+        agent_factory_service,
+        json_storage_service,
+    )
+
+
+
+    # Graph Resolution Service for graph execution strategy resolution
+    graph_resolution_service = providers.Singleton(
+        "agentmap.services.graph_resolution_service.GraphResolutionService",
+        graph_bundle_service,
+        graph_definition_service,
+        app_config_service,
+        logging_service,
+    )
+
+    # Graph Execution Service for clean execution orchestration
+    graph_execution_service = providers.Singleton(
+        "agentmap.services.graph_execution_service.GraphExecutionService",
+        execution_tracking_service,
+        execution_policy_service,
+        state_adapter_service,
+        graph_assembly_service,
+        graph_bundle_service,  
+        graph_factory_service,
+        agent_factory_service,
+        logging_service,
+    )
+
+    # Graph Output Service for exporting graphs in human-readable formats (removed compilation_service dependency)
+    graph_output_service = providers.Singleton(
+        "agentmap.services.graph_output_service.GraphOutputService",
+        app_config_service,
+        logging_service,
+        function_resolution_service,
+        agent_registry_service,
+        graph_definition_service,
+    )
+
     # Dependency checker service (with unified cache integration)
     dependency_checker_service = providers.Singleton(
         _create_dependency_checker_service,
@@ -604,16 +686,23 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
-    # Graph Checkpoint Service for managing workflow execution checkpoints
     graph_checkpoint_service = providers.Singleton(
         "agentmap.services.graph_checkpoint_service.GraphCheckpointService",
-        providers.Callable(
-            lambda storage_manager: (
-                storage_manager.get_service("json") if storage_manager else None
-            ),
-            storage_service_manager,
-        ),
+        json_storage_service,  # Direct injection
         logging_service,
+    )
+
+    # Agent Service Injection Service for centralized agent service injection
+    agent_service_injection_service = providers.Singleton(
+        "agentmap.services.agent_service_injection_service.AgentServiceInjectionService",
+        llm_service,
+        storage_service_manager,
+        logging_service,
+        host_protocol_configuration_service,
+        prompt_manager_service,
+        orchestrator_service,
+        graph_checkpoint_service,
+        blob_storage_service,
     )
 
     # Application bootstrap service (coordinates agent registration and feature discovery)
@@ -645,76 +734,49 @@ class ApplicationContainer(containers.DeclarativeContainer):
     # Factory for GraphRunnerService that properly passes the container
     @staticmethod
     def _create_graph_runner_service(
-        graph_definition_service,
         graph_execution_service,
-        compilation_service,
-        graph_bundle_service,
+        graph_resolution_service,
+        graph_preparation_service,
         agent_factory_service,
-        llm_service,
-        storage_service_manager,
-        node_registry_service,
+        agent_service_injection_service,
         logging_service,
         app_config_service,
         execution_tracking_service,
-        execution_policy_service,
         state_adapter_service,
-        dependency_checker_service,
-        graph_assembly_service,
-        prompt_manager_service,
-        orchestrator_service,
         host_protocol_configuration_service,
-        graph_checkpoint_service,
-        blob_storage_service,
+        prompt_manager_service,
     ):
-        """Create GraphRunnerService with proper container injection."""
+        """Create GraphRunnerService with proper dependencies for refactored architecture."""
         from agentmap.services.graph_runner_service import GraphRunnerService
 
         return GraphRunnerService(
-            graph_definition_service=graph_definition_service,
             graph_execution_service=graph_execution_service,
-            compilation_service=compilation_service,
-            graph_bundle_service=graph_bundle_service,
+            graph_resolution_service=graph_resolution_service,
+            graph_preparation_service=graph_preparation_service,
             agent_factory_service=agent_factory_service,
-            llm_service=llm_service,
-            storage_service_manager=storage_service_manager,
-            node_registry_service=node_registry_service,
+            agent_service_injection_service=agent_service_injection_service,
             logging_service=logging_service,
             app_config_service=app_config_service,
             execution_tracking_service=execution_tracking_service,
-            execution_policy_service=execution_policy_service,
             state_adapter_service=state_adapter_service,
-            dependency_checker_service=dependency_checker_service,
-            graph_assembly_service=graph_assembly_service,
+            host_protocol_configuration_service=host_protocol_configuration_service,
             prompt_manager_service=prompt_manager_service,
-            orchestrator_service=orchestrator_service,
-            host_protocol_configuration_service=host_protocol_configuration_service,  # Pass the service, not container
-            graph_checkpoint_service=graph_checkpoint_service,
-            blob_storage_service=blob_storage_service,
         )
 
     # Graph Runner Service - Simplified facade service for complete graph execution
     graph_runner_service = providers.Singleton(
         _create_graph_runner_service,
-        graph_definition_service,
         graph_execution_service,
-        compilation_service,
-        graph_bundle_service,
+        graph_resolution_service,
+        graph_preparation_service,
         agent_factory_service,
-        llm_service,
-        storage_service_manager,
-        node_registry_service,
+        agent_service_injection_service,
         logging_service,
         app_config_service,
         execution_tracking_service,
-        execution_policy_service,
         state_adapter_service,
-        dependency_checker_service,
-        graph_assembly_service,
+        host_protocol_configuration_service,
         prompt_manager_service,
-        orchestrator_service,
-        host_protocol_configuration_service,  # Pass the service provider
-        graph_checkpoint_service,
-        blob_storage_service,
     )
 
     # Provider for checking service availability

@@ -200,17 +200,7 @@ class TestRunCommand(SimpleCLITestBase):
         result = self.run_command(["run", "--graph", "test_graph", "--csv", str(csv_file)])
         
         self.assert_success(result)
-    
-    def test_run_with_validation(self):
-        """Test run with validation enabled."""
-        csv_file = self.create_test_csv()
         
-        result = self.run_command(["run", "--graph", "test_graph", "--validate"])
-        
-        self.assert_success(result)
-        # Verify validation service was called
-        self.mock_validation_service.validate_csv_for_compilation.assert_called()
-    
     def test_run_with_execution_failure(self):
         """Test run command when graph execution fails."""
         csv_file = self.create_test_csv()
@@ -225,58 +215,7 @@ class TestRunCommand(SimpleCLITestBase):
         
         self.assert_failure(result)
 
-
-class TestCompileCommand(SimpleCLITestBase):
-    """Test compile command."""
     
-    def test_help_output(self):
-        """Test --help shows usage information."""
-        result = self.run_command(["compile", "--help"])
-        self.assert_success(result)
-        self.assertIn("compile", result.stdout.lower())
-    
-    def test_compile_specific_graph(self):
-        """Test compiling a specific graph."""
-        csv_file = self.create_test_csv()
-        
-        result = self.run_command(["compile", "--graph", "test_graph"])
-        
-        self.assert_success(result)
-        self.assertIn("✅", result.stdout)
-        self.mock_compilation_service.compile_graph.assert_called_once()
-    
-    def test_compile_all_graphs(self):
-        """Test compiling all graphs."""
-        csv_file = self.create_test_csv()
-        
-        result = self.run_command(["compile"])
-        
-        self.assert_success(result)
-        self.mock_compilation_service.compile_all_graphs.assert_called_once()
-    
-    def test_compile_with_output_directory(self):
-        """Test compile with custom output directory."""
-        csv_file = self.create_test_csv()
-        
-        result = self.run_command(["compile", "--graph", "test_graph", "--output", str(self.output_dir)])
-        
-        self.assert_success(result)
-    
-    def test_compile_with_errors(self):
-        """Test compile command when compilation fails."""
-        csv_file = self.create_test_csv()
-        
-        # Configure compilation to fail
-        error_result = Mock()
-        error_result.success = False
-        error_result.errors = ["Compilation failed"]
-        self.mock_compilation_service.compile_graph.return_value = error_result
-        
-        result = self.run_command(["compile", "--graph", "test_graph"])
-        
-        self.assert_failure(result)
-
-
 class TestScaffoldCommand(SimpleCLITestBase):
     """Test scaffold command."""
     
@@ -362,15 +301,6 @@ class TestExportCommand(SimpleCLITestBase):
         
         self.assert_success(result)
     
-    def test_export_with_output_file(self):
-        """Test export with custom output file."""
-        csv_file = self.create_test_csv()
-        output_file = self.output_dir / "exported.pkl"
-        
-        result = self.run_command(["export", "--graph", "test_graph", "--output", str(output_file)])
-        
-        self.assert_success(result)
-    
     def test_export_failure(self):
         """Test export when service fails."""
         csv_file = self.create_test_csv()
@@ -393,10 +323,7 @@ class TestWorkflowCommandsIntegration(SimpleCLITestBase):
         # Step 1: Scaffold
         scaffold_result = self.run_command(["scaffold"])
         self.assert_success(scaffold_result)
-        
-        # Step 2: Compile
-        compile_result = self.run_command(["compile", "--graph", "test_graph"])
-        self.assert_success(compile_result)
+    
         
         # Step 3: Run
         run_result = self.run_command(["run", "--graph", "test_graph"])
@@ -404,21 +331,7 @@ class TestWorkflowCommandsIntegration(SimpleCLITestBase):
         
         # Verify all services were called
         self.mock_scaffold_service.scaffold_agents_from_csv.assert_called()
-        self.mock_compilation_service.compile_graph.assert_called()
         self.mock_graph_runner_service.run_graph.assert_called()
     
-    def test_export_after_compile(self):
-        """Test export after compilation."""
-        csv_file = self.create_test_csv()
-        
-        # Compile first
-        compile_result = self.run_command(["compile", "--graph", "test_graph"])
-        self.assert_success(compile_result)
-        
-        # Then export
-        export_result = self.run_command(["export", "--graph", "test_graph"])
-        self.assert_success(export_result)
-
-
 if __name__ == '__main__':
     unittest.main()

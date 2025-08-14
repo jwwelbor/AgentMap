@@ -26,10 +26,8 @@ class ServiceAdapter:
         self,
         csv: Optional[str] = None,
         state: Optional[Union[str, Dict[str, Any]]] = None,
-        autocompile: Optional[bool] = None,
         validate_before_run: bool = False,
         track_execution: bool = True,
-        force_compilation: bool = False,
         execution_mode: str = "standard",
         config_file: Optional[str] = None,
         **kwargs,
@@ -67,12 +65,12 @@ class ServiceAdapter:
 
         return RunOptions(
             initial_state=parsed_state,
-            autocompile=autocompile,
             csv_path=csv_path,
             validate_before_run=validate_before_run,
             track_execution=track_execution,
-            force_compilation=force_compilation,
             execution_mode=execution_mode,
+            config_file=config_file,
+            **kwargs,
         )
 
     def extract_result_state(self, result: ExecutionResult) -> Dict[str, Any]:

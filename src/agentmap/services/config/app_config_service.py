@@ -45,6 +45,7 @@ class AppConfigService:
         self._config_service = config_service
         self._config_data = None
         self._logger = None
+        self._config_file_path = Path(config_path) if config_path else None
 
         # Setup bootstrap logging - will be replaced later by DI
         self._setup_bootstrap_logging()
@@ -110,7 +111,13 @@ class AppConfigService:
             self._config_data, path, default
         )
 
+
+
     # Path accessors
+    def get_cache_path(self) -> Path:
+        """Get the path for custom agents."""
+        return Path(self.get_value("paths.cache", "agentmap/custom_agents"))
+    
     def get_custom_agents_path(self) -> Path:
         """Get the path for custom agents."""
         return Path(self.get_value("paths.custom_agents", "agentmap/custom_agents"))
@@ -122,6 +129,23 @@ class AppConfigService:
     def get_compiled_graphs_path(self) -> Path:
         """Get the path for compiled graphs."""
         return Path(self.get_value("paths.compiled_graphs", "agentmap/compiled_graphs"))
+    
+    def get_metadata_bundles_path(self) -> Path:
+        """Get the path for metadata bundles."""
+        metadata_bundles_path = Path(self.get_value("paths.metadata_bundles", "agentmap/metadata_bundles"))
+
+        # Ensure the directory exists
+        try:
+            metadata_bundles_path.mkdir(parents=True, exist_ok=True)
+            self._logger.debug(
+                f"[AppConfigService] Metadata bundles path ensured: {metadata_bundles_path}"
+            )
+        except Exception as e:
+            error_msg = f"Could not create metadata bundles directory {metadata_bundles_path}: {e}"
+            self._logger.error(f"[AppConfigService] {error_msg}")
+            raise ConfigurationException(error_msg) from e
+
+        return metadata_bundles_path
 
     def get_csv_path(self) -> Path:
         """Get the path for the workflow CSV file."""
@@ -161,42 +185,7 @@ class AppConfigService:
 
         # Default routing configuration
         defaults = {
-            "enabled": True,
-            "complexity_analysis": {
-                "prompt_length_thresholds": {"low": 100, "medium": 300, "high": 800},
-                "methods": {
-                    "prompt_length": True,
-                    "keyword_analysis": True,
-                    "context_analysis": True,
-                    "memory_analysis": True,
-                    "structure_analysis": True,
-                },
-                "keyword_weights": {
-                    "complexity_keywords": 0.4,
-                    "task_specific_keywords": 0.3,
-                    "prompt_structure": 0.3,
-                },
-                "context_analysis": {
-                    "memory_size_threshold": 10,
-                    "input_field_count_threshold": 5,
-                },
-            },
-            "task_types": {
-                "general": {
-                    "description": "General purpose tasks",
-                    "provider_preference": ["anthropic", "openai", "google"],
-                    "default_complexity": "medium",
-                    "complexity_keywords": {
-                        "high": ["analyze", "complex", "detailed", "comprehensive"],
-                        "critical": ["urgent", "critical", "important", "decision"],
-                    },
-                }
-            },
-            "fallback": {
-                "default_provider": "anthropic",
-                "default_model": "claude-3-haiku-20240307",
-                "retry_with_lower_complexity": True,
-            },
+            "enabled": False
         }
 
         # Merge with defaults
@@ -423,6 +412,11 @@ class AppConfigService:
             "errors": errors,
             "summary": summary,
         }
+
+    # Config file path accessor
+    def get_config_file_path(self) -> Optional[Path]:
+        """Get the path to the main configuration file that was used during initialization."""
+        return self._config_file_path
 
     # Storage config path accessor (storage loading moved to StorageConfigService)
     def get_storage_config_path(self) -> Path:

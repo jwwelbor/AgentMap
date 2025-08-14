@@ -15,6 +15,9 @@ from agentmap.exceptions import (
     StorageOperationError,
     StorageServiceError,
 )
+from agentmap.services.config.availability_cache_service import (
+    AvailabilityCacheService,
+)
 from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.protocols import BlobStorageServiceProtocol
@@ -42,6 +45,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
         self,
         configuration: StorageConfigService,
         logging_service: LoggingService,
+        availability_cache: AvailabilityCacheService,
     ):
         """
         Initialize the blob storage service.
@@ -49,9 +53,11 @@ class BlobStorageService(BlobStorageServiceProtocol):
         Args:
             configuration: Storage configuration service
             logging_service: Logging service for creating loggers
+            availability_cache: Availability cache service for caching import checks
         """
         self.configuration = configuration
         self.logging_service = logging_service
+        self.availability_cache = availability_cache
         self._logger = logging_service.get_class_logger(self)
 
         # Cache for connector instances
@@ -91,52 +97,68 @@ class BlobStorageService(BlobStorageServiceProtocol):
         Initialize the provider registry with available connectors.
 
         This method attempts to import all blob storage connectors and
-        registers them if their dependencies are available.
+        registers them if their dependencies are available. Uses the
+        availability cache to avoid repeated import checks.
         """
         # Azure Blob Storage
-        try:
-            from agentmap.services.storage.azure_blob_connector import (
-                AzureBlobConnector,
-            )
+        azure_available = self._check_and_cache_availability(
+            "azure", self._check_azure_availability
+        )
+        if azure_available:
+            try:
+                from agentmap.services.storage.azure_blob_connector import (
+                    AzureBlobConnector,
+                )
 
-            self._provider_factories["azure"] = AzureBlobConnector
-            self._available_providers["azure"] = self._check_azure_availability()
-            self._logger.debug(
-                f"Azure provider available: {self._available_providers['azure']}"
-            )
-        except ImportError as e:
-            self._logger.debug(f"Azure provider not available: {e}")
+                self._provider_factories["azure"] = AzureBlobConnector
+                self._available_providers["azure"] = True
+                self._logger.debug("Azure provider available and registered")
+            except ImportError as e:
+                self._logger.debug(f"Azure connector import failed: {e}")
+                self._available_providers["azure"] = False
+        else:
             self._available_providers["azure"] = False
+            self._logger.debug("Azure provider not available (cached)")
 
         # AWS S3
-        try:
-            from agentmap.services.storage.aws_s3_connector import (
-                AWSS3Connector,
-            )
+        s3_available = self._check_and_cache_availability(
+            "s3", self._check_s3_availability
+        )
+        if s3_available:
+            try:
+                from agentmap.services.storage.aws_s3_connector import (
+                    AWSS3Connector,
+                )
 
-            self._provider_factories["s3"] = AWSS3Connector
-            self._available_providers["s3"] = self._check_s3_availability()
-            self._logger.debug(
-                f"S3 provider available: {self._available_providers['s3']}"
-            )
-        except ImportError as e:
-            self._logger.debug(f"S3 provider not available: {e}")
+                self._provider_factories["s3"] = AWSS3Connector
+                self._available_providers["s3"] = True
+                self._logger.debug("S3 provider available and registered")
+            except ImportError as e:
+                self._logger.debug(f"S3 connector import failed: {e}")
+                self._available_providers["s3"] = False
+        else:
             self._available_providers["s3"] = False
+            self._logger.debug("S3 provider not available (cached)")
 
         # Google Cloud Storage
-        try:
-            from agentmap.services.storage.gcp_storage_connector import (
-                GCPStorageConnector,
-            )
+        gcs_available = self._check_and_cache_availability(
+            "gcs", self._check_gcs_availability
+        )
+        if gcs_available:
+            try:
+                from agentmap.services.storage.gcp_storage_connector import (
+                    GCPStorageConnector,
+                )
 
-            self._provider_factories["gs"] = GCPStorageConnector
-            self._available_providers["gs"] = self._check_gcs_availability()
-            self._logger.debug(
-                f"GCS provider available: {self._available_providers['gs']}"
-            )
-        except ImportError as e:
-            self._logger.debug(f"GCS provider not available: {e}")
+                self._provider_factories["gs"] = GCPStorageConnector
+                self._available_providers["gs"] = True
+                self._logger.debug("GCS provider available and registered")
+            except ImportError as e:
+                self._logger.debug(f"GCS connector import failed: {e}")
+                self._available_providers["gs"] = False
+        else:
             self._available_providers["gs"] = False
+            self._logger.debug("GCS provider not available (cached)")
 
         # Local file storage (always available)
         try:
@@ -153,6 +175,48 @@ class BlobStorageService(BlobStorageServiceProtocol):
             self._logger.error(f"Local file provider not available: {e}")
             self._available_providers["file"] = False
             self._available_providers["local"] = False
+
+    def _check_and_cache_availability(
+        self, provider: str, check_func: callable
+    ) -> bool:
+        """
+        Check and cache provider availability.
+
+        Args:
+            provider: Provider name for cache key
+            check_func: Function to check availability if not cached
+
+        Returns:
+            True if provider is available, False otherwise
+        """
+        # Try to get from cache first
+        cached_result = self.availability_cache.get_availability(
+            "dependency.storage", provider
+        )
+
+        if cached_result is not None:
+            # Use cached result
+            return cached_result.get("available", False)
+
+        # Not in cache, perform actual check
+        try:
+            available = check_func()
+            # Cache the result
+            self.availability_cache.set_availability(
+                "dependency.storage",
+                provider,
+                {"available": available, "provider": provider},
+            )
+            return available
+        except Exception as e:
+            self._logger.debug(f"Error checking {provider} availability: {e}")
+            # Cache the failure
+            self.availability_cache.set_availability(
+                "dependency.storage",
+                provider,
+                {"available": False, "provider": provider, "error": str(e)},
+            )
+            return False
 
     @staticmethod
     def _check_azure_availability() -> bool:

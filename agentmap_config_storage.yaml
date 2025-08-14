@@ -1,71 +1,87 @@
 # Storage configuration for AgentMap
 # This file defines storage locations and connection settings
 
+# JSON storage provider configuration
+json:
+  enabled: true
+  provider: "json"
+  base_directory: "data/json"
+  encoding: "utf-8"
+  indent: 2
+  # options:
+  #   allow_nan: true
+  #   sort_keys: false
+
+
 csv:
+  enabled: true
   # Default directory for CSV files if not specified
   default_directory: "data/csv"
   # Enable automatic CSV file creation on write operations
   auto_create_files: true
   
   # Named CSV collections
-  collections:
-    users: "data/csv/users.csv"
-    products: "data/csv/products.csv"
-    orders: "data/csv/orders.csv"
-    customers: "data/csv/customers/info.csv"
-    logs: "logs/app_events.csv"
+  # collections:
+  #   users: "data/csv/users.csv"
+  #   products: "data/csv/products.csv"
+  #   orders: "data/csv/orders.csv"
+  #   customers: "data/csv/customers/info.csv"
+  #   logs: "logs/app_events.csv"
 
 vector:
-  # Default vector database provider
-  default_provider: "local"
+  enabled: false
+  # # Default vector database provider
+  # default_provider: "local"
   
-  # Vector database collections
-  collections:
-    documents:
-      provider: "pinecone"
-      index_name: "document-index"
-      namespace: "general"
-      dimension: 1536
-      metric: "cosine"
-      api_key: "env:PINECONE_API_KEY"
+  # # Vector database collections
+  # collections:
+  #   documents:
+  #     provider: "pinecone"
+  #     index_name: "document-index"
+  #     namespace: "general"
+  #     dimension: 1536
+  #     metric: "cosine"
+  #     api_key: "env:PINECONE_API_KEY"
     
-    embeddings:
-      provider: "supabase"
-      table: "embeddings"
-      connection_string: "env:SUPABASE_URL"
-      api_key: "env:SUPABASE_KEY"
+  #   embeddings:
+  #     provider: "supabase"
+  #     table: "embeddings"
+  #     connection_string: "env:SUPABASE_URL"
+  #     api_key: "env:SUPABASE_KEY"
     
-    local_vectors:
-      provider: "local"
-      path: "data/vector/local_store"
-      dimension: 768
+  #   local_vectors:
+  #     provider: "local"
+  #     path: "data/vector/local_store"
+  #     dimension: 768
 
 kv:
-  # Default key-value store provider
-  default_provider: "local"
+  enabled: false
+  # # Default key-value store provider
+  # default_provider: "local"
   
-  # Key-value store collections
-  collections:
-    cache:
-      provider: "redis"
-      connection: "env:REDIS_URL"
-      prefix: "agentmap:"
+  # # Key-value store collections
+  # collections:
+  #   cache:
+  #     provider: "redis"
+  #     connection: "env:REDIS_URL"
+  #     prefix: "agentmap:"
     
-    settings:
-      provider: "local"
-      path: "data/kv/settings.json"
+  #   settings:
+  #     provider: "local"
+  #     path: "data/kv/settings.json"
     
-    session:
-      provider: "memory"
-      ttl: 3600  # Time to live in seconds
+  #   session:
+  #     provider: "memory"
+  #     ttl: 3600  # Time to live in seconds
 
 firebase:
+  enabled: false
   # Default Firebase project
-  default_project: "env:FIREBASE_DEFAULT_PROJECT"
+  # default_project: "env:FIREBASE_DEFAULT_PROJECT"
   
   # Authentication settings
   auth:
-    service_account_key: "env:FIREBASE_SERVICE_ACCOUNT"  # Path to service account key file
+    # service_account_key: "env:FIREBASE_SERVICE_ACCOUNT"  # Path to service account key file
     # Alternative authentication methods
     # api_key: "env:FIREBASE_API_KEY"
     # email: "env:FIREBASE_EMAIL"
@@ -73,38 +89,39 @@ firebase:
   
   # Firestore document collections
   firestore:
-    collections:
-      users:
-        collection_path: "users"
-        project_id: "env:FIREBASE_PROJECT_ID"  # Optional override of default project
-      products:
-        collection_path: "inventory/products"
-      orders:
-        collection_path: "transactions/orders"
-        query_limit: 100  # Default query limit
+    # collections:
+    #   users:
+    #     collection_path: "users"
+    #     project_id: "env:FIREBASE_PROJECT_ID"  # Optional override of default project
+    #   products:
+    #     collection_path: "inventory/products"
+    #   orders:
+    #     collection_path: "transactions/orders"
+    #     query_limit: 100  # Default query limit
   
   # Realtime Database references
   realtime_db:
-    collections:
-      active_users:
-        db_url: "env:FIREBASE_RTDB_URL"
-        path: "users/active"
-      game_state:
-        path: "games/current"
-        ordered_by: "timestamp"
-      chat_messages:
-        path: "chat/messages"
-        query_limit: 50
+    # enabled: true
+    # collections:
+    #   active_users:
+    #     db_url: "env:FIREBASE_RTDB_URL"
+    #     path: "users/active"
+    #   game_state:
+    #     path: "games/current"
+    #     ordered_by: "timestamp"
+    #   chat_messages:
+    #     path: "chat/messages"
+    #     query_limit: 50
   
   # Cloud Storage buckets
   storage:
-    collections:
-      user_uploads:
-        bucket: "env:FIREBASE_STORAGE_BUCKET"
-        path: "uploads/user"
-      product_images:
-        bucket: "products-images-bucket"
-        path: "images/products"
-      backup_files:
-        bucket: "backups-bucket"
-        path: "automated/daily"
+    # collections:
+    #   user_uploads:
+    #     bucket: "env:FIREBASE_STORAGE_BUCKET"
+    #     path: "uploads/user"
+    #   product_images:
+    #     bucket: "products-images-bucket"
+    #     path: "images/products"
+    #   backup_files:
+    #     bucket: "backups-bucket"
+    #     path: "automated/daily"

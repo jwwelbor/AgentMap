@@ -29,20 +29,20 @@ from agentmap.infrastructure.interaction.cli_handler import CLIInteractionHandle
 class StateExecutionRequest(ValidatedStateExecutionRequest):
     """Request model for path-based execution with just state."""
 
-    class Config:
-        schema_extra = {
-            "example": {
-                "state": {
-                    "user_input": "Process customer inquiry about pricing",
-                    "customer_id": "CUST-12345",
-                    "priority": "high",
-                    "metadata": {"source": "api", "timestamp": "2024-01-15T10:30:00Z"},
-                },
-                "autocompile": True,
-                "execution_id": "exec-2024-0115-001",
-            },
-            "description": "Execute a workflow graph with initial state and optional compilation",
-        }
+#     class Config:
+#         schema_extra = {
+#             "example": {
+#                 "state": {
+#                     "user_input": "Process customer inquiry about pricing",
+#                     "customer_id": "CUST-12345",
+#                     "priority": "high",
+#                     "metadata": {"source": "api", "timestamp": "2024-01-15T10:30:00Z"},
+#                 },
+#                 "autocompile": True,
+#                 "execution_id": "exec-2024-0115-001",
+#             },
+#             "description": "Execute a workflow graph with initial state and optional compilation",
+#         }
 
 
 class GraphRunRequest(BaseModel):
@@ -69,39 +69,39 @@ class GraphRunRequest(BaseModel):
         None, description="Optional execution tracking identifier"
     )
 
-    class Config:
-        schema_extra = {
-            "example": {
-                "graph": "customer_support_flow",
-                "workflow": "customer_service",
-                "state": {
-                    "ticket_id": "TICKET-7890",
-                    "customer_message": "I need help with my order",
-                    "urgency": "medium",
-                },
-                "autocompile": True,
-                "execution_id": "legacy-exec-001",
-            },
-            "description": "Legacy endpoint supporting flexible parameter combinations for backward compatibility",
-        }
+    # class Config:
+    #     schema_extra = {
+    #         "example": {
+    #             "graph": "customer_support_flow",
+    #             "workflow": "customer_service",
+    #             "state": {
+    #                 "ticket_id": "TICKET-7890",
+    #                 "customer_message": "I need help with my order",
+    #                 "urgency": "medium",
+    #             },
+    #             "autocompile": True,
+    #             "execution_id": "legacy-exec-001",
+    #         },
+    #         "description": "Legacy endpoint supporting flexible parameter combinations for backward compatibility",
+    #     }
 
 
 class ResumeWorkflowRequest(ValidatedResumeWorkflowRequest):
     """Request model for resuming an interrupted workflow."""
 
-    class Config:
-        schema_extra = {
-            "example": {
-                "thread_id": "thread-uuid-12345",
-                "response_action": "approve",
-                "response_data": {
-                    "user_decision": "approved",
-                    "comments": "Looks good, proceed with processing",
-                    "reviewer_id": "USER-456",
-                },
-            },
-            "description": "Resume a paused workflow by providing user response or decision",
-        }
+    # class Config:
+    #     schema_extra = {
+    #         "example": {
+    #             "thread_id": "thread-uuid-12345",
+    #             "response_action": "approve",
+    #             "response_data": {
+    #                 "user_decision": "approved",
+    #                 "comments": "Looks good, proceed with processing",
+    #                 "reviewer_id": "USER-456",
+    #             },
+    #         },
+    #         "description": "Resume a paused workflow by providing user response or decision",
+    #     }
 
 
 # Response models
@@ -125,44 +125,45 @@ class GraphRunResponse(BaseModel):
         None, description="Additional execution metadata and statistics"
     )
 
-    class Config:
-        schema_extra = {
-            "examples": [
-                {
-                    "name": "Successful Execution",
-                    "value": {
-                        "success": True,
-                        "output": {
-                            "final_response": "Customer inquiry has been processed successfully",
-                            "ticket_status": "resolved",
-                            "resolution_time": "00:03:45",
-                            "assigned_agent": "AI-Agent-Support",
-                        },
-                        "execution_id": "exec-2024-0115-001",
-                        "execution_time": 3.45,
-                        "metadata": {
-                            "nodes_executed": 7,
-                            "llm_calls_made": 3,
-                            "total_tokens": 1250,
-                        },
-                    },
-                },
-                {
-                    "name": "Failed Execution",
-                    "value": {
-                        "success": False,
-                        "output": None,
-                        "error": "Graph compilation failed: Missing required agent type 'custom_llm'",
-                        "execution_id": "exec-2024-0115-002",
-                        "execution_time": 0.15,
-                        "metadata": {
-                            "error_node": "process_inquiry",
-                            "error_type": "AgentNotFound",
-                        },
-                    },
-                },
-            ]
-        }
+    # TODO: Example config
+    # class Config:
+    #     schema_extra = {
+    #         "examples": [
+    #             {
+    #                 "name": "Successful Execution",
+    #                 "value": {
+    #                     "success": True,
+    #                     "output": {
+    #                         "final_response": "Customer inquiry has been processed successfully",
+    #                         "ticket_status": "resolved",
+    #                         "resolution_time": "00:03:45",
+    #                         "assigned_agent": "AI-Agent-Support",
+    #                     },
+    #                     "execution_id": "exec-2024-0115-001",
+    #                     "execution_time": 3.45,
+    #                     "metadata": {
+    #                         "nodes_executed": 7,
+    #                         "llm_calls_made": 3,
+    #                         "total_tokens": 1250,
+    #                     },
+    #                 },
+    #             },
+    #             {
+    #                 "name": "Failed Execution",
+    #                 "value": {
+    #                     "success": False,
+    #                     "output": None,
+    #                     "error": "Graph compilation failed: Missing required agent type 'custom_llm'",
+    #                     "execution_id": "exec-2024-0115-002",
+    #                     "execution_time": 0.15,
+    #                     "metadata": {
+    #                         "error_node": "process_inquiry",
+    #                         "error_type": "AgentNotFound",
+    #                     },
+    #                 },
+    #             },
+    #         ]
+    #     }
 
 
 class ResumeWorkflowResponse(BaseModel):

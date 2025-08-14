@@ -39,6 +39,23 @@ class CSVStorageService(BaseStorageService):
     - Follows configuration architecture patterns from docs/contributing/architecture/configuration-patterns.md
     """
 
+    def __init__(
+        self,
+        provider_name: str,
+        configuration,  # StorageConfigService (avoid circular import)
+        logging_service,  # LoggingService (avoid circular import)
+    ):
+        """
+        Initialize CSVStorageService.
+
+        Args:
+            provider_name: Name of the storage provider
+            configuration: Storage configuration service
+            logging_service: Logging service for creating loggers
+        """
+        # Call parent's __init__ with the provided provider_name
+        super().__init__(provider_name, configuration, logging_service)
+
     def _initialize_client(self) -> Any:
         """
         Initialize CSV client.
