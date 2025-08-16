@@ -55,12 +55,14 @@ def run_command(
         # Validate parameters early
         validate_run_parameters(csv=csv, state=state)
 
+        # TODO: figure out how to find out if the bundle exists and pass that to initialize_application
+
         # Initialize DI container with agent bootstrap (agents needed for graph execution)
         container = initialize_application(config_file)
         adapter = create_service_adapter(container)
         validation_service = container.validation_service
 
-        # Get execution formatter service
+        # Get execution formatter service for pretty printing results
         formatter_service = container.execution_formatter_service()
 
         # Get services

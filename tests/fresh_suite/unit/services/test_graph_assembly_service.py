@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 from typing import Dict, Any, Optional
 from pathlib import Path
 
-from agentmap.services.graph_assembly_service import GraphAssemblyService
+from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
 from agentmap.services.node_registry_service import NodeRegistryUser
 from agentmap.models.node import Node
 from agentmap.agents.builtins.default_agent import DefaultAgent

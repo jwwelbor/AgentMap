@@ -53,51 +53,6 @@ class GraphPreparationService:
         
         self.logger.info("[GraphPreparationService] Initialized")
 
-    def load_graph_definition_for_execution(
-        self, csv_path: Path, graph_name: Optional[str]
-    ) -> Tuple[Dict[str, Any], str]:
-        """
-        Load and prepare graph definition for execution.
-
-        Uses GraphDefinitionService and prepares the definition with agent instances.
-
-        Args:
-            csv_path: Path to CSV file
-            graph_name: Optional specific graph name to load
-
-        Returns:
-            Tuple of (prepared_graph_def, resolved_graph_name)
-        """
-        self.logger.debug(
-            f"[GraphPreparationService] Loading graph definition for execution: {csv_path}"
-        )
-
-        # Step 1: Load graph definition using GraphDefinitionService
-        if graph_name:
-            # Load specific graph
-            graph_domain_model = self.graph_definition.build_from_csv(
-                csv_path, graph_name
-            )
-            resolved_graph_name = graph_name
-        else:
-            # Load first graph available
-            all_graphs = self.graph_definition.build_all_from_csv(csv_path)
-            if not all_graphs:
-                raise ValueError(f"No graphs found in CSV file: {csv_path}")
-
-            resolved_graph_name = next(iter(all_graphs))
-            graph_domain_model = all_graphs[resolved_graph_name]
-
-            self.logger.debug(
-                f"[GraphPreparationService] Using first graph: {resolved_graph_name}"
-            )
-
-        # Step 2: Convert to execution format and prepare with agent instances
-        prepared_graph_def = self.prepare_graph_definition(
-            graph_domain_model, resolved_graph_name
-        )
-
-        return prepared_graph_def, resolved_graph_name
 
     def prepare_graph_definition(
         self, graph_domain_model: Any, graph_name: str

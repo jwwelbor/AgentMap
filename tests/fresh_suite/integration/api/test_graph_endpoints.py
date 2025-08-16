@@ -48,113 +48,7 @@ multi_graph,fail,default,Handle multi graph errors,Multi graph error handler,err
             "graph_operations.csv"
         )
     
-    # =============================================================================
-    # Graph Compilation Tests
-    # =============================================================================
     
-    def test_compile_graph_success(self):
-        """Test successful graph compilation using DI container services."""
-        request_data = {
-            "graph": "test_graph",
-            "csv": str(self.graph_csv_path),
-            "output_dir": str(Path(self.temp_dir) / "compiled"),
-            "state_schema": "dict",
-            "validate": True
-        }
-        
-        # ✅ FIXED: Use real DI container services, not CLI patches
-        # Mock compilation service to return success result with correct attributes
-        mock_compilation_result = Mock()
-        mock_compilation_result.success = True
-        mock_compilation_result.output_path = Path(self.temp_dir) / "compiled" / "test_graph.pkl"
-        mock_compilation_result.source_path = Path(self.graph_csv_path)
-        mock_compilation_result.compilation_time = 2.5
-        mock_compilation_result.error = None
-        
-        with patch.object(
-            self.container.compilation_service(), 
-            'compile_graph',
-            return_value=mock_compilation_result
-        ) as mock_compile:
-            response = self.client.post("/graph/compile", json=request_data)
-        
-        self.assert_response_success(response)
-        
-        data = response.json()
-        self.assert_response_contains_fields(data, [
-            "success", "bundle_path", "source_path", "compilation_time"
-        ])
-        
-        self.assertTrue(data["success"])
-        self.assertIsNotNone(data["bundle_path"])
-        self.assertIsNotNone(data["source_path"])
-        self.assertGreater(data["compilation_time"], 0)
-        self.assertIsNone(data["error"])
-        
-        # Verify service was called correctly
-        mock_compile.assert_called_once()
-    
-    def test_compile_graph_failure(self):
-        """Test graph compilation failure using DI container services."""
-        request_data = {
-            "graph": "invalid_graph",
-            "csv": str(self.graph_csv_path),
-            "validate": True
-        }
-        
-        # ✅ FIXED: Mock compilation service to raise ValueError
-        with patch.object(
-            self.container.compilation_service(),
-            'compile_graph',
-            side_effect=ValueError("Graph 'invalid_graph' not found in CSV")
-        ):
-            response = self.client.post("/graph/compile", json=request_data)
-        
-        self.assert_response_error(response, 400)
-    
-    def test_compile_graph_file_not_found(self):
-        """Test graph compilation with non-existent CSV file."""
-        request_data = {
-            "graph": "test_graph",
-            "csv": "/nonexistent/path/to/graph.csv",
-            "validate": True
-        }
-        
-        # ✅ FIXED: Mock compilation service to raise FileNotFoundError
-        with patch.object(
-            self.container.compilation_service(),
-            'compile_graph',
-            side_effect=FileNotFoundError("CSV file not found")
-        ):
-            response = self.client.post("/graph/compile", json=request_data)
-        
-        self.assert_file_not_found_response(response)
-    
-    def test_compile_graph_minimal_request(self):
-        """Test graph compilation with minimal request data."""
-        request_data = {
-            # Only required fields, using defaults for others
-        }
-        
-        # ✅ FIXED: Mock compilation service for minimal request
-        mock_result = Mock()
-        mock_result.success = True
-        mock_result.output_path = Path(self.temp_dir) / "compiled" / "default_graph.pkl"
-        mock_result.source_path = Path("default.csv")
-        mock_result.compilation_time = 1.0
-        mock_result.error = None
-        
-        with patch.object(
-            self.container.compilation_service(),
-            'compile_graph',
-            return_value=mock_result
-        ):
-            response = self.client.post("/graph/compile", json=request_data)
-        
-        self.assert_response_success(response)
-        
-        data = response.json()
-        self.assertTrue(data["success"])
     
     # =============================================================================
     # Graph Validation Tests  
@@ -529,16 +423,6 @@ multi_graph,fail,default,Handle multi graph errors,Multi graph error handler,err
             "graph": "test_graph",
             "csv": str(self.graph_csv_path)
         }
-        
-        # ✅ FIXED: Mock service to raise RuntimeError
-        with patch.object(
-            self.container.compilation_service(),
-            'compile_graph',
-            side_effect=RuntimeError("Internal compilation error")
-        ):
-            response = self.client.post("/graph/compile", json=request_data)
-        
-        self.assert_response_error(response, 500)
         
         # ✅ FIXED: Mock validation service to raise RuntimeError
         with patch.object(

@@ -902,39 +902,6 @@ class MockServiceFactory:
         
         return mock_service
     
-    @staticmethod
-    def create_mock_compilation_service() -> Mock:
-        """
-        Create a pure Mock object for CompilationService.
-        
-        This Mock provides realistic compilation result behavior for graph
-        autocompilation and compilation management operations.
-        
-        Returns:
-            Mock object with auto_compile_if_needed method
-            
-        Example:
-            mock_compilation = MockServiceFactory.create_mock_compilation_service()
-            result = mock_compilation.auto_compile_if_needed("test_graph", Path("test.csv"), options)
-        """
-        mock_service = Mock()
-        
-        def create_mock_compilation_result(success: bool = True) -> Mock:
-            """Create a mock compilation result."""
-            mock_result = Mock()
-            mock_result.success = success
-            mock_result.error = None if success else "Mock compilation error"
-            mock_result.bundle_path = Path("compiled/test_graph.pkl") if success else None
-            return mock_result
-        
-        def auto_compile_if_needed(graph_name: str, csv_path: Path, options: Any) -> Mock:
-            # Default to successful compilation
-            return create_mock_compilation_result(success=True)
-        
-        # Configure methods
-        mock_service.auto_compile_if_needed.side_effect = auto_compile_if_needed
-        
-        return mock_service
     
     @staticmethod
     def create_mock_graph_bundle_service() -> Mock:

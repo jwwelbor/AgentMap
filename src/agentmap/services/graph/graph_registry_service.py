@@ -1,0 +1,322 @@
+"""
+GraphRegistryService implementation for AgentMap.
+
+Provides O(1) lookups for graph bundles by mapping CSV file hashes 
+to their corresponding preprocessed bundle locations.
+"""
+
+import hashlib
+import threading
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.logging_service import LoggingService
+from agentmap.services.storage.json_service import JSONStorageService
+from agentmap.services.storage.types import StorageResult, WriteMode
+
+
+class GraphRegistryService:
+    """
+    High-performance graph registry for O(1) bundle lookups.
+    
+    Thread-safe implementation with in-memory caching and persistent storage.
+    Eliminates redundant CSV parsing by maintaining a registry of known graphs.
+    """
+    
+    REGISTRY_SCHEMA_VERSION = "1.0.0"
+    DEFAULT_REGISTRY_FILE = "graph_registry.json"
+    
+    def __init__(self,
+                 json_storage_service: JSONStorageService,
+                 app_config_service: AppConfigService,
+                 logging_service: LoggingService):
+        """Initialize GraphRegistryService with required dependencies."""
+        self.json_storage = json_storage_service
+        self.config = app_config_service
+        self.logger = logging_service.get_class_logger(self)
+        
+        # Thread-safe cache
+        self._registry_cache: Dict[str, Dict] = {}
+        self._cache_lock = threading.RLock()
+        self._dirty = False
+        
+        # Initialize metadata
+        self._metadata = self._create_metadata()
+        self._registry_path = self._get_registry_path()
+        
+        # Load existing registry
+        self._load_registry()
+        
+        self.logger.info(
+            f"GraphRegistryService initialized with {len(self._registry_cache)} entries"
+        )
+    
+    def compute_hash(self, csv_path: Path) -> str:
+        """
+        Compute SHA-256 hash of CSV file content.
+        
+        Args:
+            csv_path: Path to CSV file
+            
+        Returns:
+            Hexadecimal string representation of SHA-256 hash
+            
+        Raises:
+            FileNotFoundError: If CSV file doesn't exist
+            IOError: If file cannot be read
+        """
+        if not csv_path.exists():
+            raise FileNotFoundError(f"CSV file not found: {csv_path}")
+        
+        try:
+            with open(csv_path, 'rb') as f:
+                content = f.read()
+            
+            hash_obj = hashlib.sha256(content)
+            csv_hash = hash_obj.hexdigest()
+            
+            self.logger.debug(f"Computed hash: {csv_hash[:8]}... for {csv_path.name}")
+            return csv_hash
+            
+        except Exception as e:
+            self.logger.error(f"Failed to compute hash for {csv_path}: {e}")
+            raise IOError(f"Cannot read CSV file {csv_path}: {e}")
+    
+    def find_bundle(self, csv_hash: str) -> Optional[Path]:
+        """
+        Find bundle path for given CSV hash.
+        
+        Args:
+            csv_hash: SHA-256 hash of CSV content
+            
+        Returns:
+            Path to bundle file if found, None otherwise
+        """
+        with self._cache_lock:
+            entry = self._registry_cache.get(csv_hash)
+            
+            if not entry:
+                self.logger.debug(f"No bundle found for hash {csv_hash[:8]}...")
+                return None
+            
+            bundle_path = Path(entry["bundle_path"])
+            
+            if bundle_path.exists():
+                self.logger.debug(f"Found bundle for hash {csv_hash[:8]}...")
+                return bundle_path
+            else:
+                self.logger.warning(
+                    f"Bundle file missing for hash {csv_hash[:8]}...: {bundle_path}"
+                )
+                return None
+    
+    def register(self, 
+                 csv_hash: str, 
+                 graph_name: str, 
+                 bundle_path: Path, 
+                 csv_path: Path,
+                 node_count: int = 0) -> None:
+        """
+        Register a new graph bundle mapping.
+        
+        Args:
+            csv_hash: SHA-256 hash of CSV content
+            graph_name: Human-readable graph identifier
+            bundle_path: Path to saved bundle file
+            csv_path: Original CSV file path for reference
+            node_count: Number of nodes in the graph (optional)
+            
+        Raises:
+            ValueError: If required parameters are invalid
+        """
+        self._validate_registration_params(csv_hash, graph_name, bundle_path)
+        
+        entry = self._create_registry_entry(
+            csv_hash, graph_name, bundle_path, csv_path, node_count
+        )
+        
+        with self._cache_lock:
+            is_update = csv_hash in self._registry_cache
+            
+            self._registry_cache[csv_hash] = entry
+            self._update_metadata(bundle_path.stat().st_size, is_update)
+            self._dirty = True
+            
+            # Persist immediately
+            self._persist_registry()
+            
+            action = "Updating" if is_update else "Registering"
+            self.logger.info(
+                f"{action} graph bundle: {graph_name} (hash: {csv_hash[:8]}...)"
+            )
+    
+    def remove_entry(self, csv_hash: str) -> bool:
+        """
+        Remove entry from registry.
+        
+        Args:
+            csv_hash: SHA-256 hash of CSV content
+            
+        Returns:
+            True if entry was removed, False if not found
+        """
+        with self._cache_lock:
+            if csv_hash not in self._registry_cache:
+                return False
+            
+            entry = self._registry_cache[csv_hash]
+            
+            # Update metadata
+            bundle_size = entry.get("bundle_size", 0)
+            self._metadata["total_entries"] -= 1
+            self._metadata["total_bundle_size"] -= bundle_size
+            self._metadata["last_modified"] = datetime.utcnow().isoformat()
+            
+            # Remove from cache
+            del self._registry_cache[csv_hash]
+            self._dirty = True
+            
+            # Persist changes
+            self._persist_registry()
+            
+            self.logger.info(
+                f"Removed registry entry: {entry['graph_name']} "
+                f"(hash: {csv_hash[:8]}...)"
+            )
+            return True
+    
+    def get_entry_info(self, csv_hash: str) -> Optional[Dict[str, Any]]:
+        """
+        Get complete information about a registry entry.
+        
+        Args:
+            csv_hash: SHA-256 hash of CSV content
+            
+        Returns:
+            Dictionary with entry information or None if not found
+        """
+        with self._cache_lock:
+            entry = self._registry_cache.get(csv_hash)
+            return entry.copy() if entry else None
+    
+    def _validate_registration_params(self, csv_hash: str, graph_name: str, bundle_path: Path) -> None:
+        """Validate registration parameters."""
+        if not csv_hash or len(csv_hash) != 64:
+            raise ValueError(f"Invalid CSV hash: {csv_hash}")
+        
+        if not graph_name:
+            raise ValueError("Graph name cannot be empty")
+        
+        if not bundle_path.exists():
+            raise ValueError(f"Bundle file does not exist: {bundle_path}")
+    
+    def _create_registry_entry(self, csv_hash: str, graph_name: str, 
+                             bundle_path: Path, csv_path: Path, node_count: int) -> Dict[str, Any]:
+        """Create a new registry entry."""
+        bundle_size = bundle_path.stat().st_size
+        
+        return {
+            "graph_name": graph_name,
+            "csv_hash": csv_hash,
+            "bundle_path": str(bundle_path),
+            "csv_path": str(csv_path),
+            "created_at": datetime.utcnow().isoformat(),
+            "last_accessed": datetime.utcnow().isoformat(),
+            "access_count": 0,
+            "bundle_size": bundle_size,
+            "node_count": node_count
+        }
+    
+    def _update_metadata(self, bundle_size: int, is_update: bool) -> None:
+        """Update registry metadata."""
+        if not is_update:
+            self._metadata["total_entries"] += 1
+        
+        self._metadata["total_bundle_size"] += bundle_size
+        self._metadata["last_modified"] = datetime.utcnow().isoformat()
+    
+    def _create_metadata(self) -> Dict[str, Any]:
+        """Create initial metadata."""
+        return {
+            "created_at": datetime.utcnow().isoformat(),
+            "last_modified": datetime.utcnow().isoformat(),
+            "total_entries": 0,
+            "total_bundle_size": 0
+        }
+    
+    def _get_registry_path(self) -> str:
+        """Get registry file path from configuration."""
+        cache_folder = self.config.get_cache_path()
+        return str(cache_folder / self.DEFAULT_REGISTRY_FILE)
+    
+    def _load_registry(self) -> None:
+        """Load registry from persistent storage."""
+        try:
+            result = self.json_storage.read(
+                collection=self._registry_path
+            )
+            
+            if result and result.success and result.data:
+                self._load_registry_data(result.data)
+            else:
+                self.logger.info("No existing registry found, starting fresh")
+                self._create_empty_registry()
+                
+        except Exception as e:
+            self.logger.error(f"Failed to load registry: {e}")
+            self._handle_load_error(e)
+    
+    def _load_registry_data(self, registry_data: Dict[str, Any]) -> None:
+        """Load registry data from storage."""
+        version = registry_data.get("version", "0.0.0")
+        if version != self.REGISTRY_SCHEMA_VERSION:
+            self.logger.warning(
+                f"Registry schema version mismatch: {version} != {self.REGISTRY_SCHEMA_VERSION}"
+            )
+        
+        self._registry_cache = registry_data.get("entries", {})
+        self._metadata = registry_data.get("metadata", self._metadata)
+        
+        self.logger.info(f"Loaded {len(self._registry_cache)} entries from registry")
+    
+    def _persist_registry(self) -> None:
+        """Persist registry to storage."""
+        if not self._dirty:
+            return
+        
+        try:
+            registry_data = {
+                "version": self.REGISTRY_SCHEMA_VERSION,
+                "entries": self._registry_cache,
+                "metadata": self._metadata
+            }
+            
+            result = self.json_storage.write(
+                collection="graph_registry",
+                data=registry_data,
+                path=self._registry_path,
+                mode=WriteMode.WRITE
+            )
+            
+            if result.success:
+                self._dirty = False
+                self.logger.debug("Registry persisted successfully")
+            else:
+                self.logger.error(f"Failed to persist registry: {result.error}")
+                
+        except Exception as e:
+            self.logger.error(f"Error persisting registry: {e}")
+    
+    def _create_empty_registry(self) -> None:
+        """Create a new empty registry."""
+        self._registry_cache = {}
+        self._metadata = self._create_metadata()
+        self._dirty = True
+        self._persist_registry()
+    
+    def _handle_load_error(self, error: Exception) -> None:
+        """Handle registry load errors with recovery."""
+        self.logger.warning("Creating fresh registry due to load error")
+        self._create_empty_registry()

@@ -26,10 +26,17 @@ class TestFeaturesRegistryService(unittest.TestCase):
         # Use MockServiceFactory for consistent behavior
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
         
+        # Create mock availability cache service
+        self.mock_availability_cache_service = Mock()
+        self.mock_availability_cache_service.get_availability.return_value = None  # Simulate cache miss by default
+        self.mock_availability_cache_service.set_availability.return_value = True
+        self.mock_availability_cache_service.invalidate_cache.return_value = None
+        
         # Create service instance with mocked dependencies
         self.service = FeaturesRegistryService(
             features_registry=self.mock_features_registry,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            availability_cache_service=self.mock_availability_cache_service
         )
         
         # Get mock logger for verification

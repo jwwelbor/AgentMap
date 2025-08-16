@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Dict, Any
 import time
 
-from agentmap.services.graph_execution_service import GraphExecutionService
+from agentmap.services.graph.graph_execution_service import GraphExecutionService
 from agentmap.models.execution_result import ExecutionResult
 from tests.utils.mock_service_factory import MockServiceFactory
 
@@ -183,220 +183,6 @@ class TestGraphExecutionService(unittest.TestCase):
                 expected_calls = graph_names.index(graph_name) + 1
                 self.assertEqual(self.mock_execution_tracking_service.create_tracker.call_count, expected_calls)
     
-    # =============================================================================
-    # 3. Compiled Graph Execution Tests
-    # =============================================================================
-    
-    def test_execute_compiled_graph_success(self):
-        """Test execute_compiled_graph() with successful execution."""
-        # Prepare test data
-        bundle_path = Path("compiled/test_graph.pkl")
-        initial_state = {"user_id": "user123", "input_data": "test_data"}
-        
-        # Configure bundle loading
-        mock_bundle = Mock()
-        mock_compiled_graph = Mock()
-        mock_bundle.graph = mock_compiled_graph
-        
-        # Clear side effects and set specific return values
-        self.mock_graph_bundle_service.load_bundle.side_effect = None
-        self.mock_graph_bundle_service.load_bundle.return_value = mock_bundle
-        
-        # Configure execution tracking
-        mock_tracker = Mock()
-        self.mock_execution_tracking_service.create_tracker.side_effect = None
-        self.mock_execution_tracking_service.create_tracker.return_value = mock_tracker
-        
-        # Configure execution summary
-        mock_execution_summary = Mock()
-        mock_execution_summary.graph_name = "test_graph"
-        mock_execution_summary.graph_success = True
-        self.mock_execution_tracking_service.to_summary.side_effect = None
-        self.mock_execution_tracking_service.to_summary.return_value = mock_execution_summary
-        
-        # Configure policy evaluation
-        self.mock_execution_policy_service.evaluate_success_policy.side_effect = None
-        self.mock_execution_policy_service.evaluate_success_policy.return_value = True
-        
-        # Configure state adapter
-        def mock_set_value(state, key, value):
-            updated_state = state.copy()
-            updated_state[key] = value
-            return updated_state
-        
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
-        
-        # Configure graph execution
-        final_execution_state = {
-            "user_id": "user123",
-            "result": "processing_complete",
-            "output_data": "processed_test_data"
-        }
-        mock_compiled_graph.invoke.return_value = final_execution_state
-        
-        # Mock the internal _load_compiled_graph_from_bundle method to bypass file checks
-        with patch.object(self.service, '_load_compiled_graph_from_bundle', return_value=mock_compiled_graph):
-            # Execute test
-            result = self.service.execute_compiled_graph(bundle_path, initial_state)
-        
-        # Verify result structure
-        self.assertIsInstance(result, ExecutionResult)
-        self.assertEqual(result.graph_name, "test_graph")
-        self.assertTrue(result.success)
-        self.assertEqual(result.compiled_from, "precompiled")
-        self.assertIsNone(result.error)
-        
-        # Verify final state includes execution metadata
-        self.assertIn("__execution_summary", result.final_state)
-        self.assertIn("__policy_success", result.final_state)
-        self.assertEqual(result.final_state["user_id"], "user123")
-        
-        # Verify service interactions
-        self.mock_execution_tracking_service.create_tracker.assert_called_once()
-        self.mock_execution_policy_service.evaluate_success_policy.assert_called_once_with(mock_execution_summary)
-        
-        # Verify execution timing
-        self.assertGreaterEqual(result.total_duration, 0)  # Allow zero duration for mock
-        
-        # Verify success logging
-        logger_calls = self.mock_logger.calls
-        info_calls = [call for call in logger_calls if call[0] == "info"]
-        self.assertTrue(any("Executing compiled graph: test_graph" in call[1] for call in info_calls))
-        self.assertTrue(any("✅ COMPLETED COMPILED GRAPH: 'test_graph'" in call[1] for call in info_calls))
-    
-    def test_execute_compiled_graph_bundle_loading_failure(self):
-        """Test execute_compiled_graph() handles bundle loading failures."""
-        # Prepare test data
-        bundle_path = Path("nonexistent/missing.pkl")
-        initial_state = {"user_id": "user123"}
-        
-        # Configure bundle service to raise FileNotFoundError
-        bundle_error = FileNotFoundError(f"Compiled graph bundle not found: {bundle_path}")
-        
-        # Mock the internal _load_compiled_graph_from_bundle method to raise the error
-        with patch.object(self.service, '_load_compiled_graph_from_bundle', side_effect=bundle_error):
-            # Execute test
-            result = self.service.execute_compiled_graph(bundle_path, initial_state)
-        
-        # Verify error result
-        self.assertIsInstance(result, ExecutionResult)
-        self.assertEqual(result.graph_name, "missing")  # From path stem
-        self.assertFalse(result.success)
-        self.assertEqual(result.final_state, initial_state)  # Original state preserved
-        self.assertIsNone(result.execution_summary)
-        # Use assertLess instead of assertEqual for timing to handle small execution times
-        self.assertLess(result.total_duration, 0.01)  # Should be very fast (< 10ms)
-        self.assertEqual(result.compiled_from, "precompiled")
-        self.assertIn("Compiled graph bundle not found", result.error)
-        
-        # Verify error logging
-        logger_calls = self.mock_logger.calls
-        error_calls = [call for call in logger_calls if call[0] == "error"]
-        self.assertTrue(any("❌ COMPILED GRAPH EXECUTION FAILED: 'missing'" in call[1] for call in error_calls))
-        self.assertTrue(any("Compiled graph bundle not found" in call[1] for call in error_calls))
-    
-    def test_execute_compiled_graph_execution_failure(self):
-        """Test execute_compiled_graph() handles graph execution failures."""
-        # Prepare test data
-        bundle_path = Path("compiled/failing_graph.pkl")
-        initial_state = {"input": "test_data"}
-        
-        # Configure successful bundle loading
-        mock_compiled_graph = Mock()
-        
-        # Configure execution tracking
-        mock_tracker = Mock()
-        self.mock_execution_tracking_service.create_tracker.side_effect = None
-        self.mock_execution_tracking_service.create_tracker.return_value = mock_tracker
-        
-        # Configure graph execution to raise exception
-        execution_error = ValueError("Graph execution failed: invalid node configuration")
-        mock_compiled_graph.invoke.side_effect = execution_error
-        
-        # Mock the internal _load_compiled_graph_from_bundle method to return successful graph
-        with patch.object(self.service, '_load_compiled_graph_from_bundle', return_value=mock_compiled_graph):
-            # Execute test
-            result = self.service.execute_compiled_graph(bundle_path, initial_state)
-        
-        # Verify error result
-        self.assertIsInstance(result, ExecutionResult)
-        self.assertEqual(result.graph_name, "failing_graph")
-        self.assertFalse(result.success)
-        self.assertEqual(result.final_state, initial_state)  # Original state preserved
-        self.assertIsNone(result.execution_summary)
-        self.assertEqual(result.compiled_from, "precompiled")
-        self.assertEqual(result.error, "Graph execution failed: invalid node configuration")
-        
-        # Verify execution failed
-        mock_compiled_graph.invoke.assert_called_once_with(initial_state)
-        
-        # Verify error logging
-        logger_calls = self.mock_logger.calls
-        error_calls = [call for call in logger_calls if call[0] == "error"]
-        self.assertTrue(any("❌ COMPILED GRAPH EXECUTION FAILED: 'failing_graph'" in call[1] for call in error_calls))
-        self.assertTrue(any("Graph execution failed: invalid node configuration" in call[1] for call in error_calls))
-    
-    def test_execute_compiled_graph_policy_evaluation_failure(self):
-        """Test execute_compiled_graph() with policy evaluation returning False."""
-        # Prepare test data
-        bundle_path = Path("compiled/policy_fail_graph.pkl")
-        initial_state = {"input": "test_data"}
-        
-        # Configure successful bundle loading and execution
-        mock_compiled_graph = Mock()
-        
-        # Configure execution tracking
-        mock_tracker = Mock()
-        self.mock_execution_tracking_service.create_tracker.side_effect = None
-        self.mock_execution_tracking_service.create_tracker.return_value = mock_tracker
-        
-        # Configure execution summary
-        mock_execution_summary = Mock()
-        mock_execution_summary.graph_name = "policy_fail_graph"
-        mock_execution_summary.graph_success = False  # Some nodes failed
-        self.mock_execution_tracking_service.to_summary.side_effect = None
-        self.mock_execution_tracking_service.to_summary.return_value = mock_execution_summary
-        
-        # Configure policy evaluation to return False (policy failure)
-        self.mock_execution_policy_service.evaluate_success_policy.side_effect = None
-        self.mock_execution_policy_service.evaluate_success_policy.return_value = False
-        
-        # Configure state adapter
-        def mock_set_value(state, key, value):
-            updated_state = state.copy()
-            updated_state[key] = value
-            return updated_state
-        
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
-        
-        # Configure successful graph execution
-        final_execution_state = {"input": "test_data", "result": "partial_success"}
-        mock_compiled_graph.invoke.return_value = final_execution_state
-        
-        # Mock the internal _load_compiled_graph_from_bundle method to return successful graph
-        with patch.object(self.service, '_load_compiled_graph_from_bundle', return_value=mock_compiled_graph):
-            # Execute test
-            result = self.service.execute_compiled_graph(bundle_path, initial_state)
-        
-        # Verify result shows policy failure but execution success
-        self.assertIsInstance(result, ExecutionResult)
-        self.assertEqual(result.graph_name, "policy_fail_graph")
-        self.assertFalse(result.success)  # Policy evaluation failed
-        self.assertEqual(result.compiled_from, "precompiled")
-        self.assertIsNone(result.error)  # No execution error, just policy failure
-        
-        # Verify final state includes execution metadata
-        self.assertIn("__execution_summary", result.final_state)
-        self.assertIn("__policy_success", result.final_state)
-        self.assertFalse(result.final_state["__policy_success"])
-        
-        # Verify policy evaluation was called
-        self.mock_execution_policy_service.evaluate_success_policy.assert_called_once_with(mock_execution_summary)
-        
-        # Verify success logging (execution succeeded even though policy failed)
-        logger_calls = self.mock_logger.calls
-        info_calls = [call for call in logger_calls if call[0] == "info"]
-        self.assertTrue(any("✅ COMPLETED COMPILED GRAPH: 'policy_fail_graph'" in call[1] for call in info_calls))
     
     # =============================================================================
     # 4. Definition Graph Execution Tests
@@ -633,68 +419,6 @@ class TestGraphExecutionService(unittest.TestCase):
     # 5. Internal Method Tests
     # =============================================================================
     
-    def test_load_compiled_graph_from_bundle_success(self):
-        """Test _load_compiled_graph_from_bundle() with GraphBundle format."""
-        # Prepare test data
-        bundle_path = Path("test_bundles/valid_bundle.pkl")
-        
-        # Configure bundle service to return valid bundle
-        mock_bundle = Mock()
-        mock_compiled_graph = Mock()
-        mock_bundle.graph = mock_compiled_graph
-        
-        self.mock_graph_bundle_service.load_bundle.side_effect = None
-        self.mock_graph_bundle_service.load_bundle.return_value = mock_bundle
-        
-        # Create a mock file for path.exists() check
-        with patch('pathlib.Path.exists', return_value=True):
-            # Execute test
-            result = self.service._load_compiled_graph_from_bundle(bundle_path)
-            
-            # Verify result
-            self.assertEqual(result, mock_compiled_graph)
-            
-            # Verify bundle service was called
-            self.mock_graph_bundle_service.load_bundle.assert_called_once_with(bundle_path)
-            
-            # Verify debug logging
-            logger_calls = self.mock_logger.calls
-            debug_calls = [call for call in logger_calls if call[0] == "debug"]
-            self.assertTrue(any(f"Loading bundle: {bundle_path}" in call[1] for call in debug_calls))
-            self.assertTrue(any("Loaded GraphBundle format" in call[1] for call in debug_calls))
-    
-    def test_load_compiled_graph_from_bundle_missing_file(self):
-        """Test _load_compiled_graph_from_bundle() handles missing files."""
-        # Prepare test data
-        missing_path = Path("nonexistent/missing.pkl")
-        
-        # Execute test with non-existent file
-        with patch('pathlib.Path.exists', return_value=False):
-            with self.assertRaises(FileNotFoundError) as context:
-                self.service._load_compiled_graph_from_bundle(missing_path)
-            
-            # Verify error message
-            self.assertIn("Compiled graph bundle not found", str(context.exception))
-            self.assertIn(str(missing_path), str(context.exception))
-    
-    def test_load_compiled_graph_from_bundle_invalid_format(self):
-        """Test _load_compiled_graph_from_bundle() handles invalid bundle formats."""
-        # Prepare test data
-        bundle_path = Path("test_bundles/invalid_bundle.pkl")
-        
-        # Configure bundle service to return invalid bundle
-        bundle_error = ValueError("Invalid bundle format: corrupted data")
-        self.mock_graph_bundle_service.load_bundle.side_effect = bundle_error
-        
-        # Execute test
-        with patch('pathlib.Path.exists', return_value=True):
-            with self.assertRaises(ValueError) as context:
-                self.service._load_compiled_graph_from_bundle(bundle_path)
-            
-            # Verify error message includes both GraphBundle and pickle errors
-            error_message = str(context.exception)
-            self.assertIn("Could not load bundle in either GraphBundle or legacy format", error_message)
-            self.assertIn("Invalid bundle format: corrupted data", error_message)
     
     def test_graph_name_resolution_delegated_to_factory_service(self):
         """Test that graph name resolution is delegated to GraphFactoryService."""
@@ -881,7 +605,7 @@ class TestGraphExecutionService(unittest.TestCase):
         
         # Verify execution tracking completion was called
         self.mock_execution_tracking_service.complete_execution.assert_called_once_with(mock_tracker)
-        self.mock_execution_tracking_service.to_summary.assert_called_once_with(mock_tracker, graph_name, initial_state)
+        self.mock_execution_tracking_service.to_summary.assert_called_once_with(mock_tracker, graph_name)
         
         # Verify error logging with detailed traceback
         logger_calls = self.mock_logger.calls
@@ -994,55 +718,7 @@ class TestGraphExecutionService(unittest.TestCase):
         warning_calls = [call for call in logger_calls if call[0] == "warning"]
         self.assertTrue(any("No execution tracker available for error summary" in call[1] for call in warning_calls))
     
-    def test_execute_compiled_graph_with_empty_state(self):
-        """Test execute_compiled_graph() handles empty initial state."""
-        # Prepare test data
-        bundle_path = Path("compiled/empty_state_graph.pkl")
-        empty_state = {}
-        
-        # Configure successful bundle loading and execution
-        mock_compiled_graph = Mock()
-        
-        # Configure execution tracking
-        mock_tracker = Mock()
-        self.mock_execution_tracking_service.create_tracker.side_effect = None
-        self.mock_execution_tracking_service.create_tracker.return_value = mock_tracker
-        
-        # Configure execution summary
-        mock_execution_summary = Mock()
-        self.mock_execution_tracking_service.to_summary.side_effect = None
-        self.mock_execution_tracking_service.to_summary.return_value = mock_execution_summary
-        
-        # Configure policy evaluation
-        self.mock_execution_policy_service.evaluate_success_policy.side_effect = None
-        self.mock_execution_policy_service.evaluate_success_policy.return_value = True
-        
-        # Configure state adapter
-        self.mock_state_adapter_service.set_value.side_effect = lambda s, k, v: {**s, k: v}
-        
-        # Configure graph execution with empty state
-        mock_compiled_graph.invoke.return_value = {"result": "empty_state_processed"}
-        
-        # Mock the internal _load_compiled_graph_from_bundle method to return successful graph
-        with patch.object(self.service, '_load_compiled_graph_from_bundle', return_value=mock_compiled_graph):
-            # Execute test
-            result = self.service.execute_compiled_graph(bundle_path, empty_state)
-        
-        # Verify successful execution with empty state
-        self.assertIsInstance(result, ExecutionResult)
-        self.assertEqual(result.graph_name, "empty_state_graph")
-        self.assertTrue(result.success)
-        self.assertEqual(result.compiled_from, "precompiled")
-        self.assertIsNone(result.error)
-        
-        # Verify graph was invoked with empty state
-        mock_compiled_graph.invoke.assert_called_once_with(empty_state)
-        
-        # Verify final state contains execution metadata
-        self.assertIn("__execution_summary", result.final_state)
-        self.assertIn("__policy_success", result.final_state)
-        self.assertEqual(result.final_state["result"], "empty_state_processed")
-    
+   
     def test_execute_with_execution_interrupted_exception(self):
         """Test graph execution handles ExecutionInterruptedException correctly."""
         # Import the exception class
@@ -1115,6 +791,226 @@ class TestGraphExecutionService(unittest.TestCase):
         
         # Verify execution tracker was set up
         self.mock_execution_tracking_service.create_tracker.assert_called_once()
+
+
+    # =============================================================================
+    # 7. Selective Loading / Metadata Bundle Tests (New Functionality)
+    # =============================================================================
+    
+    def test_execute_with_bundle_metadata_format(self):
+        """Test executing graphs from metadata bundles with selective loading."""
+        # Arrange
+        from agentmap.models.graph_bundle import GraphBundle
+        from agentmap.models.node import Node
+        from agentmap.di.minimal_container import MinimalContainer
+        
+        # Create a metadata bundle
+        bundle = GraphBundle(
+            graph_name="test_graph",
+            nodes={
+                "node1": Node(name="node1", agent_type="TestAgent")
+            },
+            required_agents={"TestAgent"},
+            required_services={"logging_service", "state_adapter_service"},
+            function_mappings={"test_func": "agentmap.test_module"},
+            csv_hash="test_hash"
+        )
+        
+        initial_state = {"input": "test"}
+        
+        # Mock MinimalContainer creation and agent creation
+        mock_minimal_container = Mock()
+        mock_agent_instance = Mock()
+        mock_agent_instance.set_execution_tracker = Mock()
+        mock_compiled_graph = Mock()
+        mock_execution_tracker = Mock()
+        
+        with patch('agentmap.di.minimal_container.MinimalContainer', return_value=mock_minimal_container):
+            # Configure mocks
+            self.mock_execution_tracking_service.create_tracker.return_value = mock_execution_tracker
+            self.mock_graph_assembly_service.assemble_graph.return_value = mock_compiled_graph
+            self.mock_execution_policy_service.evaluate_success_policy.return_value = True
+            
+            # Mock final state and summary
+            final_state = {"output": "result"}
+            execution_summary = Mock()
+            mock_compiled_graph.invoke.return_value = final_state
+            self.mock_execution_tracking_service.to_summary.return_value = execution_summary
+            
+            # Mock state adapter returns
+            self.mock_state_adapter_service.set_value.side_effect = lambda state, key, value: {**state, key: value}
+            
+            # Act
+            result = self.service.execute_with_bundle(bundle, initial_state)
+            
+            # Assert
+            self.assertIsInstance(result, ExecutionResult)
+            self.assertEqual(result.graph_name, "test_graph")
+            
+            # Test passes if no exception is thrown above
+                
+            self.assertTrue(result.success)
+            self.assertEqual(result.compiled_from, "metadata")
+            
+            # Verify MinimalContainer was created with required services
+            # Note: We can't easily verify the exact call due to patching, 
+            # but we can verify other calls that indicate the right flow
+            self.mock_execution_tracking_service.create_tracker.assert_called_once()
+            mock_compiled_graph.invoke.assert_called_once_with(initial_state)
+            self.mock_execution_policy_service.evaluate_success_policy.assert_called_once_with(execution_summary)
+    
+    def test_execute_with_bundle_error_handling(self):
+        """Test error handling in execute_with_bundle method."""
+        # Arrange
+        from agentmap.models.graph_bundle import GraphBundle
+        
+        bundle = GraphBundle(
+            graph_name="failing_graph",
+            nodes={},
+            required_agents=set(),
+            required_services={"logging_service"}
+        )
+        initial_state = {"input": "test"}
+        
+        # Mock to raise exception during execution
+        with patch('agentmap.di.minimal_container.MinimalContainer') as mock_container_class:
+            mock_container_class.side_effect = Exception("Container creation failed")
+            
+            # Act
+            result = self.service.execute_with_bundle(bundle, initial_state)
+            
+            # Assert
+            self.assertIsInstance(result, ExecutionResult)
+            self.assertEqual(result.graph_name, "failing_graph")
+            self.assertFalse(result.success)
+            self.assertIsNotNone(result.error)
+            self.assertIn("Container creation failed", result.error)
+            self.assertEqual(result.compiled_from, "metadata")
+    
+    def test_execute_from_definition_with_metadata_bundle(self):
+        """Test that execute_from_definition detects and handles metadata bundles."""
+        # Arrange
+        from agentmap.models.graph_bundle import GraphBundle
+        from agentmap.models.node import Node
+        
+        # Create a metadata bundle that looks like a graph definition
+        bundle = GraphBundle(
+            graph_name="metadata_test",
+            nodes={
+                "node1": Node(name="node1", agent_type="TestAgent")
+            },
+            required_agents={"TestAgent"},
+            required_services={"logging_service"}
+        )
+        
+        initial_state = {"input": "test"}
+        
+        # Mock the execute_with_bundle method
+        expected_result = ExecutionResult(
+            graph_name="metadata_test",
+            success=True,
+            final_state={"output": "result"},
+            execution_summary=Mock(),
+            total_duration=1.0,
+            compiled_from="metadata",
+            error=None
+        )
+        
+        with patch.object(self.service, 'execute_with_bundle', return_value=expected_result) as mock_execute_bundle:
+            # Act
+            result = self.service.execute_from_definition(bundle, initial_state)
+            
+            # Assert
+            self.assertEqual(result, expected_result)
+            mock_execute_bundle.assert_called_once_with(bundle, initial_state)
+    
+    def test_create_minimal_container(self):
+        """Test _create_minimal_container helper method."""
+        # Arrange
+        required_services = {"logging_service", "state_adapter_service"}
+        
+        with patch('agentmap.di.minimal_container.MinimalContainer') as mock_container_class:
+            with patch('agentmap.di.containers.ApplicationContainer') as mock_app_container_class:
+                mock_parent_container = Mock()
+                mock_app_container_class.return_value = mock_parent_container
+                mock_minimal_container = Mock()
+                mock_container_class.return_value = mock_minimal_container
+                
+                # Act
+                result = self.service._create_minimal_container(required_services)
+                
+                # Assert
+                self.assertEqual(result, mock_minimal_container)
+                mock_app_container_class.assert_called_once()
+                mock_container_class.assert_called_once_with(
+                    parent_container=mock_parent_container,
+                    required_services=required_services,
+                    logging_service=None
+                )
+    
+    def test_get_agent_services(self):
+        """Test _get_agent_services helper method to determine service dependencies."""
+        # Arrange
+        # Create a mock agent class with configure methods
+        mock_agent_class = Mock()
+        mock_agent_class.__name__ = "TestAgent"
+        
+        # Mock hasattr to control which configure methods the agent "has"
+        def mock_hasattr(obj, name):
+            if name == 'configure_llm_service':
+                return True
+            elif name == 'configure_logging_service':
+                return True
+            else:
+                return False  # No other configure methods
+        
+            # Mock container with services
+            mock_container = Mock()
+            mock_llm_service = Mock()
+            mock_storage_service = Mock()
+            mock_logging_service = Mock()
+            mock_container.get_service.side_effect = lambda name: {
+                'llm_service': mock_llm_service,
+                'storage_service': mock_storage_service,
+                'state_adapter_service': None,  # Service not available
+                'logging_service': mock_logging_service
+            }.get(name)
+            
+            # Act
+            services = self.service._get_agent_services(mock_agent_class, mock_container)
+            
+            # Assert
+            self.assertIn('llm_service', services)
+            self.assertIn('logging_service', services)
+            self.assertNotIn('storage_service', services)  # No configure method
+            self.assertNotIn('state_adapter_service', services)  # Service not available
+            self.assertEqual(services['llm_service'], mock_llm_service)
+            self.assertEqual(services['logging_service'], mock_logging_service)
+    
+    def test_create_agents_from_metadata(self):
+        """Test _create_agents_from_metadata helper method."""
+        # Arrange
+        from agentmap.models.node import Node
+        
+        nodes = {
+            "node1": Node(name="node1", agent_type="TestAgent")
+        }
+        required_agents = {"TestAgent"}
+        mock_container = Mock()
+        
+        # Mock agent factory service
+        mock_agent_instance = Mock()
+        self.mock_graph_factory_service.create_agent_from_class_name.return_value = mock_agent_instance
+        
+        # Act
+        agents = self.service._create_agents_from_metadata(nodes, required_agents, mock_container)
+        
+        # Assert
+        self.assertIn("TestAgent", agents)
+        self.assertEqual(agents["TestAgent"], mock_agent_instance)
+        self.mock_graph_factory_service.create_agent_from_class_name.assert_called_once_with(
+            "TestAgent", mock_container
+        )
 
 
 if __name__ == '__main__':

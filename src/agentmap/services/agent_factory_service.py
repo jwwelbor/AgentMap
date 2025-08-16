@@ -657,3 +657,47 @@ class AgentFactoryService:
             f"Agent '{agent_type}' requires additional dependencies: {missing_deps}. "
             "Install with: pip install agentmap[llm,storage]"
         )
+    
+    def get_agent_class_mappings(self, agent_types: set[str]) -> Dict[str, str]:
+        """Get mappings from agent types to their class import paths.
+        
+        This method returns a dictionary mapping agent type names to their
+        fully qualified class paths for dynamic import.
+        
+        Args:
+            agent_types: Set of agent type names to map
+            
+        Returns:
+            Dictionary mapping agent types to class import paths
+        """
+        mappings = {}
+        
+        for agent_type in agent_types:
+            try:
+                # Get the agent class
+                agent_class = self.agent_registry.get_agent_class(agent_type)
+                if agent_class:
+                    # Get the full module path and class name
+                    module_name = agent_class.__module__
+                    class_name = agent_class.__name__
+                    full_path = f"{module_name}.{class_name}"
+                    mappings[agent_type] = full_path
+                    
+                    self.logger.debug(
+                        f"[AgentFactoryService] Mapped {agent_type} -> {full_path}"
+                    )
+                else:
+                    # Use a default mapping for unknown types
+                    mappings[agent_type] = "agentmap.agents.builtins.default_agent.DefaultAgent"
+                    self.logger.warning(
+                        f"[AgentFactoryService] Unknown agent type '{agent_type}', "
+                        "using DefaultAgent"
+                    )
+            except Exception as e:
+                self.logger.warning(
+                    f"[AgentFactoryService] Failed to map agent type '{agent_type}': {e}"
+                )
+                # Fallback to default agent
+                mappings[agent_type] = "agentmap.agents.builtins.default_agent.DefaultAgent"
+        
+        return mappings

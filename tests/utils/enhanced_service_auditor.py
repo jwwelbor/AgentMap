@@ -129,7 +129,6 @@ class EnhancedServiceInterfaceAuditor:
             ('agentmap.services.execution_tracking_service', 'ExecutionTrackingService'),
             ('agentmap.services.graph_runner_service', 'GraphRunnerService'),
             ('agentmap.services.graph_definition_service', 'GraphDefinitionService'),
-            ('agentmap.services.compilation_service', 'CompilationService'),
             ('agentmap.services.graph_execution_service', 'GraphExecutionService'),
             ('agentmap.services.graph_bundle_service', 'GraphBundleService'),
             ('agentmap.services.llm_service', 'LLMService'),

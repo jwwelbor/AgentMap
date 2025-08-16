@@ -7,7 +7,7 @@ instead of accessing the container directly, following proper DI principles.
 import unittest
 from unittest.mock import Mock, MagicMock, patch
 
-from agentmap.services.graph_runner_service import GraphRunnerService
+from agentmap.services.graph.graph_runner_service import GraphRunnerService
 from agentmap.services.host_protocol_configuration_service import HostProtocolConfigurationService
 
 
@@ -62,7 +62,6 @@ class TestGraphRunnerServiceHostProtocolDI(unittest.TestCase):
         runner = GraphRunnerService(
             graph_definition_service=self.mock_graph_definition,
             graph_execution_service=self.mock_graph_execution,
-            compilation_service=self.mock_compilation,
             graph_bundle_service=self.mock_graph_bundle,
             agent_factory_service=self.mock_agent_factory,
             llm_service=self.mock_llm_service,
@@ -90,7 +89,6 @@ class TestGraphRunnerServiceHostProtocolDI(unittest.TestCase):
         runner = GraphRunnerService(
             graph_definition_service=self.mock_graph_definition,
             graph_execution_service=self.mock_graph_execution,
-            compilation_service=self.mock_compilation,
             graph_bundle_service=self.mock_graph_bundle,
             agent_factory_service=self.mock_agent_factory,
             llm_service=self.mock_llm_service,
@@ -124,7 +122,6 @@ class TestGraphRunnerServiceHostProtocolDI(unittest.TestCase):
         runner = GraphRunnerService(
             graph_definition_service=self.mock_graph_definition,
             graph_execution_service=self.mock_graph_execution,
-            compilation_service=self.mock_compilation,
             graph_bundle_service=self.mock_graph_bundle,
             agent_factory_service=self.mock_agent_factory,
             llm_service=self.mock_llm_service,
@@ -163,7 +160,6 @@ class TestGraphRunnerServiceHostProtocolDI(unittest.TestCase):
         runner = GraphRunnerService(
             graph_definition_service=self.mock_graph_definition,
             graph_execution_service=self.mock_graph_execution,
-            compilation_service=self.mock_compilation,
             graph_bundle_service=self.mock_graph_bundle,
             agent_factory_service=self.mock_agent_factory,
             llm_service=self.mock_llm_service,
@@ -202,7 +198,6 @@ class TestGraphRunnerServiceHostProtocolDI(unittest.TestCase):
         runner = GraphRunnerService(
             graph_definition_service=self.mock_graph_definition,
             graph_execution_service=self.mock_graph_execution,
-            compilation_service=self.mock_compilation,
             graph_bundle_service=self.mock_graph_bundle,
             agent_factory_service=self.mock_agent_factory,
             llm_service=self.mock_llm_service,

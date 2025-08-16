@@ -583,8 +583,8 @@ class StorageConfigService:
             elif json_config.get("enabled") is False:
                 # Check if explicitly disabled first
                 enabled = False
-            elif not json_config.get("default_directory"):
-                # Must have a default_directory to be considered configured
+            elif not json_config.get("base_directory"):
+                # Must have a base_directory to be considered configured
                 enabled = False
             else:
                 enabled = True

@@ -33,7 +33,7 @@ from tests.fresh_suite.integration.test_data_factories import (
     ExecutionTestDataFactory
 )
 from agentmap.models.execution_result import ExecutionResult
-from agentmap.services.graph_runner_service import RunOptions
+from agentmap.services.graph.graph_runner_service import RunOptions
 
 
 class TestCSVExamplesIntegration(BaseIntegrationTest):

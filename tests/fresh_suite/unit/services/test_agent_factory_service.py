@@ -586,7 +586,168 @@ class TestAgentFactoryService(unittest.TestCase):
         self.assertIn("pip install agentmap[llm,storage]", error_msg)
     
     # =============================================================================
-    # 9. Error Handling and Edge Cases
+    # 9. NEW: create_agent_instance() Method Tests (TDD)
+    # =============================================================================
+    
+    def test_create_agent_instance_with_default_agent(self):
+        """Test create_agent_instance() creates a default agent instance."""
+        # Arrange
+        mock_node = Mock()
+        mock_node.name = "test_node"
+        mock_node.prompt = "test prompt"
+        mock_node.inputs = ["input1", "input2"]
+        mock_node.output = "result"
+        mock_node.description = "test description"
+        
+        # Mock dependencies that would be injected
+        mock_execution_tracking = Mock()
+        mock_state_adapter = Mock()
+        mock_prompt_manager = None
+        
+        # Act - method should now work
+        result = self.service.create_agent_instance(
+            mock_node, 
+            "test_graph",
+            execution_tracking_service=mock_execution_tracking,
+            state_adapter_service=mock_state_adapter,
+            prompt_manager_service=mock_prompt_manager
+        )
+        
+        # Assert
+        self.assertIsNotNone(result)
+        self.assertEqual(result.name, "test_node")
+        self.assertTrue(hasattr(result, 'run'))
+    
+    def test_create_agent_instance_with_llm_agent(self):
+        """Test create_agent_instance() creates and configures LLM agent."""
+        # Arrange
+        mock_node = Mock()
+        mock_node.name = "llm_node"
+        mock_node.agent_type = "openai"
+        mock_node.prompt = "You are an AI assistant"
+        mock_node.inputs = ["user_input"]
+        mock_node.output = "response"
+        
+        # Configure LLM dependencies as NOT available (will fall back to default)
+        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: False
+        
+        mock_execution_tracking = Mock()
+        mock_state_adapter = Mock()
+        mock_prompt_manager = Mock()
+        
+        # Act - method should work and fall back to default agent
+        instance = self.service.create_agent_instance(
+            mock_node,
+            "llm_graph", 
+            execution_tracking_service=mock_execution_tracking,
+            state_adapter_service=mock_state_adapter,
+            prompt_manager_service=mock_prompt_manager
+        )
+        
+        # Assert
+        self.assertIsNotNone(instance)
+        self.assertEqual(instance.name, "llm_node")
+        self.assertTrue(hasattr(instance, 'run'))
+    
+    def test_create_agent_instance_handles_custom_agent_fallback(self):
+        """Test create_agent_instance() falls back to custom agent loading."""
+        # Arrange
+        mock_node = Mock()
+        mock_node.name = "custom_node"
+        mock_node.agent_type = "custom_agent_type"
+        mock_node.prompt = "custom prompt"
+        
+        # Configure agent registry to return None (not found)
+        self.mock_agent_registry_service.get_agent_class.return_value = None
+        
+        mock_execution_tracking = Mock()
+        mock_state_adapter = Mock()
+        
+        # Act - should fall back to default agent since custom loading not implemented yet
+        result = self.service.create_agent_instance(
+            mock_node,
+            "custom_graph",
+            execution_tracking_service=mock_execution_tracking,
+            state_adapter_service=mock_state_adapter
+        )
+        
+        # Assert
+        self.assertIsNotNone(result)
+        self.assertEqual(result.name, "custom_node")
+        self.assertTrue(hasattr(result, 'run'))
+    
+    # =============================================================================
+    # 10. NEW: validate_agent_instance() Method Tests (TDD)
+    # =============================================================================
+    
+    def test_validate_agent_instance_success_with_valid_agent(self):
+        """Test validate_agent_instance() passes for properly configured agent."""
+        # Arrange
+        mock_agent = Mock()
+        mock_agent.name = "test_agent"
+        mock_agent.run = Mock()  # Has required run method
+        
+        mock_node = Mock()
+        mock_node.name = "test_node"
+        
+        # Act & Assert - should not raise any exception
+        try:
+            self.service.validate_agent_instance(mock_agent, mock_node)
+        except ValueError:
+            self.fail("validate_agent_instance() raised ValueError unexpectedly!")
+    
+    def test_validate_agent_instance_fails_missing_name(self):
+        """Test validate_agent_instance() fails for agent missing name."""
+        # Arrange
+        mock_agent = Mock()
+        mock_agent.run = Mock()
+        # Missing name attribute
+        del mock_agent.name
+        
+        mock_node = Mock()
+        mock_node.name = "test_node"
+        
+        # Act & Assert - should raise ValueError
+        with self.assertRaises(ValueError) as context:
+            self.service.validate_agent_instance(mock_agent, mock_node)
+        
+        self.assertIn("missing required 'name' attribute", str(context.exception))
+    
+    def test_validate_agent_instance_fails_missing_run_method(self):
+        """Test validate_agent_instance() fails for agent missing run method."""
+        # Arrange
+        mock_agent = Mock()
+        mock_agent.name = "test_agent"
+        # Missing run method
+        del mock_agent.run
+        
+        mock_node = Mock()
+        mock_node.name = "test_node"
+        
+        # Act & Assert - should raise ValueError
+        with self.assertRaises(ValueError) as context:
+            self.service.validate_agent_instance(mock_agent, mock_node)
+        
+        self.assertIn("missing required 'run' method", str(context.exception))
+    
+    def test_validate_agent_instance_validates_llm_service_injection(self):
+        """Test validate_agent_instance() validates LLM service configuration."""
+        # Arrange
+        mock_agent = Mock()
+        mock_agent.name = "llm_agent"
+        mock_agent.run = Mock()
+        
+        mock_node = Mock()
+        mock_node.name = "llm_node"
+        
+        # Act & Assert - for non-protocol agents, should pass
+        try:
+            self.service.validate_agent_instance(mock_agent, mock_node)
+        except ValueError:
+            self.fail("validate_agent_instance() raised ValueError unexpectedly!")
+    
+    # =============================================================================
+    # 11. Error Handling and Edge Cases
     # =============================================================================
     
     def test_service_handles_empty_agent_type(self):

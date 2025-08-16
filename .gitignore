@@ -184,6 +184,7 @@ agentmap_local_storage_config.yaml
 data/
 .git-original-backup/
 .vscode/
+dev-artifacts/
 
 .idea
 # Code Index MCP cache directory

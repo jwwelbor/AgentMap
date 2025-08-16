@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional, Union
 from dependency_injector.containers import Container
 
 from agentmap.models.execution_result import ExecutionResult
-from agentmap.services.graph_runner_service import RunOptions
+from agentmap.services.graph.graph_runner_service import RunOptions
 
 
 class ServiceAdapter:

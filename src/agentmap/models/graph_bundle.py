@@ -28,11 +28,27 @@ class GraphBundle:
     
     # New metadata-only fields (optional for backwards compatibility)
     graph_name: Optional[str] = None
+    entry_point: Optional[str] = None  # NEW: Starting node name
     nodes: Optional[Dict[str, Node]] = None
     required_agents: Optional[Set[str]] = None
     required_services: Optional[Set[str]] = None
+    service_load_order: Optional[List[str]] = None  # NEW: Services in dependency order
     function_mappings: Optional[Dict[str, str]] = None
     csv_hash: Optional[str] = None
+    
+    # Phase 1: Agent mappings
+    agent_mappings: Optional[Dict[str, str]] = None  # NEW: agent_type -> class path
+    builtin_agents: Optional[Set[str]] = None  # NEW: Standard framework agents
+    custom_agents: Optional[Set[str]] = None  # NEW: User-defined agents
+    
+    # Phase 2: Optimization metadata
+    graph_structure: Optional[Dict[str, Any]] = None  # NEW: Structure analysis
+    protocol_mappings: Optional[Dict[str, str]] = None  # NEW: Protocol -> implementation
+    
+    # Phase 3: Validation metadata
+    validation_metadata: Optional[Dict[str, Any]] = None  # NEW: Integrity checks
+    bundle_format: str = "metadata-v1"  # NEW: Format version
+    created_at: Optional[str] = None  # NEW: Creation timestamp
     
     def __post_init__(self):
         """Initialize defaults and issue deprecation warnings as needed."""
@@ -53,19 +69,46 @@ class GraphBundle:
                 self.required_agents = set()
             if self.required_services is None:
                 self.required_services = set()
+            if self.service_load_order is None:
+                self.service_load_order = []
             if self.function_mappings is None:
                 self.function_mappings = {}
             if self.csv_hash is None:
                 self.csv_hash = "unknown_hash"
+            if self.agent_mappings is None:
+                self.agent_mappings = {}
+            if self.builtin_agents is None:
+                self.builtin_agents = set()
+            if self.custom_agents is None:
+                self.custom_agents = set()
+            if self.graph_structure is None:
+                self.graph_structure = {}
+            if self.protocol_mappings is None:
+                self.protocol_mappings = {}
+            if self.validation_metadata is None:
+                self.validation_metadata = {}
+            if self.created_at is None:
+                from datetime import datetime
+                self.created_at = datetime.utcnow().isoformat()
         
         # If completely empty, set safe defaults
         else:
             self.graph_name = "empty_graph"
+            self.entry_point = None
             self.nodes = {}
             self.required_agents = set()
             self.required_services = set()
+            self.service_load_order = []
             self.function_mappings = {}
             self.csv_hash = "empty_hash"
+            self.agent_mappings = {}
+            self.builtin_agents = set()
+            self.custom_agents = set()
+            self.graph_structure = {}
+            self.protocol_mappings = {}
+            self.validation_metadata = {}
+            from datetime import datetime
+            self.created_at = datetime.utcnow().isoformat()
     
     
     @staticmethod
@@ -100,12 +143,17 @@ class GraphBundle:
         """
         Return services in dependency order using topological sort.
         
-        This method analyzes the service dependencies and returns them in the
-        order they should be loaded to satisfy all dependencies.
+        This method returns the pre-calculated service load order if available,
+        or falls back to a simple sorted order for backwards compatibility.
         
         Returns:
             List of service names in dependency order
         """
+        # Use pre-calculated service load order if available
+        if self.service_load_order is not None and self.service_load_order:
+            return self.service_load_order
+        
+        # Fallback for backwards compatibility
         if self.required_services is None:
             return []
         
@@ -122,13 +170,24 @@ class GraphBundle:
         required_services: Set[str],
         function_mappings: Dict[str, str],
         csv_hash: str,
-        version_hash: Optional[str] = None
+        version_hash: Optional[str] = None,
+        # New Phase 1 parameters
+        entry_point: Optional[str] = None,
+        service_load_order: Optional[List[str]] = None,
+        agent_mappings: Optional[Dict[str, str]] = None,
+        builtin_agents: Optional[Set[str]] = None,
+        custom_agents: Optional[Set[str]] = None,
+        # New Phase 2 parameters
+        graph_structure: Optional[Dict[str, Any]] = None,
+        protocol_mappings: Optional[Dict[str, str]] = None,
+        # New Phase 3 parameters
+        validation_metadata: Optional[Dict[str, Any]] = None
     ) -> "GraphBundle":
         """
-        Create a new GraphBundle using the metadata-only format.
+        Create a new GraphBundle using the enhanced metadata-only format.
         
         This is the preferred constructor for new code that wants to use
-        the metadata-only storage approach.
+        the metadata-only storage approach with all enhancement metadata.
         
         Args:
             graph_name: Name of the graph
@@ -138,20 +197,39 @@ class GraphBundle:
             function_mappings: Dictionary mapping functions to implementations
             csv_hash: Hash of the source CSV for validation
             version_hash: Optional version identifier
+            entry_point: Optional starting node name
+            service_load_order: Optional pre-calculated service dependency order
+            agent_mappings: Optional mapping of agent types to class paths
+            builtin_agents: Optional set of standard framework agents
+            custom_agents: Optional set of user-defined agents
+            graph_structure: Optional graph structure analysis for optimization
+            protocol_mappings: Optional protocol to implementation mappings
+            validation_metadata: Optional validation and integrity data
             
         Returns:
-            GraphBundle instance with metadata-only storage
+            GraphBundle instance with enhanced metadata-only storage
         """
         prepared_nodes = cls.prepare_nodes_for_storage(nodes)
         
         return cls(
             graph_name=graph_name,
+            entry_point=entry_point,
             nodes=prepared_nodes,
             required_agents=required_agents,
             required_services=required_services,
+            service_load_order=service_load_order,
             function_mappings=function_mappings,
             csv_hash=csv_hash,
-            version_hash=version_hash
+            version_hash=version_hash,
+            # Phase 1: Agent mappings
+            agent_mappings=agent_mappings,
+            builtin_agents=builtin_agents,
+            custom_agents=custom_agents,
+            # Phase 2: Optimization metadata
+            graph_structure=graph_structure,
+            protocol_mappings=protocol_mappings,
+            # Phase 3: Validation metadata
+            validation_metadata=validation_metadata
         )
     
     @classmethod

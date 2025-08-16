@@ -26,7 +26,6 @@ class TestGraphOutputService(unittest.TestCase):
         self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service()
         self.mock_function_resolution_service = Mock()
         self.mock_agent_registry_service = MockServiceFactory.create_mock_agent_registry_service()
-        self.mock_compilation_service = Mock()
         
         # Configure mock app config service with expected paths
         self.mock_app_config_service.get_compiled_graphs_path.return_value = Path("compiled")
@@ -42,8 +41,7 @@ class TestGraphOutputService(unittest.TestCase):
             app_config_service=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
             function_resolution_service=self.mock_function_resolution_service,
-            agent_registry_service=self.mock_agent_registry_service,
-            compilation_service=self.mock_compilation_service
+            agent_registry_service=self.mock_agent_registry_service
         )
         
         # Get the mock logger for verification
@@ -93,7 +91,6 @@ class TestGraphOutputService(unittest.TestCase):
         self.assertEqual(self.service.functions_path, Path("functions"))
         self.assertIsNotNone(self.service.logger)
         self.assertEqual(self.service.function_resolution, self.mock_function_resolution_service)
-        self.assertEqual(self.service.compilation_service, self.mock_compilation_service)
         
         # Verify logger is configured correctly
         self.assertEqual(self.service.logger.name, 'GraphOutputService')
@@ -105,20 +102,7 @@ class TestGraphOutputService(unittest.TestCase):
         logger_calls = self.mock_logger.calls
         self.assertTrue(any(call[1] == '[GraphOutputService] Initialized' 
                           for call in logger_calls if call[0] == 'info'))
-    
-    def test_service_initialization_without_compilation_service(self):
-        """Test service initialization with optional CompilationService as None."""
-        service = GraphOutputService(
-            app_config_service=self.mock_app_config_service,
-            logging_service=self.mock_logging_service,
-            function_resolution_service=self.mock_function_resolution_service,
-            agent_registry_service=self.mock_agent_registry_service,
-            compilation_service=None
-        )
         
-        self.assertIsNone(service.compilation_service)
-        self.assertIsNotNone(service.logger)
-    
     def test_service_info_method(self):
         """Test get_service_info() method returns correct information."""
         info = self.service.get_service_info()
@@ -126,7 +110,6 @@ class TestGraphOutputService(unittest.TestCase):
         # Verify service information structure
         self.assertIsInstance(info, dict)
         self.assertEqual(info["service"], "GraphOutputService")
-        self.assertTrue(info["compilation_service_available"])
         self.assertTrue(info["function_resolution_available"])
         self.assertEqual(info["compiled_graphs_path"], str(Path("compiled")))
         self.assertEqual(info["csv_path"], str(Path("graphs/workflow.csv")))
@@ -407,81 +390,7 @@ class TestGraphOutputService(unittest.TestCase):
         
         error_msg = str(context.exception)
         self.assertIn("Unsupported documentation format: pdf", error_msg)
-    
-    # =============================================================================
-    # 7. Graph Definition Retrieval Tests
-    # =============================================================================
-    
-    def test_get_graph_definition_with_compilation_service(self):
-        """Test _get_graph_definition() uses CompilationService correctly."""
-        # Mock compilation result
-        mock_compilation_result = Mock()
-        mock_compilation_result.success = True
-        mock_compilation_result.error = None
-        self.mock_compilation_service.compile_graph.return_value = mock_compilation_result
         
-        # Mock graph domain model
-        mock_graph_domain_model = Mock()
-        mock_graph_domain_model.nodes = self.sample_graph_def
-        self.mock_compilation_service.graph_definition.build_from_csv.return_value = mock_graph_domain_model
-        
-        # Execute test
-        with patch.object(self.service, '_convert_graph_to_old_format', return_value=self.sample_graph_def) as mock_convert:
-            result = self.service._get_graph_definition("test_graph")
-            
-            # Verify compilation service was called correctly
-            self.mock_compilation_service.compile_graph.assert_called_once()
-            args = self.mock_compilation_service.compile_graph.call_args[0]
-            self.assertEqual(args[0], "test_graph")
-            
-            # Verify CompilationOptions
-            options = self.mock_compilation_service.compile_graph.call_args[0][1]
-            self.assertEqual(options.csv_path, self.service.csv_path)
-            self.assertFalse(options.include_source)
-            
-            # Verify graph definition service was called
-            self.mock_compilation_service.graph_definition.build_from_csv.assert_called_once_with(
-                self.service.csv_path, "test_graph"
-            )
-            
-            # Verify conversion to old format
-            mock_convert.assert_called_once_with(mock_graph_domain_model)
-            self.assertEqual(result, self.sample_graph_def)
-    
-    def test_get_graph_definition_compilation_failure(self):
-        """Test _get_graph_definition() handles compilation failure."""
-        # Mock compilation failure
-        mock_compilation_result = Mock()
-        mock_compilation_result.success = False
-        mock_compilation_result.error = "Compilation failed"
-        self.mock_compilation_service.compile_graph.return_value = mock_compilation_result
-        
-        # Execute test and verify exception
-        with self.assertRaises(ValueError) as context:
-            self.service._get_graph_definition("test_graph")
-        
-        error_msg = str(context.exception)
-        self.assertIn("Failed to compile graph for export 'test_graph'", error_msg)
-        self.assertIn("Compilation failed", error_msg)
-    
-    def test_get_graph_definition_no_compilation_service(self):
-        """Test _get_graph_definition() raises error when CompilationService unavailable."""
-        # Create service without compilation service
-        service = GraphOutputService(
-            app_config_service=self.mock_app_config_service,
-            logging_service=self.mock_logging_service,
-            function_resolution_service=self.mock_function_resolution_service,
-            agent_registry_service=self.mock_agent_registry_service,
-            compilation_service=None
-        )
-        
-        # Execute test and verify exception
-        with self.assertRaises(ValueError) as context:
-            service._get_graph_definition("test_graph")
-        
-        error_msg = str(context.exception)
-        self.assertIn("CompilationService not available", error_msg)
-        self.assertIn("cannot export graph", error_msg)
     
     # =============================================================================
     # 8. Path Resolution Tests
@@ -625,19 +534,6 @@ class TestGraphOutputService(unittest.TestCase):
     # 11. Error Handling Tests
     # =============================================================================
     
-    def test_service_handles_missing_dependencies_gracefully(self):
-        """Test service behavior with missing optional dependencies."""
-        # Test with None compilation service
-        service = GraphOutputService(
-            app_config_service=self.mock_app_config_service,
-            logging_service=self.mock_logging_service,
-            function_resolution_service=self.mock_function_resolution_service,
-            agent_registry_service=self.mock_agent_registry_service,
-            compilation_service=None
-        )
-        
-        info = service.get_service_info()
-        self.assertFalse(info["compilation_service_available"])
     
     def test_export_methods_handle_file_permissions_errors(self):
         """Test export methods handle file permission errors gracefully."""

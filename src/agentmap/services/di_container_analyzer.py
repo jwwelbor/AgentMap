@@ -69,6 +69,16 @@ class DIContainerAnalyzer:
         Returns:
             Set of dependency service names
         """
+        # Known non-service entries that should be filtered out
+        NON_SERVICE_ENTRIES = {
+            'config_path',      # Configuration value, not a service
+            'routing_cache',    # Cache object, not a service  
+            'logging_config',   # Configuration object
+            'execution_config', # Configuration object
+            'prompts_config',   # Configuration object
+            'storage_available' # Boolean check, not a service
+        }
+        
         try:
             self.logger.debug(f"[DIContainerAnalyzer] Analyzing dependencies for service: {service_name}")
             
@@ -128,8 +138,17 @@ class DIContainerAnalyzer:
                     # Skip if kwargs is not iterable or accessible
                     pass
             
-            self.logger.debug(f"[DIContainerAnalyzer] Total dependencies for {service_name}: {dependencies}")
-            return dependencies
+            # Filter out non-service entries
+            filtered_dependencies = dependencies - NON_SERVICE_ENTRIES
+            
+            if dependencies != filtered_dependencies:
+                self.logger.debug(
+                    f"[DIContainerAnalyzer] Filtered out non-service entries: "
+                    f"{dependencies - filtered_dependencies}"
+                )
+            
+            self.logger.debug(f"[DIContainerAnalyzer] Total dependencies for {service_name}: {filtered_dependencies}")
+            return filtered_dependencies
             
         except Exception as e:
             self.logger.debug(f"[DIContainerAnalyzer] Error analyzing dependencies for {service_name}: {e}")
@@ -140,7 +159,8 @@ class DIContainerAnalyzer:
         Build complete transitive dependency tree for the given root services.
         
         Uses breadth-first traversal to discover all dependencies recursively,
-        with protection against circular dependencies.
+        with protection against circular dependencies. Filters out non-service
+        entries like configuration values.
         
         Args:
             root_services: Set of root service names to start analysis from
@@ -148,6 +168,16 @@ class DIContainerAnalyzer:
         Returns:
             Complete set of all required services (including root services)
         """
+        # Known non-service entries that should be filtered out
+        NON_SERVICE_ENTRIES = {
+            'config_path',      # Configuration value, not a service
+            'routing_cache',    # Cache object, not a service  
+            'logging_config',   # Configuration object
+            'execution_config', # Configuration object
+            'prompts_config',   # Configuration object
+            'storage_available' # Boolean check, not a service
+        }
+        
         if not root_services:
             return set()
             
@@ -179,8 +209,17 @@ class DIContainerAnalyzer:
                 elif dep in visited:
                     self.logger.debug(f"[DIContainerAnalyzer] Detected circular dependency: {current_service} -> {dep}")
         
-        self.logger.debug(f"[DIContainerAnalyzer] Complete dependency tree: {all_services}")
-        return all_services
+        # Filter out non-service entries from the final result
+        filtered_services = all_services - NON_SERVICE_ENTRIES
+        
+        if all_services != filtered_services:
+            self.logger.debug(
+                f"[DIContainerAnalyzer] Filtered out non-service entries from tree: "
+                f"{all_services - filtered_services}"
+            )
+        
+        self.logger.debug(f"[DIContainerAnalyzer] Complete dependency tree: {filtered_services}")
+        return filtered_services
 
     def _get_provider(self, service_name: str) -> Optional[Any]:
         """
@@ -248,3 +287,127 @@ class DIContainerAnalyzer:
             return isinstance(obj, providers.Provider)
         except Exception:
             return False
+    
+    def get_dependency_tree(self, services: Set[str]) -> dict[str, Set[str]]:
+        """Build a dependency tree for the given services.
+        
+        Args:
+            services: Set of service names to analyze
+            
+        Returns:
+            Dictionary mapping service names to their dependencies
+        """
+        dependency_tree = {}
+        
+        for service in services:
+            dependencies = self.get_service_dependencies(service)
+            dependency_tree[service] = dependencies
+            
+            # Recursively add dependencies of dependencies
+            for dep in dependencies:
+                if dep not in dependency_tree:
+                    dependency_tree[dep] = self.get_service_dependencies(dep)
+        
+        self.logger.debug(
+            f"[DIContainerAnalyzer] Built dependency tree for {len(services)} services"
+        )
+        return dependency_tree
+    
+    def topological_sort(self, dependency_tree: dict[str, Set[str]]) -> list[str]:
+        """Perform topological sort on dependency tree.
+        
+        Returns services in order such that dependencies come before dependents.
+        
+        Args:
+            dependency_tree: Dictionary mapping service names to their dependencies
+            
+        Returns:
+            List of service names in dependency order
+        """
+        # Create a copy of the dependency tree to modify
+        graph = {node: set(deps) for node, deps in dependency_tree.items()}
+        
+        # Add any missing nodes (dependencies that aren't in the tree)
+        all_deps = set()
+        for deps in graph.values():
+            all_deps.update(deps)
+        for dep in all_deps:
+            if dep not in graph:
+                graph[dep] = set()
+        
+        result = []
+        no_deps = [node for node, deps in graph.items() if not deps]
+        
+        while no_deps:
+            # Sort for deterministic ordering
+            no_deps.sort()
+            node = no_deps.pop(0)
+            result.append(node)
+            
+            # Remove this node from dependencies of other nodes
+            for other_node, deps in list(graph.items()):
+                if node in deps:
+                    deps.remove(node)
+                    if not deps and other_node not in result:
+                        no_deps.append(other_node)
+        
+        # Check for cycles
+        remaining_nodes = [n for n in graph if n not in result]
+        if remaining_nodes:
+            self.logger.warning(
+                f"[DIContainerAnalyzer] Circular dependencies detected: {remaining_nodes}"
+            )
+            # Add remaining nodes anyway
+            result.extend(sorted(remaining_nodes))
+        
+        self.logger.debug(
+            f"[DIContainerAnalyzer] Topological sort completed: {len(result)} services"
+        )
+        return result
+    
+    def get_protocol_mappings(self) -> dict[str, str]:
+        """Extract protocol to implementation mappings from container.
+        
+        Returns:
+            Dictionary mapping protocol names to implementation class names
+        """
+        mappings = {}
+        
+        try:
+            # Iterate through container providers
+            for service_name in dir(self.container):
+                if service_name.startswith('_'):
+                    continue
+                    
+                provider = getattr(self.container, service_name, None)
+                if not provider:
+                    continue
+                
+                # Check if the service name ends with 'Protocol'
+                if 'protocol' in service_name.lower():
+                    # Try to get the implementation class
+                    try:
+                        if hasattr(provider, 'cls'):
+                            impl_class = provider.cls
+                            if impl_class:
+                                mappings[service_name] = impl_class.__name__
+                                self.logger.debug(
+                                    f"[DIContainerAnalyzer] Protocol mapping: "
+                                    f"{service_name} -> {impl_class.__name__}"
+                                )
+                    except Exception as e:
+                        self.logger.debug(
+                            f"[DIContainerAnalyzer] Failed to extract implementation "
+                            f"for protocol {service_name}: {e}"
+                        )
+            
+            self.logger.debug(
+                f"[DIContainerAnalyzer] Extracted {len(mappings)} protocol mappings"
+            )
+            
+        except Exception as e:
+            self.logger.warning(
+                f"[DIContainerAnalyzer] Error extracting protocol mappings: {e}"
+            )
+        
+        return mappings

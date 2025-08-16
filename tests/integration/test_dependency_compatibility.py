@@ -91,7 +91,7 @@ class TestDependencyCompatibility:
             # Test the specific import chain that was failing
             from agentmap.core import ServiceAdapter, create_service_adapter
             from agentmap.core.adapters import ServiceAdapter as AdapterClass
-            from agentmap.services.graph_assembly_service import GraphAssemblyService
+            from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
             
             # Verify classes can be instantiated (basic smoke test)
             assert ServiceAdapter is not None

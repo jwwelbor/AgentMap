@@ -614,12 +614,6 @@ class TestGraphDefinitionService(unittest.TestCase):
             self.assertIn('not defined as a node', error_message)
             self.assertIn('test_graph', error_message)
     
-    def test_build_from_config_not_implemented(self):
-        """Test build_from_config() raises NotImplementedError."""
-        with self.assertRaises(NotImplementedError) as context:
-            self.service.build_from_config({'test': 'config'})
-        
-        self.assertIn('build_from_config not yet implemented', str(context.exception))
     
     def test_service_initialization_with_missing_dependencies(self):
         """Test service handles missing dependencies gracefully."""

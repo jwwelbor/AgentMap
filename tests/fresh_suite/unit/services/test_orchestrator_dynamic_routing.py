@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import Mock, MagicMock
 from typing import Dict, Any
 
-from agentmap.services.graph_assembly_service import GraphAssemblyService
+from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
 from agentmap.models.graph import Graph, Node
 
 

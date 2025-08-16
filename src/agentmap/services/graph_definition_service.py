@@ -166,24 +166,6 @@ class GraphDefinitionService:
         """
         return self.build_from_csv(csv_path, graph_name)
 
-    def build_from_config(self, config_dict: Dict) -> Graph:
-        """
-        Build graph from configuration dictionary.
-
-        Future extensibility method for building graphs from programmatic config.
-
-        Args:
-            config_dict: Dictionary containing graph configuration
-
-        Returns:
-            Graph domain model
-
-        Raises:
-            NotImplementedError: This method is not yet implemented
-        """
-        self.logger.info(f"[GraphDefinitionService] Building graph from config")
-        # TODO: Implement when needed for configuration-based graph building
-        raise NotImplementedError("build_from_config not yet implemented")
 
     def validate_csv_before_building(self, csv_path: Path) -> List[str]:
         """

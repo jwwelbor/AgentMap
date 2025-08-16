@@ -20,7 +20,8 @@ from typing import Any, Dict, List, Optional, TextIO
 
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.types import StorageResult, WriteMode
-
+from agentmap.services.config.storage_config_service import StorageConfigService
+from agentmap.services.logging_service import LoggingService
 
 class JSONStorageService(BaseStorageService):
     """
@@ -39,8 +40,8 @@ class JSONStorageService(BaseStorageService):
     def __init__(
         self,
         provider_name: str,
-        configuration,  # StorageConfigService (avoid circular import)
-        logging_service,  # LoggingService (avoid circular import)
+        configuration: StorageConfigService,  # StorageConfigService (avoid circular import)
+        logging_service: LoggingService,  # LoggingService (avoid circular import)
     ):
         """
         Initialize JSONStorageService.

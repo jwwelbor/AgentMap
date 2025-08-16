@@ -507,7 +507,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # Graph Assembly Service for assembling StateGraph instances
     graph_assembly_service = providers.Singleton(
-        "agentmap.services.graph_assembly_service.GraphAssemblyService",
+        "agentmap.services.graph.graph_assembly_service.GraphAssemblyService",
         app_config_service,
         logging_service,
         state_adapter_service,
@@ -620,11 +620,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # Graph Bundle Service for graph bundle operations
     graph_bundle_service = providers.Singleton(
-        "agentmap.services.graph_bundle_service.GraphBundleService",
-        providers.Callable(
-            lambda logging_service: logging_service.get_logger("agentmap.graph_bundle"),
-            logging_service,
-        ),
+        "agentmap.services.graph.graph_bundle_service.GraphBundleService",
         logging_service,
         protocol_requirements_analyzer,
         None,  # di_container_analyzer - will be created on-demand
@@ -632,20 +628,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
         json_storage_service,
     )
 
-
-
-    # Graph Resolution Service for graph execution strategy resolution
-    graph_resolution_service = providers.Singleton(
-        "agentmap.services.graph_resolution_service.GraphResolutionService",
-        graph_bundle_service,
-        graph_definition_service,
-        app_config_service,
-        logging_service,
-    )
-
     # Graph Execution Service for clean execution orchestration
     graph_execution_service = providers.Singleton(
-        "agentmap.services.graph_execution_service.GraphExecutionService",
+        "agentmap.services.graph.graph_execution_service.GraphExecutionService",
         execution_tracking_service,
         execution_policy_service,
         state_adapter_service,
@@ -687,7 +672,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     )
 
     graph_checkpoint_service = providers.Singleton(
-        "agentmap.services.graph_checkpoint_service.GraphCheckpointService",
+        "agentmap.services.graph.graph_checkpoint_service.GraphCheckpointService",
         json_storage_service,  # Direct injection
         logging_service,
     )
@@ -715,6 +700,16 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
         host_service_registry,
     )
+    
+    # Graph bootstrap service (lightweight bootstrap for graph-specific needs)
+    graph_bootstrap_service = providers.Singleton(
+        "agentmap.services.graph.graph_bootstrap_service.GraphBootstrapService",
+        agent_registry_service,
+        features_registry_service,
+        dependency_checker_service,
+        app_config_service,
+        logging_service,
+    )
 
     # Additional utility providers for common transformations
 
@@ -731,52 +726,59 @@ class ApplicationContainer(containers.DeclarativeContainer):
         lambda app_config: app_config.get_prompts_config(), app_config_service
     )
 
+    graph_registry_service = providers.Singleton(
+        "agentmap.services.graph.graph_registry_service.GraphRegistryService",
+        json_storage_service,
+        app_config_service,
+        logging_service,
+    )
+
     # Factory for GraphRunnerService that properly passes the container
     @staticmethod
     def _create_graph_runner_service(
-        graph_execution_service,
-        graph_resolution_service,
-        graph_preparation_service,
-        agent_factory_service,
-        agent_service_injection_service,
         logging_service,
         app_config_service,
         execution_tracking_service,
         state_adapter_service,
+        graph_execution_service,
+        graph_bundle_service,
+        agent_factory_service,
+        csv_graph_parser_service,
+        graph_registry_service,
+        graph_bootstrap_service,
         host_protocol_configuration_service,
-        prompt_manager_service,
     ):
         """Create GraphRunnerService with proper dependencies for refactored architecture."""
-        from agentmap.services.graph_runner_service import GraphRunnerService
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
 
         return GraphRunnerService(
-            graph_execution_service=graph_execution_service,
-            graph_resolution_service=graph_resolution_service,
-            graph_preparation_service=graph_preparation_service,
-            agent_factory_service=agent_factory_service,
-            agent_service_injection_service=agent_service_injection_service,
             logging_service=logging_service,
             app_config_service=app_config_service,
             execution_tracking_service=execution_tracking_service,
             state_adapter_service=state_adapter_service,
+            graph_execution_service=graph_execution_service,
+            graph_bundle_service=graph_bundle_service,
+            agent_factory_service=agent_factory_service,
+            csv_parser=csv_graph_parser_service,
+            graph_registry_service=graph_registry_service,
+            graph_bootstrap_service=graph_bootstrap_service,
             host_protocol_configuration_service=host_protocol_configuration_service,
-            prompt_manager_service=prompt_manager_service,
         )
 
     # Graph Runner Service - Simplified facade service for complete graph execution
     graph_runner_service = providers.Singleton(
         _create_graph_runner_service,
-        graph_execution_service,
-        graph_resolution_service,
-        graph_preparation_service,
-        agent_factory_service,
-        agent_service_injection_service,
         logging_service,
         app_config_service,
         execution_tracking_service,
         state_adapter_service,
+        graph_execution_service,
+        graph_bundle_service,
+        agent_factory_service,
+        csv_graph_parser_service,
+        graph_registry_service,
+        graph_bootstrap_service,
         host_protocol_configuration_service,
-        prompt_manager_service,
     )
 
     # Provider for checking service availability

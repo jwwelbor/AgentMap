@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Tuple
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.function_resolution_service import FunctionResolutionService
-from agentmap.services.graph_runner_service import GraphRunnerService
+from agentmap.services.graph.graph_runner_service import GraphRunnerService
 from agentmap.services.state_adapter_service import StateAdapterService
 
 # from agentmap.utils.function_utils import import_function

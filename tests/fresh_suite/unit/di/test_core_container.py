@@ -256,24 +256,7 @@ kv:
         service_info = self.service_auditor.audit_service_interface(type(service))
         self.assertEqual(service_info.class_name, 'GraphDefinitionService')
         self.assertGreater(len(service_info.public_methods), 0)
-    
-    def test_compilation_service_creation(self):
-        """Test that compilation_service() creates successfully."""
-        # Arrange
-        container = initialize_di(str(self.test_config_path))
         
-        # Act
-        service = container.compilation_service()
-        
-        # Assert
-        self.assertIsNotNone(service)
-        self.assertTrue(hasattr(service, 'compile_graph'))
-        
-        # Verify service interface using auditor
-        service_info = self.service_auditor.audit_service_interface(type(service))
-        self.assertEqual(service_info.class_name, 'CompilationService')
-        self.assertGreater(len(service_info.public_methods), 0)
-    
     def test_logging_service_creation(self):
         """Test that logging_service() creates successfully."""
         # Arrange
@@ -395,17 +378,12 @@ llm:
         
         # Act - Create services that could have circular dependencies
         graph_definition_service = container.graph_definition_service()
-        compilation_service = container.compilation_service()
         graph_runner_service = container.graph_runner_service()
         
         # Assert - All services create successfully without circular dependency errors
         self.assertIsNotNone(graph_definition_service)
-        self.assertIsNotNone(compilation_service)
         self.assertIsNotNone(graph_runner_service)
         
-        # Verify they have different instances (not circular references)
-        self.assertIsNot(graph_definition_service, compilation_service)
-        self.assertIsNot(compilation_service, graph_runner_service)
 
     # =============================================================================
     # 4. Configuration Injection Tests
@@ -520,7 +498,6 @@ llm:
             'logging_service', 
             'execution_tracking_service',
             'graph_definition_service',
-            'compilation_service',
             'graph_runner_service',
             'llm_service',
             'node_registry_service'

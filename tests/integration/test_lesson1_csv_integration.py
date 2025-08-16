@@ -51,7 +51,7 @@ PersonalGoals,End,Workflow complete,echo,,,final_message,completion,Workflow com
             # The exact import chain that was failing in the original error
             from agentmap.core import ServiceAdapter, create_service_adapter
             from agentmap.core.adapters import ServiceAdapter as AdapterClass
-            from agentmap.services.graph_assembly_service import GraphAssemblyService
+            from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
             
             # These should not raise MRO errors
             assert ServiceAdapter is not None
@@ -182,7 +182,7 @@ class TestOriginalErrorReproduction:
         from agentmap.services.graph_assembly_service import GraphAssemblyService
         """
         try:
-            from agentmap.services.graph_assembly_service import GraphAssemblyService
+            from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
             
             # This import was specifically mentioned in the error traceback
             assert GraphAssemblyService is not None

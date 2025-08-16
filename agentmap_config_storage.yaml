@@ -4,7 +4,7 @@
 # JSON storage provider configuration
 json:
   enabled: true
-  provider: "json"
+  auto_create_files: true
   base_directory: "data/json"
   encoding: "utf-8"
   indent: 2

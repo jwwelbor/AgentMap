@@ -38,7 +38,6 @@ GRAPH_RUNNER_SERVICE_ANALYSIS = {
     'dependencies': [
         ('graph_definition_service', 'GraphDefinitionService'),
         ('graph_execution_service', 'GraphExecutionService'),
-        ('compilation_service', 'CompilationService'),
         ('graph_bundle_service', 'GraphBundleService'),
         ('llm_service', 'LLMService'),
         ('storage_service_manager', 'StorageServiceManager'),

@@ -76,10 +76,24 @@ class TestBlobStorageService(unittest.TestCase):
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
         self.mock_logger = self.mock_logging_service.get_class_logger.return_value
         
+        # Create mock availability cache service
+        self.mock_availability_cache = Mock()
+        self.mock_availability_cache.get_availability.return_value = None  # Default to cache miss
+        self.mock_availability_cache.set_availability.return_value = True
+        self.mock_availability_cache.get_cache_stats.return_value = {
+            "total_entries": 0,
+            "performance": {
+                "cache_hits": 0,
+                "cache_misses": 0,
+                "cache_sets": 0
+            }
+        }
+        
         # Create service instance with mocked dependencies
         self.service = BlobStorageService(
             configuration=self.mock_storage_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            availability_cache=self.mock_availability_cache
         )
         
         # Create temporary directory for test files
@@ -117,9 +131,15 @@ class TestBlobStorageService(unittest.TestCase):
         # Configure empty blob config
         empty_config.get_blob_config.return_value = {}
         
+        # Create mock availability cache
+        mock_cache = Mock()
+        mock_cache.get_availability.return_value = None
+        mock_cache.set_availability.return_value = True
+        
         service = BlobStorageService(
             configuration=empty_config,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            availability_cache=mock_cache
         )
         
         # Should initialize successfully with empty config
@@ -132,9 +152,15 @@ class TestBlobStorageService(unittest.TestCase):
         failing_config = Mock()
         failing_config.get_blob_config.side_effect = Exception("Config load failed")
         
+        # Create mock availability cache
+        mock_cache = Mock()
+        mock_cache.get_availability.return_value = None
+        mock_cache.set_availability.return_value = True
+        
         service = BlobStorageService(
             configuration=failing_config,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            availability_cache=mock_cache
         )
         
         # Should initialize successfully with empty config as fallback
@@ -159,10 +185,16 @@ class TestBlobStorageService(unittest.TestCase):
         """Test Azure provider availability checking."""
         mock_check_azure.return_value = True
         
+        # Create mock availability cache for this test
+        mock_cache = Mock()
+        mock_cache.get_availability.return_value = None
+        mock_cache.set_availability.return_value = True
+        
         # Reinitialize service to trigger availability check
         service = BlobStorageService(
             configuration=self.mock_storage_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            availability_cache=mock_cache
         )
         
         # Azure should be available
@@ -173,10 +205,16 @@ class TestBlobStorageService(unittest.TestCase):
         """Test S3 provider availability checking."""
         mock_check_s3.return_value = True
         
+        # Create mock availability cache for this test
+        mock_cache = Mock()
+        mock_cache.get_availability.return_value = None
+        mock_cache.set_availability.return_value = True
+        
         # Reinitialize service to trigger availability check
         service = BlobStorageService(
             configuration=self.mock_storage_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            availability_cache=mock_cache
         )
         
         # S3 should be available
@@ -187,10 +225,16 @@ class TestBlobStorageService(unittest.TestCase):
         """Test Google Cloud Storage provider availability checking."""
         mock_check_gcs.return_value = True
         
+        # Create mock availability cache for this test
+        mock_cache = Mock()
+        mock_cache.get_availability.return_value = None
+        mock_cache.set_availability.return_value = True
+        
         # Reinitialize service to trigger availability check
         service = BlobStorageService(
             configuration=self.mock_storage_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            availability_cache=mock_cache
         )
         
         # GCS should be available
@@ -950,10 +994,16 @@ class TestBlobStorageService(unittest.TestCase):
         with patch('agentmap.services.storage.azure_blob_connector', side_effect=ImportError):
             with patch('agentmap.services.storage.aws_s3_connector', side_effect=ImportError):
                 with patch('agentmap.services.storage.gcp_storage_connector', side_effect=ImportError):
+                    # Create mock availability cache
+                    mock_cache = Mock()
+                    mock_cache.get_availability.return_value = None
+                    mock_cache.set_availability.return_value = True
+                    
                     # Service should still initialize successfully
                     service = BlobStorageService(
                         configuration=self.mock_storage_config_service,
-                        logging_service=self.mock_logging_service
+                        logging_service=self.mock_logging_service,
+                        availability_cache=mock_cache
                     )
                     
                     # Cloud providers should not be available
@@ -987,10 +1037,16 @@ class TestBlobStorageService(unittest.TestCase):
             else:
                 mock_config.get_blob_config.return_value = {}
             
+            # Create mock availability cache
+            mock_cache = Mock()
+            mock_cache.get_availability.return_value = None
+            mock_cache.set_availability.return_value = True
+            
             # Should not raise error regardless of config structure
             service = BlobStorageService(
                 configuration=mock_config,
-                logging_service=self.mock_logging_service
+                logging_service=self.mock_logging_service,
+                availability_cache=mock_cache
             )
             
             self.assertIsNotNone(service)

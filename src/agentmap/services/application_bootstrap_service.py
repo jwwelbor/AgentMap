@@ -37,7 +37,6 @@ class ApplicationBootstrapService:
         logging_service: LoggingService,
         host_service_registry: Optional[HostServiceRegistry] = None,
     ):
-        """Initialize service with dependency injection following GraphRunnerService pattern."""
         self.agent_registry = agent_registry_service
         self.features_registry = features_registry_service
         self.dependency_checker = dependency_checker_service

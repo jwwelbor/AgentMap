@@ -5,7 +5,7 @@ This module provides the complete CLI interface that maintains compatibility
 with existing command interfaces while using the new service architecture.
 """
 
-import typer
+import typer, sys
 
 from agentmap._version import __version__
 from agentmap.core.cli.diagnostic_commands import (

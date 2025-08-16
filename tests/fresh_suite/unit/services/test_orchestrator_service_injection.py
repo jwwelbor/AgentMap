@@ -177,7 +177,6 @@ class TestGraphRunnerServiceInjection(unittest.TestCase):
         mock_services = {
             'graph_definition_service': Mock(),
             'graph_execution_service': Mock(),
-            'compilation_service': Mock(),
             'graph_bundle_service': Mock(),
             'agent_factory_service': Mock(),
             'llm_service': Mock(),
@@ -200,7 +199,7 @@ class TestGraphRunnerServiceInjection(unittest.TestCase):
         mock_services['logging_service'].get_class_logger.return_value = Mock()
         
         # Import here to avoid circular dependencies
-        from agentmap.services.graph_runner_service import GraphRunnerService
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
         
         # Create GraphRunnerService with all services
         runner = GraphRunnerService(**mock_services)
