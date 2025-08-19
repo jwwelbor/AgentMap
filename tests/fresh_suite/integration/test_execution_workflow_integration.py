@@ -24,7 +24,7 @@ from tests.fresh_suite.integration.test_data_factories import (
     ExecutionTestDataFactory
 )
 from agentmap.models.execution_result import ExecutionResult
-from agentmap.services.graph.graph_runner_service import RunOptions
+# RunOptions removed as part of GraphRunnerService simplification
 
 
 class TestExecutionWorkflowIntegration(BaseIntegrationTest):

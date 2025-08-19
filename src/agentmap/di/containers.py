@@ -18,9 +18,8 @@ class ApplicationContainer(containers.DeclarativeContainer):
     graceful failure handling for optional components like storage.
     """
 
-    # Configuration path injection (for CLI and testing)
-    # Use a simple provider that can be overridden with a string value
-    config_path = providers.Object(None)
+    # Configuration for dependency injection
+    config = providers.Configuration()
 
     # Infrastructure layer: ConfigService (singleton for efficiency)
     config_service = providers.Singleton(
@@ -31,7 +30,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     app_config_service = providers.Singleton(
         "agentmap.services.config.app_config_service.AppConfigService",
         config_service,
-        config_path,
+        config.path,
     )
 
     # Logging service factory that creates AND initializes the service
@@ -182,6 +181,12 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     logging_service = providers.Singleton(
         _create_and_initialize_logging_service, app_config_service
+    )
+
+    container_factory = providers.Singleton(
+        "agentmap.services.container_factory.ContainerFactory",
+        app_config_service,
+        logging_service,
     )
 
     # LLM Routing Config Service with unified cache integration
@@ -626,6 +631,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         None,  # di_container_analyzer - will be created on-demand
         agent_factory_service,
         json_storage_service,
+        csv_graph_parser_service,  # NEW dependency
     )
 
     # Graph Execution Service for clean execution orchestration
@@ -733,52 +739,28 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
-    # Factory for GraphRunnerService that properly passes the container
+    # Factory for simplified GraphRunnerService with minimal dependencies
     @staticmethod
-    def _create_graph_runner_service(
-        logging_service,
-        app_config_service,
-        execution_tracking_service,
-        state_adapter_service,
-        graph_execution_service,
-        graph_bundle_service,
-        agent_factory_service,
-        csv_graph_parser_service,
-        graph_registry_service,
+    def _create_simplified_graph_runner_service(
         graph_bootstrap_service,
-        host_protocol_configuration_service,
+        graph_execution_service,
+        logging_service,
     ):
-        """Create GraphRunnerService with proper dependencies for refactored architecture."""
+        """Create simplified GraphRunnerService with minimal dependencies for pure orchestration."""
         from agentmap.services.graph.graph_runner_service import GraphRunnerService
 
         return GraphRunnerService(
-            logging_service=logging_service,
-            app_config_service=app_config_service,
-            execution_tracking_service=execution_tracking_service,
-            state_adapter_service=state_adapter_service,
-            graph_execution_service=graph_execution_service,
-            graph_bundle_service=graph_bundle_service,
-            agent_factory_service=agent_factory_service,
-            csv_parser=csv_graph_parser_service,
-            graph_registry_service=graph_registry_service,
             graph_bootstrap_service=graph_bootstrap_service,
-            host_protocol_configuration_service=host_protocol_configuration_service,
+            graph_execution_service=graph_execution_service,
+            logging_service=logging_service,
         )
 
-    # Graph Runner Service - Simplified facade service for complete graph execution
+    # Graph Runner Service - Simplified facade service for pure orchestration
     graph_runner_service = providers.Singleton(
-        _create_graph_runner_service,
-        logging_service,
-        app_config_service,
-        execution_tracking_service,
-        state_adapter_service,
-        graph_execution_service,
-        graph_bundle_service,
-        agent_factory_service,
-        csv_graph_parser_service,
-        graph_registry_service,
+        _create_simplified_graph_runner_service,
         graph_bootstrap_service,
-        host_protocol_configuration_service,
+        graph_execution_service,
+        logging_service,
     )
 
     # Provider for checking service availability

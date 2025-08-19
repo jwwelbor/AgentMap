@@ -25,7 +25,7 @@ from tests.fresh_suite.integration.test_data_factories import (
     ExecutionTestDataFactory
 )
 from agentmap.models.execution_result import ExecutionResult
-from agentmap.services.graph.graph_runner_service import RunOptions
+from agentmap.models.graph_bundle import GraphBundle
 
 
 class TestExecutionTrackingIntegration(BaseIntegrationTest):
@@ -53,6 +53,25 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         # Supporting services
         self.graph_definition_service = self.container.graph_definition_service()
         
+        # Graph bundle service for CSV processing (following new pattern)
+        self.csv_parser_service = self.container.csv_graph_parser_service()
+        self.protocol_analyzer = self.container.protocol_requirements_analyzer()
+        self.agent_factory_service = self.container.agent_factory_service()
+        
+        # Create DIContainerAnalyzer manually to avoid circular dependency
+        from agentmap.services.di_container_analyzer import DIContainerAnalyzer
+        self.di_container_analyzer = DIContainerAnalyzer(self.container, self.logging_service)
+        
+        # Create GraphBundleService with all dependencies
+        from agentmap.services.graph.graph_bundle_service import GraphBundleService
+        self.graph_bundle_service = GraphBundleService(
+            logging_service=self.logging_service,
+            csv_parser=self.csv_parser_service,
+            protocol_requirements_analyzer=self.protocol_analyzer,
+            di_container_analyzer=self.di_container_analyzer,
+            agent_factory_service=self.agent_factory_service
+        )
+        
         # Test data manager
         self.test_data_manager = IntegrationTestDataManager(Path(self.temp_dir))
         
@@ -60,6 +79,42 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         self.assert_service_created(self.graph_runner_service, "GraphRunnerService")
         self.assert_service_created(self.graph_execution_service, "GraphExecutionService")
         self.assert_service_created(self.execution_tracking_service, "ExecutionTrackingService")
+        self.assert_service_created(self.graph_bundle_service, "GraphBundleService")
+    
+    def _execute_graph_from_csv(self, csv_path: str, graph_name: str, initial_state: Optional[Dict[str, Any]] = None) -> ExecutionResult:
+        """
+        Helper method to execute graph from CSV using new architecture.
+        
+        This follows the new pattern:
+        1. Create GraphBundle from CSV using GraphBundleService
+        2. Execute bundle using GraphRunnerService
+        
+        Args:
+            csv_path: Path to CSV file
+            graph_name: Name of the graph to execute
+            initial_state: Optional initial execution state
+            
+        Returns:
+            ExecutionResult from graph execution
+        """
+        # Step 1: Create bundle from CSV (new pattern)
+        bundle = self.graph_bundle_service.create_metadata_bundle(
+            csv_path=csv_path,
+            graph_name=graph_name
+        )
+        
+        # Step 2: Add initial state to bundle if provided
+        if initial_state:
+            # The new architecture may need to handle initial state differently
+            # For now, we'll store it in the bundle's validation_metadata
+            if bundle.validation_metadata is None:
+                bundle.validation_metadata = {}
+            bundle.validation_metadata['initial_state'] = initial_state
+        
+        # Step 3: Execute bundle using GraphRunnerService
+        result = self.graph_runner_service.run(bundle)
+        
+        return result
     
     # =============================================================================
     # 1. Graph Name Preservation Tests
@@ -111,15 +166,14 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         csv_path = self.test_data_manager.create_test_csv_file(graph_spec)
         print(f"Created CSV with graph name: {test_graph_name}")
         
-        # Execute the graph
+        # Execute the graph using new architecture
         initial_state = {"input": "test input for graph name"}
-        options = RunOptions(initial_state=initial_state)
         
         try:
-            result = self.graph_runner_service.run_from_csv_direct(
+            result = self._execute_graph_from_csv(
                 csv_path=csv_path,
                 graph_name=test_graph_name,
-                options=options
+                initial_state=initial_state
             )
             
             # CRITICAL TEST: Graph name should be preserved exactly
@@ -220,13 +274,12 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         
         # Execute with realistic input
         initial_state = {"input": "hug my mom"}
-        options = RunOptions(initial_state=initial_state)
         
         try:
-            result = self.graph_runner_service.run_from_csv_direct(
+            result = self._execute_graph_from_csv(
                 csv_path=csv_path,
                 graph_name=complex_graph_name,
-                options=options
+                initial_state=initial_state
             )
             
             # Verify complex graph name preservation
@@ -262,13 +315,12 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         csv_path = self.test_data_manager.create_test_csv_file(multi_node_spec)
         
         initial_state = {"user_input": "test for node recording"}
-        options = RunOptions(initial_state=initial_state)
         
         try:
-            result = self.graph_runner_service.run_from_csv_direct(
+            result = self._execute_graph_from_csv(
                 csv_path=csv_path,
                 graph_name=multi_node_spec.graph_name,
-                options=options
+                initial_state=initial_state
             )
             
             # CRITICAL TEST: Execution summary should have node executions
@@ -308,13 +360,12 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         csv_path = self.test_data_manager.create_test_csv_file(simple_spec)
         
         initial_state = {"user_input": "test for final output capture"}
-        options = RunOptions(initial_state=initial_state)
         
         try:
-            result = self.graph_runner_service.run_from_csv_direct(
+            result = self._execute_graph_from_csv(
                 csv_path=csv_path,
                 graph_name=simple_spec.graph_name,
-                options=options
+                initial_state=initial_state
             )
             
             # CRITICAL TEST: Final output should not be None (this was the bug)
@@ -403,13 +454,12 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         csv_path = self.test_data_manager.create_test_csv_file(tracker_spec)
         
         initial_state = {"input": "shared tracker test data"}
-        options = RunOptions(initial_state=initial_state)
         
         try:
-            result = self.graph_runner_service.run_from_csv_direct(
+            result = self._execute_graph_from_csv(
                 csv_path=csv_path,
                 graph_name="tracker_test",
-                options=options
+                initial_state=initial_state
             )
             
             # Verify execution completed successfully
@@ -458,13 +508,12 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         csv_path = self.test_data_manager.create_test_csv_file(simple_spec)
         
         initial_state = {"input": "no fallback test"}
-        options = RunOptions(initial_state=initial_state)
         
         try:
-            result = self.graph_runner_service.run_from_csv_direct(
+            result = self._execute_graph_from_csv(
                 csv_path=csv_path,
                 graph_name=simple_spec.graph_name,
-                options=options
+                initial_state=initial_state
             )
             
             # If execution succeeds, it means trackers were properly distributed
@@ -563,14 +612,13 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         csv_path = self.test_data_manager.create_test_csv_file(pipeline_spec)
         
         initial_state = {"input": "complete pipeline integration test"}
-        options = RunOptions(initial_state=initial_state)
         
         try:
             start_time = time.time()
-            result = self.graph_runner_service.run_from_csv_direct(
+            result = self._execute_graph_from_csv(
                 csv_path=csv_path,
                 graph_name="pipeline_test",
-                options=options
+                initial_state=initial_state
             )
             execution_time = time.time() - start_time
             
@@ -662,7 +710,7 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
                 "Failure_Next": "",
                 "Context": ""
             },
-                        {
+            {
                 "GraphName": "gm_orchestration",
                 "Node": "ErrorHandler",
                 "AgentType": "echo",
@@ -688,13 +736,12 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         
         # Use the same input sequence that revealed the original bugs
         initial_state = {"input": "end"}  # This was in the original debug output
-        options = RunOptions(initial_state=initial_state)
         
         try:
-            result = self.graph_runner_service.run_from_csv_direct(
+            result = self._execute_graph_from_csv(
                 csv_path=csv_path,
                 graph_name="gm_orchestration",
-                options=options
+                initial_state=initial_state
             )
             
             # REGRESSION TESTS FOR ORIGINAL BUGS:

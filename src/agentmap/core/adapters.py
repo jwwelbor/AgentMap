@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional, Union
 from dependency_injector.containers import Container
 
 from agentmap.models.execution_result import ExecutionResult
-from agentmap.services.graph.graph_runner_service import RunOptions
+# RunOptions removed as part of GraphRunnerService simplification
 
 
 class ServiceAdapter:
@@ -31,25 +31,24 @@ class ServiceAdapter:
         execution_mode: str = "standard",
         config_file: Optional[str] = None,
         **kwargs,
-    ) -> RunOptions:
+    ) -> Dict[str, Any]:
         """
-        Convert CLI/API parameters to RunOptions.
-
-        Note: graph_name is passed separately to run_graph() method.
+        Convert CLI/API parameters to options dict.
+        
+        NOTE: This method is deprecated as GraphRunnerService has been simplified
+        to take Bundle parameters directly instead of RunOptions.
 
         Args:
             csv: CSV path override
             state: Initial state (JSON string or dict)
-            autocompile: Whether to autocompile if graph missing
             validate_before_run: Whether to validate before execution
             track_execution: Whether to enable execution tracking
-            force_compilation: Whether to force recompilation
             execution_mode: Execution mode (standard, debug, minimal)
             config_file: Path to custom config file
             **kwargs: Additional parameters
 
         Returns:
-            RunOptions: Configured options for GraphRunnerService
+            Dict: Options dictionary (RunOptions replacement)
         """
         # Parse state if it's a JSON string
         if isinstance(state, str):
@@ -63,15 +62,15 @@ class ServiceAdapter:
         # Convert paths to Path objects if provided
         csv_path = Path(csv) if csv else None
 
-        return RunOptions(
-            initial_state=parsed_state,
-            csv_path=csv_path,
-            validate_before_run=validate_before_run,
-            track_execution=track_execution,
-            execution_mode=execution_mode,
-            config_file=config_file,
+        return {
+            "initial_state": parsed_state,
+            "csv_path": csv_path,
+            "validate_before_run": validate_before_run,
+            "track_execution": track_execution,
+            "execution_mode": execution_mode,
+            "config_file": config_file,
             **kwargs,
-        )
+        }
 
     def extract_result_state(self, result: ExecutionResult) -> Dict[str, Any]:
         """

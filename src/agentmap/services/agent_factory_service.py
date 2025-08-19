@@ -34,6 +34,7 @@ class AgentFactoryService:
         self.logger = logging_service.get_class_logger(self)
         self.logger.debug("[AgentFactoryService] Initialized")
 
+
     def resolve_agent_class(self, agent_type: str) -> Type:
         """
         Resolve an agent class by type with dependency validation.

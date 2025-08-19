@@ -140,7 +140,7 @@ class ValidationService:
         config_result = self.validate_config_file(config_path, use_cache)
         return csv_result, config_result
 
-    def validate_csv_for_compilation(self, csv_path: Path) -> None:
+    def validate_csv_for_bundling(self, csv_path: Path) -> None:
         """Validate CSV for compilation requirements and raise if invalid."""
         result = self.validate_csv_file(csv_path, use_cache=False)
         if result.has_errors:

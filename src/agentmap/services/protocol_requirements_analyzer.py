@@ -110,25 +110,28 @@ class ProtocolBasedRequirementsAnalyzer:
             self.logger.debug(
                 f"[ProtocolBasedRequirementsAnalyzer] Processing node: {repr(node)}"
             )
+
+            # TODO: this is showing Node... not valuable
             self.logger.debug(
                 f"[ProtocolBasedRequirementsAnalyzer] Node type: {type(node)}"
             )
-            self.logger.debug(
-                f"[ProtocolBasedRequirementsAnalyzer] Node dir: {dir(node)}"
-            )
+            # self.logger.debug(
+            #     f"[ProtocolBasedRequirementsAnalyzer] Node dir: {dir(node)}"
+            # )
             
             # Extract agent type (handle both Node objects and dict-like objects)
             agent_type_attr = getattr(node, 'agent_type', None)
-            agent_type_dict = node.get('agent_type') if hasattr(node, 'get') else None
-            agent_type = agent_type_attr or agent_type_dict
+            # I'm not sure why we would need this
+            # agent_type_dict = node.get('agent_type') if hasattr(node, 'get') else None
+            agent_type = agent_type_attr # or agent_type_dict
             
             node_name = getattr(node, 'name', None) or (node.get('name', 'unknown') if hasattr(node, 'get') else 'unknown')
             
             # DEBUG: Log extraction results
             self.logger.debug(
                 f"[ProtocolBasedRequirementsAnalyzer] Node '{node_name}': "
-                f"agent_type_attr={agent_type_attr}, agent_type_dict={agent_type_dict}, "
                 f"final_agent_type={agent_type}"
+                # agent_type_attr={agent_type_attr}, agent_type_dict={agent_type_dict}, "
             )
             
             if not agent_type:
@@ -136,7 +139,9 @@ class ProtocolBasedRequirementsAnalyzer:
                     f"[ProtocolBasedRequirementsAnalyzer] Node '{node_name}' "
                     "has no agent type, skipping. This is the bug!"
                 )
-                continue
+                raise ValueError(
+                    f"Node '{node_name}' has no agent type!"
+                )
 
             # Add agent type to required agents
             required_agents.add(agent_type)

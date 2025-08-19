@@ -192,7 +192,7 @@ def validate_all_cmd(
         raise typer.Exit(code=1)
 
 
-def validate_csv_for_compilation_command(
+def validate_csv_for_bundling_command(
     csv_path: Optional[str] = None, config_file: Optional[str] = None
 ) -> dict:
     """
@@ -227,7 +227,7 @@ def validate_csv_for_compilation_command(
 
     # Use existing compilation validation
     try:
-        validation_service.validate_csv_for_compilation(csv_file)
+        validation_service.validate_csv_for_bundling(csv_file)
         return {
             "success": True,
             "file_path": str(csv_file),

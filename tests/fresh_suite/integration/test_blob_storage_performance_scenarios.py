@@ -49,11 +49,13 @@ class TestBlobStoragePerformance(unittest.TestCase):
             "storage": {"blob": {"providers": {"file": {"base_directory": "/tmp"}}}}
         })
         self.mock_logging = MockServiceFactory.create_mock_logging_service()
+        self.mock_availability_cache = MockServiceFactory.create_mock_availability_cache_service()
         
         # Create service for testing
         self.service = BlobStorageService(
             configuration=self.mock_config,
-            logging_service=self.mock_logging
+            logging_service=self.mock_logging,
+            availability_cache=self.mock_availability_cache
         )
     
     # =============================================================================
@@ -365,6 +367,7 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
         """Set up cloud provider scenario test fixtures."""
         self.mock_config = MockServiceFactory.create_mock_app_config_service()
         self.mock_logging = MockServiceFactory.create_mock_logging_service()
+        self.mock_availability_cache = MockServiceFactory.create_mock_availability_cache_service()
     
     # =============================================================================
     # Azure Blob Storage Scenario Tests
@@ -387,7 +390,8 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
                 
                 service = BlobStorageService(
                     configuration=azure_config,
-                    logging_service=self.mock_logging
+                    logging_service=self.mock_logging,
+                    availability_cache=self.mock_availability_cache
                 )
                 
                 # Mock Azure behavior
@@ -419,7 +423,8 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
                 # Create service
                 service = BlobStorageService(
                     configuration=self.mock_config,
-                    logging_service=self.mock_logging
+                    logging_service=self.mock_logging,
+                    availability_cache=self.mock_availability_cache
                 )
                 
                 # Mock Azure error behavior
@@ -456,7 +461,8 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
                 
                 service = BlobStorageService(
                     configuration=s3_config,
-                    logging_service=self.mock_logging
+                    logging_service=self.mock_logging,
+                    availability_cache=self.mock_availability_cache
                 )
                 
                 # Mock S3 behavior
@@ -488,7 +494,8 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
                 # Create service
                 service = BlobStorageService(
                     configuration=self.mock_config,
-                    logging_service=self.mock_logging
+                    logging_service=self.mock_logging,
+                    availability_cache=self.mock_availability_cache
                 )
                 
                 # Mock S3 error behavior
@@ -525,7 +532,8 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
                 
                 service = BlobStorageService(
                     configuration=gcs_config,
-                    logging_service=self.mock_logging
+                    logging_service=self.mock_logging,
+                    availability_cache=self.mock_availability_cache
                 )
                 
                 # Mock GCS behavior
@@ -557,7 +565,8 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
                 # Create service
                 service = BlobStorageService(
                     configuration=self.mock_config,
-                    logging_service=self.mock_logging
+                    logging_service=self.mock_logging,
+                    availability_cache=self.mock_availability_cache
                 )
                 
                 # Mock GCS error behavior
@@ -681,7 +690,8 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
                             # Create service
                             service = BlobStorageService(
                                 configuration=self.mock_config,
-                                logging_service=self.mock_logging
+                                logging_service=self.mock_logging,
+                                availability_cache=self.mock_availability_cache
                             )
                             
                             # Check available providers

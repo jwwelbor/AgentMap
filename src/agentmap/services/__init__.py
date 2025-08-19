@@ -22,6 +22,7 @@ from agentmap.models.scaffold_types import (
     ServiceRequirements,
 )
 
+from .agent_bootstrap_service import AgentBootstrapService
 from .agent_factory_service import AgentFactoryService
 from .agent_registry_service import AgentRegistryService
 
@@ -47,7 +48,7 @@ from .graph.graph_bundle_service import GraphBundleService
 # Core Graph Services
 from .graph_definition_service import GraphDefinitionService
 from .graph_output_service import GraphOutputService
-from .graph.graph_runner_service import GraphRunnerService, RunOptions
+from .graph.graph_runner_service import GraphRunnerService
 from .graph_scaffold_service import GraphScaffoldService
 from .prompt_manager_service import PromptManagerService
 
@@ -85,7 +86,7 @@ __all__ = [
     "GraphOutputService",
     "GraphBundleService",
     "GraphScaffoldService",
-    "RunOptions",
+
     "ScaffoldOptions",
     "ScaffoldResult",
     "ServiceRequirements",
@@ -105,6 +106,7 @@ __all__ = [
     # Agent and Registry Services
     "FeaturesRegistryService",
     "AgentRegistryService",
+    "AgentBootstrapService",
     "DependencyCheckerService",
     "AgentFactoryService",
     # Configuration Services

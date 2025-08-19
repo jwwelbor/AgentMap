@@ -158,8 +158,8 @@ class GraphBundle:
             return []
         
         # Simple implementation - can be enhanced with actual dependency analysis
-        # For now, return the services as a sorted list for consistency
-        return sorted(list(self.required_services))
+        # For now, return the services 
+        return list(self.required_services)
     
     @classmethod
     def create_metadata(

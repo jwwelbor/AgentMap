@@ -183,9 +183,55 @@ class AppConfigService:
         """Get the routing configuration with default values."""
         routing_config = self.get_section("routing", {})
 
-        # Default routing configuration
+        # Default routing configuration matching LLMRoutingConfigService expectations
         defaults = {
-            "enabled": False
+            "enabled": True,
+            "routing_matrix": {},
+            "task_types": {
+                "general": {
+                    "description": "General purpose tasks",
+                    "provider_preference": ["anthropic", "openai", "google"],
+                    "default_complexity": "medium",
+                    "complexity_keywords": {
+                        "low": ["simple", "basic", "quick"],
+                        "medium": ["analyze", "process", "standard"],
+                        "high": ["complex", "detailed", "comprehensive", "advanced"],
+                        "critical": ["urgent", "critical", "important", "emergency"],
+                    },
+                }
+            },
+            "complexity_analysis": {
+                "enabled": True,
+                "prompt_length_thresholds": {
+                    "low": 500,
+                    "medium": 2000,
+                    "high": 8000
+                },
+                "content_analysis": {
+                    "enabled": True,
+                    "keyword_weights": {
+                        "complexity_indicators": 2.0,
+                        "technical_terms": 1.5,
+                        "urgency_indicators": 1.8
+                    }
+                }
+            },
+            "cost_optimization": {
+                "enabled": True,
+                "max_cost_tier": "high",
+                "cost_aware_routing": True
+            },
+            "fallback": {
+                "enabled": True,
+                "default_provider": "anthropic",
+                "default_model": "claude-3-haiku-20240307",
+                "max_retries": 2
+            },
+            "performance": {
+                "enable_routing_cache": True,
+                "cache_ttl": 300,
+                "async_routing": True
+            }
         }
 
         # Merge with defaults
@@ -421,34 +467,9 @@ class AppConfigService:
     # Storage config path accessor (storage loading moved to StorageConfigService)
     def get_storage_config_path(self) -> Path:
         """Get the path for the storage configuration file."""
-        return Path(self.get_value("storage_config_path", "storage_config.yaml"))
+        return Path(self.get_value("storage_config_path", None))
 
-    # Legacy method for backward compatibility (delegates file I/O to ConfigService)
-    def load_storage_config(self) -> Dict[str, Any]:
-        """
-        Load storage configuration from YAML file.
 
-        Note: This method is preserved for backward compatibility but violates
-        separation of concerns. Consider using StorageConfigService instead.
-        """
-        storage_config_path = self.get_storage_config_path()
-
-        # Use ConfigService to load the storage config file
-        try:
-            storage_config = self._config_service.load_config(storage_config_path)
-        except ConfigurationException:
-            # If file doesn't exist, return empty config
-            storage_config = {}
-
-        # Default storage configuration
-        defaults = {
-            "csv": {"default_directory": "data/csv", "collections": {}},
-            "vector": {"default_provider": "local", "collections": {}},
-            "kv": {"default_provider": "local", "collections": {}},
-        }
-
-        # Merge with defaults using ConfigService's merge logic
-        return self._merge_with_defaults(storage_config, defaults)
 
     # Host application configuration accessors
     def get_host_application_config(self) -> Dict[str, Any]:

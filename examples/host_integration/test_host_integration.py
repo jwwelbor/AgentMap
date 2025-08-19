@@ -90,7 +90,7 @@ class HostIntegrationTester:
         
         # Create container with test configuration
         self.container = ApplicationContainer()
-        self.container.config_path.override(str(config_path))
+        self.container.config.path.from_value(str(config_path))
         
         print("✅ Test environment setup complete")
     

@@ -389,10 +389,12 @@ kv:
             "storage": {"blob": {"providers": {"azure": {"connection_string": "test"}}}}
         })
         mock_logging = MockServiceFactory.create_mock_logging_service()
+        mock_availability_cache = MockServiceFactory.create_mock_availability_cache_service()
         
         service = BlobStorageService(
             configuration=mock_config,
-            logging_service=mock_logging
+            logging_service=mock_logging,
+            availability_cache=mock_availability_cache
         )
         
         # Azure should not be available
@@ -414,10 +416,12 @@ kv:
             "storage": {"blob": {"providers": {"s3": {"access_key": "test"}}}}
         })
         mock_logging = MockServiceFactory.create_mock_logging_service()
+        mock_availability_cache = MockServiceFactory.create_mock_availability_cache_service()
         
         service = BlobStorageService(
             configuration=mock_config,
-            logging_service=mock_logging
+            logging_service=mock_logging,
+            availability_cache=mock_availability_cache
         )
         
         # S3 should not be available
@@ -439,10 +443,12 @@ kv:
             "storage": {"blob": {"providers": {"gs": {"credentials_path": "test"}}}}
         })
         mock_logging = MockServiceFactory.create_mock_logging_service()
+        mock_availability_cache = MockServiceFactory.create_mock_availability_cache_service()
         
         service = BlobStorageService(
             configuration=mock_config,
-            logging_service=mock_logging
+            logging_service=mock_logging,
+            availability_cache=mock_availability_cache
         )
         
         # GCS should not be available
@@ -774,11 +780,13 @@ kv:
             mock_config.get_blob_config.return_value = config_data.get("blob", {})
             
             mock_logging = MockServiceFactory.create_mock_logging_service()
+            mock_availability_cache = MockServiceFactory.create_mock_availability_cache_service()
             
             # Should create service successfully
             service = BlobStorageService(
                 configuration=mock_config,
-                logging_service=mock_logging
+                logging_service=mock_logging,
+                availability_cache=mock_availability_cache
             )
             
             self.assertIsNotNone(service)
@@ -836,6 +844,7 @@ class TestBlobStorageGracefulDegradation(unittest.TestCase):
             }
         })
         self.mock_logging = MockServiceFactory.create_mock_logging_service()
+        self.mock_availability_cache = MockServiceFactory.create_mock_availability_cache_service()
     
     @patch('agentmap.services.storage.blob_storage_service.BlobStorageService._check_azure_availability')
     def test_graceful_degradation_azure_missing(self, mock_azure_availability):
@@ -846,7 +855,8 @@ class TestBlobStorageGracefulDegradation(unittest.TestCase):
         # Service should still initialize
         service = BlobStorageService(
             configuration=self.mock_config,
-            logging_service=self.mock_logging
+            logging_service=self.mock_logging,
+            availability_cache=self.mock_availability_cache
         )
         
         # Azure should not be available
@@ -869,7 +879,8 @@ class TestBlobStorageGracefulDegradation(unittest.TestCase):
         # Service should still initialize
         service = BlobStorageService(
             configuration=self.mock_config,
-            logging_service=self.mock_logging
+            logging_service=self.mock_logging,
+            availability_cache=self.mock_availability_cache
         )
         
         # S3 should not be available
@@ -888,7 +899,8 @@ class TestBlobStorageGracefulDegradation(unittest.TestCase):
         # Service should still initialize
         service = BlobStorageService(
             configuration=self.mock_config,
-            logging_service=self.mock_logging
+            logging_service=self.mock_logging,
+            availability_cache=self.mock_availability_cache
         )
         
         # GCS should not be available
@@ -914,7 +926,8 @@ class TestBlobStorageGracefulDegradation(unittest.TestCase):
         # Service should still initialize
         service = BlobStorageService(
             configuration=self.mock_config,
-            logging_service=self.mock_logging
+            logging_service=self.mock_logging,
+            availability_cache=self.mock_availability_cache
         )
         
         # Only local file should be available

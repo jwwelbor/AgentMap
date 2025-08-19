@@ -52,7 +52,7 @@ class SimpleCLITestBase(unittest.TestCase):
         self.mock_validation_service.validate_csv.return_value = validation_result
         self.mock_validation_service.validate_config.return_value = validation_result
         self.mock_validation_service.validate_both.return_value = (validation_result, validation_result)
-        self.mock_validation_service.validate_csv_for_compilation.return_value = None
+        self.mock_validation_service.validate_csv_for_bundling.return_value = None
         self.mock_validation_service.print_validation_summary.return_value = None
         
         # Create other services using MockServiceFactory

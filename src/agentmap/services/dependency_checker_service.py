@@ -38,6 +38,7 @@ class DependencyCheckerService:
 
     STORAGE_DEPENDENCIES = {
         "csv": ["pandas"],
+#        "json": ["json"],
         "vector": ["langchain", "chromadb"],
         "firebase": ["firebase_admin"],
         "azure_blob": ["azure-storage-blob"],

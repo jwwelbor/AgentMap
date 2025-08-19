@@ -89,7 +89,7 @@ class TracingConfigModel(BaseModel):
 class ConfigModel(BaseModel):
     csv_path: Optional[str] = "examples/SingleNodeGraph.csv"
     autocompile: Optional[bool] = True
-    storage_config_path: Optional[str] = "storage_config.yaml"
+    storage_config_path: Optional[str] = None
 
     paths: Optional[PathsConfigModel] = None
     llm: Optional[LLMConfigModel] = None

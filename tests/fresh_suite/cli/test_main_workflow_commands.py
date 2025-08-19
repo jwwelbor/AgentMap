@@ -79,7 +79,7 @@ class SimpleCLITestBase(unittest.TestCase):
         validation_result = Mock()
         validation_result.has_errors = False
         validation_result.has_warnings = False
-        self.mock_validation_service.validate_csv_for_compilation.return_value = None
+        self.mock_validation_service.validate_csv_for_bundling.return_value = None
         
         # App config service
         self.mock_app_config_service.get_csv_path.return_value = self.csv_dir / "test.csv"

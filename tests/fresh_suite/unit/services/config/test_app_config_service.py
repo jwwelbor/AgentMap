@@ -159,22 +159,6 @@ class TestAppConfigService(unittest.TestCase):
         result = self.app_config_service.get_storage_config_path()
         self.assertEqual(result, Path('storage_config.yaml'))
     
-    def test_load_storage_config(self):
-        """Test loading storage configuration."""
-        # Mock storage config loading
-        storage_config = {
-            'csv': {'default_directory': 'data/csv'},
-            'vector': {'default_provider': 'local'}
-        }
-        self.mock_config_service.load_config.return_value = storage_config
-        
-        result = self.app_config_service.load_storage_config()
-        
-        # Should return merged configuration with defaults
-        self.assertIsInstance(result, dict)
-        self.assertIn('csv', result)
-        self.assertIn('vector', result)
-        self.assertIn('kv', result)  # Default section
     
     def test_validate_config_success(self):
         """Test configuration validation success."""

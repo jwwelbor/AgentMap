@@ -1474,6 +1474,94 @@ class MockServiceFactory:
         mock_service.get_graph_summary.side_effect = get_graph_summary
         
         return mock_service
+    
+    @staticmethod
+    def create_mock_availability_cache_service() -> Mock:
+        """
+        Create a pure Mock object for AvailabilityCacheService.
+        
+        This Mock provides availability caching functionality for storing and retrieving
+        boolean availability results across different categories (dependencies, LLM providers, storage, etc.).
+        
+        Returns:
+            Mock object with get_availability, set_availability, and invalidation methods
+            
+        Example:
+            mock_cache = MockServiceFactory.create_mock_availability_cache_service()
+            result = mock_cache.get_availability("dependency.llm", "openai")
+            mock_cache.set_availability("storage", "csv", {"available": True})
+        """
+        mock_service = Mock()
+        
+        # Internal storage for availability data (simulates cache behavior)
+        availability_storage = {}
+        
+        def get_availability(category: str, key: str) -> Optional[Dict[str, Any]]:
+            """Get cached availability data for a categorized key."""
+            cache_key = f"{category}.{key}"
+            return availability_storage.get(cache_key)
+        
+        def set_availability(category: str, key: str, result: Dict[str, Any]) -> bool:
+            """Set availability data for a categorized key."""
+            cache_key = f"{category}.{key}"
+            availability_storage[cache_key] = result
+            return True
+        
+        def invalidate(category: Optional[str] = None, key: Optional[str] = None) -> int:
+            """Invalidate cached entries."""
+            if category is None and key is None:
+                # Clear all entries
+                count = len(availability_storage)
+                availability_storage.clear()
+                return count
+            
+            if category and key:
+                # Clear specific entry
+                cache_key = f"{category}.{key}"
+                if cache_key in availability_storage:
+                    del availability_storage[cache_key]
+                    return 1
+                return 0
+            
+            if category:
+                # Clear all entries in category
+                prefix = f"{category}."
+                keys_to_remove = [k for k in availability_storage.keys() if k.startswith(prefix)]
+                for key in keys_to_remove:
+                    del availability_storage[key]
+                return len(keys_to_remove)
+            
+            return 0
+        
+        def get_cache_stats() -> Dict[str, Any]:
+            """Get cache statistics."""
+            return {
+                "cache_hits": 0,
+                "cache_misses": 0,
+                "cache_sets": len(availability_storage),
+                "invalidations": 0,
+                "auto_invalidations": 0,
+                "total_entries": len(availability_storage)
+            }
+        
+        def is_valid(category: str, key: str) -> bool:
+            """Check if a cache entry exists and is valid."""
+            cache_key = f"{category}.{key}"
+            return cache_key in availability_storage
+        
+        # Configure methods
+        mock_service.get_availability.side_effect = get_availability
+        mock_service.set_availability.side_effect = set_availability
+        mock_service.invalidate.side_effect = invalidate
+        mock_service.get_cache_stats.side_effect = get_cache_stats
+        mock_service.is_valid.side_effect = is_valid
+        
+        # Additional methods that might be called
+        mock_service.register_config_file.return_value = None
+        mock_service.enable_auto_invalidation.return_value = None
+        mock_service.disable_auto_invalidation.return_value = None
+        
+        return mock_service
 
 
 # Convenience functions for quick mock creation
@@ -1567,6 +1655,11 @@ def create_graph_factory_service_mock() -> Mock:
     return MockServiceFactory.create_mock_graph_factory_service()
 
 
+def create_availability_cache_service_mock() -> Mock:
+    """Quick function to create an availability cache service mock."""
+    return MockServiceFactory.create_mock_availability_cache_service()
+
+
 class ServiceMockBuilder:
     """
     Builder pattern for creating customized service mocks.
@@ -1621,7 +1714,8 @@ class ServiceMockBuilder:
             'csv_graph_parser_service': 'create_mock_csv_graph_parser_service',
             'execution_tracking_service': 'create_mock_execution_tracking_service',
             'agent_registry_service': 'create_mock_agent_registry_service',
-            'graph_factory_service': 'create_mock_graph_factory_service'
+            'graph_factory_service': 'create_mock_graph_factory_service',
+            'availability_cache_service': 'create_mock_availability_cache_service'
         }
         
         # Get the correct factory method name

@@ -15,6 +15,34 @@ from pathlib import Path
 from typing import Optional
 
 from .containers import ApplicationContainer, create_optional_service, safe_get_service
+from agentmap.models.graph_bundle import GraphBundle
+
+def create_container(config_path: Optional[str] = None) -> ApplicationContainer:
+    """
+    Create a DI container with optional config path - simple factory method.
+    
+    This is a simplified factory that directly creates the container with the
+    config path set. Use this when you want direct, explicit container creation
+    without auto-discovery logic.
+    
+    Args:
+        config_path: Optional path to config file (None for defaults)
+        
+    Returns:
+        ApplicationContainer: Configured DI container
+        
+    Example:
+        # Simple direct usage
+        container = create_container("/path/to/config.yaml")
+        service = container.app_config_service()
+        
+        # Use defaults
+        container = create_container()
+    """
+    container = ApplicationContainer()
+    container.config.path.from_value(config_path)
+
+    return container
 
 
 def discover_config_file() -> Optional[str]:
@@ -59,8 +87,15 @@ def initialize_di(config_file: Optional[str] = None) -> ApplicationContainer:
     """
     import logging
 
-    # Create the main DI container
-    container = ApplicationContainer()
+    # Set up bootstrap logging to show config discovery result
+    bootstrap_logger = logging.getLogger("agentmap.bootstrap")
+    if not bootstrap_logger.handlers:
+        logging.basicConfig(
+            level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s"
+        )
+
+    # # Create the main DI container
+    # container = ApplicationContainer()
 
     # Determine which config file to use with precedence:
     # 1. Explicit config_file parameter (highest priority)
@@ -83,25 +118,17 @@ def initialize_di(config_file: Optional[str] = None) -> ApplicationContainer:
             actual_config_path = discovered_config
             config_source = f"auto-discovered: {actual_config_path}"
 
-    # Set up bootstrap logging to show config discovery result
-    bootstrap_logger = logging.getLogger("agentmap.bootstrap")
-    if not bootstrap_logger.handlers:
-        logging.basicConfig(
-            level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s"
-        )
     bootstrap_logger.info(f"Using configuration from: {config_source}")
 
-    # Override config path in container if we have one
-    if actual_config_path:
-        container.config_path.override(actual_config_path)
+    container = create_container(actual_config_path)
 
     # Optional: Wire the container for faster service resolution
     # This pre-resolves dependencies but can be skipped for lazy initialization
-    try:
-        container.wire(modules=[])
-    except Exception:
-        # If wiring fails, continue - services will be resolved lazily
-        pass
+    # try:
+    #     container.wire(modules=[])
+    # except Exception:
+    #     # If wiring fails, continue - services will be resolved lazily
+    #     pass
 
     return container
 
@@ -165,7 +192,7 @@ def get_service_status(container: ApplicationContainer) -> dict:
         "graph_builder_service",
         "graph_runner_service",
         "llm_service",
-        "storage_service_manager",
+        "json_service",
     ]
 
     for service_name in key_services:
@@ -182,7 +209,7 @@ def get_service_status(container: ApplicationContainer) -> dict:
     return status
 
 
-def initialize_application(config_file: Optional[str] = None) -> ApplicationContainer:
+def initialize_application(config_file, bundle: Optional[GraphBundle] = None) -> ApplicationContainer:
     """
     Complete application initialization: DI container setup + agent bootstrap.
 
@@ -210,12 +237,12 @@ def initialize_application(config_file: Optional[str] = None) -> ApplicationCont
     container = initialize_di(config_file)
 
     # Step 2: Bootstrap agents (new functionality)
-    bootstrap_agents(container)
+    bootstrap_agents(container, bundle)
 
     return container
 
 
-def bootstrap_agents(container: ApplicationContainer) -> None:
+def bootstrap_agents(container: ApplicationContainer, bundle: Optional[GraphBundle] = None) -> None:
     """
     Bootstrap agent registration using existing DI services.
 
@@ -242,7 +269,7 @@ def bootstrap_agents(container: ApplicationContainer) -> None:
         bootstrap_service = container.application_bootstrap_service()
 
         # Execute the main bootstrap process
-        bootstrap_service.bootstrap_application()
+        bootstrap_service.bootstrap_application(bundle)
 
     except Exception as e:
         # Graceful degradation following storage service patterns
@@ -257,6 +284,7 @@ def bootstrap_agents(container: ApplicationContainer) -> None:
 
 __all__ = [
     "ApplicationContainer",
+    "create_container",
     "discover_config_file",
     "initialize_di",
     "initialize_di_for_testing",

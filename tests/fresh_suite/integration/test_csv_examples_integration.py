@@ -33,7 +33,7 @@ from tests.fresh_suite.integration.test_data_factories import (
     ExecutionTestDataFactory
 )
 from agentmap.models.execution_result import ExecutionResult
-from agentmap.services.graph.graph_runner_service import RunOptions
+# RunOptions removed as part of GraphRunnerService simplification
 
 
 class TestCSVExamplesIntegration(BaseIntegrationTest):
@@ -58,6 +58,7 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
         self.csv_parser_service = self.container.csv_graph_parser_service()
         self.graph_execution_service = self.container.graph_execution_service()
         self.execution_tracking_service = self.container.execution_tracking_service()
+        self.graph_bundle_service = self.container.graph_bundle_service()
         
         # Initialize test data manager for file operations
         self.test_data_manager = IntegrationTestDataManager(Path(self.temp_dir))
@@ -68,6 +69,7 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
         self.assert_service_created(self.csv_parser_service, "CSVGraphParserService")
         self.assert_service_created(self.graph_execution_service, "GraphExecutionService")
         self.assert_service_created(self.execution_tracking_service, "ExecutionTrackingService")
+        self.assert_service_created(self.graph_bundle_service, "GraphBundleService")
         
         # Set up external service mocking
         self._setup_external_service_mocks()
@@ -189,17 +191,33 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
         if initial_state is None:
             initial_state = self._create_default_initial_state()
         
-        # Create RunOptions with initial state
-        options = RunOptions(initial_state=initial_state)
-        
-        # Execute workflow using GraphRunnerService
         try:
-            result = self.graph_runner_service.run_from_csv_direct(
-                csv_path=csv_path,
-                graph_name=graph_name,
-                options=options
+            # Step 1: Create bundle from CSV using GraphBundleService
+            import hashlib
+            csv_content = csv_path.read_text(encoding='utf-8')
+            csv_hash = hashlib.md5(csv_content.encode()).hexdigest()
+            
+            bundle = self.graph_bundle_service.create_bundle_from_csv(
+                csv_path=str(csv_path),
+                csv_hash=csv_hash,
+                graph_to_return=graph_name
             )
+            
+            if bundle is None:
+                return ExecutionResult(
+                    success=False,
+                    error=f"Failed to create bundle for graph '{graph_name}'",
+                    graph_name=graph_name,
+                    final_state=initial_state
+                )
+            
+            # Step 2: Set initial state on bundle
+            bundle.initial_state = initial_state
+            
+            # Step 3: Execute workflow using GraphRunnerService
+            result = self.graph_runner_service.run(bundle)
             return result
+            
         except Exception as e:
             # Wrap in ExecutionResult for consistent error handling
             return ExecutionResult(

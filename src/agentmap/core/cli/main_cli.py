@@ -16,10 +16,10 @@ from agentmap.core.cli.diagnostic_commands import (
     validate_cache_cmd,
 )
 from agentmap.core.cli.run_commands import (
-    export_command,
-    resume_command,
+  #  export_command,
+   # resume_command,
     run_command,
-    scaffold_command,
+    #scaffold_command,
 )
 from agentmap.core.cli.validation_commands import (
     validate_all_cmd,
@@ -66,9 +66,9 @@ def main(
 # ============================================================================
 
 app.command("run")(run_command)
-app.command("scaffold")(scaffold_command)
-app.command("export")(export_command)
-app.command("resume")(resume_command)
+#app.command("scaffold")(scaffold_command)
+#app.command("export")(export_command)
+#app.command("resume")(resume_command)
 
 
 # ============================================================================

@@ -618,7 +618,7 @@ async def validate_all(
 
 
 @router.post("/csv/compilation")
-async def validate_csv_for_compilation(
+async def validate_csv_for_bundling(
     csv_path: Optional[str] = None,
     auth_context: AuthContext = Depends(get_admin_auth_dependency()),
     validation_service=Depends(get_validation_service),
@@ -647,7 +647,7 @@ async def validate_csv_for_compilation(
         raise HTTPException(status_code=404, detail=f"CSV file not found: {csv_file}")
 
     try:
-        validation_service.validate_csv_for_compilation(csv_file)
+        validation_service.validate_csv_for_bundling(csv_file)
         return {
             "success": True,
             "file_path": str(csv_file),

@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Set
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.agent_registry_service import AgentRegistryService
 from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.config.agent_config_service import AgentConfigService
 from agentmap.services.dependency_checker_service import DependencyCheckerService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
@@ -127,16 +128,7 @@ class GraphBootstrapService:
         self.logger.debug("[GraphBootstrapService] Registering required core agents")
         
         # Core agents mapping (from ApplicationBootstrapService)
-        core_agents = {
-            "default": "agentmap.agents.builtins.default_agent.DefaultAgent",
-            "echo": "agentmap.agents.builtins.echo_agent.EchoAgent",
-            "branching": "agentmap.agents.builtins.branching_agent.BranchingAgent",
-            "failure": "agentmap.agents.builtins.failure_agent.FailureAgent",
-            "success": "agentmap.agents.builtins.success_agent.SuccessAgent",
-            "input": "agentmap.agents.builtins.input_agent.InputAgent",
-            "graph": "agentmap.agents.builtins.graph_agent.GraphAgent",
-            "human": "agentmap.agents.builtins.human_agent.HumanAgent",
-        }
+        core_agents = AgentConfigService.get_core_agents()
         
         registered_count = 0
         
@@ -164,16 +156,7 @@ class GraphBootstrapService:
             agent_mappings: Optional mappings from bundle for agent class paths
         """
         # Standard LLM agent class paths
-        llm_class_paths = {
-            "openai": "agentmap.agents.builtins.llm.openai_agent.OpenAIAgent",
-            "gpt": "agentmap.agents.builtins.llm.openai_agent.OpenAIAgent",
-            "chatgpt": "agentmap.agents.builtins.llm.openai_agent.OpenAIAgent",
-            "anthropic": "agentmap.agents.builtins.llm.anthropic_agent.AnthropicAgent",
-            "claude": "agentmap.agents.builtins.llm.anthropic_agent.AnthropicAgent",
-            "google": "agentmap.agents.builtins.llm.google_agent.GoogleAgent",
-            "gemini": "agentmap.agents.builtins.llm.google_agent.GoogleAgent",
-            "llm": "agentmap.agents.builtins.llm.llm_agent.LLMAgent",
-        }
+        llm_class_paths = AppConfigService.get_llm_class_paths()
         
         # Check if any LLM agents are needed
         needed_llm_agents = required_agents.intersection(llm_class_paths.keys())
@@ -191,17 +174,7 @@ class GraphBootstrapService:
         available_providers = self.dependency_checker.discover_and_validate_providers("llm")
         
         # Map agent types to providers for availability checking
-        agent_to_provider = {
-            "openai": "openai",
-            "gpt": "openai", 
-            "chatgpt": "openai",
-            "anthropic": "anthropic",
-            "claude": "anthropic",
-            "google": "google",
-            "gemini": "google",
-            "llm": None,  # Base LLM agent works with any provider
-        }
-        
+        agent_to_provider = AgentConfigService.get_llm_agent_to_provider()
         registered_count = 0
         
         for agent_type in needed_llm_agents:
@@ -240,32 +213,10 @@ class GraphBootstrapService:
             agent_mappings: Optional mappings from bundle for agent class paths
         """
         # Standard storage agent class paths
-        storage_class_paths = {
-            "csv_reader": "agentmap.agents.builtins.storage.csv.reader.CSVReaderAgent",
-            "csv_writer": "agentmap.agents.builtins.storage.csv.writer.CSVWriterAgent",
-            "json_reader": "agentmap.agents.builtins.storage.json.JSONDocumentReaderAgent",
-            "json_writer": "agentmap.agents.builtins.storage.json.JSONDocumentWriterAgent",
-            "file_reader": "agentmap.agents.builtins.storage.file.FileReaderAgent",
-            "file_writer": "agentmap.agents.builtins.storage.file.FileWriterAgent",
-            "vector_reader": "agentmap.agents.builtins.storage.vector.VectorReaderAgent",
-            "vector_writer": "agentmap.agents.builtins.storage.vector.VectorWriterAgent",
-            "blob_reader": "agentmap.agents.builtins.storage.blob.BlobReaderAgent",
-            "blob_writer": "agentmap.agents.builtins.storage.blob.BlobWriterAgent",
-        }
+        storage_class_paths = AppConfigService.get_storage_class_paths()
         
         # Map agent types to storage types for availability checking
-        agent_to_storage_type = {
-            "csv_reader": "csv",
-            "csv_writer": "csv",
-            "json_reader": "json",
-            "json_writer": "json",
-            "file_reader": "file",
-            "file_writer": "file",
-            "vector_reader": "vector",
-            "vector_writer": "vector",
-            "blob_reader": "blob",
-            "blob_writer": "blob",
-        }
+        agent_to_storage_type = AgentConfigService.get_agent_to_storage_type()
         
         # Find needed storage agents - check both standard and potential custom names
         storage_prefixes = ["csv_", "json_", "file_", "vector_", "blob_"]

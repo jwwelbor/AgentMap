@@ -5,7 +5,6 @@ Provides O(1) lookups for graph bundles by mapping CSV file hashes
 to their corresponding preprocessed bundle locations.
 """
 
-import hashlib
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -53,7 +52,8 @@ class GraphRegistryService:
             f"GraphRegistryService initialized with {len(self._registry_cache)} entries"
         )
     
-    def compute_hash(self, csv_path: Path) -> str:
+    @staticmethod
+    def compute_hash(csv_path: Path, logging_service: Optional[LoggingService] = None) -> str:
         """
         Compute SHA-256 hash of CSV file content.
         
@@ -67,6 +67,8 @@ class GraphRegistryService:
             FileNotFoundError: If CSV file doesn't exist
             IOError: If file cannot be read
         """
+        import hashlib
+
         if not csv_path.exists():
             raise FileNotFoundError(f"CSV file not found: {csv_path}")
         
@@ -77,11 +79,16 @@ class GraphRegistryService:
             hash_obj = hashlib.sha256(content)
             csv_hash = hash_obj.hexdigest()
             
-            self.logger.debug(f"Computed hash: {csv_hash[:8]}... for {csv_path.name}")
+            if logging_service:
+                logging_service.get_logger("GraphRegistryService").debug(f"Computed hash: {csv_hash[:8]}... for {csv_path.name}")
+
+            # TODO return CSV content to avoid multiple reads.
             return csv_hash
             
         except Exception as e:
-            self.logger.error(f"Failed to compute hash for {csv_path}: {e}")
+            if logging_service:
+                logging_service.get_logger("GraphRegistryService").error(f"Failed to compute hash for {csv_path}: {e}")
+
             raise IOError(f"Cannot read CSV file {csv_path}: {e}")
     
     def find_bundle(self, csv_hash: str) -> Optional[Path]:
@@ -209,7 +216,7 @@ class GraphRegistryService:
         if not graph_name:
             raise ValueError("Graph name cannot be empty")
         
-        if not bundle_path.exists():
+        if bundle_path and not bundle_path.exists():
             raise ValueError(f"Bundle file does not exist: {bundle_path}")
     
     def _create_registry_entry(self, csv_hash: str, graph_name: str, 
@@ -255,7 +262,8 @@ class GraphRegistryService:
         """Load registry from persistent storage."""
         try:
             result = self.json_storage.read(
-                collection=self._registry_path
+                collection="graph_registry",
+                path=self._registry_path
             )
             
             if result and result.success and result.data:
@@ -292,7 +300,7 @@ class GraphRegistryService:
                 "entries": self._registry_cache,
                 "metadata": self._metadata
             }
-            
+            # TODO: Specify filepath for registry
             result = self.json_storage.write(
                 collection="graph_registry",
                 data=registry_data,
