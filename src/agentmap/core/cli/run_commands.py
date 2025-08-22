@@ -16,6 +16,8 @@ from agentmap.services.graph.graph_registry_service import GraphRegistryService
 from agentmap.services.graph.graph_bundle_service import GraphBundleService
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.models.storage.types import StorageResult
+from agentmap.services.logging_service import LoggingService
+from agentmap.services.static_bundle_analyzer import StaticBundleAnalyzer
 
 def get_graph_bundle(container, csv_path, graph_name, config_file) -> tuple:
     """
@@ -31,7 +33,8 @@ def get_graph_bundle(container, csv_path, graph_name, config_file) -> tuple:
     
     # Get the ApplicationBootstrapService from the container
     registry_service: GraphRegistryService = container.graph_registry_service()
-    logging_service = container.logging_service()
+    logging_service: LoggingService = container.logging_service()
+    logger = logging_service.get_logger(__name__)
     graph_bundle_service: GraphBundleService = container.graph_bundle_service()
     app_config_service: AppConfigService = container.app_config_service()
 
@@ -42,13 +45,35 @@ def get_graph_bundle(container, csv_path, graph_name, config_file) -> tuple:
         # Load existing bundle (no CSV parsing!)
         bundle = graph_bundle_service.load_bundle(bundle_path)
     else:
+
+        try:
+            static_analyzer: StaticBundleAnalyzer = container.static_bundle_analyzer()
+            # Create bundle using only declarations (10x faster!)
+            bundle = static_analyzer.create_static_bundle(
+                Path(csv_path), graph_name
+            )
+            logger.info("Created bundle using fast declaration path")
+        except Exception as e:
+            logger.debug(f"Declaration path failed, using slow path: {e}")
+            raise
+            # Fall back to slow path
+            # bundle = graph_bundle_service.create_bundle_from_csv(
+            #     csv_path, config_file, csv_hash, graph_name
+            # )
+
         # Slow path - parse CSV, compile, register
-        bundle = graph_bundle_service.create_bundle_from_csv(csv_path, config_file, csv_hash, graph_name )
         bundle_path = app_config_service.get_cache_path() / "bundles" / f"{csv_hash[:8]}.json"
         save_result: StorageResult = graph_bundle_service.save_bundle(bundle, bundle_path)
         if save_result.success:
             bundle_path = Path(save_result.file_path)
         registry_service.register(csv_hash, graph_name, bundle_path, csv_path)
+        
+        # Log warning if there are missing declarations
+        if bundle.missing_declarations:
+            logger.warning(
+                f"Missing declarations for agent types: {', '.join(bundle.missing_declarations)}. "
+                f"These agents will need to be defined before graph execution."
+            )
 
     return bundle    
 
@@ -125,8 +150,8 @@ def run_command(
         container = initialize_di(config_file)
         bundle = get_graph_bundle(container, csv_path, graph, config_file)
 
-        # TODO: rebuild the container using the bundle to load everything needed based on bundle requirements
-        container = initialize_application(config_file, bundle)
+        # Runner will take the bundle create the agents and inject the serices into the agents
+        # build and run the graph
 
         runner = container.graph_runner_service()        
         typer.echo(f"📊 Executing graph: {bundle.graph_name or graph or 'default'}")

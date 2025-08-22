@@ -75,7 +75,7 @@ class TestGraphBundleService(unittest.TestCase):
         self.bundle_service = GraphBundleService(
             logging_service=self.logging_service,
             json_storage_service=self.storage_service.get_json_service(),
-            csv_parser=self.csv_parser,
+            csv_parser_service=self.csv_parser,
             protocol_requirements_analyzer=self.protocol_requirements_analyzer,
             agent_factory_service=self.agent_factory_service
         )

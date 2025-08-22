@@ -14,7 +14,7 @@ from agentmap.models.graph_spec import GraphSpec, NodeSpec
 from agentmap.models.node import Node
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.csv_graph_parser_service import CSVGraphParserService
-from agentmap.services.graph_factory_service import GraphFactoryService
+from agentmap.services.graph.graph_factory_service import GraphFactoryService
 from agentmap.services.logging_service import LoggingService
 
 
@@ -33,7 +33,7 @@ class GraphDefinitionService:
         logging_service: LoggingService,
         app_config_service: AppConfigService,
         csv_parser: CSVGraphParserService,
-        graph_factory: GraphFactoryService,  # NEW: Injected factory
+        graph_factory: GraphFactoryService, 
     ):
         """Initialize service with dependency injection."""
         self.logger = logging_service.get_class_logger(self)

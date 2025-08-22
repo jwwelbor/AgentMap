@@ -43,7 +43,7 @@ class TestGraphBundleIntegration(BaseIntegrationTest):
         from agentmap.services.graph.graph_bundle_service import GraphBundleService
         self.graph_bundle_service = GraphBundleService(
             logging_service=self.logging_service,
-            csv_parser=self.csv_parser_service,
+            csv_parser_service=self.csv_parser_service,
             protocol_requirements_analyzer=self.protocol_analyzer,
             di_container_analyzer=self.di_container_analyzer,
             agent_factory_service=self.agent_factory_service

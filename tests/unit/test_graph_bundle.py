@@ -304,7 +304,7 @@ class TestGraphBundleProperties:
         assert legacy_bundle.is_legacy_format
         
         # Legacy format with node_registry
-        legacy_bundle2 = GraphBundle(node_registry={})
+        legacy_bundle2 = GraphBundle(node_instances={})
         assert legacy_bundle2.is_legacy_format
         
         # Metadata-only format

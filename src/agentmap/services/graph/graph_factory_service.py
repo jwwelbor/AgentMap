@@ -7,6 +7,7 @@ Eliminates duplication across GraphDefinitionService, GraphExecutionService, and
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from logging import Logger
 
 from agentmap.models.graph import Graph
 from agentmap.models.node import Node
@@ -57,7 +58,7 @@ class GraphFactoryService:
 
         # Detect and set entry point
         if auto_detect_entry_point:
-            entry_point = self.detect_entry_point(graph)
+            entry_point = self.detect_entry_point(graph, self.logger)
             graph.entry_point = entry_point
 
         self.logger.debug(
@@ -80,7 +81,8 @@ class GraphFactoryService:
         self.logger.debug(f"Resolved graph name from path: '{name}'")
         return name
 
-    def detect_entry_point(self, graph: Graph) -> Optional[str]:
+    @staticmethod
+    def detect_entry_point(graph: Graph, logger: Optional[Logger] = None) -> Optional[str]:
         """
         Detect entry point for a graph using simple, predictable logic.
 
@@ -95,7 +97,8 @@ class GraphFactoryService:
             Entry point node name or None if no nodes
         """
         if not graph.nodes:
-            self.logger.warning("Cannot detect entry point: graph has no nodes")
+            if logger:
+                logger.warning("Cannot detect entry point: graph has no nodes")
             return None
 
         node_names = list(graph.nodes.keys())
@@ -103,12 +106,14 @@ class GraphFactoryService:
         # Priority 1: Check for explicitly marked entry point (for programmatic use)
         for node_name, node in graph.nodes.items():
             if hasattr(node, "_is_entry_point") and node._is_entry_point:
-                self.logger.debug(f"Found explicitly marked entry point: '{node_name}'")
+                if logger:
+                    logger.debug(f"Found explicitly marked entry point: '{node_name}'")
                 return node_name
 
         # Priority 2: First node (natural CSV order - most common case)
         entry_point = node_names[0]
-        self.logger.debug(f"Using first node as entry point: '{entry_point}'")
+        if logger:
+            logger.debug(f"Using first node as entry point: '{entry_point}'")
         return entry_point
 
     def validate_graph_structure(self, graph: Graph) -> List[str]:

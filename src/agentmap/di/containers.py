@@ -264,13 +264,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
-    # Node Registry Service using string-based provider
-    node_registry_service = providers.Singleton(
-        "agentmap.services.node_registry_service.NodeRegistryService",
-        app_config_service,
-        logging_service,
-    )
-
     # Dependency Checker Service with unified cache integration
     @staticmethod
     def _create_dependency_checker_service(
@@ -425,29 +418,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # LEVEL 1: Utility Services (no business logic dependencies)
 
-    # Function Resolution Service for dynamic function loading
-    function_resolution_service = providers.Singleton(
-        "agentmap.services.function_resolution_service.FunctionResolutionService",
-        providers.Callable(
-            lambda app_config: app_config.get_functions_path(), app_config_service
-        ),
-    )
-
-    # Validation Cache Service for caching validation results
-    validation_cache_service = providers.Singleton(
-        "agentmap.services.validation.validation_cache_service.ValidationCacheService"
-    )
-
-    # LEVEL 2: Basic Services (no dependencies on other business services)
-
-    # Config Validation Service for validating configuration files
-    config_validation_service = providers.Singleton(
-        "agentmap.services.validation.config_validation_service.ConfigValidationService",
-        logging_service,
-    )
-
-    # LEVEL 3: Core Services (depend on Level 1 & 2)
-
     # StateAdapterService for state management (no dependencies)
     state_adapter_service = providers.Singleton(
         "agentmap.services.state_adapter_service.StateAdapterService"
@@ -460,6 +430,157 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     agent_registry_model = providers.Singleton(
         "agentmap.models.agent_registry.AgentRegistry"
+    )
+
+    # Validation Cache Service for caching validation results
+    validation_cache_service = providers.Singleton(
+        "agentmap.services.validation.validation_cache_service.ValidationCacheService"
+    )
+
+    # Execution Formatter Service for formatting graph execution results 
+    # (development/testing)
+    execution_formatter_service = providers.Singleton(
+        "agentmap.services.execution_formatter_service.ExecutionFormatterService"
+    )
+
+   # Additional utility providers for common transformations
+
+    # Provider for getting specific configuration sections
+    logging_config = providers.Callable(
+        lambda app_config: app_config.get_logging_config(), app_config_service
+    )
+
+    execution_config = providers.Callable(
+        lambda app_config: app_config.get_execution_config(), app_config_service
+    )
+
+    prompts_config = providers.Callable(
+        lambda app_config: app_config.get_prompts_config(), app_config_service
+    )
+
+
+    #################################################################################
+    # LEVEL 2: Basic Services (no dependencies on other business services)
+
+    # CSV Graph Parser Service for pure CSV parsing functionality
+    csv_graph_parser_service = providers.Singleton(
+        "agentmap.services.csv_graph_parser_service.CSVGraphParserService",
+        logging_service,
+    )
+
+
+    # Host Service Registry for managing host service registration
+    host_service_registry = providers.Singleton(
+        "agentmap.services.host_service_registry.HostServiceRegistry", 
+        logging_service
+    )
+
+
+    # Graph Factory Service for centralized graph creation 
+    graph_factory_service = providers.Singleton(
+        "agentmap.services.graph.graph_factory_service.GraphFactoryService",
+        logging_service,
+    )
+
+    # Config Validation Service for validating configuration files
+    config_validation_service = providers.Singleton(
+        "agentmap.services.validation.config_validation_service.ConfigValidationService",
+        logging_service,
+    )
+
+    # Function Resolution Service for dynamic function loading
+    function_resolution_service = providers.Singleton(
+        "agentmap.services.function_resolution_service.FunctionResolutionService",
+        providers.Callable(
+            lambda app_config: app_config.get_functions_path(), app_config_service
+        ),
+    )
+
+    # For parsing agent and service declarations
+    declaration_parser = providers.Singleton(
+        "agentmap.services.declaration_parser.DeclarationParser",
+        logging_service,
+    )
+
+    # Declaration Registry Service with proper initialization
+    @staticmethod
+    def _create_declaration_registry_service(app_config_service, logging_service):
+        """
+        Create and initialize DeclarationRegistryService with built-in declarations.
+        
+        This factory ensures the declaration registry is populated with:
+        1. Built-in agent declarations (echo, input, anthropic, etc.)
+        2. Built-in service declarations (logging_service, llm_service, etc.)
+        
+        Args:
+            app_config_service: Application configuration service
+            logging_service: Logging service for error reporting
+        """
+        from agentmap.services.declaration_registry_service import DeclarationRegistryService
+        from agentmap.services.declaration_sources import PythonDeclarationSource
+        from agentmap.services.declaration_parser import DeclarationParser
+        
+        # Create the registry service
+        registry = DeclarationRegistryService(app_config_service, logging_service)
+        
+        # Create the parser for declarations
+        parser = DeclarationParser(logging_service)
+        
+        # Add built-in Python declarations source
+        builtin_source = PythonDeclarationSource(parser, logging_service)
+        registry.add_source(builtin_source)
+        
+        # Load all declarations from sources
+        registry.load_all()
+        
+        logger = logging_service.get_class_logger(registry)
+        logger.info(f"Initialized declaration registry with {len(registry.get_all_agent_types())} "
+                     "agents and {len(registry.get_all_service_names())} services")
+        
+        return registry
+
+    # Declaration Registry Service for declarative discovery system
+    declaration_registry_service = providers.Singleton(
+        _create_declaration_registry_service,
+        app_config_service,
+        logging_service,
+    )
+
+    # ExecutionTrackingService for creating clean ExecutionTracker instances
+    execution_tracking_service = providers.Singleton(
+        "agentmap.services.execution_tracking_service.ExecutionTrackingService",
+        app_config_service,
+        logging_service,
+    )
+
+    # ExecutionPolicyService for policy evaluation (clean architecture)
+    execution_policy_service = providers.Singleton(
+        "agentmap.services.execution_policy_service.ExecutionPolicyService",
+        app_config_service,
+        logging_service,
+    )
+
+    # PromptManagerService for external template management
+    prompt_manager_service = providers.Singleton(
+        "agentmap.services.prompt_manager_service.PromptManagerService",
+        app_config_service,
+        logging_service,
+    )
+
+    # IndentedTemplateComposer for clean template composition with internal template loading
+    indented_template_composer = providers.Singleton(
+        "agentmap.services.indented_template_composer.IndentedTemplateComposer",
+        app_config_service,
+        logging_service,
+    )
+
+    # LEVEL 3: Core Services (depend on Level 1 & 2)
+
+    static_bundle_analyzer = providers.Singleton(
+    "agentmap.services.static_bundle_analyzer.StaticBundleAnalyzer",
+        declaration_registry_service,
+        csv_graph_parser_service,
+        logging_service,
     )
 
     # Features registry service (operates on global features model)
@@ -498,17 +619,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # LEVEL 4: Advanced Services (depend on Level 1, 2 & 3)
 
-    # CSV Graph Parser Service for pure CSV parsing functionality
-    csv_graph_parser_service = providers.Singleton(
-        "agentmap.services.csv_graph_parser_service.CSVGraphParserService",
-        logging_service,
-    )
-
-    # Graph Factory Service for centralized graph creation (no dependencies except logging)
-    graph_factory_service = providers.Singleton(
-        "agentmap.services.graph_factory_service.GraphFactoryService",
-        logging_service,
-    )
 
     # Graph Assembly Service for assembling StateGraph instances
     graph_assembly_service = providers.Singleton(
@@ -528,41 +638,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         app_config_service,  # 2nd: app_config_service
         csv_graph_parser_service,  # 3rd: csv_parser
         graph_factory_service,  # 4th: graph_factory
-
-    )
-
-    # Graph Preparation Service for preparing graph definitions for execution
-    graph_preparation_service = providers.Singleton(
-        "agentmap.services.graph_preparation_service.GraphPreparationService",
-        graph_definition_service,
-        node_registry_service,
-        logging_service,
-    )
-
-    # ExecutionTrackingService for creating clean ExecutionTracker instances
-    execution_tracking_service = providers.Singleton(
-        "agentmap.services.execution_tracking_service.ExecutionTrackingService",
-        app_config_service,
-        logging_service,
-    )
-
-    # ExecutionPolicyService for policy evaluation (clean architecture)
-    execution_policy_service = providers.Singleton(
-        "agentmap.services.execution_policy_service.ExecutionPolicyService",
-        app_config_service,
-        logging_service,
-    )
-
-    # Execution Formatter Service for formatting graph execution results (development/testing)
-    execution_formatter_service = providers.Singleton(
-        "agentmap.services.execution_formatter_service.ExecutionFormatterService"
-    )
-
-    # PromptManagerService for external template management
-    prompt_manager_service = providers.Singleton(
-        "agentmap.services.prompt_manager_service.PromptManagerService",
-        app_config_service,
-        logging_service,
     )
 
     # OrchestratorService for node selection and orchestration business logic
@@ -574,12 +649,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         features_registry_service,
     )
 
-    # IndentedTemplateComposer for clean template composition with internal template loading
-    indented_template_composer = providers.Singleton(
-        "agentmap.services.indented_template_composer.IndentedTemplateComposer",
-        app_config_service,
-        logging_service,
-    )
 
     # GraphScaffoldService for service-aware scaffolding
     graph_scaffold_service = providers.Singleton(
@@ -591,9 +660,12 @@ class ApplicationContainer(containers.DeclarativeContainer):
         indented_template_composer,
     )
 
-    # Additional utility providers for common transformations
 
     # LEVEL 5: Higher-level Services (depend on previous levels)
+    # ======================================================================
+    # These services analyze requirements and dependencies without instantiating
+    # agents or services, providing metadata for graph execution planning.
+    # ======================================================================
 
     # Agent factory service (coordinates between registry and features)
     agent_factory_service = providers.Singleton(
@@ -603,12 +675,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
-    # LEVEL 5.5: Analyzer Services (depend on agent factory and container)
-    # ======================================================================
-    # These services analyze requirements and dependencies without instantiating
-    # agents or services, providing metadata for graph execution planning.
-    # ======================================================================
-
     # ProtocolBasedRequirementsAnalyzer for analyzing graph requirements from agent protocols
     protocol_requirements_analyzer = providers.Singleton(
         "agentmap.services.protocol_requirements_analyzer.ProtocolBasedRequirementsAnalyzer",
@@ -616,9 +682,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         agent_factory_service,
         logging_service,
     )
-
-
-
 
     # DIContainerAnalyzer is not registered in the DI container
     # It's created on-demand by GraphBundleService to avoid circular dependency
@@ -628,10 +691,10 @@ class ApplicationContainer(containers.DeclarativeContainer):
         "agentmap.services.graph.graph_bundle_service.GraphBundleService",
         logging_service,
         protocol_requirements_analyzer,
-        None,  # di_container_analyzer - will be created on-demand
         agent_factory_service,
         json_storage_service,
-        csv_graph_parser_service,  # NEW dependency
+        csv_graph_parser_service,
+        static_bundle_analyzer,  # ADD THIS
     )
 
     # Graph Execution Service for clean execution orchestration
@@ -640,10 +703,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         execution_tracking_service,
         execution_policy_service,
         state_adapter_service,
-        graph_assembly_service,
-        graph_bundle_service,  
-        graph_factory_service,
-        agent_factory_service,
         logging_service,
     )
 
@@ -663,11 +722,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
         features_registry_service,
         availability_cache_service,
-    )
-
-    # Host Service Registry for managing host service registration
-    host_service_registry = providers.Singleton(
-        "agentmap.services.host_service_registry.HostServiceRegistry", logging_service
     )
 
     # Host Protocol Configuration Service for configuring protocols on agents
@@ -704,6 +758,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         dependency_checker_service,
         app_config_service,
         logging_service,
+        declaration_registry_service,  # Add declaration registry service
         host_service_registry,
     )
     
@@ -717,21 +772,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
-    # Additional utility providers for common transformations
-
-    # Provider for getting specific configuration sections
-    logging_config = providers.Callable(
-        lambda app_config: app_config.get_logging_config(), app_config_service
-    )
-
-    execution_config = providers.Callable(
-        lambda app_config: app_config.get_execution_config(), app_config_service
-    )
-
-    prompts_config = providers.Callable(
-        lambda app_config: app_config.get_prompts_config(), app_config_service
-    )
-
     graph_registry_service = providers.Singleton(
         "agentmap.services.graph.graph_registry_service.GraphRegistryService",
         json_storage_service,
@@ -739,28 +779,26 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
-    # Factory for simplified GraphRunnerService with minimal dependencies
-    @staticmethod
-    def _create_simplified_graph_runner_service(
-        graph_bootstrap_service,
-        graph_execution_service,
+    # Graph Instantiation Service for graph instantiation and orchestration
+    graph_agent_instantiation_service = providers.Singleton(
+        "agentmap.services.graph.graph_agent_instantiation_service.GraphAgentInstantiationService",
+        agent_factory_service,
+        agent_service_injection_service,
+        execution_tracking_service,
+        state_adapter_service,
         logging_service,
-    ):
-        """Create simplified GraphRunnerService with minimal dependencies for pure orchestration."""
-        from agentmap.services.graph.graph_runner_service import GraphRunnerService
-
-        return GraphRunnerService(
-            graph_bootstrap_service=graph_bootstrap_service,
-            graph_execution_service=graph_execution_service,
-            logging_service=logging_service,
-        )
+        prompt_manager_service,
+    )
 
     # Graph Runner Service - Simplified facade service for pure orchestration
     graph_runner_service = providers.Singleton(
-        _create_simplified_graph_runner_service,
+        "agentmap.services.graph.graph_runner_service.GraphRunnerService",
         graph_bootstrap_service,
+        graph_agent_instantiation_service,
+        graph_assembly_service,
         graph_execution_service,
-        logging_service,
+        execution_tracking_service,
+        logging_service
     )
 
     # Provider for checking service availability

@@ -16,6 +16,8 @@ from agentmap.services.host_service_registry import HostServiceRegistry
 from agentmap.services.agent_registry_service import AgentRegistryService
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.graph.graph_bundle_service import GraphBundleService
+from agentmap.services.declaration_registry_service import DeclarationRegistryService
+from agentmap.services.protocols import DeclarationRegistryServiceProtocol
 from agentmap.models.graph_bundle import GraphBundle
 
 class ApplicationBootstrapService:
@@ -27,6 +29,7 @@ class ApplicationBootstrapService:
                  dependency_checker_service: DependencyCheckerService,  # DependencyCheckerService
                  app_config_service: AppConfigService,  # AppConfigService
                  logging_service: LoggingService,  # LoggingService
+                 declaration_registry_service: DeclarationRegistryServiceProtocol,  # DeclarationRegistryService
                  host_service_registry: Optional[HostServiceRegistry] = None):  # HostServiceRegistry
         """
         Initialize ApplicationBootstrapService with required dependencies.
@@ -37,12 +40,14 @@ class ApplicationBootstrapService:
             dependency_checker_service: DependencyCheckerService for dependency validation
             app_config_service: AppConfigService for application configuration
             logging_service: LoggingService for logging
+            declaration_registry_service: DeclarationRegistryService for declaration-based bootstrapping
             host_service_registry: HostServiceRegistry for host service management
         """
         self.agent_registry = agent_registry_service
         self.features_registry = features_registry_service
         self.dependency_checker = dependency_checker_service
         self.app_config = app_config_service
+        self.declaration_registry = declaration_registry_service
         self.host_service_registry = host_service_registry
         
         # Initialize logger using the service pattern
@@ -521,6 +526,154 @@ class ApplicationBootstrapService:
                 "storage": list(self.dependency_checker.discover_and_validate_providers("storage").keys())
             }
         }
+
+    # New declaration-based bootstrap methods
+    
+    def bootstrap_from_declarations(
+        self, agent_types: Set[str], services: Set[str], protocols: Set[str]
+    ) -> Dict:
+        """
+        Bootstrap application using only declarations without loading implementations.
+        
+        This method provides fast bootstrap by working with declaration metadata only,
+        eliminating circular dependencies and implementation loading overhead.
+        
+        Args:
+            agent_types: Set of agent types to register (declarations only)
+            services: Set of service names to register (declarations only)
+            protocols: Set of protocol names to register (declarations only)
+            
+        Returns:
+            Dictionary with bootstrap metadata and placeholder information
+        """
+        self.logger.info("⚡ [ApplicationBootstrapService] Starting declaration-based bootstrap")
+        
+        # Initialize bootstrap metadata
+        bootstrap_metadata = {
+            "bootstrap_type": "declarations",
+            "agent_declarations_registered": 0,
+            "service_declarations_registered": 0,
+            "features_enabled": [],
+            "missing_declarations": [],
+            "bootstrap_completed": False,
+        }
+        
+        # Register agent declarations (placeholders for lazy loading)
+        for agent_type in agent_types:
+            if self._register_agent_declaration(agent_type):
+                bootstrap_metadata["agent_declarations_registered"] += 1
+            else:
+                bootstrap_metadata["missing_declarations"].append(f"agent:{agent_type}")
+        
+        # Register service declarations (placeholders for lazy loading)
+        for service_name in services:
+            if self._register_service_declaration(service_name):
+                bootstrap_metadata["service_declarations_registered"] += 1
+            else:
+                bootstrap_metadata["missing_declarations"].append(f"service:{service_name}")
+        
+        # Enable features based on declarations
+        enabled_features = self._enable_features_from_declarations(agent_types, services)
+        bootstrap_metadata["features_enabled"] = enabled_features
+        
+        bootstrap_metadata["bootstrap_completed"] = True
+        
+        self.logger.info(
+            f"✅ [ApplicationBootstrapService] Declaration bootstrap completed: "
+            f"{bootstrap_metadata['agent_declarations_registered']} agents, "
+            f"{bootstrap_metadata['service_declarations_registered']} services, "
+            f"{len(enabled_features)} features"
+        )
+        
+        return bootstrap_metadata
+    
+    def _register_agent_declaration(self, agent_type: str) -> bool:
+        """
+        Register agent declaration for lazy loading without loading implementation.
+        
+        Args:
+            agent_type: Type of agent to register declaration for
+            
+        Returns:
+            True if declaration was found and registered, False otherwise
+        """
+        declaration = self.declaration_registry.get_agent_declaration(agent_type)
+        if declaration:
+            # Store declaration metadata for later lazy loading
+            # This could be enhanced to store declaration in a registry
+            self.logger.debug(f"Registered declaration for agent: {agent_type}")
+            return True
+        else:
+            self.logger.warning(f"No declaration found for agent type: {agent_type}")
+            return False
+    
+    def _register_service_declaration(self, service_name: str) -> bool:
+        """
+        Register service declaration for lazy loading without loading implementation.
+        
+        Args:
+            service_name: Name of service to register declaration for
+            
+        Returns:
+            True if declaration was found and registered, False otherwise
+        """
+        declaration = self.declaration_registry.get_service_declaration(service_name)
+        if declaration:
+            # Store declaration metadata for later lazy loading
+            # This could be enhanced to store declaration in a registry
+            self.logger.debug(f"Registered declaration for service: {service_name}")
+            return True
+        else:
+            self.logger.warning(f"No declaration found for service: {service_name}")
+            return False
+    
+    def _enable_features_from_declarations(
+        self, agent_types: Set[str], services: Set[str]
+    ) -> list[str]:
+        """
+        Enable features based on declared agent capabilities and services.
+        
+        Args:
+            agent_types: Set of declared agent types
+            services: Set of declared services
+            
+        Returns:
+            List of feature names that were enabled
+        """
+        enabled_features = []
+        
+        # Always enable core features
+        self.features_registry.enable_feature("core")
+        enabled_features.append("core")
+        
+        # Enable LLM features if LLM-related agents or services are declared
+        llm_indicators = {
+            "llm", "openai", "anthropic", "google", "llm_service", 
+            "llm_routing_service", "openai_service"
+        }
+        if agent_types & llm_indicators or services & llm_indicators:
+            self.features_registry.enable_feature("llm")
+            enabled_features.append("llm")
+            self.logger.debug("Enabled LLM features based on declarations")
+        
+        # Enable storage features if storage-related agents or services are declared
+        storage_indicators = {
+            "csv_reader", "csv_writer", "json_reader", "json_writer",
+            "storage_service", "blob_storage_service", "json_storage_service"
+        }
+        if agent_types & storage_indicators or services & storage_indicators:
+            self.features_registry.enable_feature("storage")
+            enabled_features.append("storage")
+            self.logger.debug("Enabled storage features based on declarations")
+        
+        # Enable validation features if validation-related components are declared
+        validation_indicators = {"validation_service", "csv_validation_service"}
+        if services & validation_indicators:
+            self.features_registry.enable_feature("validation")
+            enabled_features.append("validation")
+            self.logger.debug("Enabled validation features based on declarations")
+        
+        return enabled_features
 
     @staticmethod
     def _get_matching_elements(dict_a: dict, dict_b: dict) -> dict:

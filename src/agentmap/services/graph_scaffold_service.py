@@ -91,13 +91,6 @@ class ServiceRequirementParser:
                 "type_hint": "Any  # Memory storage service",
                 "doc": "Memory storage service for in-memory data operations",
             },
-            "node_registry": {
-                "protocol": "NodeRegistryUser",
-                "import": "from agentmap.services.node_registry_service import NodeRegistryUser",
-                "attribute": "node_registry",
-                "type_hint": "Dict[str, Dict[str, Any]]",
-                "doc": "Node registry service for accessing graph node metadata and routing",
-            },
             "storage": {
                 "protocol": "StorageCapableAgent",
                 "import": "from agentmap.services.protocols import StorageCapableAgent",

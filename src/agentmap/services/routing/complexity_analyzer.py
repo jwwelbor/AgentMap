@@ -28,7 +28,9 @@ class PromptComplexityAnalyzer:
     """
 
     def __init__(
-        self, configuration: AppConfigService, logging_service: LoggingService
+        self, 
+        configuration: AppConfigService, 
+        logging_service: LoggingService
     ):
         """
         Initialize the complexity analyzer with configuration.

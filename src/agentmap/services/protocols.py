@@ -5,7 +5,13 @@ Defines the interfaces that agents expect from injected services.
 These protocols enable type-safe dependency injection and clear service contracts.
 """
 
-from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol, Set, runtime_checkable
+
+# Declaration system imports
+from agentmap.models.declaration_models import AgentDeclaration, ServiceDeclaration
+
+if TYPE_CHECKING:
+    from agentmap.services.declaration_sources import DeclarationSource
 
 
 @runtime_checkable
@@ -475,6 +481,87 @@ class FeaturesRegistryServiceProtocol(Protocol):
 
         Returns:
             True if provider is available and validated, False otherwise
+        """
+        ...
+
+
+@runtime_checkable
+class DeclarationRegistryServiceProtocol(Protocol):
+    """Protocol for declaration registry service interface used by services."""
+
+    def get_agent_declaration(self, agent_type: str) -> Optional[AgentDeclaration]:
+        """
+        Get agent declaration by type.
+        
+        Args:
+            agent_type: Type of agent to find
+            
+        Returns:
+            AgentDeclaration if found, None otherwise
+        """
+        ...
+
+    def get_service_declaration(self, service_name: str) -> Optional[ServiceDeclaration]:
+        """
+        Get service declaration by name.
+        
+        Args:
+            service_name: Name of service to find
+            
+        Returns:
+            ServiceDeclaration if found, None otherwise
+        """
+        ...
+
+    def resolve_agent_requirements(self, agent_types: Set[str]) -> Dict[str, any]:
+        """
+        Resolve all requirements for given agent types.
+        
+        Args:
+            agent_types: Set of agent types to resolve requirements for
+            
+        Returns:
+            Dictionary with 'services', 'protocols', and 'missing' keys
+        """
+        ...
+
+    def add_source(self, source: "DeclarationSource") -> None:
+        """
+        Add a declaration source to the registry.
+        
+        Args:
+            source: Declaration source to add
+        """
+        ...
+
+    def load_all(self) -> None:
+        """
+        Reload declarations from all sources.
+        
+        Later sources override earlier ones to enable customization.
+        """
+        ...
+
+
+@runtime_checkable
+class DeclarationSourceProtocol(Protocol):
+    """Protocol for declaration source interface used by services."""
+
+    def load_agents(self) -> Dict[str, AgentDeclaration]:
+        """
+        Load agent declarations from this source.
+        
+        Returns:
+            Dictionary mapping agent types to AgentDeclaration models
+        """
+        ...
+
+    def load_services(self) -> Dict[str, ServiceDeclaration]:
+        """
+        Load service declarations from this source.
+        
+        Returns:
+            Dictionary mapping service names to ServiceDeclaration models
         """
         ...
 

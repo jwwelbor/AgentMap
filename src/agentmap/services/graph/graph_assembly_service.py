@@ -6,10 +6,10 @@ from agentmap.models.graph import Graph
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.function_resolution_service import FunctionResolutionService
-from agentmap.services.graph_factory_service import GraphFactoryService
+from agentmap.services.graph.graph_factory_service import GraphFactoryService
 from agentmap.services.logging_service import LoggingService
-from agentmap.services.node_registry_service import NodeRegistryUser
 from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.services.protocols import OrchestrationCapableAgent
 
 
 class GraphAssemblyService:
@@ -34,7 +34,7 @@ class GraphAssemblyService:
         state_schema = self._get_state_schema_from_config()
         self.builder = StateGraph(state_schema=state_schema)
         self.orchestrator_nodes = []
-        self.node_registry: Optional[Dict[str, Any]] = None
+        self.orchestrator_node_registry: Optional[Dict[str, Any]] = None
         self.injection_stats = {
             "orchestrators_found": 0,
             "orchestrators_injected": 0,
@@ -92,20 +92,22 @@ class GraphAssemblyService:
     def assemble_graph(
         self,
         graph: Graph,
-        node_registry: Optional[Dict[str, Any]] = None,
+        agent_instances: Dict[str, Any],
+        orchestrator_node_registry: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """
         Assemble an executable LangGraph from a Graph domain model.
 
         Args:
             graph: Graph domain model with nodes and configuration
+            agent_instances: Dictionary mapping node names to agent instances
             node_registry: Optional node registry for orchestrator injection
 
         Returns:
             Compiled executable graph
 
         Raises:
-            ValueError: If graph has no nodes
+            ValueError: If graph has no nodes or missing agent instances
         """
         self.logger.info(f"🚀 Starting graph assembly: '{graph.name}'")
 
@@ -123,7 +125,7 @@ class GraphAssemblyService:
             "injection_failures": 0,
         }
 
-        self.node_registry = node_registry
+        self.orchestrator_node_registry = orchestrator_node_registry
 
         # Add all nodes and process their edges
         node_names = list(graph.nodes.keys())
@@ -140,12 +142,17 @@ class GraphAssemblyService:
             )
 
         for node_name, node in graph.nodes.items():
-            self.add_node(node_name, node.context.get("instance"))
+            # Get agent instance from the provided agent_instances dictionary
+            if node_name not in agent_instances:
+                raise ValueError(f"No agent instance found for node: {node_name}")
+            agent_instance = agent_instances[node_name]
+            self.add_node(node_name, agent_instance)
             self.process_node_edges(node_name, node.edges)
 
         # Set entry point
         if graph.entry_point:
-            self.set_entry_point(graph.entry_point)
+            self.builder.set_entry_point(graph.entry_point)
+            self.logger.debug(f"🚪 Set entry point: '{graph.entry_point}'")
 
         # Add dynamic routers for orchestrator nodes
         if self.orchestrator_nodes:
@@ -158,7 +165,10 @@ class GraphAssemblyService:
                 failure_target = node.edges.get("failure") if node else None
                 self._add_dynamic_router(orch_node_name, failure_target)
 
-        return self.compile()
+        # Compile and return the executable LangGraph
+        compiled_graph = self.builder.compile()
+        self.logger.debug(f"✅ Graph '{graph.name}' compiled successfully")
+        return compiled_graph
 
     def add_node(self, name: str, agent_instance: Any) -> None:
         """
@@ -171,12 +181,12 @@ class GraphAssemblyService:
         self.builder.add_node(name, agent_instance.run)
         class_name = agent_instance.__class__.__name__
 
-        if isinstance(agent_instance, NodeRegistryUser):
+        if isinstance(agent_instance, OrchestrationCapableAgent):
             self.orchestrator_nodes.append(name)
             self.injection_stats["orchestrators_found"] += 1
-            if self.node_registry:
+            if self.orchestrator_node_registry:
                 try:
-                    agent_instance.node_registry = self.node_registry
+                    agent_instance.node_registry = self.orchestrator_node_registry
                     self.injection_stats["orchestrators_injected"] += 1
                     self.logger.debug(
                         f"✅ Injected registry into orchestrator '{name}'"
@@ -188,16 +198,6 @@ class GraphAssemblyService:
                     )
 
         self.logger.debug(f"🔹 Added node: '{name}' ({class_name})")
-
-    def set_entry_point(self, node_name: str) -> None:
-        """
-        Set the entry point for the graph.
-
-        Args:
-            node_name: Name of the entry point node
-        """
-        self.builder.set_entry_point(node_name)
-        self.logger.debug(f"🚪 Set entry point: '{node_name}'")
 
     def process_node_edges(self, node_name: str, edges: Dict[str, str]) -> None:
         """
@@ -344,23 +344,6 @@ class GraphAssemblyService:
 
         self.logger.debug(f"[{node_name}] → dynamic router added with open routing")
 
-    def compile(self) -> Any:
-        """
-        Compile the assembled graph into an executable form.
-
-        Returns:
-            Compiled executable graph
-        """
-        self.logger.info("📋 Compiling graph")
-
-        stats = self.injection_stats
-        if stats["orchestrators_found"] > 0:
-            self.logger.info(f"📊 Registry injection summary: {stats}")
-
-        compiled_graph = self.builder.compile()
-        self.logger.info("✅ Graph compilation completed successfully")
-
-        return compiled_graph
 
     def get_injection_summary(self) -> Dict[str, int]:
         """Get summary of registry injection statistics."""

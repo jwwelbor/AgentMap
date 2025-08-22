@@ -269,7 +269,7 @@ test_graph,node2,ValidationAgent,Validate prompt,Validation node,,output1,final_
         node_registry = {"node1": {"name": "node1"}}
         bundle = GraphBundle(
             graph=graph,
-            node_registry=node_registry,
+            node_instances=node_registry,
             version_hash="test_hash"
         )
         
@@ -310,7 +310,7 @@ test_graph,node2,ValidationAgent,Validate prompt,Validation node,,output1,final_
             # Assert
             assert isinstance(result, GraphBundle)
             assert result.graph == graph
-            assert result.node_registry == node_registry
+            assert result.node_instances == node_registry
             assert result.is_metadata_only is False
 
     def test_create_metadata_bundle_from_spec_success(self, enhanced_service, sample_graph_spec,
@@ -440,7 +440,7 @@ test_graph,node2,ValidationAgent,Validate prompt,Validation node,,output1,final_
         version_hash = hashlib.md5(sample_csv_content.encode()).hexdigest()
         bundle = GraphBundle(
             graph={},
-            node_registry={},
+            node_instances={},
             version_hash=version_hash
         )
         
@@ -513,7 +513,7 @@ test_graph,node2,ValidationAgent,Validate prompt,Validation node,,output1,final_
         # Should still create bundle
         assert isinstance(result, GraphBundle)
         assert result.graph == simple_graph
-        assert result.node_registry == node_registry
+        assert result.node_instances == node_registry
 
     def test_backwards_compatibility_constructor(self, mock_logging_service):
         """Test that old constructor still works."""

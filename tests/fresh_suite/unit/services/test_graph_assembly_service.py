@@ -80,7 +80,7 @@ class TestGraphAssemblyService(unittest.TestCase):
         
         # Verify internal state is initialized
         self.assertEqual(self.service.orchestrator_nodes, [])
-        self.assertIsNone(self.service.node_registry)
+        self.assertIsNone(self.service.orchestrator_node_registry)
         expected_stats = {"orchestrators_found": 0, "orchestrators_injected": 0, "injection_failures": 0}
         self.assertEqual(self.service.injection_stats, expected_stats)
     
@@ -489,7 +489,7 @@ class TestGraphAssemblyService(unittest.TestCase):
         mock_orchestrator = MockOrchestratorAgent()
         
         # Set up service with node registry
-        self.service.node_registry = {"node1": {"description": "Test node"}}
+        self.service.orchestrator_node_registry = {"node1": {"description": "Test node"}}
         
         with patch.object(self.service, 'builder') as mock_builder:
             self.service.add_node("orchestrator_node", mock_orchestrator)
@@ -498,7 +498,7 @@ class TestGraphAssemblyService(unittest.TestCase):
             self.assertIn("orchestrator_node", self.service.orchestrator_nodes)
             
             # Verify registry was injected
-            self.assertEqual(mock_orchestrator.node_registry, self.service.node_registry)
+            self.assertEqual(mock_orchestrator.node_registry, self.service.orchestrator_node_registry)
             
             # Verify injection stats
             self.assertEqual(self.service.injection_stats["orchestrators_found"], 1)
@@ -518,7 +518,7 @@ class TestGraphAssemblyService(unittest.TestCase):
         mock_orchestrator = MockOrchestratorAgent()
         
         # No registry set on service
-        self.service.node_registry = None
+        self.service.orchestrator_node_registry = None
         
         with patch.object(self.service, 'builder') as mock_builder:
             self.service.add_node("orchestrator_node", mock_orchestrator)

@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Set, List
 
 from .node import Node
+from datetime import datetime
 
 
 @dataclass
@@ -23,7 +24,7 @@ class GraphBundle:
     
     # Legacy fields (primary constructor for backwards compatibility)
     graph: Optional[Any] = None
-    node_registry: Optional[Dict[str, Any]] = None
+    node_instances: Optional[Dict[str, Any]] = None
     version_hash: Optional[str] = None
     
     # New metadata-only fields (optional for backwards compatibility)
@@ -49,6 +50,7 @@ class GraphBundle:
     validation_metadata: Optional[Dict[str, Any]] = None  # NEW: Integrity checks
     bundle_format: str = "metadata-v1"  # NEW: Format version
     created_at: Optional[str] = None  # NEW: Creation timestamp
+    missing_declarations: Optional[Set[str]] = None  # NEW: Agent types without declarations
     
     def __post_init__(self):
         """Initialize defaults and issue deprecation warnings as needed."""
@@ -90,6 +92,8 @@ class GraphBundle:
             if self.created_at is None:
                 from datetime import datetime
                 self.created_at = datetime.utcnow().isoformat()
+            if self.missing_declarations is None:
+                self.missing_declarations = set()
         
         # If completely empty, set safe defaults
         else:
@@ -109,6 +113,7 @@ class GraphBundle:
             self.validation_metadata = {}
             from datetime import datetime
             self.created_at = datetime.utcnow().isoformat()
+            self.missing_declarations = set()
     
     
     @staticmethod
@@ -181,7 +186,8 @@ class GraphBundle:
         graph_structure: Optional[Dict[str, Any]] = None,
         protocol_mappings: Optional[Dict[str, str]] = None,
         # New Phase 3 parameters
-        validation_metadata: Optional[Dict[str, Any]] = None
+        validation_metadata: Optional[Dict[str, Any]] = None,
+        missing_declarations: Optional[Set[str]] = None
     ) -> "GraphBundle":
         """
         Create a new GraphBundle using the enhanced metadata-only format.
@@ -229,7 +235,8 @@ class GraphBundle:
             graph_structure=graph_structure,
             protocol_mappings=protocol_mappings,
             # Phase 3: Validation metadata
-            validation_metadata=validation_metadata
+            validation_metadata=validation_metadata,
+            missing_declarations=missing_declarations
         )
     
     @classmethod
@@ -268,10 +275,11 @@ class GraphBundle:
     def is_metadata_only(self) -> bool:
         """Check if this bundle is using the new metadata-only format."""
         return (self.graph is None and 
-                self.node_registry is None and
+                self.node_instances is None and
                 self.nodes is not None)
     
     @property
     def is_legacy_format(self) -> bool:
         """Check if this bundle is using the legacy format."""
-        return self.graph is not None or self.node_registry is not None
+        return self.graph is not None or self.node_instances is not None
+

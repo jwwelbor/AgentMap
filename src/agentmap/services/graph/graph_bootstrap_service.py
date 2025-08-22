@@ -156,10 +156,10 @@ class GraphBootstrapService:
             agent_mappings: Optional mappings from bundle for agent class paths
         """
         # Standard LLM agent class paths
-        llm_class_paths = AppConfigService.get_llm_class_paths()
+        llm_agent_class_paths = AgentConfigService.get_llm_agents()
         
         # Check if any LLM agents are needed
-        needed_llm_agents = required_agents.intersection(llm_class_paths.keys())
+        needed_llm_agents = required_agents.intersection(llm_agent_class_paths.keys())
         
         if not needed_llm_agents:
             self.logger.debug("[GraphBootstrapService] No LLM agents required")
@@ -170,7 +170,7 @@ class GraphBootstrapService:
         # Enable LLM feature if needed (following ApplicationBootstrapService)
         self.features_registry.enable_feature("llm")
         
-        # Discover available providers
+        # Discover available providers TODO: Should this be FeatureRegistryService?
         available_providers = self.dependency_checker.discover_and_validate_providers("llm")
         
         # Map agent types to providers for availability checking
@@ -188,9 +188,9 @@ class GraphBootstrapService:
                 provider = agent_to_provider.get(agent_type)
                 # Base LLM agent needs any provider, specific agents need their provider
                 if provider is None and available_providers:  # Base LLM agent
-                    class_path = llm_class_paths[agent_type]
+                    class_path = llm_agent_class_paths[agent_type]
                 elif provider and available_providers.get(provider):
-                    class_path = llm_class_paths[agent_type]
+                    class_path = llm_agent_class_paths[agent_type]
             
             if class_path and self._register_agent(agent_type, class_path):
                 registered_count += 1
@@ -213,7 +213,7 @@ class GraphBootstrapService:
             agent_mappings: Optional mappings from bundle for agent class paths
         """
         # Standard storage agent class paths
-        storage_class_paths = AppConfigService.get_storage_class_paths()
+        storage_class_paths = AgentConfigService.get_storage_agents()
         
         # Map agent types to storage types for availability checking
         agent_to_storage_type = AgentConfigService.get_agent_to_storage_type()

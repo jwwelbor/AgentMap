@@ -16,7 +16,6 @@ from typing import Any, Dict, Optional, Tuple
 
 from agentmap.services.graph_definition_service import GraphDefinitionService
 from agentmap.services.logging_service import LoggingService
-from agentmap.services.node_registry_service import NodeRegistryService
 
 
 class GraphPreparationService:
@@ -36,7 +35,6 @@ class GraphPreparationService:
     def __init__(
         self,
         graph_definition_service: GraphDefinitionService,
-        node_registry_service: NodeRegistryService,
         logging_service: LoggingService,
     ):
         """
@@ -48,7 +46,6 @@ class GraphPreparationService:
             logging_service: Service for logging operations
         """
         self.graph_definition = graph_definition_service
-        self.node_registry = node_registry_service
         self.logger = logging_service.get_class_logger(self)
         
         self.logger.info("[GraphPreparationService] Initialized")
