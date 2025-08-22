@@ -158,7 +158,10 @@ class JSONStorageService(BaseStorageService):
         if not collection.lower().endswith(".json"):
             collection = f"{collection}.json"
 
-        return os.path.join(base_dir, collection)
+        if not collection.startswith(base_dir):
+            collection = os.path.join(base_dir, collection)
+
+        return collection
 
     def _ensure_directory_exists(self, file_path: str) -> None:
         """

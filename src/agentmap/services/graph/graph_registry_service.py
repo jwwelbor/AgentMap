@@ -261,13 +261,13 @@ class GraphRegistryService:
     def _load_registry(self) -> None:
         """Load registry from persistent storage."""
         try:
-            result = self.json_storage.read(
-                collection="graph_registry",
-                path=self._registry_path
+            # JSONStorageService.read() returns the data directly, not a StorageResult
+            registry_data = self.json_storage.read(
+                collection=self._registry_path
             )
             
-            if result and result.success and result.data:
-                self._load_registry_data(result.data)
+            if registry_data:
+                self._load_registry_data(registry_data)
             else:
                 self.logger.info("No existing registry found, starting fresh")
                 self._create_empty_registry()
@@ -302,9 +302,9 @@ class GraphRegistryService:
             }
             # TODO: Specify filepath for registry
             result = self.json_storage.write(
-                collection="graph_registry",
+                collection=self._registry_path,
                 data=registry_data,
-                path=self._registry_path,
+                path=None,
                 mode=WriteMode.WRITE
             )
             
