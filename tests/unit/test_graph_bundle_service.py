@@ -8,8 +8,9 @@ Updated to use the real CSVGraphParserService interface with parse_csv_to_graph_
 """
 
 import unittest
+import tempfile
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from dataclasses import dataclass
 from typing import List, Optional, Dict
 from datetime import datetime
@@ -20,6 +21,8 @@ from tests.utils.mock_service_factory import MockServiceFactory
 # Import real models that the CSV parser uses
 from agentmap.models.graph_spec import GraphSpec, NodeSpec
 from agentmap.models.node import Node
+from agentmap.models.graph_bundle import GraphBundle
+from agentmap.services.graph.graph_bundle_service import GraphBundleService
 
 
 class CSVParseError(Exception):
@@ -352,6 +355,158 @@ class TestGraphBundleService(unittest.TestCase):
         
         # The operation completed successfully, which means logging was set up correctly
         # (detailed logging behavior is implementation detail, not core functionality)
+
+
+class TestGraphBundleServiceDelete(unittest.TestCase):
+    """Test the delete_bundle method of GraphBundleService."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        # Create mock dependencies
+        self.mock_logging_service = Mock()
+        self.mock_logger = Mock()
+        self.mock_logging_service.get_class_logger.return_value = self.mock_logger
+        
+        self.mock_protocol_analyzer = Mock()
+        self.mock_agent_factory = Mock()
+        self.mock_json_storage = Mock()
+        self.mock_csv_parser = Mock()
+        self.mock_static_analyzer = Mock()
+        self.mock_app_config_service = Mock()
+        
+        # Create service instance with mocked dependencies
+        self.service = GraphBundleService(
+            logging_service=self.mock_logging_service,
+            protocol_requirements_analyzer=self.mock_protocol_analyzer,
+            agent_factory_service=self.mock_agent_factory,
+            json_storage_service=self.mock_json_storage,
+            csv_parser_service=self.mock_csv_parser,
+            static_bundle_analyzer=self.mock_static_analyzer,
+            app_config_service=self.mock_app_config_service
+        )
+    
+    def test_delete_bundle_success(self):
+        """Test successful bundle deletion."""
+        # Create a temporary file to simulate bundle
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            cache_folder = temp_path / "cache"
+            cache_folder.mkdir()
+            
+            # Mock app_config_service to return our temp cache folder
+            self.mock_app_config_service.get_cache_path.return_value = cache_folder
+            
+            # Create a bundle with csv_hash
+            bundle = GraphBundle.create_metadata(
+                graph_name="test_graph",
+                entry_point="start",
+                nodes={},
+                required_agents=set(),
+                required_services=set(),
+                service_load_order=[],
+                function_mappings={},
+                csv_hash="abc123def456"
+            )
+            
+            # Create the bundle file
+            bundle_file = cache_folder / f"{bundle.csv_hash}.json"
+            bundle_file.write_text('{"test": "data"}')
+            
+            # Test deletion
+            self.assertTrue(bundle_file.exists())
+            result = self.service.delete_bundle(bundle)
+            
+            # Verify results
+            self.assertTrue(result)
+            self.assertFalse(bundle_file.exists())
+            self.mock_logger.info.assert_called_once()
+            
+    def test_delete_bundle_file_not_found(self):
+        """Test deletion when bundle file doesn't exist."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            cache_folder = temp_path / "cache"
+            cache_folder.mkdir()
+            
+            # Mock app_config_service to return our temp cache folder
+            self.mock_app_config_service.get_cache_path.return_value = cache_folder
+            
+            # Create a bundle with csv_hash
+            bundle = GraphBundle.create_metadata(
+                graph_name="test_graph",
+                entry_point="start",
+                nodes={},
+                required_agents=set(),
+                required_services=set(),
+                service_load_order=[],
+                function_mappings={},
+                csv_hash="nonexistent123"
+            )
+            
+            # Bundle file doesn't exist
+            bundle_file = cache_folder / f"{bundle.csv_hash}.json"
+            self.assertFalse(bundle_file.exists())
+            
+            # Test deletion
+            result = self.service.delete_bundle(bundle)
+            
+            # Should return False when file not found
+            self.assertFalse(result)
+            self.mock_logger.debug.assert_called_once()
+            
+    def test_delete_bundle_no_csv_hash(self):
+        """Test deletion fails when bundle has no csv_hash."""
+        # Create bundle without csv_hash
+        bundle = GraphBundle.create_metadata(
+            graph_name="test_graph",
+            entry_point="start",
+            nodes={},
+            required_agents=set(),
+            required_services=set(),
+            service_load_order=[],
+            function_mappings={},
+            csv_hash=None  # No hash
+        )
+        
+        # Should raise ValueError
+        with self.assertRaises(ValueError) as context:
+            self.service.delete_bundle(bundle)
+        
+        self.assertIn("Bundle has no csv_hash", str(context.exception))
+        
+    def test_delete_bundle_permission_error(self):
+        """Test deletion handles permission errors correctly."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            cache_folder = temp_path / "cache"
+            cache_folder.mkdir()
+            
+            # Mock app_config_service to return our temp cache folder
+            self.mock_app_config_service.get_cache_path.return_value = cache_folder
+            
+            # Create a bundle with csv_hash
+            bundle = GraphBundle.create_metadata(
+                graph_name="test_graph",
+                entry_point="start",
+                nodes={},
+                required_agents=set(),
+                required_services=set(),
+                service_load_order=[],
+                function_mappings={},
+                csv_hash="protected123"
+            )
+            
+            # Create the bundle file
+            bundle_file = cache_folder / f"{bundle.csv_hash}.json"
+            bundle_file.write_text('{"test": "data"}')
+            
+            # Mock unlink to raise PermissionError
+            with patch.object(Path, 'unlink', side_effect=PermissionError("Access denied")):
+                with self.assertRaises(PermissionError) as context:
+                    self.service.delete_bundle(bundle)
+                
+                self.assertIn("Permission denied", str(context.exception))
+                self.mock_logger.error.assert_called_once()
 
 
 if __name__ == '__main__':

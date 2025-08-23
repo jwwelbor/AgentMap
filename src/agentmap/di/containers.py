@@ -694,7 +694,8 @@ class ApplicationContainer(containers.DeclarativeContainer):
         agent_factory_service,
         json_storage_service,
         csv_graph_parser_service,
-        static_bundle_analyzer,  # ADD THIS
+        static_bundle_analyzer,
+        app_config_service,  # Added for delete_bundle() method
     )
 
     # Graph Execution Service for clean execution orchestration

@@ -29,7 +29,8 @@ class GraphBundleService:
                  agent_factory_service: AgentFactoryService,
                  json_storage_service: JSONStorageService,
                  csv_parser_service: CSVGraphParserService,
-                 static_bundle_analyzer: StaticBundleAnalyzer):
+                 static_bundle_analyzer: StaticBundleAnalyzer,
+                 app_config_service=None):  # Optional for backwards compatibility
         """Initialize GraphBundleService with enhanced dependencies.
                 
         Args:
@@ -37,8 +38,9 @@ class GraphBundleService:
             protocol_requirements_analyzer: Service for analyzing protocol requirements
             agent_factory_service: Service for agent creation and management
             json_storage_service: JSON storage service for bundle persistence (required for save/load)
-            csv_parser: CSV parser service for parsing CSV files (NEW)
+            csv_parser_service: CSV parser service for parsing CSV files
             static_bundle_analyzer: Static bundle analyzer for fast declaration-based bundle creation
+            app_config_service: Application config service for cache path (optional)
         """
         self.logger = logging_service.get_class_logger(self)
         self.logging_service = logging_service
@@ -48,41 +50,13 @@ class GraphBundleService:
         self.agent_factory_service = agent_factory_service
         self.json_storage_service = json_storage_service
         self.csv_parser_service = csv_parser_service  
-        self.static_bundle_analyzer = static_bundle_analyzer 
-        
-        # DIContainerAnalyzer will be created on-demand to avoid circular dependency
-        self.di_container_analyzer = None  # Usually None
-        self.config_path = None
+        self.static_bundle_analyzer = static_bundle_analyzer
+        self.app_config_service = app_config_service 
 
         # Check if enhanced functionality is available
         self._has_enhanced_dependencies = all([
             protocol_requirements_analyzer, agent_factory_service
         ])
-        
-    def _get_di_container_analyzer(self, config_path: str):
-        """Get or create DIContainerAnalyzer on demand.
-        
-        This method creates the DIContainerAnalyzer only when needed,
-        avoiding circular dependency issues during container initialization.
-        """
-        if config_path:
-            self.config_path = config_path
-
-        if self.di_container_analyzer is None:
-            # Create DIContainerAnalyzer on-demand using the fully initialized container
-            from agentmap.di import initialize_application
-            
-            container = initialize_application(config_path)
-            self.di_container_analyzer = DIContainerAnalyzer(
-                container,
-                self.logging_service  # Use stored logging service if available
-            )
-            
-            self.logger.debug(
-                "Created DIContainerAnalyzer on-demand for metadata bundle operations"
-            )
-        
-        return self.di_container_analyzer
     
     def create_bundle_from_csv(self, csv_path: str, config_path: str, csv_hash: Optional[str] = None, graph_to_return: Optional[str] = None) -> GraphBundle:
         """
@@ -272,34 +246,6 @@ class GraphBundleService:
         )
         return actual_services
     
-    def _calculate_service_load_order(self, services: Set[str]) -> List[str]:
-        """Calculate topological sort order for services.
-        
-        This method analyzes service dependencies and returns them in the
-        order they should be loaded to satisfy all dependencies.
-        
-        Args:
-            services: Set of service names to analyze
-            
-        Returns:
-            List of service names in dependency order
-        """
-        try:
-            analyzer = self._get_di_container_analyzer(self.config_path)
-            dependency_tree = analyzer.get_dependency_tree(services)
-            load_order = analyzer.topological_sort(dependency_tree)
-            
-            self.logger.debug(
-                f"Calculated service load order for {len(services)} services: {load_order[:5]}..."
-            )
-            return load_order
-            
-        except Exception as e:
-            self.logger.warning(
-                f"Failed to calculate service load order: {e}. Using sorted fallback."
-            )
-            # Fallback to sorted order for reliability
-            return sorted(list(services))
     
     def _extract_agent_mappings(self, agent_types: Set[str]) -> Dict[str, str]:
         """Extract agent type to class path mappings.
@@ -465,8 +411,6 @@ class GraphBundleService:
             Dictionary mapping protocol names to implementation class names
         """
         try:
-            # analyzer = self._get_di_container_analyzer(self.config_path)
-            # mappings = analyzer.get_protocol_mappings()
             mappings = self.declaration_registry.get_protocol_implementations()
 
             self.logger.debug(
@@ -537,6 +481,65 @@ class GraphBundleService:
         except Exception:
             return "unknown"
 
+    def delete_bundle(self, bundle: GraphBundle) -> bool:
+        """Delete a cached bundle file from disk.
+        
+        Uses the bundle's csv_hash to locate and delete the cached bundle file.
+        This method only handles file deletion - registry cleanup should be 
+        handled separately by the caller if needed.
+        
+        Args:
+            bundle: GraphBundle containing the csv_hash to identify the cached file
+            
+        Returns:
+            True if bundle file was deleted, False if file not found
+            
+        Raises:
+            ValueError: If bundle has no csv_hash
+            PermissionError: If insufficient permissions to delete file
+            IOError: If deletion fails for other reasons
+        """
+        # Check for csv_hash first, before any other operations
+        # Note: GraphBundle.__post_init__ converts None to "unknown_hash"
+        if bundle.csv_hash is None or bundle.csv_hash == "" or bundle.csv_hash == "unknown_hash":
+            raise ValueError("Bundle has no csv_hash - cannot identify cached file to delete")
+        
+        try:
+            # Use AppConfigService to get cache path
+            if hasattr(self, 'app_config_service') and self.app_config_service:
+                cache_folder = self.app_config_service.get_cache_path()
+            else:
+                # Fallback to default cache location if service not available
+                from pathlib import Path as PathLib
+                cache_folder = PathLib.home() / ".agentmap" / "cache"
+                self.logger.warning("AppConfigService not available, using default cache path")
+            
+            # Construct bundle file path using the csv_hash
+            bundle_filename = f"{bundle.csv_hash}.json"
+            bundle_path = cache_folder / bundle_filename
+            
+            if not bundle_path.exists():
+                self.logger.debug(
+                    f"Bundle file not found for deletion: {bundle_path}"
+                )
+                return False
+            
+            # Delete the bundle file
+            bundle_path.unlink()
+            self.logger.info(
+                f"Deleted cached bundle: {bundle_filename} for graph '{bundle.graph_name}'"
+            )
+            return True
+            
+        except PermissionError as e:
+            error_msg = f"Permission denied when deleting bundle file: {e}"
+            self.logger.error(error_msg)
+            raise PermissionError(error_msg)
+        except Exception as e:
+            error_msg = f"Failed to delete bundle file: {e}"
+            self.logger.error(error_msg)
+            raise IOError(error_msg)
+    
     def save_bundle(self, bundle: GraphBundle, path: Path) -> None:
         """Persist the bundle to disk in appropriate format.
         

@@ -23,6 +23,7 @@ from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.function_resolution_service import FunctionResolutionService
 from agentmap.services.indented_template_composer import IndentedTemplateComposer
 from agentmap.services.logging_service import LoggingService
+from agentmap.models.graph_bundle import GraphBundle
 
 
 class ServiceRequirementParser:
@@ -365,113 +366,6 @@ class GraphScaffoldService:
             "[GraphScaffoldService] Initialized with unified IndentedTemplateComposer for all template generation"
         )
 
-    def scaffold_agents_from_csv(
-        self, csv_path: Path, options: Optional[ScaffoldOptions] = None
-    ) -> ScaffoldResult:
-        """
-        Scaffold agents and functions from CSV file with service awareness.
-
-        Args:
-            csv_path: Path to CSV file containing graph definitions
-            options: Scaffolding options (uses defaults if None)
-
-        Returns:
-            ScaffoldResult with scaffolding details
-        """
-        options = options or ScaffoldOptions()
-        self.logger.info(f"[GraphScaffoldService] Scaffolding from CSV: {csv_path}")
-
-        try:
-            # Get scaffold paths from app config
-            agents_path = options.output_path or self.config.get_custom_agents_path()
-            functions_path = options.function_path or self.config.get_functions_path()
-
-            # Create directories if they don't exist
-            agents_path.mkdir(parents=True, exist_ok=True)
-            functions_path.mkdir(parents=True, exist_ok=True)
-
-            # Collect information about agents and functions
-            agent_info = self._collect_agent_info(csv_path, options.graph_name)
-            func_info = self._collect_function_info(csv_path, options.graph_name)
-
-            # Initialize result tracking
-            result = ScaffoldResult(
-                scaffolded_count=0,
-                service_stats={"with_services": 0, "without_services": 0},
-            )
-
-            # Scaffold agents
-            for agent_type, info in agent_info.items():
-                try:
-                    created_path = self._scaffold_agent(
-                        agent_type, info, agents_path, options.overwrite_existing
-                    )
-
-                    if created_path:
-                        result.created_files.append(created_path)
-                        result.scaffolded_count += 1
-
-                        # Track service stats
-                        service_reqs = self.service_parser.parse_services(
-                            info.get("context")
-                        )
-                        if service_reqs.services:
-                            result.service_stats["with_services"] += 1
-                        else:
-                            result.service_stats["without_services"] += 1
-                    else:
-                        result.skipped_files.append(
-                            agents_path / f"{agent_type.lower()}_agent.py"
-                        )
-
-                except Exception as e:
-                    error_msg = f"Failed to scaffold agent {agent_type}: {str(e)}"
-                    self.logger.error(f"[GraphScaffoldService] {error_msg}")
-                    result.errors.append(error_msg)
-
-            # Scaffold functions
-            for func_name, info in func_info.items():
-                try:
-                    created_path = self._scaffold_function(
-                        func_name, info, functions_path, options.overwrite_existing
-                    )
-
-                    if created_path:
-                        result.created_files.append(created_path)
-                        result.scaffolded_count += 1
-                    else:
-                        result.skipped_files.append(functions_path / f"{func_name}.py")
-
-                except Exception as e:
-                    error_msg = f"Failed to scaffold function {func_name}: {str(e)}"
-                    self.logger.error(f"[GraphScaffoldService] {error_msg}")
-                    result.errors.append(error_msg)
-
-            # Log service statistics
-            if (
-                result.service_stats["with_services"] > 0
-                or result.service_stats["without_services"] > 0
-            ):
-                self.logger.info(
-                    f"[GraphScaffoldService] ✅ Scaffolded agents: "
-                    f"{result.service_stats['with_services']} with services, "
-                    f"{result.service_stats['without_services']} without services"
-                )
-
-            self.logger.info(
-                f"[GraphScaffoldService] ✅ Scaffolding complete: "
-                f"{result.scaffolded_count} created, {len(result.skipped_files)} skipped, "
-                f"{len(result.errors)} errors"
-            )
-
-            return result
-
-        except Exception as e:
-            error_msg = f"Failed to scaffold from CSV {csv_path}: {str(e)}"
-            self.logger.error(f"[GraphScaffoldService] {error_msg}")
-
-            return ScaffoldResult(scaffolded_count=0, errors=[error_msg])
-
     def scaffold_agent_class(
         self, agent_type: str, info: Dict[str, Any], output_path: Optional[Path] = None
     ) -> Optional[Path]:
@@ -505,6 +399,127 @@ class GraphScaffoldService:
         """
         func_path = func_path or self.config.functions_path
         return self._scaffold_function(func_name, info, func_path, overwrite=False)
+
+    def scaffold_from_bundle(
+        self, bundle: GraphBundle, options: Optional[ScaffoldOptions] = None
+    ) -> ScaffoldResult:
+        """
+        Scaffold agents and functions directly from a GraphBundle.
+        
+        This method avoids CSV re-parsing by using the already-processed
+        bundle information, following DRY principle.
+        
+        Args:
+            bundle: GraphBundle containing nodes and missing declarations
+            options: Scaffolding options (uses defaults if None)
+            
+        Returns:
+            ScaffoldResult with scaffolding details
+        """
+        options = options or ScaffoldOptions()
+        self.logger.info(
+            f"[GraphScaffoldService] Scaffolding from bundle: {bundle.graph_name or 'default'}"
+        )
+        
+        try:
+            # Get scaffold paths from options or app config
+            agents_path = options.output_path or self.config.get_custom_agents_path()
+            functions_path = options.function_path or self.config.get_functions_path()
+            
+            # Create directories if they don't exist
+            agents_path.mkdir(parents=True, exist_ok=True)
+            functions_path.mkdir(parents=True, exist_ok=True)
+            
+            # Initialize result tracking
+            result = ScaffoldResult(
+                scaffolded_count=0,
+                service_stats={"with_services": 0, "without_services": 0},
+            )
+            
+            # Process missing agent declarations from bundle
+            if bundle.missing_declarations:
+                self.logger.info(
+                    f"[GraphScaffoldService] Found {len(bundle.missing_declarations)} agents to scaffold"
+                )
+                
+                for agent_type in bundle.missing_declarations:
+                    # Find node info for this agent type from bundle.nodes
+                    agent_info = self._extract_agent_info_from_bundle(agent_type, bundle)
+                    
+                    if not agent_info:
+                        self.logger.warning(
+                            f"[GraphScaffoldService] No node found for agent type: {agent_type}"
+                        )
+                        continue
+                    
+                    try:
+                        created_path = self._scaffold_agent(
+                            agent_type, agent_info, agents_path, options.overwrite_existing
+                        )
+                        
+                        if created_path:
+                            result.created_files.append(created_path)
+                            result.scaffolded_count += 1
+                            
+                            # Track service stats
+                            service_reqs = self.service_parser.parse_services(
+                                agent_info.get("context")
+                            )
+                            if service_reqs.services:
+                                result.service_stats["with_services"] += 1
+                            else:
+                                result.service_stats["without_services"] += 1
+                        else:
+                            result.skipped_files.append(
+                                agents_path / f"{agent_type.lower()}_agent.py"
+                            )
+                            
+                    except Exception as e:
+                        error_msg = f"Failed to scaffold agent {agent_type}: {str(e)}"
+                        self.logger.error(f"[GraphScaffoldService] {error_msg}")
+                        result.errors.append(error_msg)
+            
+            # Process edge functions from bundle
+            func_info = self._extract_functions_from_bundle(bundle)
+            for func_name, info in func_info.items():
+                # Check if function already exists
+                if not self.function_service.has_function(func_name):
+                    try:
+                        created_path = self._scaffold_function(
+                            func_name, info, functions_path, options.overwrite_existing
+                        )
+                        
+                        if created_path:
+                            result.created_files.append(created_path)
+                            result.scaffolded_count += 1
+                        else:
+                            result.skipped_files.append(functions_path / f"{func_name}.py")
+                            
+                    except Exception as e:
+                        error_msg = f"Failed to scaffold function {func_name}: {str(e)}"
+                        self.logger.error(f"[GraphScaffoldService] {error_msg}")
+                        result.errors.append(error_msg)
+            
+            # Log service statistics
+            if result.service_stats["with_services"] > 0 or result.service_stats["without_services"] > 0:
+                self.logger.info(
+                    f"[GraphScaffoldService] ✅ Scaffolded agents: "
+                    f"{result.service_stats['with_services']} with services, "
+                    f"{result.service_stats['without_services']} without services"
+                )
+            
+            self.logger.info(
+                f"[GraphScaffoldService] ✅ Bundle scaffolding complete: "
+                f"{result.scaffolded_count} created, {len(result.skipped_files)} skipped, "
+                f"{len(result.errors)} errors"
+            )
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Failed to scaffold from bundle: {str(e)}"
+            self.logger.error(f"[GraphScaffoldService] {error_msg}")
+            return ScaffoldResult(scaffolded_count=0, errors=[error_msg])
 
     def get_scaffold_paths(self, graph_name: Optional[str] = None) -> Dict[str, Path]:
         """
@@ -755,6 +770,67 @@ class GraphScaffoldService:
             pascal_case_name += "Agent"
 
         return pascal_case_name
+
+    def _extract_agent_info_from_bundle(
+        self, agent_type: str, bundle: GraphBundle
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Extract agent information from bundle nodes.
+        
+        Args:
+            agent_type: Agent type to find
+            bundle: GraphBundle containing nodes
+            
+        Returns:
+            Agent info dict or None if not found
+        """
+        # Search through bundle nodes for matching agent type
+        for node_name, node in bundle.nodes.items():
+            if node.agent_type == agent_type:
+                # Convert Node object to info dict format expected by _scaffold_agent
+                return {
+                    "agent_type": agent_type,
+                    "node_name": node_name,
+                    "context": node.context or "",
+                    "prompt": node.prompt or "",
+                    "input_fields": node.inputs or [],
+                    "output_field": node.output or "",
+                    "description": node.description or "",
+                }
+        
+        return None
+
+    def _extract_functions_from_bundle(
+        self, bundle: GraphBundle
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Extract function information from bundle nodes' edges.
+        
+        Args:
+            bundle: GraphBundle containing nodes with edges
+            
+        Returns:
+            Dictionary mapping function names to their info
+        """
+        func_info = {}
+        
+        # Process each node's edges for function references
+        for node_name, node in bundle.nodes.items():
+            for condition, target in node.edges.items():
+                # Check if edge condition is a function reference
+                func_name = self.function_service.extract_func_ref(condition)
+                if func_name and func_name not in func_info:
+                    func_info[func_name] = {
+                        "node_name": node_name,
+                        "context": node.context or "",
+                        "input_fields": node.inputs or [],
+                        "output_field": node.output or "",
+                        "success_next": target if condition == f"func:{func_name}" else "",
+                        "failure_next": "",  # Would need more edge analysis
+                        "description": f"Edge function for {node_name} -> {target}",
+                    }
+        
+        return func_info
 
     def _to_pascal_case(self, text: str) -> str:
         """

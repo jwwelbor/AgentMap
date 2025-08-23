@@ -156,7 +156,10 @@ class CSVStorageService(BaseStorageService):
         if not collection.lower().endswith(".csv"):
             collection = f"{collection}.csv"
 
-        return os.path.join(base_dir, collection)
+        if not collection.startswith(base_dir):
+            collection = os.path.join(base_dir, collection)
+
+        return collection
 
     def _ensure_directory_exists(self, file_path: str) -> None:
         """
@@ -479,12 +482,14 @@ class CSVStorageService(BaseStorageService):
             document_id: Row ID for single-row operations
             mode: Write mode (write, append, update)
             path: Not used for CSV
-            **kwargs: Additional parameters
+            **kwargs: Additional parameters (including id_field for custom ID column)
 
         Returns:
             StorageResult with operation details
         """
         try:
+            # Extract service-specific parameters that shouldn't go to pandas
+            id_field = kwargs.pop('id_field', None)  # Extract id_field from kwargs
             file_path = self._get_file_path(collection)
             file_existed = os.path.exists(file_path)
 
@@ -512,11 +517,12 @@ class CSVStorageService(BaseStorageService):
                 if len(df) == 1:
                     # Read existing file to determine ID column
                     existing_df = None
-                    id_column = None
+                    id_column = id_field  # Use provided id_field if available
                     if file_existed:
                         try:
                             existing_df = self._read_csv_file(file_path)
-                            id_column = self._detect_id_column(existing_df)
+                            if id_column is None:  # Only detect if not provided
+                                id_column = self._detect_id_column(existing_df)
                         except Exception:
                             existing_df = None
 

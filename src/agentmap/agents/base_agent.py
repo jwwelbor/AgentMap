@@ -64,6 +64,13 @@ class BaseAgent:
         self.output_field = self.context.get("output_field", None)
         self.description = self.context.get("description", "")
 
+        # if self.input_fields is a delimited string, convert to list
+        if len(self.input_fields) == 1 and self.input_fields[0].find(",") != -1:
+            self.input_fields = str(self.input_fields[0]).split(",")
+
+        if len(self.input_fields) == 1 and self.input_fields[0].find("|") != -1:
+            self.input_fields = str(self.input_fields[0]).split("|")
+
         # Infrastructure services (required) - only core services ALL agents need
         self._logger = logger
         self._execution_tracking_service = execution_tracking_service

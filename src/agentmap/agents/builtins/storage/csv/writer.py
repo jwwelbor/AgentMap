@@ -28,16 +28,23 @@ class CSVWriterAgent(CSVAgent):
 
         Args:
             collection: CSV file path
-            inputs: Input dictionary
+            inputs: Input dictionary where keys can be column names
 
         Returns:
             Write operation result
         """
         self.log_info(f"Writing to {collection}")
 
-        # Get the data to write
-        data = inputs.get("data")
-        if data is None:
+        # Get the data to write - use 'data' field if present, otherwise use input fields directly
+        if "data" in inputs:
+            # Backward compatibility: use 'data' field if it exists
+            data = inputs.get("data")
+        else:
+            # Use input fields directly as CSV columns (excluding control fields)
+            control_fields = {"mode", "document_id", "path", "id_field", "collection", "file_path", "csv_file"}
+            data = {k: v for k, v in inputs.items() if k not in control_fields}
+        
+        if not data:
             return DocumentResult(
                 success=False, file_path=collection, error="No data provided to write"
             )
@@ -53,8 +60,13 @@ class CSVWriterAgent(CSVAgent):
         # Extract additional parameters
         document_id = inputs.get("document_id")
         path = inputs.get("path")
-        id_field = inputs.get("id_field", "id")
+        id_field = inputs.get("id_field")  # Don't force a default, let service auto-detect
 
+        # Build kwargs for the CSV storage service
+        write_kwargs = {}
+        if id_field is not None:
+            write_kwargs["id_field"] = id_field
+        
         # Call the CSV storage service
         result = self.csv_service.write(
             collection=collection,
@@ -62,7 +74,7 @@ class CSVWriterAgent(CSVAgent):
             document_id=document_id,
             mode=mode,
             path=path,
-            id_field=id_field,
+            **write_kwargs
         )
 
         return result

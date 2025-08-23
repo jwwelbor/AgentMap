@@ -166,23 +166,22 @@ class CSVAgent(BaseStorageAgent, CSVCapableAgent):
             self.log_debug(
                 f"Skipping file existence validation for write operation with auto-creation enabled: {collection}"
             )
-
-            # Still do basic input validation but skip the file existence check
-            # We'll just validate the collection parameter which we already did above
-            return
         else:
             # For read operations or when auto-creation is disabled, use strict validation
             if not is_write_op:
                 self.log_debug(
                     f"Using strict validation for read operation: {collection}"
                 )
+                super()._validate_inputs(inputs)
             else:
-                self.log_debug(
-                    f"Using strict validation (auto-creation disabled): {collection}"
-                )
+                if not auto_creation_enabled:
+                    self.log_debug(
+                        f"Using strict validation (auto-creation disabled): {collection}"
+                    )
+                    # Call parent validation which includes file existence check
+                    super()._validate_inputs(inputs)
+        return
 
-            # Call parent validation which includes file existence check
-            super()._validate_inputs(inputs)
 
     def _get_full_file_path(self, collection: str) -> str:
         """

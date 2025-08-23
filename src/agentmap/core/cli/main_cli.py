@@ -15,12 +15,9 @@ from agentmap.core.cli.diagnostic_commands import (
     inspect_graph_cmd,
     validate_cache_cmd,
 )
-from agentmap.core.cli.run_commands import (
-  #  export_command,
-   # resume_command,
-    run_command,
-    #scaffold_command,
-)
+from agentmap.core.cli.run_command import run_command
+from agentmap.core.cli.scaffold_command import scaffold_command
+from agentmap.core.cli.validate_command import validate_command
 from agentmap.core.cli.validation_commands import (
     validate_all_cmd,
     validate_config_cmd,
@@ -66,7 +63,7 @@ def main(
 # ============================================================================
 
 app.command("run")(run_command)
-#app.command("scaffold")(scaffold_command)
+app.command("scaffold")(scaffold_command)
 #app.command("export")(export_command)
 #app.command("resume")(resume_command)
 
@@ -82,6 +79,7 @@ app.command("init-config")(init_config_command)
 # VALIDATION COMMANDS
 # ============================================================================
 
+app.command("validate")(validate_command)  # Bundle-based validation
 app.command("validate-csv")(validate_csv_cmd)
 app.command("validate-config")(validate_config_cmd)
 app.command("validate-all")(validate_all_cmd)

@@ -8,6 +8,7 @@ This extracts and wraps the core functionality from the original AgentLoader cla
 import inspect
 from typing import Any, Dict, List, Optional, Tuple, Type
 
+from agentmap.core.builtin_definition_constants import BuiltinDefinitionConstants
 from agentmap.services.agent_registry_service import AgentRegistryService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
@@ -544,46 +545,39 @@ class AgentFactoryService:
 
     def _is_llm_agent(self, agent_type: str) -> bool:
         """Check if an agent type requires LLM dependencies."""
-        llm_agent_types = {
-            "openai",
-            "anthropic",
-            "google",
-            "gpt",
-            "claude",
-            "gemini",
-            "llm",
-            "chat",
-            "conversation",
-            "text_generation",
-        }
-        return agent_type in llm_agent_types
+        # Use centralized constants for categorization
+        if BuiltinDefinitionConstants.is_llm_agent(agent_type):
+            return True
+        
+        # Also check additional generic LLM-related types not in builtin definitions
+        generic_llm_types = {"chat", "conversation", "text_generation"}
+        return agent_type in generic_llm_types
 
     def _is_storage_agent(self, agent_type: str) -> bool:
         """Check if an agent type requires storage dependencies."""
-        storage_agent_types = {
-            "csv_reader",
-            "csv_writer",
-            "json_reader",
-            "json_writer",
-            "file_reader",
-            "file_writer",
-            "vector_reader",
-            "vector_writer",
-            "storage",
-            "database",
-            "persist",
-        }
-        return agent_type in storage_agent_types
+        # Use centralized constants for categorization
+        if BuiltinDefinitionConstants.is_storage_agent(agent_type):
+            return True
+        
+        # Also check additional generic storage-related types not in builtin definitions
+        generic_storage_types = {"storage", "database", "persist"}
+        return agent_type in generic_storage_types
 
     def _check_llm_dependencies(self, agent_type: str) -> bool:
         """Check if LLM dependencies are available for the agent type."""
-        # For specific LLM providers, check that provider specifically
-        if agent_type in ("openai", "gpt"):
-            return self.features.is_provider_available("llm", "openai")
-        elif agent_type in ("anthropic", "claude"):
-            return self.features.is_provider_available("llm", "anthropic")
-        elif agent_type in ("google", "gemini"):
-            return self.features.is_provider_available("llm", "google")
+        # Get provider mapping from centralized constants
+        llm_agent_to_provider = BuiltinDefinitionConstants.get_llm_agent_to_provider()
+        
+        # Check if this is a known LLM agent type
+        if agent_type in llm_agent_to_provider:
+            provider = llm_agent_to_provider[agent_type]
+            if provider:
+                # Check specific provider
+                return self.features.is_provider_available("llm", provider)
+            else:
+                # Agent works with any provider (like base 'llm' agent)
+                available_providers = self.features.get_available_providers("llm")
+                return len(available_providers) > 0
         else:
             # For generic LLM agents, check if any LLM provider is available
             available_providers = self.features.get_available_providers("llm")
@@ -591,7 +585,15 @@ class AgentFactoryService:
 
     def _check_storage_dependencies(self, agent_type: str) -> bool:
         """Check if storage dependencies are available for the agent type."""
-        # For specific storage types, check those specifically
+        # Get storage type mapping from centralized constants
+        agent_to_storage = BuiltinDefinitionConstants.get_agent_to_storage_type()
+        
+        # Check if this is a known storage agent type
+        if agent_type in agent_to_storage:
+            storage_type = agent_to_storage[agent_type]
+            return self.features.is_provider_available("storage", storage_type)
+        
+        # For unknown types, check by name patterns
         if "csv" in agent_type:
             return self.features.is_provider_available("storage", "csv")
         elif "json" in agent_type:

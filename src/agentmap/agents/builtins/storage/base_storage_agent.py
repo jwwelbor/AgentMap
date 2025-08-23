@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import Any, Callable, Dict, Optional, TypeVar, cast
+from typing import Any, Callable, Dict, Optional, TypeVar, cast, Tuple
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.models.storage import DocumentResult
@@ -282,11 +282,14 @@ class BaseStorageAgent(BaseAgent, StorageCapableAgent):
         if not collection:
             raise ValueError("Missing required 'collection' parameter")
 
-        # Check if the file exists (for file-based storage)
-        import os
 
-        if not os.path.exists(collection):
-            raise FileNotFoundError(f"File not found: {collection}")
+        # Leave file existence validation to services        
+
+        # Check if the file exists (for file-based storage)
+        # import os
+
+        # if not os.path.exists(collection):
+        #     raise FileNotFoundError(f"File not found: {collection}")
 
     def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> Any:
         """
@@ -317,6 +320,22 @@ class BaseStorageAgent(BaseAgent, StorageCapableAgent):
         """
         # Base implementation - return result as-is
         return result
+
+    def _pre_process(
+        self, state: Any, inputs: Dict[str, Any]
+    ) -> Tuple[Any, Dict[str, Any]]:
+        """
+        Pre-processing hook that can be overridden by subclasses.
+
+        Args:
+            state: Current state
+            inputs: Extracted input values
+
+        Returns:
+            Tuple of (state, processed_inputs)
+        """
+        
+        return state, inputs
 
     def _handle_operation_error(
         self, error: Exception, collection: str, inputs: Dict[str, Any]

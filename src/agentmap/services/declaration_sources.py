@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict
 
+from agentmap.core.builtin_definition_constants import BuiltinDefinitionConstants
 from agentmap.models.declaration_models import AgentDeclaration, ServiceDeclaration
 from agentmap.services.declaration_parser import DeclarationParser
 from agentmap.services.logging_service import LoggingService
@@ -48,261 +49,51 @@ class PythonDeclarationSource(DeclarationSource):
     """
     Declaration source for built-in Python dictionary declarations.
 
-    Provides core agent and service declarations without external dependencies.
-    Uses hardcoded dictionaries for fast, reliable access to built-in components.
+    Delegates to BuiltinDefinitionConstants for the actual definitions,
+    maintaining backward compatibility while eliminating duplication.
     """
 
-    # Built-in agent declarations
-    BUILTIN_AGENTS = {
-        "echo": {
-            "class_path": "agentmap.agents.builtins.echo_agent.EchoAgent",
-            "requires": ["logging_service"],
-            "protocols_implemented": []  # EchoAgent doesn't implement any protocols
-        },
-        "default": {
-            "class_path": "agentmap.agents.builtins.default_agent.DefaultAgent",
-            "requires": ["logging_service"],
-            "protocols_implemented": []  # DefaultAgent doesn't implement any protocols
-        },
-        "success": {
-            "class_path": "agentmap.agents.builtins.success_agent.SuccessAgent",
-            "requires": ["logging_service"],
-            "protocols_implemented": []  # SuccessAgent doesn't implement any protocols
-        },
-        "failure": {
-            "class_path": "agentmap.agents.builtins.failure_agent.FailureAgent",
-            "requires": ["logging_service"],
-            "protocols_implemented": []  # FailureAgent doesn't implement any protocols
-        },
-        "input": {
-            "class_path": "agentmap.agents.builtins.input_agent.InputAgent",
-            "requires": ["logging_service"],
-            "protocols_implemented": []  # InputAgent doesn't implement any protocols
-        },
-        "human": {
-            "class_path": "agentmap.agents.builtins.human_agent.HumanAgent",
-            "requires": ["logging_service"],
-            "protocols_implemented": []  # HumanAgent doesn't implement any protocols
-        },
-        "branching": {
-            "class_path": "agentmap.agents.builtins.branching_agent.BranchingAgent",
-            "requires": ["logging_service"],
-            "protocols_implemented": []  # BranchingAgent doesn't implement any protocols
-        },
-        "orchestrator": {
-            "class_path": "agentmap.agents.builtins.orchestrator_agent.OrchestratorAgent",
-            "requires": ["logging_service", "orchestrator_service"],
-            "protocols_implemented": ["LLMCapableAgent", "OrchestrationCapableAgent"]
-        },
-        "graph": {
-            "class_path": "agentmap.agents.builtins.graph_agent.GraphAgent",
-            "requires": ["logging_service", "graph_runner_service"],
-            "protocols_implemented": []  # GraphAgent doesn't implement any protocols yet
-        },
-        "summary": {
-            "class_path": "agentmap.agents.builtins.summary_agent.SummaryAgent",
-            "requires": ["logging_service"],
-            "protocols_implemented": []  # SummaryAgent doesn't implement any protocols
-        },
-        
-        # LLM agents
-        "llm": {
-            "class_path": "agentmap.agents.builtins.llm.llm_agent.LLMAgent",
-            "requires": ["logging_service", "llm_service"],
-            "protocols_implemented": ["LLMCapableAgent", "PromptCapableAgent"]
-        },
-        "anthropic": {
-            "class_path": "agentmap.agents.anthropic.AnthropicAgent",
-            "requires": ["logging_service", "llm_service"],
-            "protocols_implemented": ["LLMCapableAgent"]
-        },
-        "openai": {
-            "class_path": "agentmap.agents.openai.OpenAIAgent",
-            "requires": ["logging_service", "llm_service"],
-            "protocols_implemented": ["LLMCapableAgent"]
-        },
-        "google": {
-            "class_path": "agentmap.agents.google.GoogleAgent",
-            "requires": ["logging_service", "llm_service"],
-            "protocols_implemented": ["LLMCapableAgent"]
-        },
-        
-        # Storage agents - updated with correct paths and protocols
-        "csv_reader": {
-            "class_path": "agentmap.agents.builtins.storage.csv.reader.CSVReaderAgent",
-            "requires": ["logging_service", "storage_service_manager", "csv_service"],
-            "protocols_implemented": ["CSVCapableAgent"]
-        },
-        "csv_writer": {
-            "class_path": "agentmap.agents.builtins.storage.csv.writer.CSVWriterAgent",
-            "requires": ["logging_service", "storage_service_manager", "csv_service"],
-            "protocols_implemented": ["CSVCapableAgent"]
-        },
-        "json_reader": {
-            "class_path": "agentmap.agents.builtins.storage.json.reader.JSONReaderAgent",
-            "requires": ["logging_service", "storage_service_manager", "json_service"],
-            "protocols_implemented": ["JSONCapableAgent"]
-        },
-        "json_writer": {
-            "class_path": "agentmap.agents.builtins.storage.json.writer.JSONWriterAgent",
-            "requires": ["logging_service", "storage_service_manager", "json_service"],
-            "protocols_implemented": ["JSONCapableAgent"]
+    # Legacy attributes for backward compatibility (delegate to BuiltinDefinitionConstants)
+    @property
+    def BUILTIN_AGENTS(self):
+        """Get agent definitions from centralized constants."""
+        # Transform to match old format (without category/provider metadata)
+        return {
+            agent_type: {
+                "class_path": agent_data["class_path"],
+                "requires": agent_data.get("requires", []),
+                "protocols_implemented": agent_data.get("protocols_implemented", [])
+            }
+            for agent_type, agent_data in BuiltinDefinitionConstants.AGENTS.items()
         }
-    }
-
-    CORE_SERVICES = {
-        "logging_service": {
-            "class_path": "agentmap.services.logging_service.LoggingService",
-            "singleton": True,
-            "implements": []
-        },
-        "config_service": {
-            "class_path": "agentmap.services.config.config_service.ConfigService",
-            "singleton": True,
-            "implements": []
-        },
-        "app_config_service": {
-            "class_path": "agentmap.services.config.app_config_service.AppConfigService",
-            "required_services": ["config_service", "logging_service"],
-            "singleton": True,
-            "implements": []
-        },
-        "storage_config_service": {
-            "class_path": "agentmap.services.config.storage_config_service.StorageConfigService",
-            "required_services": ["config_service", "logging_service"],
-            "singleton": True,
-            "implements": []
-        },
-        "execution_tracking_service": {
-            "class_path": "agentmap.services.execution_tracking_service.ExecutionTrackingService",
-            "required_services": ["logging_service"],
-            "singleton": True,
-            "implements": ["ExecutionTrackingServiceProtocol"]
-        },
-        # these would only be used internally
-        # "agent_registry_service": {
-        #     "class_path": "agentmap.services.agent_registry_service.AgentRegistryService",
-        #     "required_services": ["logging_service"],
-        #     "singleton": True,
-        #     "implements": []
-        # },
-        # "features_registry_service": {
-        #     "class_path": "agentmap.services.features_registry_service.FeaturesRegistryService",
-        #     "required_services": ["logging_service"],
-        #     "singleton": True,
-        #     "implements": ["FeaturesRegistryServiceProtocol"]
-        # },
-        # "agent_factory_service": {
-        #     "class_path": "agentmap.services.agent_factory_service.AgentFactoryService",
-        #     "required_services": ["agent_registry_service", "features_registry_service", "logging_service"],
-        #     "singleton": True,
-        #     "implements": []
-        # },
-        # "graph_factory_service": {
-        #     "class_path": "agentmap.services.graph_factory_service.GraphFactoryService",
-        #     "required_services": ["logging_service"],
-        #     "singleton": True,
-        #     "implements": ["GraphFactoryServiceProtocol"]
-        # },
-    }
-
-
-    # Built-in service declarations
-    BUILTIN_SERVICES = {
-        "llm_service": {
-            "class_path": "agentmap.services.llm_service.LLMService",
-            "required_services": ["logging_service", "app_config_service", "llm_routing_service"],
-            "optional": ["config_service"],
-            "singleton": True,
-            "implements": ["LLMServiceProtocol", "LLMCapableAgent"]
-        },
-        "llm_routing_service": {
-            "class_path": "agentmap.services.routing.routing_service.LLMRoutingService",
-            "required_services": ["logging_service", "llm_routing_config_service", "routing_cache", "prompt_complexity_analyzer"],
-            "optional": ["config_service"],
-            "singleton": True,
-            "implements": ["RoutingCapableAgent"]
-        },
-        "llm_routing_config_service": {
-            "class_path": "agentmap.services.config.llm_routing_config_service.LLMRoutingConfigService",
-            "required_services": ["app_config_service", "logging_service"],
-            "singleton": True,
-            "implements": []
-        },
-        "routing_cache": {
-            "class_path": "agentmap.services.routing.cache.RoutingCache",
-            "required_services": ["logging_service"],
-            "singleton": True,
-            "implements": ["RoutingCacheProtocol"]
-        },
-        "prompt_complexity_analyzer": {
-            "class_path": "agentmap.services.routing.complexity_analyzer.PromptComplexityAnalyzer",
-            "required_services": ["logging_service", "app_config_service"],
-            "singleton": True,
-            "implements": ["PromptComplexityAnalyzerProtocol"]
-        },
-        "orchestrator_service": {
-            "class_path": "agentmap.services.orchestrator_service.OrchestratorService",
-            "required_services": ["logging_service"],
-            "singleton": True,
-            "implements": ["OrchestrationCapableAgent"]
-        },
-        "node_registry"
-        "graph_checkpoint_service": {
-            "class_path": "agentmap.services.graph.graph_checkpoint_service.GraphCheckpointService",
-            "required_services": ["logging_service"],
-            "singleton": True,
-            "implements": ["CheckpointCapableAgent", "GraphCheckpointServiceProtocol"]
-        },
-        "storage_service_manager": {
-            "class_path": "agentmap.services.storage.manager.StorageServiceManager",
-            "required_services": ["logging_service", "storage_config_service"],
-            "singleton": True,
-            "implements": ["StorageCapableAgent"]
-        },
-        "memory_service": {
-            "class_path": "agentmap.services.memory_service.MemoryService",
-            "required_services": ["logging_service"],
-            "singleton": True,
-            "implements": ["MemoryCapableAgent"]
-        },
-        "prompt_manager_service": {
-            "class_path": "agentmap.services.prompt_manager_service.PromptManagerService",
-            "required_services": ["logging_service", "app_config_service"],
-            "singleton": True,
-            "implements": ["PromptCapableAgent", "PromptManagerServiceProtocol"]
-        },
-        "csv_service": {
-            "class_path": "agentmap.services.csv_service.CSVService",
-            "required_services": ["logging_service"],
-            "singleton": True,
-            "implements": ["CSVCapableAgent"]
-        },
-        "json_service": {
-            "class_path": "agentmap.services.json_service.JSONService",
-            "required_services": ["logging_service"],
-            "singleton": True,
-            "implements": ["JSONCapableAgent"]
-        },
-        "vector_service": {
-            "class_path": "agentmap.services.storage.vector_service.VectorService",
-            "required_services": ["logging_service"],
-            "singleton": True,
-            "implements": ["VectorCapableAgent"]
-        },
-        "file_service": {
-            "class_path": "agentmap.services.storage.file_service.FileService",
-            "required_services": ["logging_service"],
-            "singleton": True,
-            "implements": ["FileCapableAgent"]
-        },
-        "blob_storage_service": {
-            "class_path": "agentmap.services.storage.blob_storage_service.BlobStorageService",
-            "required_services": ["logging_service"],
-            "singleton": True,
-            "implements": ["BlobStorageCapableAgent", "BlobStorageServiceProtocol"]
-        },
-    }
+    
+    @property
+    def BUILTIN_SERVICES(self):
+        """Get service definitions from centralized constants."""
+        # Transform to match old format
+        return {
+            service_name: {
+                "class_path": service_data["class_path"],
+                "required_services": service_data.get("required_services", []),
+                "optional": service_data.get("optional", []),
+                "singleton": service_data.get("singleton", True),
+                "implements": service_data.get("implements", [])
+            }
+            for service_name, service_data in BuiltinDefinitionConstants.SERVICES.items()
+        }
+    
+    @property
+    def CORE_SERVICES(self):
+        """Get core service definitions for backward compatibility."""
+        core_service_names = [
+            "logging_service", "config_service", "app_config_service",
+            "storage_config_service", "execution_tracking_service"
+        ]
+        return {
+            name: self.BUILTIN_SERVICES[name]
+            for name in core_service_names
+            if name in self.BUILTIN_SERVICES
+        }
 
     def __init__(self, parser: DeclarationParser, logging_service: LoggingService):
         """Initialize with dependency injection."""
