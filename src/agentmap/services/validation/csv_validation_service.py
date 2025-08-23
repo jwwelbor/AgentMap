@@ -11,7 +11,7 @@ from agentmap.models.validation.csv_row_model import CSVRowModel
 from agentmap.models.validation.validation_models import (
     ValidationResult,
 )
-from agentmap.services.agent_registry_service import AgentRegistryService
+from agentmap.services.agent.agent_registry_service import AgentRegistryService
 from agentmap.services.function_resolution_service import FunctionResolutionService
 from agentmap.services.logging_service import LoggingService
 

@@ -18,11 +18,11 @@ from agentmap.core.cli.diagnostic_commands import (
 from agentmap.core.cli.run_command import run_command
 from agentmap.core.cli.scaffold_command import scaffold_command
 from agentmap.core.cli.validate_command import validate_command
-from agentmap.core.cli.validation_commands import (
-    validate_all_cmd,
-    validate_config_cmd,
-    validate_csv_cmd,
-)
+# from agentmap.core.cli.validation_commands import (
+#     validate_all_cmd,
+#     validate_config_cmd,
+#     validate_csv_cmd,
+# )
 
 
 # Version callback
@@ -80,17 +80,17 @@ app.command("init-config")(init_config_command)
 # ============================================================================
 
 app.command("validate")(validate_command)  # Bundle-based validation
-app.command("validate-csv")(validate_csv_cmd)
-app.command("validate-config")(validate_config_cmd)
-app.command("validate-all")(validate_all_cmd)
+# app.command("validate-csv")(validate_csv_cmd)
+# app.command("validate-config")(validate_config_cmd)
+# app.command("validate-all")(validate_all_cmd)
 
 # ============================================================================
 # CACHE AND DIAGNOSTIC COMMANDS
 # ============================================================================
 
-app.command("validate-cache")(validate_cache_cmd)
-app.command("diagnose")(diagnose_cmd)
-app.command("inspect-graph")(inspect_graph_cmd)
+# app.command("validate-cache")(validate_cache_cmd)
+# app.command("diagnose")(diagnose_cmd)
+# app.command("inspect-graph")(inspect_graph_cmd)
 
 
 def main_cli():

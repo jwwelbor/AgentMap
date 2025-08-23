@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 from agentmap.models.graph import Graph
-from agentmap.services.agent_registry_service import AgentRegistryService
+from agentmap.services.agent.agent_registry_service import AgentRegistryService
 from agentmap.services.graph_definition_service import GraphDefinitionService
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.function_resolution_service import FunctionResolutionService
@@ -66,7 +66,6 @@ class GraphOutputService:
         logging_service: LoggingService,
         function_resolution_service: FunctionResolutionService,
         agent_registry_service: AgentRegistryService,
-        graph_definition_service: GraphDefinitionService,
     ):
         """Initialize output service with dependency injection."""
         self.compiled_graphs_path = app_config_service.get_compiled_graphs_path()
@@ -76,8 +75,6 @@ class GraphOutputService:
         self.logger = logging_service.get_class_logger(self)
         self.function_resolution = function_resolution_service
         self.agent_registry = agent_registry_service
-        self.graph_definition = graph_definition_service
-
         self.logger.info("[GraphOutputService] Initialized")
 
     def export_graph(
@@ -332,17 +329,21 @@ class GraphOutputService:
 
         try:
 
-            # Get the Graph domain model through GraphDefinitionService
-            graph_domain_model = (
-                self.graph_definition.build_from_csv(
-                    self.csv_path, graph_name
-                )
-            )
+            #get the graph definition from the graph bundle
 
-            # Convert Graph domain model to old format for compatibility
-            graph_def = self._convert_graph_to_old_format(graph_domain_model)
+            return None
 
-            return graph_def
+            # # Get the Graph domain model through GraphDefinitionService
+            # graph_domain_model = (
+            #     self.graph_definition.build_from_csv(
+            #         self.csv_path, graph_name
+            #     )
+            # )
+
+            # # Convert Graph domain model to old format for compatibility
+            # graph_def = self._convert_graph_to_old_format(graph_domain_model)
+
+            # return graph_def
 
         except Exception as e:
             self.logger.error(

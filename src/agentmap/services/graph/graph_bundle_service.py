@@ -15,8 +15,8 @@ from agentmap.models.node import Node
 from agentmap.models.graph_spec import GraphSpec, NodeSpec
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.protocol_requirements_analyzer import ProtocolBasedRequirementsAnalyzer
-from agentmap.services.di_container_analyzer import DIContainerAnalyzer
-from agentmap.services.agent_factory_service import AgentFactoryService
+# from agentmap.services.di_container_analyzer import DIContainerAnalyzer
+from agentmap.services.agent.agent_factory_service import AgentFactoryService
 from agentmap.services.csv_graph_parser_service import CSVGraphParserService
 from agentmap.services.static_bundle_analyzer import StaticBundleAnalyzer
 from agentmap.services.storage.types import WriteMode

@@ -11,7 +11,7 @@ import unittest
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, Mock, patch
 
-from agentmap.services.agent_service_injection_service import AgentServiceInjectionService
+from agentmap.services.agent.agent_service_injection_service import AgentServiceInjectionService
 from agentmap.services.protocols import (
     BlobStorageCapableAgent,
     CheckpointCapableAgent,

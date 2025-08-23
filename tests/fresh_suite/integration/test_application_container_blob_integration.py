@@ -22,7 +22,7 @@ from agentmap.di import initialize_di
 from agentmap.services.storage.blob_storage_service import BlobStorageService
 from agentmap.services.storage.manager import StorageServiceManager
 from agentmap.services.application_bootstrap_service import ApplicationBootstrapService
-from agentmap.services.agent_factory_service import AgentFactoryService
+from agentmap.services.agent.agent_factory_service import AgentFactoryService
 from agentmap.agents.builtins.storage.blob.blob_reader_agent import BlobReaderAgent
 from agentmap.agents.builtins.storage.blob.blob_writer_agent import BlobWriterAgent
 from tests.fresh_suite.unit.services.storage.blob_storage_test_fixtures import (

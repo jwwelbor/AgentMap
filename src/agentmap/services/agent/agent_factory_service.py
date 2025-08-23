@@ -9,7 +9,7 @@ import inspect
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 from agentmap.core.builtin_definition_constants import BuiltinDefinitionConstants
-from agentmap.services.agent_registry_service import AgentRegistryService
+from agentmap.services.agent.agent_registry_service import AgentRegistryService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
 

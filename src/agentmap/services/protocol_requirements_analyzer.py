@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Set, Type
 
 from agentmap.services.csv_graph_parser_service import CSVGraphParserService
-from agentmap.services.agent_factory_service import AgentFactoryService
+from agentmap.services.agent.agent_factory_service import AgentFactoryService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.protocols import (
     LLMCapableAgent,

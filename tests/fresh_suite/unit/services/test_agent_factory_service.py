@@ -8,7 +8,7 @@ and follow the established MockServiceFactory patterns for consistent testing.
 import unittest
 from unittest.mock import Mock
 from typing import Type, Dict, Any
-from agentmap.services.agent_factory_service import AgentFactoryService
+from agentmap.services.agent.agent_factory_service import AgentFactoryService
 from tests.utils.migration_utils import MockLoggingService
 from tests.utils.mock_service_factory import MockServiceFactory
 

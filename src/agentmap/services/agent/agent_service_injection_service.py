@@ -1,12 +1,3 @@
-"""
-Agent Service Injection Service for AgentMap.
-
-Centralizes agent service injection logic to fix critical service injection failure 
-in compiled graphs. Extracts service injection patterns from GraphRunnerService 
-into a dedicated service that can be used by both runtime and compiled graph 
-execution paths.
-"""
-
 from typing import Any, Optional
 
 from agentmap.services.host_protocol_configuration_service import (
@@ -35,13 +26,7 @@ from agentmap.services.storage.manager import StorageServiceManager
 class AgentServiceInjectionService:
     """
     Service responsible for injecting core services into agent instances.
-    
-    This service centralizes the agent service injection logic that was previously
-    scattered across GraphRunnerService, enabling consistent service injection
-    for both runtime and compiled graph execution paths.
-    
-    Fixes the critical issue where compiled graphs load pre-existing agent instances
-    without service injection, causing "LLM service not configured" errors.
+
     """
 
     def __init__(

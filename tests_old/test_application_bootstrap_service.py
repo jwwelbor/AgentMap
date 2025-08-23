@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import Protocol
 
 from agentmap.services.application_bootstrap_service import ApplicationBootstrapService
-from agentmap.services.agent_registry_service import AgentRegistryService
+from agentmap.services.agent.agent_registry_service import AgentRegistryService
 from agentmap.services.features_registry_service import FeaturesRegistryService
-from agentmap.services.dependency_checker_service import DependencyCheckerService
+# from agentmap.services.dependency_checker_service import DependencyCheckerService
 from agentmap.services.host_service_registry import HostServiceRegistry
 from tests.utils.mock_service_factory import MockServiceFactory
 
@@ -43,7 +43,7 @@ class TestApplicationBootstrapService(unittest.TestCase):
         # Create mock services for all dependencies
         self.mock_agent_registry_service = Mock(spec=AgentRegistryService)
         self.mock_features_registry_service = Mock(spec=FeaturesRegistryService)
-        self.mock_dependency_checker_service = Mock(spec=DependencyCheckerService)
+        # self.mock_dependency_checker_service = Mock(spec=DependencyCheckerService)
         self.mock_host_service_registry = Mock(spec=HostServiceRegistry)
         
         # Create service instance with mocked dependencies

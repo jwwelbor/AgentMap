@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 from unittest.mock import Mock, MagicMock, patch
 
 try:
-    from agentmap.services.agent_service_injection_service import AgentServiceInjectionService
+    from agentmap.services.agent.agent_service_injection_service import AgentServiceInjectionService
     from agentmap.services.protocols import (
         LLMCapableAgent,
         StorageCapableAgent,

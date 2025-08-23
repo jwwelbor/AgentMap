@@ -10,8 +10,8 @@ injected services.
 from typing import Any, Dict, Optional
 
 from agentmap.models.graph_bundle import GraphBundle
-from agentmap.services.agent_factory_service import AgentFactoryService
-from agentmap.services.agent_service_injection_service import AgentServiceInjectionService
+from agentmap.services.agent.agent_factory_service import AgentFactoryService
+from agentmap.services.agent.agent_service_injection_service import AgentServiceInjectionService
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.prompt_manager_service import PromptManagerService

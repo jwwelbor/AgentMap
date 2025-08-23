@@ -22,9 +22,9 @@ from agentmap.models.scaffold_types import (
     ServiceRequirements,
 )
 
-from .agent_bootstrap_service import AgentBootstrapService
-from .agent_factory_service import AgentFactoryService
-from .agent_registry_service import AgentRegistryService
+# from agentmap.services.agent.agent_bootstrap_service import AgentBootstrapService
+from .agent.agent_factory_service import AgentFactoryService
+from .agent.agent_registry_service import AgentRegistryService
 
 # Application Services
 from .application_bootstrap_service import ApplicationBootstrapService
@@ -33,7 +33,7 @@ from .application_bootstrap_service import ApplicationBootstrapService
 # Configuration Services
 from .config import AppConfigService, ConfigService, StorageConfigService
 from .config.llm_routing_config_service import LLMRoutingConfigService
-from .dependency_checker_service import DependencyCheckerService
+# from .dependency_checker_service import DependencyCheckerService
 from .execution_policy_service import ExecutionPolicyService
 from .execution_tracking_service import ExecutionTracker, ExecutionTrackingService
 

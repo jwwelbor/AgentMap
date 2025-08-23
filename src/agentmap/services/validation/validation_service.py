@@ -32,7 +32,7 @@ class ValidationService:
             # Create minimal services for CSV validation
             functions_path = config_service.get_functions_path()
             from agentmap.models.agent_registry import AgentRegistry
-            from agentmap.services.agent_registry_service import (
+            from agentmap.services.agent.agent_registry_service import (
                 AgentRegistryService,
             )
             from agentmap.services.function_resolution_service import (

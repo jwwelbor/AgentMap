@@ -18,7 +18,7 @@ from agentmap.models.scaffold_types import (
     ServiceAttribute,
     ServiceRequirements,
 )
-from agentmap.services.agent_registry_service import AgentRegistryService
+from agentmap.services.agent.agent_registry_service import AgentRegistryService
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.function_resolution_service import FunctionResolutionService
 from agentmap.services.indented_template_composer import IndentedTemplateComposer

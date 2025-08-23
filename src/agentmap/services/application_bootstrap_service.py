@@ -9,11 +9,11 @@ different bootstrap methods for various CLI commands.
 from typing import Optional, Set, Dict
 
 from agentmap.services.config.agent_config_service import AgentConfigService
-from agentmap.services.dependency_checker_service import DependencyCheckerService
+# from agentmap.services.dependency_checker_service import DependencyCheckerService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.host_service_registry import HostServiceRegistry
-from agentmap.services.agent_registry_service import AgentRegistryService
+from agentmap.services.agent.agent_registry_service import AgentRegistryService
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.graph.graph_bundle_service import GraphBundleService
 from agentmap.services.declaration_registry_service import DeclarationRegistryService
@@ -26,7 +26,7 @@ class ApplicationBootstrapService:
     def __init__(self,
                  agent_registry_service: AgentRegistryService,  # AgentRegistryService
                  features_registry_service: FeaturesRegistryService,  # FeaturesRegistryService
-                 dependency_checker_service: DependencyCheckerService,  # DependencyCheckerService
+                #  dependency_checker_service: DependencyCheckerService,  # DependencyCheckerService
                  app_config_service: AppConfigService,  # AppConfigService
                  logging_service: LoggingService,  # LoggingService
                  declaration_registry_service: DeclarationRegistryServiceProtocol,  # DeclarationRegistryService
@@ -45,7 +45,7 @@ class ApplicationBootstrapService:
         """
         self.agent_registry = agent_registry_service
         self.features_registry = features_registry_service
-        self.dependency_checker = dependency_checker_service
+        # self.dependency_checker = dependency_checker_service
         self.app_config = app_config_service
         self.declaration_registry = declaration_registry_service
         self.host_service_registry = host_service_registry

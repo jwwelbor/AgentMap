@@ -183,11 +183,11 @@ class ApplicationContainer(containers.DeclarativeContainer):
         _create_and_initialize_logging_service, app_config_service
     )
 
-    container_factory = providers.Singleton(
-        "agentmap.services.container_factory.ContainerFactory",
-        app_config_service,
-        logging_service,
-    )
+    # container_factory = providers.Singleton(
+    #     "agentmap.services.container_factory.ContainerFactory",
+    #     app_config_service,
+    #     logging_service,
+    # )
 
     # LLM Routing Config Service with unified cache integration
     @staticmethod
@@ -264,28 +264,28 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
-    # Dependency Checker Service with unified cache integration
-    @staticmethod
-    def _create_dependency_checker_service(
-        logging_service, features_registry_service, availability_cache_service
-    ):
-        """
-        Create dependency checker service with unified cache integration.
+    # # Dependency Checker Service with unified cache integration
+    # @staticmethod
+    # def _create_dependency_checker_service(
+    #     logging_service, features_registry_service, availability_cache_service
+    # ):
+    #     """
+    #     Create dependency checker service with unified cache integration.
 
-        Args:
-            logging_service: Logging service
-            features_registry_service: Features registry service
-            availability_cache_service: Unified availability cache service
-        """
-        from agentmap.services.dependency_checker_service import (
-            DependencyCheckerService,
-        )
+    #     Args:
+    #         logging_service: Logging service
+    #         features_registry_service: Features registry service
+    #         availability_cache_service: Unified availability cache service
+    #     """
+    #     from agentmap.services.dependency_checker_service import (
+    #         DependencyCheckerService,
+    #     )
 
-        service = DependencyCheckerService(
-            logging_service, features_registry_service, availability_cache_service
-        )
+    #     service = DependencyCheckerService(
+    #         logging_service, features_registry_service, availability_cache_service
+    #     )
 
-        return service
+    #     return service
 
     # Blob Storage Service for cloud blob operations
     @staticmethod
@@ -593,7 +593,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # Agent registry service (operates on global agent model)
     agent_registry_service = providers.Singleton(
-        "agentmap.services.agent_registry_service.AgentRegistryService",
+        "agentmap.services.agent.agent_registry_service.AgentRegistryService",
         agent_registry_model,
         logging_service,
     )
@@ -631,15 +631,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         graph_factory_service,
     )
 
-    # Graph Definition Service (renamed from GraphBuilderService) for graph building with CSV parsing delegation
-    graph_definition_service = providers.Singleton(
-        "agentmap.services.graph_definition_service.GraphDefinitionService",
-        logging_service,  # 1st: logging_service (correct order)
-        app_config_service,  # 2nd: app_config_service
-        csv_graph_parser_service,  # 3rd: csv_parser
-        graph_factory_service,  # 4th: graph_factory
-    )
-
     # OrchestratorService for node selection and orchestration business logic
     orchestrator_service = providers.Singleton(
         "agentmap.services.orchestrator_service.OrchestratorService",
@@ -669,7 +660,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # Agent factory service (coordinates between registry and features)
     agent_factory_service = providers.Singleton(
-        "agentmap.services.agent_factory_service.AgentFactoryService",
+        "agentmap.services.agent.agent_factory_service.AgentFactoryService",
         agent_registry_service,
         features_registry_service,
         logging_service,
@@ -714,16 +705,15 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
         function_resolution_service,
         agent_registry_service,
-        graph_definition_service,
     )
 
     # Dependency checker service (with unified cache integration)
-    dependency_checker_service = providers.Singleton(
-        _create_dependency_checker_service,
-        logging_service,
-        features_registry_service,
-        availability_cache_service,
-    )
+    # dependency_checker_service = providers.Singleton(
+    #     _create_dependency_checker_service,
+    #     logging_service,
+    #     features_registry_service,
+    #     availability_cache_service,
+    # )
 
     # Host Protocol Configuration Service for configuring protocols on agents
     host_protocol_configuration_service = providers.Singleton(
@@ -740,7 +730,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # Agent Service Injection Service for centralized agent service injection
     agent_service_injection_service = providers.Singleton(
-        "agentmap.services.agent_service_injection_service.AgentServiceInjectionService",
+        "agentmap.services.agent.agent_service_injection_service.AgentServiceInjectionService",
         llm_service,
         storage_service_manager,
         logging_service,
@@ -756,7 +746,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         "agentmap.services.application_bootstrap_service.ApplicationBootstrapService",
         agent_registry_service,
         features_registry_service,
-        dependency_checker_service,
+        # dependency_checker_service,
         app_config_service,
         logging_service,
         declaration_registry_service,  # Add declaration registry service
@@ -768,7 +758,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         "agentmap.services.graph.graph_bootstrap_service.GraphBootstrapService",
         agent_registry_service,
         features_registry_service,
-        dependency_checker_service,
+        # dependency_checker_service,
         app_config_service,
         logging_service,
     )
