@@ -38,7 +38,10 @@ class PromptManagerService:
         # Get prompts configuration using specific getter method
         prompts_config = self.config.get_prompts_config()
         self.prompts_config = prompts_config
-        self.prompts_dir = Path(prompts_config.get("directory", "prompts"))
+        # TODO: move this to ConfigPathService
+        self.prompts_dir = Path(
+            prompts_config.get("directory", "agentmap_data/prompts")
+        )
         self.registry_path = Path(
             prompts_config.get("registry_file", "prompts/registry.yaml")
         )

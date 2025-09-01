@@ -18,14 +18,16 @@ def init_config_command(
     """Copy default configuration files to current directory."""
 
     # Get template directory
-    template_dir = Path(__file__).parent.parent.parent / "templates" / "config"
+    template_dir = Path(__file__).parent.parent.parent / "templates"
     current_dir = Path.cwd()
 
     # Files to copy (template_name -> target_name)
     files_to_copy = {
-        "agentmap_config.yaml.template": "agentmap_config.yaml",
-        "agentmap_config_storage.yaml.template": "agentmap_config_storage.yaml",
-        "agentmap_prompt_registry.yaml.template": "agentmap_prompt_registry.yaml",
+        "config/agentmap_config.yaml.template": "agentmap_config.yaml",
+        "config/agentmap_config_storage.yaml.template": "agentmap_config_storage.yaml",
+        # Skipping prompt registry for now
+        #  "config/agentmap_prompt_registry.yaml.template": "agentmap_prompt_registry.yaml",
+        "csv/hello_world.csv": "hello_world.csv",
     }
 
     # Check for existing files

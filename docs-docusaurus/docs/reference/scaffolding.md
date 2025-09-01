@@ -653,24 +653,3 @@ class TestScaffolding(unittest.TestCase):
         self.assertEqual(len(result.created_files), 1)
         self.assertEqual(result.service_stats["with_services"], 1)
 ```
-
-## Related Documentation
-
-### 🚀 **Getting Started**
-- **[Development Workflow](/docs/getting-started#development-workflow-with-scaffolding)**: Scaffolding in the development cycle
-- **[Scaffolding Guide](/docs/guides/development/scaffolding)**: Complete user guide with examples
-
-### 🛠️ **Development Guides**
-- **[Agent Development](/docs/guides/development/agents/)**: Building custom agents with scaffolding
-- **[Service Integration](/docs/guides/development/service-integration)**: Service integration patterns
-- **[Best Practices](/docs/guides/development/best-practices)**: Code organization and patterns
-
-### 📖 **Reference Documentation**
-- **[CLI Commands](/docs/deployment/cli-commands#scaffolding-commands)**: Command-line scaffolding usage
-- **[CSV Schema](/docs/reference/csv-schema#service-configuration-for-scaffolding)**: Context field service configuration
-- **[Service Catalog](/docs/reference/service-catalog)**: Available service types
-
-### 🔧 **Advanced Topics**
-- **[Template System](/docs/templates)**: Template development and customization
-- **[Service Protocols](/docs/reference/services/)**: Service interface specifications
-- **[Testing Patterns](/docs/guides/development/testing)**: Testing scaffolded agents

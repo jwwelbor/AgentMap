@@ -223,7 +223,7 @@ class GraphDefinitionService:
                 )
 
                 # Use default agent type if not specified
-                agent_type = node_spec.agent_type or "Default"
+                agent_type = node_spec.agent_type or "default"
 
                 nodes_dict[node_spec.name] = Node(
                     name=node_spec.name,

@@ -25,7 +25,7 @@ class BuiltinDefinitionConstants:
             "class_path": "agentmap.agents.builtins.echo_agent.EchoAgent",
             "category": "core",
             "requires": ["logging_service"],
-            "protocols_implemented": [],
+            "protocols_implemented": ["PromptCapableAgent"],
             "source": "builtin",
         },
         "default": {

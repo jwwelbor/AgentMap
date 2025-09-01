@@ -1,0 +1,4 @@
+graph_name,node_name,agent_type,next_node,on_failure,prompt,input_fields,output_field
+HelloWorld,Start,input,PrintResult,HandleError,"Hello world! What is your name? ",,name
+HelloWorld,PrintResult,echo,,,"Hello {name}. Welcome to AgentMap!",name,result
+HelloWorld,HandleError,echo,,,Error occurred

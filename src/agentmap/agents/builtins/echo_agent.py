@@ -7,10 +7,12 @@ from typing import Any, Dict, Optional
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
+from agentmap.services.prompt_manager_service import PromptManagerService
+from agentmap.services.protocols import PromptCapableAgent
 from agentmap.services.state_adapter_service import StateAdapterService
 
 
-class EchoAgent(BaseAgent):
+class EchoAgent(BaseAgent, PromptCapableAgent):
     """
     Echo agent that simply returns input data unchanged.
 
@@ -51,6 +53,9 @@ class EchoAgent(BaseAgent):
             state_adapter_service=state_adapter_service,
         )
 
+    def configure_prompt_service(self, prompt_service):
+        self.prompt_service: PromptManagerService = prompt_service
+
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
         Echo back the input data unchanged.
@@ -61,9 +66,15 @@ class EchoAgent(BaseAgent):
         Returns:
             The input data unchanged
         """
-        self.log_info(f"received inputs: {inputs} and prompt: '{self.prompt}'")
+        if (
+            self.prompt and self.prompt.find("{") != -1
+        ):  # if there's a prompt with mustache
+            result = self.prompt_service.format_prompt(self.prompt, inputs)
+            self.log_info(result)
+            return result
 
-        # If there are inputs, return the first input value
+        # If there are inputs, return them
+        self.log_info(f"received inputs: {inputs} and prompt: '{self.prompt}'")
         if inputs:
             # For multiple inputs, return all as a dictionary to maintain structure
             if len(inputs) > 1:
@@ -93,8 +104,8 @@ class EchoAgent(BaseAgent):
                 "structure_maintenance": True,
             },
             "agent_behavior": {
-                "execution_type": "echo_passthrough",
-                "output_format": "unchanged_input_data",
+                "execution_type": "echo_passthrough or populate prompt with input data",
+                "output_format": "unchanged_input_data or formatted prompt",
                 "data_transformation": "none",
             },
         }

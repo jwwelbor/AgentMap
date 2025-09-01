@@ -468,7 +468,7 @@ class CSVGraphParserService:
                     break
 
         if rename_map:
-            self.logger.info(
+            self.logger.trace(
                 f"[CSVGraphParserService] Normalizing column names: {rename_map}"
             )
             df = df.rename(columns=rename_map)
@@ -502,7 +502,7 @@ class CSVGraphParserService:
                 )
 
                 # Use default agent type if not specified
-                agent_type = node_spec.agent_type or "Default"
+                agent_type = node_spec.agent_type or "default"
 
                 node = Node(
                     name=node_spec.name,

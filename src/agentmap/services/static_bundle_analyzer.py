@@ -233,7 +233,8 @@ class StaticBundleAnalyzer:
 
         for node in nodes:
             if node.agent_type:
-                agent_types.add(node.agent_type)
+                # Normalize to lowercase for case-insensitive matching
+                agent_types.add(node.agent_type.lower())
 
         # Default to 'default' agent type if no agent type specified
         if not agent_types:

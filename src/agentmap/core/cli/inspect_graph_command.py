@@ -85,12 +85,12 @@ def inspect_graph_cmd(
             node_def = graph_def[node_name]
 
             typer.echo(f"\n🤖 Node: {node_name}")
-            typer.echo(f"   Agent Type: {node_def.agent_type or 'Default'}")
+            typer.echo(f"   Agent Type: {node_def.agent_type or 'default'}")
             typer.echo(f"   Description: {node_def.description or 'No description'}")
 
             if show_resolution:
                 # Show agent resolution details
-                agent_type = node_def.agent_type or "Default"
+                agent_type = node_def.agent_type or "default"
                 if agent_type in agent_status["agent_types"]:
                     type_info = agent_status["agent_types"][agent_type]["info"]
                     typer.echo(f"   🔧 Resolution:")
@@ -158,7 +158,7 @@ def inspect_graph_cmd(
                     f"   ❌ Failed to create agent: {str(e)}", fg=typer.colors.RED
                 )
                 # Show what we can from the agent status
-                agent_type = node_def.agent_type or "Default"
+                agent_type = node_def.agent_type or "default"
                 if agent_type in agent_status["agent_types"]:
                     type_info = agent_status["agent_types"][agent_type]["info"]
                     if not type_info["resolvable"]:

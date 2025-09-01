@@ -922,7 +922,7 @@ class GraphBundleService:
 
         bundle_path = self.file_path_service.get_bundle_path(
             csv_hash=csv_hash,
-            graph_name=graph_name,
+            graph_name=bundle.graph_name,
         )
 
         save_result: StorageResult = self.save_bundle(bundle, bundle_path)
@@ -933,7 +933,7 @@ class GraphBundleService:
             # Register with composite key for future lookups
             self.graph_registry_service.register(
                 csv_hash,
-                bundle.graph_name,  # Use actual graph name from bundle
+                bundle.graph_name,
                 bundle_path,
                 csv_path,
                 len(bundle.nodes) if bundle.nodes else 0,

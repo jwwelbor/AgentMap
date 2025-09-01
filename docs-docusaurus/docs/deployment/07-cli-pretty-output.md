@@ -29,7 +29,7 @@ agentmap run --graph gm_orchestration --pretty --verbose
 
 ## Example Output
 
-### Without --pretty (current behavior):
+### Without --pretty (default behavior):
 ```
 ✅ Graph execution completed successfully
 ✅ Output: {'input': 'end', '__next_node': 'EndNode', 'orchestrator_result': 'EndNode', 'exploration_result': {'processed': True, 'agent_type': 'exploration_router', 'node': 'EnvironmentInteraction', 'timestamp': 'placeholder'}, 'combat_result': {'processed': True, 'agent_type': 'combat_router', 'node': 'CombatTurn', 'timestamp': 'placeholder'}, '__execution_summary': ExecutionSummary(...), '__policy_success': True}

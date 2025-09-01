@@ -1,5 +1,5 @@
 # Core configuration
-csv_path: "examples/SingleNodeGraph.csv"
+csv_path: "agentmap/workflows/hello_world.csv"
 autocompile: true
 storage_config_path: "agentmap_config_storage.yaml"
 
@@ -7,8 +7,7 @@ storage_config_path: "agentmap_config_storage.yaml"
 paths:
   custom_agents: "agentmap/custom_agents"
   functions: "agentmap/custom_functions"
-  compiled_graphs: "agentmap/compiled_graphs"
-  csv_repository: "workflows"  # Directory for storing workflow CSV files
+  csv_repository: "agentmap/workflows"  # Directory for storing workflow CSV files
 
 # Memory configuration
 memory:
@@ -18,19 +17,14 @@ memory:
   max_token_limit: 2000
   memory_key: "conversation_memory"
 
-# Prompts configuration
-prompts:
-  directory: "prompts"
-  #registry_file: "prompts/registry.yaml"
-  enable_cache: false
-
+# Execution tracking configuration
 execution:
   # What to record during execution
   tracking:
     enabled: true
     track_outputs: true
     track_inputs: true
-  
+
   # How to determine success
   success_policy:
     type: "all_nodes"
@@ -42,7 +36,7 @@ tracing:
   enabled: false
   mode: "local"
   local_exporter: "file"
-  local_directory: "./traces"
+  local_directory: "agentmap/traces"
   project: "your_project_name"  # Replace with your project name`
   langsmith_api_key: ""
   trace_all: true
@@ -72,95 +66,40 @@ logging:
 llm:
   openai:
     api_key: ""  # Or use env: OPENAI_API_KEY
-    model: "gpt-4o-mini"  # Updated to current model
+    model: "gpt-4o-mini"
     temperature: 0.7
   anthropic:
     api_key: ""  # Or use env: ANTHROPIC_API_KEY
-    model: "claude-3-5-sonnet-20241022"  # Updated to current model
+    model: "claude-3-5-sonnet-20241022"
     temperature: 0.7
   google:
     api_key: ""  # Or use env: GOOGLE_API_KEY
-    model: "gemini-1.5-flash"  # Updated to current model
+    model: "gemini-1.5-flash"
     temperature: 0.7
 
 routing:
   enabled: true
-  
+
   # Provider × Complexity Matrix
   # This is the core routing table that maps (provider, complexity) → model
   routing_matrix:
     anthropic:
-      low: "claude-3-5-haiku-20241022"  # Updated to current model
-      medium: "claude-3-5-sonnet-20241022"  # Updated to current model
-      high: "claude-sonnet-4-20250514"  # Updated to Claude 4
-      critical: "claude-opus-4-20250514"  # Updated to Claude 4
-    
+      low: "claude-3-5-haiku-20241022"
+      medium: "claude-3-5-sonnet-20241022"
+      high: "claude-sonnet-4-20250514"
+      critical: "claude-opus-4-20250514"
+
     openai:
-      low: "gpt-4o-mini"  # Updated to current model
-      medium: "gpt-4o"  # Updated to current model
-      high: "gpt-4o"  # Updated to current model
-      critical: "gpt-4o"  # Updated to current model
-    
+      low: "gpt-4o-mini-2024-07-18"
+      medium: "gpt-4o-2024-11-20"
+      high: "gpt-4o-2024-11-20"
+      critical: "o3-mini-2025-01-31"
+
     google:
-      low: "gemini-1.5-flash"  # Updated to current model
-      medium: "gemini-1.5-pro"  # Updated to current model
-      high: "gemini-1.5-pro"  # Updated to current model
-      critical: "gemini-1.5-pro"  # Updated to current model
-  
-  # Application-Specific Task Types
-  # These define the business logic for your specific application
-  task_types:
-    # General purpose (default)
-    general:
-      description: "General purpose tasks"
-      provider_preference: ["anthropic", "openai", "google"]
-      default_complexity: "medium"
-      complexity_keywords:
-        high: ["analyze", "complex", "detailed", "comprehensive"]
-        critical: ["urgent", "critical", "important", "decision"]
-    
-    # Creative content generation
-    creative_writing:
-      description: "Creative content generation and storytelling"
-      provider_preference: ["anthropic", "openai"]  # Anthropic preferred for creativity
-      default_complexity: "high"
-      complexity_keywords:
-        medium: ["write", "create", "story"]
-        high: ["creative", "narrative", "imaginative", "artistic"]
-        critical: ["masterpiece", "publication", "professional"]
-    
-    # Technical analysis and coding
-    code_analysis:
-      description: "Code review, analysis, and technical documentation"
-      provider_preference: ["openai", "anthropic"]  # OpenAI preferred for code
-      default_complexity: "medium"
-      complexity_keywords:
-        low: ["simple", "basic", "review"]
-        medium: ["analyze", "refactor", "optimize"]
-        high: ["architecture", "design", "complex algorithm"]
-        critical: ["security", "production", "critical bug"]
-    
-    # Customer service and dialogue
-    customer_service:
-      description: "Customer service interactions and support"
-      provider_preference: ["anthropic", "openai"]
-      default_complexity: "medium"
-      complexity_keywords:
-        low: ["greeting", "simple question", "faq"]
-        medium: ["support", "help", "issue"]
-        high: ["complaint", "escalation", "complex problem"]
-        critical: ["urgent", "emergency", "executive"]
-    
-    # Data analysis and insights
-    data_analysis:
-      description: "Data processing, analysis, and insights"
-      provider_preference: ["openai", "google", "anthropic"]
-      default_complexity: "medium"
-      complexity_keywords:
-        low: ["simple", "summary", "basic stats"]
-        medium: ["analyze", "trends", "patterns"]
-        high: ["deep analysis", "insights", "correlations"]
-        critical: ["predictive", "strategic", "business critical"]
+      low: "gemini-1.5-flash"
+      medium: "gemini-1.5-pro"
+      high: "gemini-1.5-pro"
+      critical: "gemini-1.5-pro"
 
   # Complexity Analysis Configuration
   complexity_analysis:
@@ -170,42 +109,42 @@ routing:
       medium: 300   # 100-300 chars = medium complexity
       high: 800     # 300-800 chars = high complexity
       # > 800 chars = critical complexity
-    
+
     # Enable different analysis methods
     methods:
       prompt_length: true
       keyword_analysis: true
       context_analysis: true
       memory_analysis: true
-    
+
     # Keyword weighting (how much each type of keyword affects complexity)
     keyword_weights:
       complexity_keywords: 0.4
       task_specific_keywords: 0.3
       prompt_structure: 0.3
-    
+
     # Context analysis settings
     context_analysis:
       memory_size_threshold: 10  # Messages in memory that indicate complexity
       input_field_count_threshold: 5  # Number of input fields
-      
+
   # Cost Optimization Settings
   cost_optimization:
     enabled: true
     # Prefer cheaper models when complexity allows
     prefer_cost_effective: true
     # Maximum cost tier (low, medium, high, critical)
-    max_cost_tier: "high"
-    
+    max_cost_tier: "medium"
+
   # Fallback Configuration
   fallback:
     # Default provider when preferences unavailable
     default_provider: "anthropic"
     # Default model when routing fails
-    default_model: "claude-3-5-haiku-20241022"  # Updated to current model
+    default_model: "claude-3-5-haiku-20241022"
     # Retry with lower complexity if model unavailable
     retry_with_lower_complexity: true
-    
+
   # Performance Settings
   performance:
     # Cache routing decisions for identical inputs
