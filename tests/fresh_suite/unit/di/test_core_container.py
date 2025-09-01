@@ -14,11 +14,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from agentmap.di import (
-    initialize_di, 
-    initialize_application, 
+    initialize_di,
     initialize_di_for_testing,
-    get_service_status,
-    bootstrap_agents
+    get_service_status
 )
 from agentmap.di.containers import ApplicationContainer
 from tests.utils.enhanced_service_auditor import EnhancedServiceInterfaceAuditor
@@ -168,17 +166,21 @@ kv:
         with self.assertRaises(FileNotFoundError):
             initialize_di(nonexistent_path)
     
-    def test_initialize_application_includes_agent_bootstrap(self):
-        """Test that initialize_application() includes agent bootstrap."""
-        # Act - This should complete without errors even if bootstrap fails gracefully
-        container = initialize_application(str(self.test_config_path))
+    def test_initialize_di_includes_proper_services(self):
+        """Test that initialize_di() creates container with expected services."""
+        # Act - Use current DI initialization method
+        container = initialize_di(str(self.test_config_path))
         
         # Assert
         self.assertIsNotNone(container)
         
-        # Verify bootstrap service exists (even if bootstrap failed gracefully)
-        self.assertTrue(hasattr(container, 'application_bootstrap_service'))
-        self.assertTrue(callable(getattr(container, 'application_bootstrap_service')))
+        # Verify core services exist (using current service names)
+        self.assertTrue(hasattr(container, 'app_config_service'))
+        self.assertTrue(hasattr(container, 'logging_service'))
+        self.assertTrue(hasattr(container, 'graph_runner_service'))
+        self.assertTrue(callable(getattr(container, 'app_config_service')))
+        self.assertTrue(callable(getattr(container, 'logging_service')))
+        self.assertTrue(callable(getattr(container, 'graph_runner_service')))
     
     def test_initialize_di_for_testing_handles_overrides(self):
         """Test that initialize_di_for_testing() handles overrides properly."""
@@ -232,29 +234,29 @@ kv:
         
         # Assert
         self.assertIsNotNone(service)
-        self.assertTrue(hasattr(service, 'run_graph'))
+        self.assertTrue(hasattr(service, 'run'))  # Current method is 'run', not 'run_graph'
         
         # Verify service has expected interface
-        self.assertTrue(callable(getattr(service, 'run_graph')))
+        self.assertTrue(callable(getattr(service, 'run')))
         
         # Verify service class name
         self.assertEqual(type(service).__name__, 'GraphRunnerService')
     
-    def test_graph_definition_service_creation(self):
-        """Test that graph_definition_service() creates successfully."""
+    def test_execution_formatter_service_creation(self):
+        """Test that execution_formatter_service() creates successfully."""
         # Arrange
         container = initialize_di(str(self.test_config_path))
         
         # Act
-        service = container.graph_definition_service()
+        service = container.execution_formatter_service()
         
         # Assert
         self.assertIsNotNone(service)
-        self.assertTrue(hasattr(service, 'build_graph_from_csv'))
+        self.assertTrue(hasattr(service, 'format_execution_result'))
         
         # Verify service interface using auditor
         service_info = self.service_auditor.audit_service_interface(type(service))
-        self.assertEqual(service_info.class_name, 'GraphDefinitionService')
+        self.assertEqual(service_info.class_name, 'ExecutionFormatterService')
         self.assertGreater(len(service_info.public_methods), 0)
         
     def test_logging_service_creation(self):
@@ -294,21 +296,21 @@ kv:
         self.assertEqual(service_info.class_name, 'LLMService')
         self.assertGreater(len(service_info.public_methods), 0)
     
-    def test_node_registry_service_creation(self):
-        """Test that node_registry_service() creates successfully."""
+    def test_validation_service_creation(self):
+        """Test that validation_service() creates successfully."""
         # Arrange
         container = initialize_di(str(self.test_config_path))
         
         # Act
-        service = container.node_registry_service()
+        service = container.validation_service()
         
         # Assert
         self.assertIsNotNone(service)
-        self.assertTrue(hasattr(service, 'build_registry'))
+        self.assertTrue(hasattr(service, 'validate_csv_for_bundling'))
         
         # Verify service interface using auditor
         service_info = self.service_auditor.audit_service_interface(type(service))
-        self.assertEqual(service_info.class_name, 'NodeRegistryService')
+        self.assertEqual(service_info.class_name, 'ValidationService')
         self.assertGreater(len(service_info.public_methods), 0)
 
     # =============================================================================
@@ -377,12 +379,14 @@ llm:
         container = initialize_di(str(self.test_config_path))
         
         # Act - Create services that could have circular dependencies
-        graph_definition_service = container.graph_definition_service()
+        llm_service = container.llm_service()
         graph_runner_service = container.graph_runner_service()
+        validation_service = container.validation_service()
         
         # Assert - All services create successfully without circular dependency errors
-        self.assertIsNotNone(graph_definition_service)
+        self.assertIsNotNone(llm_service)
         self.assertIsNotNone(graph_runner_service)
+        self.assertIsNotNone(validation_service)
         
 
     # =============================================================================
@@ -461,26 +465,22 @@ llm:
                 if service_status.get('available'):
                     self.assertIn('type', service_status)
     
-    def test_bootstrap_agents_handles_graceful_failure(self):
-        """Test that bootstrap_agents() handles failures gracefully."""
+    def test_di_container_handles_graceful_service_failures(self):
+        """Test that DI container handles service creation failures gracefully."""
         # Arrange
         container = initialize_di(str(self.test_config_path))
         
-        # Act - This should not raise exceptions even if bootstrap fails
-        try:
-            bootstrap_agents(container)
-            bootstrap_completed = True
-        except Exception as e:
-            # Bootstrap should handle its own exceptions gracefully
-            self.fail(f"bootstrap_agents should handle exceptions gracefully, but raised: {e}")
-            bootstrap_completed = False
-        
-        # Assert - Container should still be functional regardless of bootstrap result
+        # Act - Test that container remains functional even if some services fail
         self.assertIsNotNone(container)
         
-        # Core services should still work after bootstrap attempt
+        # Core services should work
         logging_service = container.logging_service()
         self.assertIsNotNone(logging_service)
+        
+        # Container should provide service status information
+        status = get_service_status(container)
+        self.assertIsInstance(status, dict)
+        self.assertTrue(status.get('container_initialized'))
 
     # =============================================================================
     # 6. Integration Validation Tests
@@ -500,7 +500,7 @@ llm:
             'graph_definition_service',
             'graph_runner_service',
             'llm_service',
-            'node_registry_service'
+            'agent_registry_service'
         ]
         
         for service_name in key_service_names:

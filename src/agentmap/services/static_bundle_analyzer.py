@@ -14,6 +14,7 @@ from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.node import Node
 from agentmap.services.csv_graph_parser_service import CSVGraphParserService
 from agentmap.services.declaration_registry_service import DeclarationRegistryService
+from agentmap.services.custom_agent_declaration_manager import CustomAgentDeclarationManager
 from agentmap.services.logging_service import LoggingService
 
 
@@ -29,11 +30,13 @@ class StaticBundleAnalyzer:
     def __init__(
         self,
         declaration_registry_service: DeclarationRegistryService,
+        custom_agent_declaration_manager: CustomAgentDeclarationManager,
         csv_parser_service: CSVGraphParserService,
         logging_service: LoggingService,
     ):
         """Initialize with dependency injection."""
         self.declaration_registry = declaration_registry_service
+        self.custom_agent_declaration_manager = custom_agent_declaration_manager
         self.csv_parser = csv_parser_service
         self.logger = logging_service.get_class_logger(self)
         self.logger.debug("[StaticBundleAnalyzer] Initialized")
@@ -122,6 +125,32 @@ class StaticBundleAnalyzer:
         valid_agents, missing_agents = self._validate_declarations(agent_types)
         missing_declarations.update(missing_agents)
         
+        # Extract agent mappings for all valid agents that have declarations
+        agent_mappings = {}
+        builtin_agents = set()
+        custom_agents = set()
+        
+        for agent_type in valid_agents:
+            # Check registry first, then custom declarations
+            decl = self.declaration_registry.get_agent_declaration(agent_type)
+            if not decl:
+                # Check custom agent declarations if not found in registry
+                custom_decl = self.custom_agent_declaration_manager.get_agent_declaration(agent_type)
+                if custom_decl and 'class_path' in custom_decl:
+                    agent_mappings[agent_type] = custom_decl['class_path']
+                    custom_agents.add(agent_type)
+            elif hasattr(decl, 'class_path'):
+                agent_mappings[agent_type] = decl.class_path
+                if self._is_builtin_agent(agent_type, decl):
+                    builtin_agents.add(agent_type)
+                else:
+                    custom_agents.add(agent_type)
+        
+        self.logger.debug(
+            f"Extracted agent mappings: {len(agent_mappings)} total, "
+            f"{len(builtin_agents)} builtin, {len(custom_agents)} custom"
+        )
+        
         # Compute CSV hash for validation
         csv_hash = self._compute_csv_hash(csv_path)
         
@@ -151,7 +180,10 @@ class StaticBundleAnalyzer:
             entry_point=entry_point,
             validation_metadata=validation_metadata,
             protocol_mappings=protocol_mappings,
-            missing_declarations=missing_declarations
+            missing_declarations=missing_declarations,
+            agent_mappings=agent_mappings,
+            builtin_agents=builtin_agents,
+            custom_agents=custom_agents
         )
         
         self.logger.info(
@@ -216,12 +248,18 @@ class StaticBundleAnalyzer:
         missing_agents = set()
         
         for agent_type in agent_types:
+            # Check declaration registry first
             declaration = self.declaration_registry.get_agent_declaration(agent_type)
             if declaration:
                 valid_agents.add(agent_type)
             else:
-                missing_agents.add(agent_type)
-                self.logger.warning(f"No declaration found for agent type: {agent_type}")
+                # Check custom agent declarations if not found in registry
+                custom_declaration = self.custom_agent_declaration_manager.get_agent_declaration(agent_type)
+                if custom_declaration:
+                    valid_agents.add(agent_type)
+                else:
+                    missing_agents.add(agent_type)
+                    self.logger.warning(f"No declaration found for agent type: {agent_type}")
         
         return valid_agents, missing_agents
 
@@ -253,3 +291,26 @@ class StaticBundleAnalyzer:
         
         # Fallback: return the first node if no clear entry point
         return next(iter(nodes.keys()))
+
+    def _is_builtin_agent(self, agent_type: str, declaration) -> bool:
+        """
+        Determine if an agent is a builtin framework agent.
+        
+        Args:
+            agent_type: Type of the agent
+            declaration: Agent declaration object
+            
+        Returns:
+            True if agent is builtin, False if custom
+        """
+        # Check if the class path starts with builtin namespace
+        if hasattr(declaration, 'class_path') and declaration.class_path:
+            return declaration.class_path.startswith('agentmap.agents.builtins.')
+        
+        # Check if the declaration source is "builtin"
+        if hasattr(declaration, 'source'):
+            return declaration.source == 'builtin'
+        
+        # Fallback: assume custom if cannot determine
+        self.logger.debug(f"Could not determine if agent '{agent_type}' is builtin, assuming custom")
+        return False

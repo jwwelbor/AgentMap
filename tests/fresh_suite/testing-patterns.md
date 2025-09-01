@@ -161,6 +161,51 @@ When adding a new service:
 
 ---
 
+## 16&nbsp;. ExecutionResult Model Usage
+
+### Correct Data Structure
+The `ExecutionResult` model contains execution tracking information in the `execution_summary` field, which has `node_executions` as a list of `NodeExecution` objects:
+
+```python
+from agentmap.models.execution_result import ExecutionResult
+
+# ✅ Correct way to access execution tracking data
+result = self.graph_runner_service.run_from_csv_direct(...)
+
+# Access execution summary
+self.assertIsNotNone(result.execution_summary)
+self.assertIsNotNone(result.execution_summary.node_executions)
+self.assertGreater(len(result.execution_summary.node_executions), 0)
+
+# Access individual node executions
+for node_exec in result.execution_summary.node_executions:
+    self.assertIsNotNone(node_exec.node_name)
+    self.assertIsInstance(node_exec.success, bool)
+    self.assertIsNotNone(node_exec.duration)
+
+# Get executed node names
+executed_nodes = [node_exec.node_name for node_exec in result.execution_summary.node_executions]
+```
+
+### Common Mistakes
+```python
+# ❌ Wrong - this attribute doesn't exist
+result.execution_log  # AttributeError
+
+# ❌ Wrong - expecting dictionary structure
+entry.get('node')     # node_executions contains NodeExecution objects, not dicts
+```
+
+### Model Structure Reference
+- `ExecutionResult.execution_summary` → `ExecutionSummary` object
+- `ExecutionSummary.node_executions` → List of `NodeExecution` objects
+- `NodeExecution.node_name` → String name of the executed node
+- `NodeExecution.success` → Boolean success status
+- `NodeExecution.duration` → Float execution time in seconds
+- `NodeExecution.error` → Optional error message
+
+---
+
 ## 15&nbsp;. Summary Checklist  
 
 - [ ] Use `MockServiceFactory` for every dependency.  
@@ -169,5 +214,6 @@ When adding a new service:
 - [ ] Leverage `BaseCLITest` for CLI, realistic temp files, and service mocks.  
 - [ ] Maintain clean separation of infra vs domain logic.  
 - [ ] Keep this guide updated with new patterns.
+- [ ] Use correct `ExecutionResult.execution_summary.node_executions` structure for execution tracking.
 
 *Follow these consolidated patterns to keep the AgentMap test suite fast, reliable, secure, and maintainable.*

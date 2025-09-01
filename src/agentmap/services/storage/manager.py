@@ -8,6 +8,7 @@ handling provider registration, service instantiation, and lifecycle management.
 from typing import Any, Dict, List, Optional, Type
 
 from agentmap.services.config.storage_config_service import StorageConfigService
+from agentmap.services.file_path_service import FilePathService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.protocols import StorageService, StorageServiceFactory
@@ -29,6 +30,7 @@ class StorageServiceManager:
         self,
         configuration: StorageConfigService,
         logging_service: LoggingService,
+        file_path_service: FilePathService,
         blob_storage_service: Optional[Any] = None,
     ):
         """
@@ -37,10 +39,12 @@ class StorageServiceManager:
         Args:
             configuration: Storage configuration service for storage-specific config access
             logging_service: Logging service for creating loggers
+            file_path_service: File path service for path validation and operations
             blob_storage_service: Optional blob storage service for cloud storage operations
         """
         self.configuration = configuration
         self.logging_service = logging_service
+        self.file_path_service = file_path_service
         self._logger = logging_service.get_class_logger(self)
         self.blob_storage_service = blob_storage_service
 
@@ -182,8 +186,16 @@ class StorageServiceManager:
         """
         try:
             service_class = self._service_classes[provider_name]
+            
+            # Get base directory from storage configuration (reads from storage.yaml)
+            base_directory = self.configuration.get_base_directory()
+            
             service = service_class(
-                provider_name, self.configuration, self.logging_service
+                provider_name, 
+                self.configuration, 
+                self.logging_service,
+                base_directory=base_directory,
+                file_path_service=self.file_path_service
             )
 
             # Cache the service

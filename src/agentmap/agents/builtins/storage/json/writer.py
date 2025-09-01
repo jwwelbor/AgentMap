@@ -43,7 +43,7 @@ class JSONDocumentWriterAgent(JSONDocumentAgent):
             )
 
         # Get write mode
-        mode_str = inputs.get("mode", "write").lower()
+        mode_str = inputs.get("mode", "append").lower()
         try:
             mode = WriteMode.from_string(mode_str)
         except ValueError as e:

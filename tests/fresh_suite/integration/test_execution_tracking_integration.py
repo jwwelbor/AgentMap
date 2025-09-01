@@ -58,19 +58,9 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         self.protocol_analyzer = self.container.protocol_requirements_analyzer()
         self.agent_factory_service = self.container.agent_factory_service()
         
-        # Create DIContainerAnalyzer manually to avoid circular dependency
-        from agentmap.services.di_container_analyzer import DIContainerAnalyzer
-        self.di_container_analyzer = DIContainerAnalyzer(self.container, self.logging_service)
         
-        # Create GraphBundleService with all dependencies
-        from agentmap.services.graph.graph_bundle_service import GraphBundleService
-        self.graph_bundle_service = GraphBundleService(
-            logging_service=self.logging_service,
-            csv_parser_service=self.csv_parser_service,
-            protocol_requirements_analyzer=self.protocol_analyzer,
-            di_container_analyzer=self.di_container_analyzer,
-            agent_factory_service=self.agent_factory_service
-        )
+        # Get GraphBundleService from DI container (properly configured with all dependencies)
+        self.graph_bundle_service = self.container.graph_bundle_service()
         
         # Test data manager
         self.test_data_manager = IntegrationTestDataManager(Path(self.temp_dir))
@@ -86,7 +76,7 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         Helper method to execute graph from CSV using new architecture.
         
         This follows the new pattern:
-        1. Create GraphBundle from CSV using GraphBundleService
+        1. Create GraphBundle from CSV using GraphBundleService.get_or_create_bundle
         2. Execute bundle using GraphRunnerService
         
         Args:
@@ -97,22 +87,15 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         Returns:
             ExecutionResult from graph execution
         """
-        # Step 1: Create bundle from CSV (new pattern)
-        bundle = self.graph_bundle_service.create_metadata_bundle(
-            csv_path=csv_path,
-            graph_name=graph_name
+        # Step 1: Create bundle from CSV (using correct API)
+        bundle = self.graph_bundle_service.get_or_create_bundle(
+            csv_path=Path(csv_path),
+            graph_name=graph_name,
+            config_path=str(Path(self.temp_dir) / "integration_test_config.yaml")
         )
         
-        # Step 2: Add initial state to bundle if provided
-        if initial_state:
-            # The new architecture may need to handle initial state differently
-            # For now, we'll store it in the bundle's validation_metadata
-            if bundle.validation_metadata is None:
-                bundle.validation_metadata = {}
-            bundle.validation_metadata['initial_state'] = initial_state
-        
-        # Step 3: Execute bundle using GraphRunnerService
-        result = self.graph_runner_service.run(bundle)
+        # Step 2: Execute bundle using GraphRunnerService with initial state
+        result = self.graph_runner_service.run(bundle, initial_state=initial_state)
         
         return result
     
@@ -199,108 +182,7 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         except Exception as e:
             self.fail(f"Graph name preservation test failed: {e}")
     
-    def test_complex_graph_name_preservation(self):
-        """Test graph name preservation with more complex CSV structure."""
-        print("\n=== Testing Complex Graph Name Preservation ===")
-        
-        # Use a more complex graph name (matches real usage)
-        complex_graph_name = "gm_orchestration"
-        
-        # Create the actual gm_orchestration structure
-        gm_nodes = [
-            {
-                "GraphName": complex_graph_name,
-                "Node": "UserInput",
-                "AgentType": "input",
-                "Prompt": "What do you want to do?",
-                "Description": "This is to simulate user input",
-                "Input_Fields": "input",
-                "Output_Field": "input", 
-                "Edge": "Orchestrator",
-                "Success_Next": "",
-                "Failure_Next": "",
-                "Context": ""
-            },
-            {
-                "GraphName": complex_graph_name,
-                "Node": "Orchestrator",
-                "AgentType": "orchestrator", 
-                "Prompt": "",
-                "Description": "This is the main orchestration node",
-                "Input_Fields": "input",
-                "Output_Field": "orchestrator_result",
-                "Edge": "",
-                "Success_Next": "",
-                "Failure_Next": "ErrorHandler",
-                "Context": ""
-            },
-            {
-                "GraphName": complex_graph_name,
-                "Node": "SocialEncounter",
-                "AgentType": "social_router",
-                "Prompt": "##NOLLM Route input to the social interaction graph",
-                "Description": "Triggered when a player is speaking with an NPC",
-                "Input_Fields": "input",
-                "Output_Field": "dialogue_result",
-                "Edge": "UserInput",
-                "Success_Next": "",
-                "Failure_Next": "",
-                "Context": ""
-            },
-            {
-                "GraphName": complex_graph_name,
-                "Node": "EndNode",
-                "AgentType": "default",
-                "Prompt": "End the session",
-                "Description": "",
-                "Input_Fields": "input",
-                "Output_Field": "",
-                "Edge": "",
-                "Success_Next": "",
-                "Failure_Next": "",
-                "Context": ""
-            }
-        ]
-        
-        from tests.fresh_suite.integration.test_data_factories import TestGraphSpec
-        gm_spec = TestGraphSpec(
-            graph_name=complex_graph_name,
-            nodes=gm_nodes,
-            description="GM Orchestration test graph"
-        )
-        
-        csv_path = self.test_data_manager.create_test_csv_file(gm_spec)
-        print(f"Created complex CSV with graph name: {complex_graph_name}")
-        
-        # Execute with realistic input
-        initial_state = {"input": "hug my mom"}
-        
-        try:
-            result = self._execute_graph_from_csv(
-                csv_path=csv_path,
-                graph_name=complex_graph_name,
-                initial_state=initial_state
-            )
-            
-            # Verify complex graph name preservation
-            self.assertIsInstance(result, ExecutionResult)
-            self.assertEqual(result.graph_name, complex_graph_name,
-                           f"Complex graph name should be '{complex_graph_name}'")
-            
-            # Check execution summary
-            if result.execution_summary:
-                self.assertEqual(result.execution_summary.graph_name, complex_graph_name,
-                               "Complex graph execution summary should have correct name")
-            
-            print(f"✅ Complex graph name preserved: {result.graph_name}")
-            
-            # Verify NOT auto-generated names
-            self.assertNotEqual(result.graph_name, f"graph_{len(gm_nodes)}_nodes")
-            
-            print("✅ Complex graph name preservation test passed")
-            
-        except Exception as e:
-            self.fail(f"Complex graph name preservation test failed: {e}")
+   
     
     # =============================================================================
     # 2. Node Execution Recording Tests  

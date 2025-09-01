@@ -199,16 +199,21 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
             
             bundle = self.graph_bundle_service.create_bundle_from_csv(
                 csv_path=str(csv_path),
+                config_path="",  # Empty config path for test
                 csv_hash=csv_hash,
                 graph_to_return=graph_name
             )
             
             if bundle is None:
+                from agentmap.models.execution_summary import ExecutionSummary
                 return ExecutionResult(
-                    success=False,
-                    error=f"Failed to create bundle for graph '{graph_name}'",
                     graph_name=graph_name,
-                    final_state=initial_state
+                    final_state=initial_state,
+                    execution_summary=ExecutionSummary(graph_name=graph_name),
+                    success=False,
+                    total_duration=0.0,
+                    compiled_from="test",
+                    error=f"Failed to create bundle for graph '{graph_name}'"
                 )
             
             # Step 2: Set initial state on bundle
@@ -220,11 +225,15 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
             
         except Exception as e:
             # Wrap in ExecutionResult for consistent error handling
+            from agentmap.models.execution_summary import ExecutionSummary
             return ExecutionResult(
-                success=False,
-                error=f"Workflow execution failed: {e}",
                 graph_name=graph_name,
-                final_state=initial_state
+                final_state=initial_state,
+                execution_summary=ExecutionSummary(graph_name=graph_name),
+                success=False,
+                total_duration=0.0,
+                compiled_from="test",
+                error=f"Workflow execution failed: {e}"
             )
     
     def _create_default_initial_state(self) -> Dict[str, Any]:

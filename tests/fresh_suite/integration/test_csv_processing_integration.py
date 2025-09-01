@@ -76,7 +76,7 @@ class TestCSVProcessingPipelineIntegration(BaseIntegrationTest):
         # Verify node properties
         start_node = graph.nodes["start"]
         self.assertEqual(start_node.name, "start")
-        self.assertEqual(start_node.agent_type, "Default")
+        self.assertEqual(start_node.agent_type, "default")
         self.assertEqual(start_node.prompt, "Start the workflow")
         self.assertEqual(start_node.inputs, ["user_input"])
         self.assertEqual(start_node.output, "start_output")
@@ -174,7 +174,7 @@ class TestCSVProcessingPipelineIntegration(BaseIntegrationTest):
         # Verify node spec properties
         start_spec = next(spec for spec in node_specs if spec.name == "start")
         self.assertEqual(start_spec.graph_name, "simple_linear")
-        self.assertEqual(start_spec.agent_type, "Default")
+        self.assertEqual(start_spec.agent_type, "default")
         self.assertEqual(start_spec.prompt, "Start the workflow")
         self.assertEqual(start_spec.input_fields, ["user_input"])
         self.assertEqual(start_spec.output_field, "start_output")
@@ -285,7 +285,7 @@ encoding_test,end_node,Default,"Finalize with üñíçødé","Final node with sp
             node_data = {
                 "GraphName": "large_graph",
                 "Node": f"node_{i:02d}",
-                "AgentType": "Default",
+                "AgentType": "default",
                 "Prompt": f"Process step {i}",
                 "Description": f"Node {i} in large workflow",
                 "Input_Fields": f"input_{i}" if i == 0 else f"output_{i-1:02d}",

@@ -260,7 +260,7 @@ class GraphBundle:
         return cls(
             # Legacy fields
             graph=graph,
-            node_registry=node_registry,
+            node_instances=node_registry,  # Correct parameter name
             version_hash=version_hash,
             # New metadata fields
             graph_name=graph_name,

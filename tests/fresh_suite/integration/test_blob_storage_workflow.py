@@ -167,13 +167,41 @@ kv:
         # Initialize DI container
         container = initialize_di(str(self.test_config_path))
         
-        # Get application bootstrap service
-        bootstrap_service = container.application_bootstrap_service()
+        # Test that blob storage service is available (indicates proper registration)
+        blob_service = container.blob_storage_service()
+        agent_factory = container.agent_factory_service()
         
-        if bootstrap_service is not None:
-            # Check if blob agents can be created (this tests registration)
-            # This is more of a smoke test since agent creation depends on availability
-            pass  # The fact that bootstrap service exists indicates successful registration
+        # Test that we can get required services for blob agent operations
+        self.assertIsNotNone(agent_factory, "Agent factory service should be available")
+        
+        if blob_service is not None:
+            # Test that blob agents can be created through the agent factory
+            from agentmap.agents.builtins.storage.blob.blob_reader_agent import BlobReaderAgent
+            from agentmap.agents.builtins.storage.blob.blob_writer_agent import BlobWriterAgent
+            
+            # Test blob reader agent creation (basic instantiation test)
+            try:
+                blob_reader = BlobReaderAgent(
+                    name="test_reader",
+                    prompt="Test reader agent",
+                    logger=container.logging_service().get_class_logger("test_reader")
+                )
+                self.assertIsNotNone(blob_reader)
+            except Exception as e:
+                self.fail(f"Failed to create BlobReaderAgent: {e}")
+            
+            # Test blob writer agent creation (basic instantiation test)
+            try:
+                blob_writer = BlobWriterAgent(
+                    name="test_writer", 
+                    prompt="Test writer agent",
+                    logger=container.logging_service().get_class_logger("test_writer")
+                )
+                self.assertIsNotNone(blob_writer)
+            except Exception as e:
+                self.fail(f"Failed to create BlobWriterAgent: {e}")
+        else:
+            self.skipTest("Blob storage service not available - skipping agent registration test")
     
     # =============================================================================
     # End-to-End Blob Storage Workflow Tests

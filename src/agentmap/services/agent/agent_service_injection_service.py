@@ -94,8 +94,13 @@ class AgentServiceInjectionService:
         core_services_configured = 0
         
         try:
-            # Configure LLM service
+            # Configure LLM service (strict mode)
             if isinstance(agent, LLMCapableAgent):
+                if self.llm_service is None:
+                    error_msg = f"LLM service not available for agent {agent_name}"
+                    self.logger.error(f"[AgentServiceInjectionService] ❌ {error_msg}")
+                    raise Exception(error_msg)
+                
                 try:
                     agent.configure_llm_service(self.llm_service)
                     self.logger.debug(f"[AgentServiceInjectionService] ✅ Configured LLM service for {agent_name}")
@@ -104,8 +109,13 @@ class AgentServiceInjectionService:
                     self.logger.error(f"[AgentServiceInjectionService] ❌ Failed to configure LLM service for {agent_name}: {e}")
                     raise
             
-            # Configure storage service
+            # Configure storage service (strict mode)
             if isinstance(agent, StorageCapableAgent):
+                if self.storage_service_manager is None:
+                    error_msg = f"Storage service manager not available for agent {agent_name}"
+                    self.logger.error(f"[AgentServiceInjectionService] ❌ {error_msg}")
+                    raise Exception(error_msg)
+                
                 try:
                     agent.configure_storage_service(self.storage_service_manager)
                     self.logger.debug(f"[AgentServiceInjectionService] ✅ Configured storage service for {agent_name}")
@@ -122,18 +132,9 @@ class AgentServiceInjectionService:
                     raise Exception(error_msg)
                 
                 try:
-                    # Check if agent already has prompt service from constructor
-                    has_prompt_service = (
-                        hasattr(agent, "prompt_manager_service") 
-                        and agent.prompt_manager_service is not None
-                    )
-                    
-                    if has_prompt_service:
-                        self.logger.debug(f"[AgentServiceInjectionService] Agent {agent_name} already has prompt service available")
-                    else:
-                        agent.configure_prompt_service(self.prompt_manager_service)
-                        self.logger.debug(f"[AgentServiceInjectionService] ✅ Configured prompt service for {agent_name}")
-                        core_services_configured += 1
+                    agent.configure_prompt_service(self.prompt_manager_service)
+                    self.logger.debug(f"[AgentServiceInjectionService] ✅ Configured prompt service for {agent_name}")
+                    core_services_configured += 1
                 except Exception as e:
                     self.logger.error(f"[AgentServiceInjectionService] ❌ Failed to configure prompt service for {agent_name}: {e}")
                     raise

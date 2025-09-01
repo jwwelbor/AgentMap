@@ -51,6 +51,7 @@ firebase-admin = {version = "*", optional = true}
 unstructured = {version = "*", optional = true}
 python-docx = {version = "*", optional = true}
 chromadb = {version = "*", optional = true}
+pathvalidate = "^3.3.1"
 
 [tool.poetry.extras]
 llm = [

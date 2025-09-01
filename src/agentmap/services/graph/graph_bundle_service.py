@@ -1,26 +1,25 @@
 # services/graph_bundle_service.py
 
-import copy
-import hashlib
-import logging
-import pickle
-import warnings
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, List
-from datetime import datetime
-import uuid
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.node import Node
-from agentmap.models.graph_spec import GraphSpec, NodeSpec
-from agentmap.services.logging_service import LoggingService
-from agentmap.services.protocol_requirements_analyzer import ProtocolBasedRequirementsAnalyzer
-# from agentmap.services.di_container_analyzer import DIContainerAnalyzer
+
 from agentmap.services.agent.agent_factory_service import AgentFactoryService
 from agentmap.services.csv_graph_parser_service import CSVGraphParserService
+from agentmap.services.logging_service import LoggingService
+from agentmap.services.protocol_requirements_analyzer import ProtocolBasedRequirementsAnalyzer
 from agentmap.services.static_bundle_analyzer import StaticBundleAnalyzer
-from agentmap.services.storage.types import WriteMode
 from agentmap.services.storage.json_service import JSONStorageService
+from agentmap.services.storage.types import WriteMode, StorageResult
+from agentmap.services.graph.graph_registry_service import GraphRegistryService
+from agentmap.services.declaration_registry_service import DeclarationRegistryService
+from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.storage.system_manager import SystemStorageManager
+from agentmap.services.file_path_service import FilePathService
+
 
 class GraphBundleService:
     def __init__(self, 
@@ -30,7 +29,12 @@ class GraphBundleService:
                  json_storage_service: JSONStorageService,
                  csv_parser_service: CSVGraphParserService,
                  static_bundle_analyzer: StaticBundleAnalyzer,
-                 app_config_service=None):  # Optional for backwards compatibility
+                 app_config_service: AppConfigService,
+                 declaration_registry_service: DeclarationRegistryService,
+                 graph_registry_service: GraphRegistryService,
+                 file_path_service: FilePathService,
+                 system_storage_manager: SystemStorageManager
+        ):  # Added for bundle caching and registry
         """Initialize GraphBundleService with enhanced dependencies.
                 
         Args:
@@ -41,6 +45,10 @@ class GraphBundleService:
             csv_parser_service: CSV parser service for parsing CSV files
             static_bundle_analyzer: Static bundle analyzer for fast declaration-based bundle creation
             app_config_service: Application config service for cache path (optional)
+            declaration_registry_service: Declaration registry service for service dependencies (optional)
+            graph_registry_service: Graph registry service for bundle caching and registry
+            file_path_service: File path service for centralized secure path handling
+            system_storage_manager: System storage manager for system cache storage (optional)
         """
         self.logger = logging_service.get_class_logger(self)
         self.logging_service = logging_service
@@ -52,148 +60,15 @@ class GraphBundleService:
         self.csv_parser_service = csv_parser_service  
         self.static_bundle_analyzer = static_bundle_analyzer
         self.app_config_service = app_config_service 
+        self.declaration_registry = declaration_registry_service  # Store for service dependency resolution
+        self.graph_registry_service = graph_registry_service  # Store for bundle registry and caching
+        self.system_storage_manager = system_storage_manager  # Store for system-level bundle storage
+        self.file_path_service = file_path_service  # Store for centralized path handling
 
         # Check if enhanced functionality is available
         self._has_enhanced_dependencies = all([
             protocol_requirements_analyzer, agent_factory_service
         ])
-    
-    def create_bundle_from_csv(self, csv_path: str, config_path: str, csv_hash: Optional[str] = None, graph_to_return: Optional[str] = None) -> GraphBundle:
-        """
-        Create a graph bundle from CSV file.
-        Moved from GraphRunnerService for better separation of concerns.
-        
-        Args:
-            csv_path: Path to the CSV file
-            csv_hash: Optional hash of CSV content (computed if not provided)
-            graph_to_return: Optional specific graph name to return (returns first graph if not provided)
-            
-        Returns:
-            GraphBundle with metadata extracted from CSV
-            
-        Raises:
-            FileNotFoundError: If CSV file not found
-            ValueError: If CSV parsing fails or requested graph not found
-            Exception: If bundle creation fails
-        """
-        self.logger.info(f"Creating bundle from CSV: {csv_path}")
-        
-        try:
-            # Convert to Path for consistent handling
-            csv_path_obj = Path(csv_path)
-            
-            # Compute CSV hash if not provided
-            if csv_hash is None:
-                csv_hash = self._compute_csv_hash(csv_path_obj)
-                self.logger.debug(f"Computed CSV hash: {csv_hash}")
-            
-            # Parse CSV to get graph specification
-            self.logger.debug(f"Parsing CSV to graph specification")
-            graph_spec = self.csv_parser_service.parse_csv_to_graph_spec(csv_path_obj)
-            
-            # Get available graphs
-            graph_names = graph_spec.get_graph_names()
-            if not graph_names:
-                raise ValueError(f"No graphs found in CSV file: {csv_path}")
-            
-            self.logger.debug(f"Found {len(graph_names)} graphs: {graph_names}")
-            
-            # Determine which graph to return
-            if graph_to_return is None:
-                if len(graph_names) == 1:
-                    target_graph_name = graph_names[0]
-                    self.logger.debug(f"Single graph found, using: {target_graph_name}")
-                else:
-                    # For multiple graphs, use the first one and log a warning
-                    target_graph_name = graph_names[0]
-                    self.logger.warning(
-                        f"Multiple graphs found: {graph_names}. "
-                        f"No graph_to_return specified, using first: {target_graph_name}"
-                    )
-            else:
-                if graph_to_return not in graph_names:
-                    raise ValueError(
-                        f"Requested graph '{graph_to_return}' not found in CSV. "
-                        f"Available graphs: {graph_names}"
-                    )
-                target_graph_name = graph_to_return
-                self.logger.debug(f"Using requested graph: {target_graph_name}")
-            
-            node_specs = graph_spec.get_nodes_for_graph(target_graph_name)
-            nodes = self.csv_parser_service._convert_node_specs_to_nodes(node_specs)
-            
-            self.logger.debug(f"Parsed {len(nodes)} nodes from CSV for graph '{target_graph_name}'")
-            
-            # Generate graph name if empty
-            if not target_graph_name or target_graph_name.strip() == "":
-                raise ValueError(
-                    "Graph name cannot be empty. "
-                    "Please provide a valid graph name in the CSV file."
-                )
-            
-            # Create optimized bundle with all metadata
-            bundle = self.create_metadata_bundle_from_nodes(
-                nodes=nodes,
-                graph_name=target_graph_name,
-                config_path=config_path,
-                csv_hash=csv_hash
-            )
-            
-            self.logger.info(
-                f"Created bundle '{target_graph_name}' with {len(bundle.required_agents)} agent types, "
-                f"{len(bundle.nodes)} nodes"
-            )
-            
-            return bundle
-            
-        except FileNotFoundError as e:
-            self.logger.error(f"CSV file not found: {csv_path}")
-            raise
-        except ValueError as e:
-            self.logger.error(f"CSV parsing error: {e}")
-            raise
-        except Exception as e:
-            self.logger.error(f"Failed to create bundle from CSV: {e}")
-            raise
-    
-    def _compute_csv_hash(self, csv_path: Path) -> str:
-        """Compute MD5 hash of CSV file content.
-        
-        For unit tests with mocked CSV parser, returns a deterministic test hash
-        when the file doesn't exist (common in unit test scenarios).
-        
-        Args:
-            csv_path: Path to the CSV file
-            
-        Returns:
-            MD5 hash of file content, or test hash for mocked scenarios
-            
-        Raises:
-            IOError: If file cannot be read (except in test scenarios)
-        """
-        try:
-            from agentmap.services.graph.graph_registry_service import compute_hash #import for consistency
-
-            # # Check if file exists before trying to read it
-            # if not csv_path.exists():
-            #     # For unit tests with mocked CSV parser, provide a deterministic test hash
-            #     # This allows tests to work without actual files
-            #     # TODO: Find a better way to handle this testing scenario, shouldn't be in production
-            #     test_hash = hashlib.md5(str(csv_path).encode()).hexdigest()[:12]
-            #     self.logger.debug(f"File not found, using test hash for {csv_path}: {test_hash}")
-            #     return test_hash
-            
-            csv_hash = compute_hash(csv_path, self.logging_service)
-
-            self.logger.debug(f"Computed hash for {csv_path}: {csv_hash}")
-            return csv_hash
-            
-        except Exception as e:
-            self.logger.error(f"Failed to compute CSV hash: {e}")
-            # For unit tests, provide a fallback hash based on path
-            fallback_hash = hashlib.md5(str(csv_path).encode()).hexdigest()[:12]
-            self.logger.debug(f"Using fallback hash for {csv_path}: {fallback_hash}")
-            return fallback_hash
     
     # ==========================================
     # Phase 1: Critical Metadata Extraction
@@ -257,10 +132,6 @@ class GraphBundleService:
             Dictionary mapping agent types to their class import paths
         """
         try:
-            if not self.agent_factory_service:
-                self.logger.warning("AgentFactoryService not available for agent mappings")
-                return {}
-            
             mappings = self.agent_factory_service.get_agent_class_mappings(agent_types)
             
             self.logger.debug(
@@ -270,9 +141,9 @@ class GraphBundleService:
             
         except Exception as e:
             self.logger.warning(
-                f"Failed to extract agent mappings: {e}. Using empty mappings."
+                f"Failed to extract agent mappings: {e}. "
             )
-            return {}
+            raise e
     
     def _classify_agents(self, agent_types: Set[str]) -> tuple[Set[str], Set[str]]:
         """Classify agents into builtin and custom categories.
@@ -287,10 +158,7 @@ class GraphBundleService:
         custom_agents = set()
         
         # Standard framework agent types
-        framework_agents = {
-            "Default", "LLMAgent", "ToolAgent", "ValidationAgent",
-            "DataProcessingAgent", "ConditionalAgent"
-        }
+        framework_agents = DeclarationRegistryService.get_all_agent_types()
         
         for agent_type in agent_types:
             if agent_type in framework_agents:
@@ -386,12 +254,12 @@ class GraphBundleService:
                 "is_dag": True,
                 "parallel_opportunities": []
             }
-    
+
     def _calculate_max_depth(self, nodes: Dict[str, Node]) -> int:
         """Calculate maximum depth of the graph."""
         # Simple implementation - could be enhanced with actual graph traversal
         return min(len(nodes), 10)  # Cap at 10 for performance
-    
+
     def _check_dag(self, nodes: Dict[str, Node]) -> bool:
         """Check if graph is a directed acyclic graph."""
         # Simple heuristic - if any node has edges that could create cycles
@@ -484,7 +352,8 @@ class GraphBundleService:
     def delete_bundle(self, bundle: GraphBundle) -> bool:
         """Delete a cached bundle file from disk.
         
-        Uses the bundle's csv_hash to locate and delete the cached bundle file.
+        Uses the bundle's csv_hash and graph_name to locate and delete the cached bundle file
+        using consistent path format from FilePathService.
         This method only handles file deletion - registry cleanup should be 
         handled separately by the caller if needed.
         
@@ -505,18 +374,11 @@ class GraphBundleService:
             raise ValueError("Bundle has no csv_hash - cannot identify cached file to delete")
         
         try:
-            # Use AppConfigService to get cache path
-            if hasattr(self, 'app_config_service') and self.app_config_service:
-                cache_folder = self.app_config_service.get_cache_path()
-            else:
-                # Fallback to default cache location if service not available
-                from pathlib import Path as PathLib
-                cache_folder = PathLib.home() / ".agentmap" / "cache"
-                self.logger.warning("AppConfigService not available, using default cache path")
-            
-            # Construct bundle file path using the csv_hash
-            bundle_filename = f"{bundle.csv_hash}.json"
-            bundle_path = cache_folder / bundle_filename
+            # Use FilePathService to get consistent bundle path
+            bundle_path = self.file_path_service.get_bundle_path(
+                csv_hash=bundle.csv_hash,
+                graph_name=bundle.graph_name
+            )
             
             if not bundle_path.exists():
                 self.logger.debug(
@@ -527,7 +389,7 @@ class GraphBundleService:
             # Delete the bundle file
             bundle_path.unlink()
             self.logger.info(
-                f"Deleted cached bundle: {bundle_filename} for graph '{bundle.graph_name}'"
+                f"Deleted cached bundle: {bundle_path.name} for graph '{bundle.graph_name}'"
             )
             return True
             
@@ -540,50 +402,65 @@ class GraphBundleService:
             self.logger.error(error_msg)
             raise IOError(error_msg)
     
-    def save_bundle(self, bundle: GraphBundle, path: Path) -> None:
+    def save_bundle(self, bundle: GraphBundle, path: Path) -> Optional[StorageResult]:
         """Persist the bundle to disk in appropriate format.
         
-        Saves metadata-only bundles as JSON and legacy bundles as pickle.
-        The format is determined automatically based on bundle type.
+        Saves metadata-only bundles as JSON. Uses SystemStorageManager for system bundles
+        in cache_folder/bundles and JSONStorageService for user storage.
         
         Args:
             bundle: GraphBundle to save
             path: Path to save the bundle to
             
         Raises:
-            ValueError: If json_storage_service is not available for metadata bundles
+            ValueError: If required storage service is not available
             IOError: If save operation fails
         """
-        # Metadata bundles are always saved as JSON
-        if not self.json_storage_service:
-            raise ValueError(
-                "json_storage_service is required to save metadata bundles. "
-                "Please ensure GraphBundleService is properly initialized with all dependencies."
-            )
-        
-        # # Ensure path has .json extension
-        # if path.suffix != '.json':
-        #     path = path.with_suffix('.json')
+
+        # Use system storage for cache_folder/bundles
+        self.logger.debug(f"Using SystemStorageManager for system bundle: {path}")
         
         # Serialize bundle to dictionary
         data = self._serialize_metadata_bundle(bundle)
         
-        # Use JSONStorageService to write the bundle
-        result = self.json_storage_service.write(
-            collection=str(path),
+        # Get JSON storage service for "bundles" namespace
+        storage_service = self.system_storage_manager.get_json_storage("bundles")
+                
+        result = storage_service.write(
+            collection=path.name,
             data=data,
             mode=WriteMode.WRITE
         )
         
         if result.success:
             self.logger.debug(
-                f"Saved metadata GraphBundle to {path} with csv_hash {bundle.csv_hash}"
+                f"Saved system bundle to cache_folder/bundles/{path.name} with csv_hash {bundle.csv_hash}"
             )
             return result
         else:
-            error_msg = f"Failed to save GraphBundle: {result.error}"
+            error_msg = f"Failed to save system bundle: {result.error}"
             self.logger.error(error_msg)
             raise IOError(error_msg)
+        
+    
+    def _is_cache_path(self, path: Path) -> bool:
+        """Check if the given path is within the cache_folder.
+        
+        Args:
+            path: Path to check
+            
+        Returns:
+            True if path is within cache_folder, False otherwise
+        """
+        if not self.app_config_service:
+            return False
+            
+        try:
+            cache_folder = Path(self.app_config_service.get_cache_folder())
+            return cache_folder in path.parents or path.parent == cache_folder
+        except Exception as e:
+            self.logger.debug(f"Could not determine if path is in cache folder: {e}")
+            return False
 
     
     def _serialize_metadata_bundle(self, bundle: GraphBundle) -> Dict[str, Any]:
@@ -644,7 +521,8 @@ class GraphBundleService:
         """Load a GraphBundle from a file.
         
         Automatically detects format (JSON for metadata, pickle for legacy)
-        and loads appropriately.
+        and loads appropriately. Uses SystemStorageManager for system bundles
+        in cache_folder/bundles and JSONStorageService for user storage.
         
         Args:
             path: Path to load the bundle from
@@ -653,28 +531,45 @@ class GraphBundleService:
             GraphBundle or None if loading fails
             
         Raises:
-            ValueError: If json_storage_service is not available for JSON files
+            ValueError: If required storage service is not available
         """
         try:
-            if not path.exists():
-                self.logger.error(f"Bundle file not found: {path}")
-                return None
+            self.logger.error(f"Bundle file not found: {path}")
+            return None
+        
+
+            # Use system storage for cache_folder/bundles
+            self.logger.debug(f"Using SystemStorageManager for system bundle: {path}")
             
-            # Determine format by extension
-            if not self.json_storage_service:
-                raise ValueError(
-                    "json_storage_service is required to load JSON bundles. "
-                    "Please ensure GraphBundleService is properly initialized with all dependencies."
-                )
-            
-            # Use JSONStorageService to read the bundle
-            data = self.json_storage_service.read(collection=str(path))
+            # Get JSON storage service for "bundles" namespace
+            storage_service = self.system_storage_manager.get_json_storage("bundles")            
+            data = storage_service.read(
+                collection=path.name,
+            )
             
             if data is None:
-                self.logger.error(f"No data found in bundle file: {path}")
+                self.logger.error(f"No data found in system bundle file: {path}")
                 return None
             
             return self._deserialize_metadata_bundle(data)
+            
+            # Use regular JSON storage service for user data
+            # if not self.json_storage_service:
+            #     raise ValueError(
+            #         "json_storage_service is required to load JSON bundles. "
+            #         "Please ensure GraphBundleService is properly initialized with all dependencies."
+            #     )
+            
+            # self.logger.debug(f"Using JSONStorageService for user bundle: {path}")
+            
+            # # Use JSONStorageService to read the bundle
+            # data = self.json_storage_service.read(collection=str(path))
+            
+            # if data is None:
+            #     self.logger.error(f"No data found in bundle file: {path}")
+            #     return None
+            
+            # return self._deserialize_metadata_bundle(data)
                 
         except Exception as e:
             self.logger.error(f"Failed to load GraphBundle from {path}: {e}")
@@ -725,7 +620,8 @@ class GraphBundleService:
                 graph_structure=data.get("graph_structure"),
                 protocol_mappings=data.get("protocol_mappings"),
                 # Phase 3: Validation metadata
-                validation_metadata=data.get("validation_metadata")
+                validation_metadata=data.get("validation_metadata"),
+                missing_declarations=list_to_set(data.get("missing_declarations"))  # FIX: Restore missing_declarations
             )
             
             # Set format metadata if available
@@ -781,8 +677,12 @@ class GraphBundleService:
         # Phase 1: Critical metadata extraction
         # Identify entry point if not provided
         if entry_point is None:
-            #for now, go with the first node until we need to do otherwise.
-            entry_point = list(nodes.keys())[0]   # self._identify_entry_point(nodes) #this isn't really working correctly
+            if not nodes:
+                # Handle empty nodes case - set to None, will be handled downstream
+                entry_point = None
+            else:
+                #for now, go with the first node until we need to do otherwise.
+                entry_point = list(nodes.keys())[0]   # self._identify_entry_point(nodes) #this isn't really working correctly
         
         # Analyze requirements using protocol-based approach
         # TODO: FIX this... it doesn't seem to be picking up all the protocols
@@ -802,7 +702,7 @@ class GraphBundleService:
         builtin_agents, custom_agents = self._classify_agents(required_agents)
         
         # Phase 2: Optimization metadata
-        graph_structure = self._analyze_graph_structure(nodes)
+        # graph_structure = self._analyze_graph_structure(nodes) # this doesn't really do anythign right now... not needed.
         protocol_mappings = self._extract_protocol_mappings()
         
         # Phase 3: Validation metadata
@@ -825,7 +725,7 @@ class GraphBundleService:
             builtin_agents=builtin_agents,
             custom_agents=custom_agents,
             # Phase 2: Optimization metadata
-            graph_structure=graph_structure,
+            # graph_structure=graph_structure,
             protocol_mappings=protocol_mappings,
             # Phase 3: Validation metadata
             validation_metadata=validation_metadata
@@ -889,7 +789,7 @@ class GraphBundleService:
     
     def try_create_static_bundle(self, csv_path: Path, graph_name: Optional[str] = None) -> Optional[GraphBundle]:
         """
-        Attempt to create static bundle, falling back gracefully on failure.
+        Attempt to create static bundle
         
         This method attempts static bundle creation first for performance,
         and returns None if static creation fails, allowing fallback to dynamic creation.
@@ -952,15 +852,131 @@ class GraphBundleService:
             "performance_improvement": "~10x faster" if self.is_static_bundle_available() else "N/A",
         }
         
-        if self.is_static_bundle_available():
-            info["static_bundle_benefits"] = [
-                "No implementation loading",
-                "No circular dependencies", 
-                "Fast declaration-only analysis",
-                "Minimal memory usage"
-            ]
-        
         return info
+    
+    def get_or_create_bundle(self, 
+                            csv_path: Path, 
+                            graph_name: Optional[str] = None, 
+                            config_path: Optional[str] = None) -> GraphBundle:
+        """
+        Get existing bundle from cache or create a new one.
+        
+        This method encapsulates the bundle caching logic, checking for
+        existing bundles using composite keys (csv_hash, graph_name) and 
+        creating new ones as needed. Bundles are created per-graph, not per-CSV.
+        
+        Args:
+            csv_path: Path to CSV file
+            graph_name: Optional graph name (used for composite key lookup)
+            config_path: Optional path to configuration file
+            
+        Returns:
+            GraphBundle ready for execution or scaffolding
+            
+        Raises:
+            ValueError: If graph_registry_service is not available
+            FileNotFoundError: If CSV file doesn't exist
+        """
+        if not self.graph_registry_service:
+            raise ValueError(
+                "graph_registry_service is required for bundle caching. "
+                "Please ensure GraphBundleService is properly initialized."
+            )
+        
+        # Ensure csv_path is a Path object
+        csv_path = Path(csv_path)
+        
+        if not csv_path.exists():
+            raise FileNotFoundError(f"CSV file not found: {csv_path}")
+        
+        # Compute hash for CSV file using helper method
+        csv_hash = GraphRegistryService.compute_hash(csv_path)
+
+        bundle = self.lookup_bundle(csv_hash, graph_name)
+
+        if bundle:
+            return bundle
+
+        bundle = self._create_bundle(csv_path, graph_name)
+
+        bundle_path = self.file_path_service.get_bundle_path(
+            csv_hash=csv_hash,
+            graph_name=graph_name,
+        )
+
+        save_result: StorageResult = self.save_bundle(bundle, bundle_path)
+
+        if save_result.success:
+            # TODO: See if this actually changes from above
+            bundle_path = Path(save_result.file_path)
+            # Register with composite key for future lookups
+            self.graph_registry_service.register(
+                csv_hash,
+                bundle.graph_name,  # Use actual graph name from bundle
+                bundle_path,
+                csv_path,
+                len(bundle.nodes) if bundle.nodes else 0
+            )
+            self.logger.info(
+                f"Bundle saved and registered with composite key: "
+                f"({csv_hash[:8]}..., '{bundle.graph_name}')"
+            )
+        else:
+            self.logger.warning(f"Failed to save bundle: {save_result.error}")
+
+        
+        # Log warnings for missing declarations
+        if bundle.missing_declarations:
+            self.logger.warning(
+                f"Missing declarations for agent types: {', '.join(bundle.missing_declarations)}. "
+                f"These agents will need to be defined before graph execution. execute 'scaffold' command"
+            )
+        
+        return bundle
+
+
+
+    def _create_bundle(self, csv_path, graph_name) -> GraphBundle:
+        # Create new bundle for this specific graph
+        self.logger.info(
+            f"Creating new bundle for {csv_path} with graph '{graph_name or 'auto-detect'}'"
+        )
+        bundle = None
+
+        try:
+            # Try fast path with static analysis first
+            bundle = self.static_bundle_analyzer.create_static_bundle(
+                csv_path, graph_name
+            )
+            self.logger.info("Created bundle using fast static analysis")
+        except FileNotFoundError as e:
+            self.logger.warning(f"CSV not found: {csv_path}")
+        except Exception as e:
+            self.logger.warning("Failed to create bundle using fast static analysis")
+            raise e
+
+        return bundle
+
+    def lookup_bundle(self, csv_hash, graph_name):
+        # Look up bundle using composite key (csv_hash, graph_name)
+        bundle_path = self.graph_registry_service.find_bundle(csv_hash, graph_name)
+        bundle = None
+        if bundle_path:
+            # Load existing bundle from cache
+            self.logger.info(
+                f"Loading cached bundle for hash {csv_hash[:8]}... "
+                f"and graph '{graph_name or 'default'}'"
+            )
+            bundle = self.load_bundle(bundle_path)
+
+            # Validate the loaded bundle matches requested graph
+            if bundle and graph_name and bundle.graph_name != graph_name:
+                self.logger.warning(
+                    f"Cached bundle has graph '{bundle.graph_name}' but "
+                    f"requested '{graph_name}'. Creating new bundle."
+                )
+                bundle = None  # Force recreation
+        return bundle
 
 
     

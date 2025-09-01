@@ -163,32 +163,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         availability_cache_service,
     )
 
-    # Logging service factory that creates AND initializes the service
-    @staticmethod
-    def _create_and_initialize_logging_service(app_config_service):
-        """
-        Create and initialize LoggingService.
-
-        This factory ensures the LoggingService is properly initialized
-        after creation, which is required before other services can use it.
-        """
-        from agentmap.services.logging_service import LoggingService
-
-        logging_config = app_config_service.get_logging_config()
-        service = LoggingService(logging_config)
-        service.initialize()  # Critical: initialize before returning
-        return service
-
-    logging_service = providers.Singleton(
-        _create_and_initialize_logging_service, app_config_service
-    )
-
-    # container_factory = providers.Singleton(
-    #     "agentmap.services.container_factory.ContainerFactory",
-    #     app_config_service,
-    #     logging_service,
-    # )
-
     # LLM Routing Config Service with unified cache integration
     @staticmethod
     def _create_llm_routing_config_service(
@@ -264,28 +238,89 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
-    # # Dependency Checker Service with unified cache integration
-    # @staticmethod
-    # def _create_dependency_checker_service(
-    #     logging_service, features_registry_service, availability_cache_service
-    # ):
-    #     """
-    #     Create dependency checker service with unified cache integration.
+    # Dependency Checker Service with unified cache integration
+    @staticmethod
+    def _create_dependency_checker_service(
+        logging_service, features_registry_service, availability_cache_service
+    ):
+        """
+        Create dependency checker service with unified cache integration.
 
-    #     Args:
-    #         logging_service: Logging service
-    #         features_registry_service: Features registry service
-    #         availability_cache_service: Unified availability cache service
-    #     """
-    #     from agentmap.services.dependency_checker_service import (
-    #         DependencyCheckerService,
-    #     )
+        Args:
+            logging_service: Logging service
+            features_registry_service: Features registry service
+            availability_cache_service: Unified availability cache service
+        """
+        from agentmap.services.dependency_checker_service import (
+            DependencyCheckerService,
+        )
 
-    #     service = DependencyCheckerService(
-    #         logging_service, features_registry_service, availability_cache_service
-    #     )
+        service = DependencyCheckerService(
+            logging_service, features_registry_service, availability_cache_service
+        )
 
-    #     return service
+        return service
+
+
+    # LEVEL 1: Utility Services (no business logic dependencies)
+
+    # Global model instances for shared state
+    features_registry_model = providers.Singleton(
+        "agentmap.models.features_registry.FeaturesRegistry"
+    )
+
+    agent_registry_model = providers.Singleton(
+        "agentmap.models.agent_registry.AgentRegistry"
+    )
+
+    # Validation Cache Service for caching validation results
+    validation_cache_service = providers.Singleton(
+        "agentmap.services.validation.validation_cache_service.ValidationCacheService"
+    )
+
+    # Execution Formatter Service for formatting graph execution results 
+    # (development/testing)
+    execution_formatter_service = providers.Singleton(
+        "agentmap.services.execution_formatter_service.ExecutionFormatterService"
+    )
+
+   # Additional utility providers for common transformations
+
+    # Provider for getting specific configuration sections
+    logging_config = providers.Callable(
+        lambda app_config: app_config.get_logging_config(), app_config_service
+    )
+
+    execution_config = providers.Callable(
+        lambda app_config: app_config.get_execution_config(), app_config_service
+    )
+
+    prompts_config = providers.Callable(
+        lambda app_config: app_config.get_prompts_config(), app_config_service
+    )
+
+    custom_agents_config = providers.Callable(
+        lambda app_config: app_config.get_custom_agents_path(), app_config_service
+    )
+
+
+    # StateAdapterService for state management (no dependencies)
+    state_adapter_service = providers.Singleton(
+        "agentmap.services.state_adapter_service.StateAdapterService"
+    )
+
+    # FilePathService for centralized path validation and security
+    file_path_service = providers.Singleton(
+        "agentmap.services.file_path_service.FilePathService",
+        app_config_service,
+        logging_service,
+    )
+
+    custom_agent_loader = providers.Singleton(
+        "agentmap.services.custom_agent_loader.CustomAgentLoader",
+        custom_agents_config,
+        logging_service,
+    )
 
     # Blob Storage Service for cloud blob operations
     @staticmethod
@@ -371,7 +406,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     # Storage Service Manager with graceful failure handling
     @staticmethod
     def _create_storage_service_manager(
-        storage_config_service, logging_service, blob_storage_service
+        storage_config_service, logging_service, file_path_service, blob_storage_service
     ):
         """
         Create storage service manager with graceful failure handling.
@@ -392,7 +427,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
             from agentmap.services.storage.manager import StorageServiceManager
 
             return StorageServiceManager(
-                storage_config_service, logging_service, blob_storage_service
+                storage_config_service, logging_service, file_path_service, blob_storage_service
             )
         except Exception as e:
             # Import the specific exception to check for it
@@ -409,53 +444,21 @@ class ApplicationContainer(containers.DeclarativeContainer):
                 # Re-raise other exceptions as they indicate real problems
                 raise
 
+    # Storage Service Manager with graceful failure handling (moved here after file_path_service)
     storage_service_manager = providers.Singleton(
         _create_storage_service_manager,
         storage_config_service,  # Use storage_config_service as primary configuration
         logging_service,
+        file_path_service,
         blob_storage_service,
     )
 
-    # LEVEL 1: Utility Services (no business logic dependencies)
-
-    # StateAdapterService for state management (no dependencies)
-    state_adapter_service = providers.Singleton(
-        "agentmap.services.state_adapter_service.StateAdapterService"
-    )
-
-    # Global model instances for shared state
-    features_registry_model = providers.Singleton(
-        "agentmap.models.features_registry.FeaturesRegistry"
-    )
-
-    agent_registry_model = providers.Singleton(
-        "agentmap.models.agent_registry.AgentRegistry"
-    )
-
-    # Validation Cache Service for caching validation results
-    validation_cache_service = providers.Singleton(
-        "agentmap.services.validation.validation_cache_service.ValidationCacheService"
-    )
-
-    # Execution Formatter Service for formatting graph execution results 
-    # (development/testing)
-    execution_formatter_service = providers.Singleton(
-        "agentmap.services.execution_formatter_service.ExecutionFormatterService"
-    )
-
-   # Additional utility providers for common transformations
-
-    # Provider for getting specific configuration sections
-    logging_config = providers.Callable(
-        lambda app_config: app_config.get_logging_config(), app_config_service
-    )
-
-    execution_config = providers.Callable(
-        lambda app_config: app_config.get_execution_config(), app_config_service
-    )
-
-    prompts_config = providers.Callable(
-        lambda app_config: app_config.get_prompts_config(), app_config_service
+    # System Storage Manager for system-level storage operations
+    system_storage_manager = providers.Singleton(
+        "agentmap.services.storage.system_manager.SystemStorageManager",
+        app_config_service,
+        logging_service,
+        file_path_service,
     )
 
 
@@ -506,18 +509,19 @@ class ApplicationContainer(containers.DeclarativeContainer):
     @staticmethod
     def _create_declaration_registry_service(app_config_service, logging_service):
         """
-        Create and initialize DeclarationRegistryService with built-in declarations.
+        Create and initialize DeclarationRegistryService with built-in and custom declarations.
         
         This factory ensures the declaration registry is populated with:
         1. Built-in agent declarations (echo, input, anthropic, etc.)
         2. Built-in service declarations (logging_service, llm_service, etc.)
+        3. Custom agent declarations from custom_agents.yaml
         
         Args:
             app_config_service: Application configuration service
             logging_service: Logging service for error reporting
         """
         from agentmap.services.declaration_registry_service import DeclarationRegistryService
-        from agentmap.services.declaration_sources import PythonDeclarationSource
+        from agentmap.services.declaration_sources import PythonDeclarationSource, CustomAgentYAMLSource
         from agentmap.services.declaration_parser import DeclarationParser
         
         # Create the registry service
@@ -526,16 +530,21 @@ class ApplicationContainer(containers.DeclarativeContainer):
         # Create the parser for declarations
         parser = DeclarationParser(logging_service)
         
-        # Add built-in Python declarations source
+        # Add built-in Python declarations source (first - base declarations)
         builtin_source = PythonDeclarationSource(parser, logging_service)
         registry.add_source(builtin_source)
+        
+        # Add custom agent YAML source (second - overrides built-ins if conflicts)
+        custom_yaml_source = CustomAgentYAMLSource(app_config_service, parser, logging_service)
+        registry.add_source(custom_yaml_source)
         
         # Load all declarations from sources
         registry.load_all()
         
         logger = logging_service.get_class_logger(registry)
-        logger.info(f"Initialized declaration registry with {len(registry.get_all_agent_types())} "
-                     "agents and {len(registry.get_all_service_names())} services")
+        logger.info(f"Initialized declaration registry")
+        # logger.info(f"Initialized declaration registry with {len(registry.get_all_agent_types())} "
+        #              "agents and {len(registry.get_all_service_names())} services from all sources")
         
         return registry
 
@@ -574,13 +583,31 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
+    # CustomAgentDeclarationManager for managing custom_agents.yaml file operations
+    custom_agent_declaration_manager = providers.Singleton(
+        "agentmap.services.custom_agent_declaration_manager.CustomAgentDeclarationManager",
+        app_config_service,
+        logging_service,
+        indented_template_composer,
+    )
+
     # LEVEL 3: Core Services (depend on Level 1 & 2)
 
     static_bundle_analyzer = providers.Singleton(
     "agentmap.services.static_bundle_analyzer.StaticBundleAnalyzer",
         declaration_registry_service,
+        custom_agent_declaration_manager,
         csv_graph_parser_service,
         logging_service,
+    )
+
+    # Graph Definition Service for building Graph domain models from CSV
+    graph_definition_service = providers.Singleton(
+        "agentmap.services.graph_definition_service.GraphDefinitionService",
+        logging_service,
+        app_config_service,
+        csv_graph_parser_service,
+        graph_factory_service,
     )
 
     # Features registry service (operates on global features model)
@@ -619,6 +646,14 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # LEVEL 4: Advanced Services (depend on Level 1, 2 & 3)
 
+    # OrchestratorService for node selection and orchestration business logic
+    orchestrator_service = providers.Singleton(
+        "agentmap.services.orchestrator_service.OrchestratorService",
+        prompt_manager_service,
+        logging_service,
+        llm_service,
+        features_registry_service,
+    )
 
     # Graph Assembly Service for assembling StateGraph instances
     graph_assembly_service = providers.Singleton(
@@ -629,27 +664,11 @@ class ApplicationContainer(containers.DeclarativeContainer):
         features_registry_service,
         function_resolution_service,
         graph_factory_service,
-    )
-
-    # OrchestratorService for node selection and orchestration business logic
-    orchestrator_service = providers.Singleton(
-        "agentmap.services.orchestrator_service.OrchestratorService",
-        prompt_manager_service,
-        logging_service,
-        llm_service,
-        features_registry_service,
+        orchestrator_service,
     )
 
 
-    # GraphScaffoldService for service-aware scaffolding
-    graph_scaffold_service = providers.Singleton(
-        "agentmap.services.graph_scaffold_service.GraphScaffoldService",
-        app_config_service,
-        logging_service,
-        function_resolution_service,
-        agent_registry_service,
-        indented_template_composer,
-    )
+
 
 
     # LEVEL 5: Higher-level Services (depend on previous levels)
@@ -661,9 +680,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
     # Agent factory service (coordinates between registry and features)
     agent_factory_service = providers.Singleton(
         "agentmap.services.agent.agent_factory_service.AgentFactoryService",
-        agent_registry_service,
         features_registry_service,
         logging_service,
+        custom_agent_loader,
     )
 
     # ProtocolBasedRequirementsAnalyzer for analyzing graph requirements from agent protocols
@@ -673,9 +692,14 @@ class ApplicationContainer(containers.DeclarativeContainer):
         agent_factory_service,
         logging_service,
     )
-
-    # DIContainerAnalyzer is not registered in the DI container
-    # It's created on-demand by GraphBundleService to avoid circular dependency
+    
+    # Graph Registry Service for bundle caching and O(1) lookups
+    graph_registry_service = providers.Singleton(
+        "agentmap.services.graph.graph_registry_service.GraphRegistryService",
+        system_storage_manager,
+        app_config_service,
+        logging_service,
+    )
 
     # Graph Bundle Service for graph bundle operations
     graph_bundle_service = providers.Singleton(
@@ -683,11 +707,39 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
         protocol_requirements_analyzer,
         agent_factory_service,
-        json_storage_service,
+        json_storage_service,  # Fixed: was system_storage_manager, should be json_storage_service
         csv_graph_parser_service,
         static_bundle_analyzer,
         app_config_service,  # Added for delete_bundle() method
+        declaration_registry_service,  # Added for declaration registry access
+        graph_registry_service,  # Added for bundle caching and registry
+        file_path_service,  # Added for centralized bundle path handling
+        system_storage_manager,  # Fixed: moved to correct position (11th parameter)
     )
+
+    # Bundle Update Service for updating cached bundles with declaration mappings
+    bundle_update_service = providers.Singleton(
+        "agentmap.services.graph.bundle_update_service.BundleUpdateService",
+        declaration_registry_service,
+        custom_agent_declaration_manager,
+        graph_bundle_service,
+        file_path_service,  # Added for centralized bundle path handling
+        logging_service,
+    )
+
+
+    # GraphScaffoldService for service-aware scaffolding
+    graph_scaffold_service = providers.Singleton(
+        "agentmap.services.graph_scaffold_service.GraphScaffoldService",
+        app_config_service,
+        logging_service,
+        function_resolution_service,
+        agent_registry_service,
+        indented_template_composer,
+        custom_agent_declaration_manager,
+        bundle_update_service,
+    )
+
 
     # Graph Execution Service for clean execution orchestration
     graph_execution_service = providers.Singleton(
@@ -708,12 +760,12 @@ class ApplicationContainer(containers.DeclarativeContainer):
     )
 
     # Dependency checker service (with unified cache integration)
-    # dependency_checker_service = providers.Singleton(
-    #     _create_dependency_checker_service,
-    #     logging_service,
-    #     features_registry_service,
-    #     availability_cache_service,
-    # )
+    dependency_checker_service = providers.Singleton(
+        _create_dependency_checker_service,
+        logging_service,
+        features_registry_service,
+        availability_cache_service,
+    )
 
     # Host Protocol Configuration Service for configuring protocols on agents
     host_protocol_configuration_service = providers.Singleton(
@@ -742,16 +794,17 @@ class ApplicationContainer(containers.DeclarativeContainer):
     )
 
     # Application bootstrap service (coordinates agent registration and feature discovery)
-    application_bootstrap_service = providers.Singleton(
-        "agentmap.services.application_bootstrap_service.ApplicationBootstrapService",
-        agent_registry_service,
-        features_registry_service,
-        # dependency_checker_service,
-        app_config_service,
-        logging_service,
-        declaration_registry_service,  # Add declaration registry service
-        host_service_registry,
-    )
+    # NOTE: ApplicationBootstrapService module doesn't exist, commenting out for now
+    # application_bootstrap_service = providers.Singleton(
+    #     "agentmap.services.application_bootstrap_service.ApplicationBootstrapService",
+    #     agent_registry_service,
+    #     features_registry_service,
+    #     dependency_checker_service,
+    #     app_config_service,
+    #     logging_service,
+    #     availability_cache_service,
+    #     host_service_registry,
+    # )
     
     # Graph bootstrap service (lightweight bootstrap for graph-specific needs)
     graph_bootstrap_service = providers.Singleton(
@@ -759,13 +812,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         agent_registry_service,
         features_registry_service,
         # dependency_checker_service,
-        app_config_service,
-        logging_service,
-    )
-
-    graph_registry_service = providers.Singleton(
-        "agentmap.services.graph.graph_registry_service.GraphRegistryService",
-        json_storage_service,
         app_config_service,
         logging_service,
     )
@@ -779,11 +825,13 @@ class ApplicationContainer(containers.DeclarativeContainer):
         state_adapter_service,
         logging_service,
         prompt_manager_service,
+        graph_bundle_service,
     )
 
     # Graph Runner Service - Simplified facade service for pure orchestration
     graph_runner_service = providers.Singleton(
         "agentmap.services.graph.graph_runner_service.GraphRunnerService",
+        app_config_service,
         graph_bootstrap_service,
         graph_agent_instantiation_service,
         graph_assembly_service,

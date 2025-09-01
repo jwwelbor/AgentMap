@@ -249,17 +249,21 @@ multi_graph,fail,default,Handle multi graph errors,Multi graph error handler,err
             'build_from_csv',
             return_value=mock_graph
         ):
-            # ✅ FIXED: Use graph_runner_service for agent status
-            mock_agent_status = {
-                "resolved_agents": 4,
-                "unresolved_agents": 0,
-                "total_agents": 4
+            # ✅ FIXED: Mock the instantiation summary method that API actually calls
+            mock_instantiation_summary = {
+                "graph_name": "test_graph",
+                "total_nodes": 4,
+                "instantiated": 4,
+                "missing": 0,
+                "agent_types": {
+                    "default": {"count": 4, "instantiated": 4}
+                }
             }
             
             with patch.object(
-                self.container.graph_runner_service(),
-                'get_agent_resolution_status',
-                return_value=mock_agent_status
+                self.container.graph_agent_instantiation_service(),
+                'get_instantiation_summary',
+                return_value=mock_instantiation_summary
             ):
                 response = self.client.get(
                     f"/graph/status/test_graph?csv={self.graph_csv_path}"
@@ -316,11 +320,21 @@ multi_graph,fail,default,Handle multi graph errors,Multi graph error handler,err
             'build_from_csv',
             return_value=mock_graph
         ):
-            mock_status = {"resolved_agents": 2}
+            # ✅ FIXED: Mock the instantiation summary method that API actually calls
+            mock_instantiation_summary = {
+                "graph_name": "test_graph",
+                "total_nodes": 2,
+                "instantiated": 2,
+                "missing": 0,
+                "agent_types": {
+                    "default": {"count": 2, "instantiated": 2}
+                }
+            }
+            
             with patch.object(
-                self.container.graph_runner_service(),
-                'get_agent_resolution_status',
-                return_value=mock_status
+                self.container.graph_agent_instantiation_service(),
+                'get_instantiation_summary',
+                return_value=mock_instantiation_summary
             ):
                 response = self.client.get("/graph/status/test_graph")
         

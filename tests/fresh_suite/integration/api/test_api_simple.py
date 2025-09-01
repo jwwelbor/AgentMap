@@ -21,7 +21,7 @@ class MockServices:
     def graph_runner_service(self):
         """Return a mock graph runner service."""
         class MockGraphRunner:
-            def run_graph(self, options):
+            def run(self, options):
                 class MockResult:
                     success = True
                     error_message = None

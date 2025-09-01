@@ -190,7 +190,7 @@ class TestModernizedFileWriterAgent(unittest.TestCase):
             collection=collection,
             data="Simple content",
             document_id=None,
-            mode=WriteMode.WRITE,  # Default mode
+            mode=WriteMode.APPEND,  # Default mode
             path=None
         )
     

@@ -11,7 +11,6 @@ from typing import Optional
 from agentmap.di import initialize_di
 from agentmap.core.cli.cli_utils import (
     resolve_csv_path,
-    get_or_create_bundle,
     handle_command_error
 )
 
@@ -50,7 +49,12 @@ def validate_command(
         
         # Create bundle to check for missing declarations
         typer.echo("📦 Analyzing graph dependencies...")
-        bundle = get_or_create_bundle(container, csv_path, graph, config_file)
+        graph_bundle_service = container.graph_bundle_service()
+        bundle = graph_bundle_service.get_or_create_bundle(
+            csv_path=csv_path,
+            graph_name=graph,
+            config_path=config_file
+        )
         
         # Report bundle analysis
         if graph:

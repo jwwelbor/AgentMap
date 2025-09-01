@@ -12,7 +12,6 @@ from agentmap.di import initialize_di
 from agentmap.core.cli.cli_utils import (
     resolve_csv_path,
     parse_json_state,
-    get_or_create_bundle,
     handle_command_error
 )
 
@@ -68,8 +67,13 @@ def run_command(
         # Parse initial state using utility
         initial_state = parse_json_state(state)
 
-        # Get or create bundle using utility
-        bundle = get_or_create_bundle(container, csv_path, graph, config_file)
+        # Get or create bundle using GraphBundleService
+        graph_bundle_service = container.graph_bundle_service()
+        bundle = graph_bundle_service.get_or_create_bundle(
+            csv_path=csv_path,
+            graph_name=graph,
+            config_path=config_file
+        )
 
         # Execute graph using bundle
         runner = container.graph_runner_service()        

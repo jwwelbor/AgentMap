@@ -8,6 +8,7 @@ operations to CSVStorageService, keeping agents simple and focused.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
@@ -105,48 +106,21 @@ class CSVAgent(BaseStorageAgent, CSVCapableAgent):
             self._csv_service = CSVStorageService(self.context)
             self._client = self._csv_service
 
-    def _is_auto_creation_enabled(self) -> bool:
-        """
-        Check if CSV auto-creation is enabled.
 
-        Returns:
-            True if auto-creation is enabled, False otherwise
-        """
-        try:
-            if self._csv_service is not None:
-                return self.csv_service.configuration.is_csv_auto_create_enabled()
-            else:
-                self.log_debug(
-                    "CSV service not yet configured, assuming auto-creation disabled"
-                )
-                return False
-        except Exception as e:
-            self.log_debug(f"Could not check auto-creation setting: {e}")
-            return False
-
-    def _is_write_operation(self, inputs: Dict[str, Any]) -> bool:
-        """
-        Determine if this is a write operation that could benefit from auto-creation.
-
-        Args:
-            inputs: Input dictionary
-
-        Returns:
-            True if this appears to be a write operation
-        """
-        # Write operations typically have data to write
-        return "data" in inputs
 
     def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
         """
-        Validate inputs for CSV operations with auto-creation support.
+        Validate inputs for CSV operations following clean architecture principles.
+
+        File existence validation has been moved to the service layer to maintain
+        clean separation of concerns and allow the service to handle auto-creation
+        and other storage-specific behaviors appropriately.
 
         Args:
             inputs: Input dictionary
 
         Raises:
             ValueError: If inputs are invalid
-            FileNotFoundError: If file doesn't exist and auto-creation won't help
         """
         collection = self.get_collection(inputs)
         if not collection:
@@ -156,32 +130,12 @@ class CSVAgent(BaseStorageAgent, CSVCapableAgent):
         if not collection.lower().endswith(".csv"):
             self.log_warning(f"Collection path does not end with .csv: {collection}")
 
-        # Determine if we should skip file existence validation
-        is_write_op = self._is_write_operation(inputs)
-        auto_creation_enabled = self._is_auto_creation_enabled()
-
-        if is_write_op and auto_creation_enabled:
-            # For write operations with auto-creation enabled, skip parent file validation
-            # The CSV service will handle creating the file if needed
-            self.log_debug(
-                f"Skipping file existence validation for write operation with auto-creation enabled: {collection}"
-            )
-        else:
-            # For read operations or when auto-creation is disabled, use strict validation
-            if not is_write_op:
-                self.log_debug(
-                    f"Using strict validation for read operation: {collection}"
-                )
-                super()._validate_inputs(inputs)
-            else:
-                if not auto_creation_enabled:
-                    self.log_debug(
-                        f"Using strict validation (auto-creation disabled): {collection}"
-                    )
-                    # Call parent validation which includes file existence check
-                    super()._validate_inputs(inputs)
+        # File existence validation has been moved to service layer
+        # The CSVStorageService will handle file existence, auto-creation,
+        # and other storage-specific validation appropriately
+        self.log_debug(f"Input validation completed for collection: {collection}")
+        
         return
-
 
     def _get_full_file_path(self, collection: str) -> str:
         """
@@ -203,20 +157,7 @@ class CSVAgent(BaseStorageAgent, CSVCapableAgent):
             self.log_debug(f"Could not resolve full file path for {collection}: {e}")
             return collection
 
-    def _get_auto_creation_context(self) -> str:
-        """
-        Get context about auto-creation settings for error messages.
 
-        Returns:
-            Context string about auto-creation configuration
-        """
-        try:
-            if self._is_auto_creation_enabled():
-                return "Auto-creation is enabled but failed"
-            else:
-                return "Auto-creation is disabled. Enable with 'auto_create_files: true' in CSV config"
-        except Exception:
-            return "Could not determine auto-creation settings"
 
     def _handle_operation_error(
         self, error: Exception, collection: str, inputs: Dict[str, Any]
@@ -236,20 +177,10 @@ class CSVAgent(BaseStorageAgent, CSVCapableAgent):
         full_path = self._get_full_file_path(collection)
 
         if isinstance(error, FileNotFoundError):
-            # Enhanced file not found error with full context
-            auto_creation_context = self._get_auto_creation_context()
-            is_write_op = self._is_write_operation(inputs)
-
+            # Enhanced file not found error with full path context
             error_msg = f"CSV file not found: '{collection}'"
             if full_path != collection:
                 error_msg += f" (resolved to: '{full_path}')"
-
-            error_msg += f". {auto_creation_context}"
-
-            if is_write_op and not self._is_auto_creation_enabled():
-                error_msg += ". For write operations, consider enabling auto-creation in your storage configuration"
-            elif not is_write_op:
-                error_msg += ". File must exist for read operations"
 
             self.log_error(f"[{self.__class__.__name__}] {error_msg}")
 

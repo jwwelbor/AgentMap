@@ -25,13 +25,27 @@ class TestGraphAgent(unittest.TestCase):
         # Create custom service mocks (not part of standard protocols yet)
         self.mock_graph_runner_service = Mock()
         self.mock_function_resolution_service = Mock()
+        self.mock_graph_bundle_service = Mock()  # Add mock for bundle service
         
         # Configure graph runner service mock
-        self.mock_graph_runner_service.run_graph.return_value = {
+        self.mock_graph_runner_service.run.return_value = {
             "output": "Mock subgraph result",
             "graph_success": True,
             "last_action_success": True
         }
+        
+        # Configure graph bundle service mock
+        from agentmap.models.graph_bundle import GraphBundle
+        from agentmap.models.node import Node
+        mock_bundle = GraphBundle.create_metadata(
+            graph_name="test_subgraph",
+            nodes={"node1": Node(name="node1", agent_type="TestAgent")},
+            required_agents=set(),
+            required_services=set(),
+            function_mappings={},
+            csv_hash="test_hash"
+        )
+        self.mock_graph_bundle_service.get_or_create_bundle.return_value = mock_bundle
         
         # Configure function resolution service mock
         self.mock_function_resolution_service.extract_func_ref.return_value = "test.mapping_function"
@@ -386,22 +400,33 @@ class TestGraphAgent(unittest.TestCase):
     
     def test_process_successful_subgraph_execution(self):
         """Test successful subgraph execution."""
-        agent = self.create_graph_agent()
+        # Fix: Provide CSV path in context so bundle can be created
+        context = {"csv_path": "graphs/test_subgraph.csv"}
+        agent = self.create_graph_agent(context=context)
         agent.configure_graph_runner_service(self.mock_graph_runner_service)
+        agent.configure_graph_bundle_service(self.mock_graph_bundle_service)
         
         inputs = {"data1": "value1", "data2": "value2"}
         
         result = agent.process(inputs)
         
-        # Verify subgraph was executed
-        self.mock_graph_runner_service.run_graph.assert_called_once()
-        call_args = self.mock_graph_runner_service.run_graph.call_args
+        # Verify bundle service was called to get the bundle
+        self.mock_graph_bundle_service.get_or_create_bundle.assert_called_once()
+        bundle_call_args = self.mock_graph_bundle_service.get_or_create_bundle.call_args
+        # Use Path.as_posix() to normalize path separators for cross-platform testing
+        actual_path = bundle_call_args.kwargs["csv_path"]
+        expected_path = "graphs/test_subgraph.csv"
+        self.assertEqual(str(actual_path).replace("\\", "/"), expected_path)
+        self.assertEqual(bundle_call_args.kwargs["graph_name"], "test_subgraph")
         
-        # Verify call parameters
-        self.assertEqual(call_args.kwargs["graph_name"], "test_subgraph")
+        # Verify subgraph was executed with bundle
+        self.mock_graph_runner_service.run.assert_called_once()
+        call_args = self.mock_graph_runner_service.run.call_args
+        
+        # Verify call parameters - now uses bundle instead of graph_name
+        self.assertIn("bundle", call_args.kwargs)
         self.assertEqual(call_args.kwargs["initial_state"], {"data1": "value1", "data2": "value2"})
-        self.assertIsNone(call_args.kwargs["csv_path"])  # No CSV path in default context
-        self.assertTrue(call_args.kwargs["autocompile_override"])
+        self.assertTrue(call_args.kwargs["is_subgraph"])
         
         # Verify result
         expected = {"output": "Mock subgraph result", "graph_success": True, "last_action_success": True}
@@ -420,14 +445,14 @@ class TestGraphAgent(unittest.TestCase):
         context = {"csv_path": "graphs/custom.csv"}
         agent = self.create_graph_agent(context=context)
         agent.configure_graph_runner_service(self.mock_graph_runner_service)
+        agent.configure_graph_bundle_service(self.mock_graph_bundle_service)
         
         inputs = {"data": "value"}
         
         agent.process(inputs)
         
-        # Verify CSV path was passed
-        call_args = self.mock_graph_runner_service.run_graph.call_args
-        self.assertEqual(call_args.kwargs["csv_path"], "graphs/custom.csv")
+        # Verify bundle service was called to get bundle for the subgraph
+        self.mock_graph_bundle_service.get_or_create_bundle.assert_called()
     
     def test_process_without_configured_service(self):
         """Test process method fails gracefully when graph runner service not configured."""
@@ -442,11 +467,14 @@ class TestGraphAgent(unittest.TestCase):
     
     def test_process_with_subgraph_execution_error(self):
         """Test process handles subgraph execution errors gracefully."""
-        agent = self.create_graph_agent()
+        # Fix: Provide CSV path in context so bundle can be created and error path can be tested
+        context = {"csv_path": "graphs/test_subgraph.csv"}
+        agent = self.create_graph_agent(context=context)
         agent.configure_graph_runner_service(self.mock_graph_runner_service)
+        agent.configure_graph_bundle_service(self.mock_graph_bundle_service)
         
         # Configure service to raise error
-        self.mock_graph_runner_service.run_graph.side_effect = Exception("Subgraph execution failed")
+        self.mock_graph_runner_service.run.side_effect = Exception("Subgraph execution failed")
         
         inputs = {"data": "value"}
         
@@ -534,8 +562,11 @@ class TestGraphAgent(unittest.TestCase):
     
     def test_run_method_integration(self):
         """Test the inherited run method works with GraphAgent."""
-        agent = self.create_graph_agent()
+        # Fix: Provide CSV path in context so bundle can be created
+        context = {"csv_path": "graphs/test_subgraph.csv"}
+        agent = self.create_graph_agent(context=context)
         agent.configure_graph_runner_service(self.mock_graph_runner_service)
+        agent.configure_graph_bundle_service(self.mock_graph_bundle_service)
         
         # Configure state adapter behavior
         def mock_get_inputs(state, input_fields):
@@ -567,7 +598,7 @@ class TestGraphAgent(unittest.TestCase):
         result_state = agent.run(test_state)
         
         # Verify subgraph was executed
-        self.mock_graph_runner_service.run_graph.assert_called_once()
+        self.mock_graph_runner_service.run.assert_called_once()
         
         # Verify state was updated with result
         self.assertIn("result", result_state)
@@ -676,9 +707,12 @@ class TestGraphAgent(unittest.TestCase):
     
     def test_logging_integration_detailed(self):
         """Test that agent properly logs subgraph operations."""
-        agent = self.create_graph_agent()
+        # Fix: Provide CSV path in context so bundle can be created
+        context = {"csv_path": "graphs/test_subgraph.csv"}
+        agent = self.create_graph_agent(context=context)
         agent.configure_graph_runner_service(self.mock_graph_runner_service)
         agent.configure_function_resolution_service(self.mock_function_resolution_service)
+        agent.configure_graph_bundle_service(self.mock_graph_bundle_service)
         
         inputs = {"data1": "test_data", "data2": "more_data"}
         
@@ -702,9 +736,11 @@ class TestGraphAgent(unittest.TestCase):
     
     def test_logging_field_mapping_operations(self):
         """Test logging for field mapping operations."""
-        context = {"input_fields": ["target1=source1", "target2=source2"]}
+        # Fix: Add CSV path to context so bundle can be created
+        context = {"input_fields": ["target1=source1", "target2=source2"], "csv_path": "graphs/test_subgraph.csv"}
         agent = self.create_graph_agent(context=context)
         agent.configure_graph_runner_service(self.mock_graph_runner_service)
+        agent.configure_graph_bundle_service(self.mock_graph_bundle_service)
         
         inputs = {"source1": "value1", "source2": "value2"}
         

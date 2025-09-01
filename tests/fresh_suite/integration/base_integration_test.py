@@ -12,7 +12,7 @@ import yaml
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from agentmap.di import initialize_application
+from agentmap.di import initialize_di
 from tests.utils.enhanced_service_auditor import EnhancedServiceInterfaceAuditor
 
 
@@ -38,8 +38,8 @@ class BaseIntegrationTest(unittest.TestCase):
         # Create test configuration following established patterns
         self.test_config_path = self._create_test_config()
         
-        # Initialize real DI container with test configuration and agent bootstrap
-        self.container = initialize_application(str(self.test_config_path))
+        # Initialize real DI container with test configuration
+        self.container = initialize_di(str(self.test_config_path))
         
         # Initialize service interface auditor for validation
         self.service_auditor = EnhancedServiceInterfaceAuditor()
@@ -173,8 +173,8 @@ class BaseIntegrationTest(unittest.TestCase):
                 }
             },
             "paths": {
-                "csv_data": str(Path(self.temp_dir) / "csv_data"),
-                "csv_repository": str(Path(self.temp_dir) / "csv_data"),
+                "csv_data": str(Path(self.temp_dir) / "storage" / "csv"),
+                "csv_repository": str(Path(self.temp_dir) / "storage" / "csv"),
                 "compiled_graphs": str(Path(self.temp_dir) / "compiled"),
                 "custom_agents": str(Path(self.temp_dir) / "custom_agents"),
                 "functions": str(Path(self.temp_dir) / "functions")
@@ -182,41 +182,44 @@ class BaseIntegrationTest(unittest.TestCase):
             "storage_config_path": str(storage_config_path)
         }
         
-        # Create storage configuration data
+        # Create storage configuration data with base_directory hierarchy
         storage_config_data = {
+            "base_directory": str(Path(self.temp_dir) / "storage"),
             "csv": {
-                "default_directory": str(Path(self.temp_dir) / "csv_data"),
+                "default_directory": "csv",
                 "auto_create_files": True,
                 "collections": {}
             },
             "vector": {
+                "default_directory": "vector",
                 "default_provider": "chroma",
                 "collections": {
                     "test_collection": {
                         "provider": "chroma",
                         "settings": {
-                            "persist_directory": str(Path(self.temp_dir) / "vector_data")
+                            "persist_directory": str(Path(self.temp_dir) / "storage" / "vector" / "chroma")
                         }
                     }
                 }
             },
             "kv": {
+                "default_directory": "kv",
                 "default_provider": "local",
                 "collections": {
                     "test_kv": {
                         "provider": "local",
                         "settings": {
-                            "file_path": str(Path(self.temp_dir) / "kv_data.json")
+                            "file_path": str(Path(self.temp_dir) / "storage" / "kv" / "kv_data.json")
                         }
                     }
                 }
             },
             "json": {
-                "default_directory": str(Path(self.temp_dir) / "json_data"),
+                "default_directory": "json",
                 "collections": {}
             },
             "file": {
-                "default_directory": str(Path(self.temp_dir) / "file_data"),
+                "default_directory": "file",
                 "collections": {}
             }
         }
@@ -228,8 +231,13 @@ class BaseIntegrationTest(unittest.TestCase):
         with open(storage_config_path, 'w') as f:
             yaml.dump(storage_config_data, f, default_flow_style=False, indent=2)
         
-        # Create necessary directories
-        (Path(self.temp_dir) / "csv_data").mkdir(parents=True, exist_ok=True)
+        # Create necessary directories with new base_directory hierarchy
+        (Path(self.temp_dir) / "storage").mkdir(parents=True, exist_ok=True)
+        (Path(self.temp_dir) / "storage" / "csv").mkdir(parents=True, exist_ok=True)
+        (Path(self.temp_dir) / "storage" / "json").mkdir(parents=True, exist_ok=True)
+        (Path(self.temp_dir) / "storage" / "vector").mkdir(parents=True, exist_ok=True)
+        (Path(self.temp_dir) / "storage" / "kv").mkdir(parents=True, exist_ok=True)
+        (Path(self.temp_dir) / "storage" / "file").mkdir(parents=True, exist_ok=True)
         (Path(self.temp_dir) / "compiled").mkdir(parents=True, exist_ok=True)
         (Path(self.temp_dir) / "custom_agents").mkdir(parents=True, exist_ok=True)
         (Path(self.temp_dir) / "functions").mkdir(parents=True, exist_ok=True)
@@ -247,7 +255,7 @@ class BaseIntegrationTest(unittest.TestCase):
         Returns:
             Path to the created CSV file
         """
-        csv_path = Path(self.temp_dir) / "csv_data" / filename
+        csv_path = Path(self.temp_dir) / "storage" / "csv" / filename
         csv_path.parent.mkdir(parents=True, exist_ok=True)
         csv_path.write_text(content, encoding='utf-8')
         return csv_path

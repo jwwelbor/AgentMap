@@ -31,8 +31,9 @@ from tests.utils.mock_service_factory import MockServiceFactory
 class MockStorageService(BaseStorageService):
     """Mock storage service for testing."""
     
-    def __init__(self, provider_name: str, configuration: Any, logging_service: Any):
-        super().__init__(provider_name, configuration, logging_service)
+    def __init__(self, provider_name: str, configuration: Any, logging_service: Any, 
+                 file_path_service: Any = None, base_directory: Any = None):
+        super().__init__(provider_name, configuration, logging_service, file_path_service, base_directory)
         self.is_healthy = True
         self.initialization_error = None
     
@@ -88,7 +89,10 @@ class MockStorageServiceFactory:
         mock_logging = Mock()
         mock_logging.get_class_logger.return_value = Mock()
         
-        return self.service_class(provider_name, mock_config, mock_logging)
+        # Mock file path service
+        mock_file_path = Mock()
+        
+        return self.service_class(provider_name, mock_config, mock_logging, mock_file_path)
 
 
 class TestStorageServiceManager(unittest.TestCase):
@@ -98,6 +102,7 @@ class TestStorageServiceManager(unittest.TestCase):
         """Set up test fixtures with mocked dependencies."""
         # Create mock services using MockServiceFactory
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        self.mock_file_path_service = MockServiceFactory.create_mock_file_path_service()
         self.mock_storage_config_service = MockServiceFactory.create_mock_storage_config_service({
             "csv": {
                 "enabled": True,
@@ -116,7 +121,8 @@ class TestStorageServiceManager(unittest.TestCase):
             # Create StorageServiceManager with mocked dependencies
             self.manager = StorageServiceManager(
                 configuration=self.mock_storage_config_service,
-                logging_service=self.mock_logging_service
+                logging_service=self.mock_logging_service,
+                file_path_service=self.mock_file_path_service
             )
         
         # Get the mock logger for verification
@@ -136,6 +142,7 @@ class TestStorageServiceManager(unittest.TestCase):
         # Verify dependencies are stored
         self.assertEqual(self.manager.configuration, self.mock_storage_config_service)
         self.assertEqual(self.manager.logging_service, self.mock_logging_service)
+        self.assertEqual(self.manager.file_path_service, self.mock_file_path_service)
         self.assertIsNotNone(self.manager._logger)
         
         # Verify internal storage structures are initialized
@@ -154,7 +161,8 @@ class TestStorageServiceManager(unittest.TestCase):
         # Create manager with real auto-registration
         manager = StorageServiceManager(
             configuration=self.mock_storage_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            file_path_service=self.mock_file_path_service
         )
         
         # Verify auto-registration was called
@@ -170,7 +178,8 @@ class TestStorageServiceManager(unittest.TestCase):
         # Should not fail even if auto-registration fails
         manager = StorageServiceManager(
             configuration=self.mock_storage_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            file_path_service=self.mock_file_path_service
         )
         
         # Manager should still be created
@@ -186,7 +195,8 @@ class TestStorageServiceManager(unittest.TestCase):
         # Should not fail even if auto-registration fails
         manager = StorageServiceManager(
             configuration=self.mock_storage_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            file_path_service=self.mock_file_path_service
         )
         
         # Manager should still be created
@@ -387,7 +397,8 @@ class TestStorageServiceManager(unittest.TestCase):
         with patch.object(StorageServiceManager, '_auto_register_providers'):
             manager = StorageServiceManager(
                 configuration=mock_config_without_default,
-                logging_service=self.mock_logging_service
+                logging_service=self.mock_logging_service,
+                file_path_service=self.mock_file_path_service
             )
         
         # Register csv provider (the hardcoded fallback)
@@ -415,7 +426,8 @@ class TestStorageServiceManager(unittest.TestCase):
         with patch.object(StorageServiceManager, '_auto_register_providers'):
             test_manager = StorageServiceManager(
                 configuration=mock_config_no_csv,
-                logging_service=self.mock_logging_service
+                logging_service=self.mock_logging_service,
+                file_path_service=self.mock_file_path_service
             )
         
         # Register a different provider to show it doesn't fall back

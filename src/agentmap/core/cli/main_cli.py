@@ -8,15 +8,15 @@ with existing command interfaces while using the new service architecture.
 import typer, sys
 
 from agentmap._version import __version__
-from agentmap.core.cli.diagnostic_commands import (
-    config_cmd,
-    diagnose_cmd,
-    init_config_command,
-    inspect_graph_cmd,
-    validate_cache_cmd,
-)
+from agentmap.core.cli.config_command import config_cmd
+from agentmap.core.cli.diagnose_command import diagnose_cmd
+from agentmap.core.cli.init_config_command import init_config_command
+from agentmap.core.cli.inspect_graph_command import inspect_graph_cmd
+from agentmap.core.cli.refresh_command import refresh_cmd
+from agentmap.core.cli.validate_cache_command import validate_cache_cmd
 from agentmap.core.cli.run_command import run_command
 from agentmap.core.cli.scaffold_command import scaffold_command
+from agentmap.core.cli.update_bundle_command import update_bundle_command
 from agentmap.core.cli.validate_command import validate_command
 # from agentmap.core.cli.validation_commands import (
 #     validate_all_cmd,
@@ -64,6 +64,7 @@ def main(
 
 app.command("run")(run_command)
 app.command("scaffold")(scaffold_command)
+app.command("update-bundle")(update_bundle_command)
 #app.command("export")(export_command)
 #app.command("resume")(resume_command)
 
@@ -72,7 +73,7 @@ app.command("scaffold")(scaffold_command)
 # CONFIGURATION COMMANDS
 # ============================================================================
 
-app.command("config")(config_cmd)
+# app.command("config")(config_cmd)
 app.command("init-config")(init_config_command)
 
 # ============================================================================
@@ -88,9 +89,10 @@ app.command("validate")(validate_command)  # Bundle-based validation
 # CACHE AND DIAGNOSTIC COMMANDS
 # ============================================================================
 
-# app.command("validate-cache")(validate_cache_cmd)
-# app.command("diagnose")(diagnose_cmd)
-# app.command("inspect-graph")(inspect_graph_cmd)
+app.command("refresh")(refresh_cmd)
+#app.command("validate-cache")(validate_cache_cmd)
+app.command("diagnose")(diagnose_cmd)
+#app.command("inspect-graph")(inspect_graph_cmd)
 
 
 def main_cli():

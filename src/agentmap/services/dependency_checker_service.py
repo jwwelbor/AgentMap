@@ -153,7 +153,9 @@ class DependencyCheckerService:
             Tuple of (all_valid, invalid_modules)
         """
         invalid = []
-
+        self.logger.debug(
+            f"[DependencyCheckerService] Validating {len(module_names)} imports"
+        )
         for module_name in module_names:
             try:
                 # Special case for modules with version requirements
@@ -212,7 +214,7 @@ class DependencyCheckerService:
         Returns:
             Tuple of (all_available, missing_packages)
         """
-        # Step 1: Check feature policy first
+        # # Step 1: Check feature policy first
         if not self.features_registry.is_feature_enabled("llm"):
             self.logger.debug("[DependencyCheckerService] LLM feature not enabled")
             return False, ["llm feature not enabled"]
@@ -343,12 +345,15 @@ class DependencyCheckerService:
         # Check technical validation
         return self.features_registry.is_provider_validated(category, provider)
 
-    def discover_and_validate_providers(self, category: str) -> Dict[str, bool]:
+    def discover_and_validate_providers(self, category: str, force: bool = False) -> Dict[str, bool]:
         """
         Discover available providers and update registry with validation results.
 
         This method performs comprehensive discovery and updates the features registry
         with current validation status for all known providers in a category.
+        
+        Automatically enables the feature for the category before discovery, as discovery
+        implies intent to use the feature if dependencies are available.
 
         Args:
             category: Category to discover ('llm' or 'storage')
@@ -356,21 +361,28 @@ class DependencyCheckerService:
         Returns:
             Dictionary of provider -> validation_status
         """
+        # Auto-enable the feature for discovery (like ApplicationBootstrapService did)
+        # This ensures we can actually discover and validate providers
+        category_lower = category.lower()
+        self.features_registry.enable_feature(category_lower)
+        self.logger.debug(
+            f"[DependencyCheckerService] Enabled '{category_lower}' feature for provider discovery"
+        )
+        
         self.logger.debug(
             f"[DependencyCheckerService] Discovering providers for category: {category}"
         )
 
         results = {}
 
-        if category.lower() == "llm":
+        if category_lower == "llm":
             for provider in self.LLM_DEPENDENCIES.keys():
                 if provider == "langchain":  # Skip base langchain entry
                     continue
 
-                is_available, missing = self._validate_llm_provider(provider)
+                is_available, missing = self._validate_llm_provider(provider, force)
                 results[provider] = is_available
 
-                # Update registry - CRITICAL FIX: Set both validated AND available
                 self.features_registry.set_provider_validated(
                     "llm", provider, is_available
                 )
@@ -382,12 +394,11 @@ class DependencyCheckerService:
                         f"llm.{provider}", missing
                     )
 
-        elif category.lower() == "storage":
+        elif category_lower == "storage":
             for storage_type in self.STORAGE_DEPENDENCIES.keys():
-                is_available, missing = self._validate_storage_type(storage_type)
+                is_available, missing = self._validate_storage_type(storage_type, force)
                 results[storage_type] = is_available
 
-                # Update registry - CRITICAL FIX: Set both validated AND available
                 self.features_registry.set_provider_validated(
                     "storage", storage_type, is_available
                 )
@@ -404,7 +415,7 @@ class DependencyCheckerService:
         )
         return results
 
-    def _validate_llm_provider(self, provider: str) -> Tuple[bool, List[str]]:
+    def _validate_llm_provider(self, provider: str, force: bool = False) -> Tuple[bool, List[str]]:
         """
         Validate dependencies for a specific LLM provider with cache integration.
 
@@ -424,21 +435,26 @@ class DependencyCheckerService:
             return False, [f"unknown-provider:{provider}"]
 
         # Try cache first
-        cached_result = self._get_cached_availability("dependency.llm", provider_lower)
-        if cached_result and cached_result.get("validation_passed"):
+        if not force:
             self.logger.debug(
-                f"[DependencyCheckerService] Using cached result for LLM provider: {provider}"
+                f"[DependencyCheckerService] Checking cache for LLM provider: {provider}"
             )
-            return True, []
-        elif cached_result and not cached_result.get("validation_passed"):
-            # Cache indicates failure - use cached error info if available
-            error = cached_result.get("last_error", f"cached-failure:{provider}")
-            return False, [error]
+            cached_result = self._get_cached_availability("dependency.llm", provider_lower)
+            if cached_result and cached_result.get("validation_passed"):
+                self.logger.debug(
+                    f"[DependencyCheckerService] Using cached result for LLM provider: {provider}"
+                )
+                return True, []
+            elif cached_result and not cached_result.get("validation_passed"):
+                # Cache indicates failure - use cached error info if available
+                error = cached_result.get("last_error", f"cached-failure:{provider}")
+                return False, [error]
 
-        # Cache miss or invalid - perform validation and cache result
-        self.logger.debug(
-            f"[DependencyCheckerService] Cache miss for LLM provider: {provider}, performing validation"
-        )
+            # Cache miss or invalid - perform validation and cache result
+            self.logger.debug(
+                f"[DependencyCheckerService] Cache miss for LLM provider: {provider}, performing validation"
+            )
+        
         is_valid, missing = self.validate_imports(dependencies)
 
         # Cache the result
@@ -454,7 +470,7 @@ class DependencyCheckerService:
 
         return is_valid, missing
 
-    def _validate_storage_type(self, storage_type: str) -> Tuple[bool, List[str]]:
+    def _validate_storage_type(self, storage_type: str, force: bool = False) -> Tuple[bool, List[str]]:
         """
         Validate dependencies for a specific storage type with cache integration.
 
@@ -473,24 +489,29 @@ class DependencyCheckerService:
             )
             return False, [f"unknown-storage:{storage_type}"]
 
-        # Try cache first
-        cached_result = self._get_cached_availability(
-            "dependency.storage", storage_lower
-        )
-        if cached_result and cached_result.get("validation_passed"):
+        if not force:
             self.logger.debug(
-                f"[DependencyCheckerService] Using cached result for storage type: {storage_type}"
+                f"[DependencyCheckerService] Checking cache for storage type: {storage_type}"
             )
-            return True, []
-        elif cached_result and not cached_result.get("validation_passed"):
-            # Cache indicates failure - use cached error info if available
-            error = cached_result.get("last_error", f"cached-failure:{storage_type}")
-            return False, [error]
+            # Try cache first
+            cached_result = self._get_cached_availability(
+                "dependency.storage", storage_lower
+            )
+            if cached_result and cached_result.get("validation_passed"):
+                self.logger.debug(
+                    f"[DependencyCheckerService] Using cached result for storage type: {storage_type}"
+                )
+                return True, []
+            elif cached_result and not cached_result.get("validation_passed"):
+                # Cache indicates failure - use cached error info if available
+                error = cached_result.get("last_error", f"cached-failure:{storage_type}")
+                return False, [error]
 
-        # Cache miss or invalid - perform validation and cache result
-        self.logger.debug(
-            f"[DependencyCheckerService] Cache miss for storage type: {storage_type}, performing validation"
-        )
+            # Cache miss or invalid - perform validation and cache result
+            self.logger.debug(
+                f"[DependencyCheckerService] Cache miss for storage type: {storage_type}, performing validation"
+            )
+
         is_valid, missing = self.validate_imports(dependencies)
 
         # Cache the result

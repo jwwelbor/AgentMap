@@ -400,8 +400,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
         
         # But should return default/empty path for storage config
         storage_path = app_config.get_storage_config_path()
-        self.assertEqual(str(storage_path), "storage_config.yaml",  # Default value
-                        "AppConfigService should provide default storage config path")
+        self.assertEqual(str(storage_path), str(None))
         
         # StorageConfigService should fail fast when storage config is not specified
         with self.assertRaises(StorageConfigurationNotAvailableException) as context:
@@ -413,7 +412,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
         with self.assertRaises(StorageConfigurationNotAvailableException) as context:
             StorageConfigService(self.config_service, storage_path)
         
-        self.assertIn("not found", str(context.exception))
+        self.assertIn("not specified", str(context.exception))
     
     def test_routing_validation_fail_fast_coordination(self):
         """Test routing validation fail-fast behavior with other services."""

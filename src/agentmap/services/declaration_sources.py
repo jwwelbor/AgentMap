@@ -281,3 +281,164 @@ class YAMLDeclarationSource(DeclarationSource):
         except Exception as e:
             self.logger.error(f"Failed to load YAML file '{self.path}': {e}")
             return {}
+
+
+class CustomAgentYAMLSource(DeclarationSource):
+    """
+    Declaration source for custom_agents.yaml file.
+    
+    Loads agent declarations from custom_agents.yaml file and converts them to
+    AgentDeclaration models for use by DeclarationRegistryService. Integrates with
+    the scaffolding system to enable proper agent registration and service injection.
+    """
+
+    def __init__(
+        self,
+        app_config_service,  # Importing directly would create circular dependency
+        parser: DeclarationParser,
+        logging_service: LoggingService,
+    ):
+        """
+        Initialize CustomAgentYAMLSource with dependency injection.
+        
+        Args:
+            app_config_service: Application configuration service for file paths
+            parser: Declaration parser for normalizing agent data
+            logging_service: Logging service for error reporting
+        """
+        self.config = app_config_service
+        self.parser = parser
+        self.logger = logging_service.get_class_logger(self)
+        self.logger.debug("[CustomAgentYAMLSource] Initialized")
+
+    def load_agents(self) -> Dict[str, AgentDeclaration]:
+        """
+        Load agent declarations from custom_agents.yaml file.
+        
+        Returns:
+            Dictionary mapping agent types to AgentDeclaration models
+        """
+        self.logger.debug("Loading custom agent declarations from YAML")
+        
+        # Get custom_agents.yaml path from configuration
+        file_path = self._get_custom_agents_path()
+        
+        # Load YAML data
+        yaml_data = self._load_yaml_file(file_path)
+        if not yaml_data or "agents" not in yaml_data:
+            self.logger.debug("No agents section found in custom_agents.yaml")
+            return {}
+
+        agents = {}
+        agents_data = yaml_data["agents"]
+
+        for agent_type, agent_data in agents_data.items():
+            try:
+                # Convert custom_agents.yaml format to parser-expected format
+                normalized_data = self._normalize_agent_data(agent_data)
+                
+                declaration = self.parser.parse_agent(
+                    agent_type, normalized_data, f"yaml:{file_path}"
+                )
+                agents[agent_type] = declaration
+                self.logger.debug(f"Loaded custom agent: {agent_type}")
+            except Exception as e:
+                self.logger.error(f"Failed to load custom agent '{agent_type}': {e}")
+                continue
+
+        self.logger.debug(f"Loaded {len(agents)} custom agent declarations")
+        return agents
+
+    def load_services(self) -> Dict[str, ServiceDeclaration]:
+        """
+        Load service declarations from custom_agents.yaml file.
+        
+        Returns:
+            Empty dictionary since custom_agents.yaml only contains agent declarations
+        """
+        self.logger.debug("No custom services - custom_agents.yaml only contains agents")
+        return {}
+
+    def _get_custom_agents_path(self) -> Path:
+        """
+        Get the path to the custom_agents.yaml file from configuration.
+        
+        Places the YAML file in the same directory as the Python agent files
+        for easier management and co-location of related files.
+        
+        Returns:
+            Path object pointing to custom_agents.yaml file
+        """
+        # Use the same directory as the Python agent files
+        # This ensures the YAML declarations are co-located with the code
+        custom_agents_dir = self.config.get_custom_agents_path()
+        
+        # Place custom_agents.yaml in the same directory as the Python files
+        return custom_agents_dir / "custom_agents.yaml"
+
+    def _load_yaml_file(self, file_path: Path) -> Dict[str, Any]:
+        """
+        Load and parse YAML file with graceful error handling.
+        
+        Args:
+            file_path: Path to YAML file to load
+            
+        Returns:
+            Parsed YAML data as dictionary, or empty dict if file missing/invalid
+        """
+        if not file_path.exists():
+            self.logger.debug(f"Custom agents YAML file not found: {file_path}")
+            return {}
+
+        if not file_path.is_file():
+            self.logger.warning(f"Custom agents path is not a file: {file_path}")
+            return {}
+
+        try:
+            import yaml
+            
+            with open(file_path, 'r', encoding='utf-8') as file:
+                data = yaml.safe_load(file)
+                
+            if not isinstance(data, dict):
+                self.logger.warning(f"Custom agents YAML file does not contain valid dictionary: {file_path}")
+                return {}
+                
+            self.logger.debug(f"Successfully loaded custom agents YAML file: {file_path}")
+            return data
+            
+        except ImportError:
+            self.logger.error("PyYAML not available - cannot load custom agents YAML file")
+            return {}
+        except Exception as e:
+            self.logger.error(f"Failed to load custom agents YAML file '{file_path}': {e}")
+            return {}
+
+    def _normalize_agent_data(self, agent_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize custom_agents.yaml format to parser-expected format.
+        
+        Args:
+            agent_data: Raw agent data from custom_agents.yaml
+            
+        Returns:
+            Normalized data for DeclarationParser
+        """
+        normalized = {
+            "class_path": agent_data.get("class") or agent_data.get("class_path")
+        }
+        
+        # Handle requires section
+        requires = agent_data.get("requires", {})
+        if isinstance(requires, dict):
+            # Extract services and protocols from requires section
+            services = requires.get("services", [])
+            protocols = requires.get("protocols", [])
+            
+            # Convert to expected format for parser
+            if services:
+                normalized["services"] = services
+            if protocols:
+                normalized["protocols_implemented"] = protocols
+        
+        return normalized

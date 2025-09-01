@@ -7,7 +7,10 @@ and GraphScaffoldService to avoid circular import dependencies.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional
+from typing import Dict, List, NamedTuple, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agentmap.models.graph_bundle import GraphBundle
 
 
 @dataclass
@@ -48,3 +51,4 @@ class ScaffoldResult:
     skipped_files: List[Path] = field(default_factory=list)
     service_stats: Dict[str, int] = field(default_factory=dict)
     errors: List[str] = field(default_factory=list)
+    updated_bundle: Optional["GraphBundle"] = None

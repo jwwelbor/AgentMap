@@ -6,9 +6,11 @@ following the Template Method pattern and established service patterns.
 """
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agentmap.services.config.storage_config_service import StorageConfigService
+from agentmap.services.file_path_service import FilePathService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.protocols import StorageService
 from agentmap.services.storage.types import (
@@ -35,6 +37,8 @@ class BaseStorageService(StorageService, ABC):
         provider_name: str,
         configuration: StorageConfigService,
         logging_service: LoggingService,
+        file_path_service: Optional[FilePathService] = None,
+        base_directory: Optional[str] = None,
     ):
         """
         Initialize the base storage service.
@@ -43,10 +47,14 @@ class BaseStorageService(StorageService, ABC):
             provider_name: Name of the storage provider
             configuration: Storage configuration service for storage-specific config access
             logging_service: Logging service for creating loggers
+            file_path_service: Optional file path service for path validation and security
+            base_directory: Optional base directory for storage operations (for system storage)
         """
         self.provider_name = provider_name
         self.configuration = configuration
         self._logger = logging_service.get_class_logger(self)
+        self._file_path_service = file_path_service
+        self._base_directory = base_directory
         self._client = None
         self._config = self._load_provider_config()
         self._is_initialized = False
@@ -54,6 +62,78 @@ class BaseStorageService(StorageService, ABC):
     def get_provider_name(self) -> str:
         """Get the storage provider name."""
         return self.provider_name
+    
+    @property
+    def base_directory(self) -> Optional[str]:
+        """
+        Get the base directory for storage operations.
+        
+        Returns:
+            Base directory path or None if not configured
+        """
+        return self._base_directory
+    
+    def get_full_path(self, key: str) -> str:
+        """
+        Get the full path for a storage key.
+        
+        Handles different path resolution strategies based on storage configuration:
+        - For system storage (dict config): uses base_directory/key directly
+        - For user storage (StorageConfigService): uses base_directory/storage_config_default_directory/key
+        
+        Args:
+            key: Storage key/collection name
+            
+        Returns:
+            Full resolved path for storage operations
+            
+        Raises:
+            ValueError: If path cannot be resolved or is unsafe
+        """
+        if not key:
+            raise ValueError("Storage key cannot be empty")
+        
+        # For system storage with base_directory injection (dict config)
+        if self._base_directory:
+            # Use base_directory directly with key
+            full_path = str(Path(self._base_directory) / key)
+            
+            # Validate path if file_path_service is available
+            if self._file_path_service:
+                try:
+                    self._file_path_service.validate_safe_path(full_path, self._base_directory)
+                except Exception as e:
+                    self._logger.error(f"[{self.provider_name}] Path validation failed for {full_path}: {e}")
+                    raise ValueError(f"Unsafe storage path: {e}")
+            
+            self._logger.debug(f"[{self.provider_name}] Resolved system storage path: {full_path}")
+            return full_path
+        
+        # For user storage (StorageConfigService) - use configuration's default directory
+        else:
+            try:
+                # Get base directory from configuration
+                config_base_dir = self.configuration.get_base_directory()
+                if not config_base_dir:
+                    raise ValueError("No base directory configured in StorageConfigService")
+                
+                # Combine with key
+                full_path = str(Path(config_base_dir) / key)
+                
+                # Validate path if file_path_service is available
+                if self._file_path_service:
+                    try:
+                        self._file_path_service.validate_safe_path(full_path, config_base_dir)
+                    except Exception as e:
+                        self._logger.error(f"[{self.provider_name}] Path validation failed for {full_path}: {e}")
+                        raise ValueError(f"Unsafe storage path: {e}")
+                
+                self._logger.debug(f"[{self.provider_name}] Resolved user storage path: {full_path}")
+                return full_path
+                
+            except Exception as e:
+                self._logger.error(f"[{self.provider_name}] Failed to resolve storage path for key '{key}': {e}")
+                raise ValueError(f"Cannot resolve storage path: {e}")
 
     def health_check(self) -> bool:
         """
@@ -79,7 +159,11 @@ class BaseStorageService(StorageService, ABC):
         Returns:
             StorageConfig for this provider
         """
+        if self.provider_name.startswith("system_"):
+            return self.configuration # System storage is static dict src\agentmap\services\storage\system_manager.py
+
         try:
+
             # Use storage-specific configuration methods instead of generic access
             if self.provider_name in ["firebase", "mongodb", "supabase", "local"]:
                 # Use named provider methods for known providers
@@ -101,6 +185,8 @@ class BaseStorageService(StorageService, ABC):
                 "memory",
                 "file",
                 "kv",
+                "blob",
+                "json",
             ]:
                 storage_type_method = f"get_{self.provider_name}_config"
                 if hasattr(self.configuration, storage_type_method):

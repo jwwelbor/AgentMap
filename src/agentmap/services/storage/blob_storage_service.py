@@ -102,7 +102,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
         """
         # Azure Blob Storage
         azure_available = self._check_and_cache_availability(
-            "azure", self._check_azure_availability
+            "azure_blob", self._check_azure_availability
         )
         if azure_available:
             try:
@@ -122,7 +122,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
 
         # AWS S3
         s3_available = self._check_and_cache_availability(
-            "s3", self._check_s3_availability
+            "aws_s3", self._check_s3_availability
         )
         if s3_available:
             try:
@@ -142,7 +142,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
 
         # Google Cloud Storage
         gcs_available = self._check_and_cache_availability(
-            "gcs", self._check_gcs_availability
+            "gcp_storage", self._check_gcs_availability
         )
         if gcs_available:
             try:

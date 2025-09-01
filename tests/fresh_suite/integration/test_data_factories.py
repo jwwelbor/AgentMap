@@ -30,7 +30,7 @@ class CSVTestDataFactory:
             {
                 "GraphName": "simple_linear",
                 "Node": "start",
-                "AgentType": "Default",
+                "AgentType": "default",
                 "Prompt": "Start the workflow",
                 "Description": "Initial node that starts processing",
                 "Input_Fields": "user_input",
@@ -43,7 +43,7 @@ class CSVTestDataFactory:
             {
                 "GraphName": "simple_linear",
                 "Node": "middle",
-                "AgentType": "Default", 
+                "AgentType": "default", 
                 "Prompt": "Process the data",
                 "Description": "Middle processing node",
                 "Input_Fields": "start_output",
@@ -56,7 +56,7 @@ class CSVTestDataFactory:
             {
                 "GraphName": "simple_linear",
                 "Node": "end",
-                "AgentType": "Default",
+                "AgentType": "default",
                 "Prompt": "Finalize the result",
                 "Description": "Final node that completes processing",
                 "Input_Fields": "middle_output",
@@ -81,7 +81,7 @@ class CSVTestDataFactory:
             {
                 "GraphName": "conditional_branch",
                 "Node": "input_validator",
-                "AgentType": "Default",
+                "AgentType": "default",
                 "Prompt": "Validate the input data",
                 "Description": "Validates input and determines processing path",
                 "Input_Fields": "raw_input",
@@ -94,7 +94,7 @@ class CSVTestDataFactory:
             {
                 "GraphName": "conditional_branch",
                 "Node": "success_processor",
-                "AgentType": "Default",
+                "AgentType": "default",
                 "Prompt": "Process valid data",
                 "Description": "Processes data when validation succeeds",
                 "Input_Fields": "validation_result",
@@ -107,7 +107,7 @@ class CSVTestDataFactory:
             {
                 "GraphName": "conditional_branch",
                 "Node": "error_handler",
-                "AgentType": "Default",
+                "AgentType": "default",
                 "Prompt": "Handle validation errors",
                 "Description": "Handles cases where validation fails",
                 "Input_Fields": "validation_result",
@@ -120,7 +120,7 @@ class CSVTestDataFactory:
             {
                 "GraphName": "conditional_branch",
                 "Node": "output_formatter",
-                "AgentType": "Default",
+                "AgentType": "default",
                 "Prompt": "Format the final output",
                 "Description": "Formats final output regardless of processing path",
                 "Input_Fields": "processed_data|error_message",
@@ -150,7 +150,7 @@ class CSVTestDataFactory:
             {
                 "GraphName": "second_graph",
                 "Node": "alpha",
-                "AgentType": "Default",
+                "AgentType": "default",
                 "Prompt": "Alpha processing",
                 "Description": "First node in second graph",
                 "Input_Fields": "alpha_input",
@@ -163,7 +163,7 @@ class CSVTestDataFactory:
             {
                 "GraphName": "second_graph",
                 "Node": "beta",
-                "AgentType": "Default",
+                "AgentType": "default",
                 "Prompt": "Beta processing",
                 "Description": "Second node in second graph",
                 "Input_Fields": "alpha_output",

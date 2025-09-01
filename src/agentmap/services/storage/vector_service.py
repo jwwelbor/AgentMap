@@ -61,10 +61,12 @@ class VectorStorageService(BaseStorageService):
         provider_name: str,
         configuration: StorageConfigService,
         logging_service: LoggingService,
+        file_path_service: Any = None,
+        base_directory: str = None,
     ):
         """Initialize VectorStorageService with configuration service (following BaseStorageService pattern)."""
         # Call parent constructor first
-        super().__init__(provider_name, configuration, logging_service)
+        super().__init__(provider_name, configuration, logging_service, file_path_service, base_directory)
 
         # Vector-specific initialization will be handled in _initialize_client
         # Logger is now inherited from BaseStorageService

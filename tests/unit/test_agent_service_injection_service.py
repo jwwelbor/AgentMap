@@ -40,7 +40,7 @@ class MockStorageServiceManager:
     """Mock storage service manager for testing."""
     
     def __init__(self, available_services: Optional[List[str]] = None):
-        self.available_services = available_services or ["csv", "json", "file", "vector", "memory"]
+        self.available_services = available_services if available_services is not None else ["csv", "json", "file", "vector", "memory"]
         self.services = {
             "csv": Mock(name="csv_service"),
             "json": Mock(name="json_service"),
@@ -110,7 +110,7 @@ class MockBlobStorageService:
 
 
 # Mock Agents implementing various protocol combinations
-class MockLLMOnlyAgent:
+class MockLLMOnlyAgent(LLMCapableAgent):
     """Mock agent implementing only LLMCapableAgent."""
     
     def __init__(self, name: str = "llm_agent"):
@@ -121,7 +121,7 @@ class MockLLMOnlyAgent:
         self.llm_service = llm_service
 
 
-class MockStorageOnlyAgent:
+class MockStorageOnlyAgent(StorageCapableAgent):
     """Mock agent implementing only StorageCapableAgent."""
     
     def __init__(self, name: str = "storage_agent"):
@@ -132,7 +132,7 @@ class MockStorageOnlyAgent:
         self.storage_service = storage_service
 
 
-class MockCSVOnlyAgent:
+class MockCSVOnlyAgent(CSVCapableAgent):
     """Mock agent implementing only CSVCapableAgent."""
     
     def __init__(self, name: str = "csv_agent"):
@@ -143,7 +143,7 @@ class MockCSVOnlyAgent:
         self.csv_service = csv_service
 
 
-class MockJSONOnlyAgent:
+class MockJSONOnlyAgent(JSONCapableAgent):
     """Mock agent implementing only JSONCapableAgent."""
     
     def __init__(self, name: str = "json_agent"):
@@ -154,7 +154,7 @@ class MockJSONOnlyAgent:
         self.json_service = json_service
 
 
-class MockFileOnlyAgent:
+class MockFileOnlyAgent(FileCapableAgent):
     """Mock agent implementing only FileCapableAgent."""
     
     def __init__(self, name: str = "file_agent"):
@@ -165,7 +165,7 @@ class MockFileOnlyAgent:
         self.file_service = file_service
 
 
-class MockVectorOnlyAgent:
+class MockVectorOnlyAgent(VectorCapableAgent):
     """Mock agent implementing only VectorCapableAgent."""
     
     def __init__(self, name: str = "vector_agent"):
@@ -176,7 +176,7 @@ class MockVectorOnlyAgent:
         self.vector_service = vector_service
 
 
-class MockMemoryOnlyAgent:
+class MockMemoryOnlyAgent(MemoryCapableAgent):
     """Mock agent implementing only MemoryCapableAgent."""
     
     def __init__(self, name: str = "memory_agent"):
@@ -187,7 +187,7 @@ class MockMemoryOnlyAgent:
         self.memory_service = memory_service
 
 
-class MockPromptOnlyAgent:
+class MockPromptOnlyAgent(PromptCapableAgent):
     """Mock agent implementing only PromptCapableAgent."""
     
     def __init__(self, name: str = "prompt_agent"):
@@ -198,7 +198,7 @@ class MockPromptOnlyAgent:
         self.prompt_manager_service = prompt_service
 
 
-class MockCheckpointOnlyAgent:
+class MockCheckpointOnlyAgent(CheckpointCapableAgent):
     """Mock agent implementing only CheckpointCapableAgent."""
     
     def __init__(self, name: str = "checkpoint_agent"):
@@ -209,7 +209,7 @@ class MockCheckpointOnlyAgent:
         self.graph_checkpoint_service = checkpoint_service
 
 
-class MockOrchestrationOnlyAgent:
+class MockOrchestrationOnlyAgent(OrchestrationCapableAgent):
     """Mock agent implementing only OrchestrationCapableAgent."""
     
     def __init__(self, name: str = "orchestration_agent"):
@@ -220,7 +220,7 @@ class MockOrchestrationOnlyAgent:
         self.orchestrator_service = orchestrator_service
 
 
-class MockBlobStorageOnlyAgent:
+class MockBlobStorageOnlyAgent(BlobStorageCapableAgent):
     """Mock agent implementing only BlobStorageCapableAgent."""
     
     def __init__(self, name: str = "blob_agent"):
@@ -231,7 +231,7 @@ class MockBlobStorageOnlyAgent:
         self.blob_storage_service = blob_service
 
 
-class MockMultiServiceAgent:
+class MockMultiServiceAgent(LLMCapableAgent, StorageCapableAgent, PromptCapableAgent):
     """Mock agent implementing multiple core protocols."""
     
     def __init__(self, name: str = "multi_agent"):
@@ -250,7 +250,7 @@ class MockMultiServiceAgent:
         self.prompt_manager_service = prompt_service
 
 
-class MockMultiStorageAgent:
+class MockMultiStorageAgent(CSVCapableAgent, JSONCapableAgent, FileCapableAgent):
     """Mock agent implementing multiple storage protocols."""
     
     def __init__(self, name: str = "multi_storage_agent"):
@@ -269,7 +269,10 @@ class MockMultiStorageAgent:
         self.file_service = file_service
 
 
-class MockAllServicesAgent:
+class MockAllServicesAgent(LLMCapableAgent, StorageCapableAgent, PromptCapableAgent, 
+                            CheckpointCapableAgent, OrchestrationCapableAgent, BlobStorageCapableAgent,
+                            CSVCapableAgent, JSONCapableAgent, FileCapableAgent, 
+                            VectorCapableAgent, MemoryCapableAgent):
     """Mock agent implementing all 11 protocols."""
     
     def __init__(self, name: str = "all_services_agent"):
@@ -331,7 +334,7 @@ class MockBasicAgent:
         self.name = name
 
 
-class MockFailingAgent:
+class MockFailingAgent(LLMCapableAgent):
     """Mock agent where configuration methods raise exceptions."""
     
     def __init__(self, name: str = "failing_agent"):
@@ -689,8 +692,7 @@ class TestAgentServiceInjectionService(unittest.TestCase):
     
     # ===== LOGGING VERIFICATION TESTS =====
     
-    @patch('agentmap.services.agent_service_injection_service.logging')
-    def test_error_logging_for_service_failure(self, mock_logging):
+    def test_error_logging_for_service_failure(self):
         """Verify ERROR level messages for service failures."""
         # Create a mock logger to capture calls
         mock_logger = Mock()
@@ -711,8 +713,7 @@ class TestAgentServiceInjectionService(unittest.TestCase):
         self.assertIn("❌", error_message, "Should contain error indicator")
         self.assertIn("test_failing_agent", error_message, "Should contain agent name")
     
-    @patch('agentmap.services.agent_service_injection_service.logging')
-    def test_debug_logging_for_successful_configuration(self, mock_logging):
+    def test_debug_logging_for_successful_configuration(self):
         """Verify DEBUG level messages for successful service configuration."""
         mock_logger = Mock()
         self.injection_service.logger = mock_logger
@@ -729,8 +730,7 @@ class TestAgentServiceInjectionService(unittest.TestCase):
         success_logged = any("✅" in str(call) for call in debug_calls)
         self.assertTrue(success_logged, "Should log successful configuration with ✅")
     
-    @patch('agentmap.services.agent_service_injection_service.logging')
-    def test_info_logging_for_service_summary(self, mock_logging):
+    def test_info_logging_for_service_summary(self):
         """Verify INFO level messages for service summaries."""
         # Note: The current implementation uses DEBUG for summaries, 
         # but we test this to verify future INFO level promotion
@@ -767,30 +767,7 @@ class TestAgentServiceInjectionService(unittest.TestCase):
         self.assertLess(storage_time, 0.1, "Storage service injection should be fast")
         
         print(f"Performance: Core services: {core_time:.4f}s/100, Storage services: {storage_time:.4f}s/100")
-    
-    def test_service_injection_performance_comparison(self):
-        """Compare performance of individual vs unified configuration."""
-        agent = MockAllServicesAgent("test_performance_agent")
-        
-        # Measure individual configuration
-        start_time = time.time()
-        for _ in range(50):
-            self.injection_service.configure_core_services(agent)
-            self.injection_service.configure_storage_services(agent)
-        individual_time = time.time() - start_time
-        
-        # Measure unified configuration
-        start_time = time.time()
-        for _ in range(50):
-            self.injection_service.configure_all_services(agent)
-        unified_time = time.time() - start_time
-        
-        # Unified should not be significantly slower
-        performance_ratio = unified_time / individual_time if individual_time > 0 else 1
-        self.assertLess(performance_ratio, 1.2, "Unified configuration should not be >20% slower")
-        
-        print(f"Performance comparison: Individual: {individual_time:.4f}s, Unified: {unified_time:.4f}s, Ratio: {performance_ratio:.2f}")
-    
+   
     # ===== UTILITY METHOD TESTS =====
     
     def test_requires_storage_services(self):

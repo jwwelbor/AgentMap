@@ -44,6 +44,8 @@ class CSVStorageService(BaseStorageService):
         provider_name: str,
         configuration,  # StorageConfigService (avoid circular import)
         logging_service,  # LoggingService (avoid circular import)
+        file_path_service=None,  # FilePathService (optional for path validation)
+        base_directory: str = None,  # Optional base directory for injection
     ):
         """
         Initialize CSVStorageService.
@@ -52,9 +54,11 @@ class CSVStorageService(BaseStorageService):
             provider_name: Name of the storage provider
             configuration: Storage configuration service
             logging_service: Logging service for creating loggers
+            file_path_service: Optional file path service for path validation and security
+            base_directory: Optional base directory for storage operations (for system storage)
         """
-        # Call parent's __init__ with the provided provider_name
-        super().__init__(provider_name, configuration, logging_service)
+        # Call parent's __init__ with all parameters including new injection parameters
+        super().__init__(provider_name, configuration, logging_service, file_path_service, base_directory)
 
     def _initialize_client(self) -> Any:
         """
@@ -71,13 +75,20 @@ class CSVStorageService(BaseStorageService):
         """
         # Use StorageConfigService named domain methods instead of generic access
         csv_config = self.configuration.get_csv_config()
-
-        # Use the path accessor with business logic (already ensures directory exists)
-        base_dir = str(self.configuration.get_csv_data_path())
+        
+        # Use injected base_directory if available, otherwise use StorageConfigService
+        if self.base_directory:
+            base_dir = str(self.base_directory)
+            # Note: Directory creation is deferred until write operations to maintain
+            # backward compatibility with error handling (especially for read operations)
+        else:
+            # Use the path accessor with business logic (already ensures directory exists)
+            base_dir = str(self.configuration.get_csv_data_path())
+        
         encoding = csv_config.get("encoding", "utf-8")
 
-        # Additional validation for fail-fast behavior
-        if not self.configuration.is_csv_storage_enabled():
+        # Additional validation for fail-fast behavior (only when not using injection)
+        if not self.base_directory and not self.configuration.is_csv_storage_enabled():
             raise OSError("CSV storage is not enabled in configuration")
 
         return {
@@ -134,32 +145,46 @@ class CSVStorageService(BaseStorageService):
 
         Uses StorageConfigService collection configuration when available,
         falls back to default behavior for absolute paths or unconfigured collections.
+        Uses file_path_service for path validation when available.
 
         Args:
             collection: Collection name (can be relative or absolute path)
 
         Returns:
             Full file path
+            
+        Raises:
+            ValueError: If path validation fails when file_path_service is available
         """
         if os.path.isabs(collection):
-            return collection
-
-        # Check if collection is configured in StorageConfigService
-        if self.configuration.has_collection("csv", collection):
+            file_path = collection
+        elif self.configuration.has_collection("csv", collection):
             # Use the configured collection file path
-            return str(self.configuration.get_collection_file_path(collection))
+            file_path = str(self.configuration.get_collection_file_path(collection))
+        else:
+            # Fallback to default behavior for unconfigured collections
+            base_dir = self.client["base_directory"]
 
-        # Fallback to default behavior for unconfigured collections
-        base_dir = self.client["base_directory"]
+            # Ensure .csv extension
+            if not collection.lower().endswith(".csv"):
+                collection = f"{collection}.csv"
 
-        # Ensure .csv extension
-        if not collection.lower().endswith(".csv"):
-            collection = f"{collection}.csv"
-
-        if not collection.startswith(base_dir):
-            collection = os.path.join(base_dir, collection)
-
-        return collection
+            if not collection.startswith(base_dir):
+                collection = os.path.join(base_dir, collection)
+            
+            file_path = collection
+        
+        # Validate path using file_path_service if available
+        if self._file_path_service:
+            try:
+                # Use base_directory if available for validation, otherwise use client base_directory
+                validation_base = self.base_directory if self.base_directory else self.client["base_directory"]
+                self._file_path_service.validate_safe_path(file_path, validation_base)
+            except Exception as e:
+                self._logger.error(f"Path validation failed for {file_path}: {e}")
+                raise ValueError(f"Unsafe file path: {e}")
+        
+        return file_path
 
     def _ensure_directory_exists(self, file_path: str) -> None:
         """
@@ -223,6 +248,10 @@ class CSVStorageService(BaseStorageService):
             OSError: If other OS-level errors occur
         """
         try:
+            # Ensure base directory exists when using injection (deferred from _initialize_client)
+            if self.base_directory:
+                os.makedirs(self.base_directory, exist_ok=True)
+            
             self._ensure_directory_exists(file_path)
 
             # Set default write options

@@ -32,14 +32,14 @@ class GraphBootstrapService:
         self,
         agent_registry_service: AgentRegistryService,
         features_registry_service: FeaturesRegistryService,
-        dependency_checker_service: DependencyCheckerService,
+        # dependency_checker_service: DependencyCheckerService,
         app_config_service: AppConfigService,
         logging_service: LoggingService,
     ):
         """Initialize with same dependencies as ApplicationBootstrapService."""
         self.agent_registry = agent_registry_service
         self.features_registry = features_registry_service
-        self.dependency_checker = dependency_checker_service
+        # self.dependency_checker = dependency_checker_service
         self.app_config = app_config_service
         self.logger = logging_service.get_class_logger(self)
         

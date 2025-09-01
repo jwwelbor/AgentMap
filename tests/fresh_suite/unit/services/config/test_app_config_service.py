@@ -34,7 +34,8 @@ class TestAppConfigService(unittest.TestCase):
             'paths': {
                 'custom_agents': 'agentmap/custom_agents',
                 'functions': 'agentmap/custom_functions',
-                'compiled_graphs': 'agentmap/compiled_graphs'
+                'compiled_graphs': 'agentmap/compiled_graphs',
+                'cache': 'agentmap_data/cache'
             }
         }
         self.mock_config_service.get_value_from_config.side_effect = self._mock_get_value
@@ -89,12 +90,7 @@ class TestAppConfigService(unittest.TestCase):
         """Test getting functions path."""
         result = self.app_config_service.get_functions_path()
         self.assertEqual(result, Path('agentmap/custom_functions'))
-    
-    def test_get_compiled_graphs_path(self):
-        """Test getting compiled graphs path."""
-        result = self.app_config_service.get_compiled_graphs_path()
-        self.assertEqual(result, Path('agentmap/compiled_graphs'))
-    
+        
     def test_get_csv_path(self):
         """Test getting CSV path."""
         result = self.app_config_service.get_csv_path()
@@ -156,9 +152,69 @@ class TestAppConfigService(unittest.TestCase):
     
     def test_get_storage_config_path(self):
         """Test getting storage config path."""
+        # Test when config key doesn't exist - should return None
         result = self.app_config_service.get_storage_config_path()
-        self.assertEqual(result, Path('storage_config.yaml'))
+        self.assertIsNone(result)
+        
+        # Test when config key exists
+        self.mock_config_service.load_config.return_value.update({
+            'storage_config_path': 'custom_storage.yaml'
+        })
+        # Recreate service with updated config
+        app_config_with_storage = AppConfigService(
+            config_service=self.mock_config_service,
+            config_path='test_config.yaml'
+        )
+        result = app_config_with_storage.get_storage_config_path()
+        self.assertEqual(result, Path('custom_storage.yaml'))
     
+    def test_get_cache_path(self):
+        """Test getting cache path from configuration.
+        
+        AppConfigService should only return the configured path value.
+        Validation and security checks are handled by FilePathService.
+        """
+        # Test default cache path
+        result = self.app_config_service.get_cache_path()
+        self.assertEqual(result, Path('agentmap_data/cache'))
+        
+        # Test configured cache path
+        self.mock_config_service.load_config.return_value.update({
+            'paths': {'cache': 'custom/cache/dir'}
+        })
+        app_config_with_cache = AppConfigService(
+            config_service=self.mock_config_service,
+            config_path='test_config.yaml'
+        )
+        result = app_config_with_cache.get_cache_path()
+        self.assertEqual(result, Path('custom/cache/dir'))
+    
+    def test_cache_path_security_is_not_config_responsibility(self):
+        """Test that AppConfigService does NOT validate paths for security.
+        
+        This is by design - validation is FilePathService's responsibility.
+        AppConfigService should return whatever is configured, even if unsafe.
+        """
+        # Test that unsafe paths are returned as-is (validation happens elsewhere)
+        unsafe_paths = [
+            '../../../etc/passwd',
+            'cache\x00/test',
+            '/etc/shadow',
+            'C:\\Windows\\System32'
+        ]
+        
+        for unsafe_path in unsafe_paths:
+            self.mock_config_service.load_config.return_value.update({
+                'paths': {'cache': unsafe_path}
+            })
+            app_config = AppConfigService(
+                config_service=self.mock_config_service,
+                config_path='test_config.yaml'
+            )
+            
+            # AppConfigService returns the path as-is without validation
+            result = app_config.get_cache_path()
+            self.assertEqual(result, Path(unsafe_path))
     
     def test_validate_config_success(self):
         """Test configuration validation success."""
@@ -270,6 +326,100 @@ class TestAppConfigService(unittest.TestCase):
         
         result = service.get_config_summary()
         self.assertEqual(result, {"status": "not_loaded"})
+
+
+class TestAppConfigServiceWithFilePathService(unittest.TestCase):
+    """Test suite demonstrating integration pattern with FilePathService.
+    
+    These tests show how services should interact: AppConfigService provides
+    raw config values, FilePathService validates them.
+    """
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.mock_config_service = Mock(spec=ConfigService)
+        self.mock_config_service.load_config.return_value = {
+            'paths': {'cache': 'agentmap_data/cache'}
+        }
+        self.mock_config_service.get_value_from_config.side_effect = self._mock_get_value
+        
+        self.app_config_service = AppConfigService(
+            config_service=self.mock_config_service,
+            config_path='test_config.yaml'
+        )
+    
+    def _mock_get_value(self, config_data, path, default=None):
+        """Mock implementation of get_value_from_config."""
+        parts = path.split('.')
+        current = config_data
+        
+        for part in parts:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return default
+        return current
+    
+    @patch('agentmap.services.file_path_service.FilePathService')
+    def test_proper_separation_of_concerns(self, mock_file_path_service_class):
+        """Test that path validation is handled by FilePathService, not config.
+        
+        This test demonstrates the proper architectural pattern:
+        1. AppConfigService provides raw configuration values
+        2. FilePathService validates paths for security
+        3. Consumer services coordinate between them
+        """
+        # Setup mock FilePathService
+        mock_file_path_service = Mock()
+        mock_file_path_service_class.return_value = mock_file_path_service
+        
+        # Simulate a consumer service using both services correctly
+        cache_path_config = self.app_config_service.get_cache_path()
+        
+        # Consumer would then validate the path through FilePathService
+        mock_file_path_service.validate_safe_path.return_value = True
+        mock_file_path_service.ensure_directory.return_value = Path('agentmap_data/cache')
+        
+        # This is how a consumer service would use both services
+        is_valid = mock_file_path_service.validate_safe_path(str(cache_path_config))
+        self.assertTrue(is_valid)
+        
+        # And ensure the directory exists
+        actual_path = mock_file_path_service.ensure_directory(str(cache_path_config))
+        self.assertEqual(actual_path, Path('agentmap_data/cache'))
+    
+    @patch('agentmap.services.file_path_service.FilePathService')
+    def test_unsafe_path_handling_pattern(self, mock_file_path_service_class):
+        """Test how unsafe paths should be handled in the architecture.
+        
+        AppConfigService returns the configured value (even if unsafe).
+        FilePathService detects and blocks unsafe paths.
+        """
+        # Setup unsafe path in config
+        self.mock_config_service.load_config.return_value.update({
+            'paths': {'cache': '../../../etc/passwd'}
+        })
+        unsafe_config = AppConfigService(
+            config_service=self.mock_config_service,
+            config_path='test_config.yaml'
+        )
+        
+        # AppConfigService returns the unsafe path as-is
+        cache_path = unsafe_config.get_cache_path()
+        self.assertEqual(cache_path, Path('../../../etc/passwd'))
+        
+        # FilePathService would detect and reject it
+        mock_file_path_service = Mock()
+        mock_file_path_service_class.return_value = mock_file_path_service
+        
+        from agentmap.exceptions.base_exceptions import PathTraversalError
+        mock_file_path_service.validate_safe_path.side_effect = PathTraversalError(
+            "Path traversal detected"
+        )
+        
+        # Consumer service would handle the validation error
+        with self.assertRaises(PathTraversalError):
+            mock_file_path_service.validate_safe_path(str(cache_path))
 
 
 if __name__ == '__main__':

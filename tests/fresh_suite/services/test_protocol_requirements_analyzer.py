@@ -20,7 +20,6 @@ from agentmap.services.protocols import (
     VectorCapableAgent,
     MemoryCapableAgent,
     BlobStorageCapableAgent,
-    DatabaseCapableAgent,
     CheckpointCapableAgent,
     OrchestrationCapableAgent,
 )

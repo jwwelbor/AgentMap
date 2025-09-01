@@ -34,3 +34,7 @@ class LoggingNotConfiguredException(AgentMapException):
 
 class FunctionResolutionException(AgentMapException):
     """Exception raised when a function cannot be resolved."""
+
+
+class CacheNotFoundError(AgentMapException):
+    """Exception raised when the availability cache file doesn't exist."""

@@ -21,6 +21,7 @@ class GraphAssemblyService:
         features_registry_service: FeaturesRegistryService,
         function_resolution_service: FunctionResolutionService,
         graph_factory_service: GraphFactoryService,
+        orchestrator_service: Any,  # OrchestratorService
     ):
         self.config = app_config_service
         self.logger = logging_service.get_class_logger(self)
@@ -29,6 +30,7 @@ class GraphAssemblyService:
         self.features_registry = features_registry_service
         self.function_resolution = function_resolution_service
         self.graph_factory_service = graph_factory_service
+        self.orchestrator_service = orchestrator_service
 
         # Get state schema from config or default to dict
         state_schema = self._get_state_schema_from_config()
@@ -184,18 +186,23 @@ class GraphAssemblyService:
         if isinstance(agent_instance, OrchestrationCapableAgent):
             self.orchestrator_nodes.append(name)
             self.injection_stats["orchestrators_found"] += 1
-            if self.orchestrator_node_registry:
-                try:
+            try:
+                # Configure orchestrator service (always available)
+                agent_instance.configure_orchestrator_service(self.orchestrator_service)
+                
+                # Configure node registry if available
+                if self.orchestrator_node_registry:
                     agent_instance.node_registry = self.orchestrator_node_registry
-                    self.injection_stats["orchestrators_injected"] += 1
-                    self.logger.debug(
-                        f"✅ Injected registry into orchestrator '{name}'"
-                    )
-                except Exception as e:
-                    self.injection_stats["injection_failures"] += 1
-                    self.logger.error(
-                        f"❌ Failed to inject registry into '{name}': {e}"
-                    )
+                    self.logger.debug(f"✅ Injected orchestrator service and node registry into '{name}'")
+                else:
+                    self.logger.debug(f"✅ Injected orchestrator service into '{name}' (no node registry available)")
+                
+                self.injection_stats["orchestrators_injected"] += 1
+            except Exception as e:
+                self.injection_stats["injection_failures"] += 1
+                error_msg = f"Failed to inject orchestrator service into '{name}': {e}"
+                self.logger.error(f"❌ {error_msg}")
+                raise ValueError(error_msg) from e
 
         self.logger.debug(f"🔹 Added node: '{name}' ({class_name})")
 

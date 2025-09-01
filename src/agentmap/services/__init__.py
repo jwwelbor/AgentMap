@@ -27,7 +27,7 @@ from .agent.agent_factory_service import AgentFactoryService
 from .agent.agent_registry_service import AgentRegistryService
 
 # Application Services
-from .application_bootstrap_service import ApplicationBootstrapService
+# from .application_bootstrap_service import ApplicationBootstrapService
 
 
 # Configuration Services
@@ -41,6 +41,7 @@ from .execution_tracking_service import ExecutionTracker, ExecutionTrackingServi
 from .features_registry_service import FeaturesRegistryService
 
 # Utility Services
+from .file_path_service import FilePathService
 from .function_resolution_service import FunctionResolutionService
 from .graph.graph_assembly_service import GraphAssemblyService
 from .graph.graph_bundle_service import GraphBundleService
@@ -92,6 +93,7 @@ __all__ = [
     "ServiceRequirements",
     "ServiceAttribute",
     # Utility Services
+    "FilePathService",
     "FunctionResolutionService",
     "PromptManagerService",
     "ExecutionPolicyService",
@@ -121,7 +123,7 @@ __all__ = [
     # Storage Services
     "StorageServiceManager",
     # Application Services
-    "ApplicationBootstrapService",
+    #     "ApplicationBootstrapService",
     # Service Protocols
     "LLMServiceProtocol",
     "StorageServiceProtocol",

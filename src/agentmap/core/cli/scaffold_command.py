@@ -12,7 +12,6 @@ from typing import Optional
 from agentmap.di import initialize_di
 from agentmap.core.cli.cli_utils import (
     resolve_csv_path,
-    get_or_create_bundle,
     handle_command_error
 )
 from agentmap.models.scaffold_types import ScaffoldOptions
@@ -53,9 +52,14 @@ def scaffold_command(
         # Initialize DI container
         container = initialize_di(config_file)
         
-        # Get or create bundle using utility
+        # Get or create bundle using GraphBundleService
         typer.echo(f"📦 Analyzing graph structure from: {csv_path}")
-        bundle = get_or_create_bundle(container, csv_path, graph, config_file)
+        graph_bundle_service = container.graph_bundle_service()
+        bundle = graph_bundle_service.get_or_create_bundle(
+            csv_path=csv_path,
+            graph_name=graph,
+            config_path=config_file
+        )
         
         # Get scaffold service
         scaffold_service:GraphScaffoldService = container.graph_scaffold_service()
@@ -123,34 +127,14 @@ def scaffold_command(
                         fg=typer.colors.CYAN,
                     )
             
-            # Invalidate the cached bundle since we created new agents
+            # Update bundle with newly scaffolded agents
             if result.scaffolded_count > 0:
-                typer.echo("\n🔄 Invalidating cached bundle after scaffolding...")
-                
-                # Get services from container
-                bundle_service: GraphBundleService = container.graph_bundle_service()
-                registry_service = container.graph_registry_service()
-                
-                try:
-                    # Delete the cached bundle file using the service
-                    deleted = bundle_service.delete_bundle(bundle)
-                    
-                    if deleted:
-                        # Remove from registry after successful deletion
-                        registry_service.remove_entry(bundle.csv_hash)
-                        typer.echo("   ✅ Bundle cache cleared. Next run will detect newly scaffolded agents.")
-                    else:
-                        typer.echo("   ℹ️ No cached bundle found to invalidate.")
-                        
-                except ValueError as e:
-                    typer.echo(f"   ⚠️ Invalid bundle: {e}")
-                except (PermissionError, IOError) as e:
-                    typer.echo(f"   ⚠️ Could not delete cached bundle: {e}")
-                    # Still try to remove from registry even if file deletion failed
-                    try:
-                        registry_service.remove_entry(bundle.csv_hash)
-                    except Exception:
-                        pass  # Registry cleanup is best-effort
+                typer.echo("\n🔄 Updating bundle with newly scaffolded agents...")
+                bundle_update_service = container.bundle_update_service()
+                updated_bundle = bundle_update_service.update_bundle_from_declarations(
+                    bundle, persist=True
+                )
+                typer.echo("   ✅ Bundle updated with new agent mappings.")
             
     except Exception as e:
         typer.secho(f"❌ Scaffold operation failed: {e}", fg=typer.colors.RED)

@@ -229,14 +229,19 @@ class TestModernizedCSVReaderAgent(unittest.TestCase):
         
         # Mock get_collection to return a test CSV path
         with patch.object(agent, 'get_collection', return_value='nonexistent.csv'):
-            with patch('os.path.exists', return_value=False):
-                inputs = {"file_path": "nonexistent.csv"}
-                
-                # Should raise FileNotFoundError due to BaseStorageAgent validation
-                with self.assertRaises(FileNotFoundError) as cm:
-                    agent._validate_inputs(inputs)
-                
-                self.assertIn("File not found", str(cm.exception))
+            inputs = {"file_path": "nonexistent.csv"}
+            
+            # Since file existence validation has been moved to the service layer,
+            # _validate_inputs should complete without raising FileNotFoundError
+            try:
+                agent._validate_inputs(inputs)
+                # Validation should pass at the agent level
+            except ValueError as e:
+                # Only ValueError should be raised for missing collection
+                if "collection" not in str(e):
+                    self.fail(f"Unexpected ValueError: {e}")
+            except FileNotFoundError:
+                self.fail("FileNotFoundError should not be raised at agent level - validation moved to service layer")
     
     def test_csv_extension_validation_warning(self):
         """Test that non-CSV extension generates warning but doesn't fail."""
@@ -337,19 +342,19 @@ class TestModernizedCSVReaderAgent(unittest.TestCase):
     # =============================================================================
     
     def test_csv_file_existence_validation_integration(self):
-        """Test CSV file existence validation in _validate_inputs."""
+        """Test that file existence validation is handled at service layer."""
         agent = self.create_csv_reader_agent()
+        agent.configure_csv_service(self.mock_csv_service)
         
-        # Mock file existence check
-        with patch('os.path.exists', return_value=True):
-            with patch.object(agent, 'get_collection', return_value='existing.csv'):
-                inputs = {"file_path": "existing.csv"}
-                
-                # Should not raise any exceptions
-                try:
-                    agent._validate_inputs(inputs)
-                except Exception as e:
-                    self.fail(f"Validation failed unexpectedly: {e}")
+        # File existence is no longer validated at agent level
+        with patch.object(agent, 'get_collection', return_value='existing.csv'):
+            inputs = {"file_path": "existing.csv"}
+            
+            # Should not raise any exceptions at agent validation level
+            try:
+                agent._validate_inputs(inputs)
+            except Exception as e:
+                self.fail(f"Validation failed unexpectedly: {e}")
     
     def test_logging_integration(self):
         """Test that logging works correctly after mixin removal."""
@@ -389,39 +394,38 @@ class TestModernizedCSVReaderAgent(unittest.TestCase):
         agent = self.create_csv_reader_agent()
         agent.configure_csv_service(self.mock_csv_service)
         
-        # Mock file existence
-        with patch('os.path.exists', return_value=True):
-            with patch.object(agent, 'get_collection', return_value='test.csv'):
-                
-                # Test inputs
-                collection = "test.csv"
-                inputs = {
-                    "file_path": "test.csv",
-                    "format": "dict",
-                    "query": {"status": "active"}
-                }
-                
-                # Execute full workflow
-                agent._validate_inputs(inputs)
-                agent._log_operation_start(collection, inputs)
-                result = agent._execute_operation(collection, inputs)
-                
-                # Verify service was called correctly
-                self.mock_csv_service.read.assert_called_once_with(
-                    collection=collection,
-                    document_id=None,
-                    query={"status": "active"},
-                    path=None,
-                    format="dict",
-                    id_field="id"
-                )
-                
-                # Verify result
-                expected_result = [
-                    {"id": "1", "name": "John", "age": "25"},
-                    {"id": "2", "name": "Jane", "age": "30"}
-                ]
-                self.assertEqual(result, expected_result)
+        # Mock file existence (no longer validated at agent level)
+        with patch.object(agent, 'get_collection', return_value='test.csv'):
+            
+            # Test inputs
+            collection = "test.csv"
+            inputs = {
+                "file_path": "test.csv",
+                "format": "dict",
+                "query": {"status": "active"}
+            }
+            
+            # Execute full workflow
+            agent._validate_inputs(inputs)
+            agent._log_operation_start(collection, inputs)
+            result = agent._execute_operation(collection, inputs)
+            
+            # Verify service was called correctly
+            self.mock_csv_service.read.assert_called_once_with(
+                collection=collection,
+                document_id=None,
+                query={"status": "active"},
+                path=None,
+                format="dict",
+                id_field="id"
+            )
+            
+            # Verify result
+            expected_result = [
+                {"id": "1", "name": "John", "age": "25"},
+                {"id": "2", "name": "Jane", "age": "30"}
+            ]
+            self.assertEqual(result, expected_result)
     
     def test_configuration_properties_preserved(self):
         """Test that CSV processing configuration is preserved after modernization."""
@@ -439,6 +443,33 @@ class TestModernizedCSVReaderAgent(unittest.TestCase):
         self.assertEqual(agent.context["output_field"], "csv_records")
         self.assertEqual(agent.context["description"], "Custom CSV reader")
         self.assertEqual(agent.context["id_field"], "row_id")
+    
+    # =============================================================================
+    # 6. Service Layer Validation Tests
+    # =============================================================================
+    
+    def test_file_not_found_handled_by_service_layer(self):
+        """Test that FileNotFoundError is now handled at the service layer."""
+        agent = self.create_csv_reader_agent()
+        
+        # Configure service to raise FileNotFoundError
+        self.mock_csv_service.read.side_effect = FileNotFoundError("File not found at service layer")
+        agent.configure_csv_service(self.mock_csv_service)
+        
+        collection = "nonexistent.csv"
+        inputs = {"file_path": "nonexistent.csv"}
+        
+        # The error should be caught and handled by _handle_operation_error
+        result = agent._handle_operation_error(
+            FileNotFoundError("File not found at service layer"), 
+            collection, 
+            inputs
+        )
+        
+        # Should return DocumentResult with error info
+        self.assertIsInstance(result, DocumentResult)
+        self.assertFalse(result.success)
+        self.assertIn("CSV file not found", result.error)
 
 
 if __name__ == '__main__':

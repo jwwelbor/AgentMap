@@ -8,6 +8,7 @@ from typing import Dict, Any
 
 from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
 from agentmap.models.graph import Graph, Node
+from agentmap.services.protocols import OrchestrationCapableAgent
 
 
 class TestOrchestratorDynamicRouting(unittest.TestCase):
@@ -23,6 +24,7 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         self.mock_features = Mock()
         self.mock_function_resolution = Mock()
         self.mock_graph_factory = Mock()
+        self.mock_orchestrator_service = Mock()
         
         # Create service with fresh state
         self.assembly_service = GraphAssemblyService(
@@ -32,6 +34,7 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
             features_registry_service=self.mock_features,
             function_resolution_service=self.mock_function_resolution,
             graph_factory_service=self.mock_graph_factory,
+            orchestrator_service=self.mock_orchestrator_service,
         )
         
         # CRITICAL: Ensure clean state for each test
@@ -47,36 +50,38 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         # Create a simple graph with orchestrator
         graph = Graph(name="test_graph")
         
-        # Import NodeRegistryUser to create a proper mock
-        from agentmap.services.node_registry_service import NodeRegistryUser
-        
-        # Create mock agent instances with explicit specs to prevent protocol detection
-        # Use create_autospec to create constrained mocks that don't implement NodeRegistryUser
-        from unittest.mock import create_autospec
-        
-        class BasicAgent:
-            """Basic agent class that explicitly does NOT implement NodeRegistryUser."""
-            def run(self, state):
-                return {"result": "output"}
-        
-        mock_agents = {}
-        for name in ["Start", "NodeA", "NodeB", "NodeC", "Error"]:
-            # Use create_autospec to ensure mock only has BasicAgent attributes
-            agent = create_autospec(BasicAgent, instance=True)
-            agent.run.return_value = {}
-            agent.__class__.__name__ = f"MockAgent_{name}"
-            mock_agents[name] = agent
-        
-        # Create PROPER orchestrator mock that implements NodeRegistryUser consistently
+        # Create a proper mock orchestrator class that implements OrchestrationCapableAgent
         class MockOrchestratorAgent:
-            """Proper orchestrator mock that reliably implements NodeRegistryUser."""
+            """Mock orchestrator agent that properly implements OrchestrationCapableAgent."""
             def __init__(self):
-                self.node_registry: Dict[str, Dict[str, Any]] = {}  # Proper type annotation
+                self.node_registry: Dict[str, Dict[str, Any]] = {}
+                self.orchestrator_service = None
+                self.configure_orchestrator_service_called = False
                 
             def run(self, state):
                 return {"result": "orchestrator_output"}
+            
+            def configure_orchestrator_service(self, orchestrator_service):
+                """Required method for OrchestrationCapableAgent protocol."""
+                self.orchestrator_service = orchestrator_service
+                self.configure_orchestrator_service_called = True
         
-        # Use the real class, not a Mock - this ensures isinstance works consistently
+        # Create basic agent class that doesn't implement OrchestrationCapableAgent
+        class BasicAgent:
+            """Basic agent class that explicitly does NOT implement OrchestrationCapableAgent."""
+            def run(self, state):
+                return {"result": "output"}
+        
+        # Create agent instances
+        mock_agents = {}
+        
+        # Create non-orchestrator agents
+        for name in ["Start", "NodeA", "NodeB", "NodeC", "Error"]:
+            agent = BasicAgent()
+            agent.__class__.__name__ = f"MockAgent_{name}"
+            mock_agents[name] = agent
+        
+        # Create orchestrator agent that properly implements OrchestrationCapableAgent
         orchestrator_agent = MockOrchestratorAgent()
         mock_agents["Orchestrator"] = orchestrator_agent
         
@@ -110,24 +115,34 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         # Assemble the graph with a test registry
         test_registry = {"NodeA": {}, "NodeB": {}, "NodeC": {}}
         
-        # NO NEED TO PATCH isinstance - use real implementation
-        compiled_graph = self.assembly_service.assemble_graph(graph, test_registry)
+        # Call assemble_graph which should detect the orchestrator and inject the registry
+        compiled_graph = self.assembly_service.assemble_graph(
+            graph, 
+            mock_agents,  # Pass agent instances directly
+            orchestrator_node_registry=test_registry
+        )
         
         # Verify ONLY the orchestrator was identified (not all 6 nodes)
         self.assertIn("Orchestrator", self.assembly_service.orchestrator_nodes)
         self.assertEqual(len(self.assembly_service.orchestrator_nodes), 1)
         
-        # Verify registry was injected
-        self.assertEqual(mock_agents["Orchestrator"].node_registry, test_registry)
+        # Verify orchestrator service was configured
+        orchestrator_agent = mock_agents["Orchestrator"]
+        self.assertTrue(orchestrator_agent.configure_orchestrator_service_called)
+        self.assertEqual(orchestrator_agent.orchestrator_service, self.mock_orchestrator_service)
+        
+        # Verify registry was injected into the orchestrator
+        self.assertEqual(orchestrator_agent.node_registry, test_registry)
         
         # Verify the injection stats - THIS SHOULD NOW BE 1, not 6
         self.assertEqual(self.assembly_service.injection_stats["orchestrators_found"], 1)
         self.assertEqual(self.assembly_service.injection_stats["orchestrators_injected"], 1)
         
         # Verify that non-orchestrator agents weren't detected as orchestrators
-        # (The important thing is correct detection, not attribute presence)
         for name in ["Start", "NodeA", "NodeB", "NodeC", "Error"]:
             self.assertNotIn(name, self.assembly_service.orchestrator_nodes)
+            # Verify they don't have node_registry attribute
+            self.assertFalse(hasattr(mock_agents[name], 'node_registry'))
     
     def test_dynamic_router_returns_valid_destination(self):
         """Test that the dynamic router validates destinations."""
@@ -148,6 +163,132 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         # The dynamic router should have been added with conditional edges
         # We can't test the actual routing without running the graph,
         # but we've verified the code structure is correct
+
+    def test_orchestration_capable_agent_detection(self):
+        """Test that OrchestrationCapableAgent detection works correctly."""
+        # Create a proper orchestrator class
+        class TestOrchestratorAgent:
+            def __init__(self):
+                self.node_registry = {}
+            
+            def run(self, state):
+                return {"result": "test"}
+            
+            def configure_orchestrator_service(self, orchestrator_service):
+                pass
+        
+        # Create a regular agent
+        class RegularAgent:
+            def run(self, state):
+                return {"result": "test"}
+        
+        orchestrator = TestOrchestratorAgent()
+        regular = RegularAgent()
+        
+        # Test protocol detection
+        self.assertTrue(isinstance(orchestrator, OrchestrationCapableAgent))
+        self.assertFalse(isinstance(regular, OrchestrationCapableAgent))
+
+    def test_orchestrator_injection_failure_handling(self):
+        """Test handling of orchestrator service injection failures."""
+        # Create orchestrator that will fail configure_orchestrator_service
+        class FailingOrchestratorAgent:
+            def configure_orchestrator_service(self, orchestrator_service):
+                raise RuntimeError("Service configuration failed")
+            
+            def run(self, state):
+                return {"result": "test"}
+        
+        failing_agent = FailingOrchestratorAgent()
+        
+        # Create graph with failing agent
+        graph = Graph(name="test_graph")
+        graph.nodes = {
+            "FailingOrchestrator": Node(
+                name="FailingOrchestrator", 
+                agent_type="orchestrator", 
+                context={"instance": failing_agent}
+            )
+        }
+        graph.entry_point = "FailingOrchestrator"
+        
+        # Mock builder
+        self.assembly_service.builder = Mock()
+        self.assembly_service.builder.compile.return_value = Mock()
+        
+        # Assemble with registry should now raise an exception
+        test_registry = {"NodeA": {}}
+        
+        with self.assertRaises(ValueError) as context:
+            self.assembly_service.assemble_graph(
+                graph, 
+                {"FailingOrchestrator": failing_agent},
+                orchestrator_node_registry=test_registry
+            )
+        
+        # Verify the error message is informative
+        self.assertIn("Failed to inject orchestrator service", str(context.exception))
+        self.assertIn("FailingOrchestrator", str(context.exception))
+        
+        # Verify injection failure was tracked
+        self.assertEqual(self.assembly_service.injection_stats["orchestrators_found"], 1)
+        self.assertEqual(self.assembly_service.injection_stats["orchestrators_injected"], 0)
+        self.assertEqual(self.assembly_service.injection_stats["injection_failures"], 1)
+
+    def test_orchestrator_node_registry_injection_failure(self):
+        """Test handling of node registry injection failures."""
+        # Create orchestrator that succeeds with service config but fails with node registry
+        class NodeRegistryFailingAgent:
+            def __init__(self):
+                self.orchestrator_service = None
+            
+            def configure_orchestrator_service(self, orchestrator_service):
+                self.orchestrator_service = orchestrator_service
+            
+            def run(self, state):
+                return {"result": "test"}
+                
+            # Property that raises exception on assignment
+            @property 
+            def node_registry(self):
+                return {}
+            
+            @node_registry.setter
+            def node_registry(self, value):
+                raise RuntimeError("Node registry injection failed")
+        
+        failing_agent = NodeRegistryFailingAgent()
+        
+        # Create graph with failing agent
+        graph = Graph(name="test_graph")
+        graph.nodes = {
+            "FailingOrchestrator": Node(
+                name="FailingOrchestrator", 
+                agent_type="orchestrator", 
+                context={"instance": failing_agent}
+            )
+        }
+        graph.entry_point = "FailingOrchestrator"
+        
+        # Mock builder
+        self.assembly_service.builder = Mock()
+        self.assembly_service.builder.compile.return_value = Mock()
+        
+        # Assemble with registry should now raise an exception
+        test_registry = {"NodeA": {}}
+        
+        with self.assertRaises(ValueError) as context:
+            self.assembly_service.assemble_graph(
+                graph, 
+                {"FailingOrchestrator": failing_agent},
+                orchestrator_node_registry=test_registry
+            )
+        
+        # Verify the error message is informative
+        self.assertIn("Failed to inject orchestrator service", str(context.exception))
+        
+        # Verify orchestrator service was configured successfully before the registry failure
+        self.assertEqual(failing_agent.orchestrator_service, self.mock_orchestrator_service)
 
 
 if __name__ == "__main__":

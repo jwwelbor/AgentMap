@@ -12,13 +12,6 @@ from typing import Optional, Tuple, Any, Dict
 import typer
 
 from agentmap.di import initialize_di
-from agentmap.services.graph.graph_registry_service import GraphRegistryService
-from agentmap.services.graph.graph_bundle_service import GraphBundleService
-from agentmap.services.config.app_config_service import AppConfigService
-from agentmap.models.storage.types import StorageResult
-from agentmap.services.logging_service import LoggingService
-from agentmap.services.static_bundle_analyzer import StaticBundleAnalyzer
-from agentmap.models.graph_bundle import GraphBundle
 
 
 def resolve_csv_path(
@@ -76,83 +69,6 @@ def parse_json_state(state_str: str) -> Dict[str, Any]:
         raise typer.Exit(code=1)
 
 
-def get_or_create_bundle(
-    container, 
-    csv_path: Path, 
-    graph_name: Optional[str] = None, 
-    config_file: Optional[str] = None
-) -> GraphBundle:
-    """
-    Get existing bundle from cache or create a new one.
-    
-    This function encapsulates the bundle caching logic, checking for
-    existing bundles and creating new ones as needed.
-    
-    TODO: Consider moving this to GraphBundleService as a high-level
-    orchestration method since it already has all required dependencies.
-    
-    Args:
-        container: DI container with required services
-        csv_path: Path to CSV file
-        graph_name: Optional graph name
-        config_file: Optional path to configuration file
-        
-    Returns:
-        GraphBundle ready for execution or scaffolding
-    """
-    # Get required services from container
-    registry_service: GraphRegistryService = container.graph_registry_service()
-    logging_service: LoggingService = container.logging_service()
-    logger = logging_service.get_logger(__name__)
-    graph_bundle_service: GraphBundleService = container.graph_bundle_service()
-    app_config_service: AppConfigService = container.app_config_service()
-
-    # Compute hash for CSV file
-    csv_hash = registry_service.compute_hash(csv_path, logging_service) 
-    bundle_path = registry_service.find_bundle(csv_hash)
-
-    if bundle_path:
-        # Load existing bundle from cache
-        logger.info(f"Loading cached bundle for hash {csv_hash[:8]}")
-        bundle = graph_bundle_service.load_bundle(bundle_path)
-    else:
-        # Create new bundle
-        logger.info(f"Creating new bundle for {csv_path}")
-        
-        try:
-            # Try fast path with static analysis
-            static_analyzer: StaticBundleAnalyzer = container.static_bundle_analyzer()
-            bundle = static_analyzer.create_static_bundle(csv_path, graph_name)
-            logger.info("Created bundle using fast static analysis")
-        except Exception as e:
-            # Fall back to full CSV parsing if needed
-            logger.warning(f"Static analysis failed, using full CSV parsing: {e}")
-            bundle = graph_bundle_service.create_bundle_from_csv(
-                csv_path, config_file, csv_hash, graph_name
-            )
-
-        # Save bundle to cache
-        bundle_path = app_config_service.get_cache_path() / "bundles" / f"{csv_hash[:8]}.json"
-        save_result: StorageResult = graph_bundle_service.save_bundle(bundle, bundle_path)
-        
-        if save_result.success:
-            bundle_path = Path(save_result.file_path)
-            # Register in registry for future lookups
-            registry_service.register(csv_hash, graph_name, bundle_path, csv_path)
-            logger.info(f"Bundle saved and registered: {bundle_path}")
-        else:
-            logger.warning(f"Failed to save bundle: {save_result.error}")
-        
-        # Log warnings for missing declarations
-        if bundle.missing_declarations:
-            logger.warning(
-                f"Missing declarations for agent types: {', '.join(bundle.missing_declarations)}. "
-                f"These agents will need to be defined before graph execution."
-            )
-
-    return bundle
-
-
 def handle_command_error(e: Exception, verbose: bool = False) -> None:
     """
     Standard error handling for CLI commands.
@@ -169,3 +85,172 @@ def handle_command_error(e: Exception, verbose: bool = False) -> None:
         typer.echo(traceback.format_exc())
     
     raise typer.Exit(code=1)
+
+
+# Helper functions for backward compatibility and easier testing
+def diagnose_command(config_file: Optional[str] = None) -> dict:
+    """
+    Programmatic version of diagnose_cmd that returns structured data.
+    Used by API endpoints and testing.
+    """
+    container = initialize_di(config_file)
+    features_service = container.features_registry_service()
+    dependency_checker = container.dependency_checker_service()
+
+    # Build LLM diagnostic information
+    llm_info = {}
+    for provider in ["openai", "anthropic", "google"]:
+        has_deps, missing = dependency_checker.check_llm_dependencies(provider)
+        registered = features_service.is_provider_registered("llm", provider)
+        validated = features_service.is_provider_validated("llm", provider)
+        available = features_service.is_provider_available("llm", provider)
+
+        llm_info[provider] = {
+            "available": available,
+            "registered": registered,
+            "validated": validated,
+            "has_dependencies": has_deps,
+            "missing_dependencies": missing,
+        }
+
+    # Build storage diagnostic information
+    storage_info = {}
+    for storage_type in ["csv", "json", "file", "vector", "firebase", "blob"]:
+        has_deps, missing = dependency_checker.check_storage_dependencies(storage_type)
+        registered = features_service.is_provider_registered("storage", storage_type)
+        validated = features_service.is_provider_validated("storage", storage_type)
+        available = features_service.is_provider_available("storage", storage_type)
+
+        storage_info[storage_type] = {
+            "available": available,
+            "registered": registered,
+            "validated": validated,
+            "has_dependencies": has_deps,
+            "missing_dependencies": missing,
+        }
+
+    # Build environment information
+    import os
+    import sys
+
+    environment = {
+        "python_version": sys.version,
+        "python_executable": sys.executable,
+        "current_directory": os.getcwd(),
+        "platform": sys.platform,
+    }
+
+    # Get package versions
+    packages = [
+        "openai",
+        "anthropic",
+        "google.generativeai",
+        "langchain",
+        "langchain_google_genai",
+        "chromadb",
+    ]
+    package_versions = {}
+    for package in packages:
+        try:
+            if "." in package:
+                base_pkg = package.split(".")[0]
+                module = __import__(base_pkg)
+                package_versions[package] = f"Installed (base package {base_pkg})"
+            else:
+                module = __import__(package)
+                version = getattr(module, "__version__", "unknown")
+                package_versions[package] = version
+        except ImportError:
+            package_versions[package] = "Not installed"
+
+    # Build installation suggestions
+    installation_suggestions = []
+
+    # Check if LLM feature is enabled
+    if not features_service.is_feature_enabled("llm"):
+        installation_suggestions.append(
+            "To enable LLM agents: pip install agentmap[llm]"
+        )
+
+    # Check if storage feature is enabled
+    if not features_service.is_feature_enabled("storage"):
+        installation_suggestions.append(
+            "To enable storage agents: pip install agentmap[storage]"
+        )
+
+    # Provider-specific suggestions
+    if not dependency_checker.check_llm_dependencies("openai")[0]:
+        installation_suggestions.append(
+            "For OpenAI support: pip install agentmap[openai] or pip install openai>=1.0.0"
+        )
+
+    if not dependency_checker.check_llm_dependencies("anthropic")[0]:
+        installation_suggestions.append(
+            "For Anthropic support: pip install agentmap[anthropic] or pip install anthropic"
+        )
+
+    if not dependency_checker.check_llm_dependencies("google")[0]:
+        installation_suggestions.append(
+            "For Google support: pip install agentmap[google] or pip install google-generativeai langchain-google-genai"
+        )
+
+    if not dependency_checker.check_storage_dependencies("vector")[0]:
+        installation_suggestions.append("For vector storage: pip install chromadb")
+
+    return {
+        "llm": llm_info,
+        "storage": storage_info,
+        "environment": environment,
+        "package_versions": package_versions,
+        "installation_suggestions": installation_suggestions,
+    }
+
+
+def cache_info_command() -> dict:
+    """
+    Programmatic version of cache info that returns structured data.
+    Used by API endpoints and testing.
+    """
+    container = initialize_di()
+    validation_cache_service = container.validation_cache_service()
+    cache_stats = validation_cache_service.get_validation_cache_stats()
+
+    suggestions = []
+    if cache_stats["expired_files"] > 0:
+        suggestions.append(
+            "Run 'agentmap validate-cache --cleanup' to remove expired entries"
+        )
+    if cache_stats["corrupted_files"] > 0:
+        suggestions.append(
+            f"Found {cache_stats['corrupted_files']} corrupted cache files"
+        )
+
+    return {"cache_statistics": cache_stats, "suggestions": suggestions}
+
+
+def clear_cache_command(
+    file_path: Optional[str] = None, cleanup_expired: bool = False
+) -> dict:
+    """
+    Programmatic version of cache clearing that returns structured data.
+    Used by API endpoints and testing.
+    """
+    container = initialize_di()
+    validation_cache_service = container.validation_cache_service()
+
+    if file_path:
+        removed = validation_cache_service.clear_validation_cache(file_path)
+        operation = f"clear_file:{file_path}"
+    elif cleanup_expired:
+        removed = validation_cache_service.cleanup_validation_cache()
+        operation = "cleanup_expired"
+    else:
+        removed = validation_cache_service.clear_validation_cache()
+        operation = "clear_all"
+
+    return {
+        "success": True,
+        "operation": operation,
+        "removed_count": removed,
+        "file_path": file_path,
+    }

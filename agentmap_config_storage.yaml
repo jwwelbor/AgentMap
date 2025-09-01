@@ -1,11 +1,12 @@
 # Storage configuration for AgentMap
 # This file defines storage locations and connection settings
+core:
+  base_directory: "agentmap_data/data"  # Base directory for all user storage operations
 
 # JSON storage provider configuration
 json:
-  enabled: true
+  enabled: true #JSON Storage is always enabled for system operation
   auto_create_files: true
-  base_directory: "data/json"
   encoding: "utf-8"
   indent: 2
   # options:
@@ -16,16 +17,16 @@ json:
 csv:
   enabled: true
   # Default directory for CSV files if not specified
-  default_directory: "data/csv"
+  default_directory: "csv"
   # Enable automatic CSV file creation on write operations
   auto_create_files: true
   
   # Named CSV collections
   # collections:
-  #   users: "data/csv/users.csv"
-  #   products: "data/csv/products.csv"
-  #   orders: "data/csv/orders.csv"
-  #   customers: "data/csv/customers/info.csv"
+  #   users: "csv/users.csv"
+  #   products: "csv/products.csv"
+  #   orders: "csv/orders.csv"
+  #   customers: "csv/customers/info.csv"
   #   logs: "logs/app_events.csv"
 
 vector:
@@ -51,7 +52,7 @@ vector:
     
   #   local_vectors:
   #     provider: "local"
-  #     path: "data/vector/local_store"
+  #     path: "vector/local_store"
   #     dimension: 768
 
 kv:
@@ -68,7 +69,7 @@ kv:
     
   #   settings:
   #     provider: "local"
-  #     path: "data/kv/settings.json"
+  #     path: "kv/settings.json"
     
   #   session:
   #     provider: "memory"

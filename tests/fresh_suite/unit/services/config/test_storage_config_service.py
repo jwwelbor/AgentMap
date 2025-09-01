@@ -31,40 +31,40 @@ class TestStorageConfigService(unittest.TestCase):
         self.mock_availability_cache_service.set_availability.return_value = True
         self.mock_config_service.load_config.return_value = {
             'csv': {
-                'default_directory': 'data/csv',
+                'default_directory': 'csv',
                 'collections': {
                     'users': {'file': 'users.csv'},
                     'products': {'file': 'products.csv'}
                 }
             },
             'vector': {
-                'default_directory': 'data/vector',
+                'default_directory': 'vector',
                 'default_provider': 'local',
                 'collections': {
                     'embeddings': {'dimension': 768}
                 }
             },
             'kv': {
-                'default_directory': 'data/kv',
+                'default_directory': 'kv',
                 'default_provider': 'local',
                 'collections': {
                     'cache': {'ttl': 3600}
                 }
             },
             'json': {
-                'default_directory': 'data/json',
+                'default_directory': 'json',
                 'collections': {
                     'documents': {'file': 'documents.json'}
                 }
             },
             'file': {
-                'default_directory': 'data/files',
+                'default_directory': 'files',
                 'collections': {
                     'attachments': {}
                 }
             },
             'blob': {
-                'default_directory': 'data/blob',
+                'default_directory': 'blob',
                 'default_provider': 'file',
                 'providers': {
                     'azure': {
@@ -167,7 +167,7 @@ class TestStorageConfigService(unittest.TestCase):
         result = self.storage_config_service.get_csv_config()
         
         expected = {
-            'default_directory': 'data/csv',
+            'default_directory': 'csv',
             'collections': {
                 'users': {'file': 'users.csv'},
                 'products': {'file': 'products.csv'}
@@ -181,7 +181,7 @@ class TestStorageConfigService(unittest.TestCase):
         result = self.storage_config_service.get_vector_config()
         
         expected = {
-            'default_directory': 'data/vector',
+            'default_directory': 'vector',
             'default_provider': 'local',
             'collections': {
                 'embeddings': {'dimension': 768}
@@ -195,7 +195,7 @@ class TestStorageConfigService(unittest.TestCase):
         result = self.storage_config_service.get_kv_config()
         
         expected = {
-            'default_directory': 'data/kv',
+            'default_directory': 'kv',
             'default_provider': 'local',
             'collections': {
                 'cache': {'ttl': 3600}
@@ -209,7 +209,7 @@ class TestStorageConfigService(unittest.TestCase):
         result = self.storage_config_service.get_blob_config()
         
         expected = {
-            'default_directory': 'data/blob',
+            'default_directory': 'blob',
             'default_provider': 'file',
             'providers': {
                 'azure': {
@@ -237,7 +237,7 @@ class TestStorageConfigService(unittest.TestCase):
         result = self.storage_config_service.get_provider_config('csv')
         
         expected = {
-            'default_directory': 'data/csv',
+            'default_directory': 'csv',
             'collections': {
                 'users': {'file': 'users.csv'},
                 'products': {'file': 'products.csv'}
@@ -290,7 +290,7 @@ class TestStorageConfigService(unittest.TestCase):
     def test_get_value(self):
         """Test getting values using dot notation."""
         result = self.storage_config_service.get_value('csv.default_directory')
-        self.assertEqual(result, 'data/csv')
+        self.assertEqual(result, 'csv')
         
         result = self.storage_config_service.get_value('vector.default_provider')
         self.assertEqual(result, 'local')
@@ -314,7 +314,7 @@ class TestStorageConfigService(unittest.TestCase):
     def test_get_default_directory(self):
         """Test getting default directory for storage type."""
         result = self.storage_config_service.get_default_directory('csv')
-        self.assertEqual(result, 'data/csv')
+        self.assertEqual(result, 'csv')
         
         # Test with fallback default
         result = self.storage_config_service.get_default_directory('missing')
@@ -370,149 +370,7 @@ class TestStorageConfigService(unittest.TestCase):
         self.assertEqual(result['blob_provider_count'], 4)
         self.assertEqual(result['blob_default_provider'], 'file')
     
-    def test_validate_storage_config(self):
-        """Test storage configuration validation."""
-        result = self.storage_config_service.validate_storage_config()
-        
-        self.assertIsInstance(result, dict)
-        self.assertIn('warnings', result)
-        self.assertIn('errors', result)
-        
-        # Should have no errors for valid config
-        self.assertEqual(result['errors'], [])
-    
-    def test_validate_storage_config_missing_types(self):
-        """Test validation with missing storage types."""
-        # Set up config with missing storage types
-        self.mock_config_service.load_config.return_value = {
-            'csv': {'default_directory': 'data/csv'}
-            # Missing 'vector' and 'kv'
-        }
-        
-        service = StorageConfigService(
-            config_service=self.mock_config_service,
-            storage_config_path=self.config_path,
-            availability_cache_service=self.mock_availability_cache_service
-        )
-        
-        result = service.validate_storage_config()
-        
-        # Should have warnings for missing types
-        self.assertGreater(len(result['warnings']), 0)
-        self.assertTrue(any('vector' in warning for warning in result['warnings']))
-        self.assertTrue(any('kv' in warning for warning in result['warnings']))
-        self.assertTrue(any('blob' in warning for warning in result['warnings']))
-    
-    def test_validate_storage_config_invalid_structure(self):
-        """Test validation with invalid configuration structure."""
-        # Set up config with invalid structure
-        self.mock_config_service.load_config.return_value = {
-            'csv': 'invalid_string_instead_of_dict'
-        }
-        
-        service = StorageConfigService(
-            config_service=self.mock_config_service,
-            storage_config_path=self.config_path,
-            availability_cache_service=self.mock_availability_cache_service
-        )
-        
-        result = service.validate_storage_config()
-        
-        # Should have errors for invalid structure
-        self.assertGreater(len(result['errors']), 0)
-        self.assertTrue(any('must be a dictionary' in error for error in result['errors']))
-    
-    def test_validate_blob_config(self):
-        """Test blob storage configuration validation."""
-        result = self.storage_config_service.validate_blob_config()
-        
-        self.assertIsInstance(result, dict)
-        self.assertIn('valid', result)
-        self.assertIn('warnings', result)
-        self.assertIn('errors', result)
-        self.assertIn('summary', result)
-        
-        # Should be valid for our test configuration
-        self.assertTrue(result['valid'])
-        self.assertEqual(result['errors'], [])
-        
-        # Check summary details
-        summary = result['summary']
-        self.assertTrue(summary['blob_enabled'])
-        self.assertEqual(summary['providers_count'], 4)
-        self.assertEqual(summary['default_provider'], 'file')
-    
-    def test_validate_blob_config_invalid_structure(self):
-        """Test blob validation with invalid configuration structure."""
-        # Set up config with invalid structure
-        self.mock_config_service.load_config.return_value = {
-            'blob': 'invalid_string_instead_of_dict'
-        }
-        
-        service = StorageConfigService(
-            config_service=self.mock_config_service,
-            storage_config_path=self.config_path,
-            availability_cache_service=self.mock_availability_cache_service
-        )
-        
-        result = service.validate_blob_config()
-        
-        # Should have errors for invalid structure
-        self.assertFalse(result['valid'])
-        self.assertGreater(len(result['errors']), 0)
-        self.assertTrue(any('not properly structured' in error for error in result['errors']))
-    
-    def test_validate_blob_config_missing_default_provider(self):
-        """Test blob validation with missing default provider."""
-        # Set up config with invalid default provider
-        self.mock_config_service.load_config.return_value = {
-            'blob': {
-                'default_directory': 'data/blob',
-                'default_provider': 'nonexistent',
-                'providers': {
-                    'file': {'base_path': 'data/blob/files'}
-                }
-            }
-        }
-        
-        service = StorageConfigService(
-            config_service=self.mock_config_service,
-            storage_config_path=self.config_path,
-            availability_cache_service=self.mock_availability_cache_service
-        )
-        
-        result = service.validate_blob_config()
-        
-        # Should have errors for missing default provider
-        self.assertFalse(result['valid'])
-        self.assertGreater(len(result['errors']), 0)
-        self.assertTrue(any('not configured in providers section' in error for error in result['errors']))
-    
-    def test_validate_blob_config_unknown_provider(self):
-        """Test blob validation with unknown provider."""
-        # Set up config with unknown provider
-        self.mock_config_service.load_config.return_value = {
-            'blob': {
-                'default_directory': 'data/blob',
-                'providers': {
-                    'unknown_provider': {'config': 'value'},
-                    'file': {'base_path': 'data/blob/files'}
-                }
-            }
-        }
-        
-        service = StorageConfigService(
-            config_service=self.mock_config_service,
-            storage_config_path=self.config_path,
-            availability_cache_service=self.mock_availability_cache_service
-        )
-        
-        result = service.validate_blob_config()
-        
-        # Should have warnings for unknown provider
-        self.assertTrue(result['valid'])  # Still valid, just warnings
-        self.assertGreater(len(result['warnings']), 0)
-        self.assertTrue(any('Unknown blob provider' in warning for warning in result['warnings']))
+   
     
     def test_replace_logger(self):
         """Test replacing bootstrap logger."""
@@ -692,7 +550,7 @@ class TestStorageConfigService(unittest.TestCase):
         self.mock_config_service.load_config.return_value = {
             'csv': {
                 'enabled': False,
-                'default_directory': 'data/csv'
+                'default_directory': 'csv'
             }
         }
         
@@ -726,7 +584,7 @@ class TestStorageConfigService(unittest.TestCase):
         # Set up config with populated blob storage
         self.mock_config_service.load_config.return_value = {
             'blob': {
-                'default_directory': 'data/blob',
+                'default_directory': 'blob',
                 'providers': {'file': {'base_path': 'data/blob/files'}}
             }
         }
@@ -744,7 +602,7 @@ class TestStorageConfigService(unittest.TestCase):
         """Test blob storage type checking with missing configuration."""
         # Set up config without blob storage
         self.mock_config_service.load_config.return_value = {
-            'csv': {'default_directory': 'data/csv'}
+            'csv': {'default_directory': 'csv'}
         }
         
         service = StorageConfigService(
@@ -762,8 +620,9 @@ class TestStorageConfigService(unittest.TestCase):
         with patch('pathlib.Path.mkdir') as mock_mkdir:
             result = self.storage_config_service.get_blob_data_path()
             
-            # Should return correct path (normalize for cross-platform compatibility)
-            self.assertEqual(str(result), os.path.normpath('data/blob'))
+            # Should return correct hierarchical path: base_directory/storage_directory
+            # Config has 'default_directory': 'blob', so path becomes agentmap_data/data/blob
+            self.assertEqual(str(result), os.path.normpath('agentmap_data/data/blob'))
             
             # Should attempt to create directory since blob is enabled
             mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
@@ -785,8 +644,9 @@ class TestStorageConfigService(unittest.TestCase):
         with patch('pathlib.Path.mkdir') as mock_mkdir:
             result = service.get_blob_data_path()
             
-            # Should return default path (normalize for cross-platform compatibility)
-            self.assertEqual(str(result), os.path.normpath('data/blob'))
+            # Should return hierarchical path: base_directory/storage_type
+            # Empty config falls back to storage type name 'blob', so path becomes agentmap_data/data/blob
+            self.assertEqual(str(result), os.path.normpath('agentmap_data/data/blob'))
             
             # Should not attempt to create directory since blob config is empty
             mock_mkdir.assert_not_called()
@@ -798,7 +658,7 @@ class TestStorageConfigService(unittest.TestCase):
         self.mock_config_service.load_config.return_value = {
             'blob': {
                 'enabled': False,  # This field is now respected by is_blob_storage_enabled()
-                'default_directory': 'data/blob'
+                'default_directory': 'blob'
             }
         }
         
@@ -812,8 +672,9 @@ class TestStorageConfigService(unittest.TestCase):
         with patch('pathlib.Path.mkdir') as mock_mkdir:
             result = service.get_blob_data_path()
             
-            # Should return correct path (normalize for cross-platform compatibility)
-            self.assertEqual(str(result), os.path.normpath('data/blob'))
+            # Should return hierarchical path: base_directory/storage_directory
+            # Config has 'default_directory': 'blob', so path becomes agentmap_data/data/blob
+            self.assertEqual(str(result), os.path.normpath('agentmap_data/data/blob'))
             
             # Should NOT attempt to create directory since is_blob_storage_enabled() returns False
             # (because enabled=False is explicitly set)
@@ -825,7 +686,7 @@ class TestStorageConfigService(unittest.TestCase):
         self.mock_config_service.load_config.return_value = {
             'vector': {
                 'enabled': False,
-                'default_directory': 'data/vector',
+                'default_directory': 'vector',
                 'default_provider': 'local'
             }
         }
@@ -864,7 +725,7 @@ class TestStorageConfigService(unittest.TestCase):
         self.mock_config_service.load_config.return_value = {
             'kv': {
                 'enabled': False,
-                'default_directory': 'data/kv',
+                'default_directory': 'kv',
                 'default_provider': 'local'
             }
         }
@@ -903,7 +764,7 @@ class TestStorageConfigService(unittest.TestCase):
         self.mock_config_service.load_config.return_value = {
             'blob': {
                 'enabled': False,
-                'default_directory': 'data/blob',
+                'default_directory': 'blob',
                 'default_provider': 'file'
             }
         }

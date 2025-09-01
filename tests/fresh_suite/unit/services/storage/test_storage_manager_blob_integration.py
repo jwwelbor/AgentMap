@@ -13,7 +13,8 @@ from unittest.mock import Mock, patch
 
 from agentmap.di import initialize_di
 from agentmap.services.storage.manager import StorageServiceManager
-from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.config.storage_config_service import StorageConfigService
+from agentmap.services.file_path_service import FilePathService
 from agentmap.services.logging_service import LoggingService
 
 
@@ -21,7 +22,8 @@ class TestStorageManagerBlobIntegration(unittest.TestCase):
     """
     Test blob storage integration with StorageServiceManager.
     
-    These tests use real DI container (not mocked) to verify actual
+    These tests use real DI in container tests
+    MockServiceFactory for service tests to verify actual
     integration behavior between storage manager and blob storage.
     """
     
@@ -126,15 +128,17 @@ kv:
     def test_storage_manager_graceful_degradation_without_blob_storage(self):
         """Test that storage manager handles graceful degradation without blob storage."""
         # Arrange - Create mock services without blob storage
-        mock_config = Mock(spec=AppConfigService)
+        mock_storage_config = Mock(spec=StorageConfigService)
         mock_logging = Mock(spec=LoggingService)
+        mock_file_path_service = Mock(spec=FilePathService)
         mock_logger = Mock()
         mock_logging.get_class_logger.return_value = mock_logger
         
         # Act - Create storage manager without blob storage
         storage_manager = StorageServiceManager(
-            configuration=mock_config,
+            configuration=mock_storage_config,
             logging_service=mock_logging,
+            file_path_service=mock_file_path_service,
             blob_storage_service=None
         )
         
@@ -153,8 +157,9 @@ kv:
     def test_storage_manager_blob_integration_with_mock_blob_service(self):
         """Test storage manager integration with a mock blob service."""
         # Arrange - Create mock services with blob storage
-        mock_config = Mock(spec=AppConfigService)
+        mock_storage_config = Mock(spec=StorageConfigService)
         mock_logging = Mock(spec=LoggingService)
+        mock_file_path_service = Mock(spec=FilePathService)
         mock_logger = Mock()
         mock_logging.get_class_logger.return_value = mock_logger
         
@@ -164,8 +169,9 @@ kv:
         
         # Act - Create storage manager with blob storage
         storage_manager = StorageServiceManager(
-            configuration=mock_config,
+            configuration=mock_storage_config,
             logging_service=mock_logging,
+            file_path_service=mock_file_path_service,
             blob_storage_service=mock_blob_service
         )
         
@@ -192,8 +198,9 @@ kv:
     def test_storage_manager_blob_service_health_check_failure(self):
         """Test storage manager handles blob service health check failures."""
         # Arrange - Create mock services with failing blob service
-        mock_config = Mock(spec=AppConfigService)
+        mock_storage_config = Mock(spec=StorageConfigService)
         mock_logging = Mock(spec=LoggingService)
+        mock_file_path_service = Mock(spec=FilePathService)
         mock_logger = Mock()
         mock_logging.get_class_logger.return_value = mock_logger
         
@@ -203,8 +210,9 @@ kv:
         
         # Act - Create storage manager with failing blob storage
         storage_manager = StorageServiceManager(
-            configuration=mock_config,
+            configuration=mock_storage_config,
             logging_service=mock_logging,
+            file_path_service=mock_file_path_service,
             blob_storage_service=mock_blob_service
         )
         
@@ -221,8 +229,9 @@ kv:
     def test_storage_manager_get_service_includes_blob_storage(self):
         """Test that get_service method works with blob storage."""
         # Arrange - Create mock services with blob storage
-        mock_config = Mock(spec=AppConfigService)
+        mock_storage_config = Mock(spec=StorageConfigService)
         mock_logging = Mock(spec=LoggingService)
+        mock_file_path_service = Mock(spec=FilePathService)
         mock_logger = Mock()
         mock_logging.get_class_logger.return_value = mock_logger
         
@@ -231,8 +240,9 @@ kv:
         
         # Act - Create storage manager with blob storage
         storage_manager = StorageServiceManager(
-            configuration=mock_config,
+            configuration=mock_storage_config,
             logging_service=mock_logging,
+            file_path_service=mock_file_path_service,
             blob_storage_service=mock_blob_service
         )
         
@@ -240,6 +250,32 @@ kv:
         blob_service = storage_manager.get_service("blob")
         self.assertEqual(blob_service, mock_blob_service)
     
+    def test_storage_manager_get_service_raises_error_when_blob_not_available(self):
+        """Test that get_service('blob') raises error when blob storage is not available."""
+        # Arrange - Create mock services without blob storage
+        mock_storage_config = Mock(spec=StorageConfigService)
+        mock_logging = Mock(spec=LoggingService)
+        mock_file_path_service = Mock(spec=FilePathService)
+        mock_logger = Mock()
+        mock_logging.get_class_logger.return_value = mock_logger
+        
+        # Act - Create storage manager without blob storage
+        storage_manager = StorageServiceManager(
+            configuration=mock_storage_config,
+            logging_service=mock_logging,
+            file_path_service=mock_file_path_service,
+            blob_storage_service=None
+        )
+        
+        # Assert - Should raise error when trying to get blob service
+        from agentmap.services.storage.types import StorageServiceNotAvailableError
+        with self.assertRaises(StorageServiceNotAvailableError) as context:
+            storage_manager.get_service("blob")
+        
+        # Verify error message mentions blob is not available
+        self.assertIn("blob", str(context.exception).lower())
+        self.assertIn("not registered", str(context.exception).lower())
+
     def test_container_creates_storage_manager_with_blob_integration(self):
         """Test that the DI container creates storage manager with blob integration."""
         # Arrange

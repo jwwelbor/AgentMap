@@ -22,6 +22,7 @@ from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.types import StorageResult, WriteMode
 from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.logging_service import LoggingService
+from agentmap.services.file_path_service import FilePathService
 
 class JSONStorageService(BaseStorageService):
     """
@@ -42,6 +43,8 @@ class JSONStorageService(BaseStorageService):
         provider_name: str,
         configuration: StorageConfigService,  # StorageConfigService (avoid circular import)
         logging_service: LoggingService,  # LoggingService (avoid circular import)
+        file_path_service: Optional[FilePathService] = None,
+        base_directory: Optional[str] = None,
     ):
         """
         Initialize JSONStorageService.
@@ -50,9 +53,11 @@ class JSONStorageService(BaseStorageService):
             provider_name: Name of the storage provider
             configuration: Storage configuration service
             logging_service: Logging service for creating loggers
+            file_path_service: Optional file path service for path validation
+            base_directory: Optional base directory for system storage operations
         """
-        # Call parent's __init__ with the provided provider_name
-        super().__init__(provider_name, configuration, logging_service)
+        # Call parent's __init__ with all parameters for injection support
+        super().__init__(provider_name, configuration, logging_service, file_path_service, base_directory)
 
     # NOTE: This method is included for backward compatibility
     # The base class uses health_check(), but some code expects is_healthy()
@@ -71,6 +76,10 @@ class JSONStorageService(BaseStorageService):
 
         For JSON operations, we don't need a complex client.
         Just ensure base directory exists and return a simple config.
+        
+        Handles two storage configurations:
+        - System storage (base_directory injection): files go directly in base_directory
+        - User storage (StorageConfigService): files go in configured paths
 
         Returns:
             Configuration dict for JSON operations
@@ -78,21 +87,39 @@ class JSONStorageService(BaseStorageService):
         Raises:
             OSError: If base directory cannot be created or accessed
         """
-        # Use StorageConfigService named domain methods instead of generic access
-        json_config = self.configuration.get_json_config()
+        # Use StorageConfigService named domain methods for configuration
 
-        # Use the path accessor with business logic (already ensures directory exists)
-        base_dir = str(self.configuration.get_json_data_path())
-        encoding = json_config.get("encoding", "utf-8")
+        if self.provider_name.startswith("system_json"):
+            base_dir = self.configuration["base_directory"]
+            encoding = self.configuration["encoding"] or "utf-8"
+            indent = self.configuration["indent"] or 2
 
-        # Additional validation for fail-fast behavior
-        if not self.configuration.is_json_storage_enabled():
-            raise OSError("JSON storage is not enabled in configuration")
+        else:
+
+            json_config = self.configuration.get_json_config()
+
+            encoding = json_config.get("encoding", "utf-8")
+            indent = json_config.get("indent", 2)
+
+            # Determine base directory based on injection or configuration
+            if self._base_directory:
+                # System storage: use injected base_directory directly
+                base_dir = self._base_directory
+                self._logger.debug(f"[{self.provider_name}] Using injected base directory: {base_dir}")
+            else:
+                # User storage: use StorageConfigService paths
+                # Additional validation for fail-fast behavior
+                if not self.configuration.is_json_storage_enabled():
+                    raise OSError("JSON storage is not enabled in configuration")
+                    
+                # Use the path accessor with business logic (already ensures directory exists)
+                base_dir = str(self.configuration.get_json_data_path())
+                self._logger.debug(f"[{self.provider_name}] Using configured base directory: {base_dir}")
 
         return {
             "base_directory": base_dir,
             "encoding": encoding,
-            "indent": json_config.get("indent", 2),
+            "indent": indent,
         }
 
     def _perform_health_check(self) -> bool:
@@ -132,36 +159,36 @@ class JSONStorageService(BaseStorageService):
         """
         Get full file path for a collection.
 
-        Uses configured collection paths when available, with fallback to default behavior.
+        Uses base class path resolution with file_path_service validation.
         Enhanced with StorageConfigService collection support.
 
         Args:
             collection: Collection name (can be relative or absolute path)
 
         Returns:
-            Full file path
+            Full file path validated by file_path_service
         """
+        # Handle absolute paths directly (legacy support)
         if os.path.isabs(collection):
             return collection
 
-        # Check if this collection has specific configuration
-        if self.configuration.has_collection("json", collection):
+        # Check if this collection has specific configuration (user storage)
+        if not self._base_directory and self.configuration.has_collection("json", collection):
             collection_path = self.configuration.get_json_collection_file_path(
                 collection
             )
             return str(collection_path)
 
-        # Default behavior: use base directory
-        base_dir = self.client["base_directory"]
-
-        # Ensure .json extension
+        # Ensure .json extension for file-based collections
         if not collection.lower().endswith(".json"):
             collection = f"{collection}.json"
 
-        if not collection.startswith(base_dir):
-            collection = os.path.join(base_dir, collection)
-
-        return collection
+        # Use base class get_full_path for proper path resolution and validation
+        try:
+            return self.get_full_path(collection)
+        except ValueError as e:
+            self._logger.error(f"[{self.provider_name}] Invalid collection path '{collection}': {e}")
+            raise
 
     def _ensure_directory_exists(self, file_path: str) -> None:
         """

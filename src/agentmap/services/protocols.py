@@ -178,7 +178,42 @@ class PromptManagerServiceProtocol(Protocol):
             Formatted prompt text
         """
         ...
+@runtime_checkable
+class GraphBundleServiceProtocol(Protocol):
+    """Protocol for graph bundle service interface used by agents."""
 
+    def get_or_create_bundle(
+        self,
+        csv_path: Any,  # Path
+        graph_name: Optional[str] = None,
+        config_path: Optional[str] = None,
+    ) -> Any:  # GraphBundle
+        """
+        Get existing bundle from cache or create a new one.
+        
+        This method encapsulates the bundle caching logic, checking for
+        existing bundles using composite keys (csv_hash, graph_name) and 
+        creating new ones as needed. Bundles are created per-graph, not per-CSV.
+        
+        Args:
+            csv_path: Path to CSV file
+            graph_name: Optional graph name (used for composite key lookup)
+            config_path: Optional path to configuration file
+            
+        Returns:
+            GraphBundle ready for execution or scaffolding
+        """
+        ...
+
+@runtime_checkable
+class GraphBundleCapableAgent(Protocol):
+    """Protocol for agents that can use graph bundle services."""
+
+    def configure_graph_bundle_service(
+        self, graph_bundle_service: GraphBundleServiceProtocol
+    ) -> None:
+        """Configure graph bundle service for this agent."""
+        ...
 
 @runtime_checkable
 class GraphCheckpointServiceProtocol(Protocol):
@@ -387,15 +422,6 @@ class BlobStorageCapableAgent(Protocol):
 
 
 @runtime_checkable
-class DatabaseCapableAgent(Protocol):
-    """Protocol for agents that can use database services."""
-
-    def configure_database_service(self, database_service: Any) -> None:
-        """Configure database service for this agent."""
-        ...
-
-
-@runtime_checkable
 class PromptCapableAgent(Protocol):
     """Protocol for agents that can use prompt manager services."""
 
@@ -426,153 +452,3 @@ class OrchestrationCapableAgent(Protocol):
     ) -> None:
         """Configure orchestrator service for this agent."""
         ...
-
-
-@runtime_checkable
-class FeaturesRegistryServiceProtocol(Protocol):
-    """Protocol for features registry service interface used by services."""
-
-    def has_fuzzywuzzy(self) -> bool:
-        """
-        Check if fuzzywuzzy is available for fuzzy string matching.
-
-        Returns:
-            True if fuzzywuzzy is available, False otherwise
-        """
-        ...
-
-    def has_spacy(self) -> bool:
-        """
-        Check if spaCy is available with English model.
-
-        Returns:
-            True if spaCy and en_core_web_sm model are available, False otherwise
-        """
-        ...
-
-    def get_nlp_capabilities(self) -> Dict[str, Any]:
-        """
-        Get available NLP capabilities summary.
-
-        Returns:
-            Dictionary with NLP library availability and capabilities
-        """
-        ...
-
-    def is_feature_enabled(self, feature_name: str) -> bool:
-        """
-        Check if a feature is enabled.
-
-        Args:
-            feature_name: Name of the feature to check
-
-        Returns:
-            True if feature is enabled, False otherwise
-        """
-        ...
-
-    def is_provider_available(self, category: str, provider: str) -> bool:
-        """
-        Check if a specific provider is available and validated.
-
-        Args:
-            category: Provider category ('llm', 'storage')
-            provider: Provider name
-
-        Returns:
-            True if provider is available and validated, False otherwise
-        """
-        ...
-
-
-@runtime_checkable
-class DeclarationRegistryServiceProtocol(Protocol):
-    """Protocol for declaration registry service interface used by services."""
-
-    def get_agent_declaration(self, agent_type: str) -> Optional[AgentDeclaration]:
-        """
-        Get agent declaration by type.
-        
-        Args:
-            agent_type: Type of agent to find
-            
-        Returns:
-            AgentDeclaration if found, None otherwise
-        """
-        ...
-
-    def get_service_declaration(self, service_name: str) -> Optional[ServiceDeclaration]:
-        """
-        Get service declaration by name.
-        
-        Args:
-            service_name: Name of service to find
-            
-        Returns:
-            ServiceDeclaration if found, None otherwise
-        """
-        ...
-
-    def resolve_agent_requirements(self, agent_types: Set[str]) -> Dict[str, any]:
-        """
-        Resolve all requirements for given agent types.
-        
-        Args:
-            agent_types: Set of agent types to resolve requirements for
-            
-        Returns:
-            Dictionary with 'services', 'protocols', and 'missing' keys
-        """
-        ...
-
-    def add_source(self, source: "DeclarationSource") -> None:
-        """
-        Add a declaration source to the registry.
-        
-        Args:
-            source: Declaration source to add
-        """
-        ...
-
-    def load_all(self) -> None:
-        """
-        Reload declarations from all sources.
-        
-        Later sources override earlier ones to enable customization.
-        """
-        ...
-
-
-@runtime_checkable
-class DeclarationSourceProtocol(Protocol):
-    """Protocol for declaration source interface used by services."""
-
-    def load_agents(self) -> Dict[str, AgentDeclaration]:
-        """
-        Load agent declarations from this source.
-        
-        Returns:
-            Dictionary mapping agent types to AgentDeclaration models
-        """
-        ...
-
-    def load_services(self) -> Dict[str, ServiceDeclaration]:
-        """
-        Load service declarations from this source.
-        
-        Returns:
-            Dictionary mapping service names to ServiceDeclaration models
-        """
-        ...
-
-
-# # Legacy compatibility - these might be referenced in existing code
-# LLMServiceUser = LLMCapableAgent
-# StorageServiceUser = StorageCapableAgent
-
-# # Additional compatibility mappings for separate services approach
-# CSVServiceUser = CSVCapableAgent
-# JSONServiceUser = JSONCapableAgent
-# FileServiceUser = FileCapableAgent
-# VectorServiceUser = VectorCapableAgent
-# MemoryServiceUser = MemoryCapableAgent

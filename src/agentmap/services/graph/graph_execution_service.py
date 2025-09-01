@@ -105,7 +105,7 @@ class GraphExecutionService:
             # Complete execution tracking
             self.execution_tracking.complete_execution(execution_tracker)
             execution_summary = self.execution_tracking.to_summary(
-                execution_tracker, graph_name
+                execution_tracker, graph_name, final_state
             )
             
             # Calculate execution time and evaluate policy
@@ -165,7 +165,7 @@ class GraphExecutionService:
                     )
                     self.execution_tracking.complete_execution(execution_tracker)
                     execution_summary = self.execution_tracking.to_summary(
-                        execution_tracker, graph_name
+                        execution_tracker, graph_name, initial_state
                     )
                     self.logger.debug(
                         f"[GraphExecutionService] Error summary created with "
@@ -175,7 +175,13 @@ class GraphExecutionService:
                 self.logger.error(
                     f"[GraphExecutionService] Failed to create error summary: {summary_error}"
                 )
-                execution_summary = None
+                # Create minimal execution summary on error
+                from agentmap.models.execution_summary import ExecutionSummary
+                execution_summary = ExecutionSummary(
+                    graph_name=graph_name,
+                    status="failed",
+                    graph_success=False
+                )
             
             # Create error execution result
             result = ExecutionResult(

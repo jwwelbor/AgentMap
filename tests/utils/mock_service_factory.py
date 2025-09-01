@@ -130,6 +130,7 @@ class MockServiceFactory:
         defaults = {
             "csv_path": "graphs/workflow.csv",
             "compiled_graphs_path": "compiled",
+            "cache_path": "agentmap_data/cache",
             "autocompile": True,
             "logging": {
                 "level": "DEBUG",
@@ -162,6 +163,7 @@ class MockServiceFactory:
         # Configure all expected methods
         mock_service.get_csv_path.return_value = Path(defaults["csv_path"])
         mock_service.get_compiled_graphs_path.return_value = Path(defaults["compiled_graphs_path"])
+        mock_service.get_cache_path.return_value = Path(defaults.get("cache_path", "agentmap_data/cache"))
         mock_service.get_logging_config.return_value = defaults["logging"]
         mock_service.get_execution_config.return_value = defaults["execution"]
         mock_service.get_tracking_config.return_value = defaults["tracking"]
@@ -190,6 +192,22 @@ class MockServiceFactory:
             return defaults.get(section_name, {})
         
         mock_service.get_section.side_effect = get_section
+        
+        return mock_service
+    
+    @staticmethod
+    def create_mock_file_path_service() -> Mock:
+        """Create a mock FilePathService for testing."""
+        mock_service = Mock()
+        
+        # Configure default behaviors
+        mock_service.validate_safe_path.return_value = True
+        mock_service.sanitize_filename.side_effect = lambda f: f  # Return filename as-is
+        mock_service.ensure_directory.side_effect = lambda p: Path(p)  # Return Path object
+        mock_service.resolve_storage_path.side_effect = lambda base, storage_type, collection=None, filename=None: (
+            Path(base) / storage_type / (collection or "") / (filename or "")
+        )
+        mock_service.get_dangerous_system_paths.return_value = ["/bin", "/etc", "C:\\Windows"]
         
         return mock_service
     
@@ -600,9 +618,26 @@ class MockServiceFactory:
         
         mock_service.get_default_provider.side_effect = get_default_provider
         
+        # Add get_base_directory method that's called by StorageServiceManager
+        def get_base_directory() -> str:
+            """Get base directory for storage operations."""
+            # Check JSON config first since that's what JSONStorageService uses
+            json_config = defaults.get("json", {})
+            if json_config.get("default_directory"):
+                return str(json_config["default_directory"])
+            return "/tmp/agentmap_storage"  # Final fallback
+        
+        mock_service.get_base_directory.side_effect = get_base_directory
+        
         # Add get_value method for generic config access with nested path support
         def get_value(key: str, default: Any = None) -> Any:
             """Get value with support for nested paths like 'csv.enabled'."""
+            # Handle special case for core.base_directory
+            if key == "core.base_directory":
+                return get_base_directory()
+            elif key == "base_directory":
+                return get_base_directory()  # Use consistent base directory logic
+            
             if '.' in key:
                 # Handle nested keys like 'csv.enabled'
                 keys = key.split('.')
@@ -1562,6 +1597,177 @@ class MockServiceFactory:
         mock_service.disable_auto_invalidation.return_value = None
         
         return mock_service
+    
+    @staticmethod
+    def create_mock_system_storage_manager() -> Mock:
+        """
+        Create a pure Mock object for SystemStorageManager.
+        
+        This Mock provides system-level storage services for cache_folder operations
+        with namespace isolation support.
+        
+        Returns:
+            Mock object with get_json_storage and get_file_storage methods
+            
+        Example:
+            mock_system = MockServiceFactory.create_mock_system_storage_manager()
+            json_service = mock_system.get_json_storage("registry")
+        """
+        mock_service = Mock()
+        
+        def get_json_storage(namespace: Optional[str] = None) -> Mock:
+            """Get mock JSON storage service for system use."""
+            mock_json_service = Mock()
+            
+            # Configure JSON service methods
+            mock_json_service.read.return_value = None  # Default: no existing data
+            mock_json_service.write.return_value = Mock(success=True, error=None)
+            mock_json_service.delete.return_value = Mock(success=True, error=None)
+            mock_json_service.exists.return_value = False
+            
+            # Add provider info
+            provider_name = f"system_json_{namespace}" if namespace else "system_json"
+            mock_json_service.provider_name = provider_name
+            
+            return mock_json_service
+        
+        def get_file_storage(namespace: Optional[str] = None) -> Mock:
+            """Get mock file storage service for system use."""
+            mock_file_service = Mock()
+            
+            # Configure file service methods
+            mock_file_service.read.return_value = Mock(success=True, data=b"", error=None)
+            mock_file_service.write.return_value = Mock(success=True, error=None)
+            mock_file_service.delete.return_value = Mock(success=True, error=None)
+            mock_file_service.exists.return_value = False
+            
+            # Add provider info
+            provider_name = f"system_file_{namespace}" if namespace else "system_file"
+            mock_file_service.provider_name = provider_name
+            
+            return mock_file_service
+        
+        # Configure service methods
+        mock_service.get_json_storage.side_effect = get_json_storage
+        mock_service.get_file_storage.side_effect = get_file_storage
+        
+        return mock_service
+
+    @staticmethod
+    def create_mock_custom_agent_declaration_manager() -> Mock:
+        """
+        Create a pure Mock object for CustomAgentDeclarationManager.
+        
+        This Mock provides custom agent declaration management functionality
+        for loading, saving, and managing custom agent declarations in YAML format.
+        
+        Returns:
+            Mock object with load_declarations, get_agent_declaration, and management methods
+            
+        Example:
+            mock_manager = MockServiceFactory.create_mock_custom_agent_declaration_manager()
+            declarations = mock_manager.load_declarations()
+            agent = mock_manager.get_agent_declaration("my_agent")
+        """
+        mock_service = Mock()
+        
+        # Internal storage for declarations (simulates YAML file behavior)
+        declarations_storage = {
+            'version': '1.0',
+            'namespace': 'custom',
+            'agents': {}
+        }
+        
+        def load_declarations() -> Dict[str, Any]:
+            """Load declarations structure."""
+            return declarations_storage.copy()
+        
+        def get_agent_declaration(agent_type: str) -> Optional[Dict[str, Any]]:
+            """Get a specific agent declaration by type."""
+            agents = declarations_storage.get('agents', {})
+            return agents.get(agent_type)
+        
+        def add_or_update_agent(
+            agent_type: str,
+            class_path: str,
+            services: Optional[List[str]] = None,
+            protocols: Optional[List[str]] = None
+        ) -> None:
+            """Add or update agent declaration."""
+            services = services or []
+            protocols = protocols or []
+            
+            agent_entry = {
+                'class_path': class_path,
+                'requires': {
+                    'services': services,
+                    'protocols': protocols
+                }
+            }
+            
+            declarations_storage['agents'][agent_type] = agent_entry
+        
+        def save_declarations(declarations: Dict[str, Any]) -> None:
+            """Save declarations to storage."""
+            declarations_storage.clear()
+            declarations_storage.update(declarations)
+        
+        def remove_agent_declaration(agent_type: str) -> bool:
+            """Remove agent declaration."""
+            agents = declarations_storage.get('agents', {})
+            if agent_type in agents:
+                del agents[agent_type]
+                return True
+            return False
+        
+        def list_agent_types() -> List[str]:
+            """List all agent types."""
+            agents = declarations_storage.get('agents', {})
+            return list(agents.keys())
+        
+        def get_declaration_stats() -> Dict[str, Any]:
+            """Get declaration statistics."""
+            return {
+                'file_path': 'test/path/custom_agents.yaml',
+                'file_exists': True,
+                'version': declarations_storage.get('version', 'unknown'),
+                'namespace': declarations_storage.get('namespace', 'unknown'),
+                'total_agents': len(declarations_storage.get('agents', {})),
+                'agent_types': list(declarations_storage.get('agents', {}).keys())
+            }
+        
+        def compose_yaml_declaration(
+            agent_type: str,
+            class_path: str,
+            services: Optional[List[str]] = None,
+            protocols: Optional[List[str]] = None
+        ) -> str:
+            """Generate YAML declaration string."""
+            services = services or []
+            protocols = protocols or []
+            services_yaml = f"[{', '.join(f'"{s}"' for s in services)}]" if services else "[]"
+            protocols_yaml = f"[{', '.join(f'"{p}"' for p in protocols)}]" if protocols else "[]"
+            
+            return f"""  {agent_type}:
+    class_path: "{class_path}"
+    requires:
+      services: {services_yaml}
+      protocols: {protocols_yaml}"""
+        
+        # Configure methods
+        mock_service.load_declarations.side_effect = load_declarations
+        mock_service.get_agent_declaration.side_effect = get_agent_declaration
+        mock_service.add_or_update_agent.side_effect = add_or_update_agent
+        mock_service.save_declarations.side_effect = save_declarations
+        mock_service.remove_agent_declaration.side_effect = remove_agent_declaration
+        mock_service.list_agent_types.side_effect = list_agent_types
+        mock_service.get_declaration_stats.side_effect = get_declaration_stats
+        mock_service.compose_yaml_declaration.side_effect = compose_yaml_declaration
+        
+        # Mock file_path attribute
+        mock_service.file_path = Path("test/path/custom_agents.yaml")
+        
+        return mock_service
 
 
 # Convenience functions for quick mock creation
@@ -1658,6 +1864,11 @@ def create_graph_factory_service_mock() -> Mock:
 def create_availability_cache_service_mock() -> Mock:
     """Quick function to create an availability cache service mock."""
     return MockServiceFactory.create_mock_availability_cache_service()
+
+
+def create_system_storage_manager_mock() -> Mock:
+    """Quick function to create a system storage manager mock."""
+    return MockServiceFactory.create_mock_system_storage_manager()
 
 
 class ServiceMockBuilder:

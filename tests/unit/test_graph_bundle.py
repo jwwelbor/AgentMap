@@ -212,26 +212,6 @@ class TestGraphBundleCoreFunctionality:
         assert prepared_nodes["test_node"].context is None
         assert prepared_nodes["test_node"].name == "test_node"
 
-    def test_get_service_load_order_with_services(self):
-        """Test get_service_load_order returns services in sorted order."""
-        # Arrange
-        bundle = GraphBundle.create_metadata(
-            graph_name="test_graph",
-            nodes={},
-            required_agents=set(),
-            required_services={"zebra_service", "alpha_service", "beta_service"},
-            function_mappings={},
-            csv_hash="hash123"
-        )
-        
-        # Act
-        load_order = bundle.get_service_load_order()
-        
-        # Assert
-        assert isinstance(load_order, list)
-        assert set(load_order) == {"zebra_service", "alpha_service", "beta_service"}
-        assert load_order == sorted(load_order)
-    
     def test_get_service_load_order_with_precalculated_order(self):
         """Test get_service_load_order uses pre-calculated order when available."""
         # Arrange

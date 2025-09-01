@@ -1,4 +1,4 @@
-# agentmap/config/app_config.py
+# agentmap_data/config/app_config.py
 """
 Domain service for application configuration with business logic.
 
@@ -116,23 +116,19 @@ class AppConfigService:
     # Path accessors
     def get_cache_path(self) -> Path:
         """Get the path for custom agents."""
-        return Path(self.get_value("paths.cache", "agentmap/custom_agents"))
+        return Path(self.get_value("paths.cache", "agentmap_data/cache"))
     
     def get_custom_agents_path(self) -> Path:
         """Get the path for custom agents."""
-        return Path(self.get_value("paths.custom_agents", "agentmap/custom_agents"))
+        return Path(self.get_value("paths.custom_agents", "agentmap_data/custom_agents"))
 
     def get_functions_path(self) -> Path:
         """Get the path for functions."""
-        return Path(self.get_value("paths.functions", "agentmap/custom_functions"))
-
-    def get_compiled_graphs_path(self) -> Path:
-        """Get the path for compiled graphs."""
-        return Path(self.get_value("paths.compiled_graphs", "agentmap/compiled_graphs"))
+        return Path(self.get_value("paths.functions", "agentmap_data/custom_functions"))
     
     def get_metadata_bundles_path(self) -> Path:
         """Get the path for metadata bundles."""
-        metadata_bundles_path = Path(self.get_value("paths.metadata_bundles", "agentmap/metadata_bundles"))
+        metadata_bundles_path = Path(self.get_value("paths.metadata_bundles", "agentmap_data/metadata_bundles"))
 
         # Ensure the directory exists
         try:
@@ -459,15 +455,16 @@ class AppConfigService:
             "summary": summary,
         }
 
-    # Config file path accessor
+    # Config file path accessor for debugging mostly
     def get_config_file_path(self) -> Optional[Path]:
         """Get the path to the main configuration file that was used during initialization."""
         return self._config_file_path
 
     # Storage config path accessor (storage loading moved to StorageConfigService)
-    def get_storage_config_path(self) -> Path:
+    def get_storage_config_path(self) -> Optional[Path]:
         """Get the path for the storage configuration file."""
-        return Path(self.get_value("storage_config_path", None))
+        storage_path = self.get_value("storage_config_path")
+        return Path(storage_path) if storage_path else None
 
 
 

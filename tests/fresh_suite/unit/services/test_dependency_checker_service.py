@@ -249,7 +249,7 @@ class TestDependencyCheckerService(unittest.TestCase):
         # Configure feature as enabled
         self.mock_features_registry_service.is_feature_enabled.return_value = True
         
-        def mock_validate_provider(provider):
+        def mock_validate_provider(provider, force=False):
             # Only anthropic is available
             return (True, []) if provider == "anthropic" else (False, [f"missing_{provider}"])
         
@@ -266,7 +266,7 @@ class TestDependencyCheckerService(unittest.TestCase):
         # Configure feature as enabled
         self.mock_features_registry_service.is_feature_enabled.return_value = True
         
-        def mock_validate_provider(provider):
+        def mock_validate_provider(provider, force=False):
             return (False, [f"missing_{provider}"])
         
         with patch.object(self.service, '_validate_llm_provider', side_effect=mock_validate_provider):
@@ -371,7 +371,7 @@ class TestDependencyCheckerService(unittest.TestCase):
     
     def test_discover_and_validate_providers_llm(self):
         """Test discover_and_validate_providers() for LLM category."""
-        def mock_validate_provider(provider):
+        def mock_validate_provider(provider, force=False):
             # Only openai and anthropic are available
             return (True, []) if provider in ["openai", "anthropic"] else (False, [f"missing_{provider}"])
         
@@ -392,7 +392,7 @@ class TestDependencyCheckerService(unittest.TestCase):
     
     def test_discover_and_validate_providers_storage(self):
         """Test discover_and_validate_providers() for storage category."""
-        def mock_validate_storage(storage_type):
+        def mock_validate_storage(storage_type, force=False):
             # Only csv and vector are available
             return (True, []) if storage_type in ["csv", "vector"] else (False, [f"missing_{storage_type}"])
         

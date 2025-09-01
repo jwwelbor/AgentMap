@@ -50,7 +50,7 @@ class DocumentWriterAgent(DocumentStorageAgent):
         """
         # Get required data for non-delete operations
         data = inputs.get("data")
-        mode_str = inputs.get("mode", "write").lower()
+        mode_str = inputs.get("mode", "append").lower()
 
         # Convert string mode to enum
         mode = WriteMode.from_string(mode_str)
@@ -79,7 +79,7 @@ class DocumentWriterAgent(DocumentStorageAgent):
         Returns:
             DocumentResult with error information
         """
-        mode_str = inputs.get("mode", "write").lower()
+        mode_str = inputs.get("mode", "append").lower()
         return self._handle_storage_error(
             error,
             mode_str,

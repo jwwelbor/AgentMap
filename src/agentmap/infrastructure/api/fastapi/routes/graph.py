@@ -271,8 +271,27 @@ async def get_graph_status(
         # Build graph to check status
         graph_obj = graph_definition_service.build_from_csv(csv_path, graph_name)
 
-        # Get agent resolution status
-        agent_status = graph_runner_service.get_agent_resolution_status(graph_obj)
+        # ✅ FIXED: Get agent resolution status using existing services
+        # Create a mock bundle to get instantiation status
+        from agentmap.models.graph_bundle import GraphBundle
+        
+        # Create bundle from graph for status checking
+        bundle = GraphBundle(
+            graph_name=graph_name,
+            nodes=graph_obj.nodes if hasattr(graph_obj, 'nodes') else {},
+            entry_point=getattr(graph_obj, 'entry_point', None)
+        )
+        
+        # Use existing graph_agent_instantiation_service to get agent status
+        graph_instantiation_service = container.graph_agent_instantiation_service()
+        instantiation_summary = graph_instantiation_service.get_instantiation_summary(bundle)
+        
+        # Transform to expected agent_status format
+        agent_status = {
+            "resolved_agents": instantiation_summary.get("instantiated", 0),
+            "unresolved_agents": instantiation_summary.get("missing", 0),
+            "total_agents": instantiation_summary.get("total_nodes", 0)
+        }
 
         # ✅ FIXED: Handle Graph object node count properly
         node_count = 0

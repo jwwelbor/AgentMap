@@ -16,7 +16,6 @@ from typing import Dict, List, Optional, Union
 
 from agentmap.models.graph import Graph
 from agentmap.services.agent.agent_registry_service import AgentRegistryService
-from agentmap.services.graph_definition_service import GraphDefinitionService
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.function_resolution_service import FunctionResolutionService
 from agentmap.services.logging_service import LoggingService
@@ -68,7 +67,6 @@ class GraphOutputService:
         agent_registry_service: AgentRegistryService,
     ):
         """Initialize output service with dependency injection."""
-        self.compiled_graphs_path = app_config_service.get_compiled_graphs_path()
         self.csv_path = app_config_service.get_csv_path()
         self.custom_agents_path = app_config_service.get_custom_agents_path()
         self.functions_path = app_config_service.get_functions_path()
@@ -328,22 +326,9 @@ class GraphOutputService:
         """
 
         try:
-
-            #get the graph definition from the graph bundle
+            # TODO: get the graph definition from the graph bundle
 
             return None
-
-            # # Get the Graph domain model through GraphDefinitionService
-            # graph_domain_model = (
-            #     self.graph_definition.build_from_csv(
-            #         self.csv_path, graph_name
-            #     )
-            # )
-
-            # # Convert Graph domain model to old format for compatibility
-            # graph_def = self._convert_graph_to_old_format(graph_domain_model)
-
-            # return graph_def
 
         except Exception as e:
             self.logger.error(
@@ -366,7 +351,7 @@ class GraphOutputService:
             Path object for the output file
         """
         if not output_path:
-            output_path = self.compiled_graphs_path / f"{graph_name}.{ext}"
+            output_path = self.custom_agents_path / f"{graph_name}.{ext}"
         else:
             output_path = Path(output_path)
             if output_path.is_dir():
@@ -590,7 +575,6 @@ class GraphOutputService:
         return {
             "service": "GraphOutputService",
             "function_resolution_available": self.function_resolution is not None,
-            "compiled_graphs_path": str(self.compiled_graphs_path),
             "csv_path": str(self.csv_path),
             "functions_path": str(self.functions_path),
             "supported_formats": ["python", "source", "src", "debug", "documentation"],

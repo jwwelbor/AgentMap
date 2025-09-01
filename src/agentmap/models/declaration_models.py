@@ -142,7 +142,7 @@ class AgentDeclaration:
         Returns:
             List of service names that are not optional
         """
-        return [req.name for req in self.service_requirements] # if not req.optional]
+        return [req.name for req in self.service_requirements if not req.optional]
 
     def get_all_services(self) -> List[str]:
         """Get list of all service names.
@@ -158,7 +158,7 @@ class AgentDeclaration:
         Returns:
             List of protocol names that are required
         """
-        return [req.name for req in self.protocol_requirements] #  if req.requires
+        return [req.name for req in self.protocol_requirements if req.requires]
 
 
 @dataclass

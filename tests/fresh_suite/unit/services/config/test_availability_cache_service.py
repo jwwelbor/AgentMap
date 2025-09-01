@@ -515,30 +515,7 @@ class TestAvailabilityCacheService(unittest.TestCase):
         # Should not raise exceptions
         self.assertTrue(True, "Config file registration should succeed")
     
-    @patch('src.agentmap.services.config.availability_cache_service.ConfigChangeDetector')
-    def test_config_change_triggers_invalidation(self, mock_detector_class):
-        """Test that config file changes trigger automatic cache invalidation."""
-        # Create mock detector instance
-        mock_detector = Mock()
-        mock_detector_class.return_value = mock_detector
-        
-        # Configure detector to report changes
-        mock_detector.has_config_changed.return_value = True
-        
-        # Create new service instance to use mocked detector
-        service = AvailabilityCacheService(
-            cache_file_path=self.cache_file_path,
-            logger=self.mock_logger
-        )
-        
-        # Store some data
-        service.set_availability("test", "key", self.sample_results["success"])
-        
-        # Get data (should trigger auto-invalidation check)
-        result = service.get_availability("test", "key")
-        
-        # Should have called change detection
-        mock_detector.has_config_changed.assert_called()
+
     
     # =============================================================================
     # 7. Environment Change Detection Tests
@@ -592,22 +569,6 @@ class TestAvailabilityCacheService(unittest.TestCase):
         # Should have called environment hash detection
         self.assertGreaterEqual(mock_detector.get_environment_hash.call_count, 2)
     
-    # =============================================================================
-    # 8. Auto-Invalidation Control Tests
-    # =============================================================================
-    
-    def test_enable_disable_auto_invalidation(self):
-        """Test enabling and disabling automatic invalidation."""
-        # Auto-invalidation should be enabled by default
-        self.assertTrue(self.cache_service._auto_invalidation_enabled)
-        
-        # Disable auto-invalidation
-        self.cache_service.enable_auto_invalidation(False)
-        self.assertFalse(self.cache_service._auto_invalidation_enabled)
-        
-        # Re-enable auto-invalidation
-        self.cache_service.enable_auto_invalidation(True)
-        self.assertTrue(self.cache_service._auto_invalidation_enabled)
     
     # =============================================================================
     # 9. Cache Statistics and Health Tests

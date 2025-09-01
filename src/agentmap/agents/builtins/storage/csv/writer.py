@@ -50,12 +50,12 @@ class CSVWriterAgent(CSVAgent):
             )
 
         # Get write mode
-        mode_str = inputs.get("mode", "write").lower()
+        mode_str = inputs.get("mode", "append").lower()
         try:
             mode = WriteMode.from_string(mode_str)
         except ValueError:
-            self.log_warning(f"Invalid mode '{mode_str}', using 'write' mode")
-            mode = WriteMode.WRITE
+            self.log_warning(f"Invalid mode '{mode_str}', using 'append' mode")
+            mode = WriteMode.APPEND
 
         # Extract additional parameters
         document_id = inputs.get("document_id")

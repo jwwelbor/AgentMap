@@ -109,10 +109,12 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
         
         # Create services for integration testing
         self.logging_service = MockLoggingService()
+        self.availability_cache_service = self.create_cache_service()
         self.features_registry_model = FeaturesRegistry()
         self.features_registry_service = FeaturesRegistryService(
             self.features_registry_model, 
-            self.logging_service
+            self.logging_service,
+            self.availability_cache_service
         )
         
         # Performance tracking

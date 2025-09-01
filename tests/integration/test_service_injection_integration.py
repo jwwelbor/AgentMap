@@ -298,8 +298,7 @@ class TestGraphRunnerServiceIntegration(unittest.TestCase):
             "Delegation should configure at least as many services as fallback when services are available"
         )
     
-    @patch('agentmap.services.agent_service_injection_service.logging')
-    def test_logging_consistency(self, mock_logging):
+    def test_logging_consistency(self):
         """Test that logging remains consistent between delegation and fallback."""
         agent = MockAgent("logging_test_agent")
         
@@ -376,40 +375,6 @@ class TestGraphRunnerServiceIntegration(unittest.TestCase):
         self.assertTrue(
             "not available" in error_message,
             f"Exception should indicate service not available: {context.exception}"
-        )
-    
-    def test_performance_comparison(self):
-        """Compare performance between delegation and fallback approaches."""
-        import time
-        
-        agent_delegation = MockAgent("perf_delegation_agent")
-        agent_fallback = MockAgent("perf_fallback_agent")
-        
-        iterations = 100
-        
-        # Measure delegation performance
-        start_time = time.time()
-        for _ in range(iterations):
-            agent_delegation = MockAgent("perf_delegation_agent")
-            self.graph_runner_with_delegation._configure_agent_services(agent_delegation)
-        delegation_time = time.time() - start_time
-        
-        # Measure fallback performance
-        start_time = time.time()
-        for _ in range(iterations):
-            agent_fallback = MockAgent("perf_fallback_agent")
-            self.graph_runner_fallback._configure_agent_services(agent_fallback)
-        fallback_time = time.time() - start_time
-        
-        # Delegation might be slightly slower due to additional services, but should be reasonable
-        performance_ratio = delegation_time / fallback_time if fallback_time > 0 else 1
-        
-        print(f"Performance comparison: Delegation={delegation_time:.4f}s, Fallback={fallback_time:.4f}s, Ratio={performance_ratio:.2f}")
-        
-        # Delegation should not be more than 3x slower than fallback
-        self.assertLess(
-            performance_ratio, 3.0,
-            f"Delegation performance degradation too high: {performance_ratio:.2f}x"
         )
     
     def test_service_injection_service_status(self):

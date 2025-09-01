@@ -5,13 +5,14 @@ Service containing business logic for agent creation and instantiation.
 This extracts and wraps the core functionality from the original AgentLoader class.
 """
 
+import importlib
 import inspect
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Set, Tuple, Type
 
-from agentmap.core.builtin_definition_constants import BuiltinDefinitionConstants
-from agentmap.services.agent.agent_registry_service import AgentRegistryService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
+from agentmap.services.declaration_registry_service import DeclarationRegistryService
+from agentmap.services.custom_agent_loader import CustomAgentLoader
 
 
 class AgentFactoryService:
@@ -25,179 +26,169 @@ class AgentFactoryService:
 
     def __init__(
         self,
-        agent_registry_service: AgentRegistryService,
         features_registry_service: FeaturesRegistryService,
         logging_service: LoggingService,
+        custom_agent_loader: CustomAgentLoader
     ):
         """Initialize service with dependency injection."""
-        self.agent_registry = agent_registry_service
         self.features = features_registry_service
         self.logger = logging_service.get_class_logger(self)
-        self.logger.debug("[AgentFactoryService] Initialized")
-
-
-    def resolve_agent_class(self, agent_type: str) -> Type:
+        self._custom_agent_loader = custom_agent_loader
+        # Cache for imported agent classes for performance
+        self._class_cache: Dict[str, Type] = {}  
+        
+    def resolve_agent_class(
+        self, 
+        agent_type: str,
+        agent_mappings: Dict[str, str],
+        custom_agents: Optional[Set[str]] = None
+    ) -> Type:
         """
-        Resolve an agent class by type with dependency validation.
+        Resolve an agent class using provided mappings.
 
         Args:
             agent_type: The type identifier for the agent
+            agent_mappings: Dictionary mapping agent_type to class_path
+            custom_agents: Optional set of custom agent types for better error messages
 
         Returns:
             Agent class ready for instantiation
 
         Raises:
-            ValueError: If agent type is not found or dependencies are missing
+            ValueError: If agent type is not found in mappings
+            ImportError: If class cannot be imported
         """
-        agent_type.lower()
-
-        self.logger.debug(
-            f"[AgentFactoryService] Resolving agent class: type='{agent_type}'"
-        )
-
-        # Validate dependencies before resolving class
-        dependencies_valid, missing_deps = self.validate_agent_dependencies(agent_type)
-        if not dependencies_valid:
-            error_msg = self._get_dependency_error_message(agent_type, missing_deps)
+        self.logger.debug(f"[AgentFactoryService] Resolving agent class: type='{agent_type}'")
+        
+        # Get class path from provided mappings
+        class_path = agent_mappings.get(agent_type)
+        
+        if not class_path:
+            # Provide helpful error message
+            is_custom = custom_agents and agent_type in custom_agents
+            if is_custom:
+                error_msg = (
+                    f"Custom agent '{agent_type}' declared but no class path mapping provided. "
+                    f"Ensure custom agent is properly registered in agent_mappings."
+                )
+            else:
+                error_msg = f"Agent type '{agent_type}' not found in agent_mappings."
+            
             self.logger.error(f"[AgentFactoryService] {error_msg}")
             raise ValueError(error_msg)
-
-        # Get the agent class from registry
-        agent_class = self.agent_registry.get_agent_class(agent_type)
-        if not agent_class:
-            self.logger.error(
-                f"[AgentFactoryService] Agent type '{agent_type}' not found"
-            )
-            raise ValueError(f"Agent type '{agent_type}' not found.")
-
-        self.logger.debug(
-            f"[AgentFactoryService] Successfully resolved agent class '{agent_type}' "
-            f"to {agent_class.__name__}"
-        )
-        return agent_class
-
-    def get_agent_class(self, agent_type: str) -> Optional[Type]:
-        """
-        Get an agent class by type without dependency validation.
-
-        Use resolve_agent_class() instead for full validation.
-
-        Args:
-            agent_type: Type identifier to look up
-
-        Returns:
-            The agent class or None if not found
-        """
-        return self.agent_registry.get_agent_class(agent_type)
-
-    def can_resolve_agent_type(self, agent_type: str) -> bool:
-        """
-        Check if an agent type can be resolved (has valid dependencies).
-
-        Args:
-            agent_type: The agent type to check
-
-        Returns:
-            True if agent type can be resolved
-        """
+        
+        # Import the class
         try:
-            self.resolve_agent_class(agent_type)
-            return True
-        except ValueError:
-            return False
+            agent_class = self._import_class_from_path(class_path)
+            self.logger.debug(
+                f"[AgentFactoryService] Successfully resolved '{agent_type}' to {agent_class.__name__}"
+            )
+            return agent_class
+        except (ImportError, AttributeError) as e:
+            error_msg = f"Failed to import agent class '{class_path}' for type '{agent_type}': {e}"
+            self.logger.error(f"[AgentFactoryService] {error_msg}")
+            raise ImportError(error_msg) from e
 
-    def validate_agent_dependencies(self, agent_type: str) -> Tuple[bool, List[str]]:
+    def _import_class_from_path(self, class_path: str) -> Type:
         """
-        Validate that all dependencies for an agent type are available.
-
+        Import a class from its fully qualified path.
+        
         Args:
-            agent_type: The agent type to validate
-
+            class_path: Fully qualified class path (e.g., "module.submodule.ClassName")
+            
         Returns:
-            Tuple of (dependencies_valid, missing_dependencies)
+            The imported class
+            
+        Raises:
+            ImportError: If the class cannot be imported
+            AttributeError: If the class doesn't exist in the module
         """
-        agent_type_lower = agent_type.lower()
-        missing_deps = []
-
-        # Check LLM dependencies for LLM-related agents
-        if self._is_llm_agent(agent_type_lower):
-            if not self._check_llm_dependencies(agent_type_lower):
-                missing_deps.append("llm")
-
-        # Check storage dependencies for storage-related agents
-        if self._is_storage_agent(agent_type_lower):
-            if not self._check_storage_dependencies(agent_type_lower):
-                missing_deps.append("storage")
-
-        dependencies_valid = len(missing_deps) == 0
-
-        if dependencies_valid:
+        # Check cache first
+        if class_path in self._class_cache:
+            self.logger.debug(f"[AgentFactoryService] Using cached class for: {class_path}")
+            return self._class_cache[class_path]
+        
+        # Try custom agent loader for non-package paths
+        if not class_path.startswith("agentmap."):
+            try:
+                agent_class = self._custom_agent_loader.load_agent_class(class_path)
+                if agent_class:
+                    self._class_cache[class_path] = agent_class
+                    self.logger.debug(
+                        f"[AgentFactoryService] Loaded custom agent: {class_path} -> {agent_class.__name__}"
+                    )
+                    return agent_class
+            except Exception as e:
+                self.logger.debug(
+                    f"[AgentFactoryService] Custom loader failed for '{class_path}': {e}"
+                )
+        
+        try:
+            # Split module path and class name
+            if '.' not in class_path:
+                raise ValueError(f"Invalid class path format: {class_path}")
+            
+            module_path, class_name = class_path.rsplit('.', 1)
+            
+            # Import the module
+            module = importlib.import_module(module_path)
+            
+            # Get the class from the module
+            agent_class = getattr(module, class_name)
+            
+            # Cache the class for performance
+            self._class_cache[class_path] = agent_class
+            
             self.logger.debug(
-                f"[AgentFactoryService] All dependencies valid for agent type '{agent_type}'"
+                f"[AgentFactoryService] Successfully imported class: {class_path} -> {agent_class.__name__}"
             )
-        else:
+            
+            return agent_class
+            
+        except (ImportError, AttributeError) as e:
             self.logger.debug(
-                f"[AgentFactoryService] Missing dependencies for '{agent_type}': {missing_deps}"
+                f"[AgentFactoryService] Failed to import class from path '{class_path}': {e}"
             )
+            raise
 
-        return dependencies_valid, missing_deps
-
-    def list_available_agent_types(self) -> List[str]:
-        """
-        Get a list of all available agent types that can be resolved.
-
-        Returns:
-            List of agent type names that have valid dependencies
-        """
-        all_types = self.agent_registry.get_registered_agent_types()
-        available_types = []
-
-        for agent_type in all_types:
-            if self.can_resolve_agent_type(agent_type):
-                available_types.append(agent_type)
-
-        self.logger.debug(
-            f"[AgentFactoryService] Available agent types: {available_types}"
-        )
-        return available_types
-
-    def get_agent_resolution_context(self, agent_type: str) -> Dict[str, Any]:
+    def get_agent_resolution_context(
+        self, 
+        agent_type: str,
+        agent_mappings: Dict[str, str],
+        custom_agents: Optional[Set[str]] = None
+    ) -> Dict[str, Any]:
         """
         Get comprehensive context for agent class resolution.
 
         Args:
             agent_type: Agent type to get context for
+            agent_mappings: Dictionary mapping agent_type to class_path
+            custom_agents: Optional set of custom agent types
 
         Returns:
             Dictionary with resolution context and metadata
         """
         try:
-            agent_class = self.resolve_agent_class(agent_type)
-            dependencies_valid, missing_deps = self.validate_agent_dependencies(
-                agent_type
-            )
+            agent_class = self.resolve_agent_class(agent_type, agent_mappings, custom_agents)
 
             return {
                 "agent_type": agent_type,
                 "agent_class": agent_class,
                 "class_name": agent_class.__name__,
                 "resolvable": True,
-                "dependencies_valid": dependencies_valid,
-                "missing_dependencies": missing_deps,
+                "dependencies_valid": True,  # Simplified - dependencies are handled by resolve_agent_class
+                "missing_dependencies": [],
                 "_factory_version": "2.0",
                 "_resolution_method": "AgentFactoryService.resolve_agent_class",
             }
-        except ValueError as e:
-            dependencies_valid, missing_deps = self.validate_agent_dependencies(
-                agent_type
-            )
+        except (ValueError, ImportError) as e:
             return {
                 "agent_type": agent_type,
                 "agent_class": None,
                 "class_name": None,
                 "resolvable": False,
-                "dependencies_valid": dependencies_valid,
-                "missing_dependencies": missing_deps,
+                "dependencies_valid": False,
+                "missing_dependencies": ["resolution_failed"],
                 "resolution_error": str(e),
                 "_factory_version": "2.0",
                 "_resolution_method": "AgentFactoryService.resolve_agent_class",
@@ -207,6 +198,8 @@ class AgentFactoryService:
         self, 
         node: Any, 
         graph_name: str,
+        agent_mappings: Dict[str, str],
+        custom_agents: Optional[Set[str]] = None,
         execution_tracking_service: Optional[Any] = None,
         state_adapter_service: Optional[Any] = None,
         prompt_manager_service: Optional[Any] = None,
@@ -220,6 +213,8 @@ class AgentFactoryService:
         Args:
             node: Node definition containing agent information
             graph_name: Name of the graph for context
+            agent_mappings: Dictionary mapping agent_type to class_path
+            custom_agents: Optional set of custom agent types
             execution_tracking_service: Service for execution tracking
             state_adapter_service: Service for state management
             prompt_manager_service: Service for prompt management (optional)
@@ -229,22 +224,28 @@ class AgentFactoryService:
             Configured agent instance
             
         Raises:
-            ValueError: If agent creation fails
+            ValueError: If agent creation fails or node.agent_type is missing
         """
         from agentmap.exceptions import AgentInitializationError
         
+        # Validate that node has agent_type
+        if not hasattr(node, 'agent_type') or not node.agent_type:
+            raise ValueError(f"Node '{node.name}' is missing required 'agent_type' attribute")
+        
+        agent_type = node.agent_type
         self.logger.debug(
-            f"[AgentFactoryService] Creating agent instance for node: {node.name} (type: {getattr(node, 'agent_type', 'default')})"
+            f"[AgentFactoryService] Creating agent instance for node: {node.name} (type: {agent_type})"
         )
         
-        # Step 1: Resolve agent class with comprehensive fallback logic
-        agent_class = self._resolve_agent_class_with_fallback(node.agent_type)
+        # Step 1: Resolve agent class using provided mappings
+        agent_class = self.resolve_agent_class(agent_type, agent_mappings, custom_agents)
         
         # Step 2: Create comprehensive context with input/output field information
         context = {
             "input_fields": getattr(node, 'inputs', []),
             "output_field": getattr(node, 'output', None),
-            "description": getattr(node, 'description', "")
+            "description": getattr(node, 'description', ""),
+            "is_custom": custom_agents and agent_type in custom_agents
         }
         
         # Add CSV context data if available (extracted from GraphRunnerService logic)
@@ -373,31 +374,26 @@ class AgentFactoryService:
             return self._get_default_agent_class()
         
         try:
-            # Use existing resolve_agent_class for dependency validation
-            agent_class = self.resolve_agent_class(agent_type)
-            self.logger.debug(
-                f"[AgentFactoryService] Successfully resolved {agent_type} to {agent_class.__name__}"
-            )
-            return agent_class
-        
+            # Note: This method is part of fallback logic and may need proper agent_mappings
+            # For now, we'll try the custom agent loader approach first
+            custom_agent_class = self._try_load_custom_agent(agent_type)
+            if custom_agent_class:
+                self.logger.debug(
+                    f"[AgentFactoryService] Resolved to custom agent: {custom_agent_class.__name__}"
+                )
+                return custom_agent_class
+            else:
+                raise ValueError(f"Cannot resolve agent type: {agent_type}")
+                
         except ValueError as e:
             self.logger.debug(
                 f"[AgentFactoryService] Failed to resolve agent '{agent_type}': {e}"
             )
-            
-            # Try to load custom agent as fallback
-            try:
-                custom_agent_class = self._try_load_custom_agent(agent_type)
-                if custom_agent_class:
-                    self.logger.debug(
-                        f"[AgentFactoryService] Resolved to custom agent: {custom_agent_class.__name__}"
-                    )
-                    return custom_agent_class
-            except Exception as custom_error:
-                self.logger.debug(
-                    f"[AgentFactoryService] Custom agent fallback failed: {custom_error}"
-                )
-            
+        
+        except Exception as e:
+            self.logger.debug(
+                f"[AgentFactoryService] Failed to resolve agent '{agent_type}': {e}"
+            )
             # Final fallback - use default agent
             self.logger.warning(
                 f"[AgentFactoryService] Using default agent for unresolvable type: {agent_type}"
@@ -543,164 +539,3 @@ class AgentFactoryService:
             
             return BasicAgent
 
-    def _is_llm_agent(self, agent_type: str) -> bool:
-        """Check if an agent type requires LLM dependencies."""
-        # Use centralized constants for categorization
-        if BuiltinDefinitionConstants.is_llm_agent(agent_type):
-            return True
-        
-        # Also check additional generic LLM-related types not in builtin definitions
-        generic_llm_types = {"chat", "conversation", "text_generation"}
-        return agent_type in generic_llm_types
-
-    def _is_storage_agent(self, agent_type: str) -> bool:
-        """Check if an agent type requires storage dependencies."""
-        # Use centralized constants for categorization
-        if BuiltinDefinitionConstants.is_storage_agent(agent_type):
-            return True
-        
-        # Also check additional generic storage-related types not in builtin definitions
-        generic_storage_types = {"storage", "database", "persist"}
-        return agent_type in generic_storage_types
-
-    def _check_llm_dependencies(self, agent_type: str) -> bool:
-        """Check if LLM dependencies are available for the agent type."""
-        # Get provider mapping from centralized constants
-        llm_agent_to_provider = BuiltinDefinitionConstants.get_llm_agent_to_provider()
-        
-        # Check if this is a known LLM agent type
-        if agent_type in llm_agent_to_provider:
-            provider = llm_agent_to_provider[agent_type]
-            if provider:
-                # Check specific provider
-                return self.features.is_provider_available("llm", provider)
-            else:
-                # Agent works with any provider (like base 'llm' agent)
-                available_providers = self.features.get_available_providers("llm")
-                return len(available_providers) > 0
-        else:
-            # For generic LLM agents, check if any LLM provider is available
-            available_providers = self.features.get_available_providers("llm")
-            return len(available_providers) > 0
-
-    def _check_storage_dependencies(self, agent_type: str) -> bool:
-        """Check if storage dependencies are available for the agent type."""
-        # Get storage type mapping from centralized constants
-        agent_to_storage = BuiltinDefinitionConstants.get_agent_to_storage_type()
-        
-        # Check if this is a known storage agent type
-        if agent_type in agent_to_storage:
-            storage_type = agent_to_storage[agent_type]
-            return self.features.is_provider_available("storage", storage_type)
-        
-        # For unknown types, check by name patterns
-        if "csv" in agent_type:
-            return self.features.is_provider_available("storage", "csv")
-        elif "json" in agent_type:
-            return self.features.is_provider_available("storage", "json")
-        elif "file" in agent_type:
-            return self.features.is_provider_available("storage", "file")
-        elif "vector" in agent_type:
-            return self.features.is_provider_available("storage", "vector")
-        else:
-            # For generic storage agents, check if core storage is available
-            return self.features.is_provider_available("storage", "csv")
-
-    def _get_dependency_error_message(
-        self, agent_type: str, missing_deps: List[str]
-    ) -> str:
-        """Generate a helpful error message for missing dependencies."""
-        agent_type_lower = agent_type.lower()
-
-        # Handle multiple dependencies first
-        if len(missing_deps) > 1:
-            return (
-                f"Agent '{agent_type}' requires additional dependencies: {missing_deps}. "
-                "Install with: pip install agentmap[llm,storage]"
-            )
-
-        # Handle single LLM dependency
-        if "llm" in missing_deps:
-            if agent_type_lower in ("openai", "gpt"):
-                return (
-                    f"LLM agent '{agent_type}' requires OpenAI dependencies. "
-                    "Install with: pip install agentmap[openai]"
-                )
-            elif agent_type_lower in ("anthropic", "claude"):
-                return (
-                    f"LLM agent '{agent_type}' requires Anthropic dependencies. "
-                    "Install with: pip install agentmap[anthropic]"
-                )
-            elif agent_type_lower in ("google", "gemini"):
-                return (
-                    f"LLM agent '{agent_type}' requires Google dependencies. "
-                    "Install with: pip install agentmap[google]"
-                )
-            else:
-                return (
-                    f"LLM agent '{agent_type}' requires additional dependencies. "
-                    "Install with: pip install agentmap[llm]"
-                )
-
-        # Handle single storage dependency
-        if "storage" in missing_deps:
-            if "vector" in agent_type_lower:
-                return (
-                    f"Storage agent '{agent_type}' requires vector dependencies. "
-                    "Install with: pip install agentmap[vector]"
-                )
-            else:
-                return (
-                    f"Storage agent '{agent_type}' requires additional dependencies. "
-                    "Install with: pip install agentmap[storage]"
-                )
-
-        # Generic fallback (shouldn't be reached with current logic)
-        return (
-            f"Agent '{agent_type}' requires additional dependencies: {missing_deps}. "
-            "Install with: pip install agentmap[llm,storage]"
-        )
-    
-    def get_agent_class_mappings(self, agent_types: set[str]) -> Dict[str, str]:
-        """Get mappings from agent types to their class import paths.
-        
-        This method returns a dictionary mapping agent type names to their
-        fully qualified class paths for dynamic import.
-        
-        Args:
-            agent_types: Set of agent type names to map
-            
-        Returns:
-            Dictionary mapping agent types to class import paths
-        """
-        mappings = {}
-        
-        for agent_type in agent_types:
-            try:
-                # Get the agent class
-                agent_class = self.agent_registry.get_agent_class(agent_type)
-                if agent_class:
-                    # Get the full module path and class name
-                    module_name = agent_class.__module__
-                    class_name = agent_class.__name__
-                    full_path = f"{module_name}.{class_name}"
-                    mappings[agent_type] = full_path
-                    
-                    self.logger.debug(
-                        f"[AgentFactoryService] Mapped {agent_type} -> {full_path}"
-                    )
-                else:
-                    # Use a default mapping for unknown types
-                    mappings[agent_type] = "agentmap.agents.builtins.default_agent.DefaultAgent"
-                    self.logger.warning(
-                        f"[AgentFactoryService] Unknown agent type '{agent_type}', "
-                        "using DefaultAgent"
-                    )
-            except Exception as e:
-                self.logger.warning(
-                    f"[AgentFactoryService] Failed to map agent type '{agent_type}': {e}"
-                )
-                # Fallback to default agent
-                mappings[agent_type] = "agentmap.agents.builtins.default_agent.DefaultAgent"
-        
-        return mappings

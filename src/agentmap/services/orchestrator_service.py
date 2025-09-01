@@ -12,8 +12,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.prompt_manager_service import PromptManagerService
+from agentmap.services.features_registry_service import FeaturesRegistryService
+from agentmap.services.llm_service import LLMService
 from agentmap.services.protocols import (
-    FeaturesRegistryServiceProtocol,
     LLMServiceProtocol,
 )
 
@@ -34,8 +35,8 @@ class OrchestratorService:
         self,
         prompt_manager_service: PromptManagerService,
         logging_service: LoggingService,
-        llm_service: Optional[LLMServiceProtocol] = None,
-        features_registry_service: Optional[FeaturesRegistryServiceProtocol] = None,
+        llm_service: LLMService,
+        features_registry_service: FeaturesRegistryService,
     ):
         """Initialize service with dependency injection."""
         self.prompt_manager = prompt_manager_service

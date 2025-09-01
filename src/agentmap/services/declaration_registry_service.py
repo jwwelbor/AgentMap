@@ -225,6 +225,32 @@ class DeclarationRegistryService:
                 services.add(service_name)
         return services
     
+    def resolve_service_dependencies(self, service_names: Set[str]) -> Set[str]:
+        """
+        Public method to resolve service dependencies.
+        
+        Args:
+            service_names: Set of service names to resolve dependencies for
+            
+        Returns:
+            Set of all required service names including dependencies
+        """
+        return self._resolve_service_dependencies(service_names, set())
+    
+    def calculate_load_order(self, service_names: Set[str]) -> List[str]:
+        """
+        Calculate the load order for services based on their dependencies.
+        
+        Args:
+            service_names: Set of service names to calculate load order for
+            
+        Returns:
+            List of service names in dependency order (dependencies first)
+        """
+        # Simple topological sort - for now just return sorted list
+        # TODO: Implement proper topological sort based on dependencies
+        return sorted(list(service_names))
+    
     def get_protcol_service_map(self) -> dict[str, str]:
         """
         Builds a mapping from protocol names to sets of service names that implement them.

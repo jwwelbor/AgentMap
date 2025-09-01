@@ -124,7 +124,7 @@ timeout_workflow,completion_node,default,Workflow completed,Final node,timeout_r
         # Execute workflow with simulated timeout
         initial_state = {"initial_data": "timeout test data"}
         
-        with patch.object(self.graph_execution_service, 'execute_from_definition') as mock_execute:
+        with patch.object(self.graph_execution_service, 'execute_compiled_graph') as mock_execute:
             # Simulate timeout by raising interruption but then applying default action
             mock_request = HumanInteractionRequest(
                 thread_id="timeout-thread-001",
@@ -151,7 +151,9 @@ timeout_workflow,completion_node,default,Workflow completed,Final node,timeout_r
             
             # Execute and verify timeout interruption
             with self.assertRaises(ExecutionInterruptedException) as context:
-                self.graph_execution_service.execute_from_definition(graph_model, initial_state)
+                self.graph_execution_service.execute_compiled_graph(
+                    graph_model, "timeout_workflow", initial_state, None
+                )
             
             exception = context.exception
             self.assertEqual(exception.thread_id, "timeout-thread-001")
@@ -170,7 +172,7 @@ timeout_workflow,completion_node,default,Workflow completed,Final node,timeout_r
             "timeout_response": "auto_approve"  # Default action applied
         })
         
-        with patch.object(self.graph_execution_service, 'execute_from_definition') as mock_timeout_resume:
+        with patch.object(self.graph_execution_service, 'execute_compiled_graph') as mock_timeout_resume:
             # Mock successful completion after timeout
             mock_result = Mock()
             mock_result.success = True
@@ -183,7 +185,9 @@ timeout_workflow,completion_node,default,Workflow completed,Final node,timeout_r
             mock_timeout_resume.return_value = mock_result
             
             # Resume execution with default action
-            result = self.graph_execution_service.execute_from_definition(graph_model, timeout_state)
+            result = self.graph_execution_service.execute_compiled_graph(
+                graph_model, "timeout_workflow", timeout_state, None
+            )
             
             # Verify workflow completed with timeout handling
             self.assertTrue(result.success)

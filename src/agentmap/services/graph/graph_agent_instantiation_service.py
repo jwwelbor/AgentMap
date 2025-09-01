@@ -16,6 +16,8 @@ from agentmap.services.execution_tracking_service import ExecutionTrackingServic
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.prompt_manager_service import PromptManagerService
 from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.services.graph.graph_bundle_service import GraphBundleService
+from agentmap.services.protocols import GraphBundleCapableAgent
 
 
 class GraphAgentInstantiationService:
@@ -36,6 +38,7 @@ class GraphAgentInstantiationService:
         state_adapter_service: StateAdapterService,
         logging_service: LoggingService,
         prompt_manager_service: PromptManagerService,
+        graph_bundle_service: GraphBundleService,
     ):
         """
         Initialize with required services for agent instantiation.
@@ -47,12 +50,14 @@ class GraphAgentInstantiationService:
             state_adapter_service: Service for state management
             logging_service: Service for logging
             prompt_manager_service: Optional service for prompt management
+            graph_bundle_service: Service for managing graph bundles
         """
         self.agent_factory = agent_factory_service
         self.agent_injection = agent_service_injection_service
         self.execution_tracking = execution_tracking_service
         self.state_adapter = state_adapter_service
         self.prompt_manager = prompt_manager_service
+        self.graph_bundle_service = graph_bundle_service
         self.logger = logging_service.get_class_logger(self)
         
         self.logger.info("[GraphAgentInstantiationService] Initialized")
@@ -92,6 +97,40 @@ class GraphAgentInstantiationService:
             )
             return bundle
         
+        # Extract the information we need from the bundle
+        agent_mappings = bundle.agent_mappings or {}
+        custom_agents = bundle.custom_agents or set()
+        
+        # Check if bundle has no agent mappings at all
+        if bundle.required_agents and not agent_mappings:
+            error_msg = (
+                f"❌ Bundle '{graph_name}' has no agent mappings but requires agents: "
+                f"{sorted(list(bundle.required_agents))}\n\n"
+                f"💡 This usually means the bundle needs to be updated:\n"
+                f"   • Run 'agentmap update-bundle' to sync with current declarations\n"
+                f"   • If agents need scaffolding, run 'agentmap scaffold' first\n\n"
+                f"ℹ️  Modern AgentMap scaffolding automatically updates bundles with mappings"
+            )
+            raise RuntimeError(error_msg)
+        
+        # Validate we have mappings for all required agents
+        if bundle.required_agents:
+            missing_mappings = bundle.required_agents - set(agent_mappings.keys())
+            if missing_mappings:
+                missing_list = sorted(list(missing_mappings))
+                available_list = sorted(list(agent_mappings.keys()))
+                
+                error_msg = (
+                    f"❌ Missing agent mappings for: {missing_list}\n"
+                    f"   Available mappings: {available_list}\n\n"
+                    f"💡 Possible solutions:\n"
+                    f"   1. Run 'agentmap update-bundle' to update bundle with current declarations\n"
+                    f"   2. If agents need scaffolding, run 'agentmap scaffold' (auto-updates bundles)\n"
+                    f"   3. Check that agent declarations exist in custom_agents.yaml\n\n"
+                    f"ℹ️  Note: Scaffolding operations automatically update bundles with agent mappings"
+                )
+                raise RuntimeError(error_msg)
+        
         # Initialize node_registry if not present
         if bundle.node_instances is None:
             bundle.node_instances = {}
@@ -113,6 +152,8 @@ class GraphAgentInstantiationService:
                 agent_instance = self.agent_factory.create_agent_instance(
                     node=node,
                     graph_name=graph_name,
+                    agent_mappings=agent_mappings,
+                    custom_agents=custom_agents,
                     execution_tracking_service=self.execution_tracking,
                     state_adapter_service=self.state_adapter,
                     prompt_manager_service=self.prompt_manager,
@@ -131,6 +172,11 @@ class GraphAgentInstantiationService:
                     f"for agent: {node_name}"
                 )
                 
+                # Step 2a: Inject GraphBundleService if agent supports it
+                if isinstance(agent_instance, GraphBundleCapableAgent):
+                    agent_instance.configure_graph_bundle_service(self.graph_bundle_service)
+                    self.logger.debug(f"[GraphAgentInstantiationService] Injected GraphBundleService into {node_name}")
+                
                 # Step 3: Store instance in node_registry
                 bundle.node_instances[node_name] = agent_instance
                 
@@ -140,10 +186,22 @@ class GraphAgentInstantiationService:
                 )
                 
             except Exception as e:
+                error_details = str(e)
                 self.logger.error(
-                    f"[GraphAgentInstantiationService] ❌ Failed to instantiate node {node_name}: {e}"
+                    f"[GraphAgentInstantiationService] ❌ Failed to instantiate node {node_name}: {error_details}"
                 )
-                failed_nodes.append((node_name, str(e)))
+                
+                # Add helpful hints for common agent instantiation failures
+                if "class_path" in error_details.lower() or "import" in error_details.lower():
+                    enhanced_error = (
+                        f"{error_details}\n\n"
+                        f"💡 If this is a class path issue, try:\n"
+                        f"   • Run 'agentmap update-bundle' to sync agent mappings\n"
+                        f"   • Check if agent exists in custom_agents.yaml declarations"
+                    )
+                    failed_nodes.append((node_name, enhanced_error))
+                else:
+                    failed_nodes.append((node_name, error_details))
         
         # Report results
         if failed_nodes:
@@ -228,7 +286,10 @@ class GraphAgentInstantiationService:
         
         if not bundle.node_instances:
             validation_results["valid"] = False
-            validation_results["error"] = "No node_registry in bundle"
+            validation_results["error"] = (
+                "No node_registry in bundle - agents may not have been instantiated.\n"
+                "💡 Try running 'agentmap update-bundle' to ensure bundle has proper agent mappings."
+            )
             return validation_results
         
         for node_name, node in bundle.nodes.items():

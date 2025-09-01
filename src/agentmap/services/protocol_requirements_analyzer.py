@@ -22,7 +22,6 @@ from agentmap.services.protocols import (
     VectorCapableAgent,
     MemoryCapableAgent,
     BlobStorageCapableAgent,
-    DatabaseCapableAgent,
     CheckpointCapableAgent,
     OrchestrationCapableAgent,
 )
@@ -111,37 +110,27 @@ class ProtocolBasedRequirementsAnalyzer:
                 f"[ProtocolBasedRequirementsAnalyzer] Processing node: {repr(node)}"
             )
 
-            # TODO: this is showing Node... not valuable
             self.logger.debug(
                 f"[ProtocolBasedRequirementsAnalyzer] Node type: {type(node)}"
             )
-            # self.logger.debug(
-            #     f"[ProtocolBasedRequirementsAnalyzer] Node dir: {dir(node)}"
-            # )
             
-            # Extract agent type (handle both Node objects and dict-like objects)
-            agent_type_attr = getattr(node, 'agent_type', None)
-            # I'm not sure why we would need this
-            # agent_type_dict = node.get('agent_type') if hasattr(node, 'get') else None
-            agent_type = agent_type_attr # or agent_type_dict
+            # Extract agent type from Node object
+            agent_type = getattr(node, 'agent_type', None)
             
             node_name = getattr(node, 'name', None) or (node.get('name', 'unknown') if hasattr(node, 'get') else 'unknown')
             
             # DEBUG: Log extraction results
             self.logger.debug(
                 f"[ProtocolBasedRequirementsAnalyzer] Node '{node_name}': "
-                f"final_agent_type={agent_type}"
-                # agent_type_attr={agent_type_attr}, agent_type_dict={agent_type_dict}, "
+                f"agent_type={agent_type}"
             )
             
             if not agent_type:
                 self.logger.warning(
                     f"[ProtocolBasedRequirementsAnalyzer] Node '{node_name}' "
-                    "has no agent type, skipping. This is the bug!"
+                    "has no agent type, skipping"
                 )
-                raise ValueError(
-                    f"Node '{node_name}' has no agent type!"
-                )
+                continue
 
             # Add agent type to required agents
             required_agents.add(agent_type)
@@ -255,7 +244,6 @@ class ProtocolBasedRequirementsAnalyzer:
             "VectorCapableAgent": VectorCapableAgent,
             "MemoryCapableAgent": MemoryCapableAgent,
             "BlobStorageCapableAgent": BlobStorageCapableAgent,
-            "DatabaseCapableAgent": DatabaseCapableAgent,
             "CheckpointCapableAgent": CheckpointCapableAgent,
             "OrchestrationCapableAgent": OrchestrationCapableAgent,
         }

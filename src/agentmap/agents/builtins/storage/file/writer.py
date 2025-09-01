@@ -152,7 +152,7 @@ class FileWriterAgent(BaseStorageAgent, FileCapableAgent):
             raise ValueError("Missing required 'collection' parameter")
 
         # Validate mode and data requirements
-        mode = inputs.get("mode", "write").lower()
+        mode = inputs.get("mode", "append").lower()
 
         # Check if we have data for non-delete operations
         if mode != "delete" and "data" not in inputs:
@@ -167,7 +167,7 @@ class FileWriterAgent(BaseStorageAgent, FileCapableAgent):
         Execute write operation for file using FileStorageService.
         """
         data = inputs.get("data")
-        mode_str = inputs.get("mode", "write").lower()
+        mode_str = inputs.get("mode", "append").lower()
         try:
             mode = WriteMode.from_string(mode_str)
         except ValueError as e:

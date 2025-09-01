@@ -1,13 +1,14 @@
 """
 Unit tests for AgentFactoryService.
 
-These tests validate the AgentFactoryService using actual interface methods
+These tests validate the AgentFactoryService using the updated API signatures
 and follow the established MockServiceFactory patterns for consistent testing.
 """
 
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from typing import Type, Dict, Any
+from pathlib import Path
 from agentmap.services.agent.agent_factory_service import AgentFactoryService
 from tests.utils.migration_utils import MockLoggingService
 from tests.utils.mock_service_factory import MockServiceFactory
@@ -18,29 +19,36 @@ class TestAgentFactoryService(unittest.TestCase):
     
     def setUp(self):
         """Set up test fixtures with mocked dependencies."""
-        # Use established shared mock pattern - simple Mock for agent registry
-        self.mock_agent_registry_service = Mock()
+        # Mock dependencies that match current constructor
         self.mock_features_registry_service = Mock()
+        self.mock_custom_agent_loader = self._create_mock_custom_agent_loader()
         
         # Use migration-safe mock logging service (established pattern)
         self.mock_logging_service = MockLoggingService()
         
-        # Configure agent registry defaults
-        self.mock_agent_registry_service.get_agent_class.return_value = None  # Default: no agent found
-        self.mock_agent_registry_service.get_registered_agent_types.return_value = ["default", "input", "orchestrator"]
-        
         # Configure features registry mock defaults
         self._configure_features_registry_defaults()
         
-        # Create service instance with mocked dependencies
+        # Create service instance with mocked dependencies (updated constructor)
         self.service = AgentFactoryService(
-            agent_registry_service=self.mock_agent_registry_service,
             features_registry_service=self.mock_features_registry_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            custom_agent_loader=self.mock_custom_agent_loader
         )
         
         # Get the mock logger for verification (established pattern)
         self.mock_logger = self.service.logger
+    
+    def _create_mock_custom_agent_loader(self):
+        """Create a mock CustomAgentLoader service."""
+        mock_loader = Mock()
+        
+        # Configure default behaviors
+        mock_loader.load_agent_class.return_value = None  # No custom agents by default
+        mock_loader.get_available_agents.return_value = {}
+        mock_loader.validate_agent_class.return_value = True
+        
+        return mock_loader
     
     def _configure_features_registry_defaults(self):
         """Configure default behavior for features registry mock."""
@@ -68,335 +76,210 @@ class TestAgentFactoryService(unittest.TestCase):
     # 1. Service Initialization Tests
     # =============================================================================
     
-    def test_service_initialization(self):
-        """Test that service initializes correctly with all dependencies."""
-        # Verify all dependencies are stored (match actual implementation)
-        self.assertEqual(self.service.agent_registry, self.mock_agent_registry_service)
-        self.assertEqual(self.service.features, self.mock_features_registry_service)
-        
-        # Verify logger is configured (established pattern)
+    def test_service_initialization_with_all_dependencies(self):
+        """Test that service initializes correctly with all required dependencies."""
+        self.assertIsNotNone(self.service.features)
         self.assertIsNotNone(self.service.logger)
-        self.assertEqual(self.service.logger.name, "AgentFactoryService")
-        
-        # Verify initialization log message (established pattern)
-        logger_calls = self.mock_logger.calls
-        self.assertTrue(any(call[1] == "[AgentFactoryService] Initialized" 
-                          for call in logger_calls if call[0] == "debug"))
+        self.assertIsNotNone(self.service._custom_agent_loader)
+        self.assertIsInstance(self.service._class_cache, dict)
     
     # =============================================================================
-    # 2. resolve_agent_class() Method Tests
+    # 2. resolve_agent_class() Method Tests - Updated for Current API
     # =============================================================================
     
-    def test_resolve_agent_class_success_builtin_agent(self):
+    @patch.object(AgentFactoryService, '_import_class_from_path')
+    def test_resolve_agent_class_success_builtin_agent(self, mock_import):
         """Test successful resolution of builtin agent with valid dependencies."""
         # Arrange
         mock_agent_class = Mock()
         mock_agent_class.__name__ = "DefaultAgent"
-        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
+        mock_import.return_value = mock_agent_class
+        
+        # Create agent mappings as expected by current API
+        agent_mappings = {
+            "default": "agentmap.agents.builtins.default_agent.DefaultAgent"
+        }
         
         # Act
-        result = self.service.resolve_agent_class("default")
+        result = self.service.resolve_agent_class("default", agent_mappings)
         
         # Assert
         self.assertEqual(result, mock_agent_class)
-        self.mock_agent_registry_service.get_agent_class.assert_called_once_with("default")
+        mock_import.assert_called_once_with("agentmap.agents.builtins.default_agent.DefaultAgent")
         
         # Verify logging
         logger_calls = self.mock_logger.calls
         self.assertTrue(any("Resolving agent class: type='default'" in call[1] 
                           for call in logger_calls if call[0] == "debug"))
-        self.assertTrue(any("Successfully resolved agent class 'default'" in call[1] 
-                          for call in logger_calls if call[0] == "debug"))
-    
-    def test_resolve_agent_class_success_storage_agent(self):
-        """Test successful resolution of storage agent with valid dependencies."""
-        # Arrange
-        mock_agent_class = Mock()
-        mock_agent_class.__name__ = "CSVReaderAgent"
-        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
-        
-        # Configure storage dependencies as available
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: (
-            cat == "storage" and prov == "csv"
-        )
-        
-        # Act
-        result = self.service.resolve_agent_class("csv_reader")
-        
-        # Assert
-        self.assertEqual(result, mock_agent_class)
-        self.mock_features_registry_service.is_provider_available.assert_called_with("storage", "csv")
-    
-    def test_resolve_agent_class_success_llm_agent(self):
-        """Test successful resolution of LLM agent with valid dependencies."""
-        # Arrange
-        mock_agent_class = Mock()
-        mock_agent_class.__name__ = "OpenAIAgent"
-        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
-        
-        # Configure LLM dependencies as available
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: (
-            cat == "llm" and prov == "openai"
-        )
-        
-        # Act
-        result = self.service.resolve_agent_class("openai")
-        
-        # Assert
-        self.assertEqual(result, mock_agent_class)
-        self.mock_features_registry_service.is_provider_available.assert_called_with("llm", "openai")
-    
-    def test_resolve_agent_class_failure_missing_llm_dependencies(self):
-        """Test agent resolution failure due to missing LLM dependencies."""
-        # Arrange
-        mock_agent_class = Mock()
-        mock_agent_class.__name__ = "OpenAIAgent"
-        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
-        
-        # Configure LLM dependencies as NOT available
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: False
-        
-        # Act & Assert
-        with self.assertRaises(ValueError) as context:
-            self.service.resolve_agent_class("openai")
-        
-        error_message = str(context.exception)
-        self.assertIn("OpenAI dependencies", error_message)
-        self.assertIn("pip install agentmap[openai]", error_message)
-        
-        # Verify error logging
-        logger_calls = self.mock_logger.calls
-        self.assertTrue(any(call[0] == "error" for call in logger_calls))
-    
-    def test_resolve_agent_class_failure_missing_storage_dependencies(self):
-        """Test agent resolution failure due to missing storage dependencies."""
-        # Arrange
-        mock_agent_class = Mock()
-        mock_agent_class.__name__ = "VectorWriterAgent"
-        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
-        
-        # Configure storage dependencies as NOT available
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: False
-        
-        # Act & Assert
-        with self.assertRaises(ValueError) as context:
-            self.service.resolve_agent_class("vector_writer")
-        
-        error_message = str(context.exception)
-        self.assertIn("vector dependencies", error_message)
-        self.assertIn("pip install agentmap[vector]", error_message)
     
     def test_resolve_agent_class_failure_agent_not_found(self):
-        """Test agent resolution failure when agent type is not registered."""
-        # Arrange
-        self.mock_agent_registry_service.get_agent_class.return_value = None
+        """Test agent resolution failure when agent type is not in mappings."""
+        # Arrange - empty agent mappings
+        agent_mappings = {}
         
         # Act & Assert
         with self.assertRaises(ValueError) as context:
-            self.service.resolve_agent_class("nonexistent_agent")
+            self.service.resolve_agent_class("nonexistent_agent", agent_mappings)
         
         error_message = str(context.exception)
         self.assertIn("Agent type 'nonexistent_agent' not found", error_message)
         
         # Verify error logging
         logger_calls = self.mock_logger.calls
-        self.assertTrue(any("Agent type 'nonexistent_agent' not found" in call[1] 
-                          for call in logger_calls if call[0] == "error"))
+        self.assertTrue(any(call[0] == "error" for call in logger_calls))
     
-    def test_resolve_agent_class_case_insensitive(self):
-        """Test that agent resolution is case insensitive."""
+    @patch.object(AgentFactoryService, '_import_class_from_path')
+    def test_resolve_agent_class_success_custom_agent(self, mock_import):
+        """Test successful resolution of custom agent with mappings."""
         # Arrange
         mock_agent_class = Mock()
-        mock_agent_class.__name__ = "DefaultAgent"
-        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
+        mock_agent_class.__name__ = "CustomAgent"
+        mock_import.return_value = mock_agent_class
+        
+        # Create agent mappings with custom agent
+        agent_mappings = {
+            "custom": "path.to.custom_agent.CustomAgent"
+        }
+        custom_agents = {"custom"}
         
         # Act
-        result = self.service.resolve_agent_class("DEFAULT")
+        result = self.service.resolve_agent_class("custom", agent_mappings, custom_agents)
         
         # Assert
         self.assertEqual(result, mock_agent_class)
-        self.mock_agent_registry_service.get_agent_class.assert_called_once_with("DEFAULT")
+        mock_import.assert_called_once_with("path.to.custom_agent.CustomAgent")
+    
+    def test_resolve_agent_class_failure_custom_agent_without_mapping(self):
+        """Test custom agent resolution failure when mapping is missing."""
+        # Arrange - custom agent declared but no mapping provided
+        agent_mappings = {}
+        custom_agents = {"custom"}
+        
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            self.service.resolve_agent_class("custom", agent_mappings, custom_agents)
+        
+        error_message = str(context.exception)
+        self.assertIn("Custom agent 'custom' declared but no class path mapping provided", error_message)
+    
+    @patch.object(AgentFactoryService, '_import_class_from_path')
+    def test_resolve_agent_class_failure_import_error(self, mock_import):
+        """Test agent resolution failure when import fails."""
+        # Arrange
+        mock_import.side_effect = ImportError("Module not found")
+        
+        agent_mappings = {
+            "failing": "nonexistent.module.FailingAgent"
+        }
+        
+        # Act & Assert
+        with self.assertRaises(ImportError) as context:
+            self.service.resolve_agent_class("failing", agent_mappings)
+        
+        error_message = str(context.exception)
+        self.assertIn("Failed to import agent class", error_message)
+        self.assertIn("nonexistent.module.FailingAgent", error_message)
     
     # =============================================================================
-    # 3. get_agent_class() Method Tests
+    # 3. _import_class_from_path() Method Tests - Updated
     # =============================================================================
     
-    def test_get_agent_class_success(self):
-        """Test get_agent_class() returns agent class without dependency validation."""
+    def test_import_class_from_path_success_agentmap_package(self):
+        """Test successful import of AgentMap package class."""
+        # Mock the importlib functions
+        with patch('importlib.import_module') as mock_import_module:
+            mock_module = Mock()
+            mock_agent_class = Mock()
+            mock_agent_class.__name__ = "DefaultAgent"
+            mock_module.DefaultAgent = mock_agent_class
+            mock_import_module.return_value = mock_module
+            
+            # Act
+            result = self.service._import_class_from_path("agentmap.agents.builtins.default_agent.DefaultAgent")
+            
+            # Assert
+            self.assertEqual(result, mock_agent_class)
+            mock_import_module.assert_called_once_with("agentmap.agents.builtins.default_agent")
+            
+            # Verify caching
+            self.assertIn("agentmap.agents.builtins.default_agent.DefaultAgent", self.service._class_cache)
+    
+    def test_import_class_from_path_tries_custom_loader_for_non_package(self):
+        """Test that custom agent loader is tried for non-agentmap paths."""
         # Arrange
         mock_agent_class = Mock()
-        mock_agent_class.__name__ = "TestAgent"
-        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
+        mock_agent_class.__name__ = "CustomAgent"
+        self.mock_custom_agent_loader.load_agent_class.return_value = mock_agent_class
         
         # Act
-        result = self.service.get_agent_class("test_agent")
+        result = self.service._import_class_from_path("custom.path.CustomAgent")
         
         # Assert
         self.assertEqual(result, mock_agent_class)
-        self.mock_agent_registry_service.get_agent_class.assert_called_once_with("test_agent")
-    
-    def test_get_agent_class_returns_none_if_not_found(self):
-        """Test get_agent_class() returns None for non-existent agent."""
-        # Arrange
-        self.mock_agent_registry_service.get_agent_class.return_value = None
+        self.mock_custom_agent_loader.load_agent_class.assert_called_once_with("custom.path.CustomAgent")
         
-        # Act
-        result = self.service.get_agent_class("nonexistent_agent")
-        
-        # Assert
-        self.assertIsNone(result)
+        # Verify caching
+        self.assertIn("custom.path.CustomAgent", self.service._class_cache)
     
-    # =============================================================================
-    # 4. can_resolve_agent_type() Method Tests
-    # =============================================================================
-    
-    def test_can_resolve_agent_type_true_for_valid_agent(self):
-        """Test can_resolve_agent_type() returns True for resolvable agent."""
+    def test_import_class_from_path_fallback_to_importlib_when_custom_loader_fails(self):
+        """Test fallback to importlib when custom loader fails."""
         # Arrange
+        self.mock_custom_agent_loader.load_agent_class.side_effect = Exception("Custom loader failed")
+        
+        with patch('importlib.import_module') as mock_import_module:
+            mock_module = Mock()
+            mock_agent_class = Mock()
+            mock_agent_class.__name__ = "CustomAgent"
+            mock_module.CustomAgent = mock_agent_class
+            mock_import_module.return_value = mock_module
+            
+            # Act
+            result = self.service._import_class_from_path("custom.path.CustomAgent")
+            
+            # Assert
+            self.assertEqual(result, mock_agent_class)
+            mock_import_module.assert_called_once_with("custom.path")
+    
+    def test_import_class_from_path_failure_invalid_format(self):
+        """Test import failure with invalid class path format."""
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            self.service._import_class_from_path("invalid_format")
+        
+        self.assertIn("Invalid class path format", str(context.exception))
+    
+    def test_import_class_from_path_uses_cache(self):
+        """Test that previously imported classes are returned from cache."""
+        # Arrange - populate cache
         mock_agent_class = Mock()
-        mock_agent_class.__name__ = "DefaultAgent"
-        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
+        self.service._class_cache["cached.class.Agent"] = mock_agent_class
         
         # Act
-        result = self.service.can_resolve_agent_type("default")
+        result = self.service._import_class_from_path("cached.class.Agent")
         
         # Assert
-        self.assertTrue(result)
-    
-    def test_can_resolve_agent_type_false_for_missing_dependencies(self):
-        """Test can_resolve_agent_type() returns False when dependencies missing."""
-        # Arrange
-        mock_agent_class = Mock()
-        mock_agent_class.__name__ = "OpenAIAgent"
-        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
-        
-        # Configure LLM dependencies as NOT available
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: False
-        
-        # Act
-        result = self.service.can_resolve_agent_type("openai")
-        
-        # Assert
-        self.assertFalse(result)
-    
-    def test_can_resolve_agent_type_false_for_nonexistent_agent(self):
-        """Test can_resolve_agent_type() returns False for non-existent agent."""
-        # Arrange
-        self.mock_agent_registry_service.get_agent_class.return_value = None
-        
-        # Act
-        result = self.service.can_resolve_agent_type("nonexistent_agent")
-        
-        # Assert
-        self.assertFalse(result)
+        self.assertEqual(result, mock_agent_class)
+        # Verify no import calls were made
+        self.mock_custom_agent_loader.load_agent_class.assert_not_called()
     
     # =============================================================================
-    # 5. validate_agent_dependencies() Method Tests
+    # 4. get_agent_resolution_context() Method Tests - Updated
     # =============================================================================
     
-    def test_validate_agent_dependencies_success_builtin_agent(self):
-        """Test dependency validation success for builtin agent."""
-        # Act
-        dependencies_valid, missing_deps = self.service.validate_agent_dependencies("default")
-        
-        # Assert
-        self.assertTrue(dependencies_valid)
-        self.assertEqual(missing_deps, [])
-        
-        # Verify logging
-        logger_calls = self.mock_logger.calls
-        self.assertTrue(any("All dependencies valid for agent type 'default'" in call[1] 
-                          for call in logger_calls if call[0] == "debug"))
-    
-    def test_validate_agent_dependencies_failure_llm_agent(self):
-        """Test dependency validation failure for LLM agent."""
-        # Arrange - LLM dependencies NOT available
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: False
-        
-        # Act
-        dependencies_valid, missing_deps = self.service.validate_agent_dependencies("openai")
-        
-        # Assert
-        self.assertFalse(dependencies_valid)
-        self.assertEqual(missing_deps, ["llm"])
-        
-        # Verify logging
-        logger_calls = self.mock_logger.calls
-        self.assertTrue(any("Missing dependencies for 'openai': ['llm']" in call[1] 
-                          for call in logger_calls if call[0] == "debug"))
-    
-    def test_validate_agent_dependencies_failure_storage_agent(self):
-        """Test dependency validation failure for storage agent."""
-        # Arrange - Storage dependencies NOT available
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: False
-        
-        # Act
-        dependencies_valid, missing_deps = self.service.validate_agent_dependencies("csv_reader")
-        
-        # Assert
-        self.assertFalse(dependencies_valid)
-        self.assertEqual(missing_deps, ["storage"])
-    
-    def test_validate_agent_dependencies_mixed_types(self):
-        """Test dependency validation for agent requiring both LLM and storage."""
-        # This test demonstrates the logic for potential hybrid agents
-        # Act
-        dependencies_valid, missing_deps = self.service.validate_agent_dependencies("custom_hybrid")
-        
-        # Assert - For non-LLM/storage agents, should be valid
-        self.assertTrue(dependencies_valid)
-        self.assertEqual(missing_deps, [])
-    
-    # =============================================================================
-    # 6. list_available_agent_types() Method Tests
-    # =============================================================================
-    
-    def test_list_available_agent_types_filters_by_dependencies(self):
-        """Test list_available_agent_types() only returns agents with valid dependencies."""
-        # Arrange
-        all_agent_types = ["default", "openai", "csv_reader", "json_reader", "nonexistent"]
-        self.mock_agent_registry_service.get_registered_agent_types.return_value = all_agent_types
-        
-        # Mock agent registry to return classes for some agents
-        def mock_get_agent_class(agent_type):
-            if agent_type in ["default", "csv_reader", "json_reader"]:
-                mock_class = Mock()
-                mock_class.__name__ = f"{agent_type.title()}Agent"
-                return mock_class
-            return None
-        
-        self.mock_agent_registry_service.get_agent_class.side_effect = mock_get_agent_class
-        
-        # Configure dependencies - only storage available
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: (
-            cat == "storage" and prov in ["csv", "json"]
-        )
-        
-        # Act
-        available_types = self.service.list_available_agent_types()
-        
-        # Assert - Should only include agents with valid dependencies
-        expected_available = ["default", "csv_reader", "json_reader"]
-        self.assertEqual(set(available_types), set(expected_available))
-        
-        # Verify logging
-        logger_calls = self.mock_logger.calls
-        self.assertTrue(any("Available agent types:" in call[1] 
-                          for call in logger_calls if call[0] == "debug"))
-    
-    # =============================================================================
-    # 7. get_agent_resolution_context() Method Tests
-    # =============================================================================
-    
-    def test_get_agent_resolution_context_success(self):
+    @patch.object(AgentFactoryService, 'resolve_agent_class')
+    def test_get_agent_resolution_context_success(self, mock_resolve):
         """Test get_agent_resolution_context() returns complete context for valid agent."""
         # Arrange
         mock_agent_class = Mock()
         mock_agent_class.__name__ = "DefaultAgent"
-        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
+        mock_resolve.return_value = mock_agent_class
+        
+        agent_mappings = {
+            "default": "agentmap.agents.builtins.default_agent.DefaultAgent"
+        }
         
         # Act
-        context = self.service.get_agent_resolution_context("default")
+        context = self.service.get_agent_resolution_context("default", agent_mappings)
         
         # Assert
         expected_keys = {
@@ -414,200 +297,68 @@ class TestAgentFactoryService(unittest.TestCase):
         self.assertEqual(context["_factory_version"], "2.0")
         self.assertEqual(context["_resolution_method"], "AgentFactoryService.resolve_agent_class")
     
-    def test_get_agent_resolution_context_failure(self):
+    @patch.object(AgentFactoryService, 'resolve_agent_class')
+    def test_get_agent_resolution_context_failure(self, mock_resolve):
         """Test get_agent_resolution_context() returns error context for invalid agent."""
         # Arrange
-        self.mock_agent_registry_service.get_agent_class.return_value = None
+        mock_resolve.side_effect = ValueError("Agent type 'nonexistent' not found")
+        
+        agent_mappings = {}
         
         # Act
-        context = self.service.get_agent_resolution_context("nonexistent_agent")
+        context = self.service.get_agent_resolution_context("nonexistent", agent_mappings)
         
         # Assert
-        self.assertEqual(context["agent_type"], "nonexistent_agent")
+        self.assertEqual(context["agent_type"], "nonexistent")
         self.assertIsNone(context["agent_class"])
         self.assertIsNone(context["class_name"])
         self.assertFalse(context["resolvable"])
-        self.assertIn("resolution_error", context)
-        self.assertIn("Agent type 'nonexistent_agent' not found", context["resolution_error"])
-    
-    def test_get_agent_resolution_context_missing_dependencies(self):
-        """Test get_agent_resolution_context() shows dependency issues."""
-        # Arrange
-        mock_agent_class = Mock()
-        mock_agent_class.__name__ = "OpenAIAgent"
-        self.mock_agent_registry_service.get_agent_class.return_value = mock_agent_class
-        
-        # Configure LLM dependencies as NOT available
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: False
-        
-        # Act
-        context = self.service.get_agent_resolution_context("openai")
-        
-        # Assert
-        self.assertFalse(context["resolvable"])
         self.assertFalse(context["dependencies_valid"])
-        self.assertEqual(context["missing_dependencies"], ["llm"])
+        self.assertEqual(context["missing_dependencies"], ["resolution_failed"])
         self.assertIn("resolution_error", context)
+        self.assertIn("Agent type 'nonexistent' not found", context["resolution_error"])
     
     # =============================================================================
-    # 8. Private Helper Method Tests
+    # 5. create_agent_instance() Method Tests - Updated for Current API
     # =============================================================================
     
-    def test_is_llm_agent_recognition(self):
-        """Test _is_llm_agent() correctly identifies LLM agent types."""
-        # Test LLM agent types
-        llm_types = ["openai", "anthropic", "google", "gpt", "claude", "gemini", "llm"]
-        for agent_type in llm_types:
-            with self.subTest(agent_type=agent_type):
-                self.assertTrue(self.service._is_llm_agent(agent_type))
-        
-        # Test non-LLM agent types
-        non_llm_types = ["default", "csv_reader", "input", "orchestrator"]
-        for agent_type in non_llm_types:
-            with self.subTest(agent_type=agent_type):
-                self.assertFalse(self.service._is_llm_agent(agent_type))
-    
-    def test_is_storage_agent_recognition(self):
-        """Test _is_storage_agent() correctly identifies storage agent types."""
-        # Test storage agent types
-        storage_types = ["csv_reader", "csv_writer", "json_reader", "json_writer", 
-                        "file_reader", "file_writer", "vector_reader", "vector_writer"]
-        for agent_type in storage_types:
-            with self.subTest(agent_type=agent_type):
-                self.assertTrue(self.service._is_storage_agent(agent_type))
-        
-        # Test non-storage agent types
-        non_storage_types = ["default", "openai", "input", "orchestrator"]
-        for agent_type in non_storage_types:
-            with self.subTest(agent_type=agent_type):
-                self.assertFalse(self.service._is_storage_agent(agent_type))
-    
-    def test_check_llm_dependencies_specific_providers(self):
-        """Test _check_llm_dependencies() for specific LLM providers."""
-        # Test OpenAI specific check
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: (
-            cat == "llm" and prov == "openai"
-        )
-        self.assertTrue(self.service._check_llm_dependencies("openai"))
-        self.assertTrue(self.service._check_llm_dependencies("gpt"))
-        
-        # Test Anthropic specific check
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: (
-            cat == "llm" and prov == "anthropic"
-        )
-        self.assertTrue(self.service._check_llm_dependencies("anthropic"))
-        self.assertTrue(self.service._check_llm_dependencies("claude"))
-        
-        # Test Google specific check
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: (
-            cat == "llm" and prov == "google"
-        )
-        self.assertTrue(self.service._check_llm_dependencies("google"))
-        self.assertTrue(self.service._check_llm_dependencies("gemini"))
-    
-    def test_check_llm_dependencies_generic_llm(self):
-        """Test _check_llm_dependencies() for generic LLM agent."""
-        # Configure some LLM providers as available
-        def mock_get_providers_with_llm(category):
-            if category == "llm":
-                return ["openai", "anthropic"]
-            return self._default_get_available_providers(category)
-        
-        self.mock_features_registry_service.get_available_providers.side_effect = mock_get_providers_with_llm
-        self.assertTrue(self.service._check_llm_dependencies("llm"))
-        
-        # Test when no LLM providers available
-        def mock_get_providers_no_llm(category):
-            if category == "llm":
-                return []
-            return self._default_get_available_providers(category)
-        
-        self.mock_features_registry_service.get_available_providers.side_effect = mock_get_providers_no_llm
-        self.assertFalse(self.service._check_llm_dependencies("llm"))
-    
-    def test_check_storage_dependencies_specific_types(self):
-        """Test _check_storage_dependencies() for specific storage types."""
-        # Test CSV storage
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: (
-            cat == "storage" and prov == "csv"
-        )
-        self.assertTrue(self.service._check_storage_dependencies("csv_reader"))
-        
-        # Test JSON storage
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: (
-            cat == "storage" and prov == "json"
-        )
-        self.assertTrue(self.service._check_storage_dependencies("json_writer"))
-        
-        # Test vector storage
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: (
-            cat == "storage" and prov == "vector"
-        )
-        self.assertTrue(self.service._check_storage_dependencies("vector_reader"))
-    
-    def test_get_dependency_error_message_llm_providers(self):
-        """Test _get_dependency_error_message() for LLM providers."""
-        # Test OpenAI error message
-        error_msg = self.service._get_dependency_error_message("openai", ["llm"])
-        self.assertIn("OpenAI dependencies", error_msg)
-        self.assertIn("pip install agentmap[openai]", error_msg)
-        
-        # Test Anthropic error message
-        error_msg = self.service._get_dependency_error_message("claude", ["llm"])
-        self.assertIn("Anthropic dependencies", error_msg)
-        self.assertIn("pip install agentmap[anthropic]", error_msg)
-        
-        # Test Google error message
-        error_msg = self.service._get_dependency_error_message("gemini", ["llm"])
-        self.assertIn("Google dependencies", error_msg)
-        self.assertIn("pip install agentmap[google]", error_msg)
-        
-        # Test generic LLM error message
-        error_msg = self.service._get_dependency_error_message("llm", ["llm"])
-        self.assertIn("LLM agent 'llm' requires additional dependencies", error_msg)
-        self.assertIn("pip install agentmap[llm]", error_msg)
-    
-    def test_get_dependency_error_message_storage_providers(self):
-        """Test _get_dependency_error_message() for storage providers."""
-        # Test vector storage error message
-        error_msg = self.service._get_dependency_error_message("vector_writer", ["storage"])
-        self.assertIn("vector dependencies", error_msg)
-        self.assertIn("pip install agentmap[vector]", error_msg)
-        
-        # Test generic storage error message
-        error_msg = self.service._get_dependency_error_message("csv_reader", ["storage"])
-        self.assertIn("Storage agent 'csv_reader' requires additional dependencies", error_msg)
-        self.assertIn("pip install agentmap[storage]", error_msg)
-    
-    def test_get_dependency_error_message_multiple_dependencies(self):
-        """Test _get_dependency_error_message() for multiple missing dependencies."""
-        error_msg = self.service._get_dependency_error_message("hybrid_agent", ["llm", "storage"])
-        self.assertIn("requires additional dependencies: ['llm', 'storage']", error_msg)
-        self.assertIn("pip install agentmap[llm,storage]", error_msg)
-    
-    # =============================================================================
-    # 9. NEW: create_agent_instance() Method Tests (TDD)
-    # =============================================================================
-    
-    def test_create_agent_instance_with_default_agent(self):
+    @patch.object(AgentFactoryService, 'resolve_agent_class')
+    def test_create_agent_instance_with_default_agent(self, mock_resolve):
         """Test create_agent_instance() creates a default agent instance."""
         # Arrange
         mock_node = Mock()
         mock_node.name = "test_node"
+        mock_node.agent_type = "default"
         mock_node.prompt = "test prompt"
         mock_node.inputs = ["input1", "input2"]
         mock_node.output = "result"
         mock_node.description = "test description"
+        mock_node.context = {}
+        
+        # Mock agent class
+        mock_agent_class = Mock()
+        mock_agent_class.__name__ = "DefaultAgent"
+        mock_agent_instance = Mock()
+        mock_agent_instance.name = "test_node"
+        mock_agent_instance.run = Mock()
+        mock_agent_class.return_value = mock_agent_instance
+        mock_resolve.return_value = mock_agent_class
+        
+        # Agent mappings
+        agent_mappings = {
+            "default": "agentmap.agents.builtins.default_agent.DefaultAgent"
+        }
         
         # Mock dependencies that would be injected
         mock_execution_tracking = Mock()
         mock_state_adapter = Mock()
         mock_prompt_manager = None
         
-        # Act - method should now work
+        # Act
         result = self.service.create_agent_instance(
             mock_node, 
             "test_graph",
+            agent_mappings,
             execution_tracking_service=mock_execution_tracking,
             state_adapter_service=mock_state_adapter,
             prompt_manager_service=mock_prompt_manager
@@ -617,67 +368,68 @@ class TestAgentFactoryService(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result.name, "test_node")
         self.assertTrue(hasattr(result, 'run'))
+        mock_resolve.assert_called_once_with("default", agent_mappings, None)
     
-    def test_create_agent_instance_with_llm_agent(self):
-        """Test create_agent_instance() creates and configures LLM agent."""
+    def test_create_agent_instance_missing_agent_type(self):
+        """Test create_agent_instance() raises error for node without agent_type."""
         # Arrange
         mock_node = Mock()
-        mock_node.name = "llm_node"
-        mock_node.agent_type = "openai"
-        mock_node.prompt = "You are an AI assistant"
-        mock_node.inputs = ["user_input"]
-        mock_node.output = "response"
+        mock_node.name = "test_node"
+        # Missing agent_type attribute
+        del mock_node.agent_type
         
-        # Configure LLM dependencies as NOT available (will fall back to default)
-        self.mock_features_registry_service.is_provider_available.side_effect = lambda cat, prov: False
+        agent_mappings = {}
         
-        mock_execution_tracking = Mock()
-        mock_state_adapter = Mock()
-        mock_prompt_manager = Mock()
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            self.service.create_agent_instance(mock_node, "test_graph", agent_mappings)
         
-        # Act - method should work and fall back to default agent
-        instance = self.service.create_agent_instance(
-            mock_node,
-            "llm_graph", 
-            execution_tracking_service=mock_execution_tracking,
-            state_adapter_service=mock_state_adapter,
-            prompt_manager_service=mock_prompt_manager
-        )
-        
-        # Assert
-        self.assertIsNotNone(instance)
-        self.assertEqual(instance.name, "llm_node")
-        self.assertTrue(hasattr(instance, 'run'))
+        error_message = str(context.exception)
+        self.assertIn("Node 'test_node' is missing required 'agent_type' attribute", error_message)
     
-    def test_create_agent_instance_handles_custom_agent_fallback(self):
-        """Test create_agent_instance() falls back to custom agent loading."""
+    @patch.object(AgentFactoryService, 'resolve_agent_class')
+    def test_create_agent_instance_handles_orchestrator_special_case(self, mock_resolve):
+        """Test create_agent_instance() handles OrchestratorAgent node registry injection."""
         # Arrange
         mock_node = Mock()
-        mock_node.name = "custom_node"
-        mock_node.agent_type = "custom_agent_type"
-        mock_node.prompt = "custom prompt"
+        mock_node.name = "orchestrator_node"
+        mock_node.agent_type = "orchestrator"
+        mock_node.prompt = "orchestrator prompt"
+        mock_node.context = {}
         
-        # Configure agent registry to return None (not found)
-        self.mock_agent_registry_service.get_agent_class.return_value = None
+        # Mock OrchestratorAgent class
+        mock_orchestrator_class = Mock()
+        mock_orchestrator_class.__name__ = "OrchestratorAgent"
+        mock_orchestrator_instance = Mock()
+        mock_orchestrator_instance.name = "orchestrator_node"
+        mock_orchestrator_instance.run = Mock()
+        mock_orchestrator_class.return_value = mock_orchestrator_instance
+        mock_resolve.return_value = mock_orchestrator_class
         
-        mock_execution_tracking = Mock()
-        mock_state_adapter = Mock()
+        # Agent mappings
+        agent_mappings = {
+            "orchestrator": "agentmap.agents.builtins.orchestrator_agent.OrchestratorAgent"
+        }
         
-        # Act - should fall back to default agent since custom loading not implemented yet
+        # Node registry for injection
+        node_registry = {"node1": Mock(), "node2": Mock()}
+        
+        # Act
         result = self.service.create_agent_instance(
             mock_node,
-            "custom_graph",
-            execution_tracking_service=mock_execution_tracking,
-            state_adapter_service=mock_state_adapter
+            "test_graph",
+            agent_mappings,
+            node_registry=node_registry
         )
         
         # Assert
         self.assertIsNotNone(result)
-        self.assertEqual(result.name, "custom_node")
-        self.assertTrue(hasattr(result, 'run'))
+        self.assertEqual(result.name, "orchestrator_node")
+        # Verify node registry was injected
+        self.assertEqual(result.node_registry, node_registry)
     
     # =============================================================================
-    # 10. NEW: validate_agent_instance() Method Tests (TDD)
+    # 6. validate_agent_instance() Method Tests - Updated
     # =============================================================================
     
     def test_validate_agent_instance_success_with_valid_agent(self):
@@ -730,54 +482,133 @@ class TestAgentFactoryService(unittest.TestCase):
         
         self.assertIn("missing required 'run' method", str(context.exception))
     
-    def test_validate_agent_instance_validates_llm_service_injection(self):
-        """Test validate_agent_instance() validates LLM service configuration."""
+    # =============================================================================
+    # 7. Private Helper Method Tests
+    # =============================================================================
+    
+    @patch.object(AgentFactoryService, '_get_default_agent_class')
+    def test_resolve_agent_class_with_fallback_empty_agent_type(self, mock_get_default):
+        """Test _resolve_agent_class_with_fallback() handles empty agent type."""
         # Arrange
-        mock_agent = Mock()
-        mock_agent.name = "llm_agent"
-        mock_agent.run = Mock()
+        mock_default_class = Mock()
+        mock_default_class.__name__ = "DefaultAgent"
+        mock_get_default.return_value = mock_default_class
         
+        # Act
+        result = self.service._resolve_agent_class_with_fallback("")
+        
+        # Assert
+        self.assertEqual(result, mock_default_class)
+        mock_get_default.assert_called_once()
+    
+    @patch.object(AgentFactoryService, '_get_default_agent_class')
+    def test_resolve_agent_class_with_fallback_none_agent_type(self, mock_get_default):
+        """Test _resolve_agent_class_with_fallback() handles None agent type."""
+        # Arrange
+        mock_default_class = Mock()
+        mock_default_class.__name__ = "DefaultAgent"
+        mock_get_default.return_value = mock_default_class
+        
+        # Act
+        result = self.service._resolve_agent_class_with_fallback(None)
+        
+        # Assert
+        self.assertEqual(result, mock_default_class)
+        mock_get_default.assert_called_once()
+    
+    def test_get_default_agent_class_success(self):
+        """Test _get_default_agent_class() imports DefaultAgent successfully."""        
+        # Act
+        result = self.service._get_default_agent_class()
+        
+        # Assert
+        # Should return the actual DefaultAgent class (real implementation working)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.__name__, "DefaultAgent")
+        # Verify it can be instantiated with proper interface
+        instance = result(name="test", prompt="test", context={})
+        self.assertEqual(instance.name, "test")
+        self.assertTrue(hasattr(instance, 'run'))
+    
+    @patch('importlib.import_module')
+    def test_get_default_agent_class_fallback_on_import_error(self, mock_import):
+        """Test _get_default_agent_class() creates fallback when import fails."""
+        # Arrange
+        mock_import.side_effect = ImportError("Module not found")
+        
+        # Act
+        result = self.service._get_default_agent_class()
+        
+        # Assert
+        self.assertIsNotNone(result)
+        # Should return a class that can be instantiated
+        instance = result(name="test", prompt="test", context={})
+        self.assertEqual(instance.name, "test")
+        self.assertTrue(hasattr(instance, 'run'))
+    
+    def test_build_constructor_args_basic(self):
+        """Test _build_constructor_args() builds correct arguments."""
+        # Arrange
         mock_node = Mock()
-        mock_node.name = "llm_node"
+        mock_node.name = "test_node"
+        mock_node.prompt = "test prompt"
         
-        # Act & Assert - for non-protocol agents, should pass
-        try:
-            self.service.validate_agent_instance(mock_agent, mock_node)
-        except ValueError:
-            self.fail("validate_agent_instance() raised ValueError unexpectedly!")
-    
-    # =============================================================================
-    # 11. Error Handling and Edge Cases
-    # =============================================================================
-    
-    def test_service_handles_empty_agent_type(self):
-        """Test that service methods handle empty agent type gracefully."""
-        # resolve_agent_class should validate dependencies for empty string
-        dependencies_valid, missing_deps = self.service.validate_agent_dependencies("")
-        self.assertTrue(dependencies_valid)  # Empty string is not LLM or storage agent
-        self.assertEqual(missing_deps, [])
+        context = {"key": "value"}
         
-        # can_resolve_agent_type should handle empty agent type
-        result = self.service.can_resolve_agent_type("")
-        # This depends on agent registry behavior, but should not crash
-        self.assertIsInstance(result, bool)
-    
-    def test_service_handles_none_agent_type(self):
-        """Test that service methods handle None agent type gracefully."""
-        # These should not crash, though they may raise TypeErrors
-        with self.assertRaises((TypeError, AttributeError)):
-            self.service.validate_agent_dependencies(None)
-    
-    def test_dependency_validation_case_insensitive(self):
-        """Test that dependency validation is case insensitive."""
-        # Test uppercase agent type
-        dependencies_valid, missing_deps = self.service.validate_agent_dependencies("CSV_READER")
+        # Mock agent class with simple constructor
+        mock_agent_class = Mock()
+        mock_signature = Mock()
+        mock_signature.parameters.keys.return_value = ["self", "name", "prompt", "context", "logger"]
         
-        # Should recognize as storage agent and check dependencies
-        if not dependencies_valid:
-            self.assertEqual(missing_deps, ["storage"])
-        else:
-            self.assertEqual(missing_deps, [])
+        with patch('inspect.signature', return_value=mock_signature):
+            # Act
+            result = self.service._build_constructor_args(
+                mock_agent_class, mock_node, context, None, None, None
+            )
+        
+        # Assert
+        expected_args = {
+            "name": "test_node",
+            "prompt": "test prompt",
+            "context": context,
+            "logger": self.service.logger
+        }
+        self.assertEqual(result, expected_args)
+    
+    def test_build_constructor_args_with_services(self):
+        """Test _build_constructor_args() includes services when agent supports them."""
+        # Arrange
+        mock_node = Mock()
+        mock_node.name = "test_node"
+        mock_node.prompt = "test prompt"
+        
+        context = {"key": "value"}
+        mock_execution_tracking = Mock()
+        mock_state_adapter = Mock()
+        mock_prompt_manager = Mock()
+        
+        # Mock agent class with service parameters
+        mock_agent_class = Mock()
+        mock_signature = Mock()
+        mock_signature.parameters.keys.return_value = [
+            "self", "name", "prompt", "context", "logger",
+            "execution_tracking_service", "state_adapter_service", "prompt_manager_service"
+        ]
+        
+        with patch('inspect.signature', return_value=mock_signature):
+            # Act
+            result = self.service._build_constructor_args(
+                mock_agent_class, mock_node, context, 
+                mock_execution_tracking, mock_state_adapter, mock_prompt_manager
+            )
+        
+        # Assert
+        self.assertIn("execution_tracking_service", result)
+        self.assertIn("state_adapter_service", result)
+        self.assertIn("prompt_manager_service", result)
+        self.assertEqual(result["execution_tracking_service"], mock_execution_tracking)
+        self.assertEqual(result["state_adapter_service"], mock_state_adapter)
+        self.assertEqual(result["prompt_manager_service"], mock_prompt_manager)
 
 
 if __name__ == '__main__':

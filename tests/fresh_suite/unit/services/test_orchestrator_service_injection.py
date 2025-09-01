@@ -168,46 +168,5 @@ class TestOrchestratorServiceInjection(unittest.TestCase):
         self.assertTrue(callable(getattr(agent, 'configure_orchestrator_service')))
 
 
-class TestGraphRunnerServiceInjection(unittest.TestCase):
-    """Test GraphRunnerService properly injects OrchestratorService."""
-    
-    def test_graph_runner_stores_orchestrator_service(self):
-        """Test that GraphRunnerService accepts and stores OrchestratorService."""
-        # Create mock services
-        mock_services = {
-            'graph_definition_service': Mock(),
-            'graph_execution_service': Mock(),
-            'graph_bundle_service': Mock(),
-            'agent_factory_service': Mock(),
-            'llm_service': Mock(),
-            'storage_service_manager': Mock(),
-            'node_registry_service': Mock(),
-            'logging_service': Mock(),
-            'app_config_service': Mock(),
-            'execution_tracking_service': Mock(),
-            'execution_policy_service': Mock(),
-            'state_adapter_service': Mock(),
-            'dependency_checker_service': Mock(),
-            'graph_assembly_service': Mock(),
-            'prompt_manager_service': Mock(),
-            'orchestrator_service': Mock(spec=OrchestratorService),  # The key service
-            'host_protocol_configuration_service': Mock(),
-            'graph_checkpoint_service': Mock()
-        }
-        
-        # Mock logging service methods
-        mock_services['logging_service'].get_class_logger.return_value = Mock()
-        
-        # Import here to avoid circular dependencies
-        from agentmap.services.graph.graph_runner_service import GraphRunnerService
-        
-        # Create GraphRunnerService with all services
-        runner = GraphRunnerService(**mock_services)
-        
-        # Verify orchestrator_service is stored
-        self.assertIsNotNone(runner.orchestrator_service)
-        self.assertEqual(runner.orchestrator_service, mock_services['orchestrator_service'])
-
-
 if __name__ == "__main__":
     unittest.main()

@@ -21,7 +21,7 @@ from unittest.mock import Mock, patch, MagicMock
 from agentmap.di import initialize_di
 from agentmap.services.storage.blob_storage_service import BlobStorageService
 from agentmap.services.storage.manager import StorageServiceManager
-from agentmap.services.application_bootstrap_service import ApplicationBootstrapService
+# from agentmap.services.application_bootstrap_service import ApplicationBootstrapService
 from agentmap.services.agent.agent_factory_service import AgentFactoryService
 from agentmap.agents.builtins.storage.blob.blob_reader_agent import BlobReaderAgent
 from agentmap.agents.builtins.storage.blob.blob_writer_agent import BlobWriterAgent
@@ -110,20 +110,20 @@ class TestApplicationContainerBlobIntegration(unittest.TestCase):
         self.assertTrue(blob_info["blob"]["available"])
         self.assertEqual(blob_info["blob"]["type"], "blob_service")
     
-    def test_application_bootstrap_service_blob_registration(self):
-        """Test blob agent registration through ApplicationBootstrapService."""
-        # Initialize DI container
-        container = initialize_di(str(self.test_env.config_path))
+    # def test_application_bootstrap_service_blob_registration(self):
+    #     """Test blob agent registration through ApplicationBootstrapService."""
+    #     # Initialize DI container
+    #     container = initialize_di(str(self.test_env.config_path))
         
-        # Get application bootstrap service
-        bootstrap_service = container.application_bootstrap_service()
+    #     # Get application bootstrap service
+    #     bootstrap_service = container.application_bootstrap_service()
         
-        if bootstrap_service is not None:
-            self.assertIsInstance(bootstrap_service, ApplicationBootstrapService)
+    #     if bootstrap_service is not None:
+    #         self.assertIsInstance(bootstrap_service, ApplicationBootstrapService)
             
-            # Bootstrap service should have registered blob agents
-            # This is verified by successful initialization without errors
-            # The actual agent creation is tested in factory service tests
+    #         # Bootstrap service should have registered blob agents
+    #         # This is verified by successful initialization without errors
+    #         # The actual agent creation is tested in factory service tests
     
     def test_agent_factory_service_blob_agent_creation(self):
         """Test blob agent creation through AgentFactoryService."""

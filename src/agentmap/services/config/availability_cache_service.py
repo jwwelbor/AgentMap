@@ -17,7 +17,6 @@ Key Features:
 
 import hashlib
 import json
-import os
 import platform
 import subprocess
 import sys
@@ -25,7 +24,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Set, Tuple, Union
+from typing import Any, Dict, Optional, Union
 
 from agentmap.services.config.availability_cache import ThreadSafeFileCache
 
@@ -76,9 +75,7 @@ class EnvironmentChangeDetector:
             return hashlib.sha256(env_str.encode("utf-8")).hexdigest()[:16]
 
         except Exception:
-            # Fallback to basic environment info
-            basic_info = f"{sys.version}_{platform.platform()}"
-            return hashlib.sha256(basic_info.encode("utf-8")).hexdigest()[:16]
+            raise
 
     def _get_packages_hash(self) -> str:
         """Get hash of installed packages for change detection."""
@@ -136,9 +133,8 @@ class ConfigChangeDetector:
                         :16
                     ]
                     self._config_hashes[path_str] = content_hash
-            except Exception:
-                # Ignore errors in file monitoring
-                pass
+            except:
+                raise
 
     def has_config_changed(self) -> bool:
         """Check if any registered config files have changed."""
@@ -166,7 +162,7 @@ class ConfigChangeDetector:
 
                 except Exception:
                     # If we can't check, assume no change to avoid false positives
-                    pass
+                    raise
 
             return False
 
@@ -187,7 +183,7 @@ class ConfigChangeDetector:
                             ).hexdigest()[:16]
                             self._config_hashes[path_str] = content_hash
                 except Exception:
-                    pass
+                    raise
 
 
 class AvailabilityCacheService:
@@ -231,7 +227,7 @@ class AvailabilityCacheService:
 
         # Automatic invalidation tracking
         self._last_env_hash: Optional[str] = None
-        self._auto_invalidation_enabled = True
+        self._auto_invalidation_enabled = False
 
         # Performance statistics
         self._stats = {
@@ -257,14 +253,25 @@ class AvailabilityCacheService:
 
         Returns:
             Cached availability data or None if not found/invalid
+            
+        Raises:
+            CacheNotFoundError: If cache file doesn't exist
         """
         cache_key = f"{category}.{key}"
 
         try:
             with self._cache_lock:
-                # Check for automatic invalidation triggers
-                if self._should_auto_invalidate():
-                    self._perform_auto_invalidation()
+                # Check if cache file exists first
+                if not self._cache_file_path.exists():
+                    from agentmap.exceptions.service_exceptions import CacheNotFoundError
+                    raise CacheNotFoundError(
+                        f"Availability cache not found at {self._cache_file_path}. "
+                        "Please run 'agentmap refresh' to initialize the provider cache."
+                    )
+                
+                # # Check for automatic invalidation triggers
+                # if self._should_auto_invalidate():
+                #     self._perform_auto_invalidation()
 
                 cache_data = self._file_cache.load_cache()
                 if not cache_data:
@@ -488,6 +495,7 @@ class AvailabilityCacheService:
 
     # Private helper methods
 
+    @property
     def _should_auto_invalidate(self) -> bool:
         """Check if automatic invalidation should be triggered."""
         if not self._auto_invalidation_enabled:
@@ -508,9 +516,8 @@ class AvailabilityCacheService:
 
             return False
 
-        except Exception:
-            # If we can't check, assume no invalidation needed
-            return False
+        except:
+            raise
 
     def _perform_auto_invalidation(self) -> None:
         """Perform automatic cache invalidation."""

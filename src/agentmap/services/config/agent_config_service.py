@@ -182,10 +182,11 @@ class AgentConfigService:
             return {}
             
         agent_types = provider_mapping[provider]
+        llm_agents = AgentConfigService._get_llm_agents_dict()
         return {
-            agent_type: AgentConfigService._LLM_AGENTS[agent_type]
+            agent_type: llm_agents[agent_type]
             for agent_type in agent_types
-            if agent_type in AgentConfigService._LLM_AGENTS
+            if agent_type in llm_agents
         }
 
     @staticmethod
@@ -211,10 +212,11 @@ class AgentConfigService:
             return {}
             
         agent_types = type_mapping[storage_type]
+        storage_agents = AgentConfigService._get_storage_agents_dict()
         return {
-            agent_type: AgentConfigService._STORAGE_AGENTS[agent_type]
+            agent_type: storage_agents[agent_type]
             for agent_type in agent_types
-            if agent_type in AgentConfigService._STORAGE_AGENTS
+            if agent_type in storage_agents
         }
 
     @staticmethod
@@ -228,7 +230,7 @@ class AgentConfigService:
         Returns:
             True if the agent type is a core agent
         """
-        return agent_type in AgentConfigService._CORE_AGENTS
+        return agent_type in AgentConfigService._get_core_agents_dict()
 
     @staticmethod
     def is_llm_agent(agent_type: str) -> bool:
@@ -241,7 +243,7 @@ class AgentConfigService:
         Returns:
             True if the agent type is an LLM agent
         """
-        return agent_type in AgentConfigService._LLM_AGENTS
+        return agent_type in AgentConfigService._get_llm_agents_dict()
 
     @staticmethod
     def is_storage_agent(agent_type: str) -> bool:
@@ -254,7 +256,7 @@ class AgentConfigService:
         Returns:
             True if the agent type is a storage agent
         """
-        return agent_type in AgentConfigService._STORAGE_AGENTS
+        return agent_type in AgentConfigService._get_storage_agents_dict()
 
     @staticmethod
     def get_required_provider(agent_type: str) -> str:
@@ -267,7 +269,7 @@ class AgentConfigService:
         Returns:
             Required provider name, or None if any provider works
         """
-        return AgentConfigService._LLM_AGENT_TO_PROVIDER.get(agent_type)
+        return BuiltinDefinitionConstants.get_llm_agent_to_provider().get(agent_type)
 
     @staticmethod
     def get_required_storage_type(agent_type: str) -> str:
@@ -280,4 +282,4 @@ class AgentConfigService:
         Returns:
             Required storage type name, or None if not a storage agent
         """
-        return AgentConfigService._AGENT_TO_STORAGE_TYPE.get(agent_type)
+        return BuiltinDefinitionConstants.get_agent_to_storage_type().get(agent_type)
