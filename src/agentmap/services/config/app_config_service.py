@@ -111,24 +111,26 @@ class AppConfigService:
             self._config_data, path, default
         )
 
-
-
     # Path accessors
     def get_cache_path(self) -> Path:
         """Get the path for custom agents."""
         return Path(self.get_value("paths.cache", "agentmap_data/cache"))
-    
+
     def get_custom_agents_path(self) -> Path:
         """Get the path for custom agents."""
-        return Path(self.get_value("paths.custom_agents", "agentmap_data/custom_agents"))
+        return Path(
+            self.get_value("paths.custom_agents", "agentmap_data/custom_agents")
+        )
 
     def get_functions_path(self) -> Path:
         """Get the path for functions."""
         return Path(self.get_value("paths.functions", "agentmap_data/custom_functions"))
-    
+
     def get_metadata_bundles_path(self) -> Path:
         """Get the path for metadata bundles."""
-        metadata_bundles_path = Path(self.get_value("paths.metadata_bundles", "agentmap_data/metadata_bundles"))
+        metadata_bundles_path = Path(
+            self.get_value("paths.metadata_bundles", "agentmap_data/metadata_bundles")
+        )
 
         # Ensure the directory exists
         try:
@@ -198,36 +200,32 @@ class AppConfigService:
             },
             "complexity_analysis": {
                 "enabled": True,
-                "prompt_length_thresholds": {
-                    "low": 500,
-                    "medium": 2000,
-                    "high": 8000
-                },
+                "prompt_length_thresholds": {"low": 500, "medium": 2000, "high": 8000},
                 "content_analysis": {
                     "enabled": True,
                     "keyword_weights": {
                         "complexity_indicators": 2.0,
                         "technical_terms": 1.5,
-                        "urgency_indicators": 1.8
-                    }
-                }
+                        "urgency_indicators": 1.8,
+                    },
+                },
             },
             "cost_optimization": {
                 "enabled": True,
                 "max_cost_tier": "high",
-                "cost_aware_routing": True
+                "cost_aware_routing": True,
             },
             "fallback": {
                 "enabled": True,
                 "default_provider": "anthropic",
                 "default_model": "claude-3-haiku-20240307",
-                "max_retries": 2
+                "max_retries": 2,
             },
             "performance": {
                 "enable_routing_cache": True,
                 "cache_ttl": 300,
-                "async_routing": True
-            }
+                "async_routing": True,
+            },
         }
 
         # Merge with defaults
@@ -465,8 +463,6 @@ class AppConfigService:
         """Get the path for the storage configuration file."""
         storage_path = self.get_value("storage_config_path")
         return Path(storage_path) if storage_path else None
-
-
 
     # Host application configuration accessors
     def get_host_application_config(self) -> Dict[str, Any]:
@@ -722,12 +718,12 @@ class AppConfigService:
     def get_declaration_paths(self) -> List[Path]:
         """
         Get list of custom declaration directories.
-        
+
         Returns:
             List of Path objects for custom declaration directories
         """
         declaration_paths_config = self.get_value("declarations.custom", [])
-        
+
         declaration_paths = []
         for path_config in declaration_paths_config:
             try:
@@ -741,16 +737,16 @@ class AppConfigService:
                         f"[AppConfigService] Invalid declaration path config: {path_config}"
                     )
                     continue
-                
+
                 # Expand environment variables
                 expanded_path = os.path.expandvars(path)
                 declaration_paths.append(Path(expanded_path))
-                
+
             except Exception as e:
                 self._logger.warning(
                     f"[AppConfigService] Invalid declaration path '{path_config}': {e}"
                 )
-        
+
         # Log configured paths
         if declaration_paths:
             path_strs = [str(p) for p in declaration_paths]
@@ -761,21 +757,21 @@ class AppConfigService:
             self._logger.debug(
                 "[AppConfigService] No custom declaration paths configured"
             )
-        
+
         return declaration_paths
 
     def get_host_declaration_paths(self) -> List[Path]:
         """
         Get list of host application declaration directories.
-        
+
         Returns:
             List of Path objects for host declaration directories
         """
         if not self.is_host_declarations_enabled():
             return []
-        
+
         host_paths_config = self.get_value("declarations.host.paths", [])
-        
+
         host_paths = []
         for path in host_paths_config:
             try:
@@ -786,7 +782,7 @@ class AppConfigService:
                 self._logger.warning(
                     f"[AppConfigService] Invalid host declaration path '{path}': {e}"
                 )
-        
+
         # Log configured paths
         if host_paths:
             path_strs = [str(p) for p in host_paths]
@@ -797,13 +793,13 @@ class AppConfigService:
             self._logger.debug(
                 "[AppConfigService] No host declaration paths configured"
             )
-        
+
         return host_paths
 
     def is_host_declarations_enabled(self) -> bool:
         """
         Check if host declarations are enabled.
-        
+
         Returns:
             True if host declarations are enabled
         """
@@ -812,7 +808,7 @@ class AppConfigService:
     def get_host_declarations_namespace(self) -> Optional[str]:
         """
         Get the namespace for host declarations.
-        
+
         Returns:
             Namespace string or None if not configured
         """
@@ -821,12 +817,12 @@ class AppConfigService:
     def get_declaration_validation_settings(self) -> Dict[str, Any]:
         """
         Get declaration validation settings.
-        
+
         Returns:
             Dictionary with validation settings
         """
         validation_config = self.get_value("declarations.validation", {})
-        
+
         # Default validation settings
         defaults = {
             "strict": False,
@@ -835,10 +831,10 @@ class AppConfigService:
             "allow_unknown_protocols": True,
             "validate_class_paths": False,
         }
-        
+
         # Merge with defaults
         merged_settings = self._merge_with_defaults(validation_config, defaults)
-        
+
         # Log validation settings
         if validation_config:
             self._logger.debug(
@@ -849,7 +845,7 @@ class AppConfigService:
             self._logger.debug(
                 "[AppConfigService] Using default declaration validation settings"
             )
-        
+
         return merged_settings
 
     # Utility methods for domain-specific business logic

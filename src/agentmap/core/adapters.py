@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional, Union
 from dependency_injector.containers import Container
 
 from agentmap.models.execution_result import ExecutionResult
+
 # RunOptions removed as part of GraphRunnerService simplification
 
 
@@ -34,7 +35,7 @@ class ServiceAdapter:
     ) -> Dict[str, Any]:
         """
         Convert CLI/API parameters to options dict.
-        
+
         NOTE: This method is deprecated as GraphRunnerService has been simplified
         to take Bundle parameters directly instead of RunOptions.
 

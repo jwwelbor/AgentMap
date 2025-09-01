@@ -5,9 +5,9 @@ Centralized service for all graph creation, name resolution, and entry point det
 Eliminates duplication across GraphDefinitionService, GraphExecutionService, and GraphAssemblyService.
 """
 
+from logging import Logger
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from logging import Logger
 
 from agentmap.models.graph import Graph
 from agentmap.models.node import Node
@@ -82,7 +82,9 @@ class GraphFactoryService:
         return name
 
     @staticmethod
-    def detect_entry_point(graph: Graph, logger: Optional[Logger] = None) -> Optional[str]:
+    def detect_entry_point(
+        graph: Graph, logger: Optional[Logger] = None
+    ) -> Optional[str]:
         """
         Detect entry point for a graph using simple, predictable logic.
 

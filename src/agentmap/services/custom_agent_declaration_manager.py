@@ -9,13 +9,14 @@ This service uses the template system to ensure consistent formatting and follow
 clean architecture principles with proper dependency injection.
 """
 
-import yaml
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+import yaml
+
 from agentmap.services.config.app_config_service import AppConfigService
-from agentmap.services.logging_service import LoggingService
 from agentmap.services.indented_template_composer import IndentedTemplateComposer
+from agentmap.services.logging_service import LoggingService
 
 
 class CustomAgentDeclarationManager:
@@ -53,23 +54,23 @@ class CustomAgentDeclarationManager:
         self.file_path = self.get_custom_agents_yaml_path()
 
         # Template strings for YAML generation
-        self.YAML_HEADER_TEMPLATE = '''version: "{version}"
+        self.YAML_HEADER_TEMPLATE = """version: "{version}"
 namespace: "{namespace}"
 
-agents:'''
+agents:"""
 
-        self.AGENT_ENTRY_TEMPLATE = '''  {agent_type}:
+        self.AGENT_ENTRY_TEMPLATE = """  {agent_type}:
     class_path: "{class_path}"
     requires:
       services: {services_yaml}
-      protocols: {protocols_yaml}'''
+      protocols: {protocols_yaml}"""
 
         self.logger.info("[CustomAgentDeclarationManager] Initialized successfully")
 
     def get_custom_agents_yaml_path(self) -> Path:
         """
         Get the path to the custom_agents.yaml file.
-        
+
         Places the YAML file in the same directory as the Python agent files
         for easier management and co-location of related files.
 
@@ -79,7 +80,7 @@ agents:'''
         # Use the same directory as the Python agent files
         # This ensures the YAML declarations are co-located with the code
         custom_agents_dir = self.config.get_custom_agents_path()
-        
+
         # Place custom_agents.yaml in the same directory as the Python files
         return custom_agents_dir / "custom_agents.yaml"
 
@@ -93,27 +94,35 @@ agents:'''
 
         if self._declarations is not None:
             return self._declarations
-        
+
         try:
             if self.file_path.exists():
-                self.logger.debug(f"[CustomAgentDeclarationManager] Loading declarations from {self.file_path}")
-                with open(self.file_path, 'r', encoding='utf-8') as f:
+                self.logger.debug(
+                    f"[CustomAgentDeclarationManager] Loading declarations from {self.file_path}"
+                )
+                with open(self.file_path, "r", encoding="utf-8") as f:
                     content = yaml.safe_load(f)
                     if content is None:
                         content = {}
-                    
+
                     # Ensure proper structure
-                    if 'agents' not in content:
-                        content['agents'] = {}
-                    
-                    self.logger.debug(f"[CustomAgentDeclarationManager] Loaded {len(content.get('agents', {}))} agent declarations")
+                    if "agents" not in content:
+                        content["agents"] = {}
+
+                    self.logger.debug(
+                        f"[CustomAgentDeclarationManager] Loaded {len(content.get('agents', {}))} agent declarations"
+                    )
                     return content
             else:
-                self.logger.debug(f"[CustomAgentDeclarationManager] File {self.file_path} does not exist, returning empty structure")
+                self.logger.debug(
+                    f"[CustomAgentDeclarationManager] File {self.file_path} does not exist, returning empty structure"
+                )
                 return self._create_empty_structure()
-                
+
         except Exception as e:
-            self.logger.error(f"[CustomAgentDeclarationManager] Failed to load declarations from {self.file_path}: {e}")
+            self.logger.error(
+                f"[CustomAgentDeclarationManager] Failed to load declarations from {self.file_path}: {e}"
+            )
             raise
 
     def _create_empty_structure(self) -> Dict[str, Any]:
@@ -123,18 +132,14 @@ agents:'''
         Returns:
             Dictionary with default version, namespace, and empty agents section
         """
-        return {
-            'version': '1.0',
-            'namespace': 'custom',
-            'agents': {}
-        }
+        return {"version": "1.0", "namespace": "custom", "agents": {}}
 
     def compose_yaml_declaration(
         self,
         agent_type: str,
         class_path: str,
         services: Optional[List[str]] = None,
-        protocols: Optional[List[str]] = None
+        protocols: Optional[List[str]] = None,
     ) -> str:
         """
         Generate YAML string for agent declaration using template.
@@ -160,10 +165,12 @@ agents:'''
             agent_type=agent_type,
             class_path=class_path,
             services_yaml=services_yaml,
-            protocols_yaml=protocols_yaml
+            protocols_yaml=protocols_yaml,
         )
 
-        self.logger.debug(f"[CustomAgentDeclarationManager] Composed YAML declaration for {agent_type}")
+        self.logger.debug(
+            f"[CustomAgentDeclarationManager] Composed YAML declaration for {agent_type}"
+        )
         return agent_yaml
 
     def _format_yaml_list(self, items: List[str]) -> str:
@@ -189,7 +196,7 @@ agents:'''
         agent_type: str,
         class_path: str,
         services: Optional[List[str]] = None,
-        protocols: Optional[List[str]] = None
+        protocols: Optional[List[str]] = None,
     ) -> None:
         """
         Add new agent or update existing agent entry using template.
@@ -209,24 +216,27 @@ agents:'''
 
             # Create agent entry
             agent_entry = {
-                'class_path': class_path,
-                'requires': {
-                    'services': services,
-                    'protocols': protocols
-                }
+                "class_path": class_path,
+                "requires": {"services": services, "protocols": protocols},
             }
 
             # Add or update the agent
-            declarations['agents'][agent_type] = agent_entry
+            declarations["agents"][agent_type] = agent_entry
 
-            action = "Updated" if agent_type in declarations.get('agents', {}) else "Added"
-            self.logger.info(f"[CustomAgentDeclarationManager] {action} agent declaration for {agent_type}")
+            action = (
+                "Updated" if agent_type in declarations.get("agents", {}) else "Added"
+            )
+            self.logger.info(
+                f"[CustomAgentDeclarationManager] {action} agent declaration for {agent_type}"
+            )
 
             # Save the declarations
             self.save_declarations(declarations)
 
         except Exception as e:
-            self.logger.error(f"[CustomAgentDeclarationManager] Failed to add/update agent {agent_type}: {e}")
+            self.logger.error(
+                f"[CustomAgentDeclarationManager] Failed to add/update agent {agent_type}: {e}"
+            )
             raise
 
     def save_declarations(self, declarations: Dict[str, Any]) -> None:
@@ -236,26 +246,30 @@ agents:'''
         Args:
             declarations: Dictionary containing the complete YAML structure
         """
-        
+
         try:
             # Ensure directory exists
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Write YAML file with proper formatting
-            with open(self.file_path, 'w', encoding='utf-8') as f:
+            with open(self.file_path, "w", encoding="utf-8") as f:
                 yaml.dump(
                     declarations,
                     f,
                     default_flow_style=False,
                     sort_keys=False,
                     indent=2,
-                    allow_unicode=True
+                    allow_unicode=True,
                 )
 
-            self.logger.info(f"[CustomAgentDeclarationManager] Successfully saved declarations to {self.file_path}")
+            self.logger.info(
+                f"[CustomAgentDeclarationManager] Successfully saved declarations to {self.file_path}"
+            )
 
         except Exception as e:
-            self.logger.error(f"[CustomAgentDeclarationManager] Failed to save declarations to {self.file_path}: {e}")
+            self.logger.error(
+                f"[CustomAgentDeclarationManager] Failed to save declarations to {self.file_path}: {e}"
+            )
             raise
 
     def get_agent_declaration(self, agent_type: str) -> Optional[Dict[str, Any]]:
@@ -269,7 +283,7 @@ agents:'''
             Agent declaration dictionary or None if not found
         """
         declarations = self.load_declarations()
-        return declarations.get('agents', {}).get(agent_type)
+        return declarations.get("agents", {}).get(agent_type)
 
     def remove_agent_declaration(self, agent_type: str) -> bool:
         """
@@ -283,18 +297,24 @@ agents:'''
         """
         try:
             declarations = self.load_declarations()
-            
-            if agent_type in declarations.get('agents', {}):
-                del declarations['agents'][agent_type]
+
+            if agent_type in declarations.get("agents", {}):
+                del declarations["agents"][agent_type]
                 self.save_declarations(declarations)
-                self.logger.info(f"[CustomAgentDeclarationManager] Removed agent declaration for {agent_type}")
+                self.logger.info(
+                    f"[CustomAgentDeclarationManager] Removed agent declaration for {agent_type}"
+                )
                 return True
             else:
-                self.logger.warning(f"[CustomAgentDeclarationManager] Agent {agent_type} not found for removal")
+                self.logger.warning(
+                    f"[CustomAgentDeclarationManager] Agent {agent_type} not found for removal"
+                )
                 return False
 
         except Exception as e:
-            self.logger.error(f"[CustomAgentDeclarationManager] Failed to remove agent {agent_type}: {e}")
+            self.logger.error(
+                f"[CustomAgentDeclarationManager] Failed to remove agent {agent_type}: {e}"
+            )
             raise
 
     def list_agent_types(self) -> List[str]:
@@ -305,7 +325,7 @@ agents:'''
             List of agent type identifiers
         """
         declarations = self.load_declarations()
-        return list(declarations.get('agents', {}).keys())
+        return list(declarations.get("agents", {}).keys())
 
     def get_declaration_stats(self) -> Dict[str, Any]:
         """
@@ -315,12 +335,12 @@ agents:'''
             Dictionary containing statistics about the declarations
         """
         declarations = self.load_declarations()
-        
+
         return {
-            'file_path': str(self.file_path),
-            'file_exists': self.file_path.exists(),
-            'version': declarations.get('version', 'unknown'),
-            'namespace': declarations.get('namespace', 'unknown'),
-            'total_agents': len(declarations.get('agents', {})),
-            'agent_types': list(declarations.get('agents', {}).keys())
+            "file_path": str(self.file_path),
+            "file_exists": self.file_path.exists(),
+            "version": declarations.get("version", "unknown"),
+            "namespace": declarations.get("namespace", "unknown"),
+            "total_agents": len(declarations.get("agents", {})),
+            "agent_types": list(declarations.get("agents", {}).keys()),
         }

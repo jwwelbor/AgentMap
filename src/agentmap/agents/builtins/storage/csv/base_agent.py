@@ -106,8 +106,6 @@ class CSVAgent(BaseStorageAgent, CSVCapableAgent):
             self._csv_service = CSVStorageService(self.context)
             self._client = self._csv_service
 
-
-
     def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
         """
         Validate inputs for CSV operations following clean architecture principles.
@@ -134,7 +132,7 @@ class CSVAgent(BaseStorageAgent, CSVCapableAgent):
         # The CSVStorageService will handle file existence, auto-creation,
         # and other storage-specific validation appropriately
         self.log_debug(f"Input validation completed for collection: {collection}")
-        
+
         return
 
     def _get_full_file_path(self, collection: str) -> str:
@@ -156,8 +154,6 @@ class CSVAgent(BaseStorageAgent, CSVCapableAgent):
         except Exception as e:
             self.log_debug(f"Could not resolve full file path for {collection}: {e}")
             return collection
-
-
 
     def _handle_operation_error(
         self, error: Exception, collection: str, inputs: Dict[str, Any]

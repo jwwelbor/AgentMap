@@ -418,23 +418,23 @@ class StorageConfigService:
     def get_base_directory(self) -> str:
         """
         Get the base storage directory that all storage types use as their root.
-        
+
         Returns:
             Base directory path for all storage operations
         """
         # Check for core.base_directory first (proper YAML structure)
         base_dir = self.get_value("core.base_directory")
-        
+
         # Ultimate fallback
         return base_dir or "agentmap_data/data"
-    
+
     def get_storage_type_directory(self, storage_type: str) -> str:
         """
         Get the directory name for a specific storage type within the base directory.
-        
+
         Args:
             storage_type: Type of storage ("csv", "json", "vector", etc.)
-            
+
         Returns:
             Directory name for the storage type (defaults to storage_type name)
         """
@@ -451,17 +451,17 @@ class StorageConfigService:
                 if default_dir.startswith(base_dir):
                     return str(Path(default_dir).relative_to(Path(base_dir)))
                 return default_dir
-        
+
         # Default to storage type name
         return storage_type
-    
+
     def resolve_full_storage_path(self, storage_type: str) -> Path:
         """
         Resolve the full path for a storage type using base_directory/default_directory hierarchy.
-        
+
         Args:
             storage_type: Type of storage ("csv", "json", "vector", etc.)
-            
+
         Returns:
             Full resolved path: base_directory/storage_type_directory
         """
@@ -502,7 +502,9 @@ class StorageConfigService:
                 "enabled": enabled,
                 "validation_passed": enabled,
                 "last_error": (
-                    None if enabled else "CSV storage not properly configured - missing base_directory or default_directory"
+                    None
+                    if enabled
+                    else "CSV storage not properly configured - missing base_directory or default_directory"
                 ),
                 "checked_at": "direct_config_check",
                 "warnings": [],
@@ -625,7 +627,7 @@ class StorageConfigService:
         and follows caching pattern for consistency with other storage types.
 
         Returns:
-            True if JSON storage is enabled (always True for system needs, but 
+            True if JSON storage is enabled (always True for system needs, but
             may respect user configuration for user-facing operations).
         """
         # Try cache first
@@ -637,7 +639,7 @@ class StorageConfigService:
         # Fallback to direct config check
         try:
             json_config = self.get_json_config()
-            
+
             # For JSON storage: always enabled for system, but check user config
             if not isinstance(json_config, dict):
                 # No config present - use system default (enabled)
@@ -745,7 +747,7 @@ class StorageConfigService:
         elif storage_type == "kv":
             return self.is_kv_storage_enabled()
         elif storage_type == "json":
-            return True # required and must always enabled for app to function
+            return True  # required and must always enabled for app to function
         elif storage_type == "blob":
             return self.is_blob_storage_enabled()
         elif storage_type == "file":
@@ -1018,6 +1020,7 @@ class StorageConfigService:
                     "data_path": "validation error",
                 },
             }
+
     #         csv_config = self.get_csv_config()
 
     #         # Skip validation if CSV config is not a dictionary (handled by parent validation)
@@ -1514,50 +1517,59 @@ class StorageConfigService:
         """
         warnings = []
         errors = []
-        
+
         try:
             # Basic validation - check if config data exists and is valid
             if self._config_data is None:
                 errors.append("Storage configuration data is not loaded")
                 return {"warnings": warnings, "errors": errors}
-            
+
             if not isinstance(self._config_data, dict):
                 errors.append("Storage configuration must be a dictionary")
                 return {"warnings": warnings, "errors": errors}
-                
+
             # Validate each storage type if configured
             storage_types = ["csv", "vector", "kv", "json", "blob"]
-            
+
             for storage_type in storage_types:
                 if storage_type in self._config_data:
                     config = self._config_data[storage_type]
-                    
+
                     # Basic structure validation
                     if not isinstance(config, dict):
-                        errors.append(f"{storage_type} configuration must be a dictionary")
+                        errors.append(
+                            f"{storage_type} configuration must be a dictionary"
+                        )
                         continue
-                        
+
                     # Check collections structure
                     collections = config.get("collections")
                     if collections is not None and not isinstance(collections, dict):
-                        errors.append(f"{storage_type} collections must be a dictionary")
-                    
+                        errors.append(
+                            f"{storage_type} collections must be a dictionary"
+                        )
+
                     # Check for proper configuration based on storage type
                     if storage_type in ["csv", "vector", "kv", "blob"]:
-                        if not config.get("default_directory") and not self.get_base_directory():
-                            warnings.append(f"{storage_type} storage has no default_directory configured")
-                            
+                        if (
+                            not config.get("default_directory")
+                            and not self.get_base_directory()
+                        ):
+                            warnings.append(
+                                f"{storage_type} storage has no default_directory configured"
+                            )
+
             # Check if at least one storage type is properly configured
             has_valid_storage = False
             for storage_type in storage_types:
                 if storage_type == "json" or self.is_storage_type_enabled(storage_type):
                     has_valid_storage = True
                     break
-                    
+
             if not has_valid_storage:
                 warnings.append("No storage types appear to be properly configured")
-            
+
         except Exception as e:
             errors.append(f"Error during storage config validation: {e}")
-            
+
         return {"warnings": warnings, "errors": errors}

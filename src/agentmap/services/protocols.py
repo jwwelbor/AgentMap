@@ -5,7 +5,16 @@ Defines the interfaces that agents expect from injected services.
 These protocols enable type-safe dependency injection and clear service contracts.
 """
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol, Set, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    Set,
+    runtime_checkable,
+)
 
 # Declaration system imports
 from agentmap.models.declaration_models import AgentDeclaration, ServiceDeclaration
@@ -178,6 +187,8 @@ class PromptManagerServiceProtocol(Protocol):
             Formatted prompt text
         """
         ...
+
+
 @runtime_checkable
 class GraphBundleServiceProtocol(Protocol):
     """Protocol for graph bundle service interface used by agents."""
@@ -190,20 +201,21 @@ class GraphBundleServiceProtocol(Protocol):
     ) -> Any:  # GraphBundle
         """
         Get existing bundle from cache or create a new one.
-        
+
         This method encapsulates the bundle caching logic, checking for
-        existing bundles using composite keys (csv_hash, graph_name) and 
+        existing bundles using composite keys (csv_hash, graph_name) and
         creating new ones as needed. Bundles are created per-graph, not per-CSV.
-        
+
         Args:
             csv_path: Path to CSV file
             graph_name: Optional graph name (used for composite key lookup)
             config_path: Optional path to configuration file
-            
+
         Returns:
             GraphBundle ready for execution or scaffolding
         """
         ...
+
 
 @runtime_checkable
 class GraphBundleCapableAgent(Protocol):
@@ -214,6 +226,7 @@ class GraphBundleCapableAgent(Protocol):
     ) -> None:
         """Configure graph bundle service for this agent."""
         ...
+
 
 @runtime_checkable
 class GraphCheckpointServiceProtocol(Protocol):

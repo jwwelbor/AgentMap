@@ -7,7 +7,7 @@ and GraphScaffoldService to avoid circular import dependencies.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, List, NamedTuple, Optional
 
 if TYPE_CHECKING:
     from agentmap.models.graph_bundle import GraphBundle

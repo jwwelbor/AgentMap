@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import Any, Callable, Dict, Optional, TypeVar, cast, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple, TypeVar, cast
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.models.storage import DocumentResult
@@ -282,8 +282,7 @@ class BaseStorageAgent(BaseAgent, StorageCapableAgent):
         if not collection:
             raise ValueError("Missing required 'collection' parameter")
 
-
-        # Leave file existence validation to services        
+        # Leave file existence validation to services
 
         # Check if the file exists (for file-based storage)
         # import os
@@ -334,7 +333,7 @@ class BaseStorageAgent(BaseAgent, StorageCapableAgent):
         Returns:
             Tuple of (state, processed_inputs)
         """
-        
+
         return state, inputs
 
     def _handle_operation_error(

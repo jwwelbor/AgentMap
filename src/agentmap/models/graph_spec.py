@@ -34,7 +34,7 @@ class NodeSpec:
 
 
 @dataclass
-class  GraphSpec:
+class GraphSpec:
     """Specification for all graphs parsed from a CSV file."""
 
     graphs: Dict[str, List[NodeSpec]] = field(default_factory=dict)

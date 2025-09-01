@@ -21,10 +21,10 @@ class FeaturesRegistryService:
     """
 
     def __init__(
-        self, 
-        features_registry: FeaturesRegistry, 
+        self,
+        features_registry: FeaturesRegistry,
         logging_service: LoggingService,
-        availability_cache_service: AvailabilityCacheService
+        availability_cache_service: AvailabilityCacheService,
     ):
         """Initialize service with dependency injection."""
         self.features_registry = features_registry
@@ -110,8 +110,12 @@ class FeaturesRegistryService:
         )
 
         # Invalidate cache entries for this provider
-        self.availability_cache_service.invalidate_cache("provider", f"{category}.{provider}")
-        self.availability_cache_service.invalidate_cache("provider", f"{category}.{provider}.validated")
+        self.availability_cache_service.invalidate_cache(
+            "provider", f"{category}.{provider}"
+        )
+        self.availability_cache_service.invalidate_cache(
+            "provider", f"{category}.{provider}.validated"
+        )
 
         self.logger.debug(
             f"[FeaturesRegistryService] Provider '{provider}' in category '{category}' set to: {available}"
@@ -142,8 +146,12 @@ class FeaturesRegistryService:
         )
 
         # Invalidate cache entries for this provider
-        self.availability_cache_service.invalidate_cache("provider", f"{category}.{provider}")
-        self.availability_cache_service.invalidate_cache("provider", f"{category}.{provider}.validated")
+        self.availability_cache_service.invalidate_cache(
+            "provider", f"{category}.{provider}"
+        )
+        self.availability_cache_service.invalidate_cache(
+            "provider", f"{category}.{provider}.validated"
+        )
 
         self.logger.debug(
             f"[FeaturesRegistryService] Provider '{provider}' in category '{category}' validation set to: {validated}"
@@ -164,27 +172,32 @@ class FeaturesRegistryService:
         """
         category = category.lower()
         provider = self._resolve_provider_alias(category, provider)
-        
+
         # Check cache first
         cache_key = f"{category}.{provider}"
         cached = self.availability_cache_service.get_availability("provider", cache_key)
         if cached is not None:
-            self.logger.debug(f"[FeaturesRegistryService] Cache hit for provider.{cache_key}")
+            self.logger.debug(
+                f"[FeaturesRegistryService] Cache hit for provider.{cache_key}"
+            )
             return cached.get("available", False)
-        
+
         # Get from registry
         available, validated = self.features_registry.get_provider_status(
             category, provider
         )
         result = available and validated
-        
+
         # Cache the result
         self.availability_cache_service.set_availability(
-            "provider", cache_key,
-            {"available": result, "category": category, "provider": provider}
+            "provider",
+            cache_key,
+            {"available": result, "category": category, "provider": provider},
         )
-        self.logger.debug(f"[FeaturesRegistryService] Cache miss for provider.{cache_key}, cached result: {result}")
-        
+        self.logger.debug(
+            f"[FeaturesRegistryService] Cache miss for provider.{cache_key}, cached result: {result}"
+        )
+
         return result
 
     def is_provider_registered(self, category: str, provider: str) -> bool:
@@ -217,24 +230,29 @@ class FeaturesRegistryService:
         """
         category = category.lower()
         provider = self._resolve_provider_alias(category, provider)
-        
+
         # Check cache first
         cache_key = f"{category}.{provider}.validated"
         cached = self.availability_cache_service.get_availability("provider", cache_key)
         if cached is not None:
-            self.logger.debug(f"[FeaturesRegistryService] Cache hit for provider.{cache_key}")
+            self.logger.debug(
+                f"[FeaturesRegistryService] Cache hit for provider.{cache_key}"
+            )
             return cached.get("validated", False)
-        
+
         # Get from registry
         _, validated = self.features_registry.get_provider_status(category, provider)
-        
+
         # Cache the result
         self.availability_cache_service.set_availability(
-            "provider", cache_key,
-            {"validated": validated, "category": category, "provider": provider}
+            "provider",
+            cache_key,
+            {"validated": validated, "category": category, "provider": provider},
         )
-        self.logger.debug(f"[FeaturesRegistryService] Cache miss for provider.{cache_key}, cached result: {validated}")
-        
+        self.logger.debug(
+            f"[FeaturesRegistryService] Cache miss for provider.{cache_key}, cached result: {validated}"
+        )
+
         return validated
 
     def get_available_providers(self, category: str) -> List[str]:
@@ -330,11 +348,15 @@ class FeaturesRegistryService:
             True if fuzzywuzzy is available, False otherwise
         """
         # Check cache first
-        cached = self.availability_cache_service.get_availability("capability.nlp", "fuzzywuzzy")
+        cached = self.availability_cache_service.get_availability(
+            "capability.nlp", "fuzzywuzzy"
+        )
         if cached is not None:
-            self.logger.debug("[FeaturesRegistryService] Cache hit for capability.nlp.fuzzywuzzy")
+            self.logger.debug(
+                "[FeaturesRegistryService] Cache hit for capability.nlp.fuzzywuzzy"
+            )
             return cached.get("available", False)
-        
+
         # Perform actual check
         try:
             import fuzzywuzzy
@@ -343,15 +365,18 @@ class FeaturesRegistryService:
             # Test basic functionality
             test_score = fuzz.ratio("test", "test")
             available = test_score == 100
-            
+
             # Cache result
             self.availability_cache_service.set_availability(
-                "capability.nlp", "fuzzywuzzy",
-                {"available": available, "type": "nlp_library"}
+                "capability.nlp",
+                "fuzzywuzzy",
+                {"available": available, "type": "nlp_library"},
             )
-            
+
             if available:
-                self.logger.debug("[FeaturesRegistryService] fuzzywuzzy is available (cached)")
+                self.logger.debug(
+                    "[FeaturesRegistryService] fuzzywuzzy is available (cached)"
+                )
             else:
                 self.logger.debug(
                     "[FeaturesRegistryService] fuzzywuzzy failed basic test (cached)"
@@ -361,18 +386,24 @@ class FeaturesRegistryService:
         except ImportError:
             # Cache negative result
             self.availability_cache_service.set_availability(
-                "capability.nlp", "fuzzywuzzy",
-                {"available": False, "type": "nlp_library", "reason": "ImportError"}
+                "capability.nlp",
+                "fuzzywuzzy",
+                {"available": False, "type": "nlp_library", "reason": "ImportError"},
             )
-            self.logger.debug("[FeaturesRegistryService] fuzzywuzzy not available (cached)")
+            self.logger.debug(
+                "[FeaturesRegistryService] fuzzywuzzy not available (cached)"
+            )
             return False
         except Exception as e:
             # Cache negative result
             self.availability_cache_service.set_availability(
-                "capability.nlp", "fuzzywuzzy",
-                {"available": False, "type": "nlp_library", "reason": str(e)}
+                "capability.nlp",
+                "fuzzywuzzy",
+                {"available": False, "type": "nlp_library", "reason": str(e)},
             )
-            self.logger.debug(f"[FeaturesRegistryService] fuzzywuzzy error: {e} (cached)")
+            self.logger.debug(
+                f"[FeaturesRegistryService] fuzzywuzzy error: {e} (cached)"
+            )
             return False
 
     def has_spacy(self) -> bool:
@@ -383,11 +414,15 @@ class FeaturesRegistryService:
             True if spaCy and en_core_web_sm model are available, False otherwise
         """
         # Check cache first
-        cached = self.availability_cache_service.get_availability("capability.nlp", "spacy")
+        cached = self.availability_cache_service.get_availability(
+            "capability.nlp", "spacy"
+        )
         if cached is not None:
-            self.logger.debug("[FeaturesRegistryService] Cache hit for capability.nlp.spacy")
+            self.logger.debug(
+                "[FeaturesRegistryService] Cache hit for capability.nlp.spacy"
+            )
             return cached.get("available", False)
-        
+
         # Perform actual check
         try:
             import spacy
@@ -398,26 +433,34 @@ class FeaturesRegistryService:
             # Test basic functionality
             doc = nlp("test sentence")
             available = len(doc) > 0
-            
+
             # Cache result
             self.availability_cache_service.set_availability(
-                "capability.nlp", "spacy",
-                {"available": available, "type": "nlp_library", "model": "en_core_web_sm"}
+                "capability.nlp",
+                "spacy",
+                {
+                    "available": available,
+                    "type": "nlp_library",
+                    "model": "en_core_web_sm",
+                },
             )
-            
+
             if available:
                 self.logger.debug(
                     "[FeaturesRegistryService] spaCy with en_core_web_sm is available (cached)"
                 )
             else:
-                self.logger.debug("[FeaturesRegistryService] spaCy failed basic test (cached)")
+                self.logger.debug(
+                    "[FeaturesRegistryService] spaCy failed basic test (cached)"
+                )
             return available
 
         except ImportError:
             # Cache negative result
             self.availability_cache_service.set_availability(
-                "capability.nlp", "spacy",
-                {"available": False, "type": "nlp_library", "reason": "ImportError"}
+                "capability.nlp",
+                "spacy",
+                {"available": False, "type": "nlp_library", "reason": "ImportError"},
             )
             self.logger.debug(
                 "[FeaturesRegistryService] spaCy or en_core_web_sm not available (cached)"
@@ -426,8 +469,13 @@ class FeaturesRegistryService:
         except OSError:
             # Cache negative result
             self.availability_cache_service.set_availability(
-                "capability.nlp", "spacy",
-                {"available": False, "type": "nlp_library", "reason": "OSError - model not installed"}
+                "capability.nlp",
+                "spacy",
+                {
+                    "available": False,
+                    "type": "nlp_library",
+                    "reason": "OSError - model not installed",
+                },
             )
             self.logger.debug(
                 "[FeaturesRegistryService] spaCy en_core_web_sm model not installed (cached)"
@@ -436,8 +484,9 @@ class FeaturesRegistryService:
         except Exception as e:
             # Cache negative result
             self.availability_cache_service.set_availability(
-                "capability.nlp", "spacy",
-                {"available": False, "type": "nlp_library", "reason": str(e)}
+                "capability.nlp",
+                "spacy",
+                {"available": False, "type": "nlp_library", "reason": str(e)},
             )
             self.logger.debug(f"[FeaturesRegistryService] spaCy error: {e} (cached)")
             return False
@@ -497,7 +546,7 @@ class FeaturesRegistryService:
     ) -> None:
         """
         Invalidate cached provider availability data.
-        
+
         Args:
             category: Optional category to invalidate (e.g., 'llm', 'storage')
             provider: Optional specific provider to invalidate
@@ -506,8 +555,12 @@ class FeaturesRegistryService:
         """
         if category and provider:
             # Invalidate specific provider
-            self.availability_cache_service.invalidate_cache("provider", f"{category}.{provider}")
-            self.availability_cache_service.invalidate_cache("provider", f"{category}.{provider}.validated")
+            self.availability_cache_service.invalidate_cache(
+                "provider", f"{category}.{provider}"
+            )
+            self.availability_cache_service.invalidate_cache(
+                "provider", f"{category}.{provider}.validated"
+            )
             self.logger.debug(
                 f"[FeaturesRegistryService] Invalidated cache for provider: {category}.{provider}"
             )
@@ -529,6 +582,4 @@ class FeaturesRegistryService:
         Invalidate all cached capability checks (NLP libraries, etc.).
         """
         self.availability_cache_service.invalidate_cache("capability")
-        self.logger.debug(
-            "[FeaturesRegistryService] Invalidated all capability cache"
-        )
+        self.logger.debug("[FeaturesRegistryService] Invalidated all capability cache")

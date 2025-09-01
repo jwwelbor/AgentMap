@@ -8,17 +8,15 @@ CSVValidationService.
 """
 
 from pathlib import Path
-from typing import Optional
-from typing import List
-from typing import Dict
-
+from typing import Dict, List, Optional
 
 import pandas as pd
 
 from agentmap.models.graph_spec import GraphSpec, NodeSpec
+from agentmap.models.node import Node
 from agentmap.models.validation.validation_models import ValidationResult
 from agentmap.services.logging_service import LoggingService
-from agentmap.models.node import Node
+
 
 class CSVGraphParserService:
     """
@@ -477,34 +475,35 @@ class CSVGraphParserService:
 
         return df
 
-
-    def _convert_node_specs_to_nodes(self, node_specs: List[NodeSpec]) -> Dict[str, Node]:
+    def _convert_node_specs_to_nodes(
+        self, node_specs: List[NodeSpec]
+    ) -> Dict[str, Node]:
         """Convert NodeSpec objects to Node objects.
-        
+
         Based on the pattern from GraphDefinitionService._create_nodes_from_specs
         but simplified for metadata bundle creation.
-        
+
         Args:
             node_specs: List of NodeSpec objects from GraphSpec
-            
+
         Returns:
             Dictionary mapping node names to Node objects
         """
         nodes_dict = {}
-        
+
         for node_spec in node_specs:
             self.logger.debug(f"Converting NodeSpec to Node: {node_spec.name}")
-            
+
             # Only create if not already exists (handle duplicate definitions)
             if node_spec.name not in nodes_dict:
                 # Convert context string to dict if needed
                 context_dict = (
                     {"context": node_spec.context} if node_spec.context else {}
                 )
-                
+
                 # Use default agent type if not specified
                 agent_type = node_spec.agent_type or "Default"
-                
+
                 node = Node(
                     name=node_spec.name,
                     context=context_dict,
@@ -514,7 +513,7 @@ class CSVGraphParserService:
                     prompt=node_spec.prompt,
                     description=node_spec.description,
                 )
-                
+
                 # Add edge information
                 if node_spec.edge:
                     node.add_edge("default", node_spec.edge)
@@ -523,14 +522,14 @@ class CSVGraphParserService:
                         node.add_edge("success", node_spec.success_next)
                     if node_spec.failure_next:
                         node.add_edge("failure", node_spec.failure_next)
-                
+
                 nodes_dict[node_spec.name] = node
-                
+
                 self.logger.debug(
                     f"Created Node: {node_spec.name} with agent_type: {agent_type}, "
                     f"output: {node_spec.output_field}"
                 )
             else:
                 self.logger.debug(f"Node {node_spec.name} already exists, skipping")
-        
+
         return nodes_dict

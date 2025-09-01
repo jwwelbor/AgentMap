@@ -7,7 +7,7 @@ code duplication while maintaining clear error handling and user feedback.
 
 import json
 from pathlib import Path
-from typing import Optional, Tuple, Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 import typer
 
@@ -15,53 +15,52 @@ from agentmap.di import initialize_di
 
 
 def resolve_csv_path(
-    csv_file: Optional[str] = None,
-    csv_option: Optional[str] = None
+    csv_file: Optional[str] = None, csv_option: Optional[str] = None
 ) -> Path:
     """
     Resolve CSV path from either positional argument or option.
-    
+
     Args:
         csv_file: Positional CSV file argument
         csv_option: --csv option value
-        
+
     Returns:
         Path object for the CSV file
-        
+
     Raises:
         typer.Exit: If CSV is not provided or doesn't exist
     """
     # Handle shorthand CSV file argument
     csv = csv_file if csv_file is not None else csv_option
-    
+
     if not csv:
         typer.secho("❌ CSV file required", fg=typer.colors.RED)
         raise typer.Exit(code=1)
-    
+
     csv_path = Path(csv)
     if not csv_path.exists():
         typer.secho(f"❌ CSV file not found: {csv_path}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
-    
+
     return csv_path
 
 
 def parse_json_state(state_str: str) -> Dict[str, Any]:
     """
     Parse JSON state string with error handling.
-    
+
     Args:
         state_str: JSON string to parse
-        
+
     Returns:
         Parsed dictionary
-        
+
     Raises:
         typer.Exit: If JSON is invalid
     """
     if state_str == "{}":
         return {}
-    
+
     try:
         return json.loads(state_str)
     except json.JSONDecodeError as e:
@@ -72,18 +71,19 @@ def parse_json_state(state_str: str) -> Dict[str, Any]:
 def handle_command_error(e: Exception, verbose: bool = False) -> None:
     """
     Standard error handling for CLI commands.
-    
+
     Args:
         e: Exception that occurred
         verbose: Whether to show detailed traceback
     """
     typer.secho(f"❌ Error: {str(e)}", fg=typer.colors.RED)
-    
+
     if verbose:
         import traceback
+
         typer.secho("\nDetailed error trace:", fg=typer.colors.YELLOW)
         typer.echo(traceback.format_exc())
-    
+
     raise typer.Exit(code=1)
 
 

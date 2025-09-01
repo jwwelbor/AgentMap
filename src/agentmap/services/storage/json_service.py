@@ -18,11 +18,12 @@ import os
 from collections.abc import Generator
 from typing import Any, Dict, List, Optional, TextIO
 
+from agentmap.services.config.storage_config_service import StorageConfigService
+from agentmap.services.file_path_service import FilePathService
+from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.types import StorageResult, WriteMode
-from agentmap.services.config.storage_config_service import StorageConfigService
-from agentmap.services.logging_service import LoggingService
-from agentmap.services.file_path_service import FilePathService
+
 
 class JSONStorageService(BaseStorageService):
     """
@@ -57,7 +58,13 @@ class JSONStorageService(BaseStorageService):
             base_directory: Optional base directory for system storage operations
         """
         # Call parent's __init__ with all parameters for injection support
-        super().__init__(provider_name, configuration, logging_service, file_path_service, base_directory)
+        super().__init__(
+            provider_name,
+            configuration,
+            logging_service,
+            file_path_service,
+            base_directory,
+        )
 
     # NOTE: This method is included for backward compatibility
     # The base class uses health_check(), but some code expects is_healthy()
@@ -76,7 +83,7 @@ class JSONStorageService(BaseStorageService):
 
         For JSON operations, we don't need a complex client.
         Just ensure base directory exists and return a simple config.
-        
+
         Handles two storage configurations:
         - System storage (base_directory injection): files go directly in base_directory
         - User storage (StorageConfigService): files go in configured paths
@@ -105,16 +112,20 @@ class JSONStorageService(BaseStorageService):
             if self._base_directory:
                 # System storage: use injected base_directory directly
                 base_dir = self._base_directory
-                self._logger.debug(f"[{self.provider_name}] Using injected base directory: {base_dir}")
+                self._logger.debug(
+                    f"[{self.provider_name}] Using injected base directory: {base_dir}"
+                )
             else:
                 # User storage: use StorageConfigService paths
                 # Additional validation for fail-fast behavior
                 if not self.configuration.is_json_storage_enabled():
                     raise OSError("JSON storage is not enabled in configuration")
-                    
+
                 # Use the path accessor with business logic (already ensures directory exists)
                 base_dir = str(self.configuration.get_json_data_path())
-                self._logger.debug(f"[{self.provider_name}] Using configured base directory: {base_dir}")
+                self._logger.debug(
+                    f"[{self.provider_name}] Using configured base directory: {base_dir}"
+                )
 
         return {
             "base_directory": base_dir,
@@ -173,7 +184,9 @@ class JSONStorageService(BaseStorageService):
             return collection
 
         # Check if this collection has specific configuration (user storage)
-        if not self._base_directory and self.configuration.has_collection("json", collection):
+        if not self._base_directory and self.configuration.has_collection(
+            "json", collection
+        ):
             collection_path = self.configuration.get_json_collection_file_path(
                 collection
             )
@@ -187,7 +200,9 @@ class JSONStorageService(BaseStorageService):
         try:
             return self.get_full_path(collection)
         except ValueError as e:
-            self._logger.error(f"[{self.provider_name}] Invalid collection path '{collection}': {e}")
+            self._logger.error(
+                f"[{self.provider_name}] Invalid collection path '{collection}': {e}"
+            )
             raise
 
     def _ensure_directory_exists(self, file_path: str) -> None:

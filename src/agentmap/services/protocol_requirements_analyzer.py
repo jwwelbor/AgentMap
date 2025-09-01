@@ -9,21 +9,21 @@ implements (LLMCapableAgent, StorageCapableAgent, etc).
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Type
 
-from agentmap.services.csv_graph_parser_service import CSVGraphParserService
 from agentmap.services.agent.agent_factory_service import AgentFactoryService
+from agentmap.services.csv_graph_parser_service import CSVGraphParserService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.protocols import (
-    LLMCapableAgent,
-    StorageCapableAgent,
-    PromptCapableAgent,
-    CSVCapableAgent,
-    JSONCapableAgent,
-    FileCapableAgent,
-    VectorCapableAgent,
-    MemoryCapableAgent,
     BlobStorageCapableAgent,
     CheckpointCapableAgent,
+    CSVCapableAgent,
+    FileCapableAgent,
+    JSONCapableAgent,
+    LLMCapableAgent,
+    MemoryCapableAgent,
     OrchestrationCapableAgent,
+    PromptCapableAgent,
+    StorageCapableAgent,
+    VectorCapableAgent,
 )
 
 
@@ -113,18 +113,20 @@ class ProtocolBasedRequirementsAnalyzer:
             self.logger.debug(
                 f"[ProtocolBasedRequirementsAnalyzer] Node type: {type(node)}"
             )
-            
+
             # Extract agent type from Node object
-            agent_type = getattr(node, 'agent_type', None)
-            
-            node_name = getattr(node, 'name', None) or (node.get('name', 'unknown') if hasattr(node, 'get') else 'unknown')
-            
+            agent_type = getattr(node, "agent_type", None)
+
+            node_name = getattr(node, "name", None) or (
+                node.get("name", "unknown") if hasattr(node, "get") else "unknown"
+            )
+
             # DEBUG: Log extraction results
             self.logger.debug(
                 f"[ProtocolBasedRequirementsAnalyzer] Node '{node_name}': "
                 f"agent_type={agent_type}"
             )
-            
+
             if not agent_type:
                 self.logger.warning(
                     f"[ProtocolBasedRequirementsAnalyzer] Node '{node_name}' "
@@ -157,7 +159,7 @@ class ProtocolBasedRequirementsAnalyzer:
 
         return {
             "required_agents": required_agents,
-            "required_services": required_services
+            "required_services": required_services,
         }
 
     def _analyze_agent_protocols(self, agent_class: Type, node_name: str) -> Set[str]:
@@ -189,7 +191,9 @@ class ProtocolBasedRequirementsAnalyzer:
 
         return required_services
 
-    def _implements_protocol(self, agent_class: Optional[Type], protocol_name: str) -> bool:
+    def _implements_protocol(
+        self, agent_class: Optional[Type], protocol_name: str
+    ) -> bool:
         """
         Check if an agent class implements a specific protocol.
 

@@ -10,10 +10,10 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from agentmap.services.logging_service import LoggingService
-from agentmap.services.prompt_manager_service import PromptManagerService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.llm_service import LLMService
+from agentmap.services.logging_service import LoggingService
+from agentmap.services.prompt_manager_service import PromptManagerService
 from agentmap.services.protocols import (
     LLMServiceProtocol,
 )

@@ -33,7 +33,7 @@ class GraphDefinitionService:
         logging_service: LoggingService,
         app_config_service: AppConfigService,
         csv_parser: CSVGraphParserService,
-        graph_factory: GraphFactoryService, 
+        graph_factory: GraphFactoryService,
     ):
         """Initialize service with dependency injection."""
         self.logger = logging_service.get_class_logger(self)
@@ -165,7 +165,6 @@ class GraphDefinitionService:
             Graph domain model for the specified or first graph found
         """
         return self.build_from_csv(csv_path, graph_name)
-
 
     def validate_csv_before_building(self, csv_path: Path) -> List[str]:
         """

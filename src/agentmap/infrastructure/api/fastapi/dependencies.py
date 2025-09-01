@@ -186,8 +186,6 @@ class FastAPIDependencyAdapter:
 
         return Depends(_get_graph_runner_service)
 
-
-
     def get_graph_scaffold_service(self) -> Callable:
         """
         Get a FastAPI dependency function for GraphScaffoldService.
@@ -290,9 +288,6 @@ def get_graph_runner_service(container: ApplicationContainer = Depends(get_conta
     return container.graph_runner_service()
 
 
-
-
-
 def get_graph_scaffold_service(
     container: ApplicationContainer = Depends(get_container),
 ):
@@ -320,7 +315,6 @@ __all__ = [
     "get_validation_cache_service",
     "get_graph_definition_service",
     "get_graph_runner_service",
-
     "get_graph_scaffold_service",
     "get_logging_service",
 ]

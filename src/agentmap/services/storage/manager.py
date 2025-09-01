@@ -186,16 +186,16 @@ class StorageServiceManager:
         """
         try:
             service_class = self._service_classes[provider_name]
-            
+
             # Get base directory from storage configuration (reads from storage.yaml)
             base_directory = self.configuration.get_base_directory()
-            
+
             service = service_class(
-                provider_name, 
-                self.configuration, 
+                provider_name,
+                self.configuration,
                 self.logging_service,
                 base_directory=base_directory,
-                file_path_service=self.file_path_service
+                file_path_service=self.file_path_service,
             )
 
             # Cache the service

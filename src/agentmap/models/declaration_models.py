@@ -27,36 +27,36 @@ class ServiceRequirement:
     version: Optional[str] = None
 
     @classmethod
-    def from_string(cls, requirement_string: str) -> 'ServiceRequirement':
+    def from_string(cls, requirement_string: str) -> "ServiceRequirement":
         """Create ServiceRequirement from string format.
-        
+
         Args:
             requirement_string: String representation of service requirement
-            
+
         Returns:
             ServiceRequirement instance
         """
         # Parse basic format like "service_name" or "service_name:version"
-        parts = requirement_string.strip().split(':')
+        parts = requirement_string.strip().split(":")
         name = parts[0]
         version = parts[1] if len(parts) > 1 else None
         return cls(name=name, version=version)
 
     @classmethod
-    def from_dict(cls, requirement_dict: Dict[str, Any]) -> 'ServiceRequirement':
+    def from_dict(cls, requirement_dict: Dict[str, Any]) -> "ServiceRequirement":
         """Create ServiceRequirement from dictionary format.
-        
+
         Args:
             requirement_dict: Dictionary containing service requirement data
-            
+
         Returns:
             ServiceRequirement instance
         """
         return cls(
-            name=requirement_dict['name'],
-            optional=requirement_dict.get('optional', False),
-            fallback=requirement_dict.get('fallback'),
-            version=requirement_dict.get('version')
+            name=requirement_dict["name"],
+            optional=requirement_dict.get("optional", False),
+            fallback=requirement_dict.get("fallback"),
+            version=requirement_dict.get("version"),
         )
 
 
@@ -77,36 +77,36 @@ class ProtocolRequirement:
     requires: bool = False
 
     @classmethod
-    def from_string(cls, requirement_string: str) -> 'ProtocolRequirement':
+    def from_string(cls, requirement_string: str) -> "ProtocolRequirement":
         """Create ProtocolRequirement from string format.
-        
+
         Args:
             requirement_string: String representation of protocol requirement
-            
+
         Returns:
             ProtocolRequirement instance
         """
         # Parse basic format like "protocol_name" or "protocol_name:version"
-        parts = requirement_string.strip().split(':')
+        parts = requirement_string.strip().split(":")
         name = parts[0]
         version = parts[1] if len(parts) > 1 else None
         return cls(name=name, version=version)
 
     @classmethod
-    def from_dict(cls, requirement_dict: Dict[str, Any]) -> 'ProtocolRequirement':
+    def from_dict(cls, requirement_dict: Dict[str, Any]) -> "ProtocolRequirement":
         """Create ProtocolRequirement from dictionary format.
-        
+
         Args:
             requirement_dict: Dictionary containing protocol requirement data
-            
+
         Returns:
             ProtocolRequirement instance
         """
         return cls(
-            name=requirement_dict['name'],
-            version=requirement_dict.get('version'),
-            implements=requirement_dict.get('implements', False),
-            requires=requirement_dict.get('requires', False)
+            name=requirement_dict["name"],
+            version=requirement_dict.get("version"),
+            implements=requirement_dict.get("implements", False),
+            requires=requirement_dict.get("requires", False),
         )
 
 
@@ -138,7 +138,7 @@ class AgentDeclaration:
 
     def get_required_services(self) -> List[str]:
         """Get list of required service names.
-        
+
         Returns:
             List of service names that are not optional
         """
@@ -146,7 +146,7 @@ class AgentDeclaration:
 
     def get_all_services(self) -> List[str]:
         """Get list of all service names.
-        
+
         Returns:
             List of all service names (required and optional)
         """
@@ -154,7 +154,7 @@ class AgentDeclaration:
 
     def get_required_protocols(self) -> List[str]:
         """Get list of required protocol names.
-        
+
         Returns:
             List of protocol names that are required
         """

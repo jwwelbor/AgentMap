@@ -2,7 +2,7 @@
 GraphAgentInstantiationService for AgentMap.
 
 Service responsible for creating and configuring agent instances from a GraphBundle.
-Bridges the gap between agent class registration (GraphBootstrapService) and 
+Bridges the gap between agent class registration (GraphBootstrapService) and
 graph assembly (GraphAssemblyService) by creating actual agent instances with
 injected services.
 """
@@ -11,25 +11,27 @@ from typing import Any, Dict, Optional
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.agent.agent_factory_service import AgentFactoryService
-from agentmap.services.agent.agent_service_injection_service import AgentServiceInjectionService
+from agentmap.services.agent.agent_service_injection_service import (
+    AgentServiceInjectionService,
+)
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
+from agentmap.services.graph.graph_bundle_service import GraphBundleService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.prompt_manager_service import PromptManagerService
-from agentmap.services.state_adapter_service import StateAdapterService
-from agentmap.services.graph.graph_bundle_service import GraphBundleService
 from agentmap.services.protocols import GraphBundleCapableAgent
+from agentmap.services.state_adapter_service import StateAdapterService
 
 
 class GraphAgentInstantiationService:
     """
     Service for creating and configuring agent instances from graph metadata.
-    
+
     This service takes a GraphBundle with registered agent classes and creates
     actual agent instances with all required services injected. It stores the
     instances in the bundle's node_registry field, keeping metadata and runtime
     instances cleanly separated.
     """
-    
+
     def __init__(
         self,
         agent_factory_service: AgentFactoryService,
@@ -42,7 +44,7 @@ class GraphAgentInstantiationService:
     ):
         """
         Initialize with required services for agent instantiation.
-        
+
         Args:
             agent_factory_service: Service for creating agent instances
             agent_service_injection_service: Service for injecting dependencies
@@ -59,30 +61,28 @@ class GraphAgentInstantiationService:
         self.prompt_manager = prompt_manager_service
         self.graph_bundle_service = graph_bundle_service
         self.logger = logging_service.get_class_logger(self)
-        
+
         self.logger.info("[GraphAgentInstantiationService] Initialized")
-    
+
     def instantiate_agents(
-        self, 
-        bundle: GraphBundle,
-        execution_tracker: Optional[Any] = None
+        self, bundle: GraphBundle, execution_tracker: Optional[Any] = None
     ) -> GraphBundle:
         """
         Create and configure agent instances for all nodes in the bundle.
-        
+
         This method:
         1. Creates agent instances using AgentFactoryService
         2. Injects required services using AgentServiceInjectionService
         3. Stores instances in bundle.node_registry as Dict[node_name, agent_instance]
         4. Returns the updated bundle ready for graph assembly
-        
+
         Args:
             bundle: GraphBundle with nodes requiring agent instances
             execution_tracker: Optional execution tracker for agents
-            
+
         Returns:
             Updated GraphBundle with agent instances in node_registry
-            
+
         Raises:
             RuntimeError: If agent instantiation fails for any node
         """
@@ -90,17 +90,17 @@ class GraphAgentInstantiationService:
         self.logger.info(
             f"[GraphAgentInstantiationService] Starting agent instantiation for graph: {graph_name}"
         )
-        
+
         if not bundle.nodes:
             self.logger.warning(
                 f"[GraphAgentInstantiationService] No nodes to instantiate for graph: {graph_name}"
             )
             return bundle
-        
+
         # Extract the information we need from the bundle
         agent_mappings = bundle.agent_mappings or {}
         custom_agents = bundle.custom_agents or set()
-        
+
         # Check if bundle has no agent mappings at all
         if bundle.required_agents and not agent_mappings:
             error_msg = (
@@ -112,14 +112,14 @@ class GraphAgentInstantiationService:
                 f"ℹ️  Modern AgentMap scaffolding automatically updates bundles with mappings"
             )
             raise RuntimeError(error_msg)
-        
+
         # Validate we have mappings for all required agents
         if bundle.required_agents:
             missing_mappings = bundle.required_agents - set(agent_mappings.keys())
             if missing_mappings:
                 missing_list = sorted(list(missing_mappings))
                 available_list = sorted(list(agent_mappings.keys()))
-                
+
                 error_msg = (
                     f"❌ Missing agent mappings for: {missing_list}\n"
                     f"   Available mappings: {available_list}\n\n"
@@ -130,24 +130,24 @@ class GraphAgentInstantiationService:
                     f"ℹ️  Note: Scaffolding operations automatically update bundles with agent mappings"
                 )
                 raise RuntimeError(error_msg)
-        
+
         # Initialize node_registry if not present
         if bundle.node_instances is None:
             bundle.node_instances = {}
-        
+
         # Create node registry for orchestrator agents (contains node definitions)
         node_definitions_registry = self._create_node_definitions_registry(bundle)
-        
+
         instantiated_count = 0
         failed_nodes = []
-        
+
         # Process each node
         for node_name, node in bundle.nodes.items():
             try:
                 self.logger.debug(
                     f"[GraphAgentInstantiationService] Instantiating agent for node: {node_name}"
                 )
-                
+
                 # Step 1: Create agent instance using factory
                 agent_instance = self.agent_factory.create_agent_instance(
                     node=node,
@@ -157,42 +157,48 @@ class GraphAgentInstantiationService:
                     execution_tracking_service=self.execution_tracking,
                     state_adapter_service=self.state_adapter,
                     prompt_manager_service=self.prompt_manager,
-                    node_registry=node_definitions_registry
+                    node_registry=node_definitions_registry,
                 )
-                
+
                 # Step 2: Inject services using injection service
                 injection_summary = self.agent_injection.configure_all_services(
-                    agent=agent_instance,
-                    tracker=execution_tracker
+                    agent=agent_instance, tracker=execution_tracker
                 )
-                
-                total_configured = injection_summary['total_services_configured']
+
+                total_configured = injection_summary["total_services_configured"]
                 self.logger.debug(
                     f"[GraphAgentInstantiationService] Configured {total_configured} services "
                     f"for agent: {node_name}"
                 )
-                
+
                 # Step 2a: Inject GraphBundleService if agent supports it
                 if isinstance(agent_instance, GraphBundleCapableAgent):
-                    agent_instance.configure_graph_bundle_service(self.graph_bundle_service)
-                    self.logger.debug(f"[GraphAgentInstantiationService] Injected GraphBundleService into {node_name}")
-                
+                    agent_instance.configure_graph_bundle_service(
+                        self.graph_bundle_service
+                    )
+                    self.logger.debug(
+                        f"[GraphAgentInstantiationService] Injected GraphBundleService into {node_name}"
+                    )
+
                 # Step 3: Store instance in node_registry
                 bundle.node_instances[node_name] = agent_instance
-                
+
                 instantiated_count += 1
                 self.logger.debug(
                     f"[GraphAgentInstantiationService] ✅ Successfully instantiated: {node_name}"
                 )
-                
+
             except Exception as e:
                 error_details = str(e)
                 self.logger.error(
                     f"[GraphAgentInstantiationService] ❌ Failed to instantiate node {node_name}: {error_details}"
                 )
-                
+
                 # Add helpful hints for common agent instantiation failures
-                if "class_path" in error_details.lower() or "import" in error_details.lower():
+                if (
+                    "class_path" in error_details.lower()
+                    or "import" in error_details.lower()
+                ):
                     enhanced_error = (
                         f"{error_details}\n\n"
                         f"💡 If this is a class path issue, try:\n"
@@ -202,7 +208,7 @@ class GraphAgentInstantiationService:
                     failed_nodes.append((node_name, enhanced_error))
                 else:
                     failed_nodes.append((node_name, error_details))
-        
+
         # Report results
         if failed_nodes:
             error_msg = (
@@ -211,38 +217,38 @@ class GraphAgentInstantiationService:
             )
             self.logger.error(f"[GraphAgentInstantiationService] {error_msg}")
             raise RuntimeError(error_msg)
-        
+
         self.logger.info(
             f"[GraphAgentInstantiationService] ✅ Successfully instantiated {instantiated_count} agents "
             f"for graph: {graph_name}"
         )
-        
+
         return bundle
-    
+
     def _create_node_definitions_registry(self, bundle: GraphBundle) -> Dict[str, Any]:
         """
         Create node definitions registry for orchestrator agents.
-        
+
         This transforms Node objects into the metadata format expected by OrchestratorService
         for node selection and routing decisions.
-        
+
         Args:
             bundle: GraphBundle with nodes
-            
+
         Returns:
             Dictionary mapping node names to metadata dicts with:
             - description: Node description for keyword matching
-            - prompt: Node prompt for additional context  
+            - prompt: Node prompt for additional context
             - type: Agent type for filtering
             - context: Optional context dict for keyword extraction
         """
         self.logger.debug(
             "[GraphAgentInstantiationService] Creating node definitions registry for orchestrators"
         )
-        
+
         if not bundle.nodes:
             return {}
-        
+
         # Transform Node objects to metadata format expected by orchestrators
         registry = {}
         for node_name, node in bundle.nodes.items():
@@ -252,22 +258,22 @@ class GraphAgentInstantiationService:
                 "prompt": node.prompt or "",
                 "type": node.agent_type or "",
                 # Include context if it's a dict (for keyword parsing)
-                "context": node.context if isinstance(node.context, dict) else {}
+                "context": node.context if isinstance(node.context, dict) else {},
             }
-        
+
         self.logger.debug(
             f"[GraphAgentInstantiationService] Created definitions registry with {len(registry)} nodes"
         )
-        
+
         return registry
-    
+
     def validate_instantiation(self, bundle: GraphBundle) -> Dict[str, Any]:
         """
         Validate that all nodes have properly instantiated agents in node_registry.
-        
+
         Args:
             bundle: GraphBundle to validate
-            
+
         Returns:
             Validation summary with status and any issues found
         """
@@ -276,14 +282,14 @@ class GraphAgentInstantiationService:
             "total_nodes": len(bundle.nodes) if bundle.nodes else 0,
             "instantiated_nodes": 0,
             "missing_instances": [],
-            "invalid_instances": []
+            "invalid_instances": [],
         }
-        
+
         if not bundle.nodes:
             validation_results["valid"] = False
             validation_results["error"] = "No nodes in bundle"
             return validation_results
-        
+
         if not bundle.node_instances:
             validation_results["valid"] = False
             validation_results["error"] = (
@@ -291,16 +297,16 @@ class GraphAgentInstantiationService:
                 "💡 Try running 'agentmap update-bundle' to ensure bundle has proper agent mappings."
             )
             return validation_results
-        
+
         for node_name, node in bundle.nodes.items():
             # Check if instance exists in node_registry
             if node_name not in bundle.node_instances:
                 validation_results["missing_instances"].append(node_name)
                 validation_results["valid"] = False
                 continue
-            
+
             agent_instance = bundle.node_instances[node_name]
-            
+
             # Validate instance has required methods
             if not hasattr(agent_instance, "run"):
                 validation_results["invalid_instances"].append(
@@ -308,16 +314,16 @@ class GraphAgentInstantiationService:
                 )
                 validation_results["valid"] = False
                 continue
-            
+
             if not hasattr(agent_instance, "name"):
                 validation_results["invalid_instances"].append(
                     (node_name, "Missing 'name' attribute")
                 )
                 validation_results["valid"] = False
                 continue
-            
+
             validation_results["instantiated_nodes"] += 1
-        
+
         # Log validation results
         if validation_results["valid"]:
             self.logger.debug(
@@ -330,16 +336,16 @@ class GraphAgentInstantiationService:
                 f"Missing instances: {validation_results['missing_instances']}, "
                 f"Invalid instances: {validation_results['invalid_instances']}"
             )
-        
+
         return validation_results
-    
+
     def get_instantiation_summary(self, bundle: GraphBundle) -> Dict[str, Any]:
         """
         Get a summary of agent instantiation status for the bundle.
-        
+
         Args:
             bundle: GraphBundle to analyze
-            
+
         Returns:
             Summary dictionary with instantiation statistics
         """
@@ -349,33 +355,33 @@ class GraphAgentInstantiationService:
             "instantiated": 0,
             "missing": 0,
             "agent_types": {},
-            "service_injection_stats": {}
+            "service_injection_stats": {},
         }
-        
+
         if not bundle.nodes:
             return summary
-        
+
         node_registry = bundle.node_instances or {}
-        
+
         for node_name, node in bundle.nodes.items():
-            agent_type = getattr(node, 'agent_type', 'unknown')
-            
+            agent_type = getattr(node, "agent_type", "unknown")
+
             # Track agent type counts
             if agent_type not in summary["agent_types"]:
                 summary["agent_types"][agent_type] = {
                     "count": 0,
                     "instantiated": 0,
-                    "nodes": []
+                    "nodes": [],
                 }
-            
+
             summary["agent_types"][agent_type]["count"] += 1
             summary["agent_types"][agent_type]["nodes"].append(node_name)
-            
+
             # Check instantiation status in node_registry
             if node_name in node_registry:
                 summary["instantiated"] += 1
                 summary["agent_types"][agent_type]["instantiated"] += 1
-                
+
                 # Get service injection status if available
                 agent_instance = node_registry[node_name]
                 injection_status = self.agent_injection.get_service_injection_status(
@@ -387,9 +393,9 @@ class GraphAgentInstantiationService:
                     ),
                     "services_ready": injection_status.get("summary", {}).get(
                         "injection_ready_count", 0
-                    )
+                    ),
                 }
             else:
                 summary["missing"] += 1
-        
+
         return summary

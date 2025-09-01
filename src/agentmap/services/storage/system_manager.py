@@ -60,7 +60,7 @@ class SystemStorageManager:
         # Treat empty string like None
         if not namespace:
             namespace = None
-            
+
         cache_key = f"json_{namespace}" if namespace else "json"
 
         if cache_key not in self._services:
@@ -78,9 +78,9 @@ class SystemStorageManager:
             }
 
             self._services[cache_key] = JSONStorageService(
-                provider_name=f"system_json_{namespace}"
-                if namespace
-                else "system_json",
+                provider_name=(
+                    f"system_json_{namespace}" if namespace else "system_json"
+                ),
                 configuration=config,
                 logging_service=self.logging_service,
                 base_directory=base_dir,
@@ -102,7 +102,7 @@ class SystemStorageManager:
         # Treat empty string like None
         if not namespace:
             namespace = None
-            
+
         cache_key = f"file_{namespace}" if namespace else "file"
 
         if cache_key not in self._services:
@@ -118,9 +118,9 @@ class SystemStorageManager:
             }
 
             self._services[cache_key] = FileStorageService(
-                provider_name=f"system_file_{namespace}"
-                if namespace
-                else "system_file",
+                provider_name=(
+                    f"system_file_{namespace}" if namespace else "system_file"
+                ),
                 configuration=config,
                 logging_service=self.logging_service,
                 base_directory=base_dir,

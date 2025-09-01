@@ -8,5 +8,6 @@ class GraphBuildingError(AgentMapException):
 class InvalidEdgeDefinitionError(GraphBuildingError):
     """Raised when a graph edge is defined incorrectly in the CSV."""
 
+
 class BundleLoadError(AgentMapException):
     """Raised when a bundle fails to load."""

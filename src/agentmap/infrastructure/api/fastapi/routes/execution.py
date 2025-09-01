@@ -29,6 +29,7 @@ from agentmap.infrastructure.interaction.cli_handler import CLIInteractionHandle
 class StateExecutionRequest(ValidatedStateExecutionRequest):
     """Request model for path-based execution with just state."""
 
+
 #     class Config:
 #         schema_extra = {
 #             "example": {

@@ -253,7 +253,7 @@ class AvailabilityCacheService:
 
         Returns:
             Cached availability data or None if not found/invalid
-            
+
         Raises:
             CacheNotFoundError: If cache file doesn't exist
         """
@@ -263,12 +263,15 @@ class AvailabilityCacheService:
             with self._cache_lock:
                 # Check if cache file exists first
                 if not self._cache_file_path.exists():
-                    from agentmap.exceptions.service_exceptions import CacheNotFoundError
+                    from agentmap.exceptions.service_exceptions import (
+                        CacheNotFoundError,
+                    )
+
                     raise CacheNotFoundError(
                         f"Availability cache not found at {self._cache_file_path}. "
                         "Please run 'agentmap refresh' to initialize the provider cache."
                     )
-                
+
                 # # Check for automatic invalidation triggers
                 # if self._should_auto_invalidate():
                 #     self._perform_auto_invalidation()

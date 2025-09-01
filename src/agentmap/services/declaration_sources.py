@@ -62,11 +62,11 @@ class PythonDeclarationSource(DeclarationSource):
             agent_type: {
                 "class_path": agent_data["class_path"],
                 "requires": agent_data.get("requires", []),
-                "protocols_implemented": agent_data.get("protocols_implemented", [])
+                "protocols_implemented": agent_data.get("protocols_implemented", []),
             }
             for agent_type, agent_data in BuiltinDefinitionConstants.AGENTS.items()
         }
-    
+
     @property
     def BUILTIN_SERVICES(self):
         """Get service definitions from centralized constants."""
@@ -77,17 +77,20 @@ class PythonDeclarationSource(DeclarationSource):
                 "required_services": service_data.get("required_services", []),
                 "optional": service_data.get("optional", []),
                 "singleton": service_data.get("singleton", True),
-                "implements": service_data.get("implements", [])
+                "implements": service_data.get("implements", []),
             }
             for service_name, service_data in BuiltinDefinitionConstants.SERVICES.items()
         }
-    
+
     @property
     def CORE_SERVICES(self):
         """Get core service definitions for backward compatibility."""
         core_service_names = [
-            "logging_service", "config_service", "app_config_service",
-            "storage_config_service", "execution_tracking_service"
+            "logging_service",
+            "config_service",
+            "app_config_service",
+            "storage_config_service",
+            "execution_tracking_service",
         ]
         return {
             name: self.BUILTIN_SERVICES[name]
@@ -99,7 +102,9 @@ class PythonDeclarationSource(DeclarationSource):
         """Initialize with dependency injection."""
         self.parser = parser
         self.logger = logging_service.get_class_logger(self)
-        self.logger.debug("[PythonDeclarationSource] Initialized with built-in declarations")
+        self.logger.debug(
+            "[PythonDeclarationSource] Initialized with built-in declarations"
+        )
 
     def load_agents(self) -> Dict[str, AgentDeclaration]:
         """
@@ -135,11 +140,15 @@ class PythonDeclarationSource(DeclarationSource):
 
         for service_name, service_data in self.BUILTIN_SERVICES.items():
             try:
-                declaration = self.parser.parse_service(service_name, service_data, "builtin")
+                declaration = self.parser.parse_service(
+                    service_name, service_data, "builtin"
+                )
                 services[service_name] = declaration
                 self.logger.debug(f"Loaded built-in service: {service_name}")
             except Exception as e:
-                self.logger.error(f"Failed to load built-in service '{service_name}': {e}")
+                self.logger.error(
+                    f"Failed to load built-in service '{service_name}': {e}"
+                )
                 continue
 
         self.logger.debug(f"Loaded {len(services)} built-in service declarations")
@@ -184,7 +193,7 @@ class YAMLDeclarationSource(DeclarationSource):
             Dictionary mapping agent types to AgentDeclaration models
         """
         self.logger.debug(f"Loading agent declarations from YAML: {self.path}")
-        
+
         yaml_data = self._load_yaml_file()
         if not yaml_data or "agents" not in yaml_data:
             self.logger.debug("No agents section found in YAML file")
@@ -196,8 +205,10 @@ class YAMLDeclarationSource(DeclarationSource):
         for agent_type, agent_data in agents_data.items():
             try:
                 # Apply namespace prefix if provided
-                full_agent_type = f"{self.namespace}.{agent_type}" if self.namespace else agent_type
-                
+                full_agent_type = (
+                    f"{self.namespace}.{agent_type}" if self.namespace else agent_type
+                )
+
                 declaration = self.parser.parse_agent(
                     full_agent_type, agent_data, f"yaml:{self.path}"
                 )
@@ -218,7 +229,7 @@ class YAMLDeclarationSource(DeclarationSource):
             Dictionary mapping service names to ServiceDeclaration models
         """
         self.logger.debug(f"Loading service declarations from YAML: {self.path}")
-        
+
         yaml_data = self._load_yaml_file()
         if not yaml_data or "services" not in yaml_data:
             self.logger.debug("No services section found in YAML file")
@@ -230,8 +241,12 @@ class YAMLDeclarationSource(DeclarationSource):
         for service_name, service_data in services_data.items():
             try:
                 # Apply namespace prefix if provided
-                full_service_name = f"{self.namespace}.{service_name}" if self.namespace else service_name
-                
+                full_service_name = (
+                    f"{self.namespace}.{service_name}"
+                    if self.namespace
+                    else service_name
+                )
+
                 declaration = self.parser.parse_service(
                     full_service_name, service_data, f"yaml:{self.path}"
                 )
@@ -261,19 +276,23 @@ class YAMLDeclarationSource(DeclarationSource):
 
         try:
             import yaml
-            
-            with open(self.path, 'r', encoding='utf-8') as file:
+
+            with open(self.path, "r", encoding="utf-8") as file:
                 data = yaml.safe_load(file)
-                
+
             if not isinstance(data, dict):
-                self.logger.warning(f"YAML file does not contain valid dictionary: {self.path}")
+                self.logger.warning(
+                    f"YAML file does not contain valid dictionary: {self.path}"
+                )
                 return {}
-                
+
             self.logger.debug(f"Successfully loaded YAML file: {self.path}")
             return data
-            
+
         except ImportError:
-            self.logger.error("PyYAML not available - cannot load YAML declaration files")
+            self.logger.error(
+                "PyYAML not available - cannot load YAML declaration files"
+            )
             return {}
         except yaml.YAMLError as e:
             self.logger.error(f"Failed to parse YAML file '{self.path}': {e}")
@@ -286,7 +305,7 @@ class YAMLDeclarationSource(DeclarationSource):
 class CustomAgentYAMLSource(DeclarationSource):
     """
     Declaration source for custom_agents.yaml file.
-    
+
     Loads agent declarations from custom_agents.yaml file and converts them to
     AgentDeclaration models for use by DeclarationRegistryService. Integrates with
     the scaffolding system to enable proper agent registration and service injection.
@@ -300,7 +319,7 @@ class CustomAgentYAMLSource(DeclarationSource):
     ):
         """
         Initialize CustomAgentYAMLSource with dependency injection.
-        
+
         Args:
             app_config_service: Application configuration service for file paths
             parser: Declaration parser for normalizing agent data
@@ -314,15 +333,15 @@ class CustomAgentYAMLSource(DeclarationSource):
     def load_agents(self) -> Dict[str, AgentDeclaration]:
         """
         Load agent declarations from custom_agents.yaml file.
-        
+
         Returns:
             Dictionary mapping agent types to AgentDeclaration models
         """
         self.logger.debug("Loading custom agent declarations from YAML")
-        
+
         # Get custom_agents.yaml path from configuration
         file_path = self._get_custom_agents_path()
-        
+
         # Load YAML data
         yaml_data = self._load_yaml_file(file_path)
         if not yaml_data or "agents" not in yaml_data:
@@ -336,7 +355,7 @@ class CustomAgentYAMLSource(DeclarationSource):
             try:
                 # Convert custom_agents.yaml format to parser-expected format
                 normalized_data = self._normalize_agent_data(agent_data)
-                
+
                 declaration = self.parser.parse_agent(
                     agent_type, normalized_data, f"yaml:{file_path}"
                 )
@@ -352,37 +371,39 @@ class CustomAgentYAMLSource(DeclarationSource):
     def load_services(self) -> Dict[str, ServiceDeclaration]:
         """
         Load service declarations from custom_agents.yaml file.
-        
+
         Returns:
             Empty dictionary since custom_agents.yaml only contains agent declarations
         """
-        self.logger.debug("No custom services - custom_agents.yaml only contains agents")
+        self.logger.debug(
+            "No custom services - custom_agents.yaml only contains agents"
+        )
         return {}
 
     def _get_custom_agents_path(self) -> Path:
         """
         Get the path to the custom_agents.yaml file from configuration.
-        
+
         Places the YAML file in the same directory as the Python agent files
         for easier management and co-location of related files.
-        
+
         Returns:
             Path object pointing to custom_agents.yaml file
         """
         # Use the same directory as the Python agent files
         # This ensures the YAML declarations are co-located with the code
         custom_agents_dir = self.config.get_custom_agents_path()
-        
+
         # Place custom_agents.yaml in the same directory as the Python files
         return custom_agents_dir / "custom_agents.yaml"
 
     def _load_yaml_file(self, file_path: Path) -> Dict[str, Any]:
         """
         Load and parse YAML file with graceful error handling.
-        
+
         Args:
             file_path: Path to YAML file to load
-            
+
         Returns:
             Parsed YAML data as dictionary, or empty dict if file missing/invalid
         """
@@ -396,49 +417,57 @@ class CustomAgentYAMLSource(DeclarationSource):
 
         try:
             import yaml
-            
-            with open(file_path, 'r', encoding='utf-8') as file:
+
+            with open(file_path, "r", encoding="utf-8") as file:
                 data = yaml.safe_load(file)
-                
+
             if not isinstance(data, dict):
-                self.logger.warning(f"Custom agents YAML file does not contain valid dictionary: {file_path}")
+                self.logger.warning(
+                    f"Custom agents YAML file does not contain valid dictionary: {file_path}"
+                )
                 return {}
-                
-            self.logger.debug(f"Successfully loaded custom agents YAML file: {file_path}")
+
+            self.logger.debug(
+                f"Successfully loaded custom agents YAML file: {file_path}"
+            )
             return data
-            
+
         except ImportError:
-            self.logger.error("PyYAML not available - cannot load custom agents YAML file")
+            self.logger.error(
+                "PyYAML not available - cannot load custom agents YAML file"
+            )
             return {}
         except Exception as e:
-            self.logger.error(f"Failed to load custom agents YAML file '{file_path}': {e}")
+            self.logger.error(
+                f"Failed to load custom agents YAML file '{file_path}': {e}"
+            )
             return {}
 
     def _normalize_agent_data(self, agent_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Normalize custom_agents.yaml format to parser-expected format.
-        
+
         Args:
             agent_data: Raw agent data from custom_agents.yaml
-            
+
         Returns:
             Normalized data for DeclarationParser
         """
         normalized = {
             "class_path": agent_data.get("class") or agent_data.get("class_path")
         }
-        
+
         # Handle requires section
         requires = agent_data.get("requires", {})
         if isinstance(requires, dict):
             # Extract services and protocols from requires section
             services = requires.get("services", [])
             protocols = requires.get("protocols", [])
-            
+
             # Convert to expected format for parser
             if services:
                 normalized["services"] = services
             if protocols:
                 normalized["protocols_implemented"] = protocols
-        
+
         return normalized

@@ -14,28 +14,30 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from .containers import ApplicationContainer, create_optional_service, safe_get_service
 from agentmap.models.graph_bundle import GraphBundle
+
+from .containers import ApplicationContainer, create_optional_service, safe_get_service
+
 
 def create_container(config_path: Optional[str] = None) -> ApplicationContainer:
     """
     Create a DI container with optional config path - simple factory method.
-    
+
     This is a simplified factory that directly creates the container with the
     config path set. Use this when you want direct, explicit container creation
     without auto-discovery logic.
-    
+
     Args:
         config_path: Optional path to config file (None for defaults)
-        
+
     Returns:
         ApplicationContainer: Configured DI container
-        
+
     Example:
         # Simple direct usage
         container = create_container("/path/to/config.yaml")
         service = container.app_config_service()
-        
+
         # Use defaults
         container = create_container()
     """

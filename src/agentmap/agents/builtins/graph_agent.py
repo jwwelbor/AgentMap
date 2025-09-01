@@ -1,18 +1,18 @@
 # agentmap/agents/builtins/graph_agent.py
 import logging
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from agentmap.agents.base_agent import BaseAgent
+from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.function_resolution_service import FunctionResolutionService
 from agentmap.services.graph.graph_runner_service import GraphRunnerService
-from agentmap.services.state_adapter_service import StateAdapterService
 from agentmap.services.protocols import (
-    GraphBundleServiceProtocol, 
-    GraphBundleCapableAgent
+    GraphBundleCapableAgent,
+    GraphBundleServiceProtocol,
 )
-from agentmap.models.graph_bundle import GraphBundle
-from pathlib import Path
+from agentmap.services.state_adapter_service import StateAdapterService
 
 # from agentmap.utils.function_utils import import_function
 
@@ -92,7 +92,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
         """Configure graph bundle service for this agent (protocol-based)."""
         self._graph_bundle_service = graph_bundle_service
         self.log_debug("Graph bundle service configured")
-    
+
     def configure_graph_runner_service(
         self, graph_runner_service: GraphRunnerService
     ) -> None:
@@ -115,7 +115,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
                 f"Graph bundle service not configured for agent '{self.name}'"
             )
         return self._graph_bundle_service
-    
+
     @property
     def graph_runner_service(self) -> GraphRunnerService:
         """Get graph runner service, raising clear error if not configured."""
@@ -156,27 +156,27 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
         try:
             # Get or create the bundle for the subgraph
             bundle = self._get_subgraph_bundle()
-            
+
             if not bundle:
                 raise RuntimeError(
                     f"Failed to get or create bundle for subgraph '{self.subgraph_name}'"
                 )
-            
+
             self.log_debug(
                 f"[GraphAgent] Got bundle for subgraph '{self.subgraph_name}' "
                 f"with {len(bundle.nodes) if bundle.nodes else 0} nodes"
             )
-            
+
             # Get parent tracker if available for nested tracking
-            parent_tracker = getattr(self, 'current_execution_tracker', None)
-            
+            parent_tracker = getattr(self, "current_execution_tracker", None)
+
             # Execute the subgraph using the bundle (not run_graph)
             result = graph_runner.run(
                 bundle=bundle,
                 initial_state=subgraph_state,
                 is_subgraph=True,
                 parent_tracker=parent_tracker,
-                parent_graph_name=getattr(self, 'parent_graph_name', None)
+                parent_graph_name=getattr(self, "parent_graph_name", None),
             )
 
             self.log_info(f"[GraphAgent] Subgraph execution completed successfully")
@@ -323,16 +323,16 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
     def _get_subgraph_bundle(self) -> Optional[GraphBundle]:
         """
         Get or create the bundle for the subgraph execution.
-        
+
         Determines the CSV path from either:
         1. self.csv_path (external CSV subgraph)
         2. Current bundle's csv_path (embedded subgraph in same CSV)
-        
+
         Returns:
             GraphBundle for the subgraph, or None if failed
         """
         bundle_service = self.graph_bundle_service
-        
+
         # Determine CSV path
         if self.csv_path:
             # External CSV specified in context
@@ -344,8 +344,8 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
         else:
             # Try to get CSV path from current bundle (embedded subgraph)
             # This would be set by the parent graph runner when it creates this agent
-            current_bundle = getattr(self, 'current_bundle', None)
-            if current_bundle and hasattr(current_bundle, 'csv_path'):
+            current_bundle = getattr(self, "current_bundle", None)
+            if current_bundle and hasattr(current_bundle, "csv_path"):
                 csv_path = Path(current_bundle.csv_path)
                 self.log_debug(
                     f"[GraphAgent] Using current bundle's CSV path: {csv_path} "
@@ -353,7 +353,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
                 )
             else:
                 # Fallback: try to get from parent context if available
-                parent_csv_path = getattr(self, 'parent_csv_path', None)
+                parent_csv_path = getattr(self, "parent_csv_path", None)
                 if parent_csv_path:
                     csv_path = Path(parent_csv_path)
                     self.log_debug(
@@ -365,13 +365,13 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
                         f"[GraphAgent] No CSV path available for subgraph '{self.subgraph_name}'"
                     )
                     return None
-        
+
         # Get or create bundle using the service
         try:
             bundle = bundle_service.get_or_create_bundle(
                 csv_path=csv_path,
                 graph_name=self.subgraph_name,
-                config_path=getattr(self, 'config_path', None)
+                config_path=getattr(self, "config_path", None),
             )
             return bundle
         except Exception as e:
@@ -379,7 +379,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
                 f"[GraphAgent] Failed to get bundle for subgraph '{self.subgraph_name}': {e}"
             )
             return None
-    
+
     def _process_subgraph_result(self, result: Dict[str, Any]) -> Any:
         """
         Process the subgraph result based on output field configuration.

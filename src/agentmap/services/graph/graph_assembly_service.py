@@ -8,8 +8,8 @@ from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.function_resolution_service import FunctionResolutionService
 from agentmap.services.graph.graph_factory_service import GraphFactoryService
 from agentmap.services.logging_service import LoggingService
-from agentmap.services.state_adapter_service import StateAdapterService
 from agentmap.services.protocols import OrchestrationCapableAgent
+from agentmap.services.state_adapter_service import StateAdapterService
 
 
 class GraphAssemblyService:
@@ -189,14 +189,18 @@ class GraphAssemblyService:
             try:
                 # Configure orchestrator service (always available)
                 agent_instance.configure_orchestrator_service(self.orchestrator_service)
-                
+
                 # Configure node registry if available
                 if self.orchestrator_node_registry:
                     agent_instance.node_registry = self.orchestrator_node_registry
-                    self.logger.debug(f"✅ Injected orchestrator service and node registry into '{name}'")
+                    self.logger.debug(
+                        f"✅ Injected orchestrator service and node registry into '{name}'"
+                    )
                 else:
-                    self.logger.debug(f"✅ Injected orchestrator service into '{name}' (no node registry available)")
-                
+                    self.logger.debug(
+                        f"✅ Injected orchestrator service into '{name}' (no node registry available)"
+                    )
+
                 self.injection_stats["orchestrators_injected"] += 1
             except Exception as e:
                 self.injection_stats["injection_failures"] += 1
@@ -350,7 +354,6 @@ class GraphAssemblyService:
         )
 
         self.logger.debug(f"[{node_name}] → dynamic router added with open routing")
-
 
     def get_injection_summary(self) -> Dict[str, int]:
         """Get summary of registry injection statistics."""

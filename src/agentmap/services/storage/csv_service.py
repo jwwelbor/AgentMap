@@ -58,7 +58,13 @@ class CSVStorageService(BaseStorageService):
             base_directory: Optional base directory for storage operations (for system storage)
         """
         # Call parent's __init__ with all parameters including new injection parameters
-        super().__init__(provider_name, configuration, logging_service, file_path_service, base_directory)
+        super().__init__(
+            provider_name,
+            configuration,
+            logging_service,
+            file_path_service,
+            base_directory,
+        )
 
     def _initialize_client(self) -> Any:
         """
@@ -75,7 +81,7 @@ class CSVStorageService(BaseStorageService):
         """
         # Use StorageConfigService named domain methods instead of generic access
         csv_config = self.configuration.get_csv_config()
-        
+
         # Use injected base_directory if available, otherwise use StorageConfigService
         if self.base_directory:
             base_dir = str(self.base_directory)
@@ -84,7 +90,7 @@ class CSVStorageService(BaseStorageService):
         else:
             # Use the path accessor with business logic (already ensures directory exists)
             base_dir = str(self.configuration.get_csv_data_path())
-        
+
         encoding = csv_config.get("encoding", "utf-8")
 
         # Additional validation for fail-fast behavior (only when not using injection)
@@ -152,7 +158,7 @@ class CSVStorageService(BaseStorageService):
 
         Returns:
             Full file path
-            
+
         Raises:
             ValueError: If path validation fails when file_path_service is available
         """
@@ -171,19 +177,23 @@ class CSVStorageService(BaseStorageService):
 
             if not collection.startswith(base_dir):
                 collection = os.path.join(base_dir, collection)
-            
+
             file_path = collection
-        
+
         # Validate path using file_path_service if available
         if self._file_path_service:
             try:
                 # Use base_directory if available for validation, otherwise use client base_directory
-                validation_base = self.base_directory if self.base_directory else self.client["base_directory"]
+                validation_base = (
+                    self.base_directory
+                    if self.base_directory
+                    else self.client["base_directory"]
+                )
                 self._file_path_service.validate_safe_path(file_path, validation_base)
             except Exception as e:
                 self._logger.error(f"Path validation failed for {file_path}: {e}")
                 raise ValueError(f"Unsafe file path: {e}")
-        
+
         return file_path
 
     def _ensure_directory_exists(self, file_path: str) -> None:
@@ -251,7 +261,7 @@ class CSVStorageService(BaseStorageService):
             # Ensure base directory exists when using injection (deferred from _initialize_client)
             if self.base_directory:
                 os.makedirs(self.base_directory, exist_ok=True)
-            
+
             self._ensure_directory_exists(file_path)
 
             # Set default write options
@@ -518,7 +528,7 @@ class CSVStorageService(BaseStorageService):
         """
         try:
             # Extract service-specific parameters that shouldn't go to pandas
-            id_field = kwargs.pop('id_field', None)  # Extract id_field from kwargs
+            id_field = kwargs.pop("id_field", None)  # Extract id_field from kwargs
             file_path = self._get_file_path(collection)
             file_existed = os.path.exists(file_path)
 

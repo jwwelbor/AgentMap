@@ -27,15 +27,21 @@ class MemoryStorageService(BaseStorageService):
     """
 
     def __init__(
-        self, 
-        provider_name: str, 
-        configuration: Any, 
+        self,
+        provider_name: str,
+        configuration: Any,
         logging_service: Any,
         file_path_service: Any = None,
-        base_directory: str = None
+        base_directory: str = None,
     ):
         """Initialize memory storage service."""
-        super().__init__(provider_name, configuration, logging_service, file_path_service, base_directory)
+        super().__init__(
+            provider_name,
+            configuration,
+            logging_service,
+            file_path_service,
+            base_directory,
+        )
         # In-memory storage structure: {collection_name: {document_id: data}}
         self._storage: Dict[str, Dict[str, Any]] = {}
         # Metadata tracking

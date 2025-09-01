@@ -73,7 +73,9 @@ class DeclarationParser:
                 protocols_implemented = data.get("protocols_implemented", [])
                 protocol_requirements = self._parse_protocol_requirements(
                     data.get("protocols", []),
-                    data.get("implements", protocols_implemented),  # Use protocols_implemented as implements
+                    data.get(
+                        "implements", protocols_implemented
+                    ),  # Use protocols_implemented as implements
                     data.get("requires_protocols", []),
                 )
 
@@ -95,7 +97,9 @@ class DeclarationParser:
                     source=source,
                 )
 
-            raise ValueError(f"Unsupported data type for agent declaration: {type(data)}")
+            raise ValueError(
+                f"Unsupported data type for agent declaration: {type(data)}"
+            )
 
         except Exception as e:
             error_msg = f"Failed to parse agent declaration for '{agent_type}' from {source}: {e}"
@@ -172,7 +176,9 @@ class DeclarationParser:
                     source=source,
                 )
 
-            raise ValueError(f"Unsupported data type for service declaration: {type(data)}")
+            raise ValueError(
+                f"Unsupported data type for service declaration: {type(data)}"
+            )
 
         except Exception as e:
             error_msg = f"Failed to parse service declaration for '{service_name}' from {source}: {e}"

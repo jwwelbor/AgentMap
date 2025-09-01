@@ -38,7 +38,7 @@ class DependencyCheckerService:
 
     STORAGE_DEPENDENCIES = {
         "csv": ["pandas"],
-#        "json": ["json"],
+        #        "json": ["json"],
         "vector": ["langchain", "chromadb"],
         "firebase": ["firebase_admin"],
         "azure_blob": ["azure-storage-blob"],
@@ -345,13 +345,15 @@ class DependencyCheckerService:
         # Check technical validation
         return self.features_registry.is_provider_validated(category, provider)
 
-    def discover_and_validate_providers(self, category: str, force: bool = False) -> Dict[str, bool]:
+    def discover_and_validate_providers(
+        self, category: str, force: bool = False
+    ) -> Dict[str, bool]:
         """
         Discover available providers and update registry with validation results.
 
         This method performs comprehensive discovery and updates the features registry
         with current validation status for all known providers in a category.
-        
+
         Automatically enables the feature for the category before discovery, as discovery
         implies intent to use the feature if dependencies are available.
 
@@ -368,7 +370,7 @@ class DependencyCheckerService:
         self.logger.debug(
             f"[DependencyCheckerService] Enabled '{category_lower}' feature for provider discovery"
         )
-        
+
         self.logger.debug(
             f"[DependencyCheckerService] Discovering providers for category: {category}"
         )
@@ -415,7 +417,9 @@ class DependencyCheckerService:
         )
         return results
 
-    def _validate_llm_provider(self, provider: str, force: bool = False) -> Tuple[bool, List[str]]:
+    def _validate_llm_provider(
+        self, provider: str, force: bool = False
+    ) -> Tuple[bool, List[str]]:
         """
         Validate dependencies for a specific LLM provider with cache integration.
 
@@ -439,7 +443,9 @@ class DependencyCheckerService:
             self.logger.debug(
                 f"[DependencyCheckerService] Checking cache for LLM provider: {provider}"
             )
-            cached_result = self._get_cached_availability("dependency.llm", provider_lower)
+            cached_result = self._get_cached_availability(
+                "dependency.llm", provider_lower
+            )
             if cached_result and cached_result.get("validation_passed"):
                 self.logger.debug(
                     f"[DependencyCheckerService] Using cached result for LLM provider: {provider}"
@@ -454,7 +460,7 @@ class DependencyCheckerService:
             self.logger.debug(
                 f"[DependencyCheckerService] Cache miss for LLM provider: {provider}, performing validation"
             )
-        
+
         is_valid, missing = self.validate_imports(dependencies)
 
         # Cache the result
@@ -470,7 +476,9 @@ class DependencyCheckerService:
 
         return is_valid, missing
 
-    def _validate_storage_type(self, storage_type: str, force: bool = False) -> Tuple[bool, List[str]]:
+    def _validate_storage_type(
+        self, storage_type: str, force: bool = False
+    ) -> Tuple[bool, List[str]]:
         """
         Validate dependencies for a specific storage type with cache integration.
 
@@ -504,7 +512,9 @@ class DependencyCheckerService:
                 return True, []
             elif cached_result and not cached_result.get("validation_passed"):
                 # Cache indicates failure - use cached error info if available
-                error = cached_result.get("last_error", f"cached-failure:{storage_type}")
+                error = cached_result.get(
+                    "last_error", f"cached-failure:{storage_type}"
+                )
                 return False, [error]
 
             # Cache miss or invalid - perform validation and cache result
