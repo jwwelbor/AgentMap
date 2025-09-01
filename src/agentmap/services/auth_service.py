@@ -7,6 +7,7 @@ architecture principles with configurable authentication.
 """
 
 import hashlib
+from argon2 import PasswordHasher
 import hmac
 import os
 import secrets
@@ -56,6 +57,7 @@ class AuthService:
         self.config = auth_config
         self.logger = logging_service.get_class_logger(self)
         self.enabled = auth_config.get("enabled", True)
+        self._ph = PasswordHasher()
 
         # Load API keys configuration
         self._api_keys = self._load_api_keys()
@@ -125,8 +127,8 @@ class AuthService:
         Returns:
             Hashed API key for secure comparison
         """
-        # Use SHA-256 for hashing API keys
-        return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+        # Use Argon2 for hashing API keys (strong password hashing)
+        return self._ph.hash(api_key)
 
     def _constant_time_compare(self, a: str, b: str) -> bool:
         """
