@@ -1,4 +1,5 @@
 # AgentMap now uses Poetry for dependency management
+argon2-cffi==25.1.0
 # 
 # To install AgentMap:
 #   pip install agentmap
