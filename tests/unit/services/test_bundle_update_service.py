@@ -300,20 +300,23 @@ class TestBundleUpdateService(unittest.TestCase):
         save_result.success = True
         self.mock_graph_bundle_service.save_bundle.return_value = save_result
         
-        # Mock Path operations
-        with patch('pathlib.Path') as mock_path:
-            mock_cache_dir = Mock()
-            mock_path.return_value = mock_cache_dir
-            mock_cache_dir.__truediv__ = Mock(return_value=Path("test_bundle.json"))
-            
-            # Act
-            result = self.bundle_update_service.update_bundle_from_declarations(
-                bundle, persist=True
-            )
+        # Configure file path service to return a mock path
+        mock_bundle_path = Mock()
+        mock_bundle_path.name = "test_bundle.json"
+        self.mock_file_path_service.get_bundle_path.return_value = mock_bundle_path
+        
+        # Act
+        result = self.bundle_update_service.update_bundle_from_declarations(
+            bundle, persist=True
+        )
         
         # Assert
         self.assertEqual(result, bundle)
         self.mock_graph_bundle_service.save_bundle.assert_called_once()
+        self.mock_file_path_service.get_bundle_path.assert_called_once_with(
+            csv_hash=bundle.csv_hash,
+            graph_name=bundle.graph_name
+        )
 
     def test_persistence_flag_false_no_save(self):
         """Test persistence flag (persist=False) does not save."""
@@ -497,20 +500,23 @@ class TestBundleUpdateService(unittest.TestCase):
         save_result.error = "Save failed"
         self.mock_graph_bundle_service.save_bundle.return_value = save_result
         
-        # Mock Path operations
-        with patch('pathlib.Path') as mock_path:
-            mock_cache_dir = Mock()
-            mock_path.return_value = mock_cache_dir
-            mock_cache_dir.__truediv__ = Mock(return_value=Path("test_bundle.json"))
-            
-            # Act - Should not raise exception
-            result = self.bundle_update_service.update_bundle_from_declarations(
-                bundle, persist=True
-            )
+        # Configure file path service to return a mock path
+        mock_bundle_path = Mock()
+        mock_bundle_path.name = "test_bundle.json"
+        self.mock_file_path_service.get_bundle_path.return_value = mock_bundle_path
+        
+        # Act - Should not raise exception
+        result = self.bundle_update_service.update_bundle_from_declarations(
+            bundle, persist=True
+        )
         
         # Assert - Update should still succeed, just persistence failed
         self.assertEqual(result, bundle)
         self.assertIn("new_agent", bundle.agent_mappings)
+        self.mock_file_path_service.get_bundle_path.assert_called_once_with(
+            csv_hash=bundle.csv_hash,
+            graph_name=bundle.graph_name
+        )
 
     def test_complex_update_scenario(self):
         """Test complex scenario with all types of updates."""
