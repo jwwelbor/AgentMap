@@ -1743,10 +1743,11 @@ class MockServiceFactory:
             protocols: Optional[List[str]] = None
         ) -> str:
             """Generate YAML declaration string."""
+            import json
             services = services or []
             protocols = protocols or []
-            services_yaml = f"[{', '.join(f'"{s}"' for s in services)}]" if services else "[]"
-            protocols_yaml = f"[{', '.join(f'"{p}"' for p in protocols)}]" if protocols else "[]"
+            services_yaml  = json.dumps(list(services))  if services  else "[]"
+            protocols_yaml = json.dumps(list(protocols)) if protocols else "[]"
             
             return f"""  {agent_type}:
     class_path: "{class_path}"
