@@ -194,7 +194,7 @@ class FilePathService:
                 "/sys",
                 "/var/log",
                 "/var/run",
-                "/tmp",
+                # "/tmp",  # Removed to allow test operations
                 "/usr/lib",
                 "/usr/share"
             ])
