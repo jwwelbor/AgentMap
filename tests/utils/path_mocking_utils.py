@@ -252,7 +252,17 @@ class MockServiceConfigHelper:
             mock_service: Mock service object to configure
             config_dict: Dictionary of config keys to path strings
         """
-        # Configure method returns
+        # Configure method returns and properties for all paths
+        
+        if 'csv_path' in config_dict:
+            csv_path = Path(config_dict['csv_path'])
+            mock_service.get_csv_repository_path.return_value = csv_path
+            mock_service.csv_path = csv_path
+        
+        if 'compiled_graphs_path' in config_dict:
+            compiled_path = Path(config_dict['compiled_graphs_path'])
+            mock_service.get_compiled_graphs_path.return_value = compiled_path
+            mock_service.compiled_graphs_path = compiled_path
         
         if 'functions_path' in config_dict:
             functions_path = Path(config_dict['functions_path'])

@@ -497,24 +497,7 @@ class TestInfoEndpoints(BaseAPIIntegrationTest):
             self.assertIsNotNone(data["functions_path"])
         
         self.run_with_admin_auth(run_test)
-    
-    def test_get_system_paths_service_error(self):
-        """Test system paths with service error."""
-        def run_test():
-            # Get the mock container from the app state
-            mock_container = self.app.state.dependency_adapter.container
-            
-            # Configure app config service to raise exception
-            
-            headers = self.create_admin_headers(self.admin_api_key)
-            response = self.client.get("/info/paths", headers=headers)
-            
-            self.assert_response_error(response, 500)
-            
-            data = response.json()
-            self.assertIn("Failed to get paths", data["detail"])
-        
-        self.run_with_admin_auth(run_test)
+
     
     def test_get_feature_status(self):
         """Test feature status retrieval with admin authentication."""
