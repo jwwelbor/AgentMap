@@ -160,6 +160,10 @@ Error responses include detailed validation information and suggestions for reso
                 "description": "Browse and inspect workflows in the CSV repository",
             },
             {
+                "name": "Workflow Execution",
+                "description": "Execute workflows from repository with bundle caching",
+            },
+            {
                 "name": "Validation",
                 "description": "Validate CSV workflow definitions and configuration files",
             },
@@ -203,10 +207,16 @@ Error responses include detailed validation information and suggestions for reso
 
         # Include all router modules
         app.include_router(execution_router)
-        app.include_router(workflow_router)
+        app.include_router(workflow_router)  # Existing workflow management
         app.include_router(validation_router)
         app.include_router(graph_router)
         app.include_router(info_router)
+
+        # Import and add workflow execution router (repository-based with bundle caching)
+        from agentmap.core.api.workflow_execution import create_workflow_router
+
+        workflow_execution_router = create_workflow_router(self.container)
+        app.include_router(workflow_execution_router)
 
         # Keep legacy endpoints for backward compatibility
         @app.get("/agents/available", response_model=AgentsInfoResponse)
@@ -304,6 +314,12 @@ Error responses include detailed validation information and suggestions for reso
                         "methods": ["GET"],
                         "auth_required": False,
                     },
+                    "/workflow": {
+                        "description": "Workflow execution from repository with bundle caching",
+                        "methods": ["GET", "POST", "DELETE"],
+                        "auth_required": False,
+                        "rate_limit": "60/minute",
+                    },
                     "/execution": {
                         "description": "Workflow execution and resumption",
                         "methods": ["POST"],
@@ -331,7 +347,7 @@ Error responses include detailed validation information and suggestions for reso
                 "quick_start": {
                     "1_check_health": "GET /health",
                     "2_list_workflows": "GET /workflows",
-                    "3_run_workflow": "POST /execution/{workflow}/{graph}",
+                    "3_run_workflow": "POST /workflow/{workflow}/{graph}",
                     "4_get_diagnostics": "GET /info/diagnose",
                 },
                 "documentation": {
@@ -443,6 +459,12 @@ def create_sub_application(
     app.include_router(graph_router)
     app.include_router(info_router)
 
+    # Import and add workflow execution router for sub-application
+    from agentmap.core.api.workflow_execution import create_workflow_router
+
+    workflow_execution_router = create_workflow_router(container)
+    app.include_router(workflow_execution_router)
+
     # Add basic health check and info endpoints
     @app.get("/health")
     async def health_check():
@@ -458,6 +480,7 @@ def create_sub_application(
             "mounted_at": prefix or "/",
             "routes": {
                 "/workflows": "Workflow management and repository operations",
+                "/workflow": "Workflow execution from repository with bundle caching",
                 "/execution": "Workflow execution and resumption",
                 "/validation": "CSV and configuration validation",
                 "/graph": "Graph compilation, scaffolding, and operations",

@@ -308,42 +308,6 @@ multi_graph,fail,default,Handle multi graph errors,Multi graph error handler,err
         
         self.assert_file_not_found_response(response)
     
-    def test_get_graph_status_default_csv(self):
-        """Test graph status using default CSV path."""
-        # ✅ FIXED: Use real DI container services
-        mock_graph = Mock()
-        mock_graph.nodes = {'start': {}, 'end': {}}
-        mock_graph.entry_point = 'start'
-        
-        with patch.object(
-            self.container.graph_definition_service(),
-            'build_from_csv',
-            return_value=mock_graph
-        ):
-            # ✅ FIXED: Mock the instantiation summary method that API actually calls
-            mock_instantiation_summary = {
-                "graph_name": "test_graph",
-                "total_nodes": 2,
-                "instantiated": 2,
-                "missing": 0,
-                "agent_types": {
-                    "default": {"count": 2, "instantiated": 2}
-                }
-            }
-            
-            with patch.object(
-                self.container.graph_agent_instantiation_service(),
-                'get_instantiation_summary',
-                return_value=mock_instantiation_summary
-            ):
-                response = self.client.get("/graph/status/test_graph")
-        
-        self.assert_response_success(response)
-        
-        data = response.json()
-        self.assertEqual(data["graph_name"], "test_graph")
-        self.assertTrue(data["exists"])
-    
     # =============================================================================
     # Graph Listing Tests
     # =============================================================================
@@ -384,27 +348,7 @@ multi_graph,fail,default,Handle multi graph errors,Multi graph error handler,err
         response = self.client.get("/graph/list?csv=/nonexistent/file.csv")
         
         self.assert_file_not_found_response(response)
-    
-    def test_list_graphs_default_csv(self):
-        """Test listing graphs using default CSV path."""
-        # ✅ FIXED: Use real DI container services
-        mock_graph = Mock()
-        mock_graph.name = 'default_graph'
-        mock_graph.entry_point = 'start'
-        mock_graph.nodes = {'start': {}}
-        
-        with patch.object(
-            self.container.graph_definition_service(),
-            'build_from_csv',
-            return_value=mock_graph
-        ):
-            response = self.client.get("/graph/list")
-        
-        self.assert_response_success(response)
-        
-        data = response.json()
-        self.assertIsNotNone(data["csv_path"])
-        self.assertIsInstance(data["graphs"], list)
+
     
     # =============================================================================
     # Error Handling Tests

@@ -3,8 +3,14 @@ CLI run command handler using Bundle-based execution.
 
 This module provides the run command that uses GraphBundle
 for intelligent caching and execution.
+
+Enhanced to support repository-based execution patterns:
+- Direct file: agentmap run file.csv --graph GraphName
+- Repository shorthand: agentmap run workflow/GraphName
+- Repository with options: agentmap run --csv workflow --graph GraphName
 """
 
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -19,7 +25,7 @@ from agentmap.di import initialize_di
 
 def run_command(
     csv_file: Optional[str] = typer.Argument(
-        None, help="CSV file path (shorthand for --csv)"
+        None, help="CSV file path or workflow/graph (e.g., 'hello_world/HelloWorld')"
     ),
     graph: Optional[str] = typer.Option(
         None, "--graph", "-g", help="Graph name to run"
@@ -44,14 +50,52 @@ def run_command(
     """
     Run a graph using cached bundles for efficient execution.
 
-    Supports shorthand: agentmap run file.csv is equivalent to agentmap run --csv file.csv
+    Supports multiple patterns:
+    - Direct file: agentmap run file.csv --graph GraphName
+    - Repository shorthand: agentmap run workflow/GraphName
+    - Repository with options: agentmap run --csv workflow --graph GraphName
+
+    Examples:
+        agentmap run workflows/hello_world.csv --graph HelloWorld
+        agentmap run hello_world/HelloWorld
+        agentmap run --csv hello_world --graph HelloWorld
     """
     try:
-        # Resolve CSV path using utility
-        csv_path = resolve_csv_path(csv_file, csv)
-
         # Initialize DI container
         container = initialize_di(config_file)
+        app_config_service = container.app_config_service()
+
+        # Handle repository-based shorthand: workflow/graph
+        if csv_file and "/" in csv_file and not csv and not graph:
+            parts = csv_file.split("/", 1)
+            workflow_name = parts[0]
+            graph = parts[1] if len(parts) > 1 else None
+
+            # Check if it's a repository workflow (not a file path)
+            csv_repository = app_config_service.get_csv_repository_path()
+            potential_workflow = csv_repository / f"{workflow_name}.csv"
+
+            if potential_workflow.exists():
+                # It's a repository workflow
+                csv_path = potential_workflow
+            else:
+                # Maybe it's a file path, resolve normally
+                csv_path = resolve_csv_path(csv_file, csv)
+        else:
+            # Check if csv_file is a workflow name in repository
+            if csv_file and not csv:
+                csv_repository = app_config_service.get_csv_repository_path()
+                potential_workflow = csv_repository / f"{csv_file}.csv"
+
+                if potential_workflow.exists():
+                    # It's a workflow name from repository
+                    csv_path = potential_workflow
+                else:
+                    # Try to resolve as file path
+                    csv_path = resolve_csv_path(csv_file, csv)
+            else:
+                # Standard resolution
+                csv_path = resolve_csv_path(csv_file, csv)
 
         # Validate CSV if requested
         if validate:
@@ -77,6 +121,15 @@ def run_command(
         # Execute graph using bundle
         runner = container.graph_runner_service()
         typer.echo(f"📊 Executing graph: {bundle.graph_name or graph or 'default'}")
+
+        # Show if from repository
+        csv_repository = app_config_service.get_csv_repository_path()
+        if csv_path.is_relative_to(csv_repository):
+            workflow_name = csv_path.stem
+            typer.echo(f"   From workflow: {workflow_name} (repository)")
+        else:
+            typer.echo(f"   From file: {csv_path}")
+
         result = runner.run(bundle, initial_state)
 
         # Display result

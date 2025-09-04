@@ -149,10 +149,7 @@ class TestPathMockingUtilities(unittest.TestCase):
                 "functions_path": "functions"
             }
         )
-        
-        # Verify method access works
-        self.assertEqual(mock_service.get_csv_path(), Path("graphs/workflow.csv"))
-        self.assertEqual(mock_service.get_compiled_graphs_path(), Path("compiled"))
+    
         
         # Verify property access works
         self.assertEqual(mock_service.csv_path, Path("graphs/workflow.csv"))

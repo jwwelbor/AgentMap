@@ -32,11 +32,6 @@ function HomepageHeader() {
                 to="/docs/intro">
                 Get Started in 5 Minutes
               </Link>
-              <Link
-                className="button button--outline button--lg"
-                to="#what-can-i-build">
-                See Examples
-              </Link>
             </div>
           </div>
           <div className={styles.heroImage}>
@@ -49,7 +44,7 @@ function HomepageHeader() {
         </div>
         <div className={styles.commandExample}>
           <div className={styles.commandBox}>
-            <code>{`agentmap run --graph "WorldDomination" --state "{'input': 'Hello, world!'}"`}</code>
+            <code>{`agentmap run --csv "hello-world.csv" --graph "WorldDomination" --state "{'input': 'Hello, world!'}"`}</code>
           </div>
         </div>
       </div>

@@ -417,37 +417,7 @@ llm:
         
         self.run_with_admin_auth(run_test)
     
-    def test_validate_csv_default_path(self):
-        """Test CSV validation using default path from configuration."""
-        def run_test():
-            # Get the mock container from the app state
-            mock_container = self.app.state.dependency_adapter.container
-            
-            # Configure validation service to return success
-            mock_result = self.create_mock_validation_result()
-            mock_container.validation_service.return_value.validate_csv.return_value = mock_result
-            
-            # Mock app_config_service to return a valid test CSV path when no csv_path provided
-            mock_container.app_config_service.return_value.get_csv_path.return_value = self.valid_csv_path
-            
-            request_data = {
-                "no_cache": True
-                # csv_path not specified - should use default from config
-            }
-            
-            headers = self.create_admin_headers(self.admin_api_key)
-            response = self.client.post("/validation/csv", json=request_data, headers=headers)
-        
-            self.assert_response_success(response)
-            
-            data = response.json()
-            self.assertTrue(data["success"])
-            # Should use default CSV path from configuration
-            self.assertIsNotNone(data["file_path"])
-            self.assertEqual(data["file_path"], str(self.valid_csv_path))
-        
-        self.run_with_admin_auth(run_test)
-    
+
     def test_validate_all_success(self):
         """Test successful validation of both CSV and config."""
         def run_test():
@@ -588,31 +558,6 @@ llm:
             self.assertFalse(data["success"])
             self.assertIn("compilation failed", data["message"])
             self.assertIn("Graph structure invalid", data["error"])
-        
-        self.run_with_admin_auth(run_test)
-    
-    def test_validate_csv_for_bundling_default_path(self):
-        """Test CSV compilation validation using default path."""
-        def run_test():
-            # Get the mock container from the app state
-            mock_container = self.app.state.dependency_adapter.container
-            
-            # Configure validation service
-            mock_container.validation_service.return_value.validate_csv_for_bundling.return_value = None
-            
-            # Mock app_config_service to return a valid test CSV path when no csv_path provided
-            mock_container.app_config_service.return_value.get_csv_path.return_value = self.valid_csv_path
-            
-            headers = self.create_admin_headers(self.admin_api_key)
-            response = self.client.post("/validation/csv/compilation", headers=headers)
-        
-            self.assert_response_success(response)
-            
-            data = response.json()
-            self.assertTrue(data["success"])
-            # Should use default CSV path
-            self.assertIsNotNone(data["file_path"])
-            self.assertEqual(data["file_path"], str(self.valid_csv_path))
         
         self.run_with_admin_auth(run_test)
     

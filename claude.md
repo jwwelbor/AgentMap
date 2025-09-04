@@ -16,6 +16,7 @@ context:
     architecture: docs-docusaurus\docs\contributing
     project: docs-docusaurus\docs
     testing_approach: docs-docusaurus\docs\testing\testing-patterns.md
+    documentation_guide: claude_documentation.md  # REQUIRED for all documentation tasks
 
 structure:
   key_directories:

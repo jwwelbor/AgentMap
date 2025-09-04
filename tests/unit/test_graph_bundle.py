@@ -48,10 +48,6 @@ class TestGraphBundleMetadataOnlyFormat:
         # Verify agent instances are stripped
         assert "instance" not in bundle.nodes["node1"].context
         
-        # Verify it's detected as metadata-only format
-        assert bundle.is_metadata_only
-        assert not bundle.is_legacy_format
-        
         # Verify new fields have defaults
         assert bundle.entry_point is None
         assert bundle.service_load_order == []
@@ -83,7 +79,6 @@ class TestGraphBundleMetadataOnlyFormat:
         assert bundle.graph_name == "direct_graph"
         assert bundle.nodes == test_nodes
         assert bundle.required_agents == {"test_agent"}
-        assert not bundle.is_legacy_format
 
     def test_partial_new_fields_with_defaults(self):
         """Test that partial new fields get sensible defaults."""
@@ -164,11 +159,6 @@ class TestGraphBundleMetadataOnlyFormat:
         # Assert format metadata
         assert bundle.bundle_format == "metadata-v1"
         assert bundle.created_at is not None
-        
-        # Verify it's still detected as metadata-only format
-        assert bundle.is_metadata_only
-        assert not bundle.is_legacy_format
-
 
 class TestGraphBundleCoreFunctionality:
     """Test core functionality that works across both formats."""
@@ -255,102 +245,3 @@ class TestGraphBundleCoreFunctionality:
         assert bundle.required_services == set()
         assert bundle.function_mappings == {}
         assert bundle.csv_hash == "empty_hash"
-
-
-class TestGraphBundleProperties:
-    """Test GraphBundle property methods."""
-
-    def test_is_metadata_only_property(self):
-        """Test is_metadata_only property correctly identifies format."""
-        # Metadata-only format
-        metadata_bundle = GraphBundle.create_metadata(
-            graph_name="test",
-            nodes={},
-            required_agents=set(),
-            required_services=set(),
-            function_mappings={},
-            csv_hash="hash"
-        )
-        assert metadata_bundle.is_metadata_only
-        
-        # Legacy format
-        legacy_bundle = GraphBundle(graph=Mock())
-        assert not legacy_bundle.is_metadata_only
-
-    def test_is_legacy_format_property(self):
-        """Test is_legacy_format property correctly identifies format."""
-        # Legacy format with graph
-        legacy_bundle = GraphBundle(graph=Mock())
-        assert legacy_bundle.is_legacy_format
-        
-        # Legacy format with node_registry
-        legacy_bundle2 = GraphBundle(node_instances={})
-        assert legacy_bundle2.is_legacy_format
-        
-        # Metadata-only format
-        metadata_bundle = GraphBundle.create_metadata(
-            graph_name="test",
-            nodes={},
-            required_agents=set(),
-            required_services=set(),
-            function_mappings={},
-            csv_hash="hash"
-        )
-        assert not metadata_bundle.is_legacy_format
-
-
-class TestGraphBundleMigration:
-    """Test migration utilities and backwards compatibility."""
-
-    def test_create_from_legacy_with_metadata(self):
-        """Test create_from_legacy factory method with additional metadata."""
-        # Arrange
-        mock_graph = Mock()
-        mock_graph.nodes = {
-            "node1": Node(name="node1", context={"instance": Mock()})
-        }
-        
-        # Act
-        bundle = GraphBundle.create_from_legacy(
-            graph=mock_graph,
-            node_registry={},
-            version_hash="v1.0",
-            graph_name="migrated_graph",
-            required_agents={"test_agent"},
-            required_services={"test_service"},
-            function_mappings={"func": "impl"},
-            csv_hash="migration_hash"
-        )
-        
-        # Assert
-        assert bundle.graph == mock_graph  # Legacy field preserved
-        assert bundle.graph_name == "migrated_graph"  # New metadata used
-        assert bundle.required_agents == {"test_agent"}
-        assert bundle.csv_hash == "migration_hash"
-
-
-@pytest.mark.integration
-class TestGraphBundleIntegration:
-    """Integration tests for GraphBundle with serialization and other components."""
-
-    def test_metadata_bundle_serialization_compatibility(self):
-        """Test that metadata-only GraphBundle can be serialized."""
-        import pickle
-        
-        # Arrange
-        bundle = GraphBundle.create_metadata(
-            graph_name="test_graph",
-            nodes={"node1": Node(name="node1", context={"data": "test"})},
-            required_agents={"test_agent"},
-            required_services={"test_service"},
-            function_mappings={"func": "impl"},
-            csv_hash="test_hash"
-        )
-        
-        # Act & Assert
-        serialized = pickle.dumps(bundle)
-        deserialized = pickle.loads(serialized)
-        
-        assert deserialized.graph_name == "test_graph"
-        assert "node1" in deserialized.nodes
-        assert deserialized.is_metadata_only

@@ -505,7 +505,6 @@ class TestInfoEndpoints(BaseAPIIntegrationTest):
             mock_container = self.app.state.dependency_adapter.container
             
             # Configure app config service to raise exception
-            mock_container.app_config_service.return_value.get_csv_path.side_effect = RuntimeError("Configuration error")
             
             headers = self.create_admin_headers(self.admin_api_key)
             response = self.client.get("/info/paths", headers=headers)

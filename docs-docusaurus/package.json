@@ -19,7 +19,12 @@
     "fix-links": "node scripts/fix-broken-links.js",
     "fix-corrupted": "node scripts/fix-corrupted-urls.js",
     "convert-to-ids": "node scripts/convert-links-to-ids.js",
-    "final-cleanup": "node scripts/final-link-cleanup.js"
+    "final-cleanup": "node scripts/final-link-cleanup.js",
+    "check:links": "node ../scripts/check-documentation-links.js",
+    "check:links:simple": "node ../scripts/check-links-simple.js",
+    "check:links:external": "node ../scripts/check-documentation-links.js --external",
+    "check:links:verbose": "node ../scripts/check-documentation-links.js --verbose",
+    "check:docs": "npm run build && npm run serve & sleep 5 && npm run check:links && pkill -f 'docusaurus serve'"
   },
   "dependencies": {
     "@docusaurus/core": "^3.0.0",
@@ -38,7 +43,8 @@
   "devDependencies": {
     "@docusaurus/module-type-aliases": "^3.0.0",
     "@docusaurus/types": "^3.0.0",
-    "typescript": "~5.2.2"
+    "typescript": "~5.2.2",
+    "playwright": "^1.47.0"
   },
   "browserslist": {
     "production": [

@@ -145,13 +145,11 @@ class AppConfigService:
 
         return metadata_bundles_path
 
-    def get_csv_path(self) -> Path:
-        """Get the path for the workflow CSV file."""
-        return Path(self.get_value("csv_path", "examples/SingleNodeGraph.csv"))
-
     def get_csv_repository_path(self) -> Path:
         """Get the path for the CSV repository directory where workflows are stored."""
-        csv_repo_path = Path(self.get_value("paths.csv_repository", "workflows"))
+        csv_repo_path = Path(
+            self.get_value("paths.csv_repository", "agentmap_data/workflows")
+        )
 
         # Ensure the directory exists
         try:
@@ -238,11 +236,15 @@ class AppConfigService:
 
     def get_prompts_directory(self) -> Path:
         """Get the path for the prompts directory."""
-        return Path(self.get_value("prompts.directory", "prompts"))
+        return Path(self.get_value("prompts.directory", "agentmap_data/prompts"))
 
     def get_prompt_registry_path(self) -> Path:
         """Get the path for the prompt registry file."""
-        return Path(self.get_value("prompts.registry_file", "prompts/registry.yaml"))
+        return Path(
+            self.get_value(
+                "prompts.registry_file", "agentmap_data/prompts/prompt_registry.yaml"
+            )
+        )
 
     # Execution accessors
     def get_execution_config(self) -> Dict[str, Any]:

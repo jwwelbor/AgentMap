@@ -1,8 +1,7 @@
 """
 GraphBundle model for metadata-only storage of graph information.
 
-This module supports lightweight storage of graph metadata without pickled instances,
-eliminating serialization issues while preserving reconstruction capability.
+This module supports lightweight storage of graph metadata.
 """
 
 import copy
@@ -245,49 +244,3 @@ class GraphBundle:
             validation_metadata=validation_metadata,
             missing_declarations=missing_declarations,
         )
-
-    @classmethod
-    def create_from_legacy(
-        cls,
-        graph: Any,
-        node_registry: Dict[str, Any],
-        version_hash: Optional[str] = None,
-        graph_name: str = "legacy_graph",
-        required_agents: Optional[Set[str]] = None,
-        required_services: Optional[Set[str]] = None,
-        function_mappings: Optional[Dict[str, str]] = None,
-        csv_hash: str = "legacy_hash",
-    ) -> "GraphBundle":
-        """
-        Create a new GraphBundle from legacy fields with explicit metadata.
-
-        This method helps migrate from the old pickled graph format to the
-        new metadata-only format when you have additional metadata available.
-        """
-        return cls(
-            # Legacy fields
-            graph=graph,
-            node_instances=node_registry,  # Correct parameter name
-            version_hash=version_hash,
-            # New metadata fields
-            graph_name=graph_name,
-            nodes=None,  # Will be populated in __post_init__
-            required_agents=required_agents,
-            required_services=required_services,
-            function_mappings=function_mappings,
-            csv_hash=csv_hash,
-        )
-
-    @property
-    def is_metadata_only(self) -> bool:
-        """Check if this bundle is using the new metadata-only format."""
-        return (
-            self.graph is None
-            and self.node_instances is None
-            and self.nodes is not None
-        )
-
-    @property
-    def is_legacy_format(self) -> bool:
-        """Check if this bundle is using the legacy format."""
-        return self.graph is not None or self.node_instances is not None

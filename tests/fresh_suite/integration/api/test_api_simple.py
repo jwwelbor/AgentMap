@@ -37,8 +37,6 @@ class MockServices:
     def app_config_service(self):
         """Return a mock app config service."""
         class MockAppConfig:
-            def get_csv_path(self):
-                return "/tmp/test.csv"
             def get_csv_repository_path(self):
                 return "/tmp"
         return MockAppConfig()

@@ -90,11 +90,7 @@ class TestAppConfigService(unittest.TestCase):
         """Test getting functions path."""
         result = self.app_config_service.get_functions_path()
         self.assertEqual(result, Path('agentmap/custom_functions'))
-        
-    def test_get_csv_path(self):
-        """Test getting CSV path."""
-        result = self.app_config_service.get_csv_path()
-        self.assertEqual(result, Path('test.csv'))
+
     
     def test_get_logging_config(self):
         """Test getting logging configuration."""
@@ -138,7 +134,7 @@ class TestAppConfigService(unittest.TestCase):
     def test_get_prompt_registry_path(self):
         """Test getting prompt registry path."""
         result = self.app_config_service.get_prompt_registry_path()
-        self.assertEqual(result, Path('prompts/registry.yaml'))
+        self.assertEqual(result, Path('agentmap_data/prompts/prompt_registry.yaml'))
     
     def test_get_execution_config(self):
         """Test getting execution configuration."""

@@ -55,7 +55,6 @@ class GraphOutputService:
     - Documentation generation
 
     Does NOT handle:
-    - Pickle persistence (GraphBundleService responsibility)
     - CSV parsing (GraphBuilderService responsibility)
     """
 
@@ -67,7 +66,7 @@ class GraphOutputService:
         agent_registry_service: AgentRegistryService,
     ):
         """Initialize output service with dependency injection."""
-        self.csv_path = app_config_service.get_csv_path()
+        self.csv_path = app_config_service.get_csv_repository_path()
         self.custom_agents_path = app_config_service.get_custom_agents_path()
         self.functions_path = app_config_service.get_functions_path()
         self.logger = logging_service.get_class_logger(self)
@@ -98,7 +97,6 @@ class GraphOutputService:
             ValueError: If export format is not supported
 
         Note:
-            Pickle export removed - use GraphBundleService for persistence.
             This service focuses on human-readable formats only.
         """
         self.logger.info(

@@ -106,7 +106,7 @@ async def compile_graph(
         if request.csv:
             compilation_options.csv_path = Path(request.csv)
         else:
-            compilation_options.csv_path = app_config_service.get_csv_path()
+            compilation_options.csv_path = app_config_service.get_csv_repository_path()
 
         # Set other options
         if request.output_dir:
@@ -164,7 +164,9 @@ async def validate_graph(
 
         # Determine CSV path
         csv_path = (
-            Path(request.csv) if request.csv else app_config_service.get_csv_path()
+            Path(request.csv)
+            if request.csv
+            else app_config_service.get_csv_repository_path()
         )
 
         # Execute validation
@@ -202,7 +204,9 @@ async def scaffold_graph(
 
         # Determine CSV path
         csv_path = (
-            Path(request.csv) if request.csv else app_config_service.get_csv_path()
+            Path(request.csv)
+            if request.csv
+            else app_config_service.get_csv_repository_path()
         )
 
         # Create scaffold options
@@ -263,7 +267,7 @@ async def get_graph_status(
         app_config_service = container.app_config_service()
 
         # Determine CSV path
-        csv_path = Path(csv) if csv else app_config_service.get_csv_path()
+        csv_path = Path(csv) if csv else app_config_service.get_csv_repository_path()
 
         if not csv_path.exists():
             raise FileNotFoundError(f"CSV file not found: {csv_path}")
@@ -346,7 +350,7 @@ async def list_graphs(
         app_config_service = container.app_config_service()
 
         # Determine CSV path
-        csv_path = Path(csv) if csv else app_config_service.get_csv_path()
+        csv_path = Path(csv) if csv else app_config_service.get_csv_repository_path()
 
         if not csv_path.exists():
             raise FileNotFoundError(f"CSV file not found: {csv_path}")

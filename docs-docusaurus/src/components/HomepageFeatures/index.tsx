@@ -172,7 +172,6 @@ function WhyAgentMap() {
 export default function HomepageFeatures(): JSX.Element {
   return (
     <>
-      <WhatCanIBuild />
       <HowItWorks />
       <WhyAgentMap />
     </>

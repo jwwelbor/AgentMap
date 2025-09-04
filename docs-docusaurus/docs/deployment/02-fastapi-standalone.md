@@ -1017,7 +1017,7 @@ if __name__ == "__main__":
 
 - **[CLI Deployment](./cli-deployment)**: Command-line deployment option
 - **[Example Workflows](/docs/templates/)**: Real-world usage patterns
-- **[API Documentation](/docs/api/)**: Complete API reference
+- **[API Documentation](/docs/reference/api)**: Complete API reference
 - **[Troubleshooting](./troubleshooting)**: Common issues and solutions
 
 ---

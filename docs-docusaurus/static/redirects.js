@@ -35,7 +35,7 @@ const redirects = [
   // Old API documentation redirects
   {
     from: '/api',
-    to: '/docs/api',
+    to: '/docs/reference/api',
   },
   {
     from: '/reference',

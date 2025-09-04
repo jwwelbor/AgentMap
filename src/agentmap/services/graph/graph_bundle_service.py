@@ -518,7 +518,7 @@ class GraphBundleService:
     def load_bundle(self, path: Path) -> Optional[GraphBundle]:
         """Load a GraphBundle from a file.
 
-        Automatically detects format (JSON for metadata, pickle for legacy)
+        Automatically detects format (JSON for metadata)
         and loads appropriately. Uses SystemStorageManager for system bundles
         in cache_folder/bundles and JSONStorageService for user storage.
 
@@ -549,24 +549,6 @@ class GraphBundleService:
                 return None
 
             return self._deserialize_metadata_bundle(data)
-
-            # Use regular JSON storage service for user data
-            # if not self.json_storage_service:
-            #     raise ValueError(
-            #         "json_storage_service is required to load JSON bundles. "
-            #         "Please ensure GraphBundleService is properly initialized with all dependencies."
-            #     )
-
-            # self.logger.debug(f"Using JSONStorageService for user bundle: {path}")
-
-            # # Use JSONStorageService to read the bundle
-            # data = self.json_storage_service.read(collection=str(path))
-
-            # if data is None:
-            #     self.logger.error(f"No data found in bundle file: {path}")
-            #     return None
-
-            # return self._deserialize_metadata_bundle(data)
 
         except Exception as e:
             self.logger.error(f"Failed to load GraphBundle from {path}: {e}")

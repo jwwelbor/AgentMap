@@ -50,7 +50,7 @@ def inspect_graph_cmd(
         csv_path = (
             Path(csv_file)
             if csv_file
-            else container.app_config_service().get_csv_path()
+            else container.app_config_service().get_csv_repository_path()
         )
         graph_def, resolved_name = graph_runner._load_graph_definition_for_execution(
             csv_path, graph_name

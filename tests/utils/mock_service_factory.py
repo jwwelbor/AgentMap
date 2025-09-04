@@ -161,7 +161,6 @@ class MockServiceFactory:
                     defaults[key] = value
         
         # Configure all expected methods
-        mock_service.get_csv_path.return_value = Path(defaults["csv_path"])
         mock_service.get_compiled_graphs_path.return_value = Path(defaults["compiled_graphs_path"])
         mock_service.get_cache_path.return_value = Path(defaults.get("cache_path", "agentmap_data/cache"))
         mock_service.get_logging_config.return_value = defaults["logging"]

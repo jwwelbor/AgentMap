@@ -71,13 +71,6 @@ class MockAppConfigService:
     def __init__(self, config_overrides: Optional[Dict[str, Any]] = None):
         self.config_overrides = config_overrides or {}
 
-    def get_csv_path(self) -> Path:
-        """Get default CSV path."""
-        return Path(self.config_overrides.get("csv_path", "graphs/workflow.csv"))
-
-    def get_compiled_graphs_path(self) -> Path:
-        """Get compiled graphs directory."""
-        return Path(self.config_overrides.get("compiled_graphs_path", "compiled"))
 
     def get_logging_config(self) -> Dict[str, Any]:
         """Get logging configuration."""

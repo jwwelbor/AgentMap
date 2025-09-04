@@ -42,8 +42,6 @@ class TestAPIBasics(unittest.TestCase):
         
         def mock_get_app_config_service(container=None):
             class MockAppConfig:
-                def get_csv_path(self):
-                    return Path(self.temp_dir) / "test.csv"
                 def get_csv_repository_path(self):
                     return Path(self.temp_dir)
             return MockAppConfig()

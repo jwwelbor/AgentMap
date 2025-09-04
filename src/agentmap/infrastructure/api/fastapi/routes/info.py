@@ -286,7 +286,7 @@ async def get_system_paths(
         _, app_config_service, _ = adapter.initialize_services()
 
         return {
-            "csv_path": str(app_config_service.get_csv_path()),
+            "csv_path": str(app_config_service.get_csv_repository_path()),
             "custom_agents_path": str(app_config_service.get_custom_agents_path()),
             "functions_path": str(app_config_service.get_functions_path()),
             "status": "success",

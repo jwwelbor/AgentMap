@@ -457,7 +457,7 @@ async def validate_csv(
     csv_file = (
         Path(request.csv_path)
         if request.csv_path
-        else app_config_service.get_csv_path()
+        else app_config_service.get_csv_repository_path()
     )
 
     if not csv_file.exists():
@@ -563,7 +563,7 @@ async def validate_all(
     csv_file = (
         Path(request.csv_path)
         if request.csv_path
-        else app_config_service.get_csv_path()
+        else app_config_service.get_csv_repository_path()
     )
     config_file = Path(request.config_path)
 
@@ -641,7 +641,9 @@ async def validate_csv_for_bundling(
     ```
     """
     # Determine CSV path
-    csv_file = Path(csv_path) if csv_path else app_config_service.get_csv_path()
+    csv_file = (
+        Path(csv_path) if csv_path else app_config_service.get_csv_repository_path()
+    )
 
     if not csv_file.exists():
         raise HTTPException(status_code=404, detail=f"CSV file not found: {csv_file}")
