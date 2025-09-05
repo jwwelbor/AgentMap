@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd docs-docusaurus
-          npm ci
+          npm ci --omit=dev
           
       - name: Build Docusaurus site
         run: |
