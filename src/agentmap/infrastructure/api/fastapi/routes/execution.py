@@ -292,7 +292,7 @@ async def run_workflow_graph(
     workflow: str,
     graph: str,
     request: StateExecutionRequest,
-    adapter=Depends(get_service_adapter),
+    container: ApplicationContainer = Depends(get_container),
     app_config_service=Depends(get_app_config_service),
 ):
     """
@@ -374,34 +374,41 @@ async def run_workflow_graph(
         )
 
         # Get services
-        graph_runner_service, _, logging_service = adapter.initialize_services()
+        graph_runner_service = container.graph_runner_service()
+        graph_bundle_service = container.graph_bundle_service()
+        logging_service = container.logging_service()
 
         # Safely get logger, handling None logging_service
         if logging_service is not None:
             logger = logging_service.get_logger("agentmap.api.execution")
-
-        # Create run options
-        run_options = adapter.create_run_options(
-            graph=validated_graph,
-            csv=str(workflow_path),
-            state=request.state,
-            autocompile=request.autocompile,
-            execution_id=request.execution_id,
-        )
 
         if logger:
             logger.info(
                 f"API executing workflow '{validated_workflow}' graph '{validated_graph}'"
             )
 
-        # Execute graph with timeout handling
+        # Get or create bundle using GraphBundleService
         if graph_runner_service is None:
             raise HTTPException(
                 status_code=503, detail="Graph runner service not available"
             )
 
+        if graph_bundle_service is None:
+            raise HTTPException(
+                status_code=503, detail="Graph bundle service not available"
+            )
+
         try:
-            result = graph_runner_service.run_graph(run_options)
+            # Create bundle from CSV and graph name
+            bundle = graph_bundle_service.get_or_create_bundle(
+                csv_path=workflow_path,
+                graph_name=validated_graph,
+                config_path=None,  # Use default config
+            )
+
+            # Execute graph using bundle
+            result = graph_runner_service.run(bundle, request.state)
+
         except TimeoutError:
             raise ErrorHandler.create_error_response(
                 error_message="Execution timeout",
@@ -412,13 +419,22 @@ async def run_workflow_graph(
 
         # Convert to response format
         if result.success:
-            output_data = adapter.extract_result_state(result)
+            # Create metadata from execution summary if available
+            metadata = {}
+            if result.execution_summary:
+                summary = result.execution_summary
+                metadata["graph_name"] = summary.graph_name
+                metadata["status"] = summary.status
+                metadata["nodes_executed"] = (
+                    len(summary.node_executions) if summary.node_executions else 0
+                )
+
             return GraphRunResponse(
                 success=True,
-                output=output_data["final_state"],
+                output=result.final_state,
                 execution_id=request.execution_id,  # Pass through from request
                 execution_time=result.total_duration,
-                metadata=output_data["metadata"],
+                metadata=metadata,
             )
         else:
             return GraphRunResponse(
@@ -459,7 +475,7 @@ async def run_workflow_graph(
 )
 async def run_graph_legacy(
     request: GraphRunRequest,
-    adapter=Depends(get_service_adapter),
+    container: ApplicationContainer = Depends(get_container),
     app_config_service=Depends(get_app_config_service),
 ):
     """
@@ -503,7 +519,9 @@ async def run_graph_legacy(
 
     try:
         # Get services
-        graph_runner_service, _, logging_service = adapter.initialize_services()
+        graph_runner_service = container.graph_runner_service()
+        graph_bundle_service = container.graph_bundle_service()
+        logging_service = container.logging_service()
 
         # Safely get logger, handling None logging_service
         if logging_service is not None:
@@ -512,20 +530,16 @@ async def run_graph_legacy(
         # Determine CSV path - priority: csv parameter, workflow lookup, default config
         csv_path = None
         if request.csv:
-            csv_path = request.csv
+            csv_path = Path(request.csv)
         elif request.workflow:
-            workflow_path = _resolve_workflow_path(request.workflow, app_config_service)
-            csv_path = str(workflow_path)
-        # If neither csv nor workflow specified, adapter will use default from config
-
-        # Create run options
-        run_options = adapter.create_run_options(
-            graph=request.graph,
-            csv=csv_path,
-            state=request.state,
-            autocompile=request.autocompile,
-            execution_id=request.execution_id,
-        )
+            csv_path = _resolve_workflow_path(request.workflow, app_config_service)
+        else:
+            # Use default from app config
+            default_csv = app_config_service.get_csv_path()
+            if default_csv:
+                csv_path = Path(default_csv)
+            else:
+                raise ValueError("No CSV file specified and no default configured")
 
         if logger:
             logger.info(f"API executing graph: {request.graph or 'default'}")
@@ -536,17 +550,39 @@ async def run_graph_legacy(
                 status_code=503, detail="Graph runner service not available"
             )
 
-        result = graph_runner_service.run_graph(run_options)
+        if graph_bundle_service is None:
+            raise HTTPException(
+                status_code=503, detail="Graph bundle service not available"
+            )
+
+        # Create bundle from CSV and graph name
+        bundle = graph_bundle_service.get_or_create_bundle(
+            csv_path=csv_path,
+            graph_name=request.graph,
+            config_path=None,  # Use default config
+        )
+
+        # Execute graph using bundle
+        result = graph_runner_service.run(bundle, request.state)
 
         # Convert to response format
         if result.success:
-            output_data = adapter.extract_result_state(result)
+            # Create metadata from execution summary if available
+            metadata = {}
+            if result.execution_summary:
+                summary = result.execution_summary
+                metadata["graph_name"] = summary.graph_name
+                metadata["status"] = summary.status
+                metadata["nodes_executed"] = (
+                    len(summary.node_executions) if summary.node_executions else 0
+                )
+
             return GraphRunResponse(
                 success=True,
-                output=output_data["final_state"],
+                output=result.final_state,
                 execution_id=request.execution_id,  # Pass through from request
                 execution_time=result.total_duration,
-                metadata=output_data["metadata"],
+                metadata=metadata,
             )
         else:
             return GraphRunResponse(

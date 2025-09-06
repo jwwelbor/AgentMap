@@ -29,13 +29,17 @@ structure:
     config: src/agentmap/services/config/ (configuration services)
     dev_artifacts: dev-artifacts/ (temporary development files)
   dev_workspace:
-    location: dev-artifacts/{date}-{task-name}/
+    location: dev-artifacts/{current-date-YYYY-MM-DD}-{task-name}/
+    # DATE SOURCE: Look for "The current date is..." in your system context
+    # This date is provided at the start of every conversation
+    # Extract the date and format as YYYY-MM-DD
+    # DO NOT USE FUTURE OR PAST DATES ONLY THE CURRENT DATE!
     structure:
       analysis: analysis/ (investigation and documentation)
       scripts: scripts/ (verification and test scripts)
       verification: verification/ (test results and validation)
       shared: shared/ (reusable development utilities)
-    naming: YYYY-MM-DD-brief-task-description
+    naming: YYYY-MM-DD-brief-task-description (use current date)
     lifecycle: Remove after task completion or keep if valuable
   critical_files:
     - src/agentmap/services/graph_runner_service.py (main orchestration)

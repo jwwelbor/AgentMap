@@ -497,7 +497,6 @@ class TestInfoEndpoints(BaseAPIIntegrationTest):
             self.assertIsNotNone(data["functions_path"])
         
         self.run_with_admin_auth(run_test)
-
     
     def test_get_feature_status(self):
         """Test feature status retrieval with admin authentication."""
