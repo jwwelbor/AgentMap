@@ -10,6 +10,7 @@ import sys
 import typer
 
 from agentmap._version import __version__
+from agentmap.core.cli.auth_command import auth_cmd
 from agentmap.core.cli.config_command import config_cmd
 from agentmap.core.cli.diagnose_command import diagnose_cmd
 from agentmap.core.cli.init_config_command import init_config_command
@@ -78,6 +79,7 @@ app.command("update-bundle")(update_bundle_command)
 
 # app.command("config")(config_cmd)
 app.command("init-config")(init_config_command)
+app.add_typer(auth_cmd, name="auth")
 
 # ============================================================================
 # VALIDATION COMMANDS
