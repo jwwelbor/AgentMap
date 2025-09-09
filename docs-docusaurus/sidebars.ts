@@ -70,6 +70,7 @@ const sidebars: SidebarsConfig = {
           items: [
             'configuration/index',
             'configuration/main-config',
+            'configuration/auth-config',
             'configuration/environment-variables',
             'configuration/storage-config',
             'configuration/examples',

@@ -27,7 +27,7 @@ AgentMap uses a **hierarchical configuration system** with multiple layers:
 
 ### Production Setup (30 minutes)
 - [ ] Configure [LLM routing](main-config#llm-routing-configuration) for cost optimization
-- [ ] Set up [authentication](main-config#authentication-configuration) and security
+- [ ] Set up [authentication](auth-config) and security
 - [ ] Configure [logging and tracing](main-config#logging-and-tracing) for monitoring
 - [ ] Review [performance settings](main-config#performance-optimization)
 
@@ -62,6 +62,9 @@ AgentMap uses a **hierarchical configuration system** with multiple layers:
 
 ### [Main Configuration](main-config)
 Complete YAML structure covering all core AgentMap settings including LLM providers, routing, memory, execution, and performance optimization.
+
+### [Authentication Configuration](auth-config)
+Complete guide to authentication setup including API keys, JWT tokens, permissions, security policies, and CLI commands for managing authentication.
 
 ### [Storage Configuration](storage-config)  
 Comprehensive guide to storage providers including CSV, JSON, Vector databases, Firebase, and cloud storage with authentication and optimization settings.
@@ -164,10 +167,13 @@ config_service = AppConfigService("agentmap_config.yaml")
 
 ### File Permissions
 ```bash
-# Secure configuration file permissions
+# Secure configuration file permissions (Linux/macOS)
 chmod 600 agentmap_config.yaml
 chmod 600 agentmap_config_storage.yaml
 chmod 600 .env
+
+# Windows equivalent - Restrict access to current user only
+icacls agentmap_config.yaml /inheritance:r /grant:r "%USERNAME%:F"
 ```
 
 ### Production Security
@@ -210,9 +216,10 @@ Other changes require application restart:
 ## 📖 Next Steps
 
 1. **Start with [Main Configuration](main-config)** - Understand the complete YAML structure
-2. **Configure [Storage](storage-config)** - Set up your data persistence layer
-3. **Set [Environment Variables](environment-variables)** - Secure your credentials
-4. **Review [Examples](examples)** - See working configurations for your use case
-5. **Check [Troubleshooting](troubleshooting)** - Resolve common configuration issues
+2. **Set up [Authentication](auth-config)** - Secure your API endpoints
+3. **Configure [Storage](storage-config)** - Set up your data persistence layer
+4. **Set [Environment Variables](environment-variables)** - Secure your credentials
+5. **Review [Examples](examples)** - See working configurations for your use case
+6. **Check [Troubleshooting](troubleshooting)** - Resolve common configuration issues
 
 Ready to configure AgentMap for your specific needs? Choose the section that matches your current requirements and follow the detailed guides.

@@ -9,16 +9,13 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from agentmap.di import ApplicationContainer
 from agentmap.infrastructure.api.fastapi.dependencies import (
-    get_app_config_service,
-    get_container,
+    get_auth_context,
+    requires_auth,
 )
-from agentmap.infrastructure.api.fastapi.middleware.auth import require_admin_permission
 from agentmap.services.auth_service import AuthContext
 
 
@@ -239,38 +236,6 @@ class GraphDetailResponse(BaseModel):
         }
 
 
-def get_csv_parser_service(container: ApplicationContainer = Depends(get_container)):
-    """Get CSVGraphParserService through DI container."""
-    return container.csv_graph_parser_service()
-
-
-# Create security scheme for bearer tokens
-security = HTTPBearer(auto_error=False)
-
-
-def get_admin_auth_dependency():
-    """Create admin auth dependency function for workflow routes."""
-
-    def admin_auth_dependency(
-        request: Request,
-        credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-        container: ApplicationContainer = Depends(get_container),
-    ) -> AuthContext:
-        try:
-            auth_service = container.auth_service()
-        except Exception as e:
-            # Handle auth service creation errors gracefully
-            raise HTTPException(
-                status_code=503,
-                detail=f"Authentication service unavailable: {str(e)}",
-            )
-
-        # Require admin permission for all workflow endpoints
-        return require_admin_permission(auth_service)(request, credentials)
-
-    return admin_auth_dependency
-
-
 # Create router
 router = APIRouter(prefix="/workflows", tags=["Workflow Management"])
 
@@ -383,10 +348,8 @@ def _parse_workflow_file(workflow_path: Path, csv_parser_service) -> Any:
     },
     tags=["Workflow Management"],
 )
-async def list_workflows(
-    auth_context: AuthContext = Depends(get_admin_auth_dependency()),
-    app_config_service=Depends(get_app_config_service),
-):
+@requires_auth("admin")
+async def list_workflows(request: Request):
     """
     **List All Available Workflows**
     
@@ -436,16 +399,51 @@ async def list_workflows(
     
     **Performance:** Fast operation using file metadata only
     
-    **Authentication:** None required
+    **Authentication:** Admin permission required
     """
     try:
-        # Get CSV repository path
-        csv_repository = app_config_service.get_csv_repository_path()
+        # Step 1: Check container availability with detailed error
+        if not hasattr(request.app, "state"):
+            raise HTTPException(status_code=500, detail="request.app.state not found")
+        if not hasattr(request.app.state, "container"):
+            raise HTTPException(
+                status_code=500, detail="request.app.state.container not found"
+            )
 
-        # Find all CSV files in repository
-        csv_files = list(csv_repository.glob("*.csv"))
+        container = request.app.state.container
 
-        # Get basic file info and workflow summaries
+        # Step 2: Get services with detailed error handling
+        try:
+            app_config_service = container.app_config_service()
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to get app_config_service: {str(e)}"
+            )
+
+        # Step 3: Get CSV repository path
+        try:
+            csv_repository = app_config_service.get_csv_repository_path()
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to get CSV repository path: {str(e)}"
+            )
+
+        # Step 4: Check if repository exists
+        if not csv_repository.exists():
+            raise HTTPException(
+                status_code=500,
+                detail=f"CSV repository does not exist: {csv_repository}",
+            )
+
+        # Step 5: Find all CSV files in repository
+        try:
+            csv_files = list(csv_repository.glob("*.csv"))
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to list CSV files: {str(e)}"
+            )
+
+        # Step 6: Get basic file info and workflow summaries
         workflows = []
         for csv_file in csv_files:
             try:
@@ -493,8 +491,17 @@ async def list_workflows(
             total_count=len(workflows),
         )
 
+    except HTTPException:
+        # Re-raise HTTP exceptions with their original status codes
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing workflows: {e}")
+        # Import here to avoid issues if not available
+        import traceback
+
+        error_detail = f"Unexpected error in list_workflows: {str(e)}"
+        print(f"DETAILED ERROR: {error_detail}")
+        print(f"TRACEBACK: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
 @router.get(
@@ -510,12 +517,8 @@ async def list_workflows(
     },
     tags=["Workflow Management"],
 )
-async def get_workflow_details(
-    workflow: str,
-    auth_context: AuthContext = Depends(get_admin_auth_dependency()),
-    app_config_service=Depends(get_app_config_service),
-    csv_parser_service=Depends(get_csv_parser_service),
-):
+@requires_auth("admin")
+async def get_workflow_details(workflow: str, request: Request):
     """
     **Get Comprehensive Workflow Information**
     
@@ -565,8 +568,15 @@ async def get_workflow_details(
     
     **Performance:** Parses CSV file - may take longer for large workflows
     
-    **Authentication:** None required
+    **Authentication:** Admin permission required
     """
+    # Get container from request app state
+    container = request.app.state.container
+
+    # Get services from container
+    app_config_service = container.app_config_service()
+    csv_parser_service = container.csv_graph_parser_service()
+
     # Get workflow path and validate existence
     workflow_path = _get_workflow_path(workflow, app_config_service)
     csv_repository = app_config_service.get_csv_repository_path()
@@ -618,18 +628,21 @@ async def get_workflow_details(
 
 
 @router.get("/{workflow}/graphs")
-async def list_workflow_graphs(
-    workflow: str,
-    auth_context: AuthContext = Depends(get_admin_auth_dependency()),
-    app_config_service=Depends(get_app_config_service),
-    csv_parser_service=Depends(get_csv_parser_service),
-):
+@requires_auth("admin")
+async def list_workflow_graphs(workflow: str, request: Request):
     """
     List all graphs available in a specific workflow.
 
     Returns a simple list of graph names and basic information
     for quick reference and navigation.
     """
+    # Get container from request app state
+    container = request.app.state.container
+
+    # Get services from container
+    app_config_service = container.app_config_service()
+    csv_parser_service = container.csv_graph_parser_service()
+
     # Get workflow path and validate existence
     workflow_path = _get_workflow_path(workflow, app_config_service)
 
@@ -651,12 +664,11 @@ async def list_workflow_graphs(
 
 
 @router.get("/{workflow}/{graph}", response_model=GraphDetailResponse)
+@requires_auth("admin")
 async def get_graph_details(
     workflow: str,
     graph: str,
-    auth_context: AuthContext = Depends(get_admin_auth_dependency()),
-    app_config_service=Depends(get_app_config_service),
-    csv_parser_service=Depends(get_csv_parser_service),
+    request: Request,
 ):
     """
     Get detailed information about a specific graph within a workflow.
@@ -664,6 +676,13 @@ async def get_graph_details(
     Returns comprehensive information about the graph including all nodes,
     their configurations, and the relationships between them.
     """
+    # Get container from request app state
+    container = request.app.state.container
+
+    # Get services from container
+    app_config_service = container.app_config_service()
+    csv_parser_service = container.csv_graph_parser_service()
+
     # Get workflow path and validate existence
     workflow_path = _get_workflow_path(workflow, app_config_service)
 

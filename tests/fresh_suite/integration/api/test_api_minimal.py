@@ -9,7 +9,7 @@ import tempfile
 import shutil
 from pathlib import Path
 from fastapi.testclient import TestClient
-from unittest.mock import create_autospec
+from unittest.mock import Mock
 
 from agentmap.infrastructure.api.fastapi.server import create_fastapi_app
 from agentmap.di import ApplicationContainer
@@ -22,38 +22,48 @@ class TestAPIBasics(unittest.TestCase):
         """Set up with proper dependency overrides to avoid args/kwargs issue."""
         self.temp_dir = tempfile.mkdtemp()
         
-        # Create a minimal container that doesn't use MagicMock
-        self.container = ApplicationContainer()
+        # Create a mock container with properly mocked services
+        self.container = Mock(spec=ApplicationContainer)
         
-        # Override problematic dependencies with proper signatures
-        def mock_get_container():
-            return self.container
+        # Mock app config service
+        mock_app_config = Mock()
+        mock_app_config.get_csv_repository_path.return_value = Path(self.temp_dir)
+        mock_app_config.get_csv_path.return_value = Path(self.temp_dir) / "default.csv"
+        self.container.app_config_service.return_value = mock_app_config
         
-        def mock_get_service_adapter(container=None):
-            # Return a simple object with required methods, not MagicMock
-            class MockAdapter:
-                def initialize_services(self):
-                    return None, None, None
-                def create_run_options(self, **kwargs):
-                    return type('MockOptions', (), kwargs)()
-                def extract_result_state(self, result):
-                    return {"final_state": {}, "metadata": {}}
-            return MockAdapter()
+        # Mock graph runner service
+        mock_graph_runner = Mock()
+        mock_result = Mock()
+        mock_result.success = True
+        mock_result.final_state = {"result": "test_success"}
+        mock_result.error = None
+        mock_result.total_duration = 1.0
+        mock_result.execution_summary = None
+        mock_graph_runner.run.return_value = mock_result
+        self.container.graph_runner_service.return_value = mock_graph_runner
         
-        def mock_get_app_config_service(container=None):
-            class MockAppConfig:
-                def get_csv_repository_path(self):
-                    return Path(self.temp_dir)
-            return MockAppConfig()
+        # Mock graph bundle service
+        mock_graph_bundle = Mock()
+        mock_bundle = Mock()
+        mock_graph_bundle.get_or_create_bundle.return_value = mock_bundle
+        self.container.graph_bundle_service.return_value = mock_graph_bundle
+        
+        # Mock logging service (optional)
+        mock_logging = Mock()
+        mock_logger = Mock()
+        mock_logging.get_logger.return_value = mock_logger
+        self.container.logging_service.return_value = mock_logging
+        
+        # Mock auth service
+        mock_auth = Mock()
+        mock_auth.is_authentication_enabled.return_value = False  # Disable auth for tests
+        self.container.auth_service.return_value = mock_auth
         
         # Create the FastAPI app
         app = create_fastapi_app()
         
-        # Override dependencies with proper signatures (not MagicMock)
-        from agentmap.infrastructure.api.fastapi.routes.execution import get_container, get_service_adapter, get_app_config_service
-        app.dependency_overrides[get_container] = mock_get_container
-        app.dependency_overrides[get_service_adapter] = mock_get_service_adapter  
-        app.dependency_overrides[get_app_config_service] = mock_get_app_config_service
+        # Override the container in app state (this is how the new architecture works)
+        app.state.container = self.container
         
         self.client = TestClient(app)
     

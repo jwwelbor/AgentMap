@@ -19,7 +19,6 @@ from pydantic import BaseModel
 
 from agentmap.core.adapters import create_service_adapter
 from agentmap.di import ApplicationContainer, initialize_di
-from agentmap.infrastructure.api.fastapi.dependencies import FastAPIDependencyAdapter
 from agentmap.infrastructure.api.fastapi.middleware.auth import FastAPIAuthAdapter
 
 
@@ -36,13 +35,14 @@ class AgentsInfoResponse(BaseModel):
 class FastAPIServer:
     """FastAPI server using services through DI with clean architecture."""
 
-    def __init__(self, container: Optional[ApplicationContainer] = None):
-        """Initialize FastAPI server with proper adapters."""
-        self.container = container or initialize_di()
+    def __init__(
+        self,
+        container: Optional[ApplicationContainer] = None,
+        config_file: Optional[str] = None,
+    ):
+        """Initialize FastAPI server with standard AgentMap DI initialization."""
+        self.container = container or initialize_di(config_file)
         self.adapter = create_service_adapter(self.container)
-
-        # Create dependency adapter for FastAPI-specific dependency injection
-        self.dependency_adapter = FastAPIDependencyAdapter(self.container)
 
         # Create auth adapter for FastAPI-specific authentication
         auth_service = self.container.auth_service()
@@ -56,14 +56,14 @@ class FastAPIServer:
             title="AgentMap Workflow Automation API",
             description=self._get_api_description(),
             version="2.0",
-            terms_of_service="https://github.com/Agentic-Insights/AgentMap",
+            terms_of_service="https://github.com/jwwelbor/AgentMap",
             contact={
                 "name": "AgentMap Support",
-                "url": "https://github.com/Agentic-Insights/AgentMap/issues",
+                "url": "https://github.com/jwwelbor/AgentMap/issues",
             },
             license_info={
                 "name": "MIT License",
-                "url": "https://github.com/Agentic-Insights/AgentMap/blob/main/LICENSE",
+                "url": "https://github.com/jwwelbor/AgentMap/blob/main/LICENSE",
             },
             openapi_tags=self._get_openapi_tags(),
             servers=[
@@ -82,6 +82,9 @@ class FastAPIServer:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+        # Store container in app state for direct access by routes
+        app.state.container = self.container
 
         # Add routes
         self._add_routes(app)
@@ -152,7 +155,7 @@ Error responses include detailed validation information and suggestions for reso
                 "description": "Workflow execution and resumption endpoints",
                 "externalDocs": {
                     "description": "Execution Guide",
-                    "url": "https://github.com/Agentic-Insights/AgentMap/docs/execution",
+                    "url": "https://jwwelbor.github.io/AgentMap/docs/intro",
                 },
             },
             {
@@ -184,8 +187,7 @@ Error responses include detailed validation information and suggestions for reso
     def _add_routes(self, app: FastAPI):
         """Add all routes to the FastAPI app using modular routers."""
 
-        # Store adapters in app state for routes to access
-        app.state.dependency_adapter = self.dependency_adapter
+        # Store auth adapter in app state for routes to access
         app.state.auth_adapter = self.auth_adapter
 
         # Import routers from infrastructure layer
@@ -354,7 +356,7 @@ Error responses include detailed validation information and suggestions for reso
                     "interactive_docs": "/docs",
                     "redoc": "/redoc",
                     "openapi_schema": "/openapi.json",
-                    "github": "https://github.com/Agentic-Insights/AgentMap",
+                    "github": "https://github.com/jwwelbor/AgentMap",
                 },
                 "repository_structure": {
                     "description": "Workflows stored as CSV files in configured repository",
@@ -412,8 +414,7 @@ def create_sub_application(
     if container is None:
         container = initialize_di()
 
-    # Create adapters
-    dependency_adapter = FastAPIDependencyAdapter(container)
+    # Create auth adapter
     auth_service = container.auth_service()
     auth_adapter = FastAPIAuthAdapter(auth_service)
 
@@ -436,8 +437,8 @@ def create_sub_application(
         allow_headers=["*"],
     )
 
-    # Store adapters in app state
-    app.state.dependency_adapter = dependency_adapter
+    # Store container and auth adapter in app state
+    app.state.container = container
     app.state.auth_adapter = auth_adapter
 
     # Import and add all router modules from infrastructure layer
@@ -507,11 +508,9 @@ def run_server(
         reload: Enable auto-reload
         config_file: Path to custom config file
     """
-    # Initialize DI with config file
-    container = initialize_di(config_file)
-
-    # Create app
-    app = create_fastapi_app(container)
+    # Create FastAPI server with standard AgentMap DI initialization
+    server = FastAPIServer(config_file=config_file)
+    app = server.app
 
     # Run with uvicorn
     uvicorn.run(app, host=host, port=port, reload=reload)

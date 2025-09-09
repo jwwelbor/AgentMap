@@ -90,21 +90,20 @@ class TestWorkflowEndpoints(BaseAPIIntegrationTest):
         admin_auth_service = self.create_admin_auth_service(self.admin_api_key)
         mock_container = self.configure_mock_container_with_admin_auth(admin_auth_service)
         
-        # Store original dependency adapter
-        original_adapter = getattr(self.app.state, 'dependency_adapter', None)
+        # Store original container
+        original_container = getattr(self.app.state, 'container', None)
         
-        # Create a mock adapter with our mock container
-        mock_adapter = type('MockAdapter', (), {'container': mock_container})()
-        self.app.state.dependency_adapter = mock_adapter
+        # Set the mock container directly
+        self.app.state.container = mock_container
         
         try:
             return test_function()
         finally:
-            # Restore original adapter
-            if original_adapter:
-                self.app.state.dependency_adapter = original_adapter
+            # Restore original container
+            if original_container:
+                self.app.state.container = original_container
             else:
-                delattr(self.app.state, 'dependency_adapter')
+                delattr(self.app.state, 'container')
     
     def create_multiple_test_workflows(self):
         """Create multiple test workflow files for testing."""
@@ -204,37 +203,52 @@ edge_graph,node-with-dashes,default,Test dashes in names,Node with dashes,output
     
     def test_list_workflows_empty_repository(self):
         """Test listing workflows when repository is empty."""
-        def run_test():
-            # Create a temporary empty repository path
-            empty_repo_path = Path(self.temp_dir) / "empty_repo"
-            empty_repo_path.mkdir(exist_ok=True)
-            
-            # Create admin auth service and mock container for empty repository
-            admin_auth_service = self.create_admin_auth_service(self.admin_api_key)
-            mock_container = Mock()
-            mock_container.auth_service.return_value = admin_auth_service
-            
-            # Mock app config service to return empty repository path
-            mock_app_config_service = MockServiceFactory.create_mock_app_config_service()
-            mock_app_config_service.get_csv_repository_path.return_value = empty_repo_path
-            mock_container.app_config_service.return_value = mock_app_config_service
-            
-            # Use real CSV parser service
-            mock_container.csv_graph_parser_service.return_value = self.container.csv_graph_parser_service()
-            
-            # Update app state with mock container
-            self.app.state.dependency_adapter = type('MockAdapter', (), {'container': mock_container})()
-            
-            headers = self.create_admin_headers(self.admin_api_key)
+        # Create a temporary empty repository path
+        empty_repo_path = Path(self.temp_dir) / "empty_repo"
+        empty_repo_path.mkdir(exist_ok=True)
+        
+        # Create admin API key and auth service
+        admin_api_key = self.admin_api_key
+        admin_auth_service = self.create_admin_auth_service(admin_api_key)
+        
+        # Create mock container with admin auth and empty repository configuration
+        mock_container = Mock()
+        mock_container.auth_service.return_value = admin_auth_service
+        
+        # Mock app config service to return empty repository path
+        mock_app_config_service = MockServiceFactory.create_mock_app_config_service()
+        mock_app_config_service.get_csv_repository_path.return_value = empty_repo_path
+        mock_container.app_config_service.return_value = mock_app_config_service
+        
+        # Use real CSV parser service from the container
+        mock_container.csv_graph_parser_service.return_value = self.container.csv_graph_parser_service()
+        
+        # Store original container
+        original_container = getattr(self.app.state, 'container', None)
+        
+        # Set the mock container directly
+        self.app.state.container = mock_container
+        
+        try:
+            # Make the request with admin authentication
+            headers = self.create_admin_headers(admin_api_key)
             response = self.client.get("/workflows", headers=headers)
             
+            # Assert successful response
             self.assert_response_success(response)
             
+            # Verify empty repository response
             data = response.json()
             self.assertEqual(data["total_count"], 0)
             self.assertEqual(len(data["workflows"]), 0)
-        
-        self.run_with_admin_auth(run_test)
+            self.assertEqual(data["repository_path"], str(empty_repo_path))
+            
+        finally:
+            # Restore original container
+            if original_container:
+                self.app.state.container = original_container
+            else:
+                delattr(self.app.state, 'container')
     
     def test_get_workflow_details_success(self):
         """Test successful retrieval of workflow details with admin authentication."""

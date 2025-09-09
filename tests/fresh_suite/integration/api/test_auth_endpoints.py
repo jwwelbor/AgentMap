@@ -138,12 +138,12 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             "corrupted_files": 0
         }
         
-        # Store original dependency adapter
-        original_adapter = getattr(self.app.state, 'dependency_adapter', None)
+        # Store original container
+        original_container = getattr(self.app.state, 'container', None)
         
-        # Create a mock adapter with our mock container
-        mock_adapter = type('MockAdapter', (), {'container': mock_container})()
-        self.app.state.dependency_adapter = mock_adapter
+        # Set mock container directly (routes expect app.state.container)
+        # Mock adapter no longer needed - set container directly
+        self.app.state.container = mock_container
         
         try:
             # Should be able to access protected endpoints without credentials when auth is disabled
@@ -151,11 +151,11 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             # The key test is that we don't get 401 Unauthorized due to auth being disabled
             self.assertNotEqual(response.status_code, 401)
         finally:
-            # Restore original adapter
-            if original_adapter:
-                self.app.state.dependency_adapter = original_adapter
+            # Restore original container
+            if original_container:
+                self.app.state.container = original_container
             else:
-                delattr(self.app.state, 'dependency_adapter')
+                delattr(self.app.state, 'container')
     
     def test_api_key_authentication_success(self):
         """Test successful API key authentication."""
@@ -185,12 +185,12 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             "corrupted_files": 0
         }
         
-        # Store original dependency adapter
-        original_adapter = getattr(self.app.state, 'dependency_adapter', None)
+        # Store original container
+        original_container = getattr(self.app.state, 'container', None)
         
-        # Create a mock adapter with our mock container
-        mock_adapter = type('MockAdapter', (), {'container': mock_container})()
-        self.app.state.dependency_adapter = mock_adapter
+        # Set mock container directly (routes expect app.state.container)
+        # Mock adapter no longer needed - set container directly
+        self.app.state.container = mock_container
         
         try:
             # Test with bearer token
@@ -204,11 +204,11 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             response = self.client.get("/info/cache", headers=headers)
             self.assertNotEqual(response.status_code, 401)
         finally:
-            # Restore original adapter
-            if original_adapter:
-                self.app.state.dependency_adapter = original_adapter
+            # Restore original container
+            if original_container:
+                self.app.state.container = original_container
             else:
-                delattr(self.app.state, 'dependency_adapter')
+                delattr(self.app.state, 'container')
     
     def test_api_key_authentication_failure(self):
         """Test API key authentication failure."""
@@ -232,12 +232,12 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             "corrupted_files": 0
         }
         
-        # Store original dependency adapter
-        original_adapter = getattr(self.app.state, 'dependency_adapter', None)
+        # Store original container
+        original_container = getattr(self.app.state, 'container', None)
         
-        # Create a mock adapter with our mock container
-        mock_adapter = type('MockAdapter', (), {'container': mock_container})()
-        self.app.state.dependency_adapter = mock_adapter
+        # Set mock container directly (routes expect app.state.container)
+        # Mock adapter no longer needed - set container directly
+        self.app.state.container = mock_container
         
         try:
             # Test with invalid API key
@@ -248,11 +248,11 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             data = response.json()
             self.assertIn("Invalid authentication credentials", data["detail"])
         finally:
-            # Restore original adapter
-            if original_adapter:
-                self.app.state.dependency_adapter = original_adapter
+            # Restore original container
+            if original_container:
+                self.app.state.container = original_container
             else:
-                delattr(self.app.state, 'dependency_adapter')
+                delattr(self.app.state, 'container')
     
     def test_no_authentication_credentials(self):
         """Test API access without any authentication credentials."""
@@ -271,12 +271,12 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             "corrupted_files": 0
         }
         
-        # Store original dependency adapter
-        original_adapter = getattr(self.app.state, 'dependency_adapter', None)
+        # Store original container
+        original_container = getattr(self.app.state, 'container', None)
         
-        # Create a mock adapter with our mock container
-        mock_adapter = type('MockAdapter', (), {'container': mock_container})()
-        self.app.state.dependency_adapter = mock_adapter
+        # Set mock container directly (routes expect app.state.container)
+        # Mock adapter no longer needed - set container directly
+        self.app.state.container = mock_container
         
         try:
             # Try to access protected endpoint without credentials
@@ -286,11 +286,11 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             data = response.json()
             self.assertIn("Authentication required", data["detail"])
         finally:
-            # Restore original adapter
-            if original_adapter:
-                self.app.state.dependency_adapter = original_adapter
+            # Restore original container
+            if original_container:
+                self.app.state.container = original_container
             else:
-                delattr(self.app.state, 'dependency_adapter')
+                delattr(self.app.state, 'container')
     
     def test_config_based_authentication_only(self):
         """Test that authentication is based only on configuration, not headers."""
@@ -310,12 +310,12 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             "corrupted_files": 0
         }
         
-        # Store original dependency adapter
-        original_adapter = getattr(self.app.state, 'dependency_adapter', None)
+        # Store original container
+        original_container = getattr(self.app.state, 'container', None)
         
-        # Create a mock adapter with our mock container
-        mock_adapter = type('MockAdapter', (), {'container': mock_container})()
-        self.app.state.dependency_adapter = mock_adapter
+        # Set mock container directly (routes expect app.state.container)
+        # Mock adapter no longer needed - set container directly
+        self.app.state.container = mock_container
         
         try:
             # Should work without any credentials when auth is disabled
@@ -327,17 +327,17 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             response = self.client.get("/info/cache", headers=headers)
             self.assertNotEqual(response.status_code, 401)
         finally:
-            # Restore original adapter
-            if original_adapter:
-                self.app.state.dependency_adapter = original_adapter
+            # Restore original container
+            if original_container:
+                self.app.state.container = original_container
             else:
-                delattr(self.app.state, 'dependency_adapter')
+                delattr(self.app.state, 'container')
         
         # Test 2: When authentication is ENABLED in config -> require credentials
         enabled_auth_service = self.create_api_key_auth_service(self.valid_api_key)
         
         mock_container.auth_service.return_value = enabled_auth_service
-        self.app.state.dependency_adapter = mock_adapter
+        self.app.state.container = mock_container
         
         try:
             # Should require authentication when auth is enabled
@@ -354,11 +354,11 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             response = self.client.get("/info/cache", headers=headers)
             self.assertNotEqual(response.status_code, 401)
         finally:
-            # Restore original adapter
-            if original_adapter:
-                self.app.state.dependency_adapter = original_adapter
+            # Restore original container
+            if original_container:
+                self.app.state.container = original_container
             else:
-                delattr(self.app.state, 'dependency_adapter')
+                delattr(self.app.state, 'container')
     
     def test_permission_based_access_control(self):
         """Test permission-based access control."""
@@ -390,12 +390,12 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             "corrupted_files": 0
         }
         
-        # Store original dependency adapter
-        original_adapter = getattr(self.app.state, 'dependency_adapter', None)
+        # Store original container
+        original_container = getattr(self.app.state, 'container', None)
         
-        # Create a mock adapter with our mock container
-        mock_adapter = type('MockAdapter', (), {'container': mock_container})()
-        self.app.state.dependency_adapter = mock_adapter
+        # Set mock container directly (routes expect app.state.container)
+        # Mock adapter no longer needed - set container directly
+        self.app.state.container = mock_container
         
         try:
             headers = self.create_auth_headers(self.valid_api_key)
@@ -405,11 +405,11 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             # Auth should pass (not 401), may fail on other service dependencies
             self.assertNotEqual(response.status_code, 401)
         finally:
-            # Restore original adapter
-            if original_adapter:
-                self.app.state.dependency_adapter = original_adapter
+            # Restore original container
+            if original_container:
+                self.app.state.container = original_container
             else:
-                delattr(self.app.state, 'dependency_adapter')
+                delattr(self.app.state, 'container')
     
     def test_admin_permission_full_access(self):
         """Test that admin permission grants full access."""
@@ -442,12 +442,12 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             "corrupted_files": 0
         }
         
-        # Store original dependency adapter
-        original_adapter = getattr(self.app.state, 'dependency_adapter', None)
+        # Store original container
+        original_container = getattr(self.app.state, 'container', None)
         
-        # Create a mock adapter with our mock container
-        mock_adapter = type('MockAdapter', (), {'container': mock_container})()
-        self.app.state.dependency_adapter = mock_adapter
+        # Set mock container directly (routes expect app.state.container)
+        # Mock adapter no longer needed - set container directly
+        self.app.state.container = mock_container
         
         try:
             headers = self.create_auth_headers(self.valid_api_key)
@@ -460,11 +460,11 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             response = self.client.get("/info/cache", headers=headers)
             self.assertNotEqual(response.status_code, 401)
         finally:
-            # Restore original adapter
-            if original_adapter:
-                self.app.state.dependency_adapter = original_adapter
+            # Restore original container
+            if original_container:
+                self.app.state.container = original_container
             else:
-                delattr(self.app.state, 'dependency_adapter')
+                delattr(self.app.state, 'container')
     
     def test_auth_service_functionality(self):
         """Test AuthService core functionality directly."""
@@ -519,12 +519,12 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             "corrupted_files": 0
         }
         
-        # Store original dependency adapter
-        original_adapter = getattr(self.app.state, 'dependency_adapter', None)
+        # Store original container
+        original_container = getattr(self.app.state, 'container', None)
         
-        # Create a mock adapter with our mock container
-        mock_adapter = type('MockAdapter', (), {'container': mock_container})()
-        self.app.state.dependency_adapter = mock_adapter
+        # Set mock container directly (routes expect app.state.container)
+        # Mock adapter no longer needed - set container directly
+        self.app.state.container = mock_container
         
         try:
             # API should handle auth service errors gracefully
@@ -532,11 +532,11 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             # Should return 503 service unavailable, not 401
             self.assertIn(response.status_code, [500, 503])
         finally:
-            # Restore original adapter
-            if original_adapter:
-                self.app.state.dependency_adapter = original_adapter
+            # Restore original container
+            if original_container:
+                self.app.state.container = original_container
             else:
-                delattr(self.app.state, 'dependency_adapter')
+                delattr(self.app.state, 'container')
     
     def test_jwt_authentication_stub(self):
         """Test JWT authentication (stub implementation)."""

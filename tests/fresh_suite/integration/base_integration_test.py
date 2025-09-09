@@ -83,6 +83,10 @@ class BaseIntegrationTest(unittest.TestCase):
         # Use Python's yaml module to safely create configuration
         # This avoids Windows path escaping issues entirely
         config_data = {
+            # Disable authentication for all integration tests
+            "authentication": {
+                "enabled": False
+            },
             "logging": {
                 "version": 1,
                 "disable_existing_loggers": False,

@@ -39,6 +39,11 @@ class TestExecutionRoutes(TestCase):
         # Configure default behaviors
         self.mock_logging_service.get_logger.return_value = MagicMock()
         self.mock_app_config_service.get_csv_repository_path.return_value = Path("csv_repository")
+        
+        # Set up auth service mock to bypass authentication
+        self.mock_auth_service = MagicMock()
+        self.mock_container.auth_service.return_value = self.mock_auth_service
+        self.mock_auth_service.is_authentication_enabled.return_value = False
 
     def test_run_workflow_graph_success(self):
         """Test successful workflow execution via REST endpoint."""
@@ -79,6 +84,9 @@ class TestExecutionRoutes(TestCase):
         # Create FastAPI app and add router
         app = FastAPI()
         app.include_router(router)
+        
+        # Set up app state with container (required by routes)
+        app.state.container = self.mock_container
         
         # Override dependencies
         app.dependency_overrides[get_container] = lambda: self.mock_container
@@ -155,6 +163,9 @@ class TestExecutionRoutes(TestCase):
         app = FastAPI()
         app.include_router(router)
         
+        # Set up app state with container (required by routes)
+        app.state.container = self.mock_container
+        
         # Override dependencies
         app.dependency_overrides[get_container] = lambda: self.mock_container
         app.dependency_overrides[get_app_config_service] = lambda: self.mock_app_config_service
@@ -220,6 +231,9 @@ class TestExecutionRoutes(TestCase):
         app = FastAPI()
         app.include_router(router)
         
+        # Set up app state with container (required by routes)
+        app.state.container = self.mock_container
+        
         # Override dependencies
         app.dependency_overrides[get_container] = lambda: self.mock_container
         app.dependency_overrides[get_app_config_service] = lambda: self.mock_app_config_service
@@ -264,6 +278,9 @@ class TestExecutionRoutes(TestCase):
         # Create FastAPI app and add router
         app = FastAPI()
         app.include_router(router)
+        
+        # Set up app state with container (required by routes)
+        app.state.container = self.mock_container
         
         # Override dependencies
         app.dependency_overrides[get_container] = lambda: self.mock_container

@@ -10,11 +10,14 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from agentmap.core.adapters import create_service_adapter
-from agentmap.di import ApplicationContainer
+from agentmap.infrastructure.api.fastapi.dependencies import (
+    get_app_config_service,
+    requires_auth,
+)
 from agentmap.infrastructure.api.fastapi.validation.common_validation import (
     ErrorHandler,
     RequestValidator,
@@ -23,27 +26,12 @@ from agentmap.infrastructure.api.fastapi.validation.common_validation import (
     validate_request_size,
 )
 from agentmap.infrastructure.interaction.cli_handler import CLIInteractionHandler
+from agentmap.services.auth_service import AuthContext
 
 
 # Request models (enhanced with validation)
 class StateExecutionRequest(ValidatedStateExecutionRequest):
     """Request model for path-based execution with just state."""
-
-
-#     class Config:
-#         schema_extra = {
-#             "example": {
-#                 "state": {
-#                     "user_input": "Process customer inquiry about pricing",
-#                     "customer_id": "CUST-12345",
-#                     "priority": "high",
-#                     "metadata": {"source": "api", "timestamp": "2024-01-15T10:30:00Z"},
-#                 },
-#                 "autocompile": True,
-#                 "execution_id": "exec-2024-0115-001",
-#             },
-#             "description": "Execute a workflow graph with initial state and optional compilation",
-#         }
 
 
 class GraphRunRequest(BaseModel):
@@ -70,39 +58,9 @@ class GraphRunRequest(BaseModel):
         None, description="Optional execution tracking identifier"
     )
 
-    # class Config:
-    #     schema_extra = {
-    #         "example": {
-    #             "graph": "customer_support_flow",
-    #             "workflow": "customer_service",
-    #             "state": {
-    #                 "ticket_id": "TICKET-7890",
-    #                 "customer_message": "I need help with my order",
-    #                 "urgency": "medium",
-    #             },
-    #             "autocompile": True,
-    #             "execution_id": "legacy-exec-001",
-    #         },
-    #         "description": "Legacy endpoint supporting flexible parameter combinations for backward compatibility",
-    #     }
-
 
 class ResumeWorkflowRequest(ValidatedResumeWorkflowRequest):
     """Request model for resuming an interrupted workflow."""
-
-    # class Config:
-    #     schema_extra = {
-    #         "example": {
-    #             "thread_id": "thread-uuid-12345",
-    #             "response_action": "approve",
-    #             "response_data": {
-    #                 "user_decision": "approved",
-    #                 "comments": "Looks good, proceed with processing",
-    #                 "reviewer_id": "USER-456",
-    #             },
-    #         },
-    #         "description": "Resume a paused workflow by providing user response or decision",
-    #     }
 
 
 # Response models
@@ -125,46 +83,6 @@ class GraphRunResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(
         None, description="Additional execution metadata and statistics"
     )
-
-    # TODO: Example config
-    # class Config:
-    #     schema_extra = {
-    #         "examples": [
-    #             {
-    #                 "name": "Successful Execution",
-    #                 "value": {
-    #                     "success": True,
-    #                     "output": {
-    #                         "final_response": "Customer inquiry has been processed successfully",
-    #                         "ticket_status": "resolved",
-    #                         "resolution_time": "00:03:45",
-    #                         "assigned_agent": "AI-Agent-Support",
-    #                     },
-    #                     "execution_id": "exec-2024-0115-001",
-    #                     "execution_time": 3.45,
-    #                     "metadata": {
-    #                         "nodes_executed": 7,
-    #                         "llm_calls_made": 3,
-    #                         "total_tokens": 1250,
-    #                     },
-    #                 },
-    #             },
-    #             {
-    #                 "name": "Failed Execution",
-    #                 "value": {
-    #                     "success": False,
-    #                     "output": None,
-    #                     "error": "Graph compilation failed: Missing required agent type 'custom_llm'",
-    #                     "execution_id": "exec-2024-0115-002",
-    #                     "execution_time": 0.15,
-    #                     "metadata": {
-    #                         "error_node": "process_inquiry",
-    #                         "error_type": "AgentNotFound",
-    #                     },
-    #                 },
-    #             },
-    #         ]
-    #     }
 
 
 class ResumeWorkflowResponse(BaseModel):
@@ -207,13 +125,7 @@ class ResumeWorkflowResponse(BaseModel):
         }
 
 
-# Import dependency injection functions from shared dependencies module
-from agentmap.infrastructure.api.fastapi.dependencies import (
-    get_app_config_service,
-    get_container,
-    get_service_adapter,
-    get_storage_service_manager,
-)
+# Direct container access via request.app.state.container
 
 # Create router
 router = APIRouter(prefix="/execution", tags=["Execution"])
@@ -288,11 +200,12 @@ def _resolve_workflow_path(workflow_name: str, app_config_service) -> Path:
     tags=["Execution"],
 )
 @validate_request_size(max_size=RequestValidator.MAX_JSON_SIZE)
+@requires_auth("execute")
 async def run_workflow_graph(
     workflow: str,
     graph: str,
-    request: StateExecutionRequest,
-    container: ApplicationContainer = Depends(get_container),
+    execution_request: StateExecutionRequest,
+    request: Request,
     app_config_service=Depends(get_app_config_service),
 ):
     """
@@ -365,6 +278,9 @@ async def run_workflow_graph(
         validated_workflow = _validate_workflow_name(workflow)
         validated_graph = _validate_graph_name(graph)
 
+        # Get container from request app state
+        container = request.app.state.container
+
         # Resolve workflow path with size validation
         workflow_path = _resolve_workflow_path(validated_workflow, app_config_service)
 
@@ -407,7 +323,7 @@ async def run_workflow_graph(
             )
 
             # Execute graph using bundle
-            result = graph_runner_service.run(bundle, request.state)
+            result = graph_runner_service.run(bundle, execution_request.state)
 
         except TimeoutError:
             raise ErrorHandler.create_error_response(
@@ -432,7 +348,7 @@ async def run_workflow_graph(
             return GraphRunResponse(
                 success=True,
                 output=result.final_state,
-                execution_id=request.execution_id,  # Pass through from request
+                execution_id=execution_request.execution_id,  # Pass through from request
                 execution_time=result.total_duration,
                 metadata=metadata,
             )
@@ -440,7 +356,7 @@ async def run_workflow_graph(
             return GraphRunResponse(
                 success=False,
                 error=result.error,
-                execution_id=request.execution_id,  # Pass through from request
+                execution_id=execution_request.execution_id,  # Pass through from request
                 execution_time=result.total_duration,
             )
 
@@ -473,9 +389,10 @@ async def run_workflow_graph(
     tags=["Execution"],
     deprecated=False,  # Still supported for backward compatibility
 )
+@requires_auth("execute")
 async def run_graph_legacy(
-    request: GraphRunRequest,
-    container: ApplicationContainer = Depends(get_container),
+    execution_request: GraphRunRequest,
+    request: Request,
     app_config_service=Depends(get_app_config_service),
 ):
     """
@@ -518,6 +435,9 @@ async def run_graph_legacy(
     logger = None  # Initialize logger to None
 
     try:
+        # Get container from request app state
+        container = request.app.state.container
+
         # Get services
         graph_runner_service = container.graph_runner_service()
         graph_bundle_service = container.graph_bundle_service()
@@ -529,10 +449,12 @@ async def run_graph_legacy(
 
         # Determine CSV path - priority: csv parameter, workflow lookup, default config
         csv_path = None
-        if request.csv:
-            csv_path = Path(request.csv)
-        elif request.workflow:
-            csv_path = _resolve_workflow_path(request.workflow, app_config_service)
+        if execution_request.csv:
+            csv_path = Path(execution_request.csv)
+        elif execution_request.workflow:
+            csv_path = _resolve_workflow_path(
+                execution_request.workflow, app_config_service
+            )
         else:
             # Use default from app config
             default_csv = app_config_service.get_csv_path()
@@ -542,7 +464,7 @@ async def run_graph_legacy(
                 raise ValueError("No CSV file specified and no default configured")
 
         if logger:
-            logger.info(f"API executing graph: {request.graph or 'default'}")
+            logger.info(f"API executing graph: {execution_request.graph or 'default'}")
 
         # Execute graph
         if graph_runner_service is None:
@@ -558,12 +480,12 @@ async def run_graph_legacy(
         # Create bundle from CSV and graph name
         bundle = graph_bundle_service.get_or_create_bundle(
             csv_path=csv_path,
-            graph_name=request.graph,
+            graph_name=execution_request.graph,
             config_path=None,  # Use default config
         )
 
         # Execute graph using bundle
-        result = graph_runner_service.run(bundle, request.state)
+        result = graph_runner_service.run(bundle, execution_request.state)
 
         # Convert to response format
         if result.success:
@@ -580,7 +502,7 @@ async def run_graph_legacy(
             return GraphRunResponse(
                 success=True,
                 output=result.final_state,
-                execution_id=request.execution_id,  # Pass through from request
+                execution_id=execution_request.execution_id,  # Pass through from request
                 execution_time=result.total_duration,
                 metadata=metadata,
             )
@@ -588,7 +510,7 @@ async def run_graph_legacy(
             return GraphRunResponse(
                 success=False,
                 error=result.error,
-                execution_id=request.execution_id,  # Pass through from request
+                execution_id=execution_request.execution_id,  # Pass through from request
                 execution_time=result.total_duration,
             )
 
@@ -620,10 +542,10 @@ async def run_graph_legacy(
     },
     tags=["Execution"],
 )
+@requires_auth("execute")
 async def resume_workflow(
-    request: ResumeWorkflowRequest,
-    storage_manager=Depends(get_storage_service_manager),
-    container: ApplicationContainer = Depends(get_container),
+    resume_request: ResumeWorkflowRequest,
+    request: Request,
 ):
     """
     **Resume an Interrupted Workflow**
@@ -680,6 +602,12 @@ async def resume_workflow(
     logger = None  # Initialize logger to None
 
     try:
+        # Get container from request app state
+        container = request.app.state.container
+
+        # Get storage service manager from container
+        storage_manager = container.storage_service_manager()
+
         # Check if storage is available
         if not storage_manager:
             raise HTTPException(
@@ -701,22 +629,22 @@ async def resume_workflow(
         # Log the resume attempt
         if logger:
             logger.info(
-                f"Resuming thread '{request.thread_id}' with action '{request.response_action}'"
+                f"Resuming thread '{resume_request.thread_id}' with action '{resume_request.response_action}'"
             )
 
         # Call handler.resume_execution()
         result = handler.resume_execution(
-            thread_id=request.thread_id,
-            response_action=request.response_action,
-            response_data=request.response_data,
+            thread_id=resume_request.thread_id,
+            response_action=resume_request.response_action,
+            response_data=resume_request.response_data,
         )
 
         # Return success response
         return ResumeWorkflowResponse(
             success=True,
-            thread_id=request.thread_id,
-            response_action=request.response_action,
-            message=f"Successfully resumed thread '{request.thread_id}' with action '{request.response_action}'",
+            thread_id=resume_request.thread_id,
+            response_action=resume_request.response_action,
+            message=f"Successfully resumed thread '{resume_request.thread_id}' with action '{resume_request.response_action}'",
         )
 
     except HTTPException:
