@@ -20,12 +20,6 @@ sidebar_position: 1
 
 The `HumanAgent` enables powerful human-in-the-loop workflows by pausing execution at designated points and waiting for human input before continuing. This agent is essential for approval workflows, manual data entry, quality reviews, and any process requiring human judgment or intervention.
 
-:::info Related Documentation
-- [Agent Development Contract](/docs/guides/development/agents/agent-development-contract) - Agent interface requirements and patterns
-- [Advanced Agent Types](/docs/guides/development/agents/advanced-agent-types) - Context configuration reference
-- [Reference: Agent Types](../reference/agent-types) - Built-in agent types and basic usage
-:::
-
 ## Key Features
 
 - **Workflow Interruption**: Pauses execution at designated nodes for human input

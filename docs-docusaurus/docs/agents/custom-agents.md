@@ -18,12 +18,6 @@ sidebar_position: 1
 
 This document defines the interface and behavior that all agents in the AgentMap ecosystem must follow. This contract ensures extensibility and configurability through a clean architecture pattern with protocol-based dependency injection.
 
-:::info Related Documentation
-- [Service Injection Patterns](/docs/contributing/service-injection) - Complete guide to the dependency injection system
-- [Advanced Agent Types](./advanced-agent-types) - Context configuration reference and advanced patterns
-- [Reference: Agent Types](/docs/reference/agent-types) - Built-in agent types and basic usage
-:::
-
 ## Architecture Overview
 
 AgentMap uses a modern clean architecture with clear separation between infrastructure services (injected via constructor) and business services (configured via protocols).
@@ -577,12 +571,3 @@ agent.configure_llm_service(llm_service)
 | **Testing** | Mock in constructor | Mock and configure separately |
 
 The modern AgentMap architecture provides clean separation of concerns, type-safe dependency injection, and comprehensive debugging capabilities while maintaining backward compatibility through migration patterns.
-
-## Next Steps
-
-After understanding the agent contract:
-
-1. **Deep Dive into Service Injection**: Read [Service Injection Patterns](/docs/contributing/service-injection) for comprehensive dependency injection examples
-2. **Explore Context Configuration**: Check [Advanced Agent Types](./advanced-agent-types) for detailed context configuration options
-3. **Study Built-in Implementations**: Review [Reference: Agent Types](/docs/reference/agent-types) for practical examples
-4. **Custom Agent Development**: See [Agent Development Guide](/docs/guides/development/agents/agent-development) for modern development patterns and examples

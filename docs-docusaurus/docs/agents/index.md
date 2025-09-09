@@ -49,8 +49,6 @@ Specialized agents for working with cloud storage and file management operations
 
 - **[Agent Configuration →](../configuration/main-config)**: Learn how to configure agents in your CSV files
 - **[Learning Tutorials →](../learning/basic-agents)**: Step-by-step guides for working with agents
-- **[Architecture Overview →](../architecture)**: Understand how agents fit into the AgentMap system
-
 ---
 
 *Looking for specific agent capabilities? Use the navigation menu or search functionality to find detailed documentation for each agent type.*

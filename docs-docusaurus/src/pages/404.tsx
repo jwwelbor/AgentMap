@@ -12,30 +12,10 @@ const popularLinks = [
     description: 'Build your first AI workflow in 5 minutes',
   },
   {
-    title: '📚 Tutorials',
-    href: '/docs/tutorials',
-    description: 'Step-by-step guides for common workflows',
-  },
-  {
     title: '📖 Documentation',
     href: '/docs/intro',
     description: 'Complete AgentMap documentation',
-  },
-  {
-    title: '💡 Examples',
-    href: '/docs/templates',
-    description: 'Real-world workflow examples',
-  },
-  {
-    title: '🔧 API Reference',
-    href: '/docs/api',
-    description: 'Complete API documentation',
-  },
-  {
-    title: '🤖 Agent Catalog',
-    href: '/docs/playground',
-    description: 'Browse available AI agents',
-  },
+  }
 ];
 
 export default function NotFound(): JSX.Element {

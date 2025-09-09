@@ -219,9 +219,3 @@ context = {
 ## Implementation Details
 
 Full implementation details and advanced configuration options will be provided in the upcoming documentation update. For now, refer to the examples above for basic usage patterns.
-
-## See Also
-
-- [Agent Types Reference](../agent-types) - Complete reference for all agent types
-- [Storage Agent Types](../agent-types#storage-agent-types) - Other storage agents
-- [Service Catalog](../service-catalog) - Available services and protocols

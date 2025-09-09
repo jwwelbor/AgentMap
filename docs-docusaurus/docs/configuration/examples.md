@@ -1223,6 +1223,6 @@ if __name__ == "__main__":
 1. **Choose your deployment scenario** - Select the configuration that matches your needs
 2. **Customize for your environment** - Modify paths, credentials, and settings
 3. **Test your configuration** - Use the validation script to check everything works
-4. **Review [Troubleshooting](troubleshooting)** - Common issues and solutions
+4. **Review [Troubleshooting](./troubleshooting)** - Common issues and solutions
 
-Ready to troubleshoot common configuration issues? Continue to the [Troubleshooting](troubleshooting) guide.
+Ready to troubleshoot common configuration issues? Continue to the [Troubleshooting](./troubleshooting) guide.

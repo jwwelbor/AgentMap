@@ -21,21 +21,21 @@ AgentMap uses a **hierarchical configuration system** with multiple layers:
 ## 📋 Quick Configuration Checklist
 
 ### Basic Setup (5 minutes)
-- [ ] Set up [environment variables](environment-variables) for API keys
-- [ ] Create basic [main configuration](main-config) file
-- [ ] Configure [storage providers](storage-config) if using external storage
+- [ ] Set up [environment variables](./environment-variables) for API keys
+- [ ] Create basic [main configuration](./main-config) file
+- [ ] Configure [storage providers](./storage-config) if using external storage
 
 ### Production Setup (30 minutes)
-- [ ] Configure [LLM routing](main-config#llm-routing-configuration) for cost optimization
-- [ ] Set up [authentication](auth-config) and security
-- [ ] Configure [logging and tracing](main-config#logging-and-tracing) for monitoring
-- [ ] Review [performance settings](main-config#performance-optimization)
+- [ ] Configure [LLM routing](./main-config#llm-routing-configuration) for cost optimization
+- [ ] Set up [authentication](./auth-config) and security
+- [ ] Configure [logging and tracing](./main-config#logging-and-tracing) for monitoring
+- [ ] Review [performance settings](./main-config#performance-optimization)
 
 ### Advanced Setup (1 hour)
-- [ ] Implement [custom paths](main-config#paths-configuration) for agents and functions
-- [ ] Configure [memory management](main-config#memory-configuration) for stateful workflows
-- [ ] Set up [host application integration](main-config#host-application-configuration)
-- [ ] Configure [cost optimization](main-config#cost-optimization) policies
+- [ ] Implement [custom paths](./main-config#paths-configuration) for agents and functions
+- [ ] Configure [memory management](./main-config#memory-configuration) for stateful workflows
+- [ ] Set up [host application integration](./main-config#host-application-configuration)
+- [ ] Configure [cost optimization](./main-config#cost-optimization) policies
 
 ## 🚀 Configuration Capabilities
 
@@ -60,22 +60,22 @@ AgentMap uses a **hierarchical configuration system** with multiple layers:
 
 ## 📚 Configuration Guide Structure
 
-### [Main Configuration](main-config)
+### [Main Configuration](./main-config)
 Complete YAML structure covering all core AgentMap settings including LLM providers, routing, memory, execution, and performance optimization.
 
-### [Authentication Configuration](auth-config)
+### [Authentication Configuration](./auth-config)
 Complete guide to authentication setup including API keys, JWT tokens, permissions, security policies, and CLI commands for managing authentication.
 
-### [Storage Configuration](storage-config)  
+### [Storage Configuration](./storage-config)  
 Comprehensive guide to storage providers including CSV, JSON, Vector databases, Firebase, and cloud storage with authentication and optimization settings.
 
-### [Environment Variables](environment-variables)
+### [Environment Variables](./environment-variables)
 Complete reference of environment variables for API keys, storage credentials, system overrides, and security settings.
 
-### [Configuration Examples](examples)
+### [Configuration Examples](./examples)
 Working configuration examples for different deployment scenarios including local development, production, and cloud integration.
 
-### [Troubleshooting](troubleshooting)
+### [Troubleshooting](./troubleshooting)
 Common configuration issues, validation errors, and debugging guidance with solutions.
 
 ## 🎯 Configuration by Use Case
@@ -215,9 +215,9 @@ Other changes require application restart:
 
 ## 📖 Next Steps
 
-1. **Start with [Main Configuration](main-config)** - Understand the complete YAML structure
-2. **Set up [Authentication](auth-config)** - Secure your API endpoints
-3. **Configure [Storage](storage-config)** - Set up your data persistence layer
+1. **Start with [Main Configuration](./main-config)** - Understand the complete YAML structure
+2. **Set up [Authentication](./auth-config)** - Secure your API endpoints
+3. **Configure [Storage](./storage-config)** - Set up your data persistence layer
 4. **Set [Environment Variables](environment-variables)** - Secure your credentials
 5. **Review [Examples](examples)** - See working configurations for your use case
 6. **Check [Troubleshooting](troubleshooting)** - Resolve common configuration issues

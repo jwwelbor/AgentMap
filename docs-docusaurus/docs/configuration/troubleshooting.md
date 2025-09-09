@@ -921,4 +921,4 @@ python -c "import yaml; yaml.safe_load(open('agentmap_config.yaml', 'r')); print
 3. **Add complexity gradually** - Enable features one by one
 4. **Monitor logs** - Watch for warnings and errors during operation
 
-Ready to implement your configuration? Return to the [Configuration Overview](index) or check out the [Getting Started Guide](../getting-started) for next steps.
+Ready to implement your configuration? Return to the [Configuration Overview](./index) or check out the [Getting Started Guide](../getting-started) for next steps.

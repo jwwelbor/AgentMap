@@ -569,15 +569,15 @@ This will log:
 ## 📖 Next Steps
 
 1. **Set Up Authentication** - Use `agentmap auth init` to create initial configuration
-2. **Configure Storage** - Review [Storage Configuration](storage-config) for data security
+2. **Configure Storage** - Review [Storage Configuration](./storage-config) for data security
 3. **Deploy Securely** - Check [Deployment Guide](../deployment/) for production security
 4. **Monitor Access** - Set up logging and monitoring for authentication events
 
 ## 🔗 Related Documentation
 
-- [Environment Variables](environment-variables) - Managing secrets securely
-- [Storage Configuration](storage-config) - Data persistence security
+- [Environment Variables](./environment-variables) - Managing secrets securely
+- [Storage Configuration](./storage-config) - Data persistence security
 - [Deployment Guide](../deployment/) - Production deployment security
-- [Troubleshooting](troubleshooting) - Common configuration issues
+- [Troubleshooting](./troubleshooting) - Common configuration issues
 
 Ready to secure your API endpoints? Use the CLI commands to generate your authentication configuration and start protecting your AgentMap deployment.

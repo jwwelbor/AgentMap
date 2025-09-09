@@ -955,9 +955,9 @@ validation:
 
 ## 📖 Next Steps
 
-1. **Set [Environment Variables](environment-variables)** - Configure authentication credentials
-2. **Review [Configuration Examples](examples)** - See complete storage setups  
+1. **Set [Environment Variables](./environment-variables)** - Configure authentication credentials
+2. **Review [Configuration Examples](./examples)** - See complete storage setups  
 3. **Test Storage Connections** - Validate your configuration
 4. **Implement Storage in Workflows** - Use configured storage in your agents
 
-Ready to set up environment variables? Continue to the [Environment Variables](environment-variables) guide.
+Ready to set up environment variables? Continue to the [Environment Variables](./environment-variables) guide.

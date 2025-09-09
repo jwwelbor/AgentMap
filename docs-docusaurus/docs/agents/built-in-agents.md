@@ -314,6 +314,3 @@ def process(self, inputs: Dict[str, Any]) -> Any:
 ## Next Steps
 
 - **[Custom Agent Development](./custom-agents)** - Build your own agent types
-- **[Agent Types Reference](/docs/reference/agent-types)** - Complete built-in agent specifications  
-- **[CSV Schema](/docs/reference/csv-schema)** - Complete workflow definition format
-- **[Agent Development Guide](/docs/guides/development/agents/agent-development)** - Step-by-step agent development

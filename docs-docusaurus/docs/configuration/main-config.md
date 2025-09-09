@@ -759,9 +759,9 @@ Some configuration changes can be applied without restart:
 
 ## 📖 Next Steps
 
-1. **Configure [Storage](storage-config)** - Set up your data persistence layer
-2. **Set [Environment Variables](environment-variables)** - Secure your credentials  
-3. **Review [Examples](examples)** - See complete configuration examples
+1. **Configure [Storage](./storage-config)** - Set up your data persistence layer
+2. **Set [Environment Variables](./environment-variables)** - Secure your credentials  
+3. **Review [Examples](./examples)** - See complete configuration examples
 4. **Test Configuration** - Validate your setup before deployment
 
-Ready to configure storage providers? Continue to the [Storage Configuration](storage-config) guide.
+Ready to configure storage providers? Continue to the [Storage Configuration](./storage-config) guide.

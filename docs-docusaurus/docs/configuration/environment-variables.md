@@ -676,12 +676,3 @@ validation:
     - REDIS_URL
     - LANGSMITH_API_KEY
 ```
-
-## 📖 Next Steps
-
-1. **Set up your [.env file](examples#environment-file-examples)** - Configure for your environment
-2. **Review [Configuration Examples](examples)** - See complete setups with environment variables
-3. **Test your configuration** - Validate all credentials and connections
-4. **Implement [security best practices](#security-best-practices)** - Secure your deployment
-
-Ready to see complete configuration examples? Continue to the [Configuration Examples](examples) guide.
