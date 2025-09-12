@@ -13,6 +13,14 @@ from agentmap.exceptions.graph_exceptions import (
     GraphBuildingError,
     InvalidEdgeDefinitionError,
 )
+
+from agentmap.exceptions.messaaging_exceptions import (
+    MessagingConnectionError,
+    MessagingOperationError,
+    MessagingServiceError,
+    MessagingServiceUnavailableError,
+)
+
 from agentmap.exceptions.service_exceptions import (
     FunctionResolutionException,
     LLMConfigurationError,
@@ -49,6 +57,10 @@ __all__ = [
     "DocumentNotFoundError",
     "FunctionResolutionException",
     "GraphBuildingError",
+    "MessagingConnectionError",
+    "MessagingOperationError",
+    "MessagingServiceError",
+    "MessagingServiceUnavailableError",
     "InvalidEdgeDefinitionError",
     "LLMServiceError",
     "LLMProviderError",

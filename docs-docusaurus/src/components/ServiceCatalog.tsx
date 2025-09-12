@@ -123,6 +123,22 @@ adapted = adapter.adapt_initial_state({"input": "data"}, StateSchema)`,
 router_func = resolver.resolve_function("func:custom_router")`,
     protocols: ['FunctionResolutionProtocol']
   },
+  {
+    name: 'MessagingService',
+    category: 'Infrastructure',
+    description: 'Cloud-agnostic message publishing service with multi-provider support, automatic fallback, and standardized message formatting.',
+    dependencies: ['AppConfigService', 'LoggingService', 'AvailabilityCacheService'],
+    keyMethods: ['publish_message()', 'apply_template()', 'get_available_providers()'],
+    contextParameters: ['provider', 'priority', 'thread_id', 'message_type'],
+    usageExample: `messaging = container.messaging_service()
+result = await messaging.publish_message(
+    topic="workflow_triggers",
+    message_type="graph_execution", 
+    payload={"graph_name": "DataProcessing"},
+    priority=MessagePriority.HIGH
+)`,
+    protocols: ['MessagingServiceProtocol']
+  },
 
   // Configuration Services
   {

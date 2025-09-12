@@ -28,6 +28,7 @@ AgentMap uses a **hierarchical configuration system** with multiple layers:
 ### Production Setup (30 minutes)
 - [ ] Configure [LLM routing](./main-config#llm-routing-configuration) for cost optimization
 - [ ] Set up [authentication](./auth-config) and security
+- [ ] Configure [messaging services](./messaging-config) for async processing
 - [ ] Configure [logging and tracing](./main-config#logging-and-tracing) for monitoring
 - [ ] Review [performance settings](./main-config#performance-optimization)
 
@@ -42,6 +43,7 @@ AgentMap uses a **hierarchical configuration system** with multiple layers:
 ### Core Features
 - **Multiple LLM Providers**: OpenAI, Anthropic, Google with automatic routing
 - **Storage Backends**: CSV, JSON, Vector databases, Cloud storage, Firebase
+- **Messaging Services**: AWS SNS/SQS, Google Pub/Sub, Azure Service Bus, Local messaging
 - **Authentication**: JWT, API keys, Supabase integration
 - **Environment Overrides**: Complete runtime configuration control
 
@@ -68,6 +70,9 @@ Complete guide to authentication setup including API keys, JWT tokens, permissio
 
 ### [Storage Configuration](./storage-config)  
 Comprehensive guide to storage providers including CSV, JSON, Vector databases, Firebase, and cloud storage with authentication and optimization settings.
+
+### [Messaging Configuration](./messaging-config)
+Complete guide to messaging services including AWS SNS/SQS, Google Cloud Pub/Sub, Azure Service Bus, and local messaging with templates, retry policies, and multi-provider configuration.
 
 ### [Environment Variables](./environment-variables)
 Complete reference of environment variables for API keys, storage credentials, system overrides, and security settings.
