@@ -72,7 +72,8 @@ class MockServiceFactory:
             mock_logger.debug.side_effect = lambda msg, *args, **kwargs: track_log_call("debug", msg, *args, **kwargs)
             mock_logger.info.side_effect = lambda msg, *args, **kwargs: track_log_call("info", msg, *args, **kwargs)
             mock_logger.warning.side_effect = lambda msg, *args, **kwargs: track_log_call("warning", msg, *args, **kwargs)
-            mock_logger.error.side_effect = lambda msg, *args, **kwargs: track_log_call("error", msg, *args, **kwargs)
+            # Create a new Mock for error method that preserves call_args_list
+            mock_logger.error = Mock(side_effect=lambda msg, *args, **kwargs: track_log_call("error", msg, *args, **kwargs))
             mock_logger.trace.side_effect = lambda msg, *args, **kwargs: track_log_call("trace", msg, *args, **kwargs)
             
             return mock_logger

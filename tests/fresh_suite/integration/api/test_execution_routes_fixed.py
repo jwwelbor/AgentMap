@@ -5,17 +5,15 @@ Tests the fixed API execution endpoints to ensure they properly use
 GraphBundleService and call the correct runner.run() method.
 """
 
-import json
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock
 
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from agentmap.models.execution_result import ExecutionResult
-from agentmap.models.execution_summary import ExecutionSummary
+from agentmap.models.execution.result import ExecutionResult
+from agentmap.models.execution.summary import ExecutionSummary
 from agentmap.models.graph_bundle import GraphBundle
 
 
@@ -47,8 +45,8 @@ class TestExecutionRoutes(TestCase):
 
     def test_run_workflow_graph_success(self):
         """Test successful workflow execution via REST endpoint."""
-        from agentmap.infrastructure.api.fastapi.routes.execution import router
-        from agentmap.infrastructure.api.fastapi.dependencies import get_container, get_app_config_service
+        from agentmap.deployment.http.api.routes.execution import router
+        from agentmap.deployment.http.api.dependencies import get_container, get_app_config_service
         from fastapi import FastAPI
         
         # Create a test bundle
@@ -130,8 +128,8 @@ class TestExecutionRoutes(TestCase):
 
     def test_run_workflow_graph_failure(self):
         """Test failed workflow execution."""
-        from agentmap.infrastructure.api.fastapi.routes.execution import router
-        from agentmap.infrastructure.api.fastapi.dependencies import get_container, get_app_config_service
+        from agentmap.deployment.http.api.routes.execution import router
+        from agentmap.deployment.http.api.dependencies import get_container, get_app_config_service
         from fastapi import FastAPI
         
         # Create a test bundle
@@ -191,8 +189,8 @@ class TestExecutionRoutes(TestCase):
 
     def test_legacy_run_endpoint(self):
         """Test the legacy /run endpoint works with new implementation."""
-        from agentmap.infrastructure.api.fastapi.routes.execution import router
-        from agentmap.infrastructure.api.fastapi.dependencies import get_container, get_app_config_service
+        from agentmap.deployment.http.api.routes.execution import router
+        from agentmap.deployment.http.api.dependencies import get_container, get_app_config_service
         from fastapi import FastAPI
         
         # Mock the CSV path method
@@ -271,8 +269,8 @@ class TestExecutionRoutes(TestCase):
 
     def test_workflow_not_found(self):
         """Test 404 when workflow file doesn't exist."""
-        from agentmap.infrastructure.api.fastapi.routes.execution import router
-        from agentmap.infrastructure.api.fastapi.dependencies import get_container, get_app_config_service
+        from agentmap.deployment.http.api.routes.execution import router
+        from agentmap.deployment.http.api.dependencies import get_container, get_app_config_service
         from fastapi import FastAPI
         
         # Create FastAPI app and add router

@@ -5,7 +5,7 @@ This module provides the main CLI interface by importing and re-exporting
 the actual CLI implementation from agentmap.core.cli.
 """
 
-from agentmap.core.cli.main_cli import app, main_cli
+from agentmap.deployment.cli.main_cli import app, main_cli
 
 # Re-export the CLI app for poetry scripts entry point
 __all__ = ["app", "main_cli"]

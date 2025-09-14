@@ -7,7 +7,7 @@ from typing import Any, Dict
 import yaml
 from pydantic import ValidationError as PydanticValidationError
 
-from agentmap.models.config.config_models import ConfigModel
+from agentmap.models.config_models import ConfigModel
 from agentmap.models.validation.validation_models import ValidationResult
 from agentmap.services.logging_service import LoggingService
 

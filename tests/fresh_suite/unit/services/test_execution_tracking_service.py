@@ -9,11 +9,11 @@ import unittest
 from unittest.mock import Mock, patch
 from datetime import datetime, timedelta
 from typing import Dict, Any
-from agentmap.models.execution_tracker import ExecutionTracker
+from agentmap.models.execution.tracker import ExecutionTracker
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.execution_tracking_service import ExecutionTrackingService, NodeExecution
-from agentmap.models.execution_summary import ExecutionSummary
+from agentmap.models.execution.summary import ExecutionSummary
 from tests.utils.migration_utils import MockLoggingService
 from tests.utils.mock_service_factory import MockServiceFactory
 

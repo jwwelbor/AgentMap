@@ -9,7 +9,6 @@ import pytest
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 
 class TestLesson1CSVIntegration:
@@ -49,8 +48,8 @@ PersonalGoals,End,Workflow complete,echo,,,final_message,completion,Workflow com
         """
         try:
             # The exact import chain that was failing in the original error
-            from agentmap.core import ServiceAdapter, create_service_adapter
-            from agentmap.core.adapters import ServiceAdapter as AdapterClass
+            from agentmap.deployment.http import ServiceAdapter, create_service_adapter
+            from agentmap.deployment.service_adapter import ServiceAdapter as AdapterClass
             from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
             
             # These should not raise MRO errors
@@ -115,8 +114,8 @@ PersonalGoals,End,Workflow complete,echo,,,final_message,completion,Workflow com
         """
         try:
             # Import the main CLI components
-            from agentmap.core.cli.main_cli import main_cli
-            from agentmap.core.adapters import create_service_adapter
+            from agentmap.deployment.cli import main_cli
+            from agentmap.deployment.http.adapters import create_service_adapter
             from agentmap.di.containers import Container
             
             # Create DI container (this was part of the failing chain)
@@ -155,8 +154,8 @@ class TestOriginalErrorReproduction:
         try:
             # The import chain that was originally failing
             from agentmap import ServiceAdapter, create_service_adapter
-            from agentmap.core import ServiceAdapter as CoreAdapter
-            from agentmap.core.adapters import ServiceAdapter as AdapterClass
+            from agentmap.deployment.http import ServiceAdapter as CoreAdapter
+            from agentmap.deployment.service_adapter import ServiceAdapter as AdapterClass
             
             # If we get here without MRO errors, the fix worked
             assert ServiceAdapter is not None

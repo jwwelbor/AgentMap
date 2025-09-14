@@ -497,7 +497,6 @@ llm:
             'app_config_service',
             'logging_service', 
             'execution_tracking_service',
-            'graph_definition_service',
             'graph_runner_service',
             'llm_service',
             'agent_registry_service'

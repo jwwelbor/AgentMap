@@ -32,7 +32,7 @@ from tests.fresh_suite.integration.test_data_factories import (
     IntegrationTestDataManager,
     ExecutionTestDataFactory
 )
-from agentmap.models.execution_result import ExecutionResult
+from agentmap.models.execution.result import ExecutionResult
 # RunOptions removed as part of GraphRunnerService simplification
 
 
@@ -54,7 +54,6 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
         
         # Core services for CSV workflow execution
         self.graph_runner_service = self.container.graph_runner_service()
-        self.graph_definition_service = self.container.graph_definition_service() 
         self.csv_parser_service = self.container.csv_graph_parser_service()
         self.graph_execution_service = self.container.graph_execution_service()
         self.execution_tracking_service = self.container.execution_tracking_service()
@@ -65,7 +64,6 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
         
         # Verify all critical services are available
         self.assert_service_created(self.graph_runner_service, "GraphRunnerService")
-        self.assert_service_created(self.graph_definition_service, "GraphDefinitionService")
         self.assert_service_created(self.csv_parser_service, "CSVGraphParserService")
         self.assert_service_created(self.graph_execution_service, "GraphExecutionService")
         self.assert_service_created(self.execution_tracking_service, "ExecutionTrackingService")
@@ -205,7 +203,7 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
             )
             
             if bundle is None:
-                from agentmap.models.execution_summary import ExecutionSummary
+                from agentmap.models.execution.summary import ExecutionSummary
                 return ExecutionResult(
                     graph_name=graph_name,
                     final_state=initial_state,
@@ -225,7 +223,7 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
             
         except Exception as e:
             # Wrap in ExecutionResult for consistent error handling
-            from agentmap.models.execution_summary import ExecutionSummary
+            from agentmap.models.execution.summary import ExecutionSummary
             return ExecutionResult(
                 graph_name=graph_name,
                 final_state=initial_state,
@@ -277,31 +275,7 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
                           hasattr(result, 'execution_time'))
         self.assertTrue(duration_exists, 
                        "ExecutionResult should have duration field")
-    
-    def assert_csv_file_loadable(self, csv_path: Path) -> None:
-        """
-        Assert that a CSV file can be loaded and parsed successfully.
-        
-        Args:
-            csv_path: Path to CSV file to verify
-        """
-        self.assert_file_exists(csv_path, "CSV file")
-        
-        # Test CSV parsing
-        try:
-            graph_spec = self.csv_parser_service.parse_csv_to_graph_spec(csv_path)
-            self.assertIsNotNone(graph_spec, "Should parse CSV to GraphSpec")
-            self.assertGreater(len(graph_spec.graphs), 0, "Should have at least one graph")
-        except Exception as e:
-            self.fail(f"CSV file should be parseable: {e}")
-        
-        # Test graph definition building
-        try:
-            graphs = self.graph_definition_service.build_all_from_csv(csv_path)
-            self.assertIsInstance(graphs, dict, "Should return dict of graphs")
-            self.assertGreater(len(graphs), 0, "Should build at least one graph")
-        except Exception as e:
-            self.fail(f"CSV file should build to domain models: {e}")
+
     
     def get_graphs_from_csv(self, csv_path: Path) -> List[str]:
         """
@@ -362,7 +336,6 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
         
         # Verify basic services are working
         self.assertIsNotNone(self.graph_runner_service, "GraphRunnerService should be available")
-        self.assertIsNotNone(self.graph_definition_service, "GraphDefinitionService should be available")
         
         # Test basic CSV processing with factory data
         simple_spec = CSVTestDataFactory.create_simple_linear_graph()
@@ -370,10 +343,7 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
         
         # Verify file creation
         self.assert_file_exists(csv_path, "Test CSV file")
-        
-        # Test CSV can be loaded and parsed
-        self.assert_csv_file_loadable(csv_path)
-        
+                
         # Test basic workflow execution
         result = self.execute_workflow_end_to_end(csv_path, simple_spec.graph_name)
         self.assert_workflow_success(result, simple_spec.graph_name)
@@ -475,11 +445,7 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
                     # Load CSV file from examples directory
                     csv_path = self.load_example_csv_file(csv_filename)
                     print(f"✅ Loaded: {csv_path}")
-                    
-                    # Verify CSV can be parsed
-                    self.assert_csv_file_loadable(csv_path)
-                    print(f"✅ Parsed: CSV structure valid")
-                    
+                                        
                     # Get graph names from the CSV
                     graph_names = self.get_graphs_from_csv(csv_path)
                     self.assertGreater(len(graph_names), 0, f"{csv_filename} should contain at least one graph")

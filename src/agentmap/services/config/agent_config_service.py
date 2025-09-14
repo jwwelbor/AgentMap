@@ -7,7 +7,7 @@ Delegates to BuiltinDefinitionConstants for actual definitions.
 
 from typing import Dict, Optional
 
-from agentmap.core.builtin_definition_constants import BuiltinDefinitionConstants
+from agentmap.builtin_definition_constants import BuiltinDefinitionConstants
 
 
 class AgentConfigService:

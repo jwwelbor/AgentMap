@@ -1,5 +1,6 @@
 from typing import Any, Callable, Dict, Optional
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import StateGraph
 
 from agentmap.models.graph import Graph
@@ -170,6 +171,103 @@ class GraphAssemblyService:
         # Compile and return the executable LangGraph
         compiled_graph = self.builder.compile()
         self.logger.debug(f"✅ Graph '{graph.name}' compiled successfully")
+        return compiled_graph
+
+    def assemble_with_checkpoint(
+        self,
+        graph: Graph,
+        agent_instances: Dict[str, Any],
+        node_definitions: Optional[Dict[str, Any]] = None,
+        checkpointer: Optional[BaseCheckpointSaver] = None,
+    ) -> Any:
+        """
+        Assemble an executable LangGraph with checkpoint support.
+
+        This method creates a graph with checkpoint capability for pause/resume functionality.
+
+        Args:
+            graph: Graph domain model with nodes and configuration
+            agent_instances: Dictionary mapping node names to agent instances
+            node_definitions: Optional node registry for orchestrator injection
+            checkpointer: Checkpoint service for state persistence
+
+        Returns:
+            Compiled executable graph with checkpoint support
+
+        Raises:
+            ValueError: If graph has no nodes or missing agent instances
+        """
+        self.logger.info(
+            f"🚀 Starting checkpoint-enabled graph assembly: '{graph.name}'"
+        )
+
+        # Validate graph has nodes
+        if not graph.nodes:
+            raise ValueError(f"Graph '{graph.name}' has no nodes")
+
+        # Create fresh StateGraph builder for each compilation to avoid LangGraph conflicts
+        state_schema = self._get_state_schema_from_config()
+        self.builder = StateGraph(state_schema=state_schema)
+        self.orchestrator_nodes = []
+        self.injection_stats = {
+            "orchestrators_found": 0,
+            "orchestrators_injected": 0,
+            "injection_failures": 0,
+        }
+
+        self.orchestrator_node_registry = node_definitions
+
+        # Add all nodes and process their edges (same as standard assembly)
+        node_names = list(graph.nodes.keys())
+        self.logger.debug(
+            f"Processing {len(node_names)} nodes with checkpoint support: {node_names}"
+        )
+
+        # ENSURE consistent entry point using factory (in case graph doesn't have one)
+        if not graph.entry_point:
+            graph.entry_point = self.graph_factory_service.detect_entry_point(graph)
+            self.logger.debug(f"🚪 Factory detected entry point: '{graph.entry_point}'")
+        else:
+            self.logger.debug(
+                f"🚪 Using pre-existing graph entry point: '{graph.entry_point}'"
+            )
+
+        for node_name, node in graph.nodes.items():
+            # Get agent instance from the provided agent_instances dictionary
+            if node_name not in agent_instances:
+                raise ValueError(f"No agent instance found for node: {node_name}")
+            agent_instance = agent_instances[node_name]
+            self.add_node(node_name, agent_instance)
+            self.process_node_edges(node_name, node.edges)
+
+        # Set entry point
+        if graph.entry_point:
+            self.builder.set_entry_point(graph.entry_point)
+            self.logger.debug(f"🚪 Set entry point: '{graph.entry_point}'")
+
+        # Add dynamic routers for orchestrator nodes
+        if self.orchestrator_nodes:
+            self.logger.debug(
+                f"Adding dynamic routers for {len(self.orchestrator_nodes)} orchestrator nodes"
+            )
+            for orch_node_name in self.orchestrator_nodes:
+                # Get the node's failure edge if it exists
+                node = graph.nodes.get(orch_node_name)
+                failure_target = node.edges.get("failure") if node else None
+                self._add_dynamic_router(orch_node_name, failure_target)
+
+        # Compile with checkpoint support
+        if checkpointer:
+            compiled_graph = self.builder.compile(checkpointer=checkpointer)
+            self.logger.debug(
+                f"✅ Graph '{graph.name}' compiled with checkpoint support"
+            )
+        else:
+            compiled_graph = self.builder.compile()
+            self.logger.debug(
+                f"✅ Graph '{graph.name}' compiled without checkpoint support"
+            )
+
         return compiled_graph
 
     def add_node(self, name: str, agent_instance: Any) -> None:

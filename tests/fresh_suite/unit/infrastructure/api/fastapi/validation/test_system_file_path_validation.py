@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from agentmap.infrastructure.api.fastapi.validation.common_validation import RequestValidator
+from agentmap.deployment.http.api.validation.common_validation import RequestValidator
 
 
 class TestSystemFilePathValidation(unittest.TestCase):

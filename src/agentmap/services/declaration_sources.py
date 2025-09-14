@@ -5,12 +5,11 @@ Provides pluggable architecture for loading agent and service declarations
 from different sources (Python dicts, YAML files, etc.).
 """
 
-import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict
 
-from agentmap.core.builtin_definition_constants import BuiltinDefinitionConstants
+from agentmap.builtin_definition_constants import BuiltinDefinitionConstants
 from agentmap.models.declaration_models import AgentDeclaration, ServiceDeclaration
 from agentmap.services.declaration_parser import DeclarationParser
 from agentmap.services.logging_service import LoggingService

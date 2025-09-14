@@ -9,7 +9,7 @@ import time
 from typing import Any, Dict, Optional
 
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
-from agentmap.models.execution_result import ExecutionResult
+from agentmap.models.execution.result import ExecutionResult
 from agentmap.services.execution_policy_service import ExecutionPolicyService
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.logging_service import LoggingService
@@ -183,7 +183,7 @@ class GraphExecutionService:
                     f"[GraphExecutionService] Failed to create error summary: {summary_error}"
                 )
                 # Create minimal execution summary on error
-                from agentmap.models.execution_summary import ExecutionSummary
+                from agentmap.models.execution.summary import ExecutionSummary
 
                 execution_summary = ExecutionSummary(
                     graph_name=graph_name, status="failed", graph_success=False

@@ -5,7 +5,7 @@ This module provides the server CLI interface by importing and re-exporting
 the FastAPI server implementation from agentmap.infrastructure.api.fastapi.
 """
 
-from agentmap.infrastructure.api.fastapi.server import (
+from agentmap.deployment.http.api.server import (
     create_fastapi_app,
     main,
     run_server,

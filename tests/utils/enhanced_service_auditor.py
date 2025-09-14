@@ -492,7 +492,7 @@ class EnhancedServiceInterfaceAuditor:
         elif 'ExecutionResult' in return_type:
             assertions.extend([
                 '        # Verify ExecutionResult return type and structure',
-                '        from agentmap.models.execution_result import ExecutionResult',
+                '        from agentmap.models.execution.result import ExecutionResult',
                 '        self.assertIsInstance(result, ExecutionResult)',
                 '        self.assertIsNotNone(result.graph_name)',
                 '        self.assertIsInstance(result.success, bool)'

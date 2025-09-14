@@ -22,6 +22,10 @@ from agentmap.models.scaffold_types import (
     ServiceRequirements,
 )
 
+# Core Graph Services
+from agentmap.services.graph.graph_output_service import GraphOutputService
+from agentmap.services.graph.graph_scaffold_service import GraphScaffoldService
+
 # from agentmap.services.agent.agent_bootstrap_service import AgentBootstrapService
 from .agent.agent_factory_service import AgentFactoryService
 from .agent.agent_registry_service import AgentRegistryService
@@ -43,11 +47,6 @@ from .function_resolution_service import FunctionResolutionService
 from .graph.graph_assembly_service import GraphAssemblyService
 from .graph.graph_bundle_service import GraphBundleService
 from .graph.graph_runner_service import GraphRunnerService
-
-# Core Graph Services
-from .graph_definition_service import GraphDefinitionService
-from .graph_output_service import GraphOutputService
-from .graph_scaffold_service import GraphScaffoldService
 from .prompt_manager_service import PromptManagerService
 
 # Service Protocols

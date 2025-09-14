@@ -24,7 +24,7 @@ from tests.fresh_suite.integration.test_data_factories import (
     IntegrationTestDataManager,
     ExecutionTestDataFactory
 )
-from agentmap.models.execution_result import ExecutionResult
+from agentmap.models.execution.result import ExecutionResult
 from agentmap.models.graph_bundle import GraphBundle
 
 
@@ -49,10 +49,7 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
         self.graph_runner_service = self.container.graph_runner_service()
         self.graph_execution_service = self.container.graph_execution_service()
         self.execution_tracking_service = self.container.execution_tracking_service()
-        
-        # Supporting services
-        self.graph_definition_service = self.container.graph_definition_service()
-        
+                
         # Graph bundle service for CSV processing (following new pattern)
         self.csv_parser_service = self.container.csv_graph_parser_service()
         self.protocol_analyzer = self.container.protocol_requirements_analyzer()

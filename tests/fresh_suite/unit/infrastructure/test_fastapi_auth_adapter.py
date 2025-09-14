@@ -5,12 +5,12 @@ Tests FastAPI-specific authentication adapter that wraps pure AuthService.
 """
 
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 from fastapi import HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
 
-from agentmap.infrastructure.api.fastapi.middleware.auth import FastAPIAuthAdapter
+from agentmap.deployment.http.api.middleware.auth import FastAPIAuthAdapter
 from agentmap.services.auth_service import AuthContext, AuthService
 
 

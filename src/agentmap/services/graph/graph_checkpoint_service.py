@@ -4,18 +4,29 @@ Graph checkpoint service for managing workflow execution checkpoints.
 This service handles saving and loading execution checkpoints for graph workflows,
 enabling pause/resume functionality for various scenarios like human intervention,
 debugging, or long-running processes.
+
+Now implements LangGraph's BaseCheckpointSaver for direct integration.
 """
 
+import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
+
+from langgraph.checkpoint.base import (
+    BaseCheckpointSaver,
+    Checkpoint,
+    CheckpointMetadata,
+    CheckpointTuple,
+)
 
 from agentmap.models.storage.types import StorageResult, WriteMode
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.json_service import JSONStorageService
 
 
-class GraphCheckpointService:
-    """Service for managing graph execution checkpoints."""
+class GraphCheckpointService(BaseCheckpointSaver):
+    """Service for managing graph execution checkpoints with direct LangGraph integration."""
 
     def __init__(
         self,
@@ -29,266 +40,118 @@ class GraphCheckpointService:
             json_storage_service: JSON storage service for checkpoint persistence
             logging_service: Logging service for obtaining logger instances
         """
+        super().__init__()
         self.storage = json_storage_service
         self.logger = logging_service.get_class_logger(self)
-        self.checkpoint_collection = "graph_checkpoints"
+        self.checkpoint_collection = "langgraph_checkpoints"
 
-    def save_checkpoint(
+    # ===== LangGraph BaseCheckpointSaver Implementation =====
+
+    def put(
         self,
-        thread_id: str,
-        node_name: str,
-        checkpoint_type: str,
-        metadata: Dict[str, Any],
-        execution_state: Dict[str, Any],
-    ) -> StorageResult:
-        """
-        Save a graph execution checkpoint.
+        config: Dict[str, Any],
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Save a checkpoint (LangGraph interface)."""
+        thread_id = config["configurable"]["thread_id"]
+        checkpoint_id = str(uuid4())
 
-        Args:
-            thread_id: Unique identifier for the execution thread
-            node_name: Name of the node where checkpoint occurs
-            checkpoint_type: Type of checkpoint (e.g., "human_intervention", "debug", "scheduled")
-            metadata: Type-specific metadata (e.g., interaction request for human intervention)
-            execution_state: Current execution state data
+        checkpoint_doc = {
+            "checkpoint_id": checkpoint_id,
+            "thread_id": thread_id,
+            "checkpoint_data": self._serialize_checkpoint(checkpoint),
+            "metadata": self._serialize_metadata(metadata),
+            "timestamp": datetime.utcnow().isoformat(),
+            "version": "2.0",
+            "new_versions": new_versions or {},
+        }
 
-        Returns:
-            StorageResult indicating success or failure
-        """
-        try:
-            checkpoint_doc = {
-                "thread_id": thread_id,
-                "node_name": node_name,
-                "checkpoint_type": checkpoint_type,
-                "timestamp": datetime.utcnow().isoformat(),
-                "metadata": metadata,
-                "execution_state": execution_state,
-                "version": "1.0",  # For future compatibility
-            }
+        result = self.storage.write(
+            collection=self.checkpoint_collection,
+            data=checkpoint_doc,
+            document_id=f"{thread_id}_{checkpoint_id}",
+            mode=WriteMode.WRITE,
+        )
 
-            result = self.storage.write(
-                collection=self.checkpoint_collection,
-                data=checkpoint_doc,
-                document_id=thread_id,
-                mode=WriteMode.WRITE,
+        if result.success:
+            self.logger.debug(
+                f"LangGraph checkpoint saved: thread_id={thread_id}, checkpoint_id={checkpoint_id}"
             )
+            return {"success": True, "checkpoint_id": checkpoint_id}
+        else:
+            raise Exception(f"Checkpoint save failed: {result.error}")
 
-            if result.success:
-                self.logger.info(
-                    f"Checkpoint saved: thread_id={thread_id}, type={checkpoint_type}, node={node_name}"
-                )
-            else:
-                self.logger.error(f"Failed to save checkpoint: {result.error}")
+    def get_tuple(self, config: Dict[str, Any]) -> Optional[CheckpointTuple]:
+        """Load the latest checkpoint for a thread (LangGraph interface)."""
+        thread_id = config["configurable"]["thread_id"]
 
-            return result
-
-        except Exception as e:
-            error_msg = f"Error saving checkpoint: {str(e)}"
-            self.logger.error(error_msg)
-            return StorageResult(
-                success=False,
-                error=error_msg,
-                operation="save_checkpoint",
-                collection=self.checkpoint_collection,
-            )
-
-    def load_checkpoint(self, thread_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Load the latest checkpoint for a thread.
-
-        Args:
-            thread_id: Thread ID to load checkpoint for
-
-        Returns:
-            Checkpoint data or None if not found
-        """
-        try:
-            checkpoint = self.storage.read(
-                collection=self.checkpoint_collection,
-                document_id=thread_id,
-            )
-
-            if checkpoint:
-                self.logger.info(f"Checkpoint loaded for thread_id={thread_id}")
-                return checkpoint
-            else:
-                self.logger.debug(f"No checkpoint found for thread_id={thread_id}")
-                return None
-
-        except Exception as e:
-            self.logger.error(f"Error loading checkpoint: {str(e)}")
+        checkpoints = self._get_thread_checkpoints(thread_id)
+        if not checkpoints:
             return None
 
-    def list_checkpoints(
-        self,
-        checkpoint_type: Optional[str] = None,
-        thread_id: Optional[str] = None,
-        limit: int = 100,
-    ) -> List[Dict[str, Any]]:
-        """
-        List checkpoints with optional filtering.
+        latest = max(checkpoints, key=lambda x: x.get("timestamp", ""))
 
-        Args:
-            checkpoint_type: Filter by checkpoint type
-            thread_id: Filter by thread ID
-            limit: Maximum number of checkpoints to return
+        checkpoint = self._deserialize_checkpoint(latest["checkpoint_data"])
+        metadata = self._deserialize_metadata(latest["metadata"])
 
-        Returns:
-            List of checkpoint summaries
-        """
+        return CheckpointTuple(
+            config=config, checkpoint=checkpoint, metadata=metadata, parent_config=None
+        )
+
+    # ===== Helper Methods for LangGraph Integration =====
+
+    def _serialize_checkpoint(self, checkpoint: Checkpoint) -> str:
+        """Serialize checkpoint to JSON string."""
+        serializable = {
+            "channel_values": checkpoint.channel_values,
+            "channel_versions": checkpoint.channel_versions,
+            "versions_seen": checkpoint.versions_seen,
+        }
+        return json.dumps(serializable)
+
+    def _deserialize_checkpoint(self, checkpoint_data: str) -> Checkpoint:
+        """Deserialize checkpoint from JSON string."""
+        data = json.loads(checkpoint_data)
+        return Checkpoint(
+            channel_values=data["channel_values"],
+            channel_versions=data["channel_versions"],
+            versions_seen=data["versions_seen"],
+        )
+
+    def _serialize_metadata(self, metadata: CheckpointMetadata) -> str:
+        """Serialize metadata to JSON string."""
+        return json.dumps(metadata)
+
+    def _deserialize_metadata(self, metadata_data: str) -> CheckpointMetadata:
+        """Deserialize metadata from JSON string."""
+        return json.loads(metadata_data)
+
+    def _get_thread_checkpoints(self, thread_id: str) -> List[Dict[str, Any]]:
+        """Get all checkpoints for a thread."""
         try:
-            # Build query
-            query = {"limit": limit}
-            if checkpoint_type:
-                query["checkpoint_type"] = checkpoint_type
-            if thread_id:
-                query["thread_id"] = thread_id
-
-            # Read all checkpoints with query
-            checkpoints = self.storage.read(
+            # Query for all checkpoints with this thread_id
+            query = {"thread_id": thread_id}
+            results = self.storage.read(
                 collection=self.checkpoint_collection,
                 query=query,
             )
 
-            if not checkpoints:
+            if not results:
                 return []
 
             # Convert to list if dict
-            if isinstance(checkpoints, dict):
-                checkpoints = list(checkpoints.values())
-            elif not isinstance(checkpoints, list):
-                checkpoints = [checkpoints]
-
-            # Sort by timestamp (newest first)
-            checkpoints.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-
-            # Return summary info
-            summaries = []
-            for cp in checkpoints:
-                summaries.append(
-                    {
-                        "thread_id": cp.get("thread_id"),
-                        "node_name": cp.get("node_name"),
-                        "checkpoint_type": cp.get("checkpoint_type"),
-                        "timestamp": cp.get("timestamp"),
-                        "has_metadata": bool(cp.get("metadata")),
-                        "has_execution_state": bool(cp.get("execution_state")),
-                    }
-                )
-
-            return summaries
-
-        except Exception as e:
-            self.logger.error(f"Error listing checkpoints: {str(e)}")
-            return []
-
-    def delete_checkpoint(self, thread_id: str) -> StorageResult:
-        """
-        Delete a checkpoint by thread ID.
-
-        Args:
-            thread_id: Thread ID of checkpoint to delete
-
-        Returns:
-            StorageResult indicating success or failure
-        """
-        try:
-            result = self.storage.delete(
-                collection=self.checkpoint_collection,
-                document_id=thread_id,
-            )
-
-            if result.success:
-                self.logger.info(f"Checkpoint deleted for thread_id={thread_id}")
+            if isinstance(results, dict):
+                return list(results.values())
+            elif isinstance(results, list):
+                return results
             else:
-                self.logger.error(f"Failed to delete checkpoint: {result.error}")
-
-            return result
+                return [results]
 
         except Exception as e:
-            error_msg = f"Error deleting checkpoint: {str(e)}"
-            self.logger.error(error_msg)
-            return StorageResult(
-                success=False,
-                error=error_msg,
-                operation="delete_checkpoint",
-                collection=self.checkpoint_collection,
-            )
-
-    def checkpoint_exists(self, thread_id: str) -> bool:
-        """
-        Check if a checkpoint exists for a thread.
-
-        Args:
-            thread_id: Thread ID to check
-
-        Returns:
-            True if checkpoint exists, False otherwise
-        """
-        try:
-            return self.storage.exists(
-                collection=self.checkpoint_collection,
-                document_id=thread_id,
-            )
-        except Exception as e:
-            self.logger.error(f"Error checking checkpoint existence: {str(e)}")
-            return False
-
-    def update_checkpoint_metadata(
-        self,
-        thread_id: str,
-        metadata_updates: Dict[str, Any],
-    ) -> StorageResult:
-        """
-        Update metadata for an existing checkpoint.
-
-        Args:
-            thread_id: Thread ID of checkpoint to update
-            metadata_updates: Metadata fields to update
-
-        Returns:
-            StorageResult indicating success or failure
-        """
-        try:
-            # Load existing checkpoint
-            checkpoint = self.load_checkpoint(thread_id)
-            if not checkpoint:
-                return StorageResult(
-                    success=False,
-                    error=f"Checkpoint not found for thread_id={thread_id}",
-                    operation="update_checkpoint_metadata",
-                    collection=self.checkpoint_collection,
-                )
-
-            # Update metadata
-            current_metadata = checkpoint.get("metadata", {})
-            current_metadata.update(metadata_updates)
-            checkpoint["metadata"] = current_metadata
-            checkpoint["last_updated"] = datetime.utcnow().isoformat()
-
-            # Save updated checkpoint
-            result = self.storage.write(
-                collection=self.checkpoint_collection,
-                data=checkpoint,
-                document_id=thread_id,
-                mode=WriteMode.UPDATE,
-            )
-
-            if result.success:
-                self.logger.info(
-                    f"Checkpoint metadata updated for thread_id={thread_id}"
-                )
-
-            return result
-
-        except Exception as e:
-            error_msg = f"Error updating checkpoint metadata: {str(e)}"
-            self.logger.error(error_msg)
-            return StorageResult(
-                success=False,
-                error=error_msg,
-                operation="update_checkpoint_metadata",
-                collection=self.checkpoint_collection,
-            )
+            self.logger.error(f"Error getting thread checkpoints: {str(e)}")
+            return []
 
     def get_service_info(self) -> Dict[str, Any]:
         """
@@ -299,13 +162,12 @@ class GraphCheckpointService:
         """
         return {
             "service_name": "GraphCheckpointService",
-            "checkpoint_collection": self.checkpoint_collection,
+            "langgraph_collection": self.checkpoint_collection,
             "storage_available": self.storage.is_healthy(),
             "capabilities": {
-                "save_checkpoint": True,
-                "load_checkpoint": True,
-                "list_checkpoints": True,
-                "delete_checkpoint": True,
-                "update_metadata": True,
+                # LangGraph capabilities
+                "langgraph_put": True,
+                "langgraph_get_tuple": True,
             },
+            "implements_base_checkpoint_saver": True,
         }

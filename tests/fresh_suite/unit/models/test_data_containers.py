@@ -14,9 +14,9 @@ from typing import Dict, Any
 
 from agentmap.models.graph import Graph
 from agentmap.models.node import Node
-from agentmap.models.execution_tracker import ExecutionTracker, NodeExecution as TrackerNodeExecution
-from agentmap.models.execution_summary import ExecutionSummary, NodeExecution as SummaryNodeExecution
-from agentmap.models.execution_result import ExecutionResult
+from agentmap.models.execution.tracker import ExecutionTracker, NodeExecution as TrackerNodeExecution
+from agentmap.models.execution.summary import ExecutionSummary, NodeExecution as SummaryNodeExecution
+from agentmap.models.execution.result import ExecutionResult
 
 
 class TestGraphDataContainer(unittest.TestCase):

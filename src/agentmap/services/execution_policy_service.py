@@ -9,7 +9,7 @@ service wrapper pattern for dependency injection and clean architecture.
 import importlib
 from typing import Any, Dict, List
 
-from agentmap.models.execution_summary import ExecutionSummary
+from agentmap.models.execution.summary import ExecutionSummary
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
 

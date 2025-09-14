@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Dict, Any, List
 
 from agentmap.services.execution_policy_service import ExecutionPolicyService
-from agentmap.models.execution_summary import ExecutionSummary, NodeExecution
+from agentmap.models.execution.summary import ExecutionSummary, NodeExecution
 from tests.utils.mock_service_factory import MockServiceFactory
 
 

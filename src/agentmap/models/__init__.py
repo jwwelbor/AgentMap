@@ -6,8 +6,8 @@ This module contains simple domain entities that represent core business concept
 All models are data containers with minimal behavior - business logic belongs in services.
 """
 from .agent_registry import AgentRegistry
-from .execution_result import ExecutionResult
-from .execution_summary import ExecutionSummary, NodeExecution
+from .execution.result import ExecutionResult
+from .execution.summary import ExecutionSummary, NodeExecution
 from .features_registry import FeaturesRegistry
 from .graph import Graph
 from .graph_bundle import GraphBundle

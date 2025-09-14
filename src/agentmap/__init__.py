@@ -11,11 +11,13 @@ This package provides clean architecture with separated concerns:
 - DI: Dependency injection and service wiring
 """
 
+from agentmap.deployment.cli import main_cli
+from agentmap.deployment.serverless.aws_lambda import lambda_handler
+from agentmap.deployment.serverless.azure_functions import azure_http_handler
+from agentmap.deployment.serverless.gcp_functions import gcp_http_handler
+
 # Core exports for new architecture
-from agentmap.core import ServiceAdapter, create_service_adapter
-from agentmap.core.api import create_fastapi_app, run_server
-from agentmap.core.cli import main_cli
-from agentmap.core.handlers import azure_http_handler, gcp_http_handler, lambda_handler
+from agentmap.deployment.service_adapter import ServiceAdapter, create_service_adapter
 
 __author__ = "John Welborn"
 __license__ = "MIT"
@@ -26,8 +28,6 @@ __all__ = [
     "ServiceAdapter",
     "create_service_adapter",
     "main_cli",
-    "create_fastapi_app",
-    "run_server",
     "lambda_handler",
     "gcp_http_handler",
     "azure_http_handler",

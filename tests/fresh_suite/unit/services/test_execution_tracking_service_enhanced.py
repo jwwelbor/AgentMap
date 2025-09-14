@@ -10,8 +10,8 @@ import unittest
 from unittest.mock import Mock
 
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
-from agentmap.models.execution_summary import ExecutionSummary
-from agentmap.models.execution_tracker import ExecutionTracker, NodeExecution
+from agentmap.models.execution.summary import ExecutionSummary
+from agentmap.models.execution.tracker import ExecutionTracker, NodeExecution
 
 from tests.utils.mock_service_factory import MockServiceFactory
 
@@ -72,7 +72,7 @@ class TestExecutionTrackingServiceEnhanced(unittest.TestCase):
         result = self.service.create_tracker()
 
         # Verify ExecutionTracker return type and basic structure
-        from agentmap.models.execution_tracker import ExecutionTracker
+        from agentmap.models.execution.tracker import ExecutionTracker
         self.assertIsInstance(result, ExecutionTracker)
         self.assertIsNotNone(result.start_time)
         self.assertIsInstance(result.node_executions, list)
@@ -126,7 +126,7 @@ class TestExecutionTrackingServiceEnhanced(unittest.TestCase):
         
         # Verify return type: ExecutionSummary
         self.assertIsNotNone(result)
-        from agentmap.models.execution_summary import ExecutionSummary
+        from agentmap.models.execution.summary import ExecutionSummary
         self.assertIsInstance(result, ExecutionSummary)
         self.assertEqual(result.graph_name, "test_graph")
         self.assertEqual(len(result.node_executions), 1)

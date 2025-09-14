@@ -10,7 +10,7 @@ import shutil
 from pathlib import Path
 from fastapi.testclient import TestClient
 
-from agentmap.infrastructure.api.fastapi.server import create_fastapi_app
+from agentmap.deployment.http.api.server import create_fastapi_app
 
 
 class TestGraphEndpointsSimple(unittest.TestCase):

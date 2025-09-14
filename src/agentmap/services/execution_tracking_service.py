@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from agentmap.models.execution_tracker import ExecutionTracker, NodeExecution
+from agentmap.models.execution.tracker import ExecutionTracker, NodeExecution
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
 
@@ -232,10 +232,10 @@ class ExecutionTrackingService:
     def to_summary(
         self, tracker: ExecutionTracker, graph_name: str, final_output: Any = None
     ):
-        from agentmap.models.execution_summary import (
+        from agentmap.models.execution.summary import (
             ExecutionSummary,
         )
-        from agentmap.models.execution_summary import (
+        from agentmap.models.execution.summary import (
             NodeExecution as SummaryNodeExecution,
         )
 

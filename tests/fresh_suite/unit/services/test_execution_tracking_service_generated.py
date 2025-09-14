@@ -68,7 +68,7 @@ class TestExecutionTrackingService(unittest.TestCase):
         tracker = self.service.create_tracker()
         
         # Verify return type and configuration
-        from agentmap.models.execution_tracker import ExecutionTracker
+        from agentmap.models.execution.tracker import ExecutionTracker
         self.assertIsInstance(tracker, ExecutionTracker)
         self.assertTrue(tracker.track_inputs)
         self.assertTrue(tracker.track_outputs)
@@ -205,7 +205,7 @@ class TestExecutionTrackingService(unittest.TestCase):
         summary = self.service.to_summary(tracker, "test_graph")
         
         # Verify summary structure
-        from agentmap.models.execution_summary import ExecutionSummary
+        from agentmap.models.execution.summary import ExecutionSummary
         self.assertIsInstance(summary, ExecutionSummary)
         self.assertEqual(summary.graph_name, "test_graph")
         self.assertEqual(len(summary.node_executions), 1)
@@ -252,7 +252,7 @@ class TestExecutionTrackingService(unittest.TestCase):
         tracker = self.service.create_tracker()
         
         # Verify return type and configuration
-        from agentmap.models.execution_tracker import ExecutionTracker
+        from agentmap.models.execution.tracker import ExecutionTracker
         self.assertIsInstance(tracker, ExecutionTracker)
         self.assertFalse(tracker.track_inputs)
         self.assertFalse(tracker.track_outputs)

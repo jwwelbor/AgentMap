@@ -6,10 +6,10 @@ messages to message queues/topics across different cloud providers.
 """
 
 from agentmap.services.messaging.messaging_service import (
-    MessagingService,
+    CloudMessageAdapter,
     CloudProvider,
     MessagePriority,
-    CloudMessageAdapter,
+    MessagingService,
 )
 
 # Import adapters for availability checking
@@ -35,11 +35,11 @@ except ImportError:
 
 __all__ = [
     "MessagingService",
-    "CloudProvider", 
+    "CloudProvider",
     "MessagePriority",
     "CloudMessageAdapter",
     "AWSMessageAdapter",
-    "GCPMessageAdapter", 
+    "GCPMessageAdapter",
     "AzureMessageAdapter",
     "LocalMessageAdapter",
 ]

@@ -325,12 +325,12 @@ agentmap inspect-graph MyWorkflow --node ProcessData --resolution
 For automation and monitoring integration, AgentMap provides programmatic access to diagnostic information:
 
 ```python
-from agentmap.core.cli.diagnostic_commands import diagnose_command, cache_info_command
+from deployment.http import diagnose_command, cache_info_command
 
 # Get structured diagnostic data
 diagnostic_data = diagnose_command()
 print(diagnostic_data['llm']['openai']['available'])  # True/False
-print(diagnostic_data['installation_suggestions'])   # List of suggestions
+print(diagnostic_data['installation_suggestions'])  # List of suggestions
 
 # Get cache statistics
 cache_data = cache_info_command()
@@ -387,25 +387,27 @@ define command {
 ```
 
 **Prometheus Monitoring:**
+
 ```python
 # agentmap_exporter.py
 from prometheus_client import Gauge, generate_latest
-from agentmap.core.cli.diagnostic_commands import diagnose_command
+from deployment.http import diagnose_command
 
 # Create metrics
 llm_providers_available = Gauge('agentmap_llm_providers_available', 'Number of available LLM providers')
 storage_providers_available = Gauge('agentmap_storage_providers_available', 'Number of available storage providers')
 
+
 def collect_metrics():
     data = diagnose_command()
-    
+
     # Count available providers
     llm_available = sum(1 for provider in data['llm'].values() if provider['available'])
     storage_available = sum(1 for provider in data['storage'].values() if provider['available'])
-    
+
     llm_providers_available.set(llm_available)
     storage_providers_available.set(storage_available)
-    
+
     return generate_latest()
 ```
 

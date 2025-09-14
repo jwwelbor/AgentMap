@@ -5,15 +5,13 @@ This module extends the BaseIntegrationTest with FastAPI-specific functionality
 for testing REST API endpoints using the real DI container and service implementations.
 """
 
-import json
-import tempfile
 from abc import ABC
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from fastapi.testclient import TestClient
 
-from agentmap.infrastructure.api.fastapi.server import create_fastapi_app
+from agentmap.deployment.http.api.server import create_fastapi_app
 from tests.fresh_suite.integration.base_integration_test import BaseIntegrationTest
 
 

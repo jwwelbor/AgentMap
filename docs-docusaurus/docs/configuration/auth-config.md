@@ -381,7 +381,8 @@ logging:
 AgentMap automatically provides FastAPI authentication decorators:
 
 ```python
-from agentmap.infrastructure.api.fastapi.dependencies import requires_auth
+from deployment.http.api.dependencies import requires_auth
+
 
 @app.get("/protected-endpoint")
 @requires_auth(permissions=["read"])
@@ -389,7 +390,8 @@ async def protected_endpoint():
     """Endpoint requiring 'read' permission."""
     return {"message": "Access granted"}
 
-@app.post("/admin-endpoint")  
+
+@app.post("/admin-endpoint")
 @requires_auth(permissions=["admin"])
 async def admin_endpoint():
     """Endpoint requiring 'admin' permission."""

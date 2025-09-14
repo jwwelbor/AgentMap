@@ -7,11 +7,9 @@ with incompatible version combinations.
 """
 
 import pytest
-import sys
 import importlib
-from unittest.mock import patch, MagicMock
-from typing import List, Dict, Any
-import subprocess
+from typing import List, Dict
+
 try:
     from importlib.metadata import version, PackageNotFoundError
 except ImportError:
@@ -89,8 +87,8 @@ class TestDependencyCompatibility:
         """Test that AgentMap core imports work with current dependency versions."""
         try:
             # Test the specific import chain that was failing
-            from agentmap.core import ServiceAdapter, create_service_adapter
-            from agentmap.core.adapters import ServiceAdapter as AdapterClass
+            from agentmap.deployment.http import ServiceAdapter, create_service_adapter
+            from agentmap.deployment.service_adapter import ServiceAdapter as AdapterClass
             from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
             
             # Verify classes can be instantiated (basic smoke test)
@@ -116,7 +114,7 @@ class TestDependencyCompatibility:
         """
         try:
             # Import required modules for CSV workflow
-            from agentmap.core import create_service_adapter
+            from agentmap.deployment.http import create_service_adapter
             from agentmap.di.containers import Container
             
             # This should not raise MRO errors

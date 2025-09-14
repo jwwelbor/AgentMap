@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import Mock
 
-from agentmap.models.execution_tracker import ExecutionTracker
+from agentmap.models.execution.tracker import ExecutionTracker
 
 # Re-export key classes for backward compatibility
 from agentmap.services.llm_service import LLMService

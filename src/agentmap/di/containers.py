@@ -601,15 +601,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
-    # Graph Definition Service for building Graph domain models from CSV
-    graph_definition_service = providers.Singleton(
-        "agentmap.services.graph_definition_service.GraphDefinitionService",
-        logging_service,
-        app_config_service,
-        csv_graph_parser_service,
-        graph_factory_service,
-    )
-
     # Features registry service (operates on global features model)
     features_registry_service = providers.Singleton(
         "agentmap.services.features_registry_service.FeaturesRegistryService",
@@ -725,7 +716,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # GraphScaffoldService for service-aware scaffolding
     graph_scaffold_service = providers.Singleton(
-        "agentmap.services.graph_scaffold_service.GraphScaffoldService",
+        "agentmap.services.graph.graph_scaffold_service.GraphScaffoldService",
         app_config_service,
         logging_service,
         function_resolution_service,
@@ -746,7 +737,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # Graph Output Service for exporting graphs in human-readable formats (removed compilation_service dependency)
     graph_output_service = providers.Singleton(
-        "agentmap.services.graph_output_service.GraphOutputService",
+        "agentmap.services.graph.graph_output_service.GraphOutputService",
         app_config_service,
         logging_service,
         function_resolution_service,
@@ -771,6 +762,41 @@ class ApplicationContainer(containers.DeclarativeContainer):
     graph_checkpoint_service = providers.Singleton(
         "agentmap.services.graph.graph_checkpoint_service.GraphCheckpointService",
         json_storage_service,  # Direct injection
+        logging_service,
+    )
+
+    # Interaction Handler Service for human-in-the-loop interactions
+    @staticmethod
+    def _create_interaction_handler_service(json_storage_service, logging_service):
+        """Create interaction handler service for human-in-the-loop workflows."""
+        try:
+            if json_storage_service is None:
+                logger = logging_service.get_logger("agentmap.interaction")
+                logger.info(
+                    "JSON storage service not available - interaction handler disabled"
+                )
+                return None
+
+            from agentmap.deployment.cli.cli_handler import CLIInteractionHandler
+            from agentmap.services.interaction_handler_service import (
+                InteractionHandlerService,
+            )
+
+            cli_handler = CLIInteractionHandler(storage_service=json_storage_service)
+            return InteractionHandlerService(
+                storage_service=json_storage_service,
+                cli_handler=cli_handler,
+                logging_service=logging_service,
+            )
+
+        except Exception as e:
+            logger = logging_service.get_logger("agentmap.interaction")
+            logger.warning(f"Interaction handler service disabled: {e}")
+            return None
+
+    interaction_handler_service = providers.Singleton(
+        _create_interaction_handler_service,
+        json_storage_service,
         logging_service,
     )
 
@@ -832,6 +858,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         graph_execution_service,
         execution_tracking_service,
         logging_service,
+        interaction_handler_service,
     )
 
     # Provider for checking service availability
