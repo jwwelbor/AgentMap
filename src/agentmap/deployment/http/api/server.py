@@ -194,6 +194,7 @@ Error responses include detailed validation information and suggestions for reso
         from agentmap.deployment.http.api.routes.execution import (
             router as execution_router,
         )
+        from agentmap.deployment.http.api.routes.info import router as info_router
         from agentmap.deployment.http.api.routes.workflow import (
             router as workflow_router,
         )
@@ -201,6 +202,7 @@ Error responses include detailed validation information and suggestions for reso
         # Include all router modules
         app.include_router(execution_router)
         app.include_router(workflow_router)  # Existing workflow management
+        app.include_router(info_router)  # Information and diagnostics
 
         # Import and add workflow execution router (repository-based with bundle caching)
         from agentmap.models.workflow_execution_models import create_workflow_router
