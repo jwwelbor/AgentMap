@@ -21,6 +21,7 @@ from typing import Any, Dict, Optional, Union
 
 from agentmap.di import initialize_di
 from agentmap.models.execution.result import ExecutionResult
+from agentmap.runtime.workflow_ops import _resolve_csv_path
 
 
 class WorkflowOrchestrationService:
@@ -63,7 +64,6 @@ class WorkflowOrchestrationService:
         """
         # Step 1: Initialize DI container (same as run_command.py)
         container = initialize_di(config_file)
-        app_config_service = container.app_config_service()
 
         # Step 2: Parse initial state (same logic as run_command.py)
         if isinstance(initial_state, str):
@@ -76,19 +76,46 @@ class WorkflowOrchestrationService:
         else:
             parsed_state = initial_state or {}
 
-        # Step 3: Resolve CSV path (same logic as run_command.py)
-        csv_path = WorkflowOrchestrationService._resolve_csv_path(
-            csv_or_workflow=csv_or_workflow,
-            graph_name_ref=graph_name,
-            csv_override=csv_override,
-            app_config_service=app_config_service,
-        )
+        # Step 3: Handle the graph identifier resolution
+        # Combine csv_or_workflow and graph_name into a single identifier for resolution
+        if csv_or_workflow:
+            # Handle the csv_override case
+            if csv_override:
+                # If csv_override is provided, use it as the path directly
+                csv_path = Path(csv_override)
+                resolved_graph_name = graph_name or csv_or_workflow
+            else:
+                # Use the comprehensive resolution logic from workflow_ops
+                # If graph_name is provided separately, use :: syntax for resolution
+                if graph_name and "/" not in str(csv_or_workflow):
+                    graph_identifier = f"{csv_or_workflow}::{graph_name}"
+                else:
+                    graph_identifier = csv_or_workflow
+
+                csv_path, resolved_graph_name = _resolve_csv_path(
+                    graph_identifier, container
+                )
+
+                # If graph_name was explicitly provided, use it instead of resolved name
+                if graph_name:
+                    resolved_graph_name = graph_name
+        else:
+            # No csv_or_workflow provided, check for csv_override
+            if csv_override:
+                csv_path = Path(csv_override)
+                resolved_graph_name = graph_name
+            else:
+                # Use default resolution with just the graph_name
+                csv_path, resolved_graph_name = _resolve_csv_path(
+                    graph_name or "", container
+                )
 
         # Step 4: Extract graph_name from shorthand if needed (same as run_command.py)
+        # This handles the workflow/graph shorthand syntax
         if csv_or_workflow and "/" in str(csv_or_workflow) and not graph_name:
             parts = str(csv_or_workflow).split("/", 1)
             if len(parts) > 1:
-                graph_name = parts[1]
+                resolved_graph_name = parts[1]
 
         # Step 5: Validate CSV if requested (same as run_command.py)
         if validate_csv:
@@ -98,7 +125,7 @@ class WorkflowOrchestrationService:
         # Step 6: Get or create bundle (same as run_command.py)
         graph_bundle_service = container.graph_bundle_service()
         bundle = graph_bundle_service.get_or_create_bundle(
-            csv_path=csv_path, graph_name=graph_name, config_path=config_file
+            csv_path=csv_path, graph_name=resolved_graph_name, config_path=config_file
         )
 
         # Step 7: Execute using GraphRunnerService (same as run_command.py)
@@ -107,57 +134,6 @@ class WorkflowOrchestrationService:
         result = runner.run(bundle, parsed_state)
 
         return result
-
-    @staticmethod
-    def _resolve_csv_path(
-        csv_or_workflow: Optional[str],
-        graph_name_ref: Optional[str],
-        csv_override: Optional[str],
-        app_config_service,
-    ) -> Path:
-        """
-        Resolve CSV path using the exact same logic as run_command.py
-
-        This preserves all the workflow resolution patterns:
-        - Direct file paths
-        - Workflow names from repository
-        - workflow/graph shortcuts
-        """
-        from agentmap.deployment.cli.cli_utils import resolve_csv_path
-
-        # Handle repository-based shorthand: workflow/graph (same as run_command.py)
-        if (
-            csv_or_workflow
-            and "/" in csv_or_workflow
-            and not csv_override
-            and not graph_name_ref
-        ):
-            parts = csv_or_workflow.split("/", 1)
-            workflow_name = parts[0]
-
-            # Check if it's a repository workflow (same logic as run_command.py)
-            csv_repository = app_config_service.get_csv_repository_path()
-            potential_workflow = csv_repository / f"{workflow_name}.csv"
-
-            if potential_workflow.exists():
-                return potential_workflow
-            else:
-                # Maybe it's a file path, resolve normally
-                return resolve_csv_path(csv_or_workflow, csv_override)
-        else:
-            # Check if csv_or_workflow is a workflow name in repository (same as run_command.py)
-            if csv_or_workflow and not csv_override:
-                csv_repository = app_config_service.get_csv_repository_path()
-                potential_workflow = csv_repository / f"{csv_or_workflow}.csv"
-
-                if potential_workflow.exists():
-                    return potential_workflow
-                else:
-                    # Try to resolve as file path
-                    return resolve_csv_path(csv_or_workflow, csv_override)
-            else:
-                # Standard resolution (same as run_command.py)
-                return resolve_csv_path(csv_or_workflow, csv_override)
 
 
 # Convenience function for external usage
@@ -179,129 +155,5 @@ def execute_workflow(
         graph_name=graph_name,
         initial_state=initial_state,
         config_file=config_file,
-        **kwargs,
-    )
-
-
-# Resume operations (extracted from resume_command.py)
-class WorkflowResumeService:
-    """
-    Service for resuming interrupted workflows.
-
-    This also preserves the existing architecture and just extracts the
-    reusable logic from resume_command.py
-    """
-
-    @staticmethod
-    def resume_workflow(
-        thread_id: str,
-        response_action: str,
-        response_data: Optional[Union[Dict[str, Any], str]] = None,
-        data_file_path: Optional[str] = None,
-        config_file: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """
-        Resume workflow using the same logic as resume_command.py
-
-        This preserves the existing resume architecture and just makes it reusable.
-        """
-        # Initialize DI container (same as resume_command.py)
-        container = initialize_di(config_file)
-        system_storage_manager = container.system_storage_manager()
-
-        # Check storage availability (same as resume_command.py)
-        if not system_storage_manager:
-            raise RuntimeError("Storage services are not available")
-
-        # Get services (same as resume_command.py)
-        storage_service = system_storage_manager.get_service("json")
-        logging_service = container.logging_service()
-        logger = logging_service.get_logger("agentmap.workflow.resume")
-
-        # Parse response data (same logic as resume_command.py)
-        parsed_response_data = WorkflowResumeService._parse_response_data(
-            response_data, data_file_path
-        )
-
-        # Get graph services (same as resume_command.py)
-        try:
-            graph_bundle_service = container.graph_bundle_service()
-            graph_runner_service = container.graph_runner_service()
-            graph_checkpoint_service = container.graph_checkpoint_service()
-            services_available = True
-        except Exception as e:
-            logger.warning(f"Graph services not available: {e}")
-            graph_bundle_service = None
-            graph_runner_service = None
-            graph_checkpoint_service = None
-            services_available = False
-
-        # Create interaction handler (same as resume_command.py)
-        from agentmap.deployment.cli.cli_handler import CLIInteractionHandler
-
-        handler = CLIInteractionHandler(
-            storage_service=storage_service,
-            graph_bundle_service=graph_bundle_service,
-            graph_runner_service=graph_runner_service,
-            graph_checkpoint_service=graph_checkpoint_service,
-        )
-
-        # Resume execution (same as resume_command.py)
-        result = handler.resume_execution(
-            thread_id=thread_id,
-            response_action=response_action,
-            response_data=parsed_response_data,
-        )
-
-        return {
-            "success": True,
-            "thread_id": thread_id,
-            "response_action": response_action,
-            "services_available": services_available,
-            "result": result,
-        }
-
-    @staticmethod
-    def _parse_response_data(
-        response_data: Optional[Union[Dict[str, Any], str]] = None,
-        data_file_path: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
-        """Parse response data (same logic as resume_command.py)"""
-
-        if response_data:
-            if isinstance(response_data, str):
-                try:
-                    return json.loads(response_data)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid JSON in response_data: {e}")
-            else:
-                return response_data
-
-        elif data_file_path:
-            try:
-                with open(data_file_path, "r") as f:
-                    return json.load(f)
-            except FileNotFoundError:
-                raise ValueError(f"Data file not found: {data_file_path}")
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON in file: {e}")
-
-        return None
-
-
-# Convenience function for resume
-def resume_workflow(
-    thread_id: str,
-    response_action: str,
-    response_data: Optional[Union[Dict[str, Any], str]] = None,
-    **kwargs,
-) -> Dict[str, Any]:
-    """
-    Convenience function for workflow resume that preserves existing architecture.
-    """
-    return WorkflowResumeService.resume_workflow(
-        thread_id=thread_id,
-        response_action=response_action,
-        response_data=response_data,
         **kwargs,
     )

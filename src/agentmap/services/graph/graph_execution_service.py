@@ -135,7 +135,6 @@ class GraphExecutionService:
                 final_state=final_state,
                 execution_summary=execution_summary,
                 total_duration=execution_time,
-                compiled_from="assembled",
                 error=None,
             )
 
@@ -196,7 +195,6 @@ class GraphExecutionService:
                 final_state=initial_state,  # Return original state on error
                 execution_summary=execution_summary,
                 total_duration=execution_time,
-                compiled_from="assembled",
                 error=str(e),
             )
 

@@ -8,7 +8,7 @@ from typing import Optional
 
 import typer
 
-from agentmap.di import initialize_di
+from agentmap.runtime_api import validate_cache
 
 
 def validate_cache_cmd(
@@ -22,43 +22,53 @@ def validate_cache_cmd(
     ),
 ):
     """Manage validation result cache."""
-    container = initialize_di()
-    validation_cache_service = container.validation_cache_service()
-
-    if clear:
-        if file_path:
-            removed = validation_cache_service.clear_validation_cache(file_path)
-            typer.secho(
-                f"✅ Cleared {removed} cache entries for {file_path}",
-                fg=typer.colors.GREEN,
-            )
-        else:
-            removed = validation_cache_service.clear_validation_cache()
-            typer.secho(f"✅ Cleared {removed} cache entries", fg=typer.colors.GREEN)
-
-    elif cleanup:
-        removed = validation_cache_service.cleanup_validation_cache()
-        typer.secho(
-            f"✅ Removed {removed} expired cache entries", fg=typer.colors.GREEN
+    try:
+        # Manage cache using facade
+        result = validate_cache(
+            clear=clear,
+            cleanup=cleanup,
+            stats=stats,
+            file_path=file_path,
         )
 
-    elif stats or not (clear or cleanup):
-        # Show stats by default if no other action specified
-        cache_stats = validation_cache_service.get_validation_cache_stats()
+        outputs = result["outputs"]
+        action = outputs["action"]
 
-        typer.echo("Validation Cache Statistics:")
-        typer.echo("=" * 30)
-        typer.echo(f"Total files: {cache_stats['total_files']}")
-        typer.echo(f"Valid files: {cache_stats['valid_files']}")
-        typer.echo(f"Expired files: {cache_stats['expired_files']}")
-        typer.echo(f"Corrupted files: {cache_stats['corrupted_files']}")
-
-        if cache_stats["expired_files"] > 0:
-            typer.echo(
-                f"\n💡 Run 'agentmap validate-cache --cleanup' to remove expired entries"
+        if action == "clear_file":
+            typer.secho(
+                f"✅ Cleared {outputs['removed_entries']} cache entries for {outputs['file_path']}",
+                fg=typer.colors.GREEN,
             )
-
-        if cache_stats["corrupted_files"] > 0:
-            typer.echo(
-                f"⚠️  Found {cache_stats['corrupted_files']} corrupted cache files"
+        elif action == "clear_all":
+            typer.secho(
+                f"✅ Cleared {outputs['removed_entries']} cache entries",
+                fg=typer.colors.GREEN,
             )
+        elif action == "cleanup":
+            typer.secho(
+                f"✅ Removed {outputs['removed_entries']} expired cache entries",
+                fg=typer.colors.GREEN,
+            )
+        else:  # stats
+            cache_stats = outputs["cache_stats"]
+
+            typer.echo("Validation Cache Statistics:")
+            typer.echo("=" * 30)
+            typer.echo(f"Total files: {cache_stats['total_files']}")
+            typer.echo(f"Valid files: {cache_stats['valid_files']}")
+            typer.echo(f"Expired files: {cache_stats['expired_files']}")
+            typer.echo(f"Corrupted files: {cache_stats['corrupted_files']}")
+
+            if cache_stats["expired_files"] > 0:
+                typer.echo(
+                    f"\n💡 Run 'agentmap validate-cache --cleanup' to remove expired entries"
+                )
+
+            if cache_stats["corrupted_files"] > 0:
+                typer.echo(
+                    f"⚠️  Found {cache_stats['corrupted_files']} corrupted cache files"
+                )
+
+    except Exception as e:
+        typer.secho(f"❌ Failed to manage validation cache: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)

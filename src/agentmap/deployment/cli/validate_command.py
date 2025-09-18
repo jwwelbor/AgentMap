@@ -10,7 +10,7 @@ from typing import Optional
 import typer
 
 from agentmap.deployment.cli.cli_utils import handle_command_error, resolve_csv_path
-from agentmap.di import initialize_di
+from agentmap.runtime_api import validate_workflow
 
 
 def validate_command(
@@ -34,34 +34,29 @@ def validate_command(
         # Resolve CSV path using utility
         csv_path = resolve_csv_path(csv_file, csv)
 
-        # Initialize container
-        container = initialize_di(config_file)
+        # Use graph name or derive from CSV path
+        graph_name = graph or str(csv_path)
 
-        # Get validation service
-        validation_service = container.validation_service()
-
-        # Validate CSV structure
+        # Validate using facade
         typer.echo(f"🔍 Validating CSV structure: {csv_path}")
-        validation_service.validate_csv_for_bundling(csv_path)
+        result = validate_workflow(graph_name, config_file=config_file)
+
+        outputs = result["outputs"]
+        metadata = result["metadata"]
+
         typer.secho("✅ CSV structure validation passed", fg=typer.colors.GREEN)
 
-        # Create bundle to check for missing declarations
-        typer.echo("📦 Analyzing graph dependencies...")
-        graph_bundle_service = container.graph_bundle_service()
-        bundle = graph_bundle_service.get_or_create_bundle(
-            csv_path=csv_path, graph_name=graph, config_path=config_file
-        )
-
         # Report bundle analysis
-        if graph:
-            typer.echo(f"   Graph name: {bundle.graph_name or graph}")
+        typer.echo("📦 Analyzing graph dependencies...")
+        if metadata.get("bundle_name"):
+            typer.echo(f"   Graph name: {metadata['bundle_name']}")
 
-        typer.echo(f"   Total nodes: {len(bundle.nodes)}")
-        typer.echo(f"   Total edges: {len(bundle.edges)}")
+        typer.echo(f"   Total nodes: {outputs['total_nodes']}")
+        typer.echo(f"   Total edges: {outputs['total_edges']}")
 
-        if bundle.missing_declarations:
+        if outputs["missing_declarations"]:
             typer.secho(
-                f"⚠️ Missing agent declarations: {', '.join(bundle.missing_declarations)}",
+                f"⚠️ Missing agent declarations: {', '.join(outputs['missing_declarations'])}",
                 fg=typer.colors.YELLOW,
             )
             typer.echo("   Run 'agentmap scaffold' to generate these agents")

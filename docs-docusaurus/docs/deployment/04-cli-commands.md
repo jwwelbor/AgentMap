@@ -90,6 +90,69 @@ agentmap config
 Options:
 - `--path`, `-p`: Path to config file to display
 
+## ✨ Simplified Graph Naming Syntax
+
+AgentMap supports **intelligent default graph naming** that eliminates the need to specify graph names for simple workflows.
+
+### Smart Defaults
+
+**CSV filename automatically becomes the graph name:**
+
+```bash
+# Traditional approach
+agentmap run --graph CustomerSupport --csv customer_support.csv --state '{"query": "help"}'
+
+# ✨ New simplified approach
+agentmap run --csv customer_support.csv --state '{"query": "help"}'
+# Graph name is automatically "customer_support"
+```
+
+### :: Override Syntax
+
+**Specify custom graph names when needed:**
+
+```bash
+# Override graph name for multi-graph CSV files
+agentmap run --csv workflows.csv::ProductSupport --state '{"product": "AgentMap"}'
+
+# Works with all commands
+agentmap scaffold --csv complex_workflows.csv::SpecificGraph
+agentmap compile --csv production.csv::MainFlow
+agentmap export --csv analysis.csv::DataProcessor --format python
+```
+
+### HTTP API Integration
+
+**URL encoding for web APIs:**
+
+```bash
+# HTTP API endpoints support :: syntax with URL encoding
+curl -X POST "http://localhost:8000/execution/workflow.csv%3A%3AGraphName" \
+     -H "Content-Type: application/json" \
+     -d '{"state": {"input": "value"}}'
+
+# RESTful endpoints for default graph names
+curl -X POST "http://localhost:8000/execution/customer_support.csv" \
+     -H "Content-Type: application/json" \
+     -d '{"state": {"query": "help"}}'
+```
+
+### Migration Examples
+
+**Side-by-side comparison:**
+
+| Traditional Syntax | New Simplified Syntax | Use Case |
+|-------------------|----------------------|----------|
+| `--graph MyFlow --csv my_file.csv` | `--csv my_flow.csv` | Single graph per file |
+| `--graph Graph1 --csv multi.csv` | `--csv multi.csv::Graph1` | Multiple graphs per file |
+| `--graph Test --csv complex.csv` | `--csv complex.csv::Test` | Override default name |
+
+**Benefits:**
+- ⚡ **Faster Development**: Less typing for common workflows
+- 📁 **Self-Documenting**: File names clearly indicate purpose
+- 🔗 **URL-Safe**: Works seamlessly with HTTP APIs
+- 🔄 **Backward Compatible**: All existing workflows continue working
+
 ## Scaffolding Commands
 
 AgentMap's **service-aware scaffolding system** is a sophisticated code generation feature that automatically creates custom agent classes and routing functions from CSV definitions. It analyzes CSV context to detect service requirements and generates complete, working code with automatic service integration.

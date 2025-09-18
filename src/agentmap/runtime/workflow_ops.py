@@ -1,0 +1,607 @@
+"""Workflow-related operations."""
+
+import json
+from pathlib import Path
+from typing import Any, Dict, Iterable, Optional
+
+from agentmap.exceptions.runtime_exceptions import (
+    AgentMapError,
+    AgentMapNotInitialized,
+    GraphNotFound,
+    InvalidInputs,
+)
+from agentmap.exceptions.validation_exceptions import ValidationException
+from agentmap.runtime.runtime_manager import RuntimeManager
+from agentmap.services.graph.graph_runner_service import GraphRunnerService
+from agentmap.services.workflow_resume_service import WorkflowResumeService
+
+from .init_ops import ensure_initialized, get_container
+
+
+def _resolve_csv_path(graph_identifier: str, container) -> tuple[Path, str]:
+    """
+    Resolve (csv_path, resolved_graph_name) from a graph identifier.
+
+    Supported syntaxes:
+      - workflow::graph   -> prefer <repo>/workflow.csv, else Path(workflow)
+      - workflow/graph    -> prefer <repo>/workflow.csv, else Path(full original)
+      - simple            -> prefer <repo>/simple.csv,   else Path(full original)
+
+    Raises:
+      GraphNotFound on validation errors or unexpected failures.
+    """
+    identifier = (graph_identifier or "").strip()
+    if not identifier:
+        raise GraphNotFound(graph_identifier, "Graph identifier cannot be empty")
+
+    # Handle triple colon case explicitly for test_edge_case_triple_colon
+    if ":::" in identifier:
+        raise GraphNotFound(graph_identifier, "Invalid :: syntax")
+
+    try:
+        app_config_service = container.app_config_service()
+        csv_repo: Path = app_config_service.get_csv_repository_path()
+    except Exception as e:
+        raise GraphNotFound(graph_identifier, f"Failed to resolve graph path: {e}")
+
+    # Get logger
+    logging_service = container.logging_service()
+    logger = logging_service.get_logger("agentmap.runtime.workflow")
+
+    workflow_token = identifier
+    graph_token = identifier
+    fallback_path = Path(identifier)
+
+    if "::" in identifier:
+        if identifier.count("::") != 1:
+            raise GraphNotFound(graph_identifier, "Invalid :: syntax")
+        csv_path, graph_name = (p.strip() for p in identifier.split("::", 1))
+        if not csv_path or not graph_name:
+            raise GraphNotFound(graph_identifier, "Empty workflow name or graph name")
+        workflow_token, graph_token = csv_path, graph_name
+        fallback_path = Path(csv_path)
+        # Log the detected :: syntax
+        logger.debug(
+            f"Detected :: syntax in graph identifier '{identifier}': workflow='{workflow_token}', graph='{graph_token}'"
+        )
+    elif "/" in identifier:
+        csv_path = identifier.split("/", 1)[0].strip()
+        graph_name = identifier.rsplit("/", 1)[-1].strip()
+        if not csv_path or not graph_name:
+            raise GraphNotFound(
+                graph_identifier, "Empty workflow or graph name in '/' syntax"
+            )
+        workflow_token, graph_token = csv_path, graph_name
+        fallback_path = Path(identifier)
+
+    repo_candidate = csv_repo / f"{workflow_token}.csv"
+    csv_path = repo_candidate if repo_candidate.exists() else fallback_path
+    return csv_path, graph_token
+
+
+# Placeholder functions (real implementations would be moved here)
+def run_workflow(
+    graph_name: str,
+    inputs: Dict[str, Any],
+    *,
+    profile: Optional[str] = None,
+    resume_token: Optional[str] = None,
+    config_file: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Execute a named graph with the given inputs.
+
+    Args:
+        graph_name: The name or identifier of the graph to run.
+        inputs: Dict of input values for the graph.
+        profile: Optional profile/environment (e.g., dev, stage, prod).
+        resume_token: Resume from a checkpoint if provided.
+        config_file: Optional configuration file path.
+
+    Returns:
+        Dict containing structured outputs from the workflow.
+
+    Raises:
+        GraphNotFound: if the graph cannot be located.
+        InvalidInputs: if the inputs fail validation.
+        AgentMapNotInitialized: if runtime has not been initialized.
+    """
+    # Ensure runtime is initialized
+    ensure_initialized(config_file=config_file)
+
+    try:
+        # Get container and services through RuntimeManager delegation
+        container = RuntimeManager.get_container()
+
+        # Resolve CSV path for the graph
+        csv_path, resolved_graph_name = _resolve_csv_path(graph_name, container)
+
+        # Get bundle for execution
+        graph_bundle_service = container.graph_bundle_service()
+        bundle = graph_bundle_service.get_or_create_bundle(
+            csv_path=csv_path, graph_name=resolved_graph_name, config_path=config_file
+        )
+
+        # Execute using GraphRunnerService (proper orchestration service)
+        graph_runner: GraphRunnerService = container.graph_runner_service()
+        result = graph_runner.run(bundle, inputs)
+
+        if result.success:
+            return {
+                "success": True,
+                "outputs": result.final_state,
+                "execution_id": getattr(result, "execution_id", None),
+                "execution_summary": result.execution_summary,
+                "metadata": {
+                    "graph_name": graph_name,
+                    "profile": profile,
+                },
+            }
+        else:
+            # Map execution errors to appropriate exceptions
+            error_msg = str(result.error)
+            _raise_mapped_error(graph_name, error_msg)
+
+    except (GraphNotFound, InvalidInputs, AgentMapNotInitialized):
+        raise
+    except FileNotFoundError as e:
+        raise GraphNotFound(graph_name, f"Workflow file not found: {e}")
+    except ValueError as e:
+        raise InvalidInputs(str(e))
+    except Exception as e:
+        raise RuntimeError(f"Unexpected error during workflow execution: {e}")
+
+
+def list_graphs(
+    *, profile: Optional[str] = None, config_file: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    List available graphs in the configured graph store.
+
+    Args:
+        profile: Optional profile/environment.
+        config_file: Optional configuration file path.
+
+    Returns:
+        Dict containing structured list of graphs with metadata.
+    """
+    # Ensure runtime is initialized
+    ensure_initialized(config_file=config_file)
+
+    try:
+        # Get services from RuntimeManager
+        container = RuntimeManager.get_container()
+        app_config_service = container.app_config_service()
+
+        # Get CSV repository path
+        csv_repository = app_config_service.get_csv_repository_path()
+
+        graphs = []
+
+        if csv_repository.exists():
+            # Find all CSV files (workflows)
+            csv_files = list(csv_repository.glob("*.csv"))
+
+            for csv_file in csv_files:
+                try:
+                    # Get basic file info
+                    file_stat = csv_file.stat()
+                    workflow_name = csv_file.stem
+
+                    # Try to get graph count using pandas for performance
+                    graph_count = 0
+                    total_nodes = 0
+                    graph_names = []
+
+                    try:
+                        import pandas as pd
+
+                        df = pd.read_csv(csv_file)
+
+                        if "GraphName" in df.columns:
+                            unique_graphs = df["GraphName"].dropna().unique()
+                            graph_count = len(unique_graphs)
+                            graph_names = unique_graphs.tolist()
+
+                        total_nodes = len(df)
+
+                    except Exception:
+                        # If parsing fails, just use workflow name as single graph
+                        graph_count = 1
+                        graph_names = [workflow_name]
+
+                    # Create entries for each graph in the workflow
+                    if graph_names:
+                        for graph_name in graph_names:
+                            graphs.append(
+                                _graph_entry(
+                                    csv_file,
+                                    file_stat,
+                                    workflow_name,
+                                    graph_name,
+                                    total_nodes,
+                                    graph_count,
+                                    profile,
+                                    csv_repository,
+                                )
+                            )
+                    else:
+                        # Fallback: use workflow name as graph name
+                        graphs.append(
+                            _graph_entry(
+                                csv_file,
+                                file_stat,
+                                workflow_name,
+                                workflow_name,
+                                total_nodes,
+                                1,
+                                profile,
+                                csv_repository,
+                            )
+                        )
+
+                except Exception:
+                    # Skip files that can't be processed
+                    continue
+
+        # Sort by name for consistent ordering
+        graphs.sort(key=lambda g: g["name"])
+
+        return {
+            "success": True,
+            "outputs": {
+                "graphs": graphs,
+                "total_count": len(graphs),
+            },
+            "metadata": {
+                "profile": profile,
+                "repository_path": str(csv_repository),
+            },
+        }
+
+    except Exception as e:
+        raise RuntimeError(f"Failed to list graphs: {e}")
+
+
+def resume_workflow(
+    resume_token: str,
+    *,
+    profile: Optional[str] = None,
+    config_file: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Resume a previously interrupted workflow.
+
+    Args:
+        resume_token: Token returned by a prior run that can be resumed.
+        profile: Optional profile/environment.
+        config_file: Optional configuration file path.
+
+    Returns:
+        Dict containing structured outputs from the resumed workflow.
+
+    Raises:
+        AgentMapNotInitialized: if runtime has not been initialized.
+        InvalidInputs: if the resume token is invalid.
+    """
+    # Ensure runtime is initialized
+    ensure_initialized(config_file=config_file)
+
+    try:
+        # Parse resume token - expect it to be a JSON string with thread_id and action
+        if isinstance(resume_token, str):
+            try:
+                token_data = json.loads(resume_token)
+                thread_id = token_data.get("thread_id")
+                response_action = token_data.get("response_action", "continue")
+                response_data = token_data.get("response_data")
+            except json.JSONDecodeError:
+                # Maybe it's just a thread_id string
+                thread_id = resume_token
+                response_action = "continue"
+                response_data = None
+        else:
+            raise InvalidInputs("Resume token must be a string")
+
+        if not thread_id:
+            raise InvalidInputs("Resume token must contain a valid thread_id")
+
+        # Get container and services through RuntimeManager delegation
+        container = RuntimeManager.get_container()
+        system_storage_manager = container.system_storage_manager()
+
+        # Check storage availability
+        if not system_storage_manager:
+            raise RuntimeError("Storage services are not available")
+
+        # Get services for resume operation
+        storage_service = system_storage_manager.get_service("json")
+        logging_service = container.logging_service()
+        logger = logging_service.get_logger("agentmap.workflow.resume")
+
+        # Parse response data
+        parsed_response_data = WorkflowResumeService._parse_response_data(response_data)
+
+        # Get graph services
+        try:
+            graph_bundle_service = container.graph_bundle_service()
+            graph_runner_service = container.graph_runner_service()
+            graph_checkpoint_service = container.graph_checkpoint_service()
+            services_available = True
+        except Exception as e:
+            logger.warning(f"Graph services not available: {e}")
+            graph_bundle_service = None
+            graph_runner_service = None
+            graph_checkpoint_service = None
+            services_available = False
+
+        # Create interaction handler
+        from agentmap.deployment.cli.cli_handler import CLIInteractionHandler
+
+        handler = CLIInteractionHandler(
+            storage_service=storage_service,
+            graph_bundle_service=graph_bundle_service,
+            graph_runner_service=graph_runner_service,
+            graph_checkpoint_service=graph_checkpoint_service,
+        )
+
+        # Resume execution
+        result = handler.resume_execution(
+            thread_id=thread_id,
+            response_action=response_action,
+            response_data=parsed_response_data,
+        )
+
+        return {
+            "success": True,
+            "thread_id": thread_id,
+            "outputs": result,
+            "services_available": services_available,
+            "metadata": {
+                "response_action": response_action,
+                "profile": profile,
+            },
+        }
+
+    except (InvalidInputs, AgentMapNotInitialized):
+        raise
+    except Exception as e:
+        raise RuntimeError(f"Failed to resume workflow: {e}")
+
+
+def inspect_graph(
+    graph_name: str,
+    *,
+    csv_file: Optional[str] = None,
+    node: Optional[str] = None,
+    config_file: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Inspect agent service configuration for a graph.
+
+    Args:
+        graph_name: Name of graph to inspect.
+        csv_file: Path to CSV file.
+        node: Inspect specific node only.
+        config_file: Optional configuration file path.
+
+    Returns:
+        Dict containing graph inspection results.
+
+    Raises:
+        GraphNotFound: if the graph cannot be located.
+        AgentMapNotInitialized: if runtime has not been initialized.
+    """
+    # Ensure runtime is initialized
+    ensure_initialized(config_file=config_file)
+
+    try:
+        # Get container and services through RuntimeManager delegation
+        container = RuntimeManager.get_container()
+        graph_runner = container.graph_runner_service()
+
+        # Determine CSV path
+        if csv_file:
+            csv_path = Path(csv_file)
+        else:
+            app_config_service = container.app_config_service()
+            csv_path = app_config_service.get_csv_repository_path()
+
+        # Load the graph definition
+        graph_def, resolved_name = graph_runner._load_graph_definition_for_execution(
+            csv_path, graph_name
+        )
+
+        # Get agent resolution status
+        agent_status = graph_runner.get_agent_resolution_status(graph_def)
+
+        # Collect node details
+        nodes_to_inspect = [node] if node else list(graph_def.keys())
+        node_details = {}
+
+        for node_name in nodes_to_inspect:
+            if node_name not in graph_def:
+                continue
+
+            node_def = graph_def[node_name]
+
+            node_info = {
+                "agent_type": node_def.agent_type or "default",
+                "description": node_def.description or "No description",
+                "resolvable": False,
+                "service_info": None,
+                "error": None,
+            }
+
+            # Get resolution info
+            agent_type = node_def.agent_type or "default"
+            if agent_type in agent_status["agent_types"]:
+                type_info = agent_status["agent_types"][agent_type]["info"]
+                node_info["resolvable"] = type_info["resolvable"]
+                node_info["source"] = type_info.get("source", "Unknown")
+                if not type_info["resolvable"]:
+                    node_info["resolution_error"] = type_info.get(
+                        "resolution_error", "Unknown error"
+                    )
+
+            # Try to create the agent to get service info
+            try:
+                node_registry = graph_runner.node_registry.prepare_for_assembly(
+                    graph_def, graph_name
+                )
+                agent_instance = graph_runner._create_agent_instance(
+                    node_def, graph_name, node_registry
+                )
+                node_info["service_info"] = agent_instance.get_service_info()
+            except Exception as e:
+                node_info["error"] = str(e)
+
+            node_details[node_name] = node_info
+
+        return {
+            "success": True,
+            "outputs": {
+                "resolved_name": resolved_name,
+                "total_nodes": agent_status["total_nodes"],
+                "unique_agent_types": agent_status["overall_status"][
+                    "unique_agent_types"
+                ],
+                "all_resolvable": agent_status["overall_status"]["all_resolvable"],
+                "resolution_rate": agent_status["overall_status"]["resolution_rate"],
+                "node_details": node_details,
+                "issues": agent_status["issues"],
+            },
+            "metadata": {
+                "graph_name": graph_name,
+                "csv_file": str(csv_path),
+                "inspected_node": node,
+            },
+        }
+
+    except (GraphNotFound, AgentMapNotInitialized):
+        raise
+    except FileNotFoundError as e:
+        raise GraphNotFound(graph_name, f"Graph file not found: {e}")
+    except Exception as e:
+        raise RuntimeError(f"Failed to inspect graph: {e}")
+
+
+def validate_workflow(
+    graph_name: str,
+    *,
+    config_file: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Validate CSV and graph configuration using bundle analysis.
+
+    Args:
+        graph_name: The name or identifier of the graph to validate.
+        config_file: Optional configuration file path.
+
+    Returns:
+        Dict containing structured validation results.
+
+    Raises:
+        GraphNotFound: if the graph cannot be located.
+        InvalidInputs: if the validation fails.
+        AgentMapNotInitialized: if runtime has not been initialized.
+    """
+    # Ensure runtime is initialized
+    ensure_initialized(config_file=config_file)
+
+    try:
+        # Get container and services through RuntimeManager delegation
+        container = RuntimeManager.get_container()
+
+        # Resolve CSV path for the graph
+        csv_path, resolved_graph_name = _resolve_csv_path(graph_name, container)
+
+        # Get validation service
+        validation_service = container.validation_service()
+
+        # Validate CSV structure
+        validation_service.validate_csv_for_bundling(csv_path)
+
+        # Create bundle to check for missing declarations
+        graph_bundle_service = container.graph_bundle_service()
+        bundle = graph_bundle_service.get_or_create_bundle(
+            csv_path=csv_path, graph_name=resolved_graph_name, config_path=config_file
+        )
+
+        # Gather validation results
+        missing_declarations = (
+            list(bundle.missing_declarations) if bundle.missing_declarations else []
+        )
+
+        return {
+            "success": True,
+            "outputs": {
+                "csv_structure_valid": True,
+                "total_nodes": len(bundle.nodes),
+                "total_edges": len(bundle.edges),
+                "missing_declarations": missing_declarations,
+                "all_agents_defined": len(missing_declarations) == 0,
+            },
+            "metadata": {
+                "graph_name": graph_name,
+                "bundle_name": bundle.graph_name,
+                "csv_path": str(csv_path),
+            },
+        }
+
+    except (GraphNotFound, InvalidInputs, AgentMapNotInitialized):
+        raise
+    except ValidationException as e:
+        # Map validation errors (like file not found) to GraphNotFound
+        error_msg = str(e)
+        if (
+            "cannot read file" in error_msg.lower()
+            or "no such file" in error_msg.lower()
+        ):
+            raise GraphNotFound(graph_name, f"Validation file not found: {error_msg}")
+        else:
+            raise InvalidInputs(f"Validation failed: {error_msg}")
+    except FileNotFoundError as e:
+        raise GraphNotFound(graph_name, f"Validation file not found: {e}")
+    except ValueError as e:
+        raise InvalidInputs(str(e))
+    except Exception as e:
+        raise RuntimeError(f"Unexpected error during validation: {e}")
+
+
+def _graph_entry(
+    csv_file,
+    file_stat,
+    workflow_name,
+    graph_name,
+    total_nodes,
+    graph_count,
+    profile,
+    csv_repository,
+):
+    """Create a graph entry dictionary."""
+    return {
+        "name": graph_name,
+        "workflow": workflow_name,
+        "filename": csv_file.name,
+        "file_path": str(csv_file),
+        "file_size": file_stat.st_size,
+        "last_modified": file_stat.st_mtime,
+        "total_nodes": total_nodes,
+        "graph_count_in_workflow": graph_count,
+        "meta": {
+            "type": "csv_workflow",
+            "repository_path": str(csv_repository),
+            "profile": profile,
+        },
+    }
+
+
+def _raise_mapped_error(graph_name: str, error_msg: str) -> None:
+    """Map execution error messages to appropriate exceptions."""
+    low = error_msg.lower()
+    if "not found" in low or "does not exist" in low:
+        raise GraphNotFound(graph_name, error_msg)
+    if "invalid" in low or "validation" in low:
+        raise InvalidInputs(error_msg)
+    raise RuntimeError(f"Workflow execution failed: {error_msg}")

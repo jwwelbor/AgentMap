@@ -149,7 +149,9 @@ class GraphAssemblyService:
             if node_name not in agent_instances:
                 raise ValueError(f"No agent instance found for node: {node_name}")
             agent_instance = agent_instances[node_name]
-            self.add_node(node_name, agent_instance)
+            self.add_node(
+                node_name, agent_instance
+            )  # detects orchestrator nodes and adds to self.orchestrator_nodes
             self.process_node_edges(node_name, node.edges)
 
         # Set entry point

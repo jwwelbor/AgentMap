@@ -8,7 +8,7 @@ from typing import Optional
 
 import typer
 
-from agentmap.di import initialize_di
+from agentmap.runtime_api import get_config
 
 
 def config_cmd(
@@ -18,12 +18,9 @@ def config_cmd(
 ):
     """Print the current configuration values."""
     try:
-        # Initialize the container
-        container = initialize_di(config_file)
-
-        # Get configuration from the container
-        app_config_service = container.app_config_service()
-        config_data = app_config_service.get_all()
+        # Get configuration using facade
+        result = get_config(config_file=config_file)
+        config_data = result["outputs"]
 
         print("Configuration values:")
         print("---------------------")

@@ -603,7 +603,6 @@ class TestExecutionResultDataContainer(unittest.TestCase):
             execution_summary=execution_summary,
             success=True,
             total_duration=45.5,
-            compiled_from="memory"
         )
         
         # Assert
@@ -612,7 +611,6 @@ class TestExecutionResultDataContainer(unittest.TestCase):
         self.assertIs(result.execution_summary, execution_summary)
         self.assertTrue(result.success)
         self.assertEqual(result.total_duration, 45.5)
-        self.assertEqual(result.compiled_from, "memory")
         self.assertIsNone(result.error)
     
     def test_execution_result_initialization_with_error(self):
@@ -628,35 +626,14 @@ class TestExecutionResultDataContainer(unittest.TestCase):
             execution_summary=execution_summary,
             success=False,
             total_duration=12.3,
-            compiled_from="autocompiled",
             error="Graph execution encountered an error"
         )
         
         # Assert
         self.assertEqual(result.graph_name, "failed_graph")
         self.assertFalse(result.success)
-        self.assertEqual(result.compiled_from, "autocompiled")
         self.assertEqual(result.error, "Graph execution encountered an error")
-    
-    def test_execution_result_compiled_from_options(self):
-        """Test ExecutionResult with different compiled_from values."""
-        # Arrange
-        base_data = {
-            "final_state": {},
-            "execution_summary": ExecutionSummary("test"),
-            "success": True,
-            "total_duration": 1.0
-        }
         
-        # Act & Assert - Test different compiled_from values
-        for compiled_from in ["precompiled", "autocompiled", "memory"]:
-            result = ExecutionResult(
-                graph_name=f"graph_{compiled_from}",
-                compiled_from=compiled_from,
-                **base_data
-            )
-            self.assertEqual(result.compiled_from, compiled_from)
-    
     def test_execution_result_data_modification(self):
         """Test ExecutionResult data modification."""
         # Arrange
@@ -666,7 +643,6 @@ class TestExecutionResultDataContainer(unittest.TestCase):
             execution_summary=ExecutionSummary("test"),
             success=True,
             total_duration=1.0,
-            compiled_from="memory"
         )
         
         # Act - Modify data
@@ -747,7 +723,6 @@ class TestDataContainerInteroperability(unittest.TestCase):
             execution_summary=summary,
             success=True,
             total_duration=30.0,
-            compiled_from="precompiled"
         )
         
         # Assert - Data container composition works

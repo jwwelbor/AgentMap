@@ -1,30 +1,34 @@
 """
-REFACTORED CLI run command - now uses shared workflow orchestration logic.
+CLI run command - uses runtime facade for execution.
 
-This demonstrates how the CLI would be updated to use the same
-orchestration service as serverless functions while preserving the
-existing GraphExecutionService architecture.
+This command follows SPEC-DEP-001 by using only the runtime facade
+and CLI presenter utilities for consistent behavior and error handling.
 """
 
+import json
 from typing import Optional
 
 import typer
 
-from agentmap.deployment.cli.cli_utils import (
-    handle_command_error,
-    parse_json_state,
+from agentmap.deployment.cli.utils.cli_presenter import (
+    map_exception_to_exit_code,
+    print_err,
+    print_json,
 )
-from agentmap.services.workflow_orchestration_service import execute_workflow
+from agentmap.runtime_api import ensure_initialized, run_workflow
 
 
 def run_command(
-    csv_file: Optional[str] = typer.Argument(
-        None, help="CSV file path or workflow/graph (e.g., 'hello_world/HelloWorld')"
+    workflow: Optional[str] = typer.Argument(
+        None,
+        help="workflow file, workflow/graph, or filename::graph_name (e.g., 'customer_data::support_flow')",
     ),
-    graph: Optional[str] = typer.Option(
-        None, "--graph", "-g", help="Graph name to run"
+    graph: str = typer.Option(
+        "{}",
+        "--workflow",
+        "-w",
+        help="workflow file, workflow_folder/workflow_file, or filename::graph_name (e.g., 'customer_data::support_flow')",
     ),
-    csv: Optional[str] = typer.Option(None, "--csv", help="CSV path override"),
     state: str = typer.Option(
         "{}", "--state", "-s", help="Initial state as JSON string"
     ),
@@ -42,53 +46,109 @@ def run_command(
     ),
 ):
     """
-    Run a graph using cached bundles for efficient execution.
+    Run a graph using the runtime facade.
 
-    Uses the same orchestration logic as serverless functions while preserving
-    the existing GraphExecutionService → GraphRunnerService → Bundle architecture.
+    This command follows the facade pattern defined in SPEC-DEP-001 for
+    consistent behavior across all deployment adapters.
+
+    **Supported Syntax Examples:**
+
+    • Traditional syntax:
+      agentmap run workflow/graph_name
+      agentmap run --csv workflow.csv --graph graph_name
+
+    • Simplified syntax (NEW):
+      agentmap run filename::graph_name
+      agentmap run --workflow filename
+      agentmap run --workflow filename::graph_name
+
+    The :: syntax provides a convenient shorthand where the graph name
+    defaults to the CSV filename (without .csv extension), but you can
+    specify a different graph name after the :: delimiter.
     """
     try:
-        # Parse initial state (could also let execute_workflow handle this)
-        initial_state = parse_json_state(state)
+        # Ensure runtime is initialized
+        ensure_initialized(config_file=config_file)
 
-        # Execute using shared orchestration service (preserves existing architecture!)
-        result = execute_workflow(
-            csv_or_workflow=csv_file,
-            graph_name=graph,
-            initial_state=initial_state,
+        # Parse initial state
+        try:
+            initial_state = json.loads(state) if state != "{}" else {}
+        except json.JSONDecodeError as e:
+            print_err(f"Invalid JSON in --state: {e}")
+            raise typer.Exit(
+                code=map_exception_to_exit_code(ValueError("Invalid JSON in state"))
+            )
+
+        # Determine graph name - now supports :: syntax
+        graph_name = workflow or graph
+
+        if not graph_name:
+            print_err("Must provide workflow argument")
+            print_err("Examples:")
+            print_err("  agentmap run workflow/graph_name")
+            print_err("  agentmap run filename::graph_name")
+            print_err("  agentmap run --csv workflow.csv --graph graph_name")
+            raise typer.Exit(code=2)
+
+        # Validate :: syntax if present
+        # if "::" in graph_name:
+        #     if graph_name.count("::") != 1:
+        #         print_err("Invalid :: syntax - expected exactly one :: delimiter")
+        #         raise typer.Exit(code=2)
+
+        #     parts = graph_name.split("::", 1)
+        #     if not parts[0].strip() or not parts[1].strip():
+        #         print_err("Invalid :: syntax - both filename and graph name must be non-empty")
+        #         raise typer.Exit(code=2)
+
+        # Execute using runtime facade
+        result = run_workflow(
+            graph_name=graph_name,
+            inputs=initial_state,
             config_file=config_file,
-            validate_csv=validate,
-            csv_override=csv,
         )
 
-        # Display result (CLI-specific formatting)
-        if result.success:
-            typer.secho(
-                "✅ Graph execution completed successfully", fg=typer.colors.GREEN
-            )
-
+        # Display result using CLI presenter for consistency
+        if result.get("success", False):
             if pretty:
-                # Get formatter service for pretty output
-                from agentmap.di import initialize_di
-
-                container = initialize_di(config_file)
-                formatter_service = container.execution_formatter_service()
-                formatted_output = formatter_service.format_execution_result(
-                    result.final_state, verbose=verbose
+                # Pretty output with detailed information
+                typer.secho(
+                    "✅ Graph execution completed successfully", fg=typer.colors.GREEN
                 )
-                print(formatted_output)
+
+                # Show outputs in pretty format
+                outputs = result.get("outputs", {})
+                if outputs:
+                    typer.secho("📤 Outputs:", fg=typer.colors.BLUE, bold=True)
+                    print_json(outputs)
+
+                # Show metadata if verbose
+                if verbose:
+                    metadata = result.get("metadata", {})
+                    if metadata:
+                        typer.secho("ℹ️  Metadata:", fg=typer.colors.CYAN, bold=True)
+                        print_json(metadata)
             else:
-                print("✅ Output:", result.final_state)
+                # Simple JSON output for scripting
+                print_json(result)
+
         else:
-            typer.secho(
-                f"❌ Graph execution failed: {result.error}", fg=typer.colors.RED
-            )
+            # This shouldn't happen with the facade pattern, but handle gracefully
+            print_err("Graph execution failed - no success status returned")
             raise typer.Exit(code=1)
 
+        raise typer.Exit(code=0)
+
     except Exception as e:
-        handle_command_error(e, verbose)
+        # Use CLI presenter for consistent error handling and exit codes
+        print_err(str(e))
+        exit_code = map_exception_to_exit_code(e)
+        raise typer.Exit(code=exit_code)
 
 
-# The CLI is now ~30 lines instead of 100+ lines!
-# All orchestration logic is shared with serverless functions
-# Existing GraphExecutionService and architecture remain unchanged
+def parse_json_state(state: str) -> dict:
+    """Helper function to parse JSON state (for backward compatibility)."""
+    try:
+        return json.loads(state) if state != "{}" else {}
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in state: {e}")

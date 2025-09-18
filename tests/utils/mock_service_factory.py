@@ -900,11 +900,11 @@ class MockServiceFactory:
         """
         mock_service = Mock()
         
-        def create_mock_execution_result(graph_name: str, source: str, success: bool = True) -> Mock:
+        def create_mock_execution_result(graph_name: str, success: bool = True) -> Mock:
             """Create a mock ExecutionResult with realistic structure."""
             from unittest.mock import Mock
             
-            # Note: Using total_duration and compiled_from fields as used by the actual ExecutionResult model
+            # Note: Using total_duration and fields as used by the actual ExecutionResult model
             # rather than execution_time and source_info from the old implementation
             mock_result = Mock()
             mock_result.graph_name = graph_name
@@ -912,18 +912,17 @@ class MockServiceFactory:
             mock_result.final_state = {"result": "test_output", "status": "completed"}
             mock_result.execution_summary = Mock()
             mock_result.total_duration = 1.5
-            mock_result.compiled_from = source
             mock_result.error = None if success else "Mock execution error"
             
             return mock_result
         
         def execute_compiled_graph(bundle_path: Path, state: Dict[str, Any]) -> Mock:
             graph_name = bundle_path.stem
-            return create_mock_execution_result(graph_name, "precompiled")
+            return create_mock_execution_result(graph_name)
         
         def execute_from_definition(graph_def: Dict[str, Any], state: Dict[str, Any]) -> Mock:
             graph_name = "test_graph"  # Default for mock
-            return create_mock_execution_result(graph_name, "memory")
+            return create_mock_execution_result(graph_name)
         
         def setup_execution_tracking(graph_name: str) -> Mock:
             mock_tracker = Mock()

@@ -1,16 +1,21 @@
 """
-REFACTORED CLI resume command - now uses shared workflow resume logic.
+CLI resume command - uses runtime facade for resume operations.
 
-This demonstrates how the resume CLI would be updated to use the same
-orchestration service as serverless functions while preserving the
-existing resume architecture.
+This command follows SPEC-DEP-001 by using only the runtime facade
+and CLI presenter utilities for consistent behavior and error handling.
 """
 
+import json
 from typing import Optional
 
 import typer
 
-from agentmap.services.workflow_orchestration_service import resume_workflow
+from agentmap.deployment.cli.utils.cli_presenter import (
+    map_exception_to_exit_code,
+    print_err,
+    print_json,
+)
+from agentmap.runtime_api import ensure_initialized, resume_workflow
 
 
 def resume_command(
@@ -30,45 +35,80 @@ def resume_command(
 ):
     """Resume an interrupted workflow by providing thread ID and response data."""
     try:
-        # Execute using shared orchestration service (preserves existing architecture!)
+        # Ensure runtime is initialized
+        ensure_initialized(config_file=config_file)
+
+        # Parse response data from various sources
+        response_data = None
+        if data:
+            try:
+                response_data = json.loads(data)
+            except json.JSONDecodeError as e:
+                print_err(f"Invalid JSON in --data: {e}")
+                raise typer.Exit(
+                    code=map_exception_to_exit_code(ValueError("Invalid JSON"))
+                )
+        elif data_file:
+            try:
+                with open(data_file, "r") as f:
+                    response_data = json.load(f)
+            except FileNotFoundError:
+                print_err(f"Data file not found: {data_file}")
+                raise typer.Exit(
+                    code=map_exception_to_exit_code(ValueError("File not found"))
+                )
+            except json.JSONDecodeError as e:
+                print_err(f"Invalid JSON in file {data_file}: {e}")
+                raise typer.Exit(
+                    code=map_exception_to_exit_code(ValueError("Invalid JSON"))
+                )
+
+        # Create resume token with thread_id and response action
+        resume_token_data = {
+            "thread_id": thread_id,
+            "response_action": response,
+        }
+        if response_data:
+            resume_token_data["response_data"] = response_data
+
+        resume_token = json.dumps(resume_token_data)
+
+        # Execute using runtime facade
         result = resume_workflow(
-            thread_id=thread_id,
-            response_action=response,
-            response_data=data,
-            data_file_path=data_file,
+            resume_token=resume_token,
             config_file=config_file,
         )
 
-        # Display result (CLI-specific formatting)
-        if result["success"]:
+        # Display result using CLI presenter for consistency
+        if result.get("success", False):
             typer.secho(
                 f"✅ Successfully resumed thread '{thread_id}' with action '{response}'",
                 fg=typer.colors.GREEN,
             )
 
-            if not result["services_available"]:
+            # Check service availability
+            if not result.get("services_available", True):
                 typer.secho(
                     "⚠️  Graph services not available. Response saved but execution cannot restart.",
                     fg=typer.colors.YELLOW,
                 )
+
+            # Show outputs if available
+            outputs = result.get("outputs")
+            if outputs:
+                typer.secho("📤 Resume result:", fg=typer.colors.BLUE, bold=True)
+                print_json(outputs)
+
         else:
-            typer.secho(
-                f"❌ Failed to resume thread '{thread_id}': {result.get('error', 'Unknown error')}",
-                fg=typer.colors.RED,
-            )
+            # This shouldn't happen with the facade pattern, but handle gracefully
+            error_msg = result.get("error", "Unknown error")
+            print_err(f"Failed to resume thread '{thread_id}': {error_msg}")
             raise typer.Exit(code=1)
 
-    except ValueError as e:
-        typer.secho(f"❌ Error: {e}", fg=typer.colors.RED)
-        raise typer.Exit(code=1)
-    except RuntimeError as e:
-        typer.secho(f"❌ Storage error: {e}", fg=typer.colors.RED)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=0)
+
     except Exception as e:
-        typer.secho(f"❌ Unexpected error: {e}", fg=typer.colors.RED)
-        raise typer.Exit(code=1)
-
-
-# The CLI is now ~30 lines instead of 80+ lines!
-# All orchestration logic is shared with serverless functions
-# Existing resume architecture and services remain unchanged
+        # Use CLI presenter for consistent error handling and exit codes
+        print_err(str(e))
+        exit_code = map_exception_to_exit_code(e)
+        raise typer.Exit(code=exit_code)

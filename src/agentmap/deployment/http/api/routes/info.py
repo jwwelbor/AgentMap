@@ -2,7 +2,8 @@
 Information and diagnostics routes for FastAPI server.
 
 This module provides API endpoints for system information, diagnostics,
-and cache management using the new service architecture.
+and cache management using the runtime facade pattern per SPEC-DEP-001
+for consistent behavior across all deployment adapters.
 """
 
 from datetime import datetime
@@ -12,9 +13,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from agentmap.deployment.http.api.dependencies import (
-    get_container,
     requires_auth,
 )
+from agentmap.exceptions.runtime_exceptions import (
+    AgentMapNotInitialized,
+)
+
+# Use runtime facade instead of direct service access
+from agentmap.runtime_api import diagnose_system, ensure_initialized
 
 
 # Response models
@@ -53,37 +59,59 @@ router = APIRouter(prefix="/info", tags=["Information & Diagnostics"])
 async def get_configuration(request: Request):
     """Get current AgentMap configuration (Admin only)."""
     try:
+        # Ensure runtime is initialized
+        ensure_initialized()
+
+        # Note: Configuration access not yet available through facade
+        # This would require facade extension for full functionality
         container = request.app.state.container
         app_config_service = container.app_config_service()
         configuration = app_config_service.get_all()
 
         return {"configuration": configuration, "status": "success"}
+    except AgentMapNotInitialized as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get configuration: {e}")
 
 
 @router.get("/diagnose", response_model=DiagnosticResponse)
 @requires_auth("admin")
-async def diagnose_system(request: Request):
-    """Run system diagnostics and dependency checks."""
+async def diagnose_system_endpoint(request: Request):
+    """Run system diagnostics and dependency checks using runtime facade."""
     try:
-        container = request.app.state.container
-        features_service = container.features_registry_service()
-        dependency_checker = container.dependency_checker_service()
+        # Ensure runtime is initialized
+        ensure_initialized()
 
-        # Build diagnostic information using services
-        diagnostic_info = {
-            "llm": _build_llm_diagnostic(features_service, dependency_checker),
-            "storage": _build_storage_diagnostic(features_service, dependency_checker),
-            "environment": _build_environment_diagnostic(),
-            "package_versions": _get_package_versions(),
-            "installation_suggestions": _build_installation_suggestions(
-                features_service, dependency_checker
-            ),
-        }
+        # Use facade to get diagnostic information
+        result = diagnose_system()
 
-        return DiagnosticResponse(**diagnostic_info)
+        if result.get("success", False):
+            outputs = result.get("outputs", {})
+            features = outputs.get("features", {})
 
+            # Convert facade result to HTTP response format
+            diagnostic_info = {
+                "llm": features.get("llm", {}),
+                "storage": features.get("storage", {}),
+                "environment": outputs.get("environment", {}),
+                "package_versions": outputs.get("environment", {}).get(
+                    "package_versions", {}
+                ),
+                "installation_suggestions": outputs.get("suggestions", []),
+            }
+
+            return DiagnosticResponse(**diagnostic_info)
+        else:
+            error_msg = result.get("error", "Unknown diagnostic error")
+            raise HTTPException(
+                status_code=500, detail=f"Diagnostic check failed: {error_msg}"
+            )
+
+    except AgentMapNotInitialized as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Diagnostic check failed: {e}")
 
@@ -93,6 +121,11 @@ async def diagnose_system(request: Request):
 async def get_cache_info(request: Request):
     """Get validation cache information and statistics."""
     try:
+        # Ensure runtime is initialized
+        ensure_initialized()
+
+        # Note: Cache management not yet available through facade
+        # This would require facade extension for full functionality
         container = request.app.state.container
         validation_cache_service = container.validation_cache_service()
         cache_stats = validation_cache_service.get_validation_cache_stats()
@@ -111,6 +144,8 @@ async def get_cache_info(request: Request):
 
         return CacheInfoResponse(**cache_info)
 
+    except AgentMapNotInitialized as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get cache info: {e}")
 
@@ -124,6 +159,11 @@ async def clear_cache(
 ):
     """Clear validation cache entries."""
     try:
+        # Ensure runtime is initialized
+        ensure_initialized()
+
+        # Note: Cache operations not yet available through facade
+        # This would require facade extension for full functionality
         container = request.app.state.container
         validation_cache_service = container.validation_cache_service()
 
@@ -146,6 +186,8 @@ async def clear_cache(
 
         return CacheOperationResponse(**result)
 
+    except AgentMapNotInitialized as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to clear cache: {e}")
 

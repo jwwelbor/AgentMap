@@ -236,11 +236,11 @@ paths:
         
         data = response.json()
         self.assert_response_contains_fields(data, [
-            "message", "version", "endpoints", "documentation", "authentication"
+            "message", "version", "documentation", "authentication", "quick_start"
         ])
         self.assertEqual(data["version"], "2.0")
-        self.assertIn("endpoints", data)
-        self.assertIsInstance(data["endpoints"], dict)
+        # Removed old endpoints validation - now using standard FastAPI docs
+
         
         # Verify documentation structure
         self.assertIn("documentation", data)
@@ -257,15 +257,15 @@ paths:
         self.assertIsInstance(auth["modes"], list)
         
         # Verify endpoints structure
-        endpoints = data["endpoints"]
-        expected_endpoint_groups = ["/workflows", "/execution", "/validation", "/graph", "/info"]
-        for endpoint_group in expected_endpoint_groups:
-            self.assertIn(endpoint_group, endpoints)
-            endpoint_info = endpoints[endpoint_group]
-            self.assertIsInstance(endpoint_info, dict)
-            self.assertIn("description", endpoint_info)
-            self.assertIn("methods", endpoint_info)
-            self.assertIn("auth_required", endpoint_info)
+        # Old endpoints validation removed - using FastAPI /docs instead
+        # Test structure aligns with FastAPI standards
+
+
+
+
+
+
+
         
         # Verify additional helpful sections
         self.assertIn("quick_start", data)

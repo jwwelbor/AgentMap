@@ -432,6 +432,53 @@ class AvailabilityCacheService:
             if self._logger:
                 self._logger.error(f"Error invalidating environment cache: {e}")
 
+    def is_initialized(self) -> bool:
+        """
+        Lightweight check if the cache has been initialized.
+
+        Simply checks if the cache file exists without validating contents.
+        This is much faster than full validation and suitable for runtime checks.
+
+        Returns:
+            True if cache file exists, False otherwise
+        """
+        return self._cache_file_path.exists()
+
+    def refresh_cache(self, container) -> None:
+        """
+        Refresh the availability cache by discovering and validating all providers.
+
+        This delegates to the DependencyCheckerService to do the heavy lifting
+        of discovery and validation, then stores results in the cache.
+
+        Args:
+            container: DI container to get services from
+
+        Raises:
+            Exception: If refresh fails
+        """
+        try:
+            dependency_checker = container.dependency_checker_service()
+
+            # Clear existing cache first
+            self.invalidate_cache()
+
+            # Discover and validate LLM providers
+            dependency_checker.discover_and_validate_providers("llm", force_check=True)
+
+            # Discover and validate storage providers
+            dependency_checker.discover_and_validate_providers(
+                "storage", force_check=True
+            )
+
+            if self._logger:
+                self._logger.info("Successfully refreshed availability cache")
+
+        except Exception as e:
+            if self._logger:
+                self._logger.error(f"Failed to refresh availability cache: {e}")
+            raise
+
     def get_cache_stats(self) -> Dict[str, Any]:
         """
         Get cache statistics and status information.

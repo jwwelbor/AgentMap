@@ -1,92 +1,21 @@
 """
-AWS Lambda handler using the new service architecture.
+AWS Lambda handler using the runtime facade pattern.
 
-This module provides AWS Lambda function handlers that maintain
-compatibility with existing interfaces while using GraphRunnerService.
+This module provides AWS Lambda function handlers that follow SPEC-DEP-001
+by using only the runtime facade for consistent behavior across all deployment adapters.
 """
 
 from typing import Any, Dict, Optional
 
 from agentmap.deployment.serverless.base_handler import BaseHandler
-from agentmap.deployment.serverless.request_parser import RequestParser
-from agentmap.di import ApplicationContainer
 
 
 class AWSLambdaHandler(BaseHandler):
-    """AWS Lambda handler for AgentMap graph execution."""
-
-    def _parse_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Parse AWS Lambda event format.
-
-        Args:
-            event: AWS Lambda event object
-
-        Returns:
-            Dict containing parsed request data
-        """
-        # Handle different Lambda trigger types
-        if "httpMethod" in event:
-            # API Gateway trigger
-            return self._parse_api_gateway_event(event)
-        elif "Records" in event:
-            # S3, SQS, SNS, etc. trigger
-            return self._parse_records_event(event)
-        else:
-            # Direct invocation
-            return self._parse_direct_invocation(event)
-
-    def _parse_api_gateway_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse API Gateway event."""
-        method = RequestParser.get_http_method(event)
-
-        if method == "POST":
-            # Parse body for POST requests
-            body = event.get("body", "{}")
-            request_data = RequestParser.parse_json_body(body)
-        else:
-            # Use query parameters for GET requests
-            request_data = RequestParser.extract_query_params(event)
-
-        # Add path parameters
-        path_params = RequestParser.extract_path_params(event)
-        request_data.update(path_params)
-
-        return request_data
-
-    def _parse_records_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse event with Records (S3, SQS, etc.)."""
-        # For records events, extract the first record and parse its content
-        records = event.get("Records", [])
-        if not records:
-            return {}
-
-        first_record = records[0]
-
-        # Handle different record types
-        if "s3" in first_record:
-            # S3 event - could trigger graph execution based on file upload
-            s3_info = first_record["s3"]
-            return {
-                "action": "run",
-                "csv": s3_info.get("object", {}).get("key"),
-                "trigger": "s3_upload",
-            }
-        elif "body" in first_record:
-            # SQS message
-            return RequestParser.parse_json_body(first_record["body"])
-        else:
-            # Other record types
-            return first_record
-
-    def _parse_direct_invocation(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse direct Lambda invocation."""
-        # For direct invocation, the event is the request data
-        return event
+    """AWS Lambda handler using facade pattern through BaseHandler."""
 
     def lambda_handler(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """
-        AWS Lambda entry point.
+        AWS Lambda entry point using facade pattern.
 
         Args:
             event: AWS Lambda event object
@@ -95,21 +24,21 @@ class AWSLambdaHandler(BaseHandler):
         Returns:
             Dict containing response for AWS Lambda
         """
-        return self.handle_request(event, context)
+        # Use BaseHandler's facade-based request handling
+        # BaseHandler will parse the event using trigger strategies
+        return self.handle_request_sync(event, context)
 
 
 # Global handler instance for Lambda runtime
 _lambda_handler_instance: Optional[AWSLambdaHandler] = None
 
 
-def get_lambda_handler(
-    container: Optional[ApplicationContainer] = None,
-) -> AWSLambdaHandler:
+def get_lambda_handler(config_file: Optional[str] = None) -> AWSLambdaHandler:
     """
-    Get or create Lambda handler instance.
+    Get or create Lambda handler instance using facade pattern.
 
     Args:
-        container: Optional DI container
+        config_file: Optional config file path
 
     Returns:
         AWSLambdaHandler instance
@@ -117,14 +46,14 @@ def get_lambda_handler(
     global _lambda_handler_instance
 
     if _lambda_handler_instance is None:
-        _lambda_handler_instance = AWSLambdaHandler(container)
+        _lambda_handler_instance = AWSLambdaHandler(config_file=config_file)
 
     return _lambda_handler_instance
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    Main Lambda handler function.
+    Main Lambda handler function using facade pattern.
 
     This is the entry point that AWS Lambda will call.
 
@@ -141,7 +70,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 def lambda_handler_with_config(config_file: str):
     """
-    Create a Lambda handler with custom configuration.
+    Create a Lambda handler with custom configuration using facade pattern.
 
     Args:
         config_file: Path to custom config file
@@ -149,10 +78,7 @@ def lambda_handler_with_config(config_file: str):
     Returns:
         Lambda handler function
     """
-    from agentmap.di import initialize_di
-
-    container = initialize_di(config_file)
-    handler = AWSLambdaHandler(container)
+    handler = AWSLambdaHandler(config_file=config_file)
 
     def configured_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return handler.lambda_handler(event, context)
@@ -165,28 +91,22 @@ def lambda_handler_with_config(config_file: str):
 
 def run_graph_lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler specifically for graph execution."""
-    # Add default action for this specific handler
-    if "action" not in event:
-        event["action"] = "run"
+    # Add default graph parameter if not present
+    if "graph" not in event and "csv" not in event:
+        # Set a default graph name for run-only handlers
+        event["graph"] = "default"
 
     return lambda_handler(event, context)
 
 
-def validate_graph_lambda_handler(
-    event: Dict[str, Any], context: Any
-) -> Dict[str, Any]:
-    """Lambda handler specifically for graph validation."""
-    # Add default action for this specific handler
-    if "action" not in event:
-        event["action"] = "validate"
-
-    return lambda_handler(event, context)
-
-
-def compile_graph_lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Lambda handler specifically for graph compilation."""
-    # Add default action for this specific handler
-    if "action" not in event:
-        event["action"] = "compile"
+def workflow_lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """Lambda handler for workflow execution with graph name validation."""
+    # Ensure graph name is specified
+    if "graph" not in event:
+        return {
+            "statusCode": 400,
+            "headers": {"Content-Type": "application/json"},
+            "body": '{"success": false, "error": "Graph name is required"}',
+        }
 
     return lambda_handler(event, context)

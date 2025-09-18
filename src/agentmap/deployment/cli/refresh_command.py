@@ -8,7 +8,7 @@ from typing import Optional
 
 import typer
 
-from agentmap.di import initialize_di
+from agentmap.runtime_api import refresh_cache
 
 
 def refresh_cmd(
@@ -32,83 +32,59 @@ def refresh_cmd(
     providers, updating their availability status.
     """
     try:
-        # Initialize container
-        container = initialize_di(config_file)
-        dependency_checker = container.dependency_checker_service()
-        features_registry = container.features_registry_service()
-
         typer.echo("🔄 Refreshing Provider Availability Cache")
         typer.echo("=" * 40)
 
-        # Invalidate the cache
+        # Refresh using facade
+        result = refresh_cache(
+            force=force,
+            llm_only=llm_only,
+            storage_only=storage_only,
+            config_file=config_file,
+        )
+
+        outputs = result["outputs"]
+
         typer.echo("\n📦 Invalidating existing cache...")
-        dependency_checker.invalidate_environment_cache()
         typer.secho("✅ Cache invalidated", fg=typer.colors.GREEN)
 
-        # Discover and validate LLM providers
-        if not storage_only:
+        # Display LLM results
+        if not storage_only and outputs.get("llm_results"):
             typer.echo("\n🤖 Discovering LLM Providers...")
-            llm_results = dependency_checker.discover_and_validate_providers(
-                "llm", True
-            )
-
-            for provider, is_available in llm_results.items():
+            for provider, is_available in outputs["llm_results"].items():
                 status = "✅ Available" if is_available else "❌ Not available"
                 color = typer.colors.GREEN if is_available else typer.colors.RED
                 typer.secho(f"  {provider.capitalize()}: {status}", fg=color)
 
-                if not is_available:
-                    # Get missing dependencies
-                    _, missing = dependency_checker.check_llm_dependencies(provider)
-                    if missing:
-                        typer.echo(f"    Missing: {', '.join(missing)}")
-                        guide = dependency_checker.get_installation_guide(
-                            provider, "llm"
-                        )
-                        typer.echo(f"    Install: {guide}")
-
-        # Discover and validate storage providers
-        if not llm_only:
+        # Display storage results
+        if not llm_only and outputs.get("storage_results"):
             typer.echo("\n💾 Discovering Storage Providers...")
-            storage_results = dependency_checker.discover_and_validate_providers(
-                "storage", True
-            )
-
-            for storage_type, is_available in storage_results.items():
+            for storage_type, is_available in outputs["storage_results"].items():
                 status = "✅ Available" if is_available else "❌ Not available"
                 color = typer.colors.GREEN if is_available else typer.colors.RED
                 typer.secho(f"  {storage_type}: {status}", fg=color)
 
-                if not is_available:
-                    # Get missing dependencies
-                    _, missing = dependency_checker.check_storage_dependencies(
-                        storage_type
-                    )
-                    if missing:
-                        typer.echo(f"    Missing: {', '.join(missing)}")
-                        guide = dependency_checker.get_installation_guide(
-                            storage_type, "storage"
-                        )
-                        typer.echo(f"    Install: {guide}")
-
         # Show summary
-        typer.echo("\n📊 Summary:")
-        status_summary = dependency_checker.get_dependency_status_summary()
+        if outputs.get("status_summary"):
+            typer.echo("\n📊 Summary:")
+            status_summary = outputs["status_summary"]
 
-        llm_count = len(status_summary["llm"]["available_providers"])
-        storage_count = len(status_summary["storage"]["available_types"])
-
-        typer.echo(f"  LLM Providers Available: {llm_count}")
-        if llm_count > 0:
-            typer.echo(
-                f"    Providers: {', '.join(status_summary['llm']['available_providers'])}"
+            llm_count = len(
+                status_summary.get("llm", {}).get("available_providers", [])
+            )
+            storage_count = len(
+                status_summary.get("storage", {}).get("available_types", [])
             )
 
-        typer.echo(f"  Storage Types Available: {storage_count}")
-        if storage_count > 0:
-            typer.echo(
-                f"    Types: {', '.join(status_summary['storage']['available_types'])}"
-            )
+            typer.echo(f"  LLM Providers Available: {llm_count}")
+            if llm_count > 0:
+                providers = status_summary.get("llm", {}).get("available_providers", [])
+                typer.echo(f"    Providers: {', '.join(providers)}")
+
+            typer.echo(f"  Storage Types Available: {storage_count}")
+            if storage_count > 0:
+                types = status_summary.get("storage", {}).get("available_types", [])
+                typer.echo(f"    Types: {', '.join(types)}")
 
         typer.secho(
             "\n✅ Provider availability cache refreshed successfully!",

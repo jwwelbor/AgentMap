@@ -1,14 +1,12 @@
 """
-FastAPI server using services through dependency injection.
+FastAPI server using the runtime facade pattern.
 
-This module provides FastAPI endpoints that maintain compatibility with
-existing API interfaces while using the new service architecture.
-
-Refactored to follow clean architecture patterns with proper separation
-of infrastructure concerns.
+This module follows SPEC-DEP-001 by using only the runtime facade and
+providing a clean HTTP interface for workflow operations.
 """
 
 import sys
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, Optional
 
@@ -17,9 +15,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from agentmap.deployment.http.api.middleware.auth import FastAPIAuthAdapter
-from agentmap.deployment.service_adapter import create_service_adapter
-from agentmap.di import ApplicationContainer, initialize_di
+from agentmap.exceptions.runtime_exceptions import (
+    AgentMapNotInitialized,
+    GraphNotFound,
+    InvalidInputs,
+)
+
+# ✅ FACADE PATTERN: Only import from runtime facade
+from agentmap.runtime_api import ensure_initialized, get_container
 
 
 # Legacy Response Models (for backward compatibility)
@@ -32,30 +35,54 @@ class AgentsInfoResponse(BaseModel):
     install_instructions: Dict[str, str]
 
 
+def create_lifespan(config_file: Optional[str] = None):
+    """Factory function to create lifespan with config file."""
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        """
+        FastAPI lifespan hook following SPEC-RUN-002.
+
+        Calls ensure_initialized() once at startup and stores the container
+        in app.state for use by dependencies.
+        """
+        try:
+            # ✅ FACADE PATTERN: Use only runtime facade for initialization
+            # ✅ FIX: Pass config_file to ensure_initialized
+            ensure_initialized(config_file=config_file)
+
+            # ✅ CRITICAL FIX: Store container in app.state for dependencies.py
+            container = get_container()
+            app.state.container = container
+
+            print("AgentMap runtime initialized successfully")
+            yield
+        except Exception as e:
+            print(f"Failed to initialize AgentMap runtime: {e}")
+            raise
+        finally:
+            print("AgentMap runtime shutting down")
+
+    return lifespan
+
+
 class FastAPIServer:
-    """FastAPI server using services through DI with clean architecture."""
+    """FastAPI server using facade pattern only."""
 
-    def __init__(
-        self,
-        container: Optional[ApplicationContainer] = None,
-        config_file: Optional[str] = None,
-    ):
-        """Initialize FastAPI server with standard AgentMap DI initialization."""
-        self.container = container or initialize_di(config_file)
-        self.adapter = create_service_adapter(self.container)
-
-        # Create auth adapter for FastAPI-specific authentication
-        auth_service = self.container.auth_service()
-        self.auth_adapter = FastAPIAuthAdapter(auth_service)
-
+    def __init__(self, config_file: Optional[str] = None):
+        """Initialize FastAPI server using facade pattern."""
+        self.config_file = config_file
         self.app = self.create_app()
 
     def create_app(self) -> FastAPI:
-        """Create FastAPI app with service-backed routes."""
+        """Create FastAPI app with facade-backed routes."""
         app = FastAPI(
             title="AgentMap Workflow Automation API",
             description=self._get_api_description(),
             version="2.0",
+            lifespan=create_lifespan(
+                self.config_file
+            ),  # ✅ Pass config_file to lifespan
             terms_of_service="https://github.com/jwwelbor/AgentMap",
             contact={
                 "name": "AgentMap Support",
@@ -83,13 +110,56 @@ class FastAPIServer:
             allow_headers=["*"],
         )
 
-        # Store container in app state for direct access by routes
-        app.state.container = self.container
+        # Store config file in app state for routes that need it
+        app.state.config_file = self.config_file
+
+        # Add global exception handlers per SPEC-EXC-000
+        self._add_exception_handlers(app)
 
         # Add routes
         self._add_routes(app)
 
         return app
+
+    def _add_exception_handlers(self, app: FastAPI):
+        """Add global exception handlers per SPEC-EXC-000."""
+        from fastapi import Request
+        from fastapi.responses import JSONResponse
+
+        @app.exception_handler(GraphNotFound)
+        async def graph_not_found_handler(request: Request, exc: GraphNotFound):
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "error": "Graph not found",
+                    "message": str(exc),
+                    "type": "GraphNotFound",
+                },
+            )
+
+        @app.exception_handler(InvalidInputs)
+        async def invalid_inputs_handler(request: Request, exc: InvalidInputs):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "Invalid inputs",
+                    "message": str(exc),
+                    "type": "InvalidInputs",
+                },
+            )
+
+        @app.exception_handler(AgentMapNotInitialized)
+        async def not_initialized_handler(
+            request: Request, exc: AgentMapNotInitialized
+        ):
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": "Service unavailable",
+                    "message": str(exc),
+                    "type": "AgentMapNotInitialized",
+                },
+            )
 
     def _get_api_description(self) -> str:
         """Get comprehensive API description for OpenAPI documentation."""
@@ -101,11 +171,10 @@ This RESTful API supports both standalone operation and embedded integration wit
 
 ### Key Features
 
-- **Workflow Execution**: Run and resume workflows stored in CSV repository
-- **Validation**: Validate CSV workflow definitions and configuration files  
-- **Graph Operations**: Compile, scaffold, and manage workflow graphs
-- **Repository Management**: Browse and inspect workflow repository contents
-- **System Diagnostics**: Check system health, dependencies, and configuration
+- **Workflow Execution**: Run and resume workflows using the runtime facade
+- **Validation**: Validate workflows and configurations
+- **Graph Operations**: List and manage available graphs
+- **System Diagnostics**: Check system health and dependencies
 
 ### Authentication
 
@@ -115,25 +184,6 @@ The API supports multiple authentication modes:
 - **API Key**: Use `X-API-Key` header for server-to-server integration
 - **Bearer Token**: Use `Authorization: Bearer <token>` for user-based access
 
-### Workflow Repository Structure
-
-Workflows are stored as CSV files in a configured repository directory:
-
-```
-csv_repository/
-├── workflow1.csv    # Contains one or more named graphs
-├── workflow2.csv    # Each CSV defines nodes, agents, and connections
-└── ...
-```
-
-### Rate Limiting
-
-API endpoints are rate limited to ensure fair usage:
-
-- **Execution endpoints**: 60 requests per minute
-- **Validation endpoints**: 120 requests per minute  
-- **Information endpoints**: 300 requests per minute
-
 ### Response Format
 
 All responses follow consistent JSON structure with appropriate HTTP status codes.
@@ -142,9 +192,9 @@ Error responses include detailed validation information and suggestions for reso
 ### Getting Started
 
 1. Check API health: `GET /health`
-2. List available workflows: `GET /workflows`
-3. Run a workflow: `POST /execution/{workflow}/{graph}`
-4. Get system information: `GET /info/diagnose`
+2. List available workflows: `GET /graphs`
+3. Run a workflow: `POST /run/{graph_name}`
+4. Get system information: `GET /diagnose`
 """
 
     def _get_openapi_tags(self) -> list:
@@ -159,78 +209,33 @@ Error responses include detailed validation information and suggestions for reso
                 },
             },
             {
-                "name": "Workflow Management",
-                "description": "Browse and inspect workflows in the CSV repository",
-            },
-            {
-                "name": "Workflow Execution",
-                "description": "Execute workflows from repository with bundle caching",
-            },
-            {
-                "name": "Validation",
-                "description": "Validate CSV workflow definitions and configuration files",
-            },
-            {
-                "name": "Graph Operations",
-                "description": "Graph compilation, scaffolding, and management",
-            },
-            {
                 "name": "Information & Diagnostics",
                 "description": "System information, health checks, and diagnostics",
-            },
-            {
-                "name": "Authentication",
-                "description": "Authentication and authorization endpoints",
             },
         ]
 
     def _add_routes(self, app: FastAPI):
-        """Add all routes to the FastAPI app using modular routers."""
+        """Add facade-based routes to the FastAPI app."""
 
-        # Store auth adapter in app state for routes to access
-        app.state.auth_adapter = self.auth_adapter
-
-        # Import routers from infrastructure layer
-        from agentmap.deployment.http.api.routes.execution import (
-            router as execution_router,
-        )
-        from agentmap.deployment.http.api.routes.info import router as info_router
-        from agentmap.deployment.http.api.routes.workflow import (
-            router as workflow_router,
-        )
-
-        # Include all router modules
-        app.include_router(execution_router)
-        app.include_router(workflow_router)  # Existing workflow management
-        app.include_router(info_router)  # Information and diagnostics
-
-        # Import and add workflow execution router (repository-based with bundle caching)
-        from agentmap.models.workflow_execution_models import create_workflow_router
-
-        workflow_execution_router = create_workflow_router(self.container)
-        app.include_router(workflow_execution_router)
-
-        # Keep legacy endpoints for backward compatibility
-        @app.get("/agents/available", response_model=AgentsInfoResponse)
-        async def list_available_agents():
-            """Return information about available agents in this environment."""
-            from agentmap.services.features_registry_service import (
-                is_storage_enabled,
+        # Import facade-based route modules (these need to be converted)
+        # TODO: Convert these route modules to use facade pattern
+        try:
+            from agentmap.deployment.http.api.routes.execution import (
+                router as execution_router,
+            )
+            from agentmap.deployment.http.api.routes.info import router as info_router
+            from agentmap.deployment.http.api.routes.workflow import (
+                router as workflow_router,
             )
 
-            return AgentsInfoResponse(
-                core_agents=True,  # Always available
-                llm_agents=self.container.features_registry_service().is_feature_enabled(
-                    "llm"
-                ),
-                storage_agents=is_storage_enabled(),
-                install_instructions={
-                    "llm": "pip install agentmap[llm]",
-                    "storage": "pip install agentmap[storage]",
-                    "all": "pip install agentmap[all]",
-                },
-            )
+            # Include existing routers (will be gradually converted to facade pattern)
+            app.include_router(execution_router)
+            app.include_router(workflow_router)
+            app.include_router(info_router)
+        except ImportError as e:
+            print(f"Warning: Could not import route modules: {e}")
 
+        # Simple facade-based endpoints
         @app.get(
             "/health",
             summary="Health Check",
@@ -241,21 +246,9 @@ Error responses include detailed validation information and suggestions for reso
         async def health_check():
             """
             **Basic Health Check**
-            
+
             Returns simple health status for monitoring, load balancing, and uptime checks.
             This endpoint is optimized for fast response and minimal resource usage.
-            
-            **Example Request:**
-            ```bash
-            curl -X GET "http://localhost:8000/health" \\
-                 -H "Accept: application/json"
-            ```
-            
-            **Response Codes:**
-            - `200`: Service is healthy and operational
-            - `503`: Service is unhealthy or dependencies unavailable
-            
-            **Authentication:** None required
             """
             return {
                 "status": "healthy",
@@ -267,111 +260,60 @@ Error responses include detailed validation information and suggestions for reso
         @app.get(
             "/",
             summary="API Information",
-            description="Get comprehensive API information including available endpoints, authentication options, and getting started guide",
-            response_description="API information and endpoint documentation",
+            description="Get API information and links to interactive documentation",
+            response_description="API information with links to standard FastAPI documentation",
             tags=["Information & Diagnostics"],
         )
         async def root():
             """
             **Get AgentMap API Information**
-            
-            Returns comprehensive information about the API including:
-            - Available endpoints and their purposes
-            - Authentication configuration
-            - Quick start guide with example usage
-            - Links to documentation and OpenAPI schema
-            
-            **Example Request:**
-            ```bash
-            curl -X GET "http://localhost:8000/" \\
-                 -H "Accept: application/json"
-            ```
-            
-            **Authentication:** None required
+
+            Returns basic API information and directs users to the standard
+            FastAPI-generated documentation endpoints for complete API details.
             """
             return {
                 "message": "AgentMap Workflow Automation API",
                 "version": "2.0",
-                "authentication": {
-                    "modes": ["public", "api_key", "bearer_token"],
-                    "headers": {
-                        "api_key": "X-API-Key: your-api-key",
-                        "bearer_token": "Authorization: Bearer your-token",
-                    },
-                    "embedded_mode": "Authentication disabled for embedded sub-applications",
-                },
-                "endpoints": {
-                    "/workflows": {
-                        "description": "Workflow management and repository operations",
-                        "methods": ["GET"],
-                        "auth_required": False,
-                    },
-                    "/workflow": {
-                        "description": "Workflow execution from repository with bundle caching",
-                        "methods": ["GET", "POST", "DELETE"],
-                        "auth_required": False,
-                        "rate_limit": "60/minute",
-                    },
-                    "/execution": {
-                        "description": "Workflow execution and resumption",
-                        "methods": ["POST"],
-                        "auth_required": False,
-                        "rate_limit": "60/minute",
-                    },
-                    "/validation": {
-                        "description": "CSV and configuration validation",
-                        "methods": ["POST"],
-                        "auth_required": False,
-                        "rate_limit": "120/minute",
-                    },
-                    "/graph": {
-                        "description": "Graph compilation, scaffolding, and operations",
-                        "methods": ["GET", "POST"],
-                        "auth_required": False,
-                    },
-                    "/info": {
-                        "description": "System information and diagnostics",
-                        "methods": ["GET", "DELETE"],
-                        "auth_required": False,
-                        "rate_limit": "300/minute",
-                    },
-                },
-                "quick_start": {
-                    "1_check_health": "GET /health",
-                    "2_list_workflows": "GET /workflows",
-                    "3_run_workflow": "POST /workflow/{workflow}/{graph}",
-                    "4_get_diagnostics": "GET /info/diagnose",
-                },
+                "description": "Workflow execution and management using the runtime facade pattern",
                 "documentation": {
                     "interactive_docs": "/docs",
-                    "redoc": "/redoc",
+                    "redoc_docs": "/redoc",
                     "openapi_schema": "/openapi.json",
-                    "github": "https://github.com/jwwelbor/AgentMap",
+                },
+                "authentication": {
+                    "modes": ["public", "api_key", "bearer_token"],
+                    "details": "See /docs for authentication requirements per endpoint",
+                },
+                "quick_start": {
+                    "1_view_documentation": "GET /docs",
+                    "2_check_health": "GET /health",
+                    "3_list_workflows": "GET /workflows",
+                    "4_run_workflow": "POST /execution/{workflow}/{graph}",
                 },
                 "repository_structure": {
-                    "description": "Workflows stored as CSV files in configured repository",
-                    "example_path": "csv_repository/my_workflow.csv",
-                    "csv_format": "Each CSV contains GraphName, NodeName, AgentType, etc.",
+                    "workflows": "CSV files define workflow graphs",
+                    "compiled": "Compiled graphs for execution",
+                    "functions": "Custom function implementations",
                 },
             }
 
 
-def create_fastapi_app(container: Optional[ApplicationContainer] = None) -> FastAPI:
+def create_fastapi_app(config_file: Optional[str] = None) -> FastAPI:
     """
-    Factory function to create FastAPI app.
+    Factory function to create FastAPI app using facade pattern.
 
     Args:
-        container: Optional DI container
+        config_file: Optional configuration file path
 
     Returns:
         FastAPI app instance
     """
-    server = FastAPIServer(container)
+    server = FastAPIServer(config_file)
     return server.app
 
 
 def create_sub_application(
-    container: Optional[ApplicationContainer] = None,
+    config_file: Optional[str] = None,
     title: str = "AgentMap API",
     prefix: str = "",
 ) -> FastAPI:
@@ -379,11 +321,10 @@ def create_sub_application(
     Create FastAPI app configured for mounting as a sub-application.
 
     This function creates a FastAPI app suitable for mounting with app.mount()
-    in larger applications. It includes all AgentMap functionality but allows
-    customization of the title and path prefix.
+    in larger applications using the facade pattern.
 
     Args:
-        container: Optional DI container
+        config_file: Optional configuration file path
         title: API title for OpenAPI docs
         prefix: URL prefix for the sub-application
 
@@ -393,33 +334,25 @@ def create_sub_application(
     Example:
         ```python
         # In host application
-        from agentmap.infrastructure.api.fastapi.server import create_sub_application
+        from agentmap.deployment.http.api.server import create_sub_application
 
         main_app = FastAPI(title="My Application")
         agentmap_app = create_sub_application(title="AgentMap Integration")
         main_app.mount("/agentmap", agentmap_app)
         ```
     """
-    # Create container if not provided
-    if container is None:
-        container = initialize_di()
-
-    # Create auth adapter
-    auth_service = container.auth_service()
-    auth_adapter = FastAPIAuthAdapter(auth_service)
-
     # Create FastAPI app with custom configuration for sub-application
     app = FastAPI(
         title=title,
         description="AgentMap workflow execution and management API",
         version="2.0",
+        lifespan=create_lifespan(config_file),  # ✅ Pass config_file to lifespan
         openapi_url=f"{prefix}/openapi.json" if prefix else "/openapi.json",
         docs_url=f"{prefix}/docs" if prefix else "/docs",
         redoc_url=f"{prefix}/redoc" if prefix else "/redoc",
     )
 
-    # Note: CORS middleware typically should be configured by the host application
-    # to avoid conflicts. If needed for standalone sub-app usage:
+    # CORS middleware
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -427,22 +360,10 @@ def create_sub_application(
         allow_headers=["*"],
     )
 
-    # Store container and auth adapter in app state
-    app.state.container = container
-    app.state.auth_adapter = auth_adapter
+    # Store config file in app state
+    app.state.config_file = config_file
 
-    # Import and add all router modules from infrastructure layer
-    from agentmap.deployment.http.api.routes.execution import router as execution_router
-    from agentmap.deployment.http.api.routes.workflow import router as workflow_router
-
-    app.include_router(execution_router)
-    app.include_router(workflow_router)
-
-    # Import and add workflow execution router for sub-application
-    from agentmap.models.workflow_execution_models import create_workflow_router
-
-    workflow_execution_router = create_workflow_router(container)
-    app.include_router(workflow_execution_router)
+    # Note: Container will be set by lifespan hook during initialization
 
     # Add basic health check and info endpoints
     @app.get("/health")
@@ -457,14 +378,7 @@ def create_sub_application(
             "message": "AgentMap API Sub-Application",
             "version": "2.0",
             "mounted_at": prefix or "/",
-            "routes": {
-                "/workflows": "Workflow management and repository operations",
-                "/workflow": "Workflow execution from repository with bundle caching",
-                "/execution": "Workflow execution and resumption",
-                "/validation": "CSV and configuration validation",
-                "/graph": "Graph compilation, scaffolding, and operations",
-                "/info": "System information and diagnostics",
-            },
+            "facade_pattern": "This API follows SPEC-DEP-001 facade pattern",
             "docs": f"{prefix}/docs" if prefix else "/docs",
         }
 
@@ -478,7 +392,7 @@ def run_server(
     config_file: Optional[str] = None,
 ):
     """
-    Run the FastAPI server.
+    Run the FastAPI server using facade pattern.
 
     Args:
         host: Host to bind to
@@ -486,7 +400,7 @@ def run_server(
         reload: Enable auto-reload
         config_file: Path to custom config file
     """
-    # Create FastAPI server with standard AgentMap DI initialization
+    # Create FastAPI server using facade pattern
     server = FastAPIServer(config_file=config_file)
     app = server.app
 

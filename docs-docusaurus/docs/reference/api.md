@@ -55,6 +55,8 @@ python -m agentmap.server_cli
 
 ### Available Endpoints
 - `POST /execution/{workflow}/{graph}` - Execute specific workflow graph (RESTful)
+- `POST /execution/{csv_file}` - Execute graph from CSV file (simplified syntax)
+- `POST /execution/{csv_file::graph_name}` - Execute specific graph from CSV (override syntax)
 - `POST /execution/run` - Legacy execution endpoint with flexible parameters
 - `POST /execution/resume` - Resume interrupted/paused workflows
 - `GET /workflows` - List available workflows in repository
@@ -67,6 +69,50 @@ python -m agentmap.server_cli
 - `GET /docs` - Interactive OpenAPI documentation
 - `GET /redoc` - Alternative API documentation
 
+### ✨ Simplified Graph Naming API
+
+AgentMap's HTTP API now supports **intelligent default graph naming** for cleaner, more RESTful endpoints.
+
+#### Smart Default Behavior
+
+**CSV filename automatically becomes the graph name:**
+
+```http
+POST /execution/customer_support.csv
+Content-Type: application/json
+
+{
+  "state": {
+    "customer_query": "Help with my order"
+  }
+}
+```
+
+#### :: Override Syntax
+
+**Custom graph names with URL encoding:**
+
+```http
+# :: becomes %3A%3A in URLs
+POST /execution/workflows.csv%3A%3AProductSupport
+Content-Type: application/json
+
+{
+  "state": {
+    "product": "AgentMap",
+    "query": "pricing information"
+  }
+}
+```
+
+#### Migration Examples
+
+| Traditional API | New Simplified API | Benefits |
+|----------------|-------------------|----------|
+| `/execution/customer_service/support_flow` | `/execution/customer_support.csv` | Self-documenting, RESTful |
+| `/execution/workflows/product_info` | `/execution/workflows.csv::ProductInfo` | Clear syntax, explicit |
+| `/execution/main/data_pipeline` | `/execution/data_pipeline.csv` | Shorter URLs, intuitive |
+
 ### Use Cases
 - **Microservice Integration**: Embed AgentMap in larger applications
 - **Webhook Endpoints**: Trigger workflows from external events
@@ -76,8 +122,34 @@ python -m agentmap.server_cli
 ### API Examples
 
 #### Execute Workflow Graph
+
+**✨ New Simplified Syntax (Recommended):**
 ```bash
-# RESTful execution (recommended)
+# RESTful execution with filename as graph name
+curl -X POST "http://localhost:8000/execution/customer_support.csv" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "state": {
+         "customer_message": "I need help with my order",
+         "priority": "high"
+       },
+       "autocompile": true,
+       "execution_id": "api-exec-001"
+     }'
+
+# Custom graph name using :: syntax (URL encoded as %3A%3A)
+curl -X POST "http://localhost:8000/execution/workflows.csv%3A%3ACustomerSupport" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "state": {
+         "customer_message": "I need help with my order"
+       }
+     }'
+```
+
+**Traditional Syntax (Still Supported):**
+```bash
+# RESTful execution
 curl -X POST "http://localhost:8000/execution/customer_service/support_flow" \
      -H "Content-Type: application/json" \
      -d '{

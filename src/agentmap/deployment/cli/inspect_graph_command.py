@@ -10,7 +10,7 @@ from typing import Optional
 
 import typer
 
-from agentmap.di import initialize_di
+from agentmap.runtime_api import inspect_graph
 
 
 def inspect_graph_cmd(
@@ -39,92 +39,56 @@ def inspect_graph_cmd(
 ):
     """Inspect agent service configuration for a graph."""
 
-    container = initialize_di(config_file)
-    graph_runner = container.graph_runner_service()
-
     typer.echo(f"🔍 Inspecting Graph: {graph_name}")
     typer.echo("=" * 50)
 
     try:
-        # Load the graph definition
-        csv_path = (
-            Path(csv_file)
-            if csv_file
-            else container.app_config_service().get_csv_repository_path()
-        )
-        graph_def, resolved_name = graph_runner._load_graph_definition_for_execution(
-            csv_path, graph_name
+        # Inspect using facade
+        result = inspect_graph(
+            graph_name,
+            csv_file=csv_file,
+            node=node,
+            config_file=config_file,
         )
 
-        # Get agent resolution status
-        agent_status = graph_runner.get_agent_resolution_status(graph_def)
+        outputs = result["outputs"]
+        metadata = result["metadata"]
 
         typer.echo(f"\n📊 Graph Overview:")
-        typer.echo(f"   Resolved Name: {resolved_name}")
-        typer.echo(f"   Total Nodes: {agent_status['total_nodes']}")
-        typer.echo(
-            f"   Unique Agent Types: {agent_status['overall_status']['unique_agent_types']}"
-        )
-        typer.echo(
-            f"   All Resolvable: {'✅' if agent_status['overall_status']['all_resolvable'] else '❌'}"
-        )
-        typer.echo(
-            f"   Resolution Rate: {agent_status['overall_status']['resolution_rate']:.1%}"
-        )
+        typer.echo(f"   Resolved Name: {outputs['resolved_name']}")
+        typer.echo(f"   Total Nodes: {outputs['total_nodes']}")
+        typer.echo(f"   Unique Agent Types: {outputs['unique_agent_types']}")
+        typer.echo(f"   All Resolvable: {'✅' if outputs['all_resolvable'] else '❌'}")
+        typer.echo(f"   Resolution Rate: {outputs['resolution_rate']:.1%}")
 
         # Show each node/agent
-        nodes_to_inspect = [node] if node else list(graph_def.keys())
-
-        for node_name in nodes_to_inspect:
-            if node_name not in graph_def:
-                typer.secho(
-                    f"❌ Node '{node_name}' not found in graph", fg=typer.colors.RED
-                )
-                continue
-
-            node_def = graph_def[node_name]
-
+        for node_name, node_info in outputs["node_details"].items():
             typer.echo(f"\n🤖 Node: {node_name}")
-            typer.echo(f"   Agent Type: {node_def.agent_type or 'default'}")
-            typer.echo(f"   Description: {node_def.description or 'No description'}")
+            typer.echo(f"   Agent Type: {node_info['agent_type']}")
+            typer.echo(f"   Description: {node_info['description']}")
 
             if show_resolution:
-                # Show agent resolution details
-                agent_type = node_def.agent_type or "default"
-                if agent_type in agent_status["agent_types"]:
-                    type_info = agent_status["agent_types"][agent_type]["info"]
-                    typer.echo(f"   🔧 Resolution:")
+                typer.echo(f"   🔧 Resolution:")
+                typer.echo(
+                    f"      Resolvable: {'✅' if node_info['resolvable'] else '❌'}"
+                )
+                typer.echo(f"      Source: {node_info.get('source', 'Unknown')}")
+                if not node_info["resolvable"]:
                     typer.echo(
-                        f"      Resolvable: {'✅' if type_info['resolvable'] else '❌'}"
+                        f"      Issue: {node_info.get('resolution_error', 'Unknown error')}"
                     )
-                    typer.echo(f"      Source: {type_info.get('source', 'Unknown')}")
-                    if not type_info["resolvable"]:
-                        typer.echo(
-                            f"      Issue: {type_info.get('resolution_error', 'Unknown error')}"
-                        )
 
-            # Try to create the agent to get service info
-            try:
-                # Get node registry for this graph
-                node_registry = graph_runner.node_registry.prepare_for_assembly(
-                    graph_def, graph_name
-                )
+            # Show service info if available
+            if node_info["service_info"]:
+                service_info = node_info["service_info"]
 
-                # Create agent instance
-                agent_instance = graph_runner._create_agent_instance(
-                    node_def, graph_name, node_registry
-                )
-
-                # Get service info using our implemented method
-                service_info = agent_instance.get_service_info()
-
-                if show_services:
+                if show_services and "services" in service_info:
                     typer.echo(f"   📋 Services:")
                     for service, available in service_info["services"].items():
                         status = "✅" if available else "❌"
                         typer.echo(f"      {service}: {status}")
 
-                if show_protocols:
+                if show_protocols and "protocols" in service_info:
                     typer.echo(f"   🔌 Protocols:")
                     for protocol, implemented in service_info["protocols"].items():
                         status = "✅" if implemented else "❌"
@@ -148,32 +112,24 @@ def inspect_graph_cmd(
                                 typer.echo(f"      {value}")
 
                 # Show basic configuration always
-                typer.echo(f"   📝 Configuration:")
-                config = service_info["configuration"]
-                typer.echo(f"      Input Fields: {config.get('input_fields', [])}")
-                typer.echo(f"      Output Field: {config.get('output_field', 'None')}")
+                if "configuration" in service_info:
+                    typer.echo(f"   📝 Configuration:")
+                    config = service_info["configuration"]
+                    typer.echo(f"      Input Fields: {config.get('input_fields', [])}")
+                    typer.echo(
+                        f"      Output Field: {config.get('output_field', 'None')}"
+                    )
 
-            except Exception as e:
+            elif node_info["error"]:
                 typer.secho(
-                    f"   ❌ Failed to create agent: {str(e)}", fg=typer.colors.RED
+                    f"   ❌ Failed to create agent: {node_info['error']}",
+                    fg=typer.colors.RED,
                 )
-                # Show what we can from the agent status
-                agent_type = node_def.agent_type or "default"
-                if agent_type in agent_status["agent_types"]:
-                    type_info = agent_status["agent_types"][agent_type]["info"]
-                    if not type_info["resolvable"]:
-                        typer.echo(
-                            f"   💡 Resolution error: {type_info.get('resolution_error', 'Unknown')}"
-                        )
-                        if type_info.get("missing_dependencies"):
-                            typer.echo(
-                                f"   📦 Missing dependencies: {', '.join(type_info['missing_dependencies'])}"
-                            )
 
         # Show issues summary if any
-        if agent_status["issues"]:
-            typer.echo(f"\n⚠️  Issues Found ({len(agent_status['issues'])}):")
-            for issue in agent_status["issues"]:
+        if outputs["issues"]:
+            typer.echo(f"\n⚠️  Issues Found ({len(outputs['issues'])}):")
+            for issue in outputs["issues"]:
                 typer.echo(f"   {issue['node']}: {issue['issue']}")
                 if issue.get("missing_deps"):
                     typer.echo(f"      Missing: {', '.join(issue['missing_deps'])}")

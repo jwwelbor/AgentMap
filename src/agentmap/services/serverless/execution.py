@@ -5,11 +5,10 @@ This service handles the execution of graphs using the workflow orchestration
 service and provides a clean interface for the serverless handler.
 """
 
+from agentmap.models.serverless_models import ExecutionParams, ExecutionResult
 from agentmap.services.workflow_orchestration_service import (
     WorkflowOrchestrationService,
 )
-
-from ....models.serverless_models import ExecutionParams, ExecutionResult
 
 
 class ExecutionService:

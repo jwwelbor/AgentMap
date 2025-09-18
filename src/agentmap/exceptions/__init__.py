@@ -19,6 +19,12 @@ from agentmap.exceptions.messaaging_exceptions import (
     MessagingServiceError,
     MessagingServiceUnavailableError,
 )
+from agentmap.exceptions.runtime_exceptions import (
+    AgentMapError,
+    AgentMapNotInitialized,
+    GraphNotFound,
+    InvalidInputs,
+)
 from agentmap.exceptions.service_exceptions import (
     FunctionResolutionException,
     LLMConfigurationError,
@@ -77,4 +83,9 @@ __all__ = [
     "StorageServiceNotAvailableError",
     "StorageValidationError",
     "ValidationException",  # for backwards compatibility and consistency
+    # Runtime API exceptions
+    "AgentMapError",
+    "AgentMapNotInitialized",
+    "GraphNotFound",
+    "InvalidInputs",
 ]

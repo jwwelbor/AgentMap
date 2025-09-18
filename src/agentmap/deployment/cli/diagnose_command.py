@@ -1,16 +1,20 @@
 """
-CLI diagnose command handler - FIXED VERSION.
+CLI diagnose command handler for system health and dependency checking.
 
-This module provides the diagnose command for system health and dependency checking
-using the new service architecture. Now properly discovers and validates providers
-to match runtime behavior.
+This command follows SPEC-DEP-001 by using only the runtime facade
+and CLI presenter utilities for consistent behavior and error handling.
 """
 
 from typing import Optional
 
 import typer
 
-from agentmap.di import initialize_di
+from agentmap.deployment.cli.utils.cli_presenter import (
+    map_exception_to_exit_code,
+    print_err,
+    print_json,
+)
+from agentmap.runtime_api import diagnose_system, ensure_initialized
 
 
 def diagnose_cmd(
@@ -18,172 +22,150 @@ def diagnose_cmd(
         None, "--config", "-c", help="Path to custom config file"
     )
 ):
-    """Check and display dependency status for all components."""
-    container = initialize_di(config_file)
-    features_service = container.features_registry_service()
-    dependency_checker = container.dependency_checker_service()
-    logging_service = container.logging_service()
+    """
+    Check and display dependency status for all components.
 
-    logger = logging_service.get_logger("agentmap.cli.diagnostic")
+    This command follows the facade pattern defined in SPEC-DEP-001 for
+    consistent behavior across all deployment adapters.
+    """
+    try:
+        # Ensure runtime is initialized
+        ensure_initialized(config_file=config_file)
 
-    typer.echo("AgentMap Dependency Diagnostics")
-    typer.echo("=============================")
+        typer.echo("AgentMap Dependency Diagnostics")
+        typer.echo("=============================")
 
-    # IMPORTANT: Run discovery first to match runtime behavior
-    # This will auto-enable features if dependencies are found
-    typer.echo("\nDiscovering available providers...")
+        # Execute diagnosis using runtime facade
+        typer.echo("\nDiscovering available providers...")
 
-    # Force discovery to bypass cache and get fresh results
-    llm_providers = dependency_checker.discover_and_validate_providers(
-        "llm", force=True
-    )
-    storage_providers = dependency_checker.discover_and_validate_providers(
-        "storage", force=True
-    )
+        result = diagnose_system(config_file=config_file)
 
-    # Now the feature states will be accurate
-    typer.echo("\n✅ Discovery complete. Showing actual runtime state:\n")
+        # Display results using CLI presenter for consistency
+        if result.get("success", False):
+            outputs = result.get("outputs", {})
+            metadata = result.get("metadata", {})
 
-    # Check LLM dependencies
-    typer.echo("LLM Dependencies:")
-    llm_enabled = features_service.is_feature_enabled("llm")
-    typer.echo(f"  Feature Status: {'✅ Enabled' if llm_enabled else '❌ Disabled'}")
-    typer.echo(
-        f"  Available Providers: {[p for p, avail in llm_providers.items() if avail] or 'None'}"
-    )
+            typer.echo("\n✅ Discovery complete. Showing actual runtime state:\n")
 
-    typer.echo("\n  Provider Details:")
-    for provider in ["openai", "anthropic", "google"]:
-        # Get validation status from discovery results
-        is_available = llm_providers.get(provider, False)
+            # Display LLM information
+            features = outputs.get("features", {})
+            llm_info = features.get("llm", {})
+            storage_info = features.get("storage", {})
 
-        # Check what's missing if not available
-        has_deps, missing = dependency_checker.check_llm_dependencies(provider)
+            typer.echo("LLM Dependencies:")
+            llm_enabled = llm_info.get("enabled", False)
+            available_providers = llm_info.get("available_providers", [])
+            typer.echo(
+                f"  Feature Status: {'✅ Enabled' if llm_enabled else '❌ Disabled'}"
+            )
+            typer.echo(f"  Available Providers: {available_providers or 'None'}")
 
-        if is_available:
-            status = "✅ Available and validated"
-        elif has_deps:
-            status = "⚠️ Dependencies found but validation failed"
-        else:
-            status = f"❌ Missing dependencies: {', '.join(missing)}"
+            typer.echo("\n  Provider Details:")
+            provider_details = llm_info.get("provider_details", {})
+            for provider, details in provider_details.items():
+                status = details.get("status", "unknown")
+                missing_deps = details.get("missing_dependencies", [])
 
-        typer.echo(f"    {provider.capitalize()}: {status}")
+                if status == "available":
+                    status_msg = "✅ Available and validated"
+                elif status == "deps_found_validation_failed":
+                    status_msg = "⚠️ Dependencies found but validation failed"
+                else:
+                    missing_str = (
+                        ", ".join(missing_deps) if missing_deps else "Not configured"
+                    )
+                    status_msg = f"❌ Missing dependencies: {missing_str}"
 
-    # Check storage dependencies
-    typer.echo("\nStorage Dependencies:")
-    storage_enabled = features_service.is_feature_enabled("storage")
-    typer.echo(
-        f"  Feature Status: {'✅ Enabled' if storage_enabled else '❌ Disabled'}"
-    )
-    typer.echo(
-        f"  Available Types: {[t for t, avail in storage_providers.items() if avail] or 'None'}"
-    )
+                typer.echo(f"    {provider.capitalize()}: {status_msg}")
 
-    typer.echo("\n  Storage Type Details:")
-    for storage_type in ["csv", "json", "file", "vector", "firebase", "blob"]:
-        # Get validation status from discovery results
-        is_available = storage_providers.get(storage_type, False)
+            # Display Storage information
+            typer.echo("\nStorage Dependencies:")
+            storage_enabled = storage_info.get("enabled", False)
+            available_types = storage_info.get("available_types", [])
+            typer.echo(
+                f"  Feature Status: {'✅ Enabled' if storage_enabled else '❌ Disabled'}"
+            )
+            typer.echo(f"  Available Types: {available_types or 'None'}")
 
-        # For built-in types that don't require external deps
-        if storage_type in ["json", "file"]:
-            status = "✅ Built-in (always available)"
-        else:
-            # Check what's missing if not available
-            has_deps, missing = dependency_checker.check_storage_dependencies(
-                storage_type
+            typer.echo("\n  Storage Type Details:")
+            storage_details = storage_info.get("storage_details", {})
+            for storage_type, details in storage_details.items():
+                status = details.get("status", "unknown")
+                missing_deps = details.get("missing_dependencies", [])
+
+                if status == "builtin":
+                    status_msg = "✅ Built-in (always available)"
+                elif status == "available":
+                    status_msg = "✅ Available and validated"
+                elif status == "deps_found_validation_failed":
+                    status_msg = "⚠️ Dependencies found but validation failed"
+                else:
+                    missing_str = (
+                        ", ".join(missing_deps) if missing_deps else "Not configured"
+                    )
+                    status_msg = f"❌ Missing dependencies: {missing_str}"
+
+                typer.echo(f"    {storage_type}: {status_msg}")
+
+            # Display installation suggestions
+            suggestions = outputs.get("suggestions", [])
+            if suggestions:
+                typer.echo("\nInstallation Suggestions:")
+                for suggestion in suggestions:
+                    typer.echo(f"  • {suggestion}")
+
+            # Display environment information
+            env_info = outputs.get("environment", {})
+            typer.echo("\nEnvironment Information:")
+            typer.echo(f"  Python Version: {env_info.get('python_version', 'Unknown')}")
+            typer.echo(f"  Python Path: {env_info.get('python_path', 'Unknown')}")
+            typer.echo(
+                f"  Current Directory: {env_info.get('current_directory', 'Unknown')}"
             )
 
-            if is_available:
-                status = "✅ Available and validated"
-            elif has_deps:
-                status = "⚠️ Dependencies found but validation failed"
+            # Display package versions
+            package_versions = env_info.get("package_versions", {})
+            if package_versions:
+                typer.echo("\nInstalled Package Versions:")
+                for package_name, version_info in package_versions.items():
+                    if version_info == "not_installed":
+                        typer.echo(f"  {package_name}: ❌ Not installed")
+                    elif version_info == "installed":
+                        typer.echo(f"  {package_name}: ✅ Installed")
+                    else:
+                        typer.echo(f"  {package_name}: ✅ {version_info}")
+
+            # Display summary
+            typer.echo("\n" + "=" * 50)
+            typer.echo("Summary:")
+
+            overall_status = outputs.get("overall_status", "unknown")
+            llm_ready = metadata.get("llm_ready", False)
+            storage_ready = metadata.get("storage_ready", False)
+
+            if overall_status == "fully_operational":
+                typer.echo(
+                    "✅ AgentMap is fully operational with LLM and storage support!"
+                )
+            elif overall_status == "llm_only":
+                typer.echo(
+                    "⚠️ AgentMap has LLM support but limited storage capabilities."
+                )
+            elif overall_status == "storage_only":
+                typer.echo("⚠️ AgentMap has storage support but no LLM capabilities.")
             else:
-                status = f"❌ Missing dependencies: {', '.join(missing) if missing else 'Not configured'}"
-
-        typer.echo(f"    {storage_type}: {status}")
-
-    # Installation suggestions based on actual missing dependencies
-    missing_suggestions = []
-
-    if not llm_enabled or not any(llm_providers.values()):
-        missing_suggestions.append("To enable LLM agents: pip install agentmap[llm]")
-
-    for provider in ["openai", "anthropic", "google"]:
-        if not llm_providers.get(provider, False):
-            if provider == "openai":
-                missing_suggestions.append(
-                    "For OpenAI: pip install openai>=1.0.0 langchain-openai"
-                )
-            elif provider == "anthropic":
-                missing_suggestions.append(
-                    "For Anthropic: pip install anthropic langchain-anthropic"
-                )
-            elif provider == "google":
-                missing_suggestions.append(
-                    "For Google: pip install google-generativeai langchain-google-genai"
+                typer.echo(
+                    "❌ AgentMap has limited functionality. Install dependencies above."
                 )
 
-    if not storage_enabled:
-        missing_suggestions.append(
-            "To enable storage agents: pip install agentmap[storage]"
-        )
+        else:
+            # This shouldn't happen with the facade pattern, but handle gracefully
+            error_msg = result.get("error", "Unknown error")
+            print_err(f"System diagnosis failed: {error_msg}")
+            raise typer.Exit(code=1)
 
-    if not storage_providers.get("vector", False):
-        missing_suggestions.append("For vector storage: pip install chromadb")
-
-    if missing_suggestions:
-        typer.echo("\nInstallation Suggestions:")
-        for suggestion in missing_suggestions:
-            typer.echo(f"  • {suggestion}")
-
-    # Show environment info
-    typer.echo("\nEnvironment Information:")
-    import os
-    import sys
-
-    typer.echo(f"  Python Version: {sys.version}")
-    typer.echo(f"  Python Path: {sys.executable}")
-    typer.echo(f"  Current Directory: {os.getcwd()}")
-
-    # List installed versions of key packages
-    typer.echo("\nInstalled Package Versions:")
-    packages = [
-        ("openai", "OpenAI SDK"),
-        ("anthropic", "Anthropic SDK"),
-        ("google.generativeai", "Google AI SDK"),
-        ("langchain", "LangChain Core"),
-        ("langchain_openai", "LangChain OpenAI"),
-        ("langchain_anthropic", "LangChain Anthropic"),
-        ("langchain_google_genai", "LangChain Google"),
-        ("chromadb", "ChromaDB"),
-        ("pandas", "Pandas (CSV support)"),
-    ]
-
-    for package, display_name in packages:
-        try:
-            if "." in package:
-                base_pkg = package.split(".")[0]
-                module = __import__(base_pkg)
-                typer.echo(f"  {display_name}: ✅ Installed")
-            else:
-                module = __import__(package)
-                version = getattr(module, "__version__", "unknown")
-                typer.echo(f"  {display_name}: ✅ v{version}")
-        except ImportError:
-            typer.echo(f"  {display_name}: ❌ Not installed")
-
-    # Summary
-    typer.echo("\n" + "=" * 50)
-    typer.echo("Summary:")
-
-    llm_ready = llm_enabled and any(llm_providers.values())
-    storage_ready = storage_enabled and any(storage_providers.values())
-
-    if llm_ready and storage_ready:
-        typer.echo("✅ AgentMap is fully operational with LLM and storage support!")
-    elif llm_ready:
-        typer.echo("⚠️ AgentMap has LLM support but limited storage capabilities.")
-    elif storage_ready:
-        typer.echo("⚠️ AgentMap has storage support but no LLM capabilities.")
-    else:
-        typer.echo("❌ AgentMap has limited functionality. Install dependencies above.")
+    except Exception as e:
+        # Use CLI presenter for consistent error handling and exit codes
+        print_err(str(e))
+        exit_code = map_exception_to_exit_code(e)
+        raise typer.Exit(code=exit_code)

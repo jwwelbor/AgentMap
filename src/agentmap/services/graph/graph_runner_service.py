@@ -2,11 +2,10 @@
 Simplified GraphRunnerService for AgentMap.
 
 Orchestrates graph execution by coordinating:
-1. Direct Import (default): Skip bootstrap and use direct agent instantiation
-2. Legacy Bootstrap: Register agent classes then instantiate
-3. Instantiation - create and configure agent instances
-4. Assembly - build the executable graph
-5. Execution - run the graph
+1. Direct Import (default): declarative agent instantiation
+2. Instantiation - create and configure agent instances
+3. Assembly - build the executable graph
+4. Execution - run the graph
 
 Approach is configurable via execution.use_direct_import_agents setting.
 """
@@ -40,11 +39,8 @@ class GraphRunnerService:
     """
     Simplified facade service for graph execution orchestration.
 
-    Coordinates the complete graph execution pipeline with configurable approaches:
-    1. Direct Import (default): Skip bootstrap and use direct agent instantiation
-    2. Legacy Bootstrap: Register agent classes then instantiate
+    Coordinates the complete graph execution pipeline
 
-    Supports both approaches based on configuration for backwards compatibility.
     """
 
     def __init__(
@@ -72,9 +68,7 @@ class GraphRunnerService:
         self.interaction_handler = interaction_handler_service
 
         # Check configuration for execution approach
-        self.logger.info(
-            "GraphRunnerService initialized with direct import approach (no bootstrap)"
-        )
+        self.logger.info("GraphRunnerService initialized")
 
     def run(
         self,
@@ -86,10 +80,6 @@ class GraphRunnerService:
     ) -> ExecutionResult:
         """
         Run graph execution using a prepared bundle.
-
-        Supports both execution approaches based on configuration:
-        1. Direct Import: Skip bootstrap, instantiate agents directly
-        2. Legacy Bootstrap: Register agent classes then instantiate
 
         Args:
             bundle: Prepared GraphBundle with all metadata
@@ -104,19 +94,16 @@ class GraphRunnerService:
         Raises:
             Exception: Any errors from pipeline stages (not swallowed)
         """
-        graph_name = bundle.graph_name or "unknown"
-        approach = "direct import"  # if self.use_direct_import else "bootstrap"
+        graph_name = bundle.graph_name
 
         # Add contextual logging for subgraph execution
         if is_subgraph and parent_graph_name:
             self.logger.info(
                 f"⭐ Starting subgraph pipeline for: {graph_name} "
-                f"(parent: {parent_graph_name}, using {approach} approach)"
+                f"(parent: {parent_graph_name})"
             )
         else:
-            self.logger.info(
-                f"⭐ Starting graph pipeline for: {graph_name} (using {approach} approach)"
-            )
+            self.logger.info(f"⭐ Starting graph pipeline for: {graph_name}")
 
         if initial_state is None:
             initial_state = {}
@@ -189,6 +176,7 @@ class GraphRunnerService:
             executable_graph = self.graph_assembly.assemble_graph(
                 graph=graph,
                 agent_instances=bundle_with_instances.node_instances,  # Pass agent instances
+                # TODO: Only create and pass node_definitions if needed
                 orchestrator_node_registry=node_definitions,  # Pass node definitions for orchestrators
             )
             self.logger.debug(f"[GraphRunnerService] Graph assembly completed")
@@ -314,7 +302,6 @@ class GraphRunnerService:
                 final_state=initial_state,
                 execution_summary=error_summary,
                 total_duration=0.0,
-                compiled_from="pipeline",
                 error=str(e),
             )
 
@@ -356,44 +343,6 @@ class GraphRunnerService:
         )
 
         return registry
-
-    def get_pipeline_status(self) -> dict:
-        """
-        Get status of all pipeline services and execution approach.
-
-        Returns:
-            Dictionary with service availability status and configuration
-        """
-        # Determine required services based on execution approach
-        required_services = [
-            self.graph_instantiation is not None,
-            self.graph_assembly is not None,
-            self.graph_execution is not None,
-            self.execution_tracking is not None,
-        ]
-
-        # Determine pipeline stages based on approach
-        pipeline_stages = [
-            "1. Skip bootstrap (direct import enabled)",
-            "2. Create execution tracker",
-            "3. Instantiate agents (direct import)",
-            "4. Assemble executable graph",
-            "5. Execute graph",
-        ]
-
-        return {
-            "service": "GraphRunnerService",
-            "execution_approach": "direct_import",
-            "pipeline_ready": all(required_services),
-            "services": {
-                "config": self.app_config is not None,
-                "instantiation": self.graph_instantiation is not None,
-                "assembly": self.graph_assembly is not None,
-                "execution": self.graph_execution is not None,
-                "tracking": self.execution_tracking is not None,
-            },
-            "pipeline_stages": pipeline_stages,
-        }
 
     def get_default_options(self) -> RunOptions:
         """
@@ -600,7 +549,6 @@ class GraphRunnerService:
                 final_state=config.initial_state or {},
                 execution_summary=error_summary,
                 total_duration=0.0,
-                compiled_from="pipeline",
                 error=str(e),
             )
 
@@ -665,7 +613,6 @@ class GraphRunnerService:
                 final_state=final_state,
                 execution_summary=execution_summary,
                 total_duration=execution_time,
-                compiled_from="checkpointed",
                 error=None,
             )
 
@@ -690,6 +637,5 @@ class GraphRunnerService:
                 final_state=initial_state,
                 execution_summary=execution_summary,
                 total_duration=execution_time,
-                compiled_from="checkpointed",
                 error=str(e),
             )

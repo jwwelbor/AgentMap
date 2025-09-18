@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import typer
 
-from agentmap.di import initialize_di
+from agentmap.runtime_api import diagnose_system, validate_cache
 
 
 def resolve_csv_path(
@@ -93,109 +93,45 @@ def diagnose_command(config_file: Optional[str] = None) -> dict:
     Programmatic version of diagnose_cmd that returns structured data.
     Used by API endpoints and testing.
     """
-    container = initialize_di(config_file)
-    features_service = container.features_registry_service()
-    dependency_checker = container.dependency_checker_service()
+    # Use facade function and extract outputs
+    result = diagnose_system(config_file=config_file)
+    outputs = result["outputs"]
 
-    # Build LLM diagnostic information
+    # Transform facade format to legacy format for backward compatibility
     llm_info = {}
-    for provider in ["openai", "anthropic", "google"]:
-        has_deps, missing = dependency_checker.check_llm_dependencies(provider)
-        registered = features_service.is_provider_registered("llm", provider)
-        validated = features_service.is_provider_validated("llm", provider)
-        available = features_service.is_provider_available("llm", provider)
-
-        llm_info[provider] = {
-            "available": available,
-            "registered": registered,
-            "validated": validated,
-            "has_dependencies": has_deps,
-            "missing_dependencies": missing,
-        }
-
-    # Build storage diagnostic information
     storage_info = {}
-    for storage_type in ["csv", "json", "file", "vector", "firebase", "blob"]:
-        has_deps, missing = dependency_checker.check_storage_dependencies(storage_type)
-        registered = features_service.is_provider_registered("storage", storage_type)
-        validated = features_service.is_provider_validated("storage", storage_type)
-        available = features_service.is_provider_available("storage", storage_type)
 
-        storage_info[storage_type] = {
-            "available": available,
-            "registered": registered,
-            "validated": validated,
-            "has_dependencies": has_deps,
-            "missing_dependencies": missing,
-        }
+    if "features" in outputs:
+        features = outputs["features"]
 
-    # Build environment information
-    import os
-    import sys
+        # Transform LLM info
+        if "llm" in features and "provider_details" in features["llm"]:
+            for provider, details in features["llm"]["provider_details"].items():
+                llm_info[provider] = {
+                    "available": details["available"],
+                    "has_dependencies": details["has_dependencies"],
+                    "missing_dependencies": details["missing_dependencies"],
+                    # Legacy fields - use available as proxy for registered/validated
+                    "registered": details["available"],
+                    "validated": details["available"],
+                }
 
-    environment = {
-        "python_version": sys.version,
-        "python_executable": sys.executable,
-        "current_directory": os.getcwd(),
-        "platform": sys.platform,
-    }
+        # Transform storage info
+        if "storage" in features and "storage_details" in features["storage"]:
+            for storage_type, details in features["storage"]["storage_details"].items():
+                storage_info[storage_type] = {
+                    "available": details["available"],
+                    "has_dependencies": details["has_dependencies"],
+                    "missing_dependencies": details["missing_dependencies"],
+                    # Legacy fields - use available as proxy for registered/validated
+                    "registered": details["available"],
+                    "validated": details["available"],
+                }
 
-    # Get package versions
-    packages = [
-        "openai",
-        "anthropic",
-        "google.generativeai",
-        "langchain",
-        "langchain_google_genai",
-        "chromadb",
-    ]
-    package_versions = {}
-    for package in packages:
-        try:
-            if "." in package:
-                base_pkg = package.split(".")[0]
-                module = __import__(base_pkg)
-                package_versions[package] = f"Installed (base package {base_pkg})"
-            else:
-                module = __import__(package)
-                version = getattr(module, "__version__", "unknown")
-                package_versions[package] = version
-        except ImportError:
-            package_versions[package] = "Not installed"
-
-    # Build installation suggestions
-    installation_suggestions = []
-
-    # Check if LLM feature is enabled
-    if not features_service.is_feature_enabled("llm"):
-        installation_suggestions.append(
-            "To enable LLM agents: pip install agentmap[llm]"
-        )
-
-    # Check if storage feature is enabled
-    if not features_service.is_feature_enabled("storage"):
-        installation_suggestions.append(
-            "To enable storage agents: pip install agentmap[storage]"
-        )
-
-    # Provider-specific suggestions
-    if not dependency_checker.check_llm_dependencies("openai")[0]:
-        installation_suggestions.append(
-            "For OpenAI support: pip install agentmap[openai] or pip install openai>=1.0.0"
-        )
-
-    if not dependency_checker.check_llm_dependencies("anthropic")[0]:
-        installation_suggestions.append(
-            "For Anthropic support: pip install agentmap[anthropic] or pip install anthropic"
-        )
-
-    if not dependency_checker.check_llm_dependencies("google")[0]:
-        installation_suggestions.append(
-            "For Google support: pip install agentmap[google] or pip install google-generativeai langchain-google-genai"
-        )
-
-    if not dependency_checker.check_storage_dependencies("vector")[0]:
-        installation_suggestions.append("For vector storage: pip install chromadb")
+    # Extract environment and suggestions
+    environment = outputs.get("environment", {})
+    package_versions = environment.get("package_versions", {})
+    installation_suggestions = outputs.get("suggestions", [])
 
     return {
         "llm": llm_info,
@@ -211,9 +147,11 @@ def cache_info_command() -> dict:
     Programmatic version of cache info that returns structured data.
     Used by API endpoints and testing.
     """
-    container = initialize_di()
-    validation_cache_service = container.validation_cache_service()
-    cache_stats = validation_cache_service.get_validation_cache_stats()
+    # Use facade function for stats
+    result = validate_cache(stats=True)
+    outputs = result["outputs"]
+
+    cache_stats = outputs["cache_stats"]
 
     suggestions = []
     if cache_stats["expired_files"] > 0:
@@ -235,18 +173,19 @@ def clear_cache_command(
     Programmatic version of cache clearing that returns structured data.
     Used by API endpoints and testing.
     """
-    container = initialize_di()
-    validation_cache_service = container.validation_cache_service()
-
+    # Use facade function for cache operations
     if file_path:
-        removed = validation_cache_service.clear_validation_cache(file_path)
+        result = validate_cache(clear=True, file_path=file_path)
         operation = f"clear_file:{file_path}"
     elif cleanup_expired:
-        removed = validation_cache_service.cleanup_validation_cache()
+        result = validate_cache(cleanup=True)
         operation = "cleanup_expired"
     else:
-        removed = validation_cache_service.clear_validation_cache()
+        result = validate_cache(clear=True)
         operation = "clear_all"
+
+    outputs = result["outputs"]
+    removed = outputs["removed_entries"]
 
     return {
         "success": True,

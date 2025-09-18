@@ -18,6 +18,20 @@ from agentmap.deployment.serverless.gcp_functions import gcp_http_handler
 
 # Core exports for new architecture
 from agentmap.deployment.service_adapter import ServiceAdapter, create_service_adapter
+from agentmap.exceptions.runtime_exceptions import (
+    AgentMapError,
+    AgentMapNotInitialized,
+    GraphNotFound,
+    InvalidInputs,
+)
+
+# Runtime API exports
+from agentmap.runtime_api import (
+    ensure_initialized,
+    list_graphs,
+    resume_workflow,
+    run_workflow,
+)
 
 __author__ = "John Welborn"
 __license__ = "MIT"
@@ -25,10 +39,22 @@ __copyright__ = "Copyright 2025 John Welborn"
 __description__ = "A Python package for creating LangGraph maps from CSV files for agentic ai workflows."
 
 __all__ = [
+    # Core service adapter
     "ServiceAdapter",
     "create_service_adapter",
+    # CLI and serverless handlers
     "main_cli",
     "lambda_handler",
     "gcp_http_handler",
     "azure_http_handler",
+    # Runtime API
+    "ensure_initialized",
+    "run_workflow",
+    "list_graphs",
+    "resume_workflow",
+    # Runtime API exceptions
+    "AgentMapError",
+    "AgentMapNotInitialized",
+    "GraphNotFound",
+    "InvalidInputs",
 ]

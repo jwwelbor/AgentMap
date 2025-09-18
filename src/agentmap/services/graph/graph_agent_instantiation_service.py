@@ -100,6 +100,7 @@ class GraphAgentInstantiationService:
         # Extract the information we need from the bundle
         agent_mappings = bundle.agent_mappings or {}
         custom_agents = bundle.custom_agents or set()
+        orchestration_agents = bundle.protocol_mappings
 
         # Check if bundle has no agent mappings at all
         if bundle.required_agents and not agent_mappings:

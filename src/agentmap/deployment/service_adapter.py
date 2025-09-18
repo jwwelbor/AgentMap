@@ -43,7 +43,6 @@ class ServiceAdapter:
             "execution_time": result.total_duration,
             "metadata": {
                 "graph_name": result.graph_name,
-                "source_info": getattr(result, "source_info", result.compiled_from),
                 "execution_summary": result.execution_summary,
             },
         }

@@ -210,7 +210,6 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
                     execution_summary=ExecutionSummary(graph_name=graph_name),
                     success=False,
                     total_duration=0.0,
-                    compiled_from="test",
                     error=f"Failed to create bundle for graph '{graph_name}'"
                 )
             
@@ -230,7 +229,6 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
                 execution_summary=ExecutionSummary(graph_name=graph_name),
                 success=False,
                 total_duration=0.0,
-                compiled_from="test",
                 error=f"Workflow execution failed: {e}"
             )
     

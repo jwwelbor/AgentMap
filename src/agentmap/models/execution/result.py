@@ -23,7 +23,6 @@ class ExecutionResult:
         execution_summary: Optional[ExecutionSummary] containing detailed execution tracking
         success: Whether the overall execution was successful
         total_duration: Total execution time in seconds
-        compiled_from: Source of the executed graph ("precompiled", "autocompiled", "memory")
         error: Optional error message if execution failed
     """
 
@@ -32,5 +31,4 @@ class ExecutionResult:
     execution_summary: Optional[ExecutionSummary]
     success: bool
     total_duration: float
-    compiled_from: str
     error: Optional[str] = None

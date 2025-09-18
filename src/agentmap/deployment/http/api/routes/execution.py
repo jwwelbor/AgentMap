@@ -2,7 +2,8 @@
 Execution routes for FastAPI server.
 
 This module provides API endpoints for running and resuming workflows
-using the new service architecture with RESTful routing patterns.
+using the runtime facade pattern per SPEC-DEP-001 for consistent behavior
+across all deployment adapters.
 """
 
 from pathlib import Path
@@ -11,11 +12,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from agentmap.deployment.cli.cli_handler import CLIInteractionHandler
-from agentmap.deployment.http.api.dependencies import (
-    get_app_config_service,
-    requires_auth,
-)
+from agentmap.deployment.http.api.dependencies import requires_auth
 from agentmap.deployment.http.api.validation.common_validation import (
     ErrorHandler,
     RequestValidator,
@@ -23,6 +20,14 @@ from agentmap.deployment.http.api.validation.common_validation import (
     ValidatedStateExecutionRequest,
     validate_request_size,
 )
+from agentmap.exceptions.runtime_exceptions import (
+    AgentMapNotInitialized,
+    GraphNotFound,
+    InvalidInputs,
+)
+
+# Use runtime facade instead of direct service access
+from agentmap.runtime_api import ensure_initialized, resume_workflow, run_workflow
 
 
 # Request models (enhanced with validation)
@@ -121,8 +126,6 @@ class ResumeWorkflowResponse(BaseModel):
         }
 
 
-# Direct container access via request.app.state.container
-
 # Create router
 router = APIRouter(prefix="/execution", tags=["Execution"])
 
@@ -132,47 +135,276 @@ _validate_workflow_name = RequestValidator.validate_workflow_name
 _validate_graph_name = RequestValidator.validate_graph_name
 
 
-def _resolve_workflow_path(workflow_name: str, app_config_service) -> Path:
+# IMPORTANT: Define specific routes BEFORE generic ones to avoid matching conflicts
+@router.post(
+    "/run",
+    response_model=GraphRunResponse,
+    summary="Execute Graph (Legacy)",
+    description="Legacy endpoint for running graphs with flexible parameter support",
+    response_description="Execution results with backward compatibility",
+    responses={
+        200: {"description": "Graph executed successfully"},
+        400: {"description": "Invalid request parameters"},
+        404: {"description": "Workflow or CSV file not found"},
+        500: {"description": "Internal execution error"},
+    },
+    tags=["Execution"],
+    deprecated=False,  # Still supported for backward compatibility
+)
+@requires_auth("execute")
+async def run_graph_legacy(
+    execution_request: GraphRunRequest,
+    request: Request,
+):
     """
-    Resolve workflow name to full CSV file path.
-
-    Args:
-        workflow_name: Name of the workflow
-        app_config_service: Configuration service instance
-
-    Returns:
-        Path to the workflow CSV file
-
-    Raises:
-        HTTPException: If workflow file not found
+    **Legacy Graph Execution Endpoint**
+    
+    This endpoint maintains backward compatibility while supporting both
+    CSV path specification and workflow repository lookup. Now also supports
+    the simplified filename::graph_name syntax in any parameter.
+    
+    **Supported Syntax Formats:**
+    - `filename::graph_name` - Direct CSV file with specific graph
+    - Traditional workflow/graph combinations
+    - Direct file paths
+    
+    **Parameter Priority:**
+    1. `csv` parameter (direct file path or filename::graph_name)
+    2. `workflow` parameter (repository lookup or filename::graph_name)
+    3. `graph` parameter (simple name or filename::graph_name)
+    4. Default configuration file
+    
+    **Example Request with Workflow:**
+    ```bash
+    curl -X POST "http://localhost:8000/execution/run" \\
+         -H "Content-Type: application/json" \\
+         -d '{
+           "graph": "support_flow",
+           "workflow": "customer_service",
+           "state": {"priority": "high"},
+           "autocompile": true
+         }'
+    ```
+    
+    **Example Request with Direct CSV:**
+    ```bash
+    curl -X POST "http://localhost:8000/execution/run" \\
+         -H "Content-Type: application/json" \\
+         -d '{
+           "csv": "/path/to/workflow.csv",
+           "graph": "my_graph",
+           "state": {"input": "data"}
+         }'
+    ```
+    
+    **Example Request with :: Syntax:**
+    ```bash
+    curl -X POST "http://localhost:8000/execution/run" \\
+         -H "Content-Type: application/json" \\
+         -d '{
+           "workflow": "customer_data::support_flow",
+           "state": {"priority": "high"}
+         }'
+    ```
+    
+    **Authentication:** Same as other execution endpoints
     """
-    # Validate workflow name
-    clean_name = _validate_workflow_name(workflow_name)
+    try:
+        # Ensure runtime is initialized
+        ensure_initialized()
 
-    # Get CSV repository path from configuration
-    csv_repository = app_config_service.get_csv_repository_path()
+        # Determine graph name - now supports :: syntax
+        graph_name = None
+        if execution_request.csv:
+            # Direct CSV path - check for :: syntax
+            if execution_request.graph and "::" not in execution_request.csv:
+                # Traditional csv + graph combination
+                graph_name = f"{execution_request.csv}/{execution_request.graph}"
+            else:
+                # Either :: syntax already in csv, or no graph specified
+                graph_name = execution_request.csv
+        elif execution_request.workflow:
+            # Workflow repository lookup - check for :: syntax
+            if "::" in execution_request.workflow:
+                # :: syntax in workflow parameter
+                graph_name = execution_request.workflow
+            elif execution_request.graph:
+                # Traditional workflow + graph combination
+                graph_name = f"{execution_request.workflow}/{execution_request.graph}"
+            else:
+                graph_name = execution_request.workflow
+        else:
+            # Just graph name or default - support :: syntax
+            graph_name = execution_request.graph or "default"
 
-    # Add .csv extension if not present
-    if not clean_name.endswith(".csv"):
-        clean_name += ".csv"
+        if not graph_name:
+            raise InvalidInputs("No graph specified and no default configured")
 
-    # Build full path
-    workflow_path = csv_repository / clean_name
-
-    # Check if file exists
-    if not workflow_path.exists():
-        raise HTTPException(
-            status_code=404, detail=f"Workflow file not found: {clean_name}"
+        # Execute using runtime facade
+        result = run_workflow(
+            graph_name=graph_name,
+            inputs=execution_request.state,
         )
 
-    return workflow_path
+        # Convert facade result to HTTP response format
+        if result.get("success", False):
+            outputs = result.get("outputs", {})
+            metadata = result.get("metadata", {})
+
+            return GraphRunResponse(
+                success=True,
+                output=outputs,
+                execution_id=execution_request.execution_id,
+                execution_time=None,  # Not provided by facade
+                metadata=metadata,
+            )
+        else:
+            error_msg = result.get("error", "Unknown execution error")
+            return GraphRunResponse(
+                success=False,
+                error=error_msg,
+                execution_id=execution_request.execution_id,
+                execution_time=None,
+            )
+
+    except GraphNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except InvalidInputs as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except AgentMapNotInitialized as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
 
+@router.post(
+    "/resume",
+    response_model=ResumeWorkflowResponse,
+    summary="Resume Interrupted Workflow",
+    description="Resume a paused workflow by providing user response or decision",
+    response_description="Resumption status and updated workflow state",
+    responses={
+        200: {"description": "Workflow resumed successfully"},
+        400: {"description": "Invalid thread ID or response action"},
+        404: {"description": "Thread not found or already completed"},
+        503: {"description": "Storage services unavailable"},
+    },
+    tags=["Execution"],
+)
+@requires_auth("execute")
+async def resume_workflow_endpoint(
+    resume_request: ResumeWorkflowRequest,
+    request: Request,
+):
+    """
+    **Resume an Interrupted Workflow**
+    
+    This endpoint allows resumption of workflows that were paused for
+    user interaction, approval, or decision-making. Workflows pause when
+    they encounter nodes requiring human input or validation.
+    
+    **Request Parameters:**
+    - `thread_id`: Unique identifier for the paused workflow thread
+    - `response_action`: Action to take (approve, reject, choose, respond, etc.)
+    - `response_data`: Additional data required for the response
+    
+    **Common Response Actions:**
+    - `approve`: Approve the current step and continue
+    - `reject`: Reject and trigger failure path
+    - `choose`: Select from multiple options
+    - `respond`: Provide text response
+    - `edit`: Modify proposed content
+    - `retry`: Retry the current operation
+    
+    **Example Request:**
+    ```bash
+    curl -X POST "http://localhost:8000/execution/resume" \\
+         -H "Content-Type: application/json" \\
+         -H "X-API-Key: your-api-key" \\
+         -d '{
+           "thread_id": "thread-uuid-12345",
+           "response_action": "approve",
+           "response_data": {
+             "reviewer_comments": "Looks good to proceed",
+             "timestamp": "2024-01-15T14:30:00Z"
+           }
+         }'
+    ```
+    
+    **Success Response:**
+    ```json
+    {
+      "success": true,
+      "thread_id": "thread-uuid-12345",
+      "response_action": "approve",
+      "message": "Successfully resumed thread with approval"
+    }
+    ```
+    
+    **Prerequisites:**
+    - Storage services must be configured and available
+    - Thread must exist and be in a paused state
+    - Response action must be valid for the current node type
+    
+    **Authentication:** Required - workflows contain sensitive state data
+    """
+    try:
+        # Ensure runtime is initialized
+        ensure_initialized()
+
+        # Create resume token from request data
+        import json
+
+        resume_token_data = {
+            "thread_id": resume_request.thread_id,
+            "response_action": resume_request.response_action,
+        }
+        if resume_request.response_data:
+            resume_token_data["response_data"] = resume_request.response_data
+
+        resume_token = json.dumps(resume_token_data)
+
+        # Execute using runtime facade
+        result = resume_workflow(resume_token=resume_token)
+
+        # Convert facade result to HTTP response format
+        if result.get("success", False):
+            return ResumeWorkflowResponse(
+                success=True,
+                thread_id=resume_request.thread_id,
+                response_action=resume_request.response_action,
+                message=f"Successfully resumed thread '{resume_request.thread_id}' with action '{resume_request.response_action}'",
+            )
+        else:
+            error_msg = result.get("error", "Unknown resume error")
+            return ResumeWorkflowResponse(
+                success=False,
+                thread_id=resume_request.thread_id,
+                response_action=resume_request.response_action,
+                message="Failed to resume workflow",
+                error=error_msg,
+            )
+
+    except InvalidInputs as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except AgentMapNotInitialized as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
+
+
+# Now define the two-parameter endpoint
 @router.post(
     "/{workflow}/{graph}",
     response_model=GraphRunResponse,
     summary="Execute Workflow Graph",
-    description="Run a specific graph from a workflow stored in the CSV repository",
+    description="Run a specific graph from a workflow stored in the CSV repository. Supports both traditional workflow/graph syntax and simplified filename::graph_name syntax (URL encode :: as %3A%3A).",
     response_description="Execution results including output state, metadata, and timing information",
     responses={
         200: {
@@ -202,7 +434,6 @@ async def run_workflow_graph(
     graph: str,
     execution_request: StateExecutionRequest,
     request: Request,
-    app_config_service=Depends(get_app_config_service),
 ):
     """
     **Execute a Specific Graph from Workflow Repository**
@@ -267,394 +498,182 @@ async def run_workflow_graph(
     - Bearer Token: `Authorization: Bearer token` (optional)
     - Public access allowed for embedded usage
     """
-    logger = None  # Initialize logger to None
-
     try:
-        # Enhanced validation
-        validated_workflow = _validate_workflow_name(workflow)
-        validated_graph = _validate_graph_name(graph)
+        # URL decode workflow parameter to handle encoded :: syntax
+        from urllib.parse import unquote
 
-        # Get container from request app state
-        container = request.app.state.container
+        decoded_workflow = unquote(workflow)
 
-        # Resolve workflow path with size validation
-        workflow_path = _resolve_workflow_path(validated_workflow, app_config_service)
+        # Check if workflow contains :: syntax (filename::graph_name)
+        if "::" in decoded_workflow:
+            # Use the decoded workflow parameter as the full graph identifier
+            graph_name = decoded_workflow
+            # Validate the parts
+            parts = decoded_workflow.split("::", 1)
+            validated_workflow = _validate_workflow_name(parts[0])
+            validated_graph = _validate_graph_name(parts[1])
+        else:
+            # Traditional workflow/graph syntax
+            validated_workflow = _validate_workflow_name(decoded_workflow)
+            validated_graph = _validate_graph_name(graph)
+            graph_name = f"{validated_workflow}/{validated_graph}"
 
-        # Validate resolved CSV file size (skips path traversal checks since path is system-resolved)
-        RequestValidator.validate_system_file_path(
-            workflow_path, RequestValidator.MAX_CSV_SIZE
+        # Ensure runtime is initialized
+        ensure_initialized()
+
+        # Execute using runtime facade
+        result = run_workflow(
+            graph_name=graph_name,
+            inputs=execution_request.state,
         )
 
-        # Get services
-        graph_runner_service = container.graph_runner_service()
-        graph_bundle_service = container.graph_bundle_service()
-        logging_service = container.logging_service()
-
-        # Safely get logger, handling None logging_service
-        if logging_service is not None:
-            logger = logging_service.get_logger("agentmap.api.execution")
-
-        if logger:
-            logger.info(
-                f"API executing workflow '{validated_workflow}' graph '{validated_graph}'"
-            )
-
-        # Get or create bundle using GraphBundleService
-        if graph_runner_service is None:
-            raise HTTPException(
-                status_code=503, detail="Graph runner service not available"
-            )
-
-        if graph_bundle_service is None:
-            raise HTTPException(
-                status_code=503, detail="Graph bundle service not available"
-            )
-
-        try:
-            # Create bundle from CSV and graph name
-            bundle = graph_bundle_service.get_or_create_bundle(
-                csv_path=workflow_path,
-                graph_name=validated_graph,
-                config_path=None,  # Use default config
-            )
-
-            # Execute graph using bundle
-            result = graph_runner_service.run(bundle, execution_request.state)
-
-        except TimeoutError:
-            raise ErrorHandler.create_error_response(
-                error_message="Execution timeout",
-                error_code="TIMEOUT",
-                status_code=408,
-                detail="Graph execution exceeded maximum allowed time",
-            )
-
-        # Convert to response format
-        if result.success:
-            # Create metadata from execution summary if available
-            metadata = {}
-            if result.execution_summary:
-                summary = result.execution_summary
-                metadata["graph_name"] = summary.graph_name
-                metadata["status"] = summary.status
-                metadata["nodes_executed"] = (
-                    len(summary.node_executions) if summary.node_executions else 0
-                )
+        # Convert facade result to HTTP response format
+        if result.get("success", False):
+            outputs = result.get("outputs", {})
+            metadata = result.get("metadata", {})
 
             return GraphRunResponse(
                 success=True,
-                output=result.final_state,
-                execution_id=execution_request.execution_id,  # Pass through from request
-                execution_time=result.total_duration,
+                output=outputs,
+                execution_id=execution_request.execution_id,
+                execution_time=None,  # Not provided by facade
                 metadata=metadata,
             )
         else:
+            error_msg = result.get("error", "Unknown execution error")
             return GraphRunResponse(
                 success=False,
-                error=result.error,
-                execution_id=execution_request.execution_id,  # Pass through from request
-                execution_time=result.total_duration,
+                error=error_msg,
+                execution_id=execution_request.execution_id,
+                execution_time=None,
             )
 
+    except GraphNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except InvalidInputs as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except AgentMapNotInitialized as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise
-    except ValueError as e:
-        raise ErrorHandler.handle_validation_error("request", str(e))
-    except FileNotFoundError as e:
-        raise ErrorHandler.handle_file_not_found(str(e), "workflow")
     except Exception as e:
-        # Safely log error only if logger is available
-        if logger:
-            logger.error(f"API execution error: {e}")
-        raise ErrorHandler.handle_service_error("execution", e)
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
 
+# Finally, the most generic single-parameter endpoint (must be last to avoid conflicts)
 @router.post(
-    "/run",
+    "/{workflow_graph}",
     response_model=GraphRunResponse,
-    summary="Execute Graph (Legacy)",
-    description="Legacy endpoint for running graphs with flexible parameter support",
-    response_description="Execution results with backward compatibility",
+    summary="Execute Workflow Graph (Simplified Syntax)",
+    description="Execute a graph using simplified filename::graph_name syntax or traditional workflow/graph syntax",
+    response_description="Execution results including output state, metadata, and timing information",
     responses={
         200: {"description": "Graph executed successfully"},
-        400: {"description": "Invalid request parameters"},
-        404: {"description": "Workflow or CSV file not found"},
+        400: {"description": "Invalid workflow/graph syntax or request parameters"},
+        404: {"description": "Workflow file or graph not found"},
+        413: {"description": "Request payload too large (max 5MB)"},
         500: {"description": "Internal execution error"},
     },
     tags=["Execution"],
-    deprecated=False,  # Still supported for backward compatibility
 )
+@validate_request_size(max_size=RequestValidator.MAX_JSON_SIZE)
 @requires_auth("execute")
-async def run_graph_legacy(
-    execution_request: GraphRunRequest,
+async def run_workflow_graph_simplified(
+    workflow_graph: str,
+    execution_request: StateExecutionRequest,
     request: Request,
-    app_config_service=Depends(get_app_config_service),
 ):
     """
-    **Legacy Graph Execution Endpoint**
+    **Execute Graph with Simplified Syntax**
     
-    This endpoint maintains backward compatibility while supporting both
-    CSV path specification and workflow repository lookup. Use the RESTful
-    `/{workflow}/{graph}` endpoint for new integrations.
+    This endpoint accepts either filename::graph_name syntax or traditional workflow/graph syntax
+    in a single parameter. URL encode :: as %3A%3A when using filename::graph_name format.
     
-    **Parameter Priority:**
-    1. `csv` parameter (direct file path)
-    2. `workflow` parameter (repository lookup)
-    3. Default configuration file
+    **Supported Formats:**
+    - `filename::graph_name` - Direct CSV file with specific graph
+    - `workflow/graph` - Repository-based workflow with graph
+    - `simple_name` - Defaults to simple_name.csv with graph name simple_name
     
-    **Example Request with Workflow:**
+    **Example Requests:**
     ```bash
-    curl -X POST "http://localhost:8000/execution/run" \\
+    # Using :: syntax (URL encoded)
+    curl -X POST "http://localhost:8000/execution/customer_data%3A%3Asupport_flow" \\
          -H "Content-Type: application/json" \\
-         -d '{
-           "graph": "support_flow",
-           "workflow": "customer_service",
-           "state": {"priority": "high"},
-           "autocompile": true
-         }'
-    ```
+         -d '{"state": {"priority": "high"}}'
     
-    **Example Request with Direct CSV:**
-    ```bash
-    curl -X POST "http://localhost:8000/execution/run" \\
+    # Traditional syntax
+    curl -X POST "http://localhost:8000/execution/customer_service/support_flow" \\
          -H "Content-Type: application/json" \\
-         -d '{
-           "csv": "/path/to/workflow.csv",
-           "graph": "my_graph",
-           "state": {"input": "data"}
-         }'
+         -d '{"state": {"priority": "high"}}'
     ```
     
     **Authentication:** Same as other execution endpoints
     """
-    logger = None  # Initialize logger to None
-
     try:
-        # Get container from request app state
-        container = request.app.state.container
+        # URL decode the parameter to handle encoded :: syntax
+        from urllib.parse import unquote
 
-        # Get services
-        graph_runner_service = container.graph_runner_service()
-        graph_bundle_service = container.graph_bundle_service()
-        logging_service = container.logging_service()
+        decoded_graph_name = unquote(workflow_graph)
 
-        # Safely get logger, handling None logging_service
-        if logging_service is not None:
-            logger = logging_service.get_logger("agentmap.api.execution")
-
-        # Determine CSV path - priority: csv parameter, workflow lookup, default config
-        csv_path = None
-        if execution_request.csv:
-            csv_path = Path(execution_request.csv)
-        elif execution_request.workflow:
-            csv_path = _resolve_workflow_path(
-                execution_request.workflow, app_config_service
-            )
+        # Validate the graph name format
+        if "::" in decoded_graph_name:
+            parts = decoded_graph_name.split("::", 1)
+            if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+                raise InvalidInputs(
+                    "Invalid :: syntax - expected format: filename::graph_name"
+                )
+            _validate_workflow_name(parts[0])
+            _validate_graph_name(parts[1])
+        elif "/" in decoded_graph_name:
+            parts = decoded_graph_name.split("/")
+            if len(parts) < 2:
+                raise InvalidInputs(
+                    "Invalid / syntax - expected format: workflow/graph"
+                )
+            _validate_workflow_name(parts[0])
+            _validate_graph_name(parts[-1])
         else:
-            # Use default from app config
-            default_csv = app_config_service.get_csv_path()
-            if default_csv:
-                csv_path = Path(default_csv)
-            else:
-                raise ValueError("No CSV file specified and no default configured")
+            _validate_workflow_name(decoded_graph_name)
 
-        if logger:
-            logger.info(f"API executing graph: {execution_request.graph or 'default'}")
+        # Ensure runtime is initialized
+        ensure_initialized()
 
-        # Execute graph
-        if graph_runner_service is None:
-            raise HTTPException(
-                status_code=503, detail="Graph runner service not available"
-            )
-
-        if graph_bundle_service is None:
-            raise HTTPException(
-                status_code=503, detail="Graph bundle service not available"
-            )
-
-        # Create bundle from CSV and graph name
-        bundle = graph_bundle_service.get_or_create_bundle(
-            csv_path=csv_path,
-            graph_name=execution_request.graph,
-            config_path=None,  # Use default config
+        # Execute using runtime facade with the decoded graph name
+        result = run_workflow(
+            graph_name=decoded_graph_name,
+            inputs=execution_request.state,
         )
 
-        # Execute graph using bundle
-        result = graph_runner_service.run(bundle, execution_request.state)
-
-        # Convert to response format
-        if result.success:
-            # Create metadata from execution summary if available
-            metadata = {}
-            if result.execution_summary:
-                summary = result.execution_summary
-                metadata["graph_name"] = summary.graph_name
-                metadata["status"] = summary.status
-                metadata["nodes_executed"] = (
-                    len(summary.node_executions) if summary.node_executions else 0
-                )
+        # Convert facade result to HTTP response format
+        if result.get("success", False):
+            outputs = result.get("outputs", {})
+            metadata = result.get("metadata", {})
 
             return GraphRunResponse(
                 success=True,
-                output=result.final_state,
-                execution_id=execution_request.execution_id,  # Pass through from request
-                execution_time=result.total_duration,
+                output=outputs,
+                execution_id=execution_request.execution_id,
+                execution_time=None,  # Not provided by facade
                 metadata=metadata,
             )
         else:
+            error_msg = result.get("error", "Unknown execution error")
             return GraphRunResponse(
                 success=False,
-                error=result.error,
-                execution_id=execution_request.execution_id,  # Pass through from request
-                execution_time=result.total_duration,
+                error=error_msg,
+                execution_id=execution_request.execution_id,
+                execution_time=None,
             )
 
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        raise
-    except ValueError as e:
+    except GraphNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except InvalidInputs as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        # Safely log error only if logger is available
-        if logger:
-            logger.error(f"API execution error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post(
-    "/resume",
-    response_model=ResumeWorkflowResponse,
-    summary="Resume Interrupted Workflow",
-    description="Resume a paused workflow by providing user response or decision",
-    response_description="Resumption status and updated workflow state",
-    responses={
-        200: {"description": "Workflow resumed successfully"},
-        400: {"description": "Invalid thread ID or response action"},
-        404: {"description": "Thread not found or already completed"},
-        503: {"description": "Storage services unavailable"},
-    },
-    tags=["Execution"],
-)
-@requires_auth("execute")
-async def resume_workflow(
-    resume_request: ResumeWorkflowRequest,
-    request: Request,
-):
-    """
-    **Resume an Interrupted Workflow**
-    
-    This endpoint allows resumption of workflows that were paused for
-    user interaction, approval, or decision-making. Workflows pause when
-    they encounter nodes requiring human input or validation.
-    
-    **Request Parameters:**
-    - `thread_id`: Unique identifier for the paused workflow thread
-    - `response_action`: Action to take (approve, reject, choose, respond, etc.)
-    - `response_data`: Additional data required for the response
-    
-    **Common Response Actions:**
-    - `approve`: Approve the current step and continue
-    - `reject`: Reject and trigger failure path
-    - `choose`: Select from multiple options
-    - `respond`: Provide text response
-    - `edit`: Modify proposed content
-    - `retry`: Retry the current operation
-    
-    **Example Request:**
-    ```bash
-    curl -X POST "http://localhost:8000/execution/resume" \\
-         -H "Content-Type: application/json" \\
-         -H "X-API-Key: your-api-key" \\
-         -d '{
-           "thread_id": "thread-uuid-12345",
-           "response_action": "approve",
-           "response_data": {
-             "reviewer_comments": "Looks good to proceed",
-             "timestamp": "2024-01-15T14:30:00Z"
-           }
-         }'
-    ```
-    
-    **Success Response:**
-    ```json
-    {
-      "success": true,
-      "thread_id": "thread-uuid-12345",
-      "response_action": "approve",
-      "message": "Successfully resumed thread with approval"
-    }
-    ```
-    
-    **Prerequisites:**
-    - Storage services must be configured and available
-    - Thread must exist and be in a paused state
-    - Response action must be valid for the current node type
-    
-    **Authentication:** Required - workflows contain sensitive state data
-    """
-    logger = None  # Initialize logger to None
-
-    try:
-        # Get container from request app state
-        container = request.app.state.container
-
-        # Get storage service manager from container
-        storage_manager = container.storage_service_manager()
-
-        # Check if storage is available
-        if not storage_manager:
-            raise HTTPException(
-                status_code=503,
-                detail="Storage services are not available. Please check your configuration.",
-            )
-
-        # Get the JSON storage service for structured data
-        storage_service = storage_manager.get_service("json")
-        logging_service = container.logging_service()
-
-        # Safely get logger, handling None logging_service
-        if logging_service is not None:
-            logger = logging_service.get_logger("agentmap.api.resume")
-
-        # Create CLI interaction handler instance
-        handler = CLIInteractionHandler(storage_service)
-
-        # Log the resume attempt
-        if logger:
-            logger.info(
-                f"Resuming thread '{resume_request.thread_id}' with action '{resume_request.response_action}'"
-            )
-
-        # Call handler.resume_execution()
-        result = handler.resume_execution(
-            thread_id=resume_request.thread_id,
-            response_action=resume_request.response_action,
-            response_data=resume_request.response_data,
-        )
-
-        # Return success response
-        return ResumeWorkflowResponse(
-            success=True,
-            thread_id=resume_request.thread_id,
-            response_action=resume_request.response_action,
-            message=f"Successfully resumed thread '{resume_request.thread_id}' with action '{resume_request.response_action}'",
-        )
-
+    except AgentMapNotInitialized as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise
-    except ValueError as e:
-        # Handle not found errors gracefully
-        raise HTTPException(status_code=404, detail=str(e))
-    except RuntimeError as e:
-        # Handle storage errors
-        raise HTTPException(status_code=503, detail=f"Storage error: {e}")
     except Exception as e:
-        # Handle unexpected errors
-        # Safely log error only if logger is available
-        if logger:
-            logger.error(f"Unexpected error in resume endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")

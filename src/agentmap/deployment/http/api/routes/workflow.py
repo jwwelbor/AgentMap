@@ -2,7 +2,8 @@
 Workflow management routes for FastAPI server.
 
 This module provides API endpoints for managing workflows stored in the
-CSV repository, including listing, inspection, and detailed graph information.
+CSV repository using the runtime facade pattern per SPEC-DEP-001 for
+consistent behavior across all deployment adapters.
 """
 
 import re
@@ -15,6 +16,12 @@ from pydantic import BaseModel, Field
 from agentmap.deployment.http.api.dependencies import (
     requires_auth,
 )
+from agentmap.exceptions.runtime_exceptions import (
+    AgentMapNotInitialized,
+)
+
+# Use runtime facade instead of direct service access
+from agentmap.runtime_api import ensure_initialized, inspect_graph, list_graphs
 
 
 # Response models
@@ -238,100 +245,7 @@ class GraphDetailResponse(BaseModel):
 router = APIRouter(prefix="/workflows", tags=["Workflow Management"])
 
 
-def _validate_workflow_name(workflow_name: str) -> str:
-    """
-    Validate workflow name to prevent path traversal attacks.
-
-    Args:
-        workflow_name: The workflow name to validate
-
-    Returns:
-        Validated workflow name
-
-    Raises:
-        HTTPException: If workflow name is invalid
-    """
-    # Remove any path separators and invalid characters
-    clean_name = re.sub(r"[^\w\-_.]", "", workflow_name)
-
-    # Check for path traversal attempts
-    if ".." in workflow_name or "/" in workflow_name or "\\" in workflow_name:
-        raise HTTPException(
-            status_code=400, detail="Invalid workflow name: path traversal not allowed"
-        )
-
-    # Ensure it's not empty after cleaning
-    if not clean_name:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid workflow name: contains only invalid characters",
-        )
-
-    return clean_name
-
-
-def _get_workflow_path(workflow_name: str, app_config_service) -> Path:
-    """
-    Get full path to workflow file in repository.
-
-    Args:
-        workflow_name: Name of the workflow
-        app_config_service: Configuration service instance
-
-    Returns:
-        Path to the workflow CSV file
-
-    Raises:
-        HTTPException: If workflow file not found
-    """
-    # Validate workflow name
-    clean_name = _validate_workflow_name(workflow_name)
-
-    # Get CSV repository path from configuration
-    csv_repository = app_config_service.get_csv_repository_path()
-
-    # Add .csv extension if not present
-    if not clean_name.endswith(".csv"):
-        clean_name += ".csv"
-
-    # Build full path
-    workflow_path = csv_repository / clean_name
-
-    # Check if file exists
-    if not workflow_path.exists():
-        raise HTTPException(
-            status_code=404, detail=f"Workflow file not found: {clean_name}"
-        )
-
-    return workflow_path
-
-
-def _parse_workflow_file(workflow_path: Path, csv_parser_service) -> Any:
-    """
-    Parse workflow CSV file and return GraphSpec.
-
-    Args:
-        workflow_path: Path to the workflow CSV file
-        csv_parser_service: CSV parser service instance
-
-    Returns:
-        GraphSpec containing parsed workflow data
-
-    Raises:
-        HTTPException: If parsing fails
-    """
-    try:
-        return csv_parser_service.parse_csv_to_graph_spec(workflow_path)
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=404, detail=f"Workflow file not found: {workflow_path.name}"
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=400, detail=f"Invalid workflow file format: {e}"
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error parsing workflow file: {e}")
+# Helper functions removed - using facade pattern instead
 
 
 @router.get(
@@ -400,106 +314,71 @@ async def list_workflows(request: Request):
     **Authentication:** Admin permission required
     """
     try:
-        # Step 1: Check container availability with detailed error
-        if not hasattr(request.app, "state"):
-            raise HTTPException(status_code=500, detail="request.app.state not found")
-        if not hasattr(request.app.state, "container"):
+        # Ensure runtime is initialized
+        ensure_initialized()
+
+        # Use facade to list graphs/workflows
+        graphs_response = list_graphs()
+
+        # Extract the actual graphs from the structured response
+        if not graphs_response.get("success", False):
             raise HTTPException(
-                status_code=500, detail="request.app.state.container not found"
+                status_code=500, detail="Failed to retrieve graphs from runtime"
             )
 
-        container = request.app.state.container
+        graphs = graphs_response.get("outputs", {}).get("graphs", [])
+        repository_path = graphs_response.get("metadata", {}).get("repository_path", "")
 
-        # Step 2: Get services with detailed error handling
-        try:
-            app_config_service = container.app_config_service()
-        except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to get app_config_service: {str(e)}"
-            )
+        # Group by workflow and build workflow summaries
+        workflow_groups = {}
+        for graph in graphs:
+            workflow_name = graph.get("workflow", "unknown")
 
-        # Step 3: Get CSV repository path
-        try:
-            csv_repository = app_config_service.get_csv_repository_path()
-        except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to get CSV repository path: {str(e)}"
-            )
+            if workflow_name not in workflow_groups:
+                workflow_groups[workflow_name] = {
+                    "name": workflow_name,
+                    "filename": graph.get("filename", f"{workflow_name}.csv"),
+                    "file_path": graph.get("file_path", ""),
+                    "file_size": graph.get("file_size", 0),
+                    "last_modified": graph.get("last_modified", 0),
+                    "graphs": [],
+                    "total_nodes": 0,
+                }
 
-        # Step 4: Check if repository exists
-        if not csv_repository.exists():
-            raise HTTPException(
-                status_code=500,
-                detail=f"CSV repository does not exist: {csv_repository}",
-            )
+            workflow_groups[workflow_name]["graphs"].append(graph)
+            workflow_groups[workflow_name]["total_nodes"] += graph.get("total_nodes", 0)
 
-        # Step 5: Find all CSV files in repository
-        try:
-            csv_files = list(csv_repository.glob("*.csv"))
-        except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to list CSV files: {str(e)}"
-            )
-
-        # Step 6: Get basic file info and workflow summaries
+        # Convert to workflow summaries
         workflows = []
-        for csv_file in csv_files:
-            try:
-                # Get file stats
-                file_stat = csv_file.stat()
 
-                # Try to parse CSV to get graph count (but handle errors gracefully)
-                graph_count = 0
-                total_nodes = 0
-                try:
-                    # Just get basic info without full parsing for performance
-                    import pandas as pd
-
-                    df = pd.read_csv(csv_file)
-                    if "GraphName" in df.columns:
-                        graph_count = df["GraphName"].nunique()
-                    total_nodes = len(df)
-                except Exception:
-                    # If parsing fails, just use default values
-                    pass
-
-                # Create workflow summary
-                workflow_name = csv_file.stem  # filename without extension
-                workflow = WorkflowSummary(
-                    name=workflow_name,
-                    filename=csv_file.name,
-                    file_path=str(csv_file),
-                    file_size=file_stat.st_size,
-                    last_modified=file_stat.st_mtime.__str__(),
-                    graph_count=graph_count,
-                    total_nodes=total_nodes,
-                )
-                workflows.append(workflow)
-
-            except Exception as e:
-                # Log error but continue with other files
-                continue
+        for workflow_name, workflow_data in workflow_groups.items():
+            workflow = WorkflowSummary(
+                name=workflow_data["name"],
+                filename=workflow_data["filename"],
+                file_path=workflow_data["file_path"],
+                file_size=workflow_data["file_size"],
+                last_modified=str(workflow_data["last_modified"]),
+                graph_count=len(workflow_data["graphs"]),
+                total_nodes=workflow_data["total_nodes"],
+            )
+            workflows.append(workflow)
 
         # Sort workflows by name
         workflows.sort(key=lambda w: w.name)
 
         return WorkflowListResponse(
-            repository_path=str(csv_repository),
+            repository_path=repository_path,
             workflows=workflows,
             total_count=len(workflows),
         )
 
+    except AgentMapNotInitialized as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except HTTPException:
         # Re-raise HTTP exceptions with their original status codes
         raise
     except Exception as e:
-        # Import here to avoid issues if not available
-        import traceback
-
-        error_detail = f"Unexpected error in list_workflows: {str(e)}"
-        print(f"DETAILED ERROR: {error_detail}")
-        print(f"TRACEBACK: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=error_detail)
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
 
 @router.get(
@@ -568,61 +447,113 @@ async def get_workflow_details(workflow: str, request: Request):
     
     **Authentication:** Admin permission required
     """
-    # Get container from request app state
-    container = request.app.state.container
+    try:
+        # Ensure runtime is initialized
+        ensure_initialized()
 
-    # Get services from container
-    app_config_service = container.app_config_service()
-    csv_parser_service = container.csv_graph_parser_service()
+        # Use facade to get graphs for this workflow
+        graphs_response = list_graphs()
 
-    # Get workflow path and validate existence
-    workflow_path = _get_workflow_path(workflow, app_config_service)
-    csv_repository = app_config_service.get_csv_repository_path()
+        # Extract the actual graphs from the structured response
+        if not graphs_response.get("success", False):
+            raise HTTPException(
+                status_code=500, detail="Failed to retrieve graphs from runtime"
+            )
 
-    # Parse workflow file
-    graph_spec = _parse_workflow_file(workflow_path, csv_parser_service)
+        graphs = graphs_response.get("outputs", {}).get("graphs", [])
 
-    # Build graph summaries
-    graphs = []
-    total_nodes = 0
+        # Filter graphs by workflow name
+        workflow_graphs = [g for g in graphs if g.get("workflow") == workflow]
 
-    for graph_name, nodes in graph_spec.graphs.items():
-        # Find entry point (first node or node without incoming edges)
-        entry_point = None
-        if nodes:
-            # Simple heuristic: use first node as entry point
-            entry_point = nodes[0].name
+        if not workflow_graphs:
+            raise HTTPException(
+                status_code=404, detail=f"Workflow '{workflow}' not found"
+            )
 
-        # Get node names
-        node_names = [node.name for node in nodes]
-        total_nodes += len(nodes)
+        # Validate CSV file format for the workflow
+        first_graph = workflow_graphs[0]
+        csv_path = Path(first_graph.get("file_path", ""))
+        if csv_path.exists():
+            try:
+                import pandas as pd
 
-        graph_summary = GraphSummary(
-            name=graph_name,
-            node_count=len(nodes),
-            entry_point=entry_point,
-            nodes=node_names,
+                df = pd.read_csv(csv_path)
+
+                # Validate required columns
+                required_columns = [
+                    "Node",
+                    "Agent_Type",
+                    "Description",
+                    "Input_Fields",
+                    "Output_Field",
+                ]
+                missing_columns = [
+                    col for col in required_columns if col not in df.columns
+                ]
+                if missing_columns:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid workflow file format: Missing required columns: {missing_columns}",
+                    )
+
+            except pd.errors.EmptyDataError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid workflow file format: Empty CSV file",
+                )
+            except Exception as e:
+                if "Missing required columns" in str(e):
+                    raise  # Re-raise our validation errors
+                # For other parsing errors, return 400
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid workflow file format: {str(e)}"
+                )
+
+        # Get workflow metadata from first graph
+        first_graph = workflow_graphs[0]
+        repository_path = first_graph.get("meta", {}).get("repository_path", "")
+
+        # Build graph summaries from facade data
+        graph_summaries = []
+        total_nodes = 0
+
+        for graph_data in workflow_graphs:
+            graph_name = graph_data.get("name", "unknown")
+            node_count = graph_data.get("total_nodes", 0)
+            total_nodes += node_count
+
+            graph_summary = GraphSummary(
+                name=graph_name,
+                node_count=node_count,
+                entry_point=None,  # Not available from facade
+                nodes=[],  # Node details not available from facade
+            )
+            graph_summaries.append(graph_summary)
+
+        # Get file info from first graph
+        file_info = {
+            "size_bytes": first_graph.get("file_size", 0),
+            "last_modified": str(first_graph.get("last_modified", 0)),
+            "is_readable": True,
+            "extension": ".csv",
+        }
+
+        return WorkflowDetailResponse(
+            name=workflow,
+            filename=first_graph.get("filename", f"{workflow}.csv"),
+            file_path=first_graph.get("file_path", ""),
+            repository_path=repository_path,
+            graphs=graph_summaries,
+            total_nodes=total_nodes,
+            file_info=file_info,
         )
-        graphs.append(graph_summary)
 
-    # Get file info
-    file_stat = workflow_path.stat()
-    file_info = {
-        "size_bytes": file_stat.st_size,
-        "last_modified": file_stat.st_mtime.__str__(),
-        "is_readable": workflow_path.is_file(),
-        "extension": workflow_path.suffix,
-    }
-
-    return WorkflowDetailResponse(
-        name=workflow,
-        filename=workflow_path.name,
-        file_path=str(workflow_path),
-        repository_path=str(csv_repository),
-        graphs=graphs,
-        total_nodes=total_nodes,
-        file_info=file_info,
-    )
+    except AgentMapNotInitialized as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
 
 @router.get("/{workflow}/graphs")
@@ -634,31 +565,52 @@ async def list_workflow_graphs(workflow: str, request: Request):
     Returns a simple list of graph names and basic information
     for quick reference and navigation.
     """
-    # Get container from request app state
-    container = request.app.state.container
+    try:
+        # Ensure runtime is initialized
+        ensure_initialized()
 
-    # Get services from container
-    app_config_service = container.app_config_service()
-    csv_parser_service = container.csv_graph_parser_service()
+        # Use facade to get graphs for this workflow
+        graphs_response = list_graphs()
 
-    # Get workflow path and validate existence
-    workflow_path = _get_workflow_path(workflow, app_config_service)
+        # Extract the actual graphs from the structured response
+        if not graphs_response.get("success", False):
+            raise HTTPException(
+                status_code=500, detail="Failed to retrieve graphs from runtime"
+            )
 
-    # Parse workflow file
-    graph_spec = _parse_workflow_file(workflow_path, csv_parser_service)
+        all_graphs = graphs_response.get("outputs", {}).get("graphs", [])
 
-    # Build simple graph list
-    graphs = []
-    for graph_name, nodes in graph_spec.graphs.items():
-        graphs.append(
-            {
-                "name": graph_name,
-                "node_count": len(nodes),
-                "first_node": nodes[0].name if nodes else None,
-            }
-        )
+        # Filter graphs by workflow name
+        workflow_graphs = [g for g in all_graphs if g.get("workflow") == workflow]
 
-    return {"workflow_name": workflow, "graphs": graphs, "total_graphs": len(graphs)}
+        if not workflow_graphs:
+            raise HTTPException(
+                status_code=404, detail=f"Workflow '{workflow}' not found"
+            )
+
+        # Build simple graph list from facade data
+        graphs = []
+        for graph_data in workflow_graphs:
+            graphs.append(
+                {
+                    "name": graph_data.get("name", "unknown"),
+                    "node_count": graph_data.get("total_nodes", 0),
+                    "first_node": None,  # Not available from facade
+                }
+            )
+
+        return {
+            "workflow_name": workflow,
+            "graphs": graphs,
+            "total_graphs": len(graphs),
+        }
+
+    except AgentMapNotInitialized as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
 
 @router.get("/{workflow}/{graph}", response_model=GraphDetailResponse)
@@ -674,69 +626,174 @@ async def get_graph_details(
     Returns comprehensive information about the graph including all nodes,
     their configurations, and the relationships between them.
     """
-    # Get container from request app state
-    container = request.app.state.container
+    try:
+        # Ensure runtime is initialized
+        ensure_initialized()
 
-    # Get services from container
-    app_config_service = container.app_config_service()
-    csv_parser_service = container.csv_graph_parser_service()
+        # Use facade to get graphs for this workflow
+        graphs_response = list_graphs()
 
-    # Get workflow path and validate existence
-    workflow_path = _get_workflow_path(workflow, app_config_service)
-
-    # Parse workflow file
-    graph_spec = _parse_workflow_file(workflow_path, csv_parser_service)
-
-    # Check if graph exists
-    if graph not in graph_spec.graphs:
-        available_graphs = list(graph_spec.graphs.keys())
-        raise HTTPException(
-            status_code=404,
-            detail=f"Graph '{graph}' not found in workflow '{workflow}'. "
-            f"Available graphs: {available_graphs}",
-        )
-
-    # Get nodes for the specified graph
-    nodes = graph_spec.graphs[graph]
-
-    # Convert NodeSpec objects to NodeDetail response models
-    node_details = []
-    edges = []
-    entry_point = None
-
-    for node in nodes:
-        # Create node detail
-        node_detail = NodeDetail(
-            name=node.name,
-            agent_type=node.agent_type,
-            description=node.description,
-            input_fields=node.input_fields or [],
-            output_field=node.output_field,
-            success_next=node.success_next,
-            failure_next=node.failure_next,
-            line_number=node.line_number,
-        )
-        node_details.append(node_detail)
-
-        # Track edges for visualization
-        if node.success_next:
-            edges.append(
-                {"from": node.name, "to": node.success_next, "type": "success"}
-            )
-        if node.failure_next:
-            edges.append(
-                {"from": node.name, "to": node.failure_next, "type": "failure"}
+        # Extract the actual graphs from the structured response
+        if not graphs_response.get("success", False):
+            raise HTTPException(
+                status_code=500, detail="Failed to retrieve graphs from runtime"
             )
 
-        # Determine entry point (simple heuristic: first node)
-        if entry_point is None:
-            entry_point = node.name
+        all_graphs = graphs_response.get("outputs", {}).get("graphs", [])
 
-    return GraphDetailResponse(
-        workflow_name=workflow,
-        graph_name=graph,
-        nodes=node_details,
-        node_count=len(node_details),
-        entry_point=entry_point,
-        edges=edges,
-    )
+        # Find the specific graph to verify it exists
+        target_graph = None
+        for graph_data in all_graphs:
+            if (
+                graph_data.get("workflow") == workflow
+                and graph_data.get("name") == graph
+            ):
+                target_graph = graph_data
+                break
+
+        if not target_graph:
+            # Find available graphs for this workflow
+            workflow_graphs = [
+                g.get("name") for g in all_graphs if g.get("workflow") == workflow
+            ]
+            if workflow_graphs:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Graph '{graph}' not found in workflow '{workflow}'. "
+                    f"Available graphs: {workflow_graphs}",
+                )
+            else:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Workflow '{workflow}' not found",
+                )
+
+        # Load CSV directly to get node details since inspect_graph has issues
+        try:
+            csv_path = Path(target_graph.get("file_path", ""))
+            if not csv_path.exists():
+                raise HTTPException(
+                    status_code=404, detail=f"Workflow file not found: {csv_path}"
+                )
+
+            # Parse CSV file directly using pandas
+            import pandas as pd
+
+            df = pd.read_csv(csv_path)
+
+            # Validate required columns
+            required_columns = [
+                "Node",
+                "Agent_Type",
+                "Description",
+                "Input_Fields",
+                "Output_Field",
+            ]
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid workflow file format: Missing required columns: {missing_columns}",
+                )
+
+            # Filter for the specific graph
+            if "GraphName" in df.columns:
+                graph_df = df[df["GraphName"] == graph]
+                if graph_df.empty:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Graph '{graph}' not found in workflow '{workflow}'",
+                    )
+            else:
+                graph_df = df  # Single graph file
+
+            # Convert CSV data to node details
+            nodes = []
+            edges = []
+
+            for i, (_, row) in enumerate(graph_df.iterrows(), 1):
+                # Parse input fields
+                input_fields = []
+                if pd.notna(row.get("Input_Fields")):
+                    input_fields = [
+                        field.strip() for field in str(row["Input_Fields"]).split(",")
+                    ]
+
+                # Create node detail
+                node_detail = NodeDetail(
+                    name=str(row["Node"]),
+                    agent_type=str(row.get("Agent_Type", "")).strip() or None,
+                    description=str(row.get("Description", "")).strip() or None,
+                    input_fields=input_fields,
+                    output_field=str(row.get("Output_Field", "")).strip() or None,
+                    success_next=str(row.get("Success_Next", "")).strip() or None,
+                    failure_next=str(row.get("Failure_Next", "")).strip() or None,
+                    line_number=i,
+                )
+                nodes.append(node_detail)
+
+                # Build edges from success_next and failure_next
+                if node_detail.success_next:
+                    edges.append(
+                        {
+                            "from": node_detail.name,
+                            "to": node_detail.success_next,
+                            "type": "success",
+                        }
+                    )
+                if node_detail.failure_next:
+                    edges.append(
+                        {
+                            "from": node_detail.name,
+                            "to": node_detail.failure_next,
+                            "type": "failure",
+                        }
+                    )
+
+            # Determine entry point (first node or one without incoming edges)
+            entry_point = None
+            if nodes:
+                # Find nodes that are not targets of any edges
+                target_nodes = set()
+                for edge in edges:
+                    target_nodes.add(edge["to"])
+
+                entry_candidates = [
+                    node.name for node in nodes if node.name not in target_nodes
+                ]
+                if entry_candidates:
+                    entry_point = entry_candidates[0]
+                else:
+                    # Fallback to first node
+                    entry_point = nodes[0].name
+
+        except pd.errors.EmptyDataError:
+            raise HTTPException(
+                status_code=400, detail="Invalid workflow file format: Empty CSV file"
+            )
+        except KeyError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid workflow file format: Missing required column {e}",
+            )
+        except Exception as e:
+            # If parsing fails, return empty but don't fail the request
+            nodes = []
+            edges = []
+            entry_point = None
+
+        return GraphDetailResponse(
+            workflow_name=workflow,
+            graph_name=graph,
+            nodes=nodes,
+            node_count=len(nodes) if nodes else target_graph.get("total_nodes", 0),
+            entry_point=entry_point,
+            edges=edges,
+        )
+
+    except AgentMapNotInitialized as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")

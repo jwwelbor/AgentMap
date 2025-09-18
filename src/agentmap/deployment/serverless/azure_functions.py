@@ -1,8 +1,8 @@
 """
-Azure Function handler using the new service architecture.
+Azure Function handler using the runtime facade pattern.
 
-This module provides Azure Function handlers that maintain
-compatibility with existing interfaces while using GraphRunnerService.
+This module provides Azure Function handlers that follow SPEC-DEP-001
+by using only the runtime facade for consistent behavior across all deployment adapters.
 """
 
 import json
@@ -10,44 +10,34 @@ import logging
 from typing import Any, Dict, Optional
 
 from agentmap.deployment.serverless.base_handler import BaseHandler
-from agentmap.deployment.serverless.request_parser import RequestParser
-from agentmap.di import ApplicationContainer
 
 
 class AzureFunctionHandler(BaseHandler):
-    """Azure Function handler for AgentMap graph execution."""
+    """Azure Function handler using facade pattern through BaseHandler."""
 
-    def _parse_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
+    def azure_handler(self, req) -> Dict[str, Any]:
         """
-        Parse Azure Function request format.
+        Azure Function entry point for HTTP triggers using facade pattern.
 
         Args:
-            event: Azure Function request data
+            req: Azure Functions request object
 
         Returns:
-            Dict containing parsed request data
+            Dict containing response data
         """
-        # Handle different Azure trigger types
-        if hasattr(event, "method"):
-            # HTTP trigger (Azure Functions request object)
-            return self._parse_http_request(event)
-        elif isinstance(event, dict) and "blob" in event:
-            # Blob storage trigger
-            return self._parse_blob_event(event)
-        elif isinstance(event, dict) and "queueItem" in event:
-            # Queue trigger
-            return self._parse_queue_event(event)
-        elif isinstance(event, dict) and "eventGridEvent" in event:
-            # Event Grid trigger
-            return self._parse_event_grid_event(event)
-        else:
-            # Direct call or other event type
-            return event if isinstance(event, dict) else {}
+        # Convert Azure request to our standard format
+        event_data = self._convert_azure_request(req)
 
-    def _parse_http_request(self, req) -> Dict[str, Any]:
-        """Parse HTTP request from Azure Functions."""
+        # Use BaseHandler's facade-based request handling
+        result = self.handle_request_sync(event_data)
+
+        # Azure Functions expects different response format
+        return self._convert_to_azure_response(result)
+
+    def _convert_azure_request(self, req) -> Dict[str, Any]:
+        """Convert Azure Functions request to standard event format."""
         try:
-            if req.method == "POST":
+            if hasattr(req, "method") and req.method == "POST":
                 # Parse JSON body
                 try:
                     request_json = req.get_json()
@@ -57,76 +47,38 @@ class AzureFunctionHandler(BaseHandler):
                     pass
 
                 # Fallback to raw body
-                body = req.get_body().decode("utf-8")
-                if body:
-                    return RequestParser.parse_json_body(body)
+                try:
+                    body = req.get_body().decode("utf-8")
+                    if body:
+                        return json.loads(body)
+                except (json.JSONDecodeError, AttributeError):
+                    pass
 
                 return {}
-            else:
+            elif hasattr(req, "params"):
                 # GET request - use query parameters
                 return dict(req.params)
+            else:
+                # Direct call or other event type
+                return req if isinstance(req, dict) else {}
 
         except Exception:
             # Fallback to empty dict if parsing fails
             return {}
 
-    def _parse_blob_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse Azure Blob Storage event."""
-        blob_info = event.get("blob", {})
-        return {
-            "action": "run",
-            "csv": blob_info.get("name"),  # Blob name
-            "container": blob_info.get("container"),
-            "trigger": "blob_upload",
-        }
-
-    def _parse_queue_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse Azure Queue event."""
-        try:
-            queue_item = event.get("queueItem", "")
-            if isinstance(queue_item, str):
-                return json.loads(queue_item)
-            return queue_item
-        except Exception:
-            return {"action": "run", "trigger": "queue"}
-
-    def _parse_event_grid_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse Azure Event Grid event."""
-        event_data = event.get("eventGridEvent", {})
-        return {
-            "action": "run",
-            "data": event_data.get("data", {}),
-            "subject": event_data.get("subject"),
-            "trigger": "event_grid",
-        }
-
-    def azure_handler(self, req) -> Dict[str, Any]:
-        """
-        Azure Function entry point for HTTP triggers.
-
-        Args:
-            req: Azure Functions request object
-
-        Returns:
-        Dict containing response data
-        """
-        # Convert Azure request to our standard format
-        event_data = self._parse_event(req)
-        result = self.handle_request(event_data)
-
-        # Azure Functions expects different response format
-        return self._convert_to_azure_response(result)
-
     def _convert_to_azure_response(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Convert standard response to Azure Function format."""
         # Azure Functions can return the response directly
         if "body" in result:
-            body_data = json.loads(result["body"])
-            return {
-                "statusCode": result.get("statusCode", 200),
-                "headers": result.get("headers", {}),
-                "body": body_data,
-            }
+            try:
+                body_data = json.loads(result["body"])
+                return {
+                    "statusCode": result.get("statusCode", 200),
+                    "headers": result.get("headers", {}),
+                    "body": body_data,
+                }
+            except json.JSONDecodeError:
+                return result
 
         return result
 
@@ -135,14 +87,12 @@ class AzureFunctionHandler(BaseHandler):
 _azure_handler_instance: Optional[AzureFunctionHandler] = None
 
 
-def get_azure_handler(
-    container: Optional[ApplicationContainer] = None,
-) -> AzureFunctionHandler:
+def get_azure_handler(config_file: Optional[str] = None) -> AzureFunctionHandler:
     """
-    Get or create Azure handler instance.
+    Get or create Azure handler instance using facade pattern.
 
     Args:
-        container: Optional DI container
+        config_file: Optional config file path
 
     Returns:
         AzureFunctionHandler instance
@@ -150,14 +100,14 @@ def get_azure_handler(
     global _azure_handler_instance
 
     if _azure_handler_instance is None:
-        _azure_handler_instance = AzureFunctionHandler(container)
+        _azure_handler_instance = AzureFunctionHandler(config_file=config_file)
 
     return _azure_handler_instance
 
 
 def azure_http_handler(req):
     """
-    Main Azure HTTP Function handler.
+    Main Azure HTTP Function handler using facade pattern.
 
     This is the entry point for HTTP-triggered Azure Functions.
 
@@ -173,7 +123,7 @@ def azure_http_handler(req):
 
 def azure_blob_handler(blob, context):
     """
-    Main Azure Blob Storage Function handler.
+    Main Azure Blob Storage Function handler using facade pattern.
 
     This is the entry point for Blob-triggered Azure Functions.
 
@@ -188,13 +138,16 @@ def azure_blob_handler(blob, context):
 
     # Create event data for blob trigger
     event_data = {
-        "blob": {
-            "name": context.get("bindingData", {}).get("name", ""),
-            "container": context.get("bindingData", {}).get("containerName", ""),
-        }
+        "Records": [
+            {
+                "s3": {  # Use S3-like format for compatibility with trigger strategies
+                    "object": {"key": context.get("bindingData", {}).get("name", "")}
+                }
+            }
+        ]
     }
 
-    result = handler.handle_request(event_data, context)
+    result = handler.handle_request_sync(event_data, context)
 
     # Log result for Blob trigger (no HTTP response)
     logging.info(f"Blob handler result: {result}")
@@ -202,7 +155,7 @@ def azure_blob_handler(blob, context):
 
 def azure_queue_handler(queueItem, context):
     """
-    Main Azure Queue Function handler.
+    Main Azure Queue Function handler using facade pattern.
 
     This is the entry point for Queue-triggered Azure Functions.
 
@@ -215,10 +168,14 @@ def azure_queue_handler(queueItem, context):
     """
     handler = get_azure_handler()
 
-    # Create event data for queue trigger
-    event_data = {"queueItem": queueItem}
+    # Create event data for queue trigger in AWS SQS-like format for compatibility
+    event_data = {
+        "Records": [
+            {"body": queueItem if isinstance(queueItem, str) else json.dumps(queueItem)}
+        ]
+    }
 
-    result = handler.handle_request(event_data, context)
+    result = handler.handle_request_sync(event_data, context)
 
     # Log result for Queue trigger (no HTTP response)
     logging.info(f"Queue handler result: {result}")
@@ -226,7 +183,7 @@ def azure_queue_handler(queueItem, context):
 
 def azure_event_grid_handler(eventGridEvent, context):
     """
-    Main Azure Event Grid Function handler.
+    Main Azure Event Grid Function handler using facade pattern.
 
     This is the entry point for Event Grid-triggered Azure Functions.
 
@@ -239,10 +196,13 @@ def azure_event_grid_handler(eventGridEvent, context):
     """
     handler = get_azure_handler()
 
-    # Create event data for Event Grid trigger
-    event_data = {"eventGridEvent": eventGridEvent}
+    # Extract graph information from Event Grid event
+    event_data = {
+        "graph": eventGridEvent.get("subject", "default"),
+        "state": eventGridEvent.get("data", {}),
+    }
 
-    result = handler.handle_request(event_data, context)
+    result = handler.handle_request_sync(event_data, context)
 
     # Log result for Event Grid trigger (no HTTP response)
     logging.info(f"Event Grid handler result: {result}")
@@ -250,7 +210,7 @@ def azure_event_grid_handler(eventGridEvent, context):
 
 def azure_handler_with_config(config_file: str):
     """
-    Create Azure handlers with custom configuration.
+    Create Azure handlers with custom configuration using facade pattern.
 
     Args:
         config_file: Path to custom config file
@@ -258,32 +218,47 @@ def azure_handler_with_config(config_file: str):
     Returns:
         Tuple of handler functions (http, blob, queue, event_grid)
     """
-    from agentmap.di import initialize_di
-
-    container = initialize_di(config_file)
-    handler = AzureFunctionHandler(container)
+    handler = AzureFunctionHandler(config_file=config_file)
 
     def configured_http_handler(req):
         return handler.azure_handler(req)
 
     def configured_blob_handler(blob, context):
         event_data = {
-            "blob": {
-                "name": context.get("bindingData", {}).get("name", ""),
-                "container": context.get("bindingData", {}).get("containerName", ""),
-            }
+            "Records": [
+                {
+                    "s3": {
+                        "object": {
+                            "key": context.get("bindingData", {}).get("name", "")
+                        }
+                    }
+                }
+            ]
         }
-        result = handler.handle_request(event_data, context)
+        result = handler.handle_request_sync(event_data, context)
         logging.info(f"Configured Blob handler result: {result}")
 
     def configured_queue_handler(queueItem, context):
-        event_data = {"queueItem": queueItem}
-        result = handler.handle_request(event_data, context)
+        event_data = {
+            "Records": [
+                {
+                    "body": (
+                        queueItem
+                        if isinstance(queueItem, str)
+                        else json.dumps(queueItem)
+                    )
+                }
+            ]
+        }
+        result = handler.handle_request_sync(event_data, context)
         logging.info(f"Configured Queue handler result: {result}")
 
     def configured_event_grid_handler(eventGridEvent, context):
-        event_data = {"eventGridEvent": eventGridEvent}
-        result = handler.handle_request(event_data, context)
+        event_data = {
+            "graph": eventGridEvent.get("subject", "default"),
+            "state": eventGridEvent.get("data", {}),
+        }
+        result = handler.handle_request_sync(event_data, context)
         logging.info(f"Configured Event Grid handler result: {result}")
 
     return (
@@ -301,36 +276,10 @@ def run_graph_azure_handler(req):
     """Azure HTTP handler specifically for graph execution."""
     handler = get_azure_handler()
 
-    # Ensure action is set to run
-    event_data = handler._parse_event(req)
-    if "action" not in event_data:
-        event_data["action"] = "run"
+    # Parse request and ensure graph is specified
+    event_data = handler._convert_azure_request(req)
+    if "graph" not in event_data:
+        event_data["graph"] = "default"
 
-    result = handler.handle_request(event_data)
-    return handler._convert_to_azure_response(result)
-
-
-def validate_graph_azure_handler(req):
-    """Azure HTTP handler specifically for graph validation."""
-    handler = get_azure_handler()
-
-    # Ensure action is set to validate
-    event_data = handler._parse_event(req)
-    if "action" not in event_data:
-        event_data["action"] = "validate"
-
-    result = handler.handle_request(event_data)
-    return handler._convert_to_azure_response(result)
-
-
-def compile_graph_azure_handler(req):
-    """Azure HTTP handler specifically for graph compilation."""
-    handler = get_azure_handler()
-
-    # Ensure action is set to compile
-    event_data = handler._parse_event(req)
-    if "action" not in event_data:
-        event_data["action"] = "compile"
-
-    result = handler.handle_request(event_data)
+    result = handler.handle_request_sync(event_data)
     return handler._convert_to_azure_response(result)

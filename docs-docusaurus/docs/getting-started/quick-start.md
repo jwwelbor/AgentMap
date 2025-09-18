@@ -69,8 +69,20 @@ HelloWorld,HandleError,echo,,,Error occurred
 
 ## Step 4: Run Your Workflow
 
+**✨ New Simplified Syntax (Recommended):**
+```bash
+agentmap run --csv hello_world.csv
+```
+
+**Traditional Syntax (Still Supported):**
 ```bash
 agentmap run --csv hello_world.csv --graph HelloWorld
+```
+
+**Custom Graph Names:**
+```bash
+# Override graph name using :: syntax
+agentmap run --csv hello_world.csv::MyCustomBot
 ```
 
 *Expected time: 30 seconds*
