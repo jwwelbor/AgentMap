@@ -1,30 +1,23 @@
-"""
-Human agent for implementing human-in-the-loop functionality.
-
-This agent pauses workflow execution for human interaction by saving checkpoints
-and raising ExecutionInterruptedException.
-"""
-
+# human_agent.py
 import logging
-import uuid
 from typing import Any, Dict, List, Optional
 
-from agentmap.agents.base_agent import BaseAgent
-from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
+from agentmap.agents.builtins.suspend_agent import SuspendAgent
 from agentmap.models.human_interaction import HumanInteractionRequest, InteractionType
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.protocols import (
-    CheckpointCapableAgent,
     GraphCheckpointServiceProtocol,
 )
 from agentmap.services.state_adapter_service import StateAdapterService
 
 
-class HumanAgent(BaseAgent, CheckpointCapableAgent):
+class HumanAgent(SuspendAgent):  # inherited CheckpointCapableAgent
     """Agent that pauses execution for human interaction."""
 
     def __init__(
         self,
+        execution_tracking_service: ExecutionTrackingService,
+        state_adapter_service: StateAdapterService,
         name: str,
         prompt: str,
         interaction_type: str = "text_input",
@@ -32,35 +25,16 @@ class HumanAgent(BaseAgent, CheckpointCapableAgent):
         timeout_seconds: Optional[int] = None,
         default_action: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None,
-        # Infrastructure services only
         logger: Optional[logging.Logger] = None,
-        execution_tracker_service: Optional[ExecutionTrackingService] = None,
-        state_adapter_service: Optional[StateAdapterService] = None,
     ):
-        """
-        Initialize the human agent.
-
-        Args:
-            name: Name of the agent node
-            prompt: Prompt to show to the human
-            interaction_type: Type of interaction (text_input, approval, choice, edit, conversation)
-            options: Options for choice-based interactions
-            timeout_seconds: Optional timeout for the interaction
-            default_action: Default action if timeout occurs
-            context: Additional context including input/output configuration
-            logger: Logger instance
-            execution_tracker_service: ExecutionTrackingService instance
-            state_adapter_service: StateAdapterService instance
-        """
-        super().__init__(
+        super().__init__(  # call into SuspendAgent
             name=name,
             prompt=prompt,
             context=context,
             logger=logger,
-            execution_tracking_service=execution_tracker_service,
+            execution_tracking_service=execution_tracking_service,
             state_adapter_service=state_adapter_service,
         )
-
         # Parse interaction type
         try:
             self.interaction_type = InteractionType(interaction_type.lower())
@@ -76,67 +50,45 @@ class HumanAgent(BaseAgent, CheckpointCapableAgent):
         self.timeout_seconds = timeout_seconds
         self.default_action = default_action
 
-        # Services configured post-construction
-        self._checkpoint_service: Optional[GraphCheckpointServiceProtocol] = None
-
-    def configure_checkpoint_service(
-        self, checkpoint_service: GraphCheckpointServiceProtocol
-    ) -> None:
-        """
-        Configure graph checkpoint service for state persistence.
-
-        Args:
-            checkpoint_service: GraphCheckpointService instance
-        """
-        self._checkpoint_service = checkpoint_service
-        self.log_debug("Graph checkpoint service configured")
-
     def process(self, inputs: Dict[str, Any]) -> Any:
-        """
-        Process the inputs by creating an interaction request and pausing execution.
-
-        Args:
-            inputs: Dictionary containing input values from input_fields
-
-        Returns:
-            Never returns - always raises ExecutionInterruptedException
-        """
         self.log_info(f"[HumanAgent] {self.name} initiating human interaction")
-
-        # Get thread ID from execution tracker or create new one
-        thread_id = self._get_thread_id()
-
-        # Format the prompt with any input values
+        thread_id = self._get_or_create_thread_id()
         formatted_prompt = self._format_prompt_with_inputs(inputs)
 
-        # Create human interaction request
+        if "__human_response" in inputs:
+            human_response = inputs.pop("__human_response")
+            resuming_flag = inputs.pop("__resuming_from_human_interaction", False)
+
+            self.log_info(
+                f"[HumanAgent] Resuming with human response: "
+                f"action={human_response['action']}, "
+                f"from_node={human_response.get('responded_at_node', 'unknown')}"
+            )
+
+            # Process the human response and return appropriate output
+            return self._process_human_response(human_response, inputs)
+
+        # Otherwise, initiate interruption as normal
+        self.log_info(f"[HumanAgent] {self.name} initiating human interaction")
+
         interaction_request = HumanInteractionRequest(
             thread_id=thread_id,
             node_name=self.name,
             interaction_type=self.interaction_type,
             prompt=formatted_prompt,
-            context=inputs,  # Pass inputs as context for the interaction
+            context=inputs,
             options=self.options,
             timeout_seconds=self.timeout_seconds,
         )
 
-        # Prepare checkpoint data
-        checkpoint_data = {
-            "inputs": inputs,
-            "node_name": self.name,
-            "agent_context": self.context,
-        }
+        checkpoint_data = self._build_checkpoint_data(inputs)
 
-        # Include serialized execution tracker if available
-        if self.current_execution_tracker and self.execution_tracking_service:
-            tracker_data = self.execution_tracking_service.serialize_tracker(
-                self.current_execution_tracker
-            )
-            checkpoint_data["execution_tracker"] = tracker_data
-
-        # Save checkpoint if service is configured
-        if self._checkpoint_service:
-            metadata = {
+        # Save a checkpoint (reuses parent's method)
+        self._save_checkpoint(
+            thread_id=thread_id,
+            node_name=self.name,
+            checkpoint_type="human_intervention",
+            metadata={
                 "interaction_request": {
                     "id": str(interaction_request.id),
                     "type": interaction_request.interaction_type.value,
@@ -149,98 +101,56 @@ class HumanAgent(BaseAgent, CheckpointCapableAgent):
                     "interaction_type": self.interaction_type.value,
                     "default_action": self.default_action,
                 },
-            }
-
-            result = self._checkpoint_service.save_checkpoint(
-                thread_id=thread_id,
-                node_name=self.name,
-                checkpoint_type="human_intervention",
-                metadata=metadata,
-                execution_state=checkpoint_data,
-            )
-
-            if result.success:
-                self.log_info(f"Checkpoint saved for thread {thread_id}")
-            else:
-                self.log_warning(f"Failed to save checkpoint: {result.error}")
-        else:
-            self.log_warning("No checkpoint service configured, checkpoint not saved")
-
-        # Log the interruption
-        self.log_info(
-            f"[HumanAgent] Execution interrupted for human interaction. "
-            f"Thread ID: {thread_id}, Request ID: {interaction_request.id}"
+            },
+            execution_state=checkpoint_data,
         )
 
-        # Raise exception to pause execution
-        raise ExecutionInterruptedException(
+        # Raise the standardized interrupt with a HumanInteractionRequest
+        self._interrupt(
             thread_id=thread_id,
-            interaction_request=interaction_request,
             checkpoint_data=checkpoint_data,
+            interaction_request=interaction_request,
         )
 
-    def _get_thread_id(self) -> str:
+    def _process_human_response(
+        self, human_response: Dict[str, Any], inputs: Dict[str, Any]
+    ) -> Any:
         """
-        Get the current thread ID from execution tracker or create a new one.
-
-        Returns:
-            Thread ID string
-        """
-        # Try to get thread ID from execution tracker
-        if self.current_execution_tracker:
-            thread_id = getattr(self.current_execution_tracker, "thread_id", None)
-            if thread_id:
-                return thread_id
-
-        # Generate new thread ID if none exists
-        return str(uuid.uuid4())
-
-    def _format_prompt_with_inputs(self, inputs: Dict[str, Any]) -> str:
-        """
-        Format the prompt with input values.
+        NEW METHOD: Process the human response and return appropriate output.
 
         Args:
-            inputs: Input values dictionary
+            human_response: Dict with action, data, request_id, etc.
+            inputs: Original inputs to the node
 
         Returns:
-            Formatted prompt string
+            Processed response based on interaction type and action
         """
-        if not inputs:
-            return self.prompt
+        action = human_response.get("action", "unknown")
+        data = human_response.get("data", {})
 
-        try:
-            # Simple string formatting with inputs
-            return self.prompt.format(**inputs)
-        except (KeyError, ValueError):
-            # If formatting fails, return original prompt
-            self.log_debug("Prompt formatting failed, using original prompt")
-            return self.prompt
+        self.log_debug(f"Processing human response: action={action}, data={data}")
 
-    def _get_child_service_info(self) -> Optional[Dict[str, Any]]:
-        """
-        Provide HumanAgent-specific service information for debugging.
+        # Handle different interaction types
+        if self.interaction_type == InteractionType.APPROVAL:
+            # Return boolean for approval/rejection
+            return action == "approve"
 
-        Returns:
-            Dictionary with human agent capabilities and configuration
-        """
-        return {
-            "services": {
-                "supports_human_interaction": True,
-                "checkpoint_service_configured": self._checkpoint_service is not None,
-                "checkpoint_persistence_enabled": self._checkpoint_service is not None,
-            },
-            "capabilities": {
-                "interaction_types": [t.value for t in InteractionType],
-                "current_interaction_type": self.interaction_type.value,
-                "supports_timeout": self.timeout_seconds is not None,
-                "supports_default_action": self.default_action is not None,
-                "supports_choice_options": len(self.options) > 0,
-            },
-            "agent_behavior": {
-                "execution_type": "interrupt_for_human",
-                "checkpoint_enabled": self._checkpoint_service is not None,
-                "interaction_method": self.interaction_type.value,
-                "timeout_seconds": self.timeout_seconds,
-                "default_action": self.default_action,
-            },
-        }
+        elif self.interaction_type == InteractionType.CHOICE:
+            # Return the chosen option
+            choice_index = data.get("choice", 1) - 1  # Convert to 0-based
+            if 0 <= choice_index < len(self.options):
+                return self.options[choice_index]
+            else:
+                return self.options[0] if self.options else None
+
+        elif self.interaction_type == InteractionType.TEXT_INPUT:
+            # Return the text response
+            return data.get("text", "")
+
+        elif self.interaction_type == InteractionType.EDIT:
+            # Return the edited content
+            return data.get("edited", inputs.get("original", ""))
+
+        else:
+            # Default: return the entire response data
+            return data

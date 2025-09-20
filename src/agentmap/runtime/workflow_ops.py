@@ -13,7 +13,6 @@ from agentmap.exceptions.runtime_exceptions import (
 from agentmap.exceptions.validation_exceptions import ValidationException
 from agentmap.runtime.runtime_manager import RuntimeManager
 from agentmap.services.graph.graph_runner_service import GraphRunnerService
-from agentmap.services.workflow_resume_service import WorkflowResumeService
 
 from .init_ops import ensure_initialized, get_container
 
@@ -272,101 +271,49 @@ def resume_workflow(
     """
     Resume a previously interrupted workflow.
 
-    Args:
-        resume_token: Token returned by a prior run that can be resumed.
-        profile: Optional profile/environment.
-        config_file: Optional configuration file path.
-
-    Returns:
-        Dict containing structured outputs from the resumed workflow.
-
-    Raises:
-        AgentMapNotInitialized: if runtime has not been initialized.
-        InvalidInputs: if the resume token is invalid.
+    Public runtime API - delegates to service orchestration layer.
     """
-    # Ensure runtime is initialized
     ensure_initialized(config_file=config_file)
 
     try:
-        # Parse resume token - expect it to be a JSON string with thread_id and action
-        if isinstance(resume_token, str):
-            try:
-                token_data = json.loads(resume_token)
-                thread_id = token_data.get("thread_id")
-                response_action = token_data.get("response_action", "continue")
-                response_data = token_data.get("response_data")
-            except json.JSONDecodeError:
-                # Maybe it's just a thread_id string
-                thread_id = resume_token
-                response_action = "continue"
-                response_data = None
-        else:
-            raise InvalidInputs("Resume token must be a string")
+        # Parse resume token to extract thread_id, action, data
+        thread_id, response_action, response_data = _parse_resume_token(resume_token)
 
-        if not thread_id:
-            raise InvalidInputs("Resume token must contain a valid thread_id")
-
-        # Get container and services through RuntimeManager delegation
-        container = RuntimeManager.get_container()
-        system_storage_manager = container.system_storage_manager()
-
-        # Check storage availability
-        if not system_storage_manager:
-            raise RuntimeError("Storage services are not available")
-
-        # Get services for resume operation
-        storage_service = system_storage_manager.get_service("json")
-        logging_service = container.logging_service()
-        logger = logging_service.get_logger("agentmap.workflow.resume")
-
-        # Parse response data
-        parsed_response_data = WorkflowResumeService._parse_response_data(response_data)
-
-        # Get graph services
-        try:
-            graph_bundle_service = container.graph_bundle_service()
-            graph_runner_service = container.graph_runner_service()
-            graph_checkpoint_service = container.graph_checkpoint_service()
-            services_available = True
-        except Exception as e:
-            logger.warning(f"Graph services not available: {e}")
-            graph_bundle_service = None
-            graph_runner_service = None
-            graph_checkpoint_service = None
-            services_available = False
-
-        # Create interaction handler
-        from agentmap.deployment.cli.cli_handler import CLIInteractionHandler
-
-        handler = CLIInteractionHandler(
-            storage_service=storage_service,
-            graph_bundle_service=graph_bundle_service,
-            graph_runner_service=graph_runner_service,
-            graph_checkpoint_service=graph_checkpoint_service,
+        # Delegate to service orchestration layer
+        from agentmap.services.workflow_orchestration_service import (
+            WorkflowOrchestrationService,
         )
 
-        # Resume execution
-        result = handler.resume_execution(
+        result = WorkflowOrchestrationService.resume_workflow(
             thread_id=thread_id,
             response_action=response_action,
-            response_data=parsed_response_data,
+            response_data=response_data,
+            config_file=config_file,
         )
 
+        # Format as runtime API response
         return {
             "success": True,
-            "thread_id": thread_id,
-            "outputs": result,
-            "services_available": services_available,
+            "outputs": result.final_state,
+            "execution_summary": result.execution_summary,
             "metadata": {
+                "thread_id": thread_id,
                 "response_action": response_action,
                 "profile": profile,
+                "graph_name": result.graph_name,
+                "duration": result.total_duration,
             },
         }
 
-    except (InvalidInputs, AgentMapNotInitialized):
-        raise
     except Exception as e:
-        raise RuntimeError(f"Failed to resume workflow: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "metadata": {
+                "resume_token": resume_token,
+                "profile": profile,
+            },
+        }
 
 
 def inspect_graph(
@@ -595,6 +542,28 @@ def _graph_entry(
             "profile": profile,
         },
     }
+
+
+def _parse_resume_token(resume_token: str) -> tuple[str, str, Optional[Dict[str, Any]]]:
+    """Parse resume token to extract thread_id, action, and data."""
+    if isinstance(resume_token, str):
+        try:
+            token_data = json.loads(resume_token)
+            thread_id = token_data.get("thread_id")
+            response_action = token_data.get("response_action", "continue")
+            response_data = token_data.get("response_data")
+        except json.JSONDecodeError:
+            # Maybe it's just a thread_id string
+            thread_id = resume_token
+            response_action = "continue"
+            response_data = None
+    else:
+        raise InvalidInputs("Resume token must be a string")
+
+    if not thread_id:
+        raise InvalidInputs("Resume token must contain a valid thread_id")
+
+    return thread_id, response_action, response_data
 
 
 def _raise_mapped_error(graph_name: str, error_msg: str) -> None:

@@ -21,7 +21,7 @@ from agentmap.runtime.workflow_ops import _resolve_csv_path
 from agentmap.runtime.init_ops import  _is_cache_initialized, _refresh_cache
 
 from agentmap.services.workflow_orchestration_service import WorkflowOrchestrationService
-from agentmap.services.workflow_resume_service import WorkflowResumeService
+
 
 from agentmap.exceptions.runtime_exceptions import (
     AgentMapError,
@@ -313,8 +313,8 @@ class TestResumeWorkflow:
     
     @patch('agentmap.runtime.workflow_ops.RuntimeManager')
     @patch('agentmap.runtime.workflow_ops.ensure_initialized')
-    @patch('agentmap.deployment.cli.cli_handler.CLIInteractionHandler')
-    def test_resume_workflow_success(self, mock_handler_class, mock_ensure_init, mock_runtime_manager):
+    @patch('agentmap.services.workflow_orchestration_service.WorkflowOrchestrationService.resume_workflow')
+    def test_resume_workflow_success(self, mock_resume_service, mock_ensure_init, mock_runtime_manager):
         """Test successful workflow resume."""
         # Setup mocks
         mock_container = Mock()
@@ -333,12 +333,15 @@ class TestResumeWorkflow:
         mock_storage_manager.get_service.return_value = mock_storage_service
         mock_logging_service.get_logger.return_value = mock_logger
         
-        # Configure handler
-        mock_handler = Mock()
-        mock_handler.resume_execution.return_value = {"resumed": "successfully"}
-        mock_handler_class.return_value = mock_handler
-        
         mock_runtime_manager.get_container.return_value = mock_container
+        
+        # Mock the WorkflowOrchestrationService.resume_workflow to return a successful result
+        mock_result = Mock()
+        mock_result.final_state = {"resumed": "successfully"}
+        mock_result.execution_summary = "Mock execution summary"
+        mock_result.graph_name = "test_graph"
+        mock_result.total_duration = 1.5
+        mock_resume_service.return_value = mock_result
         
         # Test with JSON token
         resume_token = json.dumps({"thread_id": "thread_123", "response_action": "continue"})
@@ -346,13 +349,20 @@ class TestResumeWorkflow:
         
         # Verify
         mock_ensure_init.assert_called_once_with(config_file=None)
+        mock_resume_service.assert_called_once_with(
+            thread_id="thread_123",
+            response_action="continue", 
+            response_data=None,
+            config_file=None
+        )
         assert result["success"] is True
-        assert result["thread_id"] == "thread_123"
+        assert result["metadata"]["thread_id"] == "thread_123"
         assert result["outputs"] == {"resumed": "successfully"}
 
     @patch('agentmap.runtime.workflow_ops.RuntimeManager')
     @patch('agentmap.runtime.workflow_ops.ensure_initialized')
-    def test_resume_workflow_invalid_token(self, mock_ensure_init, mock_runtime_manager):
+    @patch('agentmap.services.workflow_orchestration_service.WorkflowOrchestrationService.resume_workflow')
+    def test_resume_workflow_invalid_token(self, mock_resume_service, mock_ensure_init, mock_runtime_manager):
         """Test resume with invalid token."""
         # Setup basic mocks for RuntimeManager  
         mock_container = Mock()
@@ -365,19 +375,24 @@ class TestResumeWorkflow:
         mock_logging_service.get_logger.return_value = mock_logger
         mock_runtime_manager.get_container.return_value = mock_container
         
-        # Test with valid JSON token structure but invalid response_data JSON
-        token_with_invalid_response_data = json.dumps({
-            "thread_id": "valid_thread_123",
-            "response_action": "continue", 
-            "response_data": '{"invalid": json}'
-        })
-        with pytest.raises(RuntimeError, match="Failed to resume workflow"):
-            resume_workflow(token_with_invalid_response_data)
+        # Test with valid JSON token structure but make the service fail
+        mock_resume_service.side_effect = RuntimeError("Resume service failed")
         
-        # Test with missing thread_id
+        token_with_valid_structure = json.dumps({
+            "thread_id": "valid_thread_123",
+            "response_action": "continue"
+        })
+        
+        # This should return success: False because the exception is caught
+        result = resume_workflow(token_with_valid_structure)
+        assert result["success"] is False
+        assert "Resume service failed" in result["error"]
+        
+        # Test with missing thread_id - this should return success: False because exception is caught
         token = json.dumps({"response_action": "continue"})
-        with pytest.raises(InvalidInputs, match="valid thread_id"):
-            resume_workflow(token)
+        result = resume_workflow(token)
+        assert result["success"] is False
+        assert "valid thread_id" in result["error"]
 
 
 class TestListGraphs:
@@ -450,33 +465,7 @@ class TestListGraphs:
 class TestHelperFunctions:
     """Test helper functions."""
     
-    def test_parse_response_data_json_string(self):
-        """Test parsing JSON string response data."""
-        json_data = '{"key": "value"}'
-        result = WorkflowResumeService._parse_response_data(json_data)
-        assert result == {"key": "value"}
 
-    def test_parse_response_data_dict(self):
-        """Test parsing dict response data."""
-        dict_data = {"key": "value"}
-        result = WorkflowResumeService._parse_response_data(dict_data)
-        assert result == {"key": "value"}
-
-    def test_parse_response_data_invalid_json(self):
-        """Test parsing invalid JSON."""
-        with pytest.raises(ValueError, match="Invalid JSON"):
-            WorkflowResumeService._parse_response_data('{"invalid": json}')
-
-    def test_parse_response_data_invalid_type(self):
-        """Test parsing invalid data type."""
-        # WorkflowResumeService._parse_response_data accepts any type and returns it if not string
-        result = WorkflowResumeService._parse_response_data(123)
-        assert result == 123
-
-    def test_parse_response_data_none(self):
-        """Test parsing None response data."""
-        result = WorkflowResumeService._parse_response_data(None)
-        assert result is None
 
     @patch('agentmap.runtime.workflow_ops.RuntimeManager')
     def test_resolve_csv_path_repository_workflow(self, mock_runtime_manager):

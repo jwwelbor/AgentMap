@@ -18,10 +18,13 @@ Architecture:
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
+from uuid import UUID
 
 from agentmap.di import initialize_di
 from agentmap.models.execution.result import ExecutionResult
+from agentmap.models.human_interaction import HumanInteractionResponse
 from agentmap.runtime.workflow_ops import _resolve_csv_path
+from agentmap.services.storage.types import WriteMode
 
 
 class WorkflowOrchestrationService:
@@ -134,6 +137,161 @@ class WorkflowOrchestrationService:
         result = runner.run(bundle, parsed_state)
 
         return result
+
+    @staticmethod
+    def resume_workflow(
+        thread_id: str,
+        response_action: str,
+        response_data: Optional[Any] = None,
+        config_file: Optional[str] = None,
+    ) -> ExecutionResult:
+        """
+        Resume a paused workflow - service orchestration layer.
+
+        This function handles:
+        1. DI container initialization
+        2. Thread metadata loading from storage
+        3. GraphBundle rehydration from stored metadata
+        4. HumanInteractionResponse creation and storage
+        5. Delegation to GraphRunnerService.resume_from_checkpoint()
+
+        Args:
+            thread_id: Thread ID to resume
+            response_action: User action (approve, reject, choose, etc.)
+            response_data: Additional response data
+            config_file: Optional config file path
+
+        Returns:
+            ExecutionResult from GraphRunnerService.resume_from_checkpoint()
+        """
+        # Step 1: Initialize DI container (same pattern as execute_workflow)
+        container = initialize_di(config_file)
+
+        # Step 2: Get required services
+        storage_service = container.json_storage_service()
+        graph_bundle_service = container.graph_bundle_service()
+        graph_runner_service = container.graph_runner_service()
+
+        try:
+            # Step 3: Load thread metadata from storage
+            thread_data = storage_service.read(
+                collection="interactions_threads", document_id=thread_id
+            )
+            if not thread_data:
+                raise ValueError(f"Thread '{thread_id}' not found in storage")
+
+            # Step 4: Load interaction request
+            request_id = thread_data.get("pending_interaction_id")
+            if not request_id:
+                raise ValueError(
+                    f"No pending interaction found for thread '{thread_id}'"
+                )
+
+            # Step 5: Rehydrate GraphBundle from stored metadata
+            bundle_info = thread_data.get("bundle_info", {})
+            graph_name = thread_data.get("graph_name")
+
+            bundle = _rehydrate_bundle_from_metadata(
+                bundle_info, graph_name, graph_bundle_service
+            )
+            if not bundle:
+                raise RuntimeError("Failed to rehydrate GraphBundle from metadata")
+
+            # Step 6: Create and save HumanInteractionResponse
+            response = HumanInteractionResponse(
+                request_id=UUID(request_id),
+                action=response_action,
+                data=response_data or {},
+            )
+
+            save_result = storage_service.write(
+                collection="interactions_responses",
+                data={
+                    "request_id": str(response.request_id),
+                    "action": response.action,
+                    "data": response.data,
+                    "timestamp": response.timestamp.isoformat(),
+                },
+                document_id=str(response.request_id),
+                mode=WriteMode.WRITE,
+            )
+            if not save_result.success:
+                raise RuntimeError(f"Failed to save response: {save_result.error}")
+
+            # Step 7: Update thread status to 'resuming'
+            update_result = storage_service.write(
+                collection="interactions_threads",
+                data={
+                    "status": "resuming",
+                    "pending_interaction_id": None,
+                    "last_response_id": str(response.request_id),
+                },
+                document_id=thread_id,
+                mode=WriteMode.UPDATE,
+            )
+            if not update_result.success:
+                raise RuntimeError(
+                    f"Failed to update thread status: {update_result.error}"
+                )
+
+            # Step 8: Prepare checkpoint state with human response injected
+            checkpoint_data = thread_data.get("checkpoint_data", {})
+            checkpoint_state = checkpoint_data.copy()
+            checkpoint_state["__human_response"] = {
+                "action": response.action,
+                "data": response.data,
+                "request_id": str(response.request_id),
+            }
+
+            # Step 9: Delegate to business logic layer
+            result = graph_runner_service.resume_from_checkpoint(
+                bundle=bundle,
+                thread_id=thread_id,
+                checkpoint_state=checkpoint_state,
+                resume_node=thread_data.get("node_name"),
+            )
+
+            return result
+
+        except Exception as e:
+            raise RuntimeError(
+                f"Resume workflow failed for thread {thread_id}: {str(e)}"
+            ) from e
+
+
+def _rehydrate_bundle_from_metadata(
+    bundle_info: Dict[str, Any], graph_name: Optional[str], graph_bundle_service
+) -> Optional[Any]:  # Return type is GraphBundle but avoiding import
+    """Rehydrate GraphBundle from stored metadata using multiple strategies."""
+    try:
+        csv_hash = bundle_info.get("csv_hash")
+        bundle_path = bundle_info.get("bundle_path")
+        csv_path = bundle_info.get("csv_path")
+
+        # Method 1: Load from bundle path
+        if bundle_path:
+            bundle = graph_bundle_service.load_bundle(Path(bundle_path))
+            if bundle:
+                return bundle
+
+        # Method 2: Lookup by csv_hash and graph_name
+        if csv_hash and graph_name:
+            bundle = graph_bundle_service.lookup_bundle(csv_hash, graph_name)
+            if bundle:
+                return bundle
+
+        # Method 3: Recreate from CSV path
+        if csv_path:
+            bundle = graph_bundle_service.get_or_create_bundle(
+                csv_path=Path(csv_path), graph_name=graph_name
+            )
+            if bundle:
+                return bundle
+
+        return None
+
+    except Exception:
+        return None
 
 
 # Convenience function for external usage

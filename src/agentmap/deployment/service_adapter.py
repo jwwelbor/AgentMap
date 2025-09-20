@@ -197,7 +197,7 @@ class ServiceAdapter:
         response_data: Optional[Union[str, Dict[str, Any]]] = None,
     ) -> None:
         """
-        Validate parameters for WorkflowResumeService.resume_workflow()
+        Validate parameters for WorkflowOrchestrationService.resume_workflow()
 
         Args:
             thread_id: Thread ID to resume
@@ -326,7 +326,7 @@ class TriggerParameterExtractor:
             event: Trigger event from serverless platform
 
         Returns:
-            Dict with parameters for WorkflowResumeService.resume_workflow()
+            Dict with parameters for WorkflowOrchestrationService.resume_workflow()
         """
         # Use same extraction logic but expect resume-specific fields
         params = TriggerParameterExtractor.extract_workflow_parameters(event)

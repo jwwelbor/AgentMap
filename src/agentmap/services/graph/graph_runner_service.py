@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
-from agentmap.models.execution.config import ExecutionConfig
 from agentmap.models.execution.result import ExecutionResult
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.config.app_config_service import AppConfigService
@@ -25,6 +24,7 @@ from agentmap.services.graph.graph_agent_instantiation_service import (
 from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
 from agentmap.services.graph.graph_bootstrap_service import GraphBootstrapService
 from agentmap.services.graph.graph_execution_service import GraphExecutionService
+from agentmap.services.interaction_handler_service import InteractionHandlerService
 from agentmap.services.logging_service import LoggingService
 
 
@@ -52,7 +52,7 @@ class GraphRunnerService:
         graph_execution_service: GraphExecutionService,
         execution_tracking_service: ExecutionTrackingService,
         logging_service: LoggingService,
-        interaction_handler_service: Optional[Any] = None,
+        interaction_handler_service: InteractionHandlerService,
     ):
         """Initialize orchestration service with all pipeline services."""
         self.app_config = app_config_service
@@ -344,53 +344,49 @@ class GraphRunnerService:
 
         return registry
 
-    def get_default_options(self) -> RunOptions:
-        """
-        Create default options for graph execution.
-
-        Returns:
-            RunOptions with default settings
-        """
-        return RunOptions()
-
-    def run_with_config(
-        self, bundle: GraphBundle, config: ExecutionConfig
+    def resume_from_checkpoint(
+        self,
+        bundle: GraphBundle,
+        thread_id: str,
+        checkpoint_state: Dict[str, Any],
+        resume_node: Optional[str] = None,
     ) -> ExecutionResult:
         """
-        Run graph execution with checkpoint configuration support.
+        Resume graph execution from a checkpoint with injected state.
 
-        This method extends the standard run() method to support:
-        - Checkpoint service configuration
-        - Thread-based state management
-        - Resumption from saved checkpoints
+        This method:
+        1. Recreates the executable graph
+        2. Uses LangGraph's checkpoint loading
+        3. Continues execution from the interruption point
 
         Args:
-            bundle: Prepared GraphBundle with all metadata
-            config: ExecutionConfig with checkpoint and thread settings
+            bundle: GraphBundle to execute
+            thread_id: Thread ID for checkpoint retrieval
+            checkpoint_state: State from checkpoint with human response injected
+            resume_node: Node where execution was interrupted
 
         Returns:
-            ExecutionResult from graph execution
+            ExecutionResult from the resumed execution
         """
+        import time
+
+        from agentmap.models.execution.summary import ExecutionSummary
+
         graph_name = bundle.graph_name or "unknown"
 
-        # Log execution mode
-        if config.resume_from_checkpoint:
-            self.logger.info(
-                f"⭐ Resuming graph execution for: {graph_name} "
-                f"(thread: {config.thread_id})"
-            )
-        else:
-            self.logger.info(
-                f"⭐ Starting new graph execution for: {graph_name} "
-                f"(thread: {config.thread_id})"
-            )
+        self.logger.info(
+            f"⭐ Resuming graph execution from checkpoint: {graph_name} "
+            f"(thread: {thread_id}, node: {resume_node})"
+        )
+
+        start_time = time.time()
 
         try:
             # Phase 1: Create execution tracker
             execution_tracker = self.execution_tracking.create_tracker()
 
-            # Phase 2: Instantiate agents
-            self.logger.debug(f"Instantiating agents for {graph_name}")
+            # Phase 2: Instantiate agents (same as normal run)
+            self.logger.debug(f"Re-instantiating agents for checkpoint resume")
             bundle_with_instances = self.graph_instantiation.instantiate_agents(
                 bundle, execution_tracker
             )
@@ -405,7 +401,7 @@ class GraphRunnerService:
                 )
 
             # Phase 3: Assembly with checkpoint support
-            self.logger.debug(f"Assembling graph with checkpoint support")
+            self.logger.debug(f"Reassembling graph for checkpoint resume")
 
             from agentmap.models.graph import Graph
 
@@ -415,197 +411,61 @@ class GraphRunnerService:
                 entry_point=bundle_with_instances.entry_point,
             )
 
-            # Check if assembly service supports checkpointing
-            if config.checkpointer and hasattr(
-                self.graph_assembly, "assemble_with_checkpoint"
-            ):
-                executable_graph = self.graph_assembly.assemble_with_checkpoint(
-                    graph=graph,
-                    agent_instances=bundle_with_instances.node_instances,
-                    node_definitions=self._create_node_registry_from_bundle(
-                        bundle_with_instances
-                    ),
-                    checkpointer=config.checkpointer,
-                )
-            else:
-                # Fallback to standard assembly
-                executable_graph = self.graph_assembly.assemble_graph(
-                    graph=graph,
-                    agent_instances=bundle_with_instances.node_instances,
-                    orchestrator_node_registry=self._create_node_registry_from_bundle(
-                        bundle_with_instances
-                    ),
-                )
-
-                if config.checkpointer:
-                    self.logger.warning(
-                        "GraphAssemblyService doesn't support checkpointing. "
-                        "Checkpoint functionality will be limited."
-                    )
-
-            # Phase 4: Execution with config
-            self.logger.debug(f"Executing graph with thread_id: {config.thread_id}")
-
-            # Prepare initial state
-            initial_state = config.get_merged_initial_state()
-
-            # Execute with LangGraph config
-            if config.checkpointer:
-                # Execute with checkpoint configuration
-                result = self._execute_with_checkpoint(
-                    executable_graph=executable_graph,
-                    graph_name=graph_name,
-                    initial_state=initial_state,
-                    execution_tracker=execution_tracker,
-                    config=config,
-                )
-            else:
-                # Standard execution
-                result = self.graph_execution.execute_compiled_graph(
-                    executable_graph=executable_graph,
-                    graph_name=graph_name,
-                    initial_state=initial_state,
-                    execution_tracker=execution_tracker,
-                )
-
-            # Log result
-            if result.success:
-                self.logger.info(
-                    f"✅ Graph execution completed for: {graph_name} "
-                    f"(thread: {config.thread_id}, duration: {result.total_duration:.2f}s)"
-                )
-            else:
-                self.logger.error(
-                    f"❌ Graph execution failed for: {graph_name} "
-                    f"(thread: {config.thread_id}) - {result.error}"
-                )
-
-            return result
-
-        except ExecutionInterruptedException as e:
-            # Handle human interaction interruption in checkpoint execution
-            self.logger.info(
-                f"🔄 Checkpointed graph execution interrupted for human interaction in thread: {e.thread_id}"
+            # Assemble with checkpoint service
+            executable_graph = self.graph_assembly.assemble_graph(
+                graph=graph,
+                agent_instances=bundle_with_instances.node_instances,
+                orchestrator_node_registry=self._create_node_registry_from_bundle(
+                    bundle_with_instances
+                ),
             )
 
-            # If interaction handler is available, process the interruption
-            if self.interaction_handler:
-                try:
-                    # Extract bundle context for rehydration
-                    bundle_context = {
-                        "csv_hash": getattr(bundle, "csv_hash", None),
-                        "bundle_path": (
-                            str(bundle.bundle_path)
-                            if hasattr(bundle, "bundle_path") and bundle.bundle_path
-                            else None
-                        ),
-                        "csv_path": (
-                            str(bundle.csv_path)
-                            if hasattr(bundle, "csv_path") and bundle.csv_path
-                            else None
-                        ),
-                        "graph_name": bundle.graph_name,
-                    }
-
-                    # Handle the interruption (stores metadata and displays interaction)
-                    self.interaction_handler.handle_execution_interruption(
-                        exception=e,
-                        bundle=bundle,
-                        bundle_context=bundle_context,
-                    )
-
-                    self.logger.info(
-                        f"✅ Interaction handling completed for thread: {e.thread_id}. "
-                        f"Checkpointed execution paused pending user response."
-                    )
-
-                except Exception as handler_error:
-                    self.logger.error(
-                        f"❌ Failed to handle checkpointed interaction for thread {e.thread_id}: {str(handler_error)}"
-                    )
-            else:
-                self.logger.warning(
-                    f"⚠️ No interaction handler configured. Checkpointed interaction for thread {e.thread_id} not handled."
-                )
-
-            # Re-raise the exception for higher-level handling
-            raise
-
-        except Exception as e:
-            self.logger.error(
-                f"❌ Execution failed for graph '{graph_name}' "
-                f"(thread: {config.thread_id}): {str(e)}"
+            # Phase 4: Resume execution with checkpoint
+            self.logger.debug(
+                f"Resuming execution from checkpoint for thread: {thread_id}"
             )
+            self.interaction_handler.mark_thread_resuming(thread_id)
 
-            from agentmap.models.execution.summary import ExecutionSummary
+            # Create LangGraph config pointing to existing checkpoint
+            langgraph_config = {
+                "configurable": {
+                    "thread_id": thread_id,
+                    # This tells LangGraph to load from checkpoint
+                    "checkpoint_namespace": "agentmap",
+                    "checkpoint_id": checkpoint_state.get("__checkpoint_id"),
+                }
+            }
 
-            error_summary = ExecutionSummary(
-                graph_name=graph_name, status="failed", graph_success=False
-            )
-
-            return ExecutionResult(
-                graph_name=graph_name,
-                success=False,
-                final_state=config.initial_state or {},
-                execution_summary=error_summary,
-                total_duration=0.0,
-                error=str(e),
-            )
-
-    def _execute_with_checkpoint(
-        self,
-        executable_graph: Any,
-        graph_name: str,
-        initial_state: Dict[str, Any],
-        execution_tracker: Any,
-        config: ExecutionConfig,
-    ) -> ExecutionResult:
-        """
-        Execute graph with checkpoint support.
-
-        This method wraps the standard execution with LangGraph
-        checkpoint configuration.
-        """
-        import time
-
-        start_time = time.time()
-
-        try:
-            # Create LangGraph config
-            langgraph_config = config.to_langgraph_config()
-
-            # Log checkpoint status
-            if config.resume_from_checkpoint:
-                self.logger.info(
-                    f"Resuming from checkpoint for thread: {config.thread_id}"
-                )
-            else:
-                self.logger.info(
-                    f"Starting new checkpointed execution for thread: {config.thread_id}"
-                )
-
-            # Invoke with checkpoint config
-            # LangGraph will automatically load checkpoint if it exists
+            # === KEY DIFFERENCE: Pass checkpoint state, not initial state ===
+            # LangGraph will merge this with the loaded checkpoint
             final_state = executable_graph.invoke(
-                initial_state, config=langgraph_config
+                checkpoint_state,  # State with optional human response injected
+                config=langgraph_config,
             )
 
-            # Complete tracking
+            # Complete tracking and create result
             self.execution_tracking.complete_execution(execution_tracker)
             execution_summary = self.execution_tracking.to_summary(
                 execution_tracker, graph_name, final_state
             )
 
-            # Calculate execution time
             execution_time = time.time() - start_time
 
-            # For now, assume success unless there's an error in final_state
+            self.interaction_handler.mark_thread_completed(thread_id)
+
+            # Evaluate success
             graph_success = not final_state.get("__error", False)
 
-            # Update state with execution metadata
+            # Update state with metadata
             final_state["__execution_summary"] = execution_summary
             final_state["__graph_success"] = graph_success
-            final_state["__thread_id"] = config.thread_id
+            final_state["__thread_id"] = thread_id
+            final_state["__resumed_from_node"] = resume_node
+
+            self.logger.info(
+                f"✅ Graph resumed successfully: '{graph_name}' "
+                f"(thread: {thread_id}, duration: {execution_time:.2f}s)"
+            )
 
             return ExecutionResult(
                 graph_name=graph_name,
@@ -620,13 +480,11 @@ class GraphRunnerService:
             execution_time = time.time() - start_time
 
             self.logger.error(
-                f"Checkpointed execution failed for '{graph_name}' "
-                f"(thread: {config.thread_id}): {str(e)}"
+                f"❌ Resume from checkpoint failed for '{graph_name}' "
+                f"(thread: {thread_id}): {str(e)}"
             )
 
             # Create error summary
-            from agentmap.models.execution.summary import ExecutionSummary
-
             execution_summary = ExecutionSummary(
                 graph_name=graph_name, status="failed", graph_success=False
             )
@@ -634,7 +492,7 @@ class GraphRunnerService:
             return ExecutionResult(
                 graph_name=graph_name,
                 success=False,
-                final_state=initial_state,
+                final_state=checkpoint_state,
                 execution_summary=execution_summary,
                 total_duration=execution_time,
                 error=str(e),

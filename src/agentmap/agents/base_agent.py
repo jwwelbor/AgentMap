@@ -10,6 +10,7 @@ import time
 import uuid
 from typing import Any, Dict, Optional, Tuple
 
+from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.protocols import (
     LLMCapableAgent,
@@ -246,6 +247,13 @@ class BaseAgent:
             )
 
             return state
+
+        except ExecutionInterruptedException as e:
+            tracking_service.record_node_result(
+                tracker, self.name, True, result={"status": "interrupted"}
+            )
+            self.log_info(f"Execution interrupted in {self.name}")
+            raise
 
         except Exception as e:
             # Handle errors

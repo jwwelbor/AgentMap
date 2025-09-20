@@ -9,7 +9,6 @@ with CLI handlers for interaction display and resumption.
 import time
 from typing import Any, Dict, Optional
 
-from agentmap.deployment.cli.cli_handler import CLIInteractionHandler
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.human_interaction import HumanInteractionRequest
@@ -33,7 +32,6 @@ class InteractionHandlerService:
     def __init__(
         self,
         storage_service: StorageService,
-        cli_handler: CLIInteractionHandler,
         logging_service: LoggingService,
     ):
         """
@@ -41,11 +39,9 @@ class InteractionHandlerService:
 
         Args:
             storage_service: Storage service for persisting interaction data
-            cli_handler: CLI handler for displaying interactions to users
             logging_service: Service for logging operations
         """
         self.storage_service = storage_service
-        self.cli_handler = cli_handler
         self.logger = logging_service.get_class_logger(self)
 
         # Collection names for structured storage
@@ -89,8 +85,12 @@ class InteractionHandlerService:
                 bundle_context=bundle_context,
             )
 
-            # Step 3: Display interaction to user via CLI
-            self.cli_handler.display_interaction_request(interaction_request)
+            # Step 3: Display interaction using simple utility function
+            from agentmap.deployment.cli.display_utils import (
+                display_interaction_request,
+            )
+
+            display_interaction_request(interaction_request)
 
             self.logger.info(
                 f"✅ Interaction stored and displayed for thread: {thread_id}"
@@ -338,7 +338,6 @@ class InteractionHandlerService:
         return {
             "service": "InteractionHandlerService",
             "storage_service_available": self.storage_service is not None,
-            "cli_handler_available": self.cli_handler is not None,
             "collections": {
                 "interactions": self.interactions_collection,
                 "threads": self.threads_collection,

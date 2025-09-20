@@ -777,18 +777,14 @@ class ApplicationContainer(containers.DeclarativeContainer):
                 )
                 return None
 
-            from agentmap.deployment.cli.cli_handler import CLIInteractionHandler
             from agentmap.services.interaction_handler_service import (
                 InteractionHandlerService,
             )
 
-            cli_handler = CLIInteractionHandler(storage_service=json_storage_service)
             return InteractionHandlerService(
                 storage_service=json_storage_service,
-                cli_handler=cli_handler,
                 logging_service=logging_service,
             )
-
         except Exception as e:
             logger = logging_service.get_logger("agentmap.interaction")
             logger.warning(f"Interaction handler service disabled: {e}")
