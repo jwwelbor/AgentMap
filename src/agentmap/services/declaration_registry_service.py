@@ -286,3 +286,113 @@ class DeclarationRegistryService:
                 protocol_mapping[protocol] = service_name
 
         return protocol_mapping
+
+    def load_selective(
+        self,
+        required_agents: Optional[Set[str]] = None,
+        required_services: Optional[Set[str]] = None,
+    ) -> None:
+        """
+        Load only the specified agents and services from declaration sources.
+
+        This method allows selective loading based on bundle requirements,
+        significantly reducing memory usage and startup time.
+
+        Args:
+            required_agents: Set of agent types to load (None = load all)
+            required_services: Set of service names to load (None = load all)
+        """
+        # If no requirements specified, fall back to loading all
+        if required_agents is None and required_services is None:
+            self.logger.debug(
+                "No selective requirements provided, loading all declarations"
+            )
+            self.load_all()
+            return
+
+        self.logger.debug(
+            f"Selective loading: {len(required_agents or [])} agents, {len(required_services or [])} services"
+        )
+
+        # Clear existing declarations
+        self._agents.clear()
+        self._services.clear()
+
+        # Load from each source in order (later sources override)
+        for source in self._sources:
+            try:
+                # Load only required agents
+                if required_agents is not None:
+                    agents = source.load_agents()
+                    # Filter to only required agents
+                    filtered_agents = {
+                        agent_type: decl
+                        for agent_type, decl in agents.items()
+                        if agent_type in required_agents
+                    }
+                    self._agents.update(filtered_agents)
+                    if filtered_agents:
+                        self.logger.debug(
+                            f"Loaded {len(filtered_agents)} agents from {type(source).__name__}"
+                        )
+
+                # Load only required services
+                if required_services is not None:
+                    services = source.load_services()
+                    # Filter to only required services
+                    filtered_services = {
+                        service_name: decl
+                        for service_name, decl in services.items()
+                        if service_name in required_services
+                    }
+                    self._services.update(filtered_services)
+                    if filtered_services:
+                        self.logger.debug(
+                            f"Loaded {len(filtered_services)} services from {type(source).__name__}"
+                        )
+
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to load from source {type(source).__name__}: {e}"
+                )
+
+        self.logger.info(
+            f"Selective load complete: {len(self._agents)} agents, {len(self._services)} services"
+        )
+
+    def load_for_bundle(self, bundle: "GraphBundle") -> None:
+        """
+        Load only the declarations required by a specific graph bundle.
+
+        This is a convenience method that extracts requirements from a bundle
+        and performs selective loading.
+
+        Args:
+            bundle: GraphBundle containing required_agents and required_services
+        """
+        required_agents = getattr(bundle, "required_agents", None)
+        required_services = getattr(bundle, "required_services", None)
+
+        # Convert to sets if needed
+        if required_agents and not isinstance(required_agents, set):
+            required_agents = set(required_agents)
+        if required_services and not isinstance(required_services, set):
+            required_services = set(required_services)
+
+        # Always include core infrastructure services even if not in bundle
+        # These are needed for basic operation
+        core_services = {
+            "logging_service",
+            "execution_tracking_service",
+            "state_adapter_service",
+            "prompt_manager_service",
+        }
+
+        if required_services:
+            required_services = required_services | core_services
+        else:
+            # If no services specified but we have agents, include core services
+            if required_agents:
+                required_services = core_services
+
+        self.load_selective(required_agents, required_services)

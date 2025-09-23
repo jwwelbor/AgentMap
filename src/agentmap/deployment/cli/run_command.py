@@ -44,6 +44,11 @@ def run_command(
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show detailed execution info with --pretty"
     ),
+    force_create: bool = typer.Option(
+        False,
+        "--force-create",
+        help="Force recreation of the bundle even if cached version exists",
+    ),
 ):
     """
     Run a graph using the runtime facade.
@@ -106,6 +111,7 @@ def run_command(
             graph_name=graph_name,
             inputs=initial_state,
             config_file=config_file,
+            force_create=force_create,
         )
 
         # Display result using CLI presenter for consistency

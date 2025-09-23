@@ -532,9 +532,6 @@ class GraphBundleService:
             ValueError: If required storage service is not available
         """
         try:
-            self.logger.error(f"Bundle file not found: {path}")
-            return None
-
             # Use system storage for cache_folder/bundles
             self.logger.debug(f"Using SystemStorageManager for system bundle: {path}")
 
@@ -860,6 +857,7 @@ class GraphBundleService:
         csv_path: Path,
         graph_name: Optional[str] = None,
         config_path: Optional[str] = None,
+        force_create: bool = False,
     ) -> GraphBundle:
         """
         Get existing bundle from cache or create a new one.
@@ -897,7 +895,7 @@ class GraphBundleService:
 
         bundle = self.lookup_bundle(csv_hash, graph_name)
 
-        if bundle:
+        if bundle and not force_create:
             return bundle
 
         bundle = self._create_bundle(csv_path, graph_name)

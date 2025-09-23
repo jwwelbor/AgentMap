@@ -18,13 +18,16 @@ from agentmap.runtime_api import ensure_initialized, update_bundle
 
 
 def update_bundle_command(
-    csv_file: Optional[str] = typer.Argument(
-        None, help="CSV file path or workflow/graph (e.g., 'hello_world/HelloWorld')"
+    workflow: Optional[str] = typer.Argument(
+        None,
+        help="workflow file, workflow/graph, or filename::graph_name (e.g., 'customer_data::support_flow')",
     ),
     graph: Optional[str] = typer.Option(
-        None, "--graph", "-g", help="Graph name to update bundle for"
+        None,
+        "--workflow",
+        "-w",
+        help="workflow file, workflow_folder/workflow_file, or filename::graph_name (e.g., 'customer_data::support_flow')",
     ),
-    csv: Optional[str] = typer.Option(None, "--csv", help="CSV path override"),
     config_file: Optional[str] = typer.Option(
         None, "--config", "-c", help="Path to custom config file"
     ),
@@ -40,31 +43,46 @@ def update_bundle_command(
 
     This command follows the facade pattern defined in SPEC-DEP-001 for
     consistent behavior across all deployment adapters.
+
+    **Supported Syntax Examples:**
+
+    • Traditional syntax:
+      agentmap update-bundle workflow/graph_name
+
+    • Simplified syntax (NEW):
+      agentmap update-bundle filename::graph_name
+      agentmap update-bundle --workflow filename
+      agentmap update-bundle --workflow filename::graph_name
+
+    The :: syntax provides a convenient shorthand where the graph name
+    defaults to the CSV filename (without .csv extension), but you can
+    specify a different graph name after the :: delimiter.
+
+    This command always forces recreation of the bundle to ensure it's up to date.
     """
     try:
         # Ensure runtime is initialized
         ensure_initialized(config_file=config_file)
 
-        # Determine graph name - handle CSV override and shorthand patterns
-        graph_name = graph or csv_file
-        if csv and graph_name != csv:
-            # CSV override provided - use the override path but keep graph name
-            graph_name = csv
+        # Determine graph name - now supports :: syntax like run_command
+        graph_name = workflow or graph
 
         if not graph_name:
-            print_err("Must provide either csv_file argument or --graph option")
-            raise typer.Exit(
-                code=map_exception_to_exit_code(ValueError("No graph specified"))
-            )
+            print_err("Must provide workflow argument")
+            print_err("Examples:")
+            print_err("  agentmap update-bundle workflow/graph_name")
+            print_err("  agentmap update-bundle filename::graph_name")
+            print_err("  agentmap update-bundle --workflow filename::graph_name")
+            raise typer.Exit(code=2)
 
-        # Execute using runtime facade
-        typer.echo(f"📦 Loading bundle for: {graph_name}")
+        # Execute using runtime facade - always force recreation for update-bundle
+        typer.echo(f"📦 Updating bundle for: {graph_name}")
 
         result = update_bundle(
             graph_name=graph_name,
             config_file=config_file,
             dry_run=dry_run,
-            force=force,
+            force=True,  # Always force for update-bundle command
         )
 
         # Display results using CLI presenter for consistency

@@ -86,6 +86,7 @@ def run_workflow(
     profile: Optional[str] = None,
     resume_token: Optional[str] = None,
     config_file: Optional[str] = None,
+    force_create: bool = False,
 ) -> Dict[str, Any]:
     """
     Execute a named graph with the given inputs.
@@ -96,6 +97,7 @@ def run_workflow(
         profile: Optional profile/environment (e.g., dev, stage, prod).
         resume_token: Resume from a checkpoint if provided.
         config_file: Optional configuration file path.
+        force_create: Force recreation of the bundle even if cached version exists.
 
     Returns:
         Dict containing structured outputs from the workflow.
@@ -118,7 +120,10 @@ def run_workflow(
         # Get bundle for execution
         graph_bundle_service = container.graph_bundle_service()
         bundle = graph_bundle_service.get_or_create_bundle(
-            csv_path=csv_path, graph_name=resolved_graph_name, config_path=config_file
+            csv_path=csv_path,
+            graph_name=resolved_graph_name,
+            config_path=config_file,
+            force_create=force_create,
         )
 
         # Execute using GraphRunnerService (proper orchestration service)

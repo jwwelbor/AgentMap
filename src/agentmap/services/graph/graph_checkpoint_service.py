@@ -153,6 +153,113 @@ class GraphCheckpointService(BaseCheckpointSaver):
             self.logger.error(f"Error getting thread checkpoints: {str(e)}")
             return []
 
+    # ===== GraphCheckpointServiceProtocol Implementation =====
+
+    def save_checkpoint(
+        self,
+        thread_id: str,
+        node_name: str,
+        checkpoint_type: str,
+        metadata: Dict[str, Any],
+        execution_state: Dict[str, Any],
+    ) -> StorageResult:
+        """
+        Save a checkpoint using the protocol interface.
+
+        Maps simple protocol parameters to LangGraph's checkpoint format.
+
+        Args:
+            thread_id: Unique identifier for the execution thread
+            node_name: Name of the node where checkpoint occurs
+            checkpoint_type: Type of checkpoint (e.g., "suspend", "human_interaction")
+            metadata: Type-specific metadata
+            execution_state: Current execution state data
+
+        Returns:
+            StorageResult indicating success/failure
+        """
+        try:
+            # Create LangGraph config
+            config = {"configurable": {"thread_id": thread_id}}
+
+            # Map execution_state to LangGraph checkpoint format
+            # The execution_state becomes the channel_values in LangGraph
+            checkpoint = Checkpoint(
+                channel_values=execution_state,
+                channel_versions={"execution_state": 1},
+                versions_seen={"execution_state": 1},
+            )
+
+            # Combine protocol metadata with checkpoint-specific metadata
+            combined_metadata = {
+                "node_name": node_name,
+                "checkpoint_type": checkpoint_type,
+                "protocol_version": "1.0",
+                **metadata,
+            }
+
+            # Use the LangGraph interface
+            result = self.put(config, checkpoint, combined_metadata)
+
+            if result.get("success"):
+                self.logger.info(
+                    f"Protocol checkpoint saved: thread_id={thread_id}, "
+                    f"node={node_name}, type={checkpoint_type}"
+                )
+                return StorageResult(
+                    success=True,
+                    data={"checkpoint_id": result["checkpoint_id"]},
+                    error=None,
+                )
+            else:
+                return StorageResult(
+                    success=False, data=None, error="LangGraph put() returned failure"
+                )
+
+        except Exception as e:
+            error_msg = f"Failed to save checkpoint: {str(e)}"
+            self.logger.error(error_msg)
+            return StorageResult(success=False, data=None, error=error_msg)
+
+    def load_checkpoint(self, thread_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Load the latest checkpoint for a thread using the protocol interface.
+
+        Args:
+            thread_id: Thread ID to load checkpoint for
+
+        Returns:
+            Checkpoint data or None if not found
+        """
+        try:
+            config = {"configurable": {"thread_id": thread_id}}
+            tuple_result = self.get_tuple(config)
+
+            if tuple_result is None:
+                self.logger.debug(f"No checkpoint found for thread_id={thread_id}")
+                return None
+
+            # Extract the execution state from channel_values
+            execution_state = tuple_result.checkpoint.channel_values
+
+            # Combine checkpoint data with metadata for protocol consumers
+            checkpoint_data = {
+                "thread_id": thread_id,
+                "execution_state": execution_state,
+                "metadata": tuple_result.metadata,
+                "config": tuple_result.config,
+                "channel_versions": tuple_result.checkpoint.channel_versions,
+                "versions_seen": tuple_result.checkpoint.versions_seen,
+            }
+
+            self.logger.debug(f"Loaded checkpoint for thread_id={thread_id}")
+            return checkpoint_data
+
+        except Exception as e:
+            error_msg = f"Failed to load checkpoint for thread_id={thread_id}: {str(e)}"
+            self.logger.error(error_msg)
+            return None
+
     def get_service_info(self) -> Dict[str, Any]:
         """
         Get information about the service for debugging.
@@ -168,6 +275,10 @@ class GraphCheckpointService(BaseCheckpointSaver):
                 # LangGraph capabilities
                 "langgraph_put": True,
                 "langgraph_get_tuple": True,
+                # Protocol capabilities
+                "protocol_save_checkpoint": True,
+                "protocol_load_checkpoint": True,
             },
             "implements_base_checkpoint_saver": True,
+            "implements_protocol": True,
         }

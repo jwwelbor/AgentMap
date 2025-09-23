@@ -32,7 +32,7 @@ class ExecutionService:
         try:
             # Use the workflow orchestration service for execution
             result = WorkflowOrchestrationService.execute_workflow(
-                csv_or_workflow=params.csv,
+                workflow=params.csv,
                 graph_name=params.graph,
                 initial_state=params.state,
                 config_file=None,  # Use default config

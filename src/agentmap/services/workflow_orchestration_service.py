@@ -24,6 +24,7 @@ from agentmap.di import initialize_di
 from agentmap.models.execution.result import ExecutionResult
 from agentmap.models.human_interaction import HumanInteractionResponse
 from agentmap.runtime.workflow_ops import _resolve_csv_path
+from agentmap.services.state_adapter_service import StateAdapterService
 from agentmap.services.storage.types import WriteMode
 
 
@@ -37,7 +38,7 @@ class WorkflowOrchestrationService:
 
     @staticmethod
     def execute_workflow(
-        csv_or_workflow: Optional[str] = None,
+        workflow: Optional[str] = None,
         graph_name: Optional[str] = None,
         initial_state: Optional[Union[Dict[str, Any], str]] = None,
         config_file: Optional[str] = None,
@@ -55,7 +56,7 @@ class WorkflowOrchestrationService:
         5. Delegation to GraphRunnerService (which uses GraphExecutionService)
 
         Args:
-            csv_or_workflow: CSV file path, workflow name, or workflow/graph pattern
+            workflow: CSV file path, workflow name, or workflow/graph pattern
             graph_name: Graph name to execute
             initial_state: Initial state dict or JSON string
             config_file: Optional config file path
@@ -68,7 +69,7 @@ class WorkflowOrchestrationService:
         # Step 1: Initialize DI container (same as run_command.py)
         container = initialize_di(config_file)
 
-        # Step 2: Parse initial state (same logic as run_command.py)
+        # Step 2: Parse initial state (same logic as run_command.py), only triggered if it's json
         if isinstance(initial_state, str):
             try:
                 parsed_state = (
@@ -80,43 +81,25 @@ class WorkflowOrchestrationService:
             parsed_state = initial_state or {}
 
         # Step 3: Handle the graph identifier resolution
-        # Combine csv_or_workflow and graph_name into a single identifier for resolution
-        if csv_or_workflow:
-            # Handle the csv_override case
-            if csv_override:
-                # If csv_override is provided, use it as the path directly
-                csv_path = Path(csv_override)
-                resolved_graph_name = graph_name or csv_or_workflow
-            else:
-                # Use the comprehensive resolution logic from workflow_ops
-                # If graph_name is provided separately, use :: syntax for resolution
-                if graph_name and "/" not in str(csv_or_workflow):
-                    graph_identifier = f"{csv_or_workflow}::{graph_name}"
-                else:
-                    graph_identifier = csv_or_workflow
-
-                csv_path, resolved_graph_name = _resolve_csv_path(
-                    graph_identifier, container
-                )
-
-                # If graph_name was explicitly provided, use it instead of resolved name
-                if graph_name:
-                    resolved_graph_name = graph_name
+        # Combine workflow and graph_name into a single identifier for resolution
+        if csv_override:
+            csv_path = Path(csv_override)
+            resolved_graph_name = graph_name or workflow or "default"
         else:
-            # No csv_or_workflow provided, check for csv_override
-            if csv_override:
-                csv_path = Path(csv_override)
-                resolved_graph_name = graph_name
+            # Build identifier for _resolve_csv_path
+            if graph_name and workflow:
+                graph_identifier = f"{workflow}::{graph_name}"
             else:
-                # Use default resolution with just the graph_name
-                csv_path, resolved_graph_name = _resolve_csv_path(
-                    graph_name or "", container
-                )
+                graph_identifier = workflow or graph_name or ""
+
+            csv_path, resolved_graph_name = _resolve_csv_path(
+                graph_identifier, container
+            )
 
         # Step 4: Extract graph_name from shorthand if needed (same as run_command.py)
         # This handles the workflow/graph shorthand syntax
-        if csv_or_workflow and "/" in str(csv_or_workflow) and not graph_name:
-            parts = str(csv_or_workflow).split("/", 1)
+        if workflow and "/" in str(workflow) and not graph_name:
+            parts = str(workflow).split("/", 1)
             if len(parts) > 1:
                 resolved_graph_name = parts[1]
 
@@ -134,8 +117,17 @@ class WorkflowOrchestrationService:
         # Step 7: Execute using GraphRunnerService (same as run_command.py)
         # This will ultimately call your existing GraphExecutionService
         runner = container.graph_runner_service()
-        result = runner.run(bundle, parsed_state)
 
+        # ===== INJECT StateAdapter normalization here =====
+        state_adapter_service = container.state_adapter_service()
+
+        # Normalize initial state for LangGraph compatibility
+        # Supports json, pydantic, or dictionary input -> normalized dict output
+        normalized_state = _normalize_initial_state_for_execution(
+            parsed_state, state_adapter_service
+        )
+
+        result = runner.run(bundle, normalized_state)
         return result
 
     @staticmethod
@@ -296,7 +288,7 @@ def _rehydrate_bundle_from_metadata(
 
 # Convenience function for external usage
 def execute_workflow(
-    csv_or_workflow: Optional[str] = None,
+    workflow: Optional[str] = None,
     graph_name: Optional[str] = None,
     initial_state: Optional[Union[Dict[str, Any], str]] = None,
     config_file: Optional[str] = None,
@@ -309,9 +301,60 @@ def execute_workflow(
     execution chain through GraphRunnerService → GraphExecutionService.
     """
     return WorkflowOrchestrationService.execute_workflow(
-        csv_or_workflow=csv_or_workflow,
+        workflow=workflow,
         graph_name=graph_name,
         initial_state=initial_state,
         config_file=config_file,
         **kwargs,
     )
+
+
+def _normalize_initial_state_for_execution(
+    initial_state: Any, state_adapter_service: StateAdapterService
+) -> Dict[str, Any]:
+    """
+    Normalize initial state for LangGraph execution using StateAdapterService.
+
+    This function implements the original design intent to support json, pydantic,
+    or dictionary state objects and translate them into LangGraph-compatible format.
+
+    Args:
+        initial_state: Raw state from user input (dict, pydantic model, JSON-parsed, etc.)
+        state_adapter_service: StateAdapterService for normalization
+
+    Returns:
+        Dict[str, Any]: Normalized state ready for LangGraph execution
+    """
+    if initial_state is None:
+        return {}
+
+    # If already a dict, check if it needs any normalization
+    if isinstance(initial_state, dict):
+        # Already a dict, but might contain complex objects that need normalization
+        # StateAdapter handles dict format natively, just ensure it's clean
+        return initial_state
+
+    # For pydantic models or objects with dict() method
+    if hasattr(initial_state, "dict") and callable(getattr(initial_state, "dict")):
+        return initial_state.dict()
+
+    # For pydantic v2 models with model_dump() method
+    if hasattr(initial_state, "model_dump") and callable(
+        getattr(initial_state, "model_dump")
+    ):
+        return initial_state.model_dump()
+
+    # For objects with __dict__ attribute
+    if hasattr(initial_state, "__dict__"):
+        return initial_state.__dict__
+
+    # For simple values, wrap in a state structure
+    if isinstance(initial_state, (str, int, float, bool, list)):
+        return {"value": initial_state}
+
+    # Fallback: try to convert to dict representation
+    try:
+        return dict(initial_state)
+    except (TypeError, ValueError):
+        # If all else fails, wrap the object
+        return {"state": initial_state}
