@@ -64,21 +64,21 @@ class GraphSummary(BaseModel):
         default=[], description="List of all node names in this graph"
     )
 
-    class Config:
-        schema_extra = {
-            "example": {
-                "name": "support_flow",
-                "node_count": 5,
-                "entry_point": "receive_inquiry",
-                "nodes": [
-                    "receive_inquiry",
-                    "classify_request",
-                    "route_to_agent",
-                    "generate_response",
-                    "close_ticket",
-                ],
-            }
-        }
+    # class Config:
+    #     schema_extra = {
+    #         "example": {
+    #             "name": "support_flow",
+    #             "node_count": 5,
+    #             "entry_point": "receive_inquiry",
+    #             "nodes": [
+    #                 "receive_inquiry",
+    #                 "classify_request",
+    #                 "route_to_agent",
+    #                 "generate_response",
+    #                 "close_ticket",
+    #             ],
+    #         }
+    #     }
 
 
 class NodeDetail(BaseModel):
@@ -627,169 +627,11 @@ async def get_graph_details(
     their configurations, and the relationships between them.
     """
     try:
-        # Ensure runtime is initialized
+    #     # Ensure runtime is initialized
         ensure_initialized()
 
-        # Use facade to get graphs for this workflow
-        graphs_response = list_graphs()
+        #TODO: lookup graph bundle and return info about it
 
-        # Extract the actual graphs from the structured response
-        if not graphs_response.get("success", False):
-            raise HTTPException(
-                status_code=500, detail="Failed to retrieve graphs from runtime"
-            )
-
-        all_graphs = graphs_response.get("outputs", {}).get("graphs", [])
-
-        # Find the specific graph to verify it exists
-        target_graph = None
-        for graph_data in all_graphs:
-            if (
-                graph_data.get("workflow") == workflow
-                and graph_data.get("name") == graph
-            ):
-                target_graph = graph_data
-                break
-
-        if not target_graph:
-            # Find available graphs for this workflow
-            workflow_graphs = [
-                g.get("name") for g in all_graphs if g.get("workflow") == workflow
-            ]
-            if workflow_graphs:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Graph '{graph}' not found in workflow '{workflow}'. "
-                    f"Available graphs: {workflow_graphs}",
-                )
-            else:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Workflow '{workflow}' not found",
-                )
-
-        # Load CSV directly to get node details since inspect_graph has issues
-        try:
-            csv_path = Path(target_graph.get("file_path", ""))
-            if not csv_path.exists():
-                raise HTTPException(
-                    status_code=404, detail=f"Workflow file not found: {csv_path}"
-                )
-
-            # Parse CSV file directly using pandas
-            import pandas as pd
-
-            df = pd.read_csv(csv_path)
-
-            # Validate required columns
-            required_columns = [
-                "Node",
-                "Agent_Type",
-                "Description",
-                "Input_Fields",
-                "Output_Field",
-            ]
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            if missing_columns:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid workflow file format: Missing required columns: {missing_columns}",
-                )
-
-            # Filter for the specific graph
-            if "GraphName" in df.columns:
-                graph_df = df[df["GraphName"] == graph]
-                if graph_df.empty:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"Graph '{graph}' not found in workflow '{workflow}'",
-                    )
-            else:
-                graph_df = df  # Single graph file
-
-            # Convert CSV data to node details
-            nodes = []
-            edges = []
-
-            for i, (_, row) in enumerate(graph_df.iterrows(), 1):
-                # Parse input fields
-                input_fields = []
-                if pd.notna(row.get("Input_Fields")):
-                    input_fields = [
-                        field.strip() for field in str(row["Input_Fields"]).split(",")
-                    ]
-
-                # Create node detail
-                node_detail = NodeDetail(
-                    name=str(row["Node"]),
-                    agent_type=str(row.get("Agent_Type", "")).strip() or None,
-                    description=str(row.get("Description", "")).strip() or None,
-                    input_fields=input_fields,
-                    output_field=str(row.get("Output_Field", "")).strip() or None,
-                    success_next=str(row.get("Success_Next", "")).strip() or None,
-                    failure_next=str(row.get("Failure_Next", "")).strip() or None,
-                    line_number=i,
-                )
-                nodes.append(node_detail)
-
-                # Build edges from success_next and failure_next
-                if node_detail.success_next:
-                    edges.append(
-                        {
-                            "from": node_detail.name,
-                            "to": node_detail.success_next,
-                            "type": "success",
-                        }
-                    )
-                if node_detail.failure_next:
-                    edges.append(
-                        {
-                            "from": node_detail.name,
-                            "to": node_detail.failure_next,
-                            "type": "failure",
-                        }
-                    )
-
-            # Determine entry point (first node or one without incoming edges)
-            entry_point = None
-            if nodes:
-                # Find nodes that are not targets of any edges
-                target_nodes = set()
-                for edge in edges:
-                    target_nodes.add(edge["to"])
-
-                entry_candidates = [
-                    node.name for node in nodes if node.name not in target_nodes
-                ]
-                if entry_candidates:
-                    entry_point = entry_candidates[0]
-                else:
-                    # Fallback to first node
-                    entry_point = nodes[0].name
-
-        except pd.errors.EmptyDataError:
-            raise HTTPException(
-                status_code=400, detail="Invalid workflow file format: Empty CSV file"
-            )
-        except KeyError as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid workflow file format: Missing required column {e}",
-            )
-        except Exception as e:
-            # If parsing fails, return empty but don't fail the request
-            nodes = []
-            edges = []
-            entry_point = None
-
-        return GraphDetailResponse(
-            workflow_name=workflow,
-            graph_name=graph,
-            nodes=nodes,
-            node_count=len(nodes) if nodes else target_graph.get("total_nodes", 0),
-            entry_point=entry_point,
-            edges=edges,
-        )
 
     except AgentMapNotInitialized as e:
         raise HTTPException(status_code=503, detail=str(e))

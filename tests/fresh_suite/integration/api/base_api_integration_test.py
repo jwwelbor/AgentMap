@@ -193,7 +193,6 @@ paths:
         """Create test request data with default values."""
         default_data = {
             "state": {"input_data": "test_input"},
-            "autocompile": False,
             "execution_id": None
         }
         default_data.update(kwargs)
@@ -299,7 +298,7 @@ missing_required_columns,test,content
         """Create test data that exceeds size limits for testing validation."""
         # Create a large state object that should trigger size validation
         large_data = {"key_" + str(i): "value_" * 1000 for i in range(1000)}
-        return {"state": large_data, "autocompile": False}
+        return {"state": large_data}
 
 
 class APITestCase(BaseAPIIntegrationTest):

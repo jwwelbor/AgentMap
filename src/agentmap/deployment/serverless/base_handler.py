@@ -87,7 +87,6 @@ class TriggerParser:
             "graph": event.get("graph"),
             "state": event.get("state", {}),
             "csv": event.get("csv"),
-            "autocompile": event.get("autocompile", False),
         }
 
 

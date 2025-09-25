@@ -52,7 +52,6 @@ def test_api_fix_integration():
                             f"{base_url}/execution/{workflow}/{graph}",
                             json={
                                 "state": {"test": "value"},
-                                "autocompile": True,
                             },
                             timeout=30
                         )

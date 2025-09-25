@@ -66,7 +66,6 @@ test_graph,end,default,End test,Test end node,output_data,final_result,,
         """Test RESTful path-based execution endpoint."""
         request_data = {
             "state": {"input_data": "test_value"},
-            "autocompile": True
         }
         
         response = self.client.post("/execution/test_workflow/test_graph", json=request_data)

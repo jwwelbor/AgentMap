@@ -115,7 +115,7 @@ PersonalGoals,End,Workflow complete,echo,,,final_message,completion,Workflow com
         try:
             # Import the main CLI components
             from agentmap.deployment.cli import main_cli
-            from agentmap.deployment.http.adapters import create_service_adapter
+            from agentmap.deployment.service_adapter import create_service_adapter
             from agentmap.di.containers import Container
             
             # Create DI container (this was part of the failing chain)

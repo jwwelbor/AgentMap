@@ -34,12 +34,23 @@ class ServiceRequirements(NamedTuple):
 
 @dataclass
 class ScaffoldOptions:
-    """Configuration options for scaffolding operations."""
+    """Configuration options for scaffolding operations.
+
+    Args:
+        graph_name: Optional name for the graph being scaffolded
+        output_path: Directory path where agent files will be generated
+        function_path: Directory path where function files will be generated
+        overwrite_existing: Whether to overwrite existing agent files
+        force_rescaffold: Whether to force rescaffold all custom agents (not just missing ones).
+                         When True, all custom agents will be regenerated regardless of existing files.
+                         Requires overwrite_existing=True for safety.
+    """
 
     graph_name: Optional[str] = None
     output_path: Optional[Path] = None
     function_path: Optional[Path] = None
     overwrite_existing: bool = False
+    force_rescaffold: bool = False
 
 
 @dataclass

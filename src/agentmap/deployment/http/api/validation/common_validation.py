@@ -401,9 +401,7 @@ class ValidatedStateExecutionRequest(BaseModel):
     """Enhanced state execution request with validation."""
 
     state: Dict[str, Any] = Field(default={}, description="Initial state for execution")
-    autocompile: bool = Field(
-        default=False, description="Whether to autocompile if missing"
-    )
+
     execution_id: Optional[str] = Field(
         default=None, max_length=100, description="Optional execution tracking ID"
     )

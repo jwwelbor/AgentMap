@@ -51,10 +51,6 @@ class GraphRunRequest(BaseModel):
     state: Dict[str, Any] = Field(
         default={}, description="Initial state variables passed to the graph"
     )
-    autocompile: bool = Field(
-        default=False,
-        description="Whether to automatically compile the graph if missing",
-    )
     execution_id: Optional[str] = Field(
         None, description="Optional execution tracking identifier"
     )
@@ -182,7 +178,6 @@ async def run_graph_legacy(
            "graph": "support_flow",
            "workflow": "customer_service",
            "state": {"priority": "high"},
-           "autocompile": true
          }'
     ```
     
@@ -449,7 +444,6 @@ async def run_workflow_graph(
     
     **Request Body:**
     - `state`: Initial state variables to pass to the graph
-    - `autocompile`: Whether to compile the graph if not already compiled
     - `execution_id`: Optional tracking identifier for monitoring
     
     **Example Request:**
@@ -462,7 +456,6 @@ async def run_workflow_graph(
              "customer_message": "I need help with my order",
              "ticket_id": "TICKET-123"
            },
-           "autocompile": true,
            "execution_id": "my-execution-001"
          }'
     ```

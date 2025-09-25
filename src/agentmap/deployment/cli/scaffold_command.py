@@ -23,7 +23,7 @@ def scaffold_command(
         None, help="CSV file path or workflow/graph (e.g., 'hello_world/HelloWorld')"
     ),
     graph: Optional[str] = typer.Option(
-        None, "--graph", "-g", help="Graph name to scaffold agents for"
+        None, "--workflow", "-w", help="Graph name to scaffold agents for"
     ),
     csv: Optional[str] = typer.Option(None, "--csv", help="CSV path override"),
     output_dir: Optional[str] = typer.Option(
@@ -37,6 +37,9 @@ def scaffold_command(
     ),
     overwrite: bool = typer.Option(
         False, "--overwrite", help="Overwrite existing agent files"
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Force rescafolding even if no changes detected typically combined with --overwrite"
     ),
 ):
     """
@@ -61,20 +64,27 @@ def scaffold_command(
                 code=map_exception_to_exit_code(ValueError("No graph specified"))
             )
 
-        # Execute using runtime facade
-        typer.echo(f"📦 Analyzing graph structure from: {graph_name}")
-
+        # Execute scaffolding using runtime facade
         result = scaffold_agents(
             graph_name=graph_name,
             output_dir=output_dir,
             func_dir=func_dir,
             config_file=config_file,
             overwrite=overwrite,
+            force=force
         )
 
         # Display results using CLI presenter for consistency
         if result.get("success", False):
             outputs = result.get("outputs", {})
+            metadata = result.get("metadata", {})
+
+            # Display progress messages from the facade
+            progress_messages = outputs.get("progress_messages", [])
+            for message in progress_messages:
+                typer.echo(message)
+
+            # Extract result data
             scaffolded_count = outputs.get("scaffolded_count", 0)
             errors = outputs.get("errors", [])
             created_files = outputs.get("created_files", [])
@@ -111,12 +121,13 @@ def scaffold_command(
                 )
 
                 # Show service statistics if available
-                if service_stats:
+                if service_stats and any(service_stats.values()):
                     typer.secho("   📊 Service integrations:", fg=typer.colors.CYAN)
                     for service, count in service_stats.items():
-                        typer.secho(
-                            f"      {service}: {count} agents", fg=typer.colors.CYAN
-                        )
+                        if count > 0:  # Only show non-zero counts
+                            typer.secho(
+                                f"      {service}: {count} agents", fg=typer.colors.CYAN
+                            )
 
                 # Show created files (limited)
                 if created_files:
@@ -134,8 +145,6 @@ def scaffold_command(
                             fg=typer.colors.CYAN,
                         )
 
-                typer.echo("\n🔄 Bundle updated with newly scaffolded agents.")
-
         else:
             # This shouldn't happen with the facade pattern, but handle gracefully
             error_msg = result.get("error", "Unknown error")
@@ -144,6 +153,9 @@ def scaffold_command(
 
         raise typer.Exit(code=0)
 
+    except typer.Exit:
+        # Re-raise typer.Exit as-is to preserve exit codes
+        raise
     except Exception as e:
         # Use CLI presenter for consistent error handling and exit codes
         print_err(str(e))

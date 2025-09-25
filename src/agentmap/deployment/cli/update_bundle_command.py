@@ -179,6 +179,9 @@ def update_bundle_command(
 
         raise typer.Exit(code=0)
 
+    except typer.Exit:
+        # Re-raise typer.Exit as-is to preserve exit codes
+        raise
     except Exception as e:
         # Use CLI presenter for consistent error handling and exit codes
         print_err(str(e))

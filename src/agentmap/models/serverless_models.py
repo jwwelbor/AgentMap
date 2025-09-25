@@ -37,7 +37,6 @@ class ExecutionParams:
     graph: Optional[str] = None
     csv: Optional[str] = None
     state: Dict[str, Any] = field(default_factory=dict)
-    autocompile: bool = False
     execution_id: Optional[str] = None
 
 

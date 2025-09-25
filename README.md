@@ -123,6 +123,103 @@ for step in result.get("execution_steps", []):
     print(f"{status} {step['node']} ({step['duration']:.3f}s)")
 ```
 
+## ✨ Simplified Graph Naming (New Feature)
+
+AgentMap now supports **intelligent default graph naming** that makes workflows even easier to create and run. No more specifying graph names for simple workflows!
+
+### 🎯 Smart Defaults
+
+**The filename automatically becomes your graph name:**
+
+```bash
+# Create customer_support.csv with any graph_name in the file
+# The graph is automatically accessible as "customer_support"
+
+agentmap run --csv customer_support.csv
+# Automatically runs the graph from customer_support.csv
+```
+
+```python
+from agentmap.runner import run_graph
+
+# Graph name derived from filename automatically
+result = run_graph(
+    csv_path="customer_support.csv",  # Graph = "customer_support"
+    initial_state={"user_query": "Help with my order"}
+)
+```
+
+### 🔧 Custom Names with :: Syntax
+
+**Override graph names when needed:**
+
+```bash
+# Run specific graph from multi-graph CSV
+agentmap run --csv workflows.csv::ProductSupport
+
+# HTTP API with URL encoding
+curl -X POST "http://localhost:8000/execution/workflows.csv%3A%3AProductSupport"
+```
+
+```python
+# Python API with custom graph name
+result = run_graph(
+    csv_path="workflows.csv::ProductSupport",
+    initial_state={"product": "AgentMap"}
+)
+```
+
+### 📊 Migration Guide
+
+**Existing workflows continue working unchanged:**
+
+```bash
+# ✅ Traditional approach - still works
+agentmap run --graph CustomerBot --csv customer_service.csv
+
+# ✅ New simplified approach - easier!
+agentmap run --csv customer_bot.csv
+```
+
+**Migration is optional and gradual:**
+
+| Scenario | Traditional | New Simplified | Benefits |
+|----------|------------|----------------|----------|
+| Single graph per file | `--graph MyGraph --csv my_file.csv` | `--csv my_graph.csv` | Less typing, intuitive |
+| Multiple graphs per file | `--graph Graph1 --csv multi.csv` | `--csv multi.csv::Graph1` | Clear syntax, URL-safe |
+| API endpoints | `/execution/MyWorkflow/MyGraph` | `/execution/my_graph.csv` | RESTful, self-documenting |
+
+### 🌟 Benefits
+
+- **🚀 Faster Development**: Skip graph name specification for simple workflows
+- **📖 Self-Documenting**: File names clearly indicate purpose
+- **🔗 URL-Friendly**: Works seamlessly with HTTP APIs
+- **🔄 Backward Compatible**: All existing workflows continue working
+- **⚡ Zero Configuration**: Works out of the box
+
+### 💡 Best Practices
+
+**File Naming Convention:**
+```bash
+# Good: Descriptive, lowercase with underscores
+customer_support.csv
+product_onboarding.csv
+data_processing_pipeline.csv
+
+# Good: Specific use case names
+order_status_check.csv
+user_feedback_analysis.csv
+```
+
+**When to Use Each Approach:**
+
+| Use Simplified Syntax When | Use Traditional Syntax When |
+|----------------------------|------------------------------|
+| ✅ Single graph per CSV file | ✅ Multiple graphs per CSV file |
+| ✅ Developing new workflows | ✅ Migrating existing systems |
+| ✅ Simple, focused workflows | ✅ Complex multi-graph systems |
+| ✅ API-first applications | ✅ Legacy system integration |
+
 ## 📋 CSV Schema Reference
 
 AgentMap workflows are defined using CSV files with the following columns:

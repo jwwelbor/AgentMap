@@ -132,7 +132,6 @@ class MockServiceFactory:
             "csv_path": "graphs/workflow.csv",
             "compiled_graphs_path": "compiled",
             "cache_path": "agentmap_data/cache",
-            "autocompile": True,
             "logging": {
                 "level": "DEBUG",
                 "format": "[%(levelname)s] %(name)s: %(message)s"

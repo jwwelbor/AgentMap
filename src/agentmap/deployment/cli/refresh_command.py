@@ -90,6 +90,9 @@ def refresh_cmd(
             "\n✅ Provider availability cache refreshed successfully!",
             fg=typer.colors.GREEN,
         )
+    except typer.Exit:
+        # Re-raise typer.Exit as-is to preserve exit codes
+        raise
 
     except Exception as e:
         typer.secho(f"❌ Failed to refresh cache: {e}", fg=typer.colors.RED)

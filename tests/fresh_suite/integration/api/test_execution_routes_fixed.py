@@ -73,7 +73,6 @@ class TestExecutionRoutes(TestCase):
                 "/execution/test_workflow/TestGraph",
                 json={
                     "state": {"input": "test_data"},
-                    "autocompile": True,
                     "execution_id": "test-123"
                 }
             )
@@ -175,7 +174,6 @@ class TestExecutionRoutes(TestCase):
                     "workflow": "legacy_workflow",
                     "graph": "LegacyGraph",
                     "state": {"test": "data"},
-                    "autocompile": True
                 }
             )
         

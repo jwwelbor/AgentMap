@@ -9,6 +9,7 @@ by resolving requirements at the declaration level only.
 from typing import Dict, List, Optional, Set
 
 from agentmap.models.declaration_models import AgentDeclaration, ServiceDeclaration
+from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.declaration_sources import DeclarationSource
 from agentmap.services.logging_service import LoggingService
@@ -360,7 +361,7 @@ class DeclarationRegistryService:
             f"Selective load complete: {len(self._agents)} agents, {len(self._services)} services"
         )
 
-    def load_for_bundle(self, bundle: "GraphBundle") -> None:
+    def load_for_bundle(self, bundle: GraphBundle) -> None:
         """
         Load only the declarations required by a specific graph bundle.
 

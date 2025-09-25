@@ -102,6 +102,8 @@ def main_cli():
     """Main CLI entry point for new service-based architecture."""
     try:
         app()
+    except typer.Exit as e:
+        sys.exit(e.exit_code)  
     except KeyboardInterrupt:
         typer.echo("\nOperation cancelled by user")
         sys.exit(1)
