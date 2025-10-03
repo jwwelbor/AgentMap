@@ -135,6 +135,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.venv/
+.venv-windows/
+.venv-linux/
 
 # Spyder project settings
 .spyderproject
@@ -179,6 +182,7 @@ custom/
 functions/
 scripts/
 junk/
+agentmap_data/
 agentmap_local_config.yaml
 agentmap_local_storage_config.yaml
 data/

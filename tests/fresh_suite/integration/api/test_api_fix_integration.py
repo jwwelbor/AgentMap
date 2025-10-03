@@ -49,7 +49,7 @@ def test_api_fix_integration():
                         # Execute the workflow
                         print(f"Testing execution of {workflow}/{graph}...")
                         response = requests.post(
-                            f"{base_url}/execution/{workflow}/{graph}",
+                            f"{base_url}/execute/{workflow}/{graph}",
                             json={
                                 "state": {"test": "value"},
                             },

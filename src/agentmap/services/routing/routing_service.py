@@ -6,7 +6,7 @@ matrix lookups, provider selection, and fallback strategies for optimal LLM rout
 """
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.logging_service import LoggingService
@@ -111,12 +111,29 @@ class LLMRoutingService:
                     self._logger.debug(f"Cache hit for {task_type}({complexity})")
                     return cached_decision
 
-            # 3. Select optimal model
-            decision = self.select_optimal_model(
-                task_type, complexity, available_providers, routing_context
+            # 3. Build candidate list (activity-first) and choose if available
+            decision = None
+            candidates = self.select_candidates(
+                routing_context,
+                available_providers=available_providers,
+                complexity=complexity,
             )
 
-            # 4. Cache the decision if caching is enabled
+            if candidates:
+                decision = self._choose_candidate_decision(
+                    candidates,
+                    available_providers,
+                    routing_context,
+                    complexity,
+                )
+
+            # 4. Fall back to matrix-based selection when needed
+            if decision is None:
+                decision = self.select_optimal_model(
+                    task_type, complexity, available_providers, routing_context
+                )
+
+            # 5. Cache the decision if caching is enabled
             if self.cache and not decision.fallback_used:
                 self._cache_decision(
                     task_type,
@@ -127,14 +144,14 @@ class LLMRoutingService:
                     decision,
                 )
 
-            # 5. Update statistics
+            # 6. Update statistics
             if decision.fallback_used:
                 self._routing_stats["fallback_used"] += 1
 
             if routing_context.complexity_override:
                 self._routing_stats["complexity_overrides"] += 1
 
-            # 6. Log the decision
+            # 7. Log the decision
             elapsed_time = time.time() - start_time
             self._logger.info(
                 f"Routed {task_type}({complexity}) to {decision.provider}:{decision.model} "
@@ -234,6 +251,128 @@ class LLMRoutingService:
         return self._apply_fallback_strategy(
             available_providers, task_type, complexity, routing_context
         )
+
+    def select_candidates(
+        self,
+        routing_context: Union[RoutingContext, Dict[str, Any]],
+        *,
+        available_providers: Optional[List[str]] = None,
+        complexity: Optional[TaskComplexity] = None,
+    ) -> List[Dict[str, str]]:
+        """
+        Build an ordered list of candidate provider/model pairs.
+
+        Activity plans are evaluated first, followed by routing-matrix backstops
+        and provider preferences.
+        """
+
+        ctx = (
+            routing_context
+            if isinstance(routing_context, RoutingContext)
+            else RoutingContext.from_dict(routing_context)
+        )
+
+        available = available_providers or list(self.routing_config.routing_matrix.keys())
+        available_lower = [provider.lower() for provider in available]
+        excluded = {provider.lower() for provider in ctx.excluded_providers}
+
+        if complexity is None:
+            # Analyse prompt from context to infer complexity when not provided
+            prompt = ctx.prompt or ctx.input_context.get("user_input", "")
+            if ctx.complexity_override:
+                try:
+                    complexity = TaskComplexity[ctx.complexity_override.upper()]
+                except KeyError:
+                    complexity = TaskComplexity.MEDIUM
+            else:
+                complexity = self.complexity_analyzer.analyze_prompt_complexity(prompt)
+
+        if complexity is None:
+            return []
+
+        complexity_key = str(complexity).lower()
+        activity_table = ActivityRoutingTable(self.routing_config, self._logger)
+        ordered: List[Dict[str, str]] = []
+        seen_pairs: Set[Tuple[str, str]] = set()
+
+        # 1) Activity-driven plan (primary + fallbacks)
+        for entry in activity_table.plan(ctx.activity, complexity_key):
+            provider = entry.get("provider")
+            model = entry.get("model")
+            if not provider or not model:
+                continue
+            provider_lower = provider.lower()
+            if provider_lower not in available_lower or provider_lower in excluded:
+                continue
+            pair = (provider_lower, model)
+            if pair in seen_pairs:
+                continue
+            ordered.append({"provider": provider, "model": model})
+            seen_pairs.add(pair)
+
+        # 2) Matrix-based backstops for remaining providers
+        for provider in available:
+            provider_lower = provider.lower()
+            if provider_lower in excluded:
+                continue
+            model = self.routing_config.get_model_for_complexity(provider_lower, complexity_key)
+            if not model:
+                continue
+            pair = (provider_lower, model)
+            if pair in seen_pairs:
+                continue
+            ordered.append({"provider": provider, "model": model})
+            seen_pairs.add(pair)
+
+        # 3) Apply provider preference ordering when supplied
+        if ctx.provider_preference:
+            preference_index = {p.lower(): i for i, p in enumerate(ctx.provider_preference)}
+            ordered.sort(
+                key=lambda item: preference_index.get(item["provider"].lower(), 1_000_000)
+            )
+
+        return ordered
+
+    def _choose_candidate_decision(
+        self,
+        candidates: List[Dict[str, str]],
+        available_providers: List[str],
+        routing_context: RoutingContext,
+        complexity: TaskComplexity,
+    ) -> Optional[RoutingDecision]:
+        """Select the first viable candidate and convert to a decision."""
+
+        available_set = {provider.lower() for provider in available_providers}
+        excluded = {provider.lower() for provider in routing_context.excluded_providers}
+        activity = routing_context.activity
+
+        for index, candidate in enumerate(candidates):
+            provider = candidate.get("provider")
+            model = candidate.get("model")
+            if not provider or not model:
+                continue
+
+            provider_lower = provider.lower()
+            if provider_lower not in available_set or provider_lower in excluded:
+                continue
+
+            reasoning = (
+                f"Activity routing: {activity}"
+                if activity and index == 0
+                else "Routing matrix candidate"
+            )
+            confidence = 0.9 if index == 0 else 0.7
+
+            return RoutingDecision(
+                provider=provider,
+                model=model,
+                complexity=complexity,
+                confidence=confidence,
+                reasoning=reasoning,
+                fallback_used=index > 0,
+            )
+
+        return None
 
     def _check_cache(
         self,
@@ -515,3 +654,73 @@ class LLMRoutingService:
             expired_count = self.cache.cleanup_expired()
             if expired_count > 0:
                 self._logger.info(f"Cleaned up {expired_count} expired cache entries")
+
+
+class ActivityRoutingTable:
+    """Resolve ordered provider/model candidates for a given activity."""
+
+    def __init__(
+        self,
+        routing_config: LLMRoutingConfigService,
+        logger: LoggingService,
+    ) -> None:
+        self._config_service = routing_config
+        self._logger = logger
+
+    def _get_config_dict(self) -> Dict[str, Any]:
+        if hasattr(self._config_service, "get_config"):
+            return self._config_service.get_config()  # type: ignore[return-value]
+        if hasattr(self._config_service, "config_dict"):
+            return getattr(self._config_service, "config_dict")
+        return {}
+
+    def _get_activities(self) -> Dict[str, Any]:
+        config = self._get_config_dict() or {}
+        if "routing" in config and isinstance(config["routing"], dict):
+            return config["routing"].get("activities", {})
+        return config.get("activities", {})
+
+    def plan(self, activity: Optional[str], complexity_key: str) -> List[Dict[str, str]]:
+        """
+        Return ordered candidates for a given activity/complexity tier.
+
+        Falls back to an empty list when the activity is undefined or
+        no configuration exists, allowing matrix-based routing to continue.
+        """
+        if not activity:
+            return []
+
+        activities = self._get_activities()
+        if not activities:
+            return []
+
+        tier_map = activities.get(activity)
+        if tier_map is None:
+            normalized = str(activity).strip().lower()
+            tier_map = activities.get(normalized)
+
+        if not isinstance(tier_map, dict):
+            return []
+
+        plan = tier_map.get(complexity_key) or tier_map.get("any")
+        if not isinstance(plan, dict):
+            return []
+
+        ordered: List[Dict[str, str]] = []
+
+        primary = plan.get("primary")
+        if isinstance(primary, dict):
+            provider = primary.get("provider")
+            model = primary.get("model")
+            if provider and model:
+                ordered.append({"provider": provider, "model": model})
+
+        for fallback in plan.get("fallbacks", []):
+            if not isinstance(fallback, dict):
+                continue
+            provider = fallback.get("provider")
+            model = fallback.get("model")
+            if provider and model:
+                ordered.append({"provider": provider, "model": model})
+
+        return ordered

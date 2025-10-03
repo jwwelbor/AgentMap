@@ -8,6 +8,7 @@ including complexity analysis, provider selection, and model optimization.
 # Import other modules that don't have circular dependencies
 from agentmap.services.routing.cache import CacheEntry, RoutingCache
 from agentmap.services.routing.complexity_analyzer import PromptComplexityAnalyzer
+from agentmap.services.routing.circuit_breaker import CircuitBreaker
 
 # Import types first to avoid circular dependencies
 from agentmap.services.routing.types import (
@@ -28,6 +29,7 @@ __all__ = [
     # Types
     "TaskComplexity",
     "TaskType",
+    "CircuitBreaker",
     "RoutingContext",
     "RoutingDecision",
     "ComplexitySignal",

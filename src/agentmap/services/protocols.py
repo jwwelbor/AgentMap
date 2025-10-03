@@ -465,3 +465,94 @@ class OrchestrationCapableAgent(Protocol):
     ) -> None:
         """Configure orchestrator service for this agent."""
         ...
+
+
+@runtime_checkable
+class EmbeddingServiceProtocol(Protocol):
+    """Protocol for embedding service interface used by agents."""
+
+    def embed_batch(
+        self,
+        items: Any,  # Iterable[EmbeddingInput]
+        model: str,
+        metric: str = "cosine",
+        normalize: bool = True,
+    ) -> List[Any]:  # List[EmbeddingOutput]
+        """
+        Embed a batch of texts.
+
+        Args:
+            items: Iterable of EmbeddingInput objects
+            model: Model name to use for embeddings
+            metric: Distance metric ("cosine", "ip", "l2")
+            normalize: Whether to normalize vectors
+
+        Returns:
+            List of EmbeddingOutput objects
+        """
+        ...
+
+
+@runtime_checkable
+class VectorStorageServiceProtocol(Protocol):
+    """Protocol for vector storage service interface used by agents."""
+
+    def write_embedded(
+        self,
+        collection: str,
+        vectors: Any,  # Iterable[EmbeddingOutput]
+        metadatas: Optional[Any] = None,  # Iterable[dict[str, Any]]
+    ) -> Any:  # UpsertResult
+        """
+        Write pre-embedded vectors to storage.
+
+        Args:
+            collection: Collection name
+            vectors: Iterable of EmbeddingOutput objects
+            metadatas: Optional metadata for each vector
+
+        Returns:
+            UpsertResult with operation details
+        """
+        ...
+
+    def query(
+        self,
+        query_vector: List[float],
+        k: int = 8,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> List[Any]:  # List[tuple[str, float, dict[str, Any]]]
+        """
+        Query vectors by similarity.
+
+        Args:
+            query_vector: Query vector
+            k: Number of results to return
+            filters: Optional metadata filters
+
+        Returns:
+            List of (id, score, metadata) tuples
+        """
+        ...
+
+
+@runtime_checkable
+class EmbeddingCapableAgent(Protocol):
+    """Protocol for agents that can use embedding services."""
+
+    def configure_embedding_service(
+        self, embedding_service: EmbeddingServiceProtocol
+    ) -> None:
+        """Configure embedding service for this agent."""
+        ...
+
+
+@runtime_checkable
+class VectorStorageCapableAgent(Protocol):
+    """Protocol for agents that can use vector storage services."""
+
+    def configure_vector_storage_service(
+        self, vector_service: VectorStorageServiceProtocol
+    ) -> None:
+        """Configure vector storage service for this agent."""
+        ...

@@ -89,7 +89,7 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
         else:
             # Legacy mode: Use specified provider or default to anthropic
             self.provider_name = self.context.get("provider", "anthropic")
-            self.model = self.context.get("model") or self._get_default_model_name()
+            self.model = self.context.get("model")
             self.temperature = float(self.context.get("temperature", 0.7))
             self.api_key = self.context.get("api_key") or os.environ.get(
                 self._get_api_key_env_var(), ""
@@ -175,25 +175,6 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
         }
         return env_vars.get(provider, f"{provider.upper()}_API_KEY")
 
-    def _get_default_model_name(self, provider: Optional[str] = None) -> str:
-        """
-        Get default model name for this provider.
-
-        Args:
-            provider: Optional provider name (uses self.provider_name if not provided)
-
-        Returns:
-            Default model name
-        """
-        if not provider:
-            provider = self.provider_name
-
-        defaults = {
-            "anthropic": "claude-3-5-sonnet-20241022",
-            "openai": "gpt-3.5-turbo",
-            "google": "gemini-1.0-pro",
-        }
-        return defaults.get(provider, "claude-3-5-sonnet-20241022")
 
     def _resolve_prompt(self, prompt: str) -> str:
         """
@@ -252,9 +233,6 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
         """
         Prepare routing context based on agent configuration and inputs.
 
-        Args:
-            inputs: Input values for this node
-
         Returns:
             Routing context dictionary or None for legacy mode
         """
@@ -262,42 +240,37 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
             # Legacy mode: return None to use direct calling
             return None
 
-        # Extract prompt content for complexity analysis
+        # Build a condensed user_input from non-memory fields for complexity analyzer
         input_parts = []
         for field in self.input_fields:
             if field != self.memory_key and inputs.get(field):
                 input_parts.append(str(inputs.get(field)))
-
         user_input = " ".join(input_parts) if input_parts else ""
 
-        # Build routing context
         routing_context = {
             "routing_enabled": True,
+            # existing fields
             "task_type": self.context.get("task_type", "general"),
             "complexity_override": self.context.get("complexity_override"),
             "auto_detect_complexity": self.context.get("auto_detect_complexity", True),
             "provider_preference": self.context.get("provider_preference", []),
-            "excluded_providers": self.context.get("excluded_providers", []),
-            "model_override": self.context.get("model_override"),
-            "max_cost_tier": self.context.get("max_cost_tier"),
-            "cost_optimization": self.context.get("cost_optimization", True),
-            "prefer_speed": self.context.get("prefer_speed", False),
-            "prefer_quality": self.context.get("prefer_quality", False),
-            "fallback_provider": self.context.get("fallback_provider", "anthropic"),
+            "exclude_providers": self.context.get("exclude_providers", []),
+            "fallback_provider": self.context.get("fallback_provider"),
             "fallback_model": self.context.get("fallback_model"),
-            "retry_with_lower_complexity": self.context.get(
-                "retry_with_lower_complexity", True
-            ),
+            "max_cost_tier": self.context.get("max_cost_tier"),
+            "retry_with_lower_complexity": self.context.get("retry_with_lower_complexity", True),
+
+            "activity": self.context.get("activity"),                 # e.g., "narrative", "code_review"
+            "router_profile": self.context.get("router_profile"),     # e.g., "quality_first", "cost_saver"
+
+            # Analyzer input context
             "input_context": {
                 "user_input": user_input,
-                "input_field_count": len(
-                    [f for f in self.input_fields if f != self.memory_key]
-                ),
+                "input_field_count": len([f for f in self.input_fields if f != self.memory_key]),
                 "memory_size": len(inputs.get(self.memory_key, [])),
                 **self.context.get("input_context", {}),
             },
         }
-
         return routing_context
 
     def _pre_process(

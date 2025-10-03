@@ -1,0 +1,14 @@
+{
+  "scriptFile": "main.py",
+  "bindings": [
+    {
+      "name": "msg",
+      "type": "serviceBusTrigger",
+      "direction": "in",
+      "queueName": "agentmap-events",
+      "connection": "ServiceBusConnection",
+      "cardinality": "many",
+      "dataType": "binary"
+    }
+  ]
+}

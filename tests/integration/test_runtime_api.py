@@ -588,18 +588,17 @@ class TestGetContainer:
 
 
 # Integration test placeholder for end-to-end facade behavior
-class TestRuntimeAPIIntegration:
+# class TestRuntimeAPIIntegration:
     """Integration tests for runtime API facade patterns."""
     
-    @pytest.mark.integration
-    def test_runtime_api_facade_contract(self):
-        """Test that runtime API follows facade contract properly."""
-        # This would be an integration test that verifies:
-        # 1. Runtime API only calls RuntimeManager methods
-        # 2. All exceptions are properly mapped to canonical types
-        # 3. No direct service/DI access in runtime API
-        # 4. Consistent behavior across all facade functions
-        pass
+    # def test_runtime_api_facade_contract(self):
+    #     """Test that runtime API follows facade contract properly."""
+    #     # This would be an integration test that verifies:
+    #     # 1. Runtime API only calls RuntimeManager methods
+    #     # 2. All exceptions are properly mapped to canonical types
+    #     # 3. No direct service/DI access in runtime API
+    #     # 4. Consistent behavior across all facade functions
+    #     pass
 
 
 if __name__ == "__main__":

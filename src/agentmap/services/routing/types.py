@@ -86,6 +86,7 @@ class RoutingContext:
     auto_detect_complexity: bool = True
 
     # Provider preferences
+    activity: Optional[str] = None
     provider_preference: List[str] = field(default_factory=list)
     excluded_providers: List[str] = field(default_factory=list)
 
@@ -114,6 +115,7 @@ class RoutingContext:
         return {
             "task_type": self.task_type,
             "routing_enabled": self.routing_enabled,
+            "activity": self.activity,
             "complexity_override": self.complexity_override,
             "auto_detect_complexity": self.auto_detect_complexity,
             "provider_preference": self.provider_preference,
@@ -142,6 +144,7 @@ class RoutingContext:
             auto_detect_complexity=data.get("auto_detect_complexity", True),
             provider_preference=data.get("provider_preference", []),
             excluded_providers=data.get("excluded_providers", []),
+            activity=data.get("activity"),
             model_override=data.get("model_override"),
             max_cost_tier=data.get("max_cost_tier"),
             prompt=data.get("prompt", ""),

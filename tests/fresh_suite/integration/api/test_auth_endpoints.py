@@ -130,7 +130,7 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
         # Configure mock container to return our disabled auth service
         mock_container = Mock()
         mock_container.auth_service.return_value = disabled_auth_service
-        # Also need to provide other services that /info/cache depends on
+        # Also need to provide other services that /admin/cache depends on
         mock_container.validation_cache_service.return_value = Mock()
         mock_container.validation_cache_service.return_value.get_validation_cache_stats.return_value = {
             "total_files": 0,
@@ -147,7 +147,7 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
         
         try:
             # Should be able to access protected endpoints without credentials when auth is disabled
-            response = self.client.get("/info/cache")
+            response = self.client.get("/admin/cache")
             # The key test is that we don't get 401 Unauthorized due to auth being disabled
             self.assertNotEqual(response.status_code, 401)
         finally:
@@ -177,7 +177,7 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
         # Configure mock container
         mock_container = Mock()
         mock_container.auth_service.return_value = auth_service
-        # Mock validation cache service for /info/cache endpoint
+        # Mock validation cache service for /admin/cache endpoint
         mock_container.validation_cache_service.return_value = Mock()
         mock_container.validation_cache_service.return_value.get_validation_cache_stats.return_value = {
             "total_files": 0,
@@ -195,13 +195,13 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
         try:
             # Test with bearer token
             headers = self.create_auth_headers(self.valid_api_key)
-            response = self.client.get("/info/cache", headers=headers)
+            response = self.client.get("/admin/cache", headers=headers)
             # Should not get 401 (auth passed), might get other errors due to service deps
             self.assertNotEqual(response.status_code, 401)
             
             # Test with X-API-Key header
             headers = self.create_auth_headers(self.valid_api_key, "api_key_header")
-            response = self.client.get("/info/cache", headers=headers)
+            response = self.client.get("/admin/cache", headers=headers)
             self.assertNotEqual(response.status_code, 401)
         finally:
             # Restore original container
@@ -224,7 +224,7 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
         # Configure mock container
         mock_container = Mock()
         mock_container.auth_service.return_value = auth_service
-        # Mock validation cache service for /info/cache endpoint
+        # Mock validation cache service for /admin/cache endpoint
         mock_container.validation_cache_service.return_value = Mock()
         mock_container.validation_cache_service.return_value.get_validation_cache_stats.return_value = {
             "total_files": 0,
@@ -242,7 +242,7 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
         try:
             # Test with invalid API key
             headers = self.create_auth_headers(self.invalid_api_key)
-            response = self.client.get("/info/cache", headers=headers)
+            response = self.client.get("/admin/cache", headers=headers)
             self.assert_response_error(response, 401)
             
             data = response.json()
@@ -263,7 +263,7 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
         # Configure mock container
         mock_container = Mock()
         mock_container.auth_service.return_value = auth_service
-        # Mock validation cache service for /info/cache endpoint
+        # Mock validation cache service for /admin/cache endpoint
         mock_container.validation_cache_service.return_value = Mock()
         mock_container.validation_cache_service.return_value.get_validation_cache_stats.return_value = {
             "total_files": 0,
@@ -280,7 +280,7 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
         
         try:
             # Try to access protected endpoint without credentials
-            response = self.client.get("/info/cache")
+            response = self.client.get("/admin/cache")
             self.assert_response_error(response, 401)
             
             data = response.json()
@@ -319,12 +319,12 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
         
         try:
             # Should work without any credentials when auth is disabled
-            response = self.client.get("/info/cache")
+            response = self.client.get("/admin/cache")
             self.assertNotEqual(response.status_code, 401)
             
             # Headers should have no effect when auth is disabled
             headers = {"X-AgentMap-Embedded": "true"}
-            response = self.client.get("/info/cache", headers=headers)
+            response = self.client.get("/admin/cache", headers=headers)
             self.assertNotEqual(response.status_code, 401)
         finally:
             # Restore original container
@@ -341,17 +341,17 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
         
         try:
             # Should require authentication when auth is enabled
-            response = self.client.get("/info/cache")
+            response = self.client.get("/admin/cache")
             self.assertEqual(response.status_code, 401)
             
             # Headers should NOT bypass auth when auth is enabled
             headers = {"X-AgentMap-Embedded": "true"}
-            response = self.client.get("/info/cache", headers=headers)
+            response = self.client.get("/admin/cache", headers=headers)
             self.assertEqual(response.status_code, 401)
             
             # Valid credentials should work
             headers = {"Authorization": f"Bearer {self.valid_api_key}"}
-            response = self.client.get("/info/cache", headers=headers)
+            response = self.client.get("/admin/cache", headers=headers)
             self.assertNotEqual(response.status_code, 401)
         finally:
             # Restore original container
@@ -382,7 +382,7 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
         # Configure mock container
         mock_container = Mock()
         mock_container.auth_service.return_value = readonly_auth_service
-        # Mock validation cache service for /info/cache endpoint
+        # Mock validation cache service for /admin/cache endpoint
         mock_container.validation_cache_service.return_value = Mock()
         mock_container.validation_cache_service.return_value.get_validation_cache_stats.return_value = {
             "total_files": 0,
@@ -401,7 +401,7 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             headers = self.create_auth_headers(self.valid_api_key)
             
             # Should be able to access read endpoints
-            response = self.client.get("/info/cache", headers=headers)
+            response = self.client.get("/admin/cache", headers=headers)
             # Auth should pass (not 401), may fail on other service dependencies
             self.assertNotEqual(response.status_code, 401)
         finally:
@@ -434,7 +434,7 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
         # Configure mock container
         mock_container = Mock()
         mock_container.auth_service.return_value = admin_auth_service
-        # Mock validation cache service for /info/cache endpoint
+        # Mock validation cache service for /admin/cache endpoint
         mock_container.validation_cache_service.return_value = Mock()
         mock_container.validation_cache_service.return_value.get_validation_cache_stats.return_value = {
             "total_files": 0,
@@ -453,11 +453,11 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             headers = self.create_auth_headers(self.valid_api_key)
             
             # Should be able to access all endpoints
-            response = self.client.get("/info/cache", headers=headers)
+            response = self.client.get("/admin/cache", headers=headers)
             self.assertNotEqual(response.status_code, 401)
             
             # Should be able to access cache management
-            response = self.client.get("/info/cache", headers=headers)
+            response = self.client.get("/admin/cache", headers=headers)
             self.assertNotEqual(response.status_code, 401)
         finally:
             # Restore original container
@@ -511,7 +511,7 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
         # Test with container that raises exceptions when accessing auth service
         mock_container = Mock()
         mock_container.auth_service.side_effect = RuntimeError("Auth service unavailable")
-        # Mock validation cache service for /info/cache endpoint
+        # Mock validation cache service for /admin/cache endpoint
         mock_container.validation_cache_service.return_value = Mock()
         mock_container.validation_cache_service.return_value.get_validation_cache_stats.return_value = {
             "total_files": 0,
@@ -528,7 +528,7 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
         
         try:
             # API should handle auth service errors gracefully
-            response = self.client.get("/info/cache")
+            response = self.client.get("/admin/cache")
             # Should return 503 service unavailable, not 401
             self.assertIn(response.status_code, [500, 503])
         finally:

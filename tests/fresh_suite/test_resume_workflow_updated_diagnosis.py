@@ -50,7 +50,7 @@ class ResumeWorkflowUpdatedDiagnosisTest(unittest.TestCase):
         possible_endpoints = [
             ResumeEndpointTest("/workflows/resume", 404, "Standard workflow resume endpoint"),
             ResumeEndpointTest("/api/v1/workflows/resume", 404, "Versioned workflow resume"), 
-            ResumeEndpointTest("/execution/resume", 404, "Execution resume endpoint"),
+            ResumeEndpointTest("/execute/resume", 404, "Execution resume endpoint"),
             ResumeEndpointTest("/resume", 404, "Simple resume endpoint"),
             ResumeEndpointTest("/api/resume", 404, "API resume endpoint"),
         ]

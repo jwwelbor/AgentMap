@@ -51,7 +51,7 @@ test_graph,end,default,End test,Test end node,output_data,final_result,,
             "state": {"input_data": "test_value"}
         }
         
-        response = self.client.post("/execution/run", json=request_data)
+        response = self.client.post("/execute/run", json=request_data)
         
         # Should NOT get 422 args/kwargs error anymore
         self.assertNotEqual(response.status_code, 422, 
@@ -68,7 +68,7 @@ test_graph,end,default,End test,Test end node,output_data,final_result,,
             "state": {"input_data": "test_value"},
         }
         
-        response = self.client.post("/execution/test_workflow/test_graph", json=request_data)
+        response = self.client.post("/execute/test_workflow/test_graph", json=request_data)
         
         # Should NOT get 422 args/kwargs error anymore
         self.assertNotEqual(response.status_code, 422, 

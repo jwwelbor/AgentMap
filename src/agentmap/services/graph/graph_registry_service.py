@@ -131,10 +131,6 @@ class GraphRegistryService:
                 self.logger.debug(f"No bundle found for hash {csv_hash[:8]}...")
                 return None
 
-            # Handle legacy structure (direct entry) by migrating it
-            if "bundle_path" in hash_entry:
-                hash_entry = self._migrate_legacy_entry(csv_hash, hash_entry)
-
             # Use composite key lookup with nested structure
             if graph_name is None:
                 # Return first available bundle for backward compatibility
@@ -202,16 +198,13 @@ class GraphRegistryService:
 
         with self._cache_lock:
             # Initialize nested structure if csv_hash doesn't exist
+            hash_entry = self._registry_cache.get(csv_hash)
+            is_new_hash = False
+            
             if csv_hash not in self._registry_cache:
                 self._registry_cache[csv_hash] = {}
                 hash_entry = self._registry_cache[csv_hash]
                 is_new_hash = True
-            else:
-                hash_entry = self._registry_cache[csv_hash]
-                # Handle migration from legacy structure
-                if "bundle_path" in hash_entry:
-                    hash_entry = self._migrate_legacy_entry(csv_hash, hash_entry)
-                is_new_hash = False
 
             is_update = graph_name in hash_entry
 
@@ -246,88 +239,60 @@ class GraphRegistryService:
 
             hash_entry = self._registry_cache[csv_hash]
 
-            # Handle legacy structure (direct entry)
-            if "bundle_path" in hash_entry:
-                if graph_name is None:
-                    # Remove entire entry
-                    bundle_size = hash_entry.get("bundle_size", 0)
-                    entry_graph_name = hash_entry.get("graph_name", "unknown")
+            # Handle new nested structure
+            if graph_name is None:
+                # Remove all graphs for this csv_hash
+                total_size = sum(
+                    entry.get("bundle_size", 0) for entry in hash_entry.values()
+                )
+                entry_count = len(hash_entry)
 
-                    # Update metadata
-                    self._metadata["total_entries"] -= 1
-                    self._metadata["total_bundle_size"] -= bundle_size
-                    self._metadata["last_modified"] = datetime.utcnow().isoformat()
+                # Update metadata
+                self._metadata["total_entries"] -= entry_count
+                self._metadata["total_bundle_size"] -= total_size
+                self._metadata["last_modified"] = datetime.utcnow().isoformat()
 
-                    # Remove from cache
-                    del self._registry_cache[csv_hash]
-                    self._dirty = True
+                # Remove from cache
+                del self._registry_cache[csv_hash]
+                self._dirty = True
 
-                    # Persist changes
-                    self._persist_registry()
+                # Persist changes
+                self._persist_registry()
 
-                    self.logger.info(
-                        f"Removed registry entry: {entry_graph_name} "
-                        f"(hash: {csv_hash[:8]}...)"
-                    )
-                    return True
-                else:
-                    # Cannot remove specific graph from legacy structure
-                    return False
+                self.logger.info(
+                    f"Removed {entry_count} registry entries for hash {csv_hash[:8]}..."
+                )
+                return True
             else:
-                # Handle new nested structure
-                if graph_name is None:
-                    # Remove all graphs for this csv_hash
-                    total_size = sum(
-                        entry.get("bundle_size", 0) for entry in hash_entry.values()
-                    )
-                    entry_count = len(hash_entry)
+                # Remove specific graph
+                if graph_name not in hash_entry:
+                    return False
 
-                    # Update metadata
-                    self._metadata["total_entries"] -= entry_count
-                    self._metadata["total_bundle_size"] -= total_size
-                    self._metadata["last_modified"] = datetime.utcnow().isoformat()
+                entry = hash_entry[graph_name]
+                bundle_size = entry.get("bundle_size", 0)
 
-                    # Remove from cache
+                # Update metadata
+                self._metadata["total_entries"] -= 1
+                self._metadata["total_bundle_size"] -= bundle_size
+                self._metadata["last_modified"] = datetime.utcnow().isoformat()
+
+                # Remove graph entry
+                del hash_entry[graph_name]
+
+                # If no graphs remain, remove the csv_hash entry entirely
+                if not hash_entry:
                     del self._registry_cache[csv_hash]
-                    self._dirty = True
 
-                    # Persist changes
-                    self._persist_registry()
+                self._dirty = True
 
-                    self.logger.info(
-                        f"Removed {entry_count} registry entries for hash {csv_hash[:8]}..."
-                    )
-                    return True
-                else:
-                    # Remove specific graph
-                    if graph_name not in hash_entry:
-                        return False
+                # Persist changes
+                self._persist_registry()
 
-                    entry = hash_entry[graph_name]
-                    bundle_size = entry.get("bundle_size", 0)
-
-                    # Update metadata
-                    self._metadata["total_entries"] -= 1
-                    self._metadata["total_bundle_size"] -= bundle_size
-                    self._metadata["last_modified"] = datetime.utcnow().isoformat()
-
-                    # Remove graph entry
-                    del hash_entry[graph_name]
-
-                    # If no graphs remain, remove the csv_hash entry entirely
-                    if not hash_entry:
-                        del self._registry_cache[csv_hash]
-
-                    self._dirty = True
-
-                    # Persist changes
-                    self._persist_registry()
-
-                    self.logger.info(
-                        f"Removed registry entry: {graph_name} "
-                        f"(hash: {csv_hash[:8]}...)"
-                    )
-                    return True
+                self.logger.info(
+                    f"Removed registry entry: {graph_name} "
+                    f"(hash: {csv_hash[:8]}...)"
+                )
+                return True
 
     def get_entry_info(
         self, csv_hash: str, graph_name: str
@@ -346,10 +311,6 @@ class GraphRegistryService:
             hash_entry = self._registry_cache.get(csv_hash)
             if not hash_entry:
                 return None
-
-            # Handle legacy structure (direct entry) by migrating it
-            if "bundle_path" in hash_entry:
-                hash_entry = self._migrate_legacy_entry(csv_hash, hash_entry)
 
             # Get specific graph entry using composite key
             entry = hash_entry.get(graph_name)
@@ -486,33 +447,6 @@ class GraphRegistryService:
         self._metadata = self._create_metadata()
         self._dirty = True
         self._persist_registry()
-
-    def _migrate_legacy_entry(
-        self, csv_hash: str, legacy_entry: Dict[str, Any]
-    ) -> Dict[str, Dict[str, Any]]:
-        """
-        Migrate legacy direct entry to new nested structure.
-
-        Args:
-            csv_hash: The CSV hash key
-            legacy_entry: Old direct entry format
-
-        Returns:
-            New nested structure {graph_name: entry}
-        """
-        # Convert legacy direct entry to nested structure
-        legacy_graph_name = legacy_entry.get("graph_name", "default")
-        new_structure = {legacy_graph_name: legacy_entry.copy()}
-
-        # Update the cache with the new structure
-        self._registry_cache[csv_hash] = new_structure
-        self._dirty = True
-
-        self.logger.debug(
-            f"Migrated legacy entry to composite key structure: {legacy_graph_name}"
-        )
-
-        return new_structure
 
     def _handle_load_error(self, error: Exception) -> None:
         """Handle registry load errors with recovery."""

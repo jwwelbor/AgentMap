@@ -1,0 +1,2 @@
+agentmap
+# boto3/botocore are available in AWS Lambda runtime; do not pin unless needed.

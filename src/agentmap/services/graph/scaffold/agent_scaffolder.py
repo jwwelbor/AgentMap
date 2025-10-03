@@ -1,9 +1,13 @@
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from agentmap.services.custom_agent_declaration_manager import (
+    CustomAgentDeclarationManager,
+)
+from agentmap.services.graph.scaffold.service_requirements_parser import (
+    ServiceRequirementsParser,
+)
 from agentmap.services.graph.scaffold.templates import Templates
-from agentmap.services.graph.scaffold.service_requirements_parser import ServiceRequirementsParser
-from agentmap.services.custom_agent_declaration_manager import CustomAgentDeclarationManager
 from agentmap.services.logging_service import LoggingService
 
 
@@ -21,7 +25,11 @@ class AgentScaffolder:
         self.logger = logger.get_class_logger(self)
 
     def scaffold(
-        self, agent_type: str, info: Dict[str, Any], output_path: Path, overwrite: bool = False
+        self,
+        agent_type: str,
+        info: Dict[str, Any],
+        output_path: Path,
+        overwrite: bool = False,
     ) -> Optional[Path]:
         file_name = f"{agent_type.lower()}_agent.py"
         file_path = output_path / file_name
@@ -56,7 +64,9 @@ class AgentScaffolder:
             return file_path
 
         except Exception as e:
-            self.logger.error(f"[AgentScaffolder] Failed to scaffold agent {agent_type}: {e}")
+            self.logger.error(
+                f"[AgentScaffolder] Failed to scaffold agent {agent_type}: {e}"
+            )
             raise
 
     def _generate_agent_class_name(self, agent_type: str) -> str:

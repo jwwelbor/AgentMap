@@ -1,9 +1,10 @@
+import json
+from typing import Any, Dict, List, Optional
+
 from agentmap.models.scaffold_types import (
     ServiceAttribute,
     ServiceRequirements,
 )
-from typing import Any, Dict, List, Optional
-import json
 
 
 class ServiceRequirementsParser:

@@ -11,7 +11,122 @@ keywords: [CLI commands, command line, deployment, scaffolding, graph execution]
   <span>📍 <a href="/docs/intro">AgentMap</a> → <a href="/docs/deployment">Deployment</a> → <strong>CLI Commands</strong></span>
 </div>
 
-AgentMap provides a command-line interface (CLI) for deploying and managing workflows, with powerful scaffolding capabilities for custom agents and functions. The CLI is ideal for development, testing, automation scripts, and production deployments that don't require web API interfaces.
+AgentMap provides a sophisticated command-line interface (CLI) built on a **facade pattern architecture** for deploying and managing workflows, with powerful scaffolding capabilities for custom agents and functions. The CLI is ideal for development, testing, automation scripts, and production deployments that don't require web API interfaces.
+
+## CLI Architecture Overview
+
+The AgentMap CLI follows a **consistent facade pattern** as defined in SPEC-DEP-001, ensuring clean separation between presentation layer and business logic.
+
+### Facade Pattern Implementation
+
+All CLI commands use the `runtime_api.py` module as a unified facade to the underlying business logic:
+
+```python
+# CLI commands follow this pattern
+from agentmap.runtime_api import ensure_initialized, specific_function
+from agentmap.deployment.cli.utils.cli_presenter import print_json, print_err, map_exception_to_exit_code
+
+def command_function(args):
+    try:
+        # Ensure runtime is initialized
+        ensure_initialized(config_file=args.config)
+        
+        # Use runtime facade for business logic
+        result = specific_function(args...)
+        
+        # Use CLI presenter for consistent output
+        print_json(result)
+        
+    except Exception as e:
+        print_err(str(e))
+        exit_code = map_exception_to_exit_code(e)
+        raise typer.Exit(code=exit_code)
+```
+
+### Runtime API Functions
+
+The `runtime_api.py` serves as a facade to split runtime modules:
+
+| Function Category | Functions | Commands Using |
+|------------------|-----------|----------------|
+| **Initialization** | `ensure_initialized()`, `get_container()` | Most commands |
+| **Workflow Operations** | `run_workflow()`, `resume_workflow()`, `validate_workflow()` | `run`, `resume`, `validate` |
+| **Bundle Operations** | `scaffold_agents()`, `update_bundle()` | `scaffold`, `update-bundle` |
+| **System Operations** | `diagnose_system()`, `get_config()`, `refresh_cache()` | `diagnose`, `config`, `refresh` |
+
+### CLI Presenter Architecture
+
+All commands use standardized utilities from `cli_presenter.py`:
+
+- **`print_json()`**: Consistent JSON output with custom encoder for AgentMap objects
+- **`print_err()`**: Standardized stderr output
+- **`map_exception_to_exit_code()`**: Maps runtime exceptions to process exit codes
+- **Custom JSON Encoder**: Handles datetime objects, dataclasses, and AgentMap-specific types
+
+### Commands NOT Using Facade Pattern
+
+Two commands implement business logic directly:
+
+| Command | Module | Reason |
+|---------|--------|--------|
+| **auth** | `auth_command.py` | Standalone authentication management |
+| **init-config** | `init_config_command.py` | Simple file creation utility |
+
+### Complete Command Structure
+
+All CLI commands are registered in `main_cli.py` and follow this structure:
+
+```
+src/agentmap/deployment/cli/
+├── main_cli.py                   # Entry point - registers all commands
+├── <command>_command.py          # Individual command handlers
+├── utils/
+│   ├── cli_presenter.py          # Output formatting and error handling
+│   └── cli_utils.py              # Common utilities (path resolution, etc.)
+├── auth_command.py               # Authentication subcommands
+├── run_command.py                # Workflow execution
+├── scaffold_command.py           # Agent scaffolding
+├── validate_command.py           # Validation commands
+├── diagnose_command.py           # System diagnostics
+├── resume_command.py             # Workflow resumption
+├── refresh_command.py            # Cache management
+└── update_bundle_command.py      # Bundle operations
+```
+
+### Import Patterns
+
+Commands follow consistent import patterns:
+
+**Facade-based commands:**
+```python
+from agentmap.runtime_api import ensure_initialized, specific_function
+from agentmap.deployment.cli.utils.cli_presenter import print_json, print_err, map_exception_to_exit_code
+```
+
+**Utility imports:**
+```python
+from agentmap.deployment.cli.utils.cli_utils import handle_command_error, resolve_csv_path
+```
+
+### Error Handling Pattern
+
+All facade-based commands follow consistent error handling:
+
+```python
+try:
+    result = runtime_function(args...)
+    if result.get("success", False):
+        print_json(result)
+    else:
+        print_err("Operation failed")
+        raise typer.Exit(code=1)
+except typer.Exit:
+    raise  # Preserve exit codes
+except Exception as e:
+    print_err(str(e))
+    exit_code = map_exception_to_exit_code(e)
+    raise typer.Exit(code=exit_code)
+```
 
 ## Configuration Loading
 

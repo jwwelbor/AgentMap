@@ -1,0 +1,73 @@
+# GCP Cloud Functions optimized configuration for AgentMap
+# Minimal configuration for serverless deployment
+
+# Storage configuration - disabled for serverless
+storage_config_path: null
+
+# Directory paths - not applicable in serverless environment
+paths:
+  custom_agents: null
+  functions: null 
+  csv_repository: null
+
+# Memory configuration - disabled for stateless functions
+memory:
+  enabled: false
+
+# Execution tracking - keep minimal for performance
+execution:
+  tracking:
+    enabled: true
+    track_outputs: true
+    track_inputs: true
+  success_policy:
+    type: "all_nodes"
+    critical_nodes: []
+    custom_function: ""
+
+# Tracing - disabled for serverless to reduce overhead
+tracing:
+  enabled: false
+
+# Logging configuration - optimized for Cloud Functions
+logging:
+  version: 1
+  disable_existing_loggers: False
+  file_path: null  # Cloud Functions use stdout/stderr
+  formatters:
+    default:
+      format: "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"
+  handlers:
+    console:
+      class: logging.StreamHandler
+      formatter: default
+      level: INFO  # INFO level for production, DEBUG for development
+  root:
+    level: INFO
+    handlers: [console]
+
+# LLM configuration - use environment variables for security
+llm:
+  openai:
+    api_key: "env:OPENAI_API_KEY"
+    model: "gpt-4o-mini-2024-07-18"
+    temperature: 0.7
+  anthropic:
+    api_key: "env:ANTHROPIC_API_KEY"
+    model: "claude-3-5-haiku-20241022"
+    temperature: 0.7
+  google:
+    api_key: "env:GOOGLE_API_KEY"
+    model: "gemini-1.5-flash"
+    temperature: 0.7
+
+# Routing - simplified for serverless to reduce cold start time
+routing:
+  enabled: false  # Disable complex routing for better performance
+  
+# Environment overrides for serverless deployment
+environment_overrides:
+  routing_enabled: ${AGENTMAP_ROUTING_ENABLED:false}
+  default_task_type: ${AGENTMAP_DEFAULT_TASK_TYPE:general}
+  cost_optimization: ${AGENTMAP_COST_OPTIMIZATION:false}
+  routing_cache_enabled: ${AGENTMAP_ROUTING_CACHE:false}

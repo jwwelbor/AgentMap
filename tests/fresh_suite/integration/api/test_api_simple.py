@@ -98,7 +98,7 @@ class TestAPIFix(unittest.TestCase):
             "state": {"input": "test_value"}
         }
         
-        response = self.client.post("/execution/run", json=request_data)
+        response = self.client.post("/execute/run", json=request_data)
         
         # The key test: we should NOT get a 422 validation error about missing args/kwargs
         self.assertNotEqual(response.status_code, 422, 

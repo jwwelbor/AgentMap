@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
+from agentmap.builtin_definition_constants import BuiltinDefinitionConstants
 
 
 class DependencyCheckerService:
@@ -27,24 +28,6 @@ class DependencyCheckerService:
     The service automatically updates the features registry with validation results,
     providing a single source of truth for dependency status.
     """
-
-    # Dependency group definitions
-    LLM_DEPENDENCIES = {
-        "openai": ["langchain_openai"],
-        "anthropic": ["langchain_anthropic"],
-        "google": ["langchain_google_genai"],
-        "langchain": ["langchain_core"],
-    }
-
-    STORAGE_DEPENDENCIES = {
-        "csv": ["pandas"],
-        #        "json": ["json"],
-        "vector": ["langchain", "chromadb"],
-        "firebase": ["firebase_admin"],
-        "azure_blob": ["azure-storage-blob"],
-        "aws_s3": ["boto3"],
-        "gcp_storage": ["google-cloud-storage"],
-    }
 
     def __init__(
         self,
@@ -378,7 +361,8 @@ class DependencyCheckerService:
         results = {}
 
         if category_lower == "llm":
-            for provider in self.LLM_DEPENDENCIES.keys():
+            supported_providers = BuiltinDefinitionConstants.get_supported_llm_providers()
+            for provider in supported_providers:
                 if provider == "langchain":  # Skip base langchain entry
                     continue
 
@@ -397,7 +381,9 @@ class DependencyCheckerService:
                     )
 
         elif category_lower == "storage":
-            for storage_type in self.STORAGE_DEPENDENCIES.keys():
+            supported_types = BuiltinDefinitionConstants.get_supported_storage_types()
+            
+            for storage_type in supported_types:                
                 is_available, missing = self._validate_storage_type(storage_type, force)
                 results[storage_type] = is_available
 
@@ -430,7 +416,7 @@ class DependencyCheckerService:
             Tuple of (is_valid, missing_dependencies)
         """
         provider_lower = provider.lower()
-        dependencies = self.LLM_DEPENDENCIES.get(provider_lower, [])
+        dependencies = BuiltinDefinitionConstants.get_provider_dependencies(provider)
 
         if not dependencies:
             self.logger.warning(
@@ -489,7 +475,7 @@ class DependencyCheckerService:
             Tuple of (is_valid, missing_dependencies)
         """
         storage_lower = storage_type.lower()
-        dependencies = self.STORAGE_DEPENDENCIES.get(storage_lower, [])
+        dependencies = BuiltinDefinitionConstants.get_storage_dependencies(storage_type)
 
         if not dependencies:
             self.logger.warning(
@@ -689,7 +675,7 @@ class DependencyCheckerService:
             return []
 
         available = []
-        for provider in self.LLM_DEPENDENCIES.keys():
+        for provider in BuiltinDefinitionConstants.get_supported_llm_providers():
             if provider == "langchain":  # Skip the base langchain entry
                 continue
 
@@ -713,7 +699,7 @@ class DependencyCheckerService:
             return []
 
         available = []
-        for storage_type in self.STORAGE_DEPENDENCIES.keys():
+        for storage_type in BuiltinDefinitionConstants.get_supported_storage_types():
             # Check if storage type is both available and validated in registry
             if self.features_registry.is_provider_available("storage", storage_type):
                 available.append(storage_type)

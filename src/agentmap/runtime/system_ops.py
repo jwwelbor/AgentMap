@@ -387,3 +387,128 @@ def diagnose_system(*, config_file: Optional[str] = None) -> Dict[str, Any]:
 
     except Exception as e:
         raise RuntimeError(f"System diagnosis failed: {e}")
+
+
+def get_version(*, config_file: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Get AgentMap version information.
+
+    Args:
+        config_file: Optional configuration file path.
+
+    Returns:
+        Dict containing version information.
+
+    Raises:
+        AgentMapNotInitialized: if runtime has not been initialized.
+    """
+    from .init_ops import ensure_initialized
+
+    # Ensure runtime is initialized
+    ensure_initialized(config_file=config_file)
+
+    try:
+        from agentmap._version import __version__
+
+        return {
+            "success": True,
+            "outputs": {"agentmap_version": __version__, "api_version": "2.0"},
+            "metadata": {"config_file": config_file},
+        }
+    except ImportError:
+        return {
+            "success": True,
+            "outputs": {"agentmap_version": "unknown", "api_version": "2.0"},
+            "metadata": {"config_file": config_file},
+        }
+
+
+def get_health(*, config_file: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Get basic health status of the AgentMap runtime.
+
+    Args:
+        config_file: Optional configuration file path.
+
+    Returns:
+        Dict containing health status.
+
+    Note: This always returns success=True if it can execute,
+    with status indicating the actual health state.
+    """
+    from .init_ops import ensure_initialized
+    from .runtime_manager import RuntimeManager
+
+    try:
+        # Try to ensure initialized
+        ensure_initialized(config_file=config_file)
+
+        # Try to get container to verify it's working
+        container = RuntimeManager.get_container()
+
+        # Check a basic service
+        try:
+            app_config_service = container.app_config_service()
+            _ = app_config_service.get_all()
+            status = "healthy"
+        except Exception:
+            status = "degraded"
+
+        return {
+            "success": True,
+            "outputs": {"status": status, "initialized": True},
+            "metadata": {"config_file": config_file},
+        }
+    except Exception as e:
+        # Runtime not initialized or other error
+        return {
+            "success": True,
+            "outputs": {
+                "status": "not_initialized",
+                "initialized": False,
+                "error": str(e),
+            },
+            "metadata": {"config_file": config_file},
+        }
+
+
+def get_system_paths(*, config_file: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Get system directory paths used by AgentMap.
+
+    Args:
+        config_file: Optional configuration file path.
+
+    Returns:
+        Dict containing system paths.
+
+    Raises:
+        AgentMapNotInitialized: if runtime has not been initialized.
+    """
+    from .init_ops import ensure_initialized
+    from .runtime_manager import RuntimeManager
+
+    # Ensure runtime is initialized
+    ensure_initialized(config_file=config_file)
+
+    try:
+        # Get container and services through RuntimeManager delegation
+        container = RuntimeManager.get_container()
+        app_config_service = container.app_config_service()
+
+        # Get paths from configuration
+        csv_path = app_config_service.get_csv_repository_path()
+        custom_agents_path = app_config_service.get_custom_agents_path()
+        functions_path = app_config_service.get_functions_path()
+
+        return {
+            "success": True,
+            "outputs": {
+                "csv_repository": str(csv_path),
+                "custom_agents": str(custom_agents_path),
+                "functions": str(functions_path),
+            },
+            "metadata": {"config_file": config_file},
+        }
+    except Exception as e:
+        raise RuntimeError(f"Failed to get system paths: {e}")

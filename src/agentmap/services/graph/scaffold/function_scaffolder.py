@@ -11,7 +11,11 @@ class FunctionScaffolder:
         self.logger = logger.get_class_logger(self)
 
     def scaffold(
-        self, func_name: str, info: Dict[str, Any], output_path: Path, overwrite: bool = False
+        self,
+        func_name: str,
+        info: Dict[str, Any],
+        output_path: Path,
+        overwrite: bool = False,
     ) -> Optional[Path]:
         file_name = f"{func_name}.py"
         file_path = output_path / file_name

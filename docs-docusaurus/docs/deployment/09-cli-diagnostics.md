@@ -11,7 +11,98 @@ keywords: [CLI commands, diagnostics, troubleshooting, system health, dependenci
   <span>📍 <a href="/docs/intro">AgentMap</a> → <a href="/docs/deployment">Deployment</a> → <strong>Diagnostic Commands</strong></span>
 </div>
 
-AgentMap provides comprehensive diagnostic tools for system health monitoring, dependency validation, and troubleshooting. These commands leverage the sophisticated **DependencyCheckerService** and **FeaturesRegistryService** to provide enterprise-grade system validation and installation guidance.
+AgentMap provides comprehensive diagnostic tools built on the **runtime facade pattern** for system health monitoring, dependency validation, and troubleshooting. These commands leverage the sophisticated **DependencyCheckerService** and **FeaturesRegistryService** through the runtime API to provide enterprise-grade system validation and installation guidance.
+
+## Diagnostic Architecture
+
+### Facade Pattern Implementation
+
+The diagnostic commands follow AgentMap's consistent facade pattern, using `runtime_api.py` for business logic:
+
+```python
+# Diagnostic command pattern
+from agentmap.runtime_api import ensure_initialized, diagnose_system
+from agentmap.deployment.cli.utils.cli_presenter import print_json, print_err, map_exception_to_exit_code
+
+def diagnose_command(args):
+    try:
+        # Ensure runtime is initialized
+        ensure_initialized(config_file=args.config)
+        
+        # Use runtime facade for diagnostic logic
+        result = diagnose_system(config_file=args.config)
+        
+        # Use CLI presenter for consistent output
+        print_json(result)
+        
+    except Exception as e:
+        print_err(str(e))
+        exit_code = map_exception_to_exit_code(e)
+        raise typer.Exit(code=exit_code)
+```
+
+### Runtime API Integration
+
+Diagnostic commands use these runtime facade functions:
+
+| Function | Purpose | Commands Using |
+|----------|---------|----------------|
+| `diagnose_system()` | Comprehensive system health check | `diagnose` |
+| `validate_cache()` | Cache integrity validation | `validate-cache` |
+| `refresh_cache()` | Cache management operations | `refresh` |
+| `get_config()` | Configuration display | `config` |
+| `ensure_initialized()` | Runtime initialization check | All diagnostic commands |
+
+### CLI Presenter Integration
+
+All diagnostic commands benefit from the standardized CLI presenter utilities:
+
+- **Structured Output**: JSON format for automation and human-readable options
+- **Exception Mapping**: Runtime exceptions mapped to appropriate exit codes for scripting
+- **Custom Encoding**: Handles diagnostic objects, timestamps, and complex data structures
+
+### Service Integration Architecture
+
+The diagnostic commands integrate with AgentMap's sophisticated service layer:
+
+```python
+# Diagnostic command implementation
+def diagnose_command(config_file):
+    try:
+        # Initialize runtime system via facade
+        ensure_initialized(config_file=config_file)
+        
+        # Use facade to access DependencyCheckerService and FeaturesRegistryService
+        result = diagnose_system(config_file=config_file)
+        
+        # Service layer provides:
+        # - LLM provider validation (OpenAI, Anthropic, Google)
+        # - Storage system validation (CSV, JSON, Vector, etc.)
+        # - Registry status coordination
+        # - Installation guidance
+        
+        # CLI presenter handles complex service objects
+        print_json(result)
+        
+    except Exception as e:
+        print_err(str(e))
+        exit_code = map_exception_to_exit_code(e)
+        raise typer.Exit(code=exit_code)
+```
+
+### Enterprise-Grade Validation Features
+
+**Multi-Layer Validation:**
+- **Feature Policy**: Checks if features are enabled in configuration
+- **Technical Dependencies**: Validates package installations and versions
+- **Registry Coordination**: Ensures feature registry matches technical state
+- **Inconsistency Detection**: Identifies mismatches between layers
+
+**Installation Guidance System:**
+- **Bundle Suggestions**: Recommends `agentmap[llm]` style installations
+- **Individual Packages**: Provides specific pip install commands
+- **Provider-Specific**: Tailored instructions for each service provider
+- **Dependency Resolution**: Helps resolve complex conflicts
 
 ## System Diagnostics
 

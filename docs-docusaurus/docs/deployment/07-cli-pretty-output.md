@@ -13,7 +13,58 @@ keywords: [CLI output, pretty printing, debugging, execution tracking, developme
 
 ## Overview
 
-The `--pretty` flag has been added to the `run` command to format graph execution output for better readability during development and testing.
+The `--pretty` flag leverages AgentMap's **CLI Presenter Architecture** to format graph execution output for better readability during development and testing. This feature uses the standardized `cli_presenter.py` utilities that provide consistent output formatting across all CLI commands.
+
+## CLI Presenter Architecture
+
+AgentMap uses a sophisticated presentation layer built around the `cli_presenter.py` module that ensures consistent output formatting and error handling across all CLI commands.
+
+### Core Components
+
+**JSON Output Management:**
+```python
+from agentmap.deployment.cli.utils.cli_presenter import print_json, print_err, map_exception_to_exit_code
+
+# Standardized JSON output with custom encoding
+print_json(result)  # Handles AgentMap objects, datetime, dataclasses
+
+# Consistent error output
+print_err("Error message")  # Outputs to stderr
+
+# Exception to exit code mapping
+exit_code = map_exception_to_exit_code(exception)
+```
+
+**Custom JSON Encoder:**
+The CLI presenter includes an `AgentMapJSONEncoder` that handles:
+- DateTime objects (converted to ISO format)
+- StorageResult objects (uses `to_dict()` method)
+- Dataclass objects like `ExecutionSummary` and `NodeExecution`
+- Nested structures with recursive datetime processing
+
+**Error Handling Integration:**
+```python
+# Standard pattern used across all commands
+try:
+    result = runtime_api_function(args...)
+    print_json(result)
+except Exception as e:
+    print_err(str(e))
+    exit_code = map_exception_to_exit_code(e)
+    raise typer.Exit(code=exit_code)
+```
+
+### Exit Code Mapping
+
+The CLI presenter maps runtime exceptions to standard exit codes:
+
+| Exception Type | Exit Code | Description |
+|----------------|-----------|-------------|
+| `InvalidInputs` | 2 | Invalid command arguments or input data |
+| `GraphNotFound` | 3 | Specified graph does not exist |
+| `AgentMapNotInitialized` | 4 | Runtime system not properly initialized |
+| Other exceptions | 1 | General error condition |
+| Success | 0 | Operation completed successfully |
 
 ## Usage
 
@@ -92,11 +143,47 @@ Includes detailed node-by-node execution timeline with:
 
 ## Implementation Details
 
-1. Added `--pretty` boolean flag to the `run` command
-2. Added `--verbose` boolean flag for detailed output
-3. Created `ExecutionFormatterService` in the services layer following established patterns
-4. Added service to DI container (`ApplicationContainer`)
-5. No changes to production code paths - only affects display
+### Facade Pattern Integration
+
+The pretty output feature is integrated into the runtime facade pattern:
+
+1. **Runtime Facade**: The `run_command` uses `runtime_api.run_workflow()` for execution
+2. **CLI Presenter**: Uses `cli_presenter.print_json()` for formatted output
+3. **Custom Encoding**: Leverages `AgentMapJSONEncoder` for complex object serialization
+4. **Error Handling**: Integrates with `map_exception_to_exit_code()` for consistent error handling
+
+### Implementation Architecture
+
+```python
+# In run_command.py
+from agentmap.runtime_api import run_workflow
+from agentmap.deployment.cli.utils.cli_presenter import print_json
+
+def run_command(pretty: bool = False, verbose: bool = False, **kwargs):
+    try:
+        # Execute via runtime facade
+        result = run_workflow(...)
+        
+        if pretty:
+            # Enhanced formatting for development
+            format_pretty_output(result, verbose)
+        else:
+            # Standard JSON for scripting
+            print_json(result)
+            
+    except Exception as e:
+        # Consistent error handling via CLI presenter
+        print_err(str(e))
+        exit_code = map_exception_to_exit_code(e)
+        raise typer.Exit(code=exit_code)
+```
+
+### Service Layer Integration
+
+1. **ExecutionFormatterService**: Handles complex object formatting within the service layer
+2. **DI Container Integration**: Service registered in `ApplicationContainer` following established patterns
+3. **No Production Impact**: Pretty formatting is presentation-only and doesn't affect workflow execution
+4. **Backward Compatibility**: Raw JSON output remains the default for script compatibility
 
 ## Notes
 

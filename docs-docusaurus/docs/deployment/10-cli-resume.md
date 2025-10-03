@@ -11,7 +11,111 @@ keywords: [CLI commands, resume workflow, state persistence, interrupted workflo
   <span>📍 <a href="/docs/intro">AgentMap</a> → <a href="/docs/deployment">Deployment</a> → <strong>Workflow Resume Commands</strong></span>
 </div>
 
-AgentMap provides functionality to resume interrupted workflows, allowing you to handle user interventions, approvals, or recovery from errors. This is particularly useful for workflows that require human oversight or complex decision points.
+AgentMap provides functionality to resume interrupted workflows using the **runtime facade pattern**, allowing you to handle user interventions, approvals, or recovery from errors. This is particularly useful for workflows that require human oversight or complex decision points.
+
+## Resume Architecture
+
+### Facade Pattern Implementation
+
+The resume command follows AgentMap's consistent facade pattern, using `runtime_api.py` for workflow management:
+
+```python
+# Resume command pattern
+from agentmap.runtime_api import ensure_initialized, resume_workflow
+from agentmap.deployment.cli.utils.cli_presenter import print_json, print_err, map_exception_to_exit_code
+
+def resume_command(thread_id, response, args):
+    try:
+        # Ensure runtime is initialized
+        ensure_initialized(config_file=args.config)
+        
+        # Use runtime facade for resume logic
+        result = resume_workflow(
+            thread_id=thread_id,
+            response=response,
+            data=args.data,
+            config_file=args.config
+        )
+        
+        # Use CLI presenter for consistent output
+        print_json(result)
+        
+    except Exception as e:
+        print_err(str(e))
+        exit_code = map_exception_to_exit_code(e)
+        raise typer.Exit(code=exit_code)
+```
+
+### Runtime API Integration
+
+The resume command uses these runtime facade functions:
+
+| Function | Purpose | Usage |
+|----------|---------|--------|
+| `resume_workflow()` | Resume interrupted workflow execution | Primary resume functionality |
+| `ensure_initialized()` | Verify runtime system is ready | Called before resume operations |
+
+### CLI Presenter Integration
+
+Resume commands benefit from standardized CLI presenter utilities:
+
+- **State Serialization**: Handles complex workflow state objects and thread data
+- **Error Mapping**: Maps resume-specific exceptions to appropriate exit codes
+- **JSON Output**: Structured results for automation and script integration
+
+### State Management Through Facade
+
+The resume functionality leverages the runtime facade for sophisticated state management:
+
+```python
+# Resume command implementation
+def resume_command(thread_id, response, data, config_file):
+    try:
+        # Ensure runtime system is ready
+        ensure_initialized(config_file=config_file)
+        
+        # Parse response data using CLI utilities
+        parsed_data = parse_json_state(data) if data else {}
+        
+        # Use runtime facade for workflow resumption
+        result = resume_workflow(
+            thread_id=thread_id,
+            response=response,
+            data=parsed_data,
+            config_file=config_file
+        )
+        
+        # Runtime facade handles:
+        # - Thread ID validation
+        # - State deserialization 
+        # - Response data integration
+        # - Workflow continuation
+        # - Result serialization
+        
+        print_json(result)
+        
+    except Exception as e:
+        print_err(str(e))
+        exit_code = map_exception_to_exit_code(e)
+        raise typer.Exit(code=exit_code)
+```
+
+### Facade Benefits for Resume Operations
+
+**State Persistence:**
+- **Thread Management**: Runtime facade handles thread ID validation and lookup
+- **State Serialization**: Complex workflow state handled by the service layer  
+- **Response Integration**: User responses seamlessly integrated into workflow context
+
+**Error Handling:**
+- **Invalid Threads**: Clear error messages for non-existent or expired threads
+- **Data Validation**: Response data validated before workflow continuation
+- **Exception Mapping**: Resume-specific exceptions mapped to appropriate exit codes
+
+**CLI Integration:**
+- **Data File Support**: JSON file input handled by CLI utilities
+- **Output Formatting**: Complex workflow results formatted by CLI presenter
+- **Script Compatibility**: Structured JSON output for automation systems
 
 ## Resume Command
 

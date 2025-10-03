@@ -73,9 +73,9 @@ class LLMService:
 
         Args:
             provider: Provider name ("openai", "anthropic", "google", etc.)
-            messages: List of {"role": "user/assistant/system", "content": "..."}
-            model: Override model name
-            temperature: Override temperature
+            messages: List of message dictionaries
+            model: Optional model override
+            temperature: Optional temperature override
             routing_context: Optional routing context for intelligent model selection
             **kwargs: Additional provider-specific parameters
 
@@ -85,17 +85,41 @@ class LLMService:
         Raises:
             LLMServiceError: On various error conditions
         """
-        # Check if routing should be used
         if (
             routing_context
             and routing_context.get("routing_enabled", False)
             and self.routing_service
         ):
             return self._call_llm_with_routing(messages, routing_context, **kwargs)
-        else:
-            return self._call_llm_direct(
-                provider, messages, model, temperature, **kwargs
-            )
+        return self._call_llm_direct(
+            provider,
+            messages,
+            model,
+            temperature,
+            **kwargs,
+        )
+
+    # TODO centralize the model constants. This shouldn't be here.
+    def _get_default_model(self, provider: Optional[str] = None) -> str:
+        """
+        Get default model name for this provider.
+
+        Args:
+            provider: Optional provider name (uses self.provider_name if not provided)
+
+        Returns:
+            Default model name
+        """
+        if not provider:
+            provider = self.provider_name
+
+        defaults = {
+            "anthropic": "claude-3-5-sonnet-20241022",
+            "openai": "gpt-3.5-turbo",
+            "google": "gemini-1.0-pro",
+        }
+        return defaults.get(provider, "claude-3-5-sonnet-20241022")
+
 
     def _normalize_provider(self, provider: str) -> str:
         """Normalize provider name and handle aliases."""
@@ -457,6 +481,7 @@ class LLMService:
         return RoutingContext(
             task_type=routing_context.get("task_type", "general"),
             routing_enabled=routing_context.get("routing_enabled", True),
+            activity=routing_context.get("activity"),
             complexity_override=routing_context.get("complexity_override"),
             auto_detect_complexity=routing_context.get("auto_detect_complexity", True),
             provider_preference=routing_context.get("provider_preference", []),

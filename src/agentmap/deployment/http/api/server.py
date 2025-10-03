@@ -218,20 +218,19 @@ Error responses include detailed validation information and suggestions for reso
         """Add facade-based routes to the FastAPI app."""
 
         # Import facade-based route modules (these need to be converted)
-        # TODO: Convert these route modules to use facade pattern
         try:
-            from agentmap.deployment.http.api.routes.execution import (
+            from agentmap.deployment.http.api.routes.admin import router as admin_router
+            from agentmap.deployment.http.api.routes.execute import (
                 router as execution_router,
             )
-            from agentmap.deployment.http.api.routes.info import router as info_router
-            from agentmap.deployment.http.api.routes.workflow import (
+            from agentmap.deployment.http.api.routes.workflows import (
                 router as workflow_router,
             )
 
-            # Include existing routers (will be gradually converted to facade pattern)
+            # Include existing routers
             app.include_router(execution_router)
             app.include_router(workflow_router)
-            app.include_router(info_router)
+            app.include_router(admin_router)
         except ImportError as e:
             print(f"Warning: Could not import route modules: {e}")
 
@@ -288,12 +287,12 @@ Error responses include detailed validation information and suggestions for reso
                     "1_view_documentation": "GET /docs",
                     "2_check_health": "GET /health",
                     "3_list_workflows": "GET /workflows",
-                    "4_run_workflow": "POST /execution/{workflow}/{graph}",
+                    "4_run_workflow": "POST /execute/{workflow}/{graph}",
                 },
                 "repository_structure": {
                     "workflows": "CSV files define workflow graphs",
-                    "compiled": "Compiled graphs for execution",
                     "functions": "Custom function implementations",
+                    "agents": "Custom agent implementations",
                 },
             }
 

@@ -103,7 +103,7 @@ def main_cli():
     try:
         app()
     except typer.Exit as e:
-        sys.exit(e.exit_code)  
+        sys.exit(e.exit_code)
     except KeyboardInterrupt:
         typer.echo("\nOperation cancelled by user")
         sys.exit(1)

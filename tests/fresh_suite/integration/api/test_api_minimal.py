@@ -100,7 +100,7 @@ test_graph,start,default,Start test,Test start,input,output,,
             "state": {"input": "test"}
         }
         
-        response = self.client.post("/execution/run", json=request_data)
+        response = self.client.post("/execute/run", json=request_data)
         
         # At this point, we just want to avoid the 422 args/kwargs error
         # Even if it fails for other reasons, it shouldn't be the dependency injection issue

@@ -60,7 +60,7 @@ def with_path_mocking(workflow_path_key: str = "execution_csv_path"):
             ensure_file_exists(csv_path, f"CSV file for {workflow_path_key}")
             
             # Apply path resolution mock
-            with patch('agentmap.infrastructure.api.fastapi.routes.execution._resolve_workflow_path') as mock_resolve:
+            with patch('agentmap.infrastructure.api.fastapi.routes.execute._resolve_workflow_path') as mock_resolve:
                 mock_resolve.return_value = csv_path
                 return test_func(self, *args, **kwargs)
         
@@ -236,7 +236,7 @@ def ci_robust_test(workflow_path_key: str = "execution_csv_path",
             csv_path = getattr(self, workflow_path_key)
             ensure_file_exists(csv_path, f"CSV file for {workflow_path_key}")
             
-            with patch('agentmap.infrastructure.api.fastapi.routes.execution._resolve_workflow_path') as mock_resolve:
+            with patch('agentmap.infrastructure.api.fastapi.routes.execute._resolve_workflow_path') as mock_resolve:
                 mock_resolve.return_value = csv_path
                 return test_func(self, *args, **kwargs)
         

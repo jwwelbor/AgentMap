@@ -11,7 +11,92 @@ keywords: [CLI commands, validation, workflow validation, CSV validation, config
   <span>📍 <a href="/docs/intro">AgentMap</a> → <a href="/docs/deployment">Deployment</a> → <strong>CLI Validation Commands</strong></span>
 </div>
 
-AgentMap provides comprehensive CLI validation commands to ensure your workflows, configuration files, and system setup are correct before execution. These commands integrate seamlessly with development workflows and CI/CD pipelines.
+AgentMap provides comprehensive CLI validation commands built on the **runtime facade pattern** to ensure your workflows, configuration files, and system setup are correct before execution. These commands integrate seamlessly with development workflows and CI/CD pipelines.
+
+## Validation Architecture
+
+### Facade Pattern Implementation
+
+All validation commands follow AgentMap's facade pattern, using `runtime_api.py` for business logic and `cli_presenter.py` for consistent output:
+
+```python
+# Standard validation command pattern
+from agentmap.runtime_api import validate_workflow
+from agentmap.deployment.cli.utils.cli_presenter import print_json, print_err, map_exception_to_exit_code
+
+def validate_command(args):
+    try:
+        # Use runtime facade for validation logic
+        result = validate_workflow(graph_name, config_file=args.config)
+        
+        # Use CLI presenter for consistent output
+        print_json(result)
+        
+    except Exception as e:
+        print_err(str(e))
+        exit_code = map_exception_to_exit_code(e)
+        raise typer.Exit(code=exit_code)
+```
+
+### Runtime API Integration
+
+Validation commands use these runtime facade functions:
+
+| Function | Purpose | Commands Using |
+|----------|---------|----------------|
+| `validate_workflow()` | CSV and graph validation | `validate` |
+| `validate_cache()` | Cache integrity checking | `validate-cache` |
+| `ensure_initialized()` | Runtime system validation | Most commands |
+
+### CLI Presenter Integration
+
+All validation commands use the standardized CLI presenter utilities:
+
+- **Consistent Error Handling**: Maps validation exceptions to appropriate exit codes
+- **JSON Output**: Structured validation results with custom encoding for AgentMap objects  
+- **Stderr Management**: Error messages output to stderr for script compatibility
+
+### Bundle-Based Validation
+
+The validation system uses **bundle analysis** to provide comprehensive workflow validation:
+
+```python
+# Example validation workflow
+def validate_command(csv_file, graph, config_file):
+    try:
+        # Resolve CSV path using utility functions
+        csv_path = resolve_csv_path(csv_file, csv)
+        
+        # Use runtime facade for validation
+        result = validate_workflow(graph_name, config_file=config_file)
+        
+        # Bundle analysis results
+        outputs = result["outputs"]
+        metadata = result["metadata"]
+        
+        # Report comprehensive validation results
+        print(f"Total nodes: {outputs['total_nodes']}")
+        print(f"Total edges: {outputs['total_edges']}")
+        
+        if outputs["missing_declarations"]:
+            print(f"Missing agents: {', '.join(outputs['missing_declarations'])}")
+        
+    except Exception as e:
+        handle_command_error(e, verbose=False)
+```
+
+### Validation Pattern Benefits
+
+**Facade Pattern Advantages:**
+- **Consistent Interface**: All validation commands use the same runtime facade
+- **Error Standardization**: Unified exception handling and exit code mapping  
+- **Output Formatting**: Consistent JSON output with custom AgentMap object encoding
+- **Business Logic Separation**: Validation logic encapsulated in the runtime layer
+
+**CLI Presenter Benefits:**
+- **Script Compatibility**: Structured JSON output for automation
+- **Human Readability**: Optional pretty formatting for development
+- **Error Handling**: Standardized stderr output and exit codes
 
 ## Command Overview
 

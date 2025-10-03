@@ -39,7 +39,9 @@ def scaffold_command(
         False, "--overwrite", help="Overwrite existing agent files"
     ),
     force: bool = typer.Option(
-        False, "--force", help="Force rescafolding even if no changes detected typically combined with --overwrite"
+        False,
+        "--force",
+        help="Force rescafolding even if no changes detected typically combined with --overwrite",
     ),
 ):
     """
@@ -71,7 +73,7 @@ def scaffold_command(
             func_dir=func_dir,
             config_file=config_file,
             overwrite=overwrite,
-            force=force
+            force=force,
         )
 
         # Display results using CLI presenter for consistency

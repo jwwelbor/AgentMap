@@ -43,11 +43,11 @@ class TestExecutionRoutes(TestCase):
             },
         }
 
-    @patch('agentmap.deployment.http.api.routes.execution.ensure_initialized')
-    @patch('agentmap.deployment.http.api.routes.execution.run_workflow')
+    @patch('agentmap.deployment.http.api.routes.execute.ensure_initialized')
+    @patch('agentmap.deployment.http.api.routes.execute.run_workflow')
     def test_run_workflow_graph_success(self, mock_run_workflow, mock_ensure_initialized):
         """Test successful workflow execution via REST endpoint."""
-        from agentmap.deployment.http.api.routes.execution import router
+        from agentmap.deployment.http.api.routes.execute import router
         from fastapi import FastAPI
         
         # Configure mocks
@@ -70,9 +70,9 @@ class TestExecutionRoutes(TestCase):
         # Create test client and make request
         with TestClient(app) as client:
             response = client.post(
-                "/execution/test_workflow/TestGraph",
+                "/execute/test_workflow/TestGraph",
                 json={
-                    "state": {"input": "test_data"},
+                    "inputs": {"input": "test_data"},
                     "execution_id": "test-123"
                 }
             )
@@ -81,22 +81,21 @@ class TestExecutionRoutes(TestCase):
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert data["output"] == {"result": "test_output"}
+        assert data["outputs"] == {"result": "test_output"}
         assert data["execution_id"] == "test-123"
-        assert data["metadata"]["graph_name"] == "test_workflow/TestGraph"
         
         # Verify runtime API calls
         mock_ensure_initialized.assert_called_once()
         mock_run_workflow.assert_called_once_with(
-            graph_name="test_workflow/TestGraph",
+            graph_name="test_workflow::TestGraph",
             inputs={"input": "test_data"}
         )
 
-    @patch('agentmap.deployment.http.api.routes.execution.ensure_initialized')
-    @patch('agentmap.deployment.http.api.routes.execution.run_workflow')
+    @patch('agentmap.deployment.http.api.routes.execute.ensure_initialized')
+    @patch('agentmap.deployment.http.api.routes.execute.run_workflow')
     def test_run_workflow_graph_failure(self, mock_run_workflow, mock_ensure_initialized):
         """Test failed workflow execution."""
-        from agentmap.deployment.http.api.routes.execution import router
+        from agentmap.deployment.http.api.routes.execute import router
         from fastapi import FastAPI
         
         # Configure mocks
@@ -119,8 +118,8 @@ class TestExecutionRoutes(TestCase):
         # Create test client and make request
         with TestClient(app) as client:
             response = client.post(
-                "/execution/test_workflow/TestGraph",
-                json={"state": {"input": "test_data"}}
+                "/execute/test_workflow/TestGraph",
+                json={"inputs": {"input": "test_data"}}
             )
         
         # Verify response
@@ -128,17 +127,17 @@ class TestExecutionRoutes(TestCase):
         data = response.json()
         assert data["success"] is False
         assert data["error"] == "Test error: Agent not found"
-        assert data["output"] is None
+        assert data["outputs"] is None
         
         # Verify runtime API calls
         mock_ensure_initialized.assert_called_once()
         mock_run_workflow.assert_called_once()
 
-    @patch('agentmap.deployment.http.api.routes.execution.ensure_initialized')
-    @patch('agentmap.deployment.http.api.routes.execution.run_workflow')
+    @patch('agentmap.deployment.http.api.routes.execute.ensure_initialized')
+    @patch('agentmap.deployment.http.api.routes.execute.run_workflow')
     def test_legacy_run_endpoint(self, mock_run_workflow, mock_ensure_initialized):
         """Test the legacy /run endpoint works with new implementation."""
-        from agentmap.deployment.http.api.routes.execution import router
+        from agentmap.deployment.http.api.routes.execute import router
         from fastapi import FastAPI
         
         # Configure mocks
@@ -169,11 +168,9 @@ class TestExecutionRoutes(TestCase):
         # Create test client and make request
         with TestClient(app) as client:
             response = client.post(
-                "/execution/run",
+                "/execute/legacy_workflow/LegacyGraph",
                 json={
-                    "workflow": "legacy_workflow",
-                    "graph": "LegacyGraph",
-                    "state": {"test": "data"},
+                    "inputs": {"test": "data"}
                 }
             )
         
@@ -181,20 +178,20 @@ class TestExecutionRoutes(TestCase):
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert data["output"] == {"legacy": "output"}
+        assert data["outputs"] == {"legacy": "output"}
         
         # Verify runtime API calls
         mock_ensure_initialized.assert_called_once()
         mock_run_workflow.assert_called_once_with(
-            graph_name="legacy_workflow/LegacyGraph",
+            graph_name="legacy_workflow::LegacyGraph",
             inputs={"test": "data"}
         )
 
-    @patch('agentmap.deployment.http.api.routes.execution.ensure_initialized')
-    @patch('agentmap.deployment.http.api.routes.execution.run_workflow')
+    @patch('agentmap.deployment.http.api.routes.execute.ensure_initialized')
+    @patch('agentmap.deployment.http.api.routes.execute.run_workflow')
     def test_workflow_not_found(self, mock_run_workflow, mock_ensure_initialized):
         """Test 404 when workflow file doesn't exist."""
-        from agentmap.deployment.http.api.routes.execution import router
+        from agentmap.deployment.http.api.routes.execute import router
         from agentmap.exceptions.runtime_exceptions import GraphNotFound
         from fastapi import FastAPI
         
@@ -218,7 +215,7 @@ class TestExecutionRoutes(TestCase):
         # Create test client and make request for non-existent workflow
         with TestClient(app) as client:
             response = client.post(
-                "/execution/nonexistent/TestGraph",
+                "/execute/nonexistent/TestGraph",
                 json={"state": {}}
             )
         
@@ -227,11 +224,11 @@ class TestExecutionRoutes(TestCase):
         data = response.json()
         assert "not found" in data["detail"].lower()
 
-    @patch('agentmap.deployment.http.api.routes.execution.ensure_initialized')
-    @patch('agentmap.deployment.http.api.routes.execution.run_workflow')  
+    @patch('agentmap.deployment.http.api.routes.execute.ensure_initialized')
+    @patch('agentmap.deployment.http.api.routes.execute.run_workflow')  
     def test_simplified_syntax_endpoint(self, mock_run_workflow, mock_ensure_initialized):
         """Test the simplified syntax endpoint."""
-        from agentmap.deployment.http.api.routes.execution import router
+        from agentmap.deployment.http.api.routes.execute import router
         from fastapi import FastAPI
         
         # Configure mocks
@@ -262,15 +259,15 @@ class TestExecutionRoutes(TestCase):
         # Create test client and make request using simplified syntax
         with TestClient(app) as client:
             response = client.post(
-                "/execution/simple_workflow",
-                json={"state": {"input": "test"}}
+                "/execute/simple_workflow",
+                json={"inputs": {"input": "test"}}
             )
         
         # Verify response
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert data["output"] == {"result": "simplified_output"}
+        assert data["outputs"] == {"result": "simplified_output"}
         
         # Verify runtime API calls
         mock_ensure_initialized.assert_called_once()
@@ -279,11 +276,11 @@ class TestExecutionRoutes(TestCase):
             inputs={"input": "test"}
         )
 
-    @patch('agentmap.deployment.http.api.routes.execution.ensure_initialized')
-    @patch('agentmap.deployment.http.api.routes.execution.resume_workflow')
+    @patch('agentmap.deployment.http.api.routes.execute.ensure_initialized')
+    @patch('agentmap.deployment.http.api.routes.execute.resume_workflow')
     def test_resume_workflow_endpoint(self, mock_resume_workflow, mock_ensure_initialized):
         """Test the resume workflow endpoint."""
-        from agentmap.deployment.http.api.routes.execution import router
+        from agentmap.deployment.http.api.routes.execute import router
         from fastapi import FastAPI
         
         # Configure mocks
@@ -315,11 +312,10 @@ class TestExecutionRoutes(TestCase):
         # Create test client and make request
         with TestClient(app) as client:
             response = client.post(
-                "/execution/resume",
+                "/resume/thread-123",
                 json={
-                    "thread_id": "thread-123",
-                    "response_action": "approve",
-                    "response_data": {"comment": "looks good"}
+                    "action": "approve",
+                    "data": {"comment": "looks good"}
                 }
             )
         
@@ -327,8 +323,7 @@ class TestExecutionRoutes(TestCase):
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert data["thread_id"] == "thread-123"
-        assert data["response_action"] == "approve"
+        assert "Successfully resumed thread 'thread-123'" in data["message"]
         
         # Verify runtime API calls
         mock_ensure_initialized.assert_called_once()

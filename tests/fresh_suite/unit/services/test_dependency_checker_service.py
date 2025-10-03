@@ -47,32 +47,7 @@ class TestDependencyCheckerService(unittest.TestCase):
         
         # Verify class logger was requested
         self.mock_logging_service.get_class_logger.assert_called_once()
-        
-        # Verify constants are defined
-        self.assertIsInstance(self.service.LLM_DEPENDENCIES, dict)
-        self.assertIsInstance(self.service.STORAGE_DEPENDENCIES, dict)
-        self.assertIn("openai", self.service.LLM_DEPENDENCIES)
-        self.assertIn("csv", self.service.STORAGE_DEPENDENCIES)
-    
-    def test_dependency_constants(self):
-        """Test that dependency constants are properly defined."""
-        # Test LLM dependencies structure
-        self.assertIn("openai", self.service.LLM_DEPENDENCIES)
-        self.assertIn("anthropic", self.service.LLM_DEPENDENCIES)
-        self.assertIn("google", self.service.LLM_DEPENDENCIES)
-        self.assertIn("langchain", self.service.LLM_DEPENDENCIES)
-        
-        # Test storage dependencies structure
-        self.assertIn("csv", self.service.STORAGE_DEPENDENCIES)
-        self.assertIn("vector", self.service.STORAGE_DEPENDENCIES)
-        self.assertIn("firebase", self.service.STORAGE_DEPENDENCIES)
-        
-        # Verify dependency lists are non-empty
-        self.assertTrue(all(isinstance(deps, list) and len(deps) > 0 
-                           for deps in self.service.LLM_DEPENDENCIES.values()))
-        self.assertTrue(all(isinstance(deps, list) and len(deps) > 0 
-                           for deps in self.service.STORAGE_DEPENDENCIES.values()))
-    
+                
     # =============================================================================
     # 2. Single Dependency Check Tests
     # =============================================================================

@@ -17,10 +17,11 @@ from agentmap.services.custom_agent_declaration_manager import (
 )
 from agentmap.services.function_resolution_service import FunctionResolutionService
 from agentmap.services.graph.bundle_update_service import BundleUpdateService
+from agentmap.services.graph.scaffold.service_requirements_parser import (
+    ServiceRequirementsParser,
+)
 from agentmap.services.indented_template_composer import IndentedTemplateComposer
 from agentmap.services.logging_service import LoggingService
-from agentmap.services.graph.scaffold.service_requirements_parser import ServiceRequirementsParser
-
 
 
 class GraphScaffoldService:
@@ -90,9 +91,7 @@ class GraphScaffoldService:
         return self._scaffold_function(func_name, info, func_path, overwrite=False)
 
     def scaffold_from_bundle(
-        self, 
-        bundle: GraphBundle, 
-        options: Optional[ScaffoldOptions] = None
+        self, bundle: GraphBundle, options: Optional[ScaffoldOptions] = None
     ) -> ScaffoldResult:
         """
         Scaffold agents and functions directly from a GraphBundle.
@@ -138,7 +137,7 @@ class GraphScaffoldService:
                     f"[GraphScaffoldService] Force rescaffold enabled: processing {len(agents_to_scaffold)} custom agents"
                 )
             else:
-                # Normal behavior: only missing declarations  
+                # Normal behavior: only missing declarations
                 agents_to_scaffold = list(bundle.missing_declarations or set())
                 self.logger.info(
                     f"[GraphScaffoldService] Found {len(agents_to_scaffold)} missing agents to scaffold"
