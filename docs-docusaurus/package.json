@@ -27,11 +27,11 @@
     "check:docs": "npm run build && npm run serve & sleep 5 && npm run check:links && pkill -f 'docusaurus serve'"
   },
   "dependencies": {
-    "@docusaurus/core": "^3.0.0",
-    "@docusaurus/preset-classic": "^3.0.0",
-    "@docusaurus/theme-live-codeblock": "^3.0.0",
-    "@docusaurus/theme-mermaid": "^3.0.0",
-    "@docusaurus/plugin-client-redirects": "^3.0.0",
+    "@docusaurus/core": "^3.9.1",
+    "@docusaurus/preset-classic": "^3.9.1",
+    "@docusaurus/theme-live-codeblock": "^3.9.1",
+    "@docusaurus/theme-mermaid": "^3.9.1",
+    "@docusaurus/plugin-client-redirects": "^3.9.1",
     "@easyops-cn/docusaurus-search-local": "^0.51.1",
     "@mdx-js/react": "^3.0.0",
     "clsx": "^2.0.0",
