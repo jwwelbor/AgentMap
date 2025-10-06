@@ -216,7 +216,8 @@ class AppConfigService:
             "fallback": {
                 "enabled": True,
                 "default_provider": "anthropic",
-                "default_model": "claude-3-haiku-20240307",
+                # Note: default_model is loaded from routing.fallback.default_model
+                # If not specified in config, LLMModelsConfigService provides the default
                 "max_retries": 2,
             },
             "performance": {

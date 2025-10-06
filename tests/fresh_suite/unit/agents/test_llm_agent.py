@@ -103,12 +103,12 @@ class TestLLMAgent(unittest.TestCase):
             name="minimal_llm",
             prompt="Simple prompt"
         )
-        
+
         # Verify defaults are applied
         self.assertEqual(minimal_agent.name, "minimal_llm")
         self.assertEqual(minimal_agent.prompt, "Simple prompt")
         self.assertEqual(minimal_agent.provider, "anthropic")  # Default provider
-        self.assertEqual(minimal_agent.model, "claude-3-5-sonnet-20241022")  # Default model
+        self.assertIsNone(minimal_agent.model)  # Default model provided by LLMService at runtime
         self.assertEqual(minimal_agent.temperature, 0.7)  # Default temperature
         self.assertIsNone(minimal_agent.max_tokens)  # Default max_tokens
     

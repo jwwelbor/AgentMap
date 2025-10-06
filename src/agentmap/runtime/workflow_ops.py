@@ -350,83 +350,91 @@ def inspect_graph(
     try:
         # Get container and services through RuntimeManager delegation
         container = RuntimeManager.get_container()
-        graph_runner = container.graph_runner_service()
 
-        # Determine CSV path
+        # Resolve CSV path
         if csv_file:
             csv_path = Path(csv_file)
+            resolved_graph_name = graph_name
         else:
-            app_config_service = container.app_config_service()
-            csv_path = app_config_service.get_csv_repository_path()
+            csv_path, resolved_graph_name = _resolve_csv_path(graph_name, container)
 
-        # Load the graph definition
-        graph_def, resolved_name = graph_runner._load_graph_definition_for_execution(
-            csv_path, graph_name
-        )
+        if not csv_path.exists():
+            raise GraphNotFound(graph_name, f"CSV file not found: {csv_path}")
 
-        # Get agent resolution status
-        agent_status = graph_runner.get_agent_resolution_status(graph_def)
+        # Load the graph bundle using GraphBundleService
+        graph_bundle_service = container.graph_bundle_service()
 
-        # Collect node details
-        nodes_to_inspect = [node] if node else list(graph_def.keys())
-        node_details = {}
+        try:
+            bundle = graph_bundle_service.get_or_create_bundle(
+                csv_path=csv_path,
+                graph_name=resolved_graph_name,
+                config_path=config_file,
+            )
+        except Exception as e:
+            # Check if this is a "graph not found in CSV" error
+            error_msg = str(e)
+            if "not found in CSV" in error_msg or "Available graphs:" in error_msg:
+                raise GraphNotFound(resolved_graph_name, error_msg)
+            raise
+
+        # Extract details from bundle - format as list of nodes for API compatibility
+        nodes_to_inspect = [node] if node else list(bundle.nodes.keys())
+        nodes_list = []
 
         for node_name in nodes_to_inspect:
-            if node_name not in graph_def:
+            if node_name not in bundle.nodes:
                 continue
 
-            node_def = graph_def[node_name]
+            node_obj = bundle.nodes[node_name]
 
             node_info = {
-                "agent_type": node_def.agent_type or "default",
-                "description": node_def.description or "No description",
-                "resolvable": False,
-                "service_info": None,
-                "error": None,
+                "name": node_name,
+                "agent_type": node_obj.agent_type or "default",
+                "description": node_obj.description or "",
             }
 
-            # Get resolution info
-            agent_type = node_def.agent_type or "default"
-            if agent_type in agent_status["agent_types"]:
-                type_info = agent_status["agent_types"][agent_type]["info"]
-                node_info["resolvable"] = type_info["resolvable"]
-                node_info["source"] = type_info.get("source", "Unknown")
-                if not type_info["resolvable"]:
-                    node_info["resolution_error"] = type_info.get(
-                        "resolution_error", "Unknown error"
-                    )
+            nodes_list.append(node_info)
 
-            # Try to create the agent to get service info
-            try:
-                node_registry = graph_runner.node_registry.prepare_for_assembly(
-                    graph_def, graph_name
-                )
-                agent_instance = graph_runner._create_agent_instance(
-                    node_def, graph_name, node_registry
-                )
-                node_info["service_info"] = agent_instance.get_service_info()
-            except Exception as e:
-                node_info["error"] = str(e)
-
-            node_details[node_name] = node_info
+        # Analyze agent types
+        unique_agent_types = len(bundle.required_agents)
+        all_agents_available = len(bundle.missing_declarations) == 0
 
         return {
             "success": True,
             "outputs": {
-                "resolved_name": resolved_name,
-                "total_nodes": agent_status["total_nodes"],
-                "unique_agent_types": agent_status["overall_status"][
-                    "unique_agent_types"
-                ],
-                "all_resolvable": agent_status["overall_status"]["all_resolvable"],
-                "resolution_rate": agent_status["overall_status"]["resolution_rate"],
-                "node_details": node_details,
-                "issues": agent_status["issues"],
+                "resolved_name": bundle.graph_name,
+                "total_nodes": len(bundle.nodes),
+                "unique_agent_types": unique_agent_types,
+                "all_resolvable": all_agents_available,
+                "resolution_rate": (
+                    1.0
+                    if all_agents_available
+                    else (
+                        (unique_agent_types - len(bundle.missing_declarations))
+                        / unique_agent_types
+                        if unique_agent_types > 0
+                        else 0.0
+                    )
+                ),
+                "structure": {
+                    "nodes": nodes_list,
+                    "entry_point": bundle.entry_point,
+                },
+                "issues": (
+                    [
+                        f"Missing agent declarations: {', '.join(bundle.missing_declarations)}"
+                    ]
+                    if bundle.missing_declarations
+                    else []
+                ),
+                "required_agents": list(bundle.required_agents),
+                "required_services": list(bundle.required_services),
             },
             "metadata": {
-                "graph_name": graph_name,
+                "graph_name": resolved_graph_name,
                 "csv_file": str(csv_path),
                 "inspected_node": node,
+                "csv_hash": bundle.csv_hash,
             },
         }
 

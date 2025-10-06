@@ -1,16 +1,19 @@
-from typing import Optional
 import time
+from typing import Optional
+
 # --- lightweight circuit breaker --------------------------------------------
+
 
 class CircuitBreaker:
     """
     Simple per (provider:model) circuit breaker.
     Opens after N failures; resets after cooldown seconds.
     """
+
     def __init__(self, failures_threshold: int = 3, reset_seconds: int = 60):
         self.threshold = failures_threshold
         self.reset = reset_seconds
-        self.failures = {}   # key -> count
+        self.failures = {}  # key -> count
         self.opened_at = {}  # key -> timestamp
 
     def _key(self, provider: str, model: str) -> str:

@@ -69,11 +69,16 @@ class TestTemplates(unittest.TestCase):
             attributes=[],
             usage_examples={}
         )
-        
-        # Call render_agent with minimal info structure
-        info = {"attrs": {}}
+
+        # Call render_agent with minimal info structure containing required fields
+        info = {
+            "attrs": {},
+            "node_name": "test_node",
+            "input_fields": [],
+            "output_field": "result"
+        }
         code = self.templates.render_agent("My", info, service_reqs)
-        
+
         # Verify the code contains the expected class definition
         self.assertIn("class MyAgent", code)
 

@@ -28,11 +28,13 @@ class TestLLMServiceEnhanced(unittest.TestCase):
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
         self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service()
         self.mock_routing_service = Mock()
-        
+        self.mock_llm_models_config_service = MockServiceFactory.create_mock_llm_models_config_service()
+
         self.service = LLMService(
             configuration=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
-            routing_service=self.mock_routing_service
+            routing_service=self.mock_routing_service,
+            llm_models_config_service=self.mock_llm_models_config_service
         )
         
         self.mock_logger = self.service._logger
@@ -78,7 +80,7 @@ class TestLLMServiceEnhanced(unittest.TestCase):
         def mock_get_config(provider):
             configs = {
                 "openai": {"api_key": "openai_key", "model": "gpt-4"},
-                "anthropic": {"api_key": "claude_key", "model": "claude-3-sonnet"},
+                "anthropic": {"api_key": "claude_key", "model": "claude-3-7-sonnet-20250219"},
                 "google": {"api_key": "google_key", "model": "gemini-pro"}
             }
             return configs.get(provider)
@@ -217,13 +219,18 @@ class TestLLMServiceEnhanced(unittest.TestCase):
             "api_key": "test_key"
             # Missing model and temperature
         }
-        
+
+        # Clear side_effect and set return_value to test merging logic
+        self.mock_llm_models_config_service.get_default_model.side_effect = None
+        self.mock_llm_models_config_service.get_default_model.return_value = "test-default-model"
+
         config = self.service._get_provider_config("openai")
-        
-        # Should apply reasonable defaults
-        self.assertEqual(config["model"], "gpt-3.5-turbo")  # OpenAI default
-        self.assertEqual(config["temperature"], 0.7)        # Standard default
-        self.assertEqual(config["api_key"], "test_key")     # From config
+
+        # Should apply defaults from llm_models_config_service
+        self.mock_llm_models_config_service.get_default_model.assert_called_with("openai")
+        self.assertEqual(config["model"], "test-default-model")  # From llm_models_config
+        self.assertEqual(config["temperature"], 0.7)             # Standard default
+        self.assertEqual(config["api_key"], "test_key")          # From config
     
     def test_identifies_available_providers_based_on_api_keys(self):
         """Test that service correctly identifies which providers are available."""
@@ -261,7 +268,7 @@ class TestLLMServiceEnhanced(unittest.TestCase):
         # Mock routing decision
         mock_decision = Mock()
         mock_decision.provider = "anthropic"
-        mock_decision.model = "claude-3-opus"
+        mock_decision.model = "claude-opus-4-20250514"
         mock_decision.complexity = "high"
         mock_decision.confidence = 0.9
         
@@ -286,7 +293,7 @@ class TestLLMServiceEnhanced(unittest.TestCase):
             mock_direct.assert_called_once_with(
                 provider="anthropic",  # From routing decision
                 messages=[{"role": "user", "content": "Analyze this data"}],
-                model="claude-3-opus",  # From routing decision
+                model="claude-opus-4-20250514",  # From routing decision
                 temperature=None
             )
             

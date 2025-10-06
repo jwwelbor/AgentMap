@@ -22,15 +22,17 @@ class TestLLMService(unittest.TestCase):
         # Create mock services using MockServiceFactory
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
         self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service()
-        
+        self.mock_llm_models_config_service = MockServiceFactory.create_mock_llm_models_config_service()
+
         # Create mock LLMRoutingService
         self.mock_routing_service = Mock()
-        
+
         # Initialize LLMService with mocked dependencies
         self.service = LLMService(
             configuration=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
-            routing_service=self.mock_routing_service
+            routing_service=self.mock_routing_service,
+            llm_models_config_service=self.mock_llm_models_config_service
         )
         
         # Get the mock logger for verification
@@ -58,9 +60,10 @@ class TestLLMService(unittest.TestCase):
         service_no_routing = LLMService(
             configuration=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
-            routing_service=None
+            routing_service=None,
+            llm_models_config_service=self.mock_llm_models_config_service
         )
-        
+
         # Verify routing is disabled
         self.assertFalse(service_no_routing._routing_enabled)
         self.assertIsNone(service_no_routing.routing_service)
@@ -137,7 +140,7 @@ class TestLLMService(unittest.TestCase):
         # Mock routing decision
         mock_decision = Mock()
         mock_decision.provider = "anthropic"
-        mock_decision.model = "claude-3-sonnet"
+        mock_decision.model = "claude-3-7-sonnet-20250219"
         mock_decision.complexity = "medium"
         mock_decision.confidence = 0.85
         
@@ -164,7 +167,7 @@ class TestLLMService(unittest.TestCase):
             mock_direct_call.assert_called_once_with(
                 provider="anthropic",
                 messages=messages,
-                model="claude-3-sonnet",
+                model="claude-3-7-sonnet-20250219",
                 temperature=None
             )
             
@@ -274,13 +277,18 @@ class TestLLMService(unittest.TestCase):
         # Configure mock to return partial config
         partial_config = {"api_key": "test_key"}
         self.mock_app_config_service.get_llm_config.return_value = partial_config
-        
+
+        # Clear side_effect and set return_value to test merging logic
+        self.mock_llm_models_config_service.get_default_model.side_effect = None
+        self.mock_llm_models_config_service.get_default_model.return_value = "test-model"
+
         # Execute test
         result = self.service._get_provider_config("openai")
-        
-        # Verify defaults are applied
-        self.assertEqual(result["model"], "gpt-3.5-turbo")  # default for openai
-        self.assertEqual(result["temperature"], 0.7)  # default
+
+        # Verify defaults are applied from llm_models_config_service
+        self.mock_llm_models_config_service.get_default_model.assert_called_with("openai")
+        self.assertEqual(result["model"], "test-model")  # from llm_models_config
+        self.assertEqual(result["temperature"], 0.7)  # hardcoded default
         self.assertEqual(result["api_key"], "test_key")  # from config
     
     def test_get_provider_config_not_found(self):
@@ -399,12 +407,13 @@ class TestLLMService(unittest.TestCase):
         """Test is_routing_enabled() returns correct status."""
         # Service with routing
         self.assertTrue(self.service.is_routing_enabled())
-        
+
         # Service without routing
         service_no_routing = LLMService(
             configuration=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
-            routing_service=None
+            routing_service=None,
+            llm_models_config_service=self.mock_llm_models_config_service
         )
         self.assertFalse(service_no_routing.is_routing_enabled())
     
@@ -426,12 +435,13 @@ class TestLLMService(unittest.TestCase):
         service_no_routing = LLMService(
             configuration=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
-            routing_service=None
+            routing_service=None,
+            llm_models_config_service=self.mock_llm_models_config_service
         )
-        
+
         # Execute test
         stats = service_no_routing.get_routing_stats()
-        
+
         # Should return empty dict
         self.assertEqual(stats, {})
     

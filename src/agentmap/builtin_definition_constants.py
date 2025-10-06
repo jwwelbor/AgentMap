@@ -6,7 +6,7 @@ eliminating duplication between PythonDeclarationSource and AgentConfigService.
 Provides a single source of truth for all built-in component definitions.
 """
 
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional
 
 
 class BuiltinDefinitionConstants:
@@ -403,11 +403,11 @@ class BuiltinDefinitionConstants:
     # Technical dependency mappings
     LLM_PROVIDER_DEPENDENCIES = {
         "openai": ["langchain_openai"],
-        "anthropic": ["langchain_anthropic"], 
+        "anthropic": ["langchain_anthropic"],
         "google": ["langchain_google_genai"],
         "langchain": ["langchain_core"],
     }
-    
+
     STORAGE_TYPE_DEPENDENCIES = {
         "csv": ["pandas"],
         "vector": ["langchain", "chromadb"],
@@ -416,17 +416,17 @@ class BuiltinDefinitionConstants:
         "aws_s3": ["boto3"],
         "gcp_storage": ["google-cloud-storage"],
     }
-    
+
     @classmethod
     def get_provider_dependencies(cls, provider: str) -> List[str]:
         """Get technical dependencies for LLM provider."""
         return cls.LLM_PROVIDER_DEPENDENCIES.get(provider, [])
-    
+
     @classmethod
     def get_storage_dependencies(cls, storage_type: str) -> List[str]:
         """Get technical dependencies for storage type."""
         return cls.STORAGE_TYPE_DEPENDENCIES.get(storage_type, [])
-    
+
     @classmethod
     def get_supported_llm_providers(cls) -> List[str]:
         """Get list of supported LLM providers."""

@@ -60,44 +60,59 @@ logging:
 # Storage-specific configurations
 # storage: look in separate file storage_config.yaml
 
-# LLM configuration
+# LLM Provider Configuration
+# Configure API keys and default models for each provider
+# Note: Model validation is delegated to provider APIs - any model name is accepted
 llm:
   openai:
     api_key: ""  # Or use env: OPENAI_API_KEY
-    model: "gpt-4o-mini-2024-07-18"
+    model: "gpt-4o-mini-2024-07-18"  # Default model (can be any valid OpenAI model)
     temperature: 0.7
+    max_tokens: null  # Optional: limit response length
+    top_p: 1.0  # Optional: nucleus sampling parameter
+    frequency_penalty: 0.0  # Optional: reduce repetition
+    presence_penalty: 0.0  # Optional: encourage topic diversity
+
   anthropic:
     api_key: ""  # Or use env: ANTHROPIC_API_KEY
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-5-sonnet-20241022"  # Default model (can be any valid Anthropic model)
     temperature: 0.7
+    max_tokens: 4096  # Optional: Claude default is 4096
+    top_p: 1.0  # Optional: nucleus sampling
+    top_k: null  # Optional: top-k sampling (Claude-specific)
+
   google:
     api_key: ""  # Or use env: GOOGLE_API_KEY
-    model: "gemini-1.5-flash"
+    model: "gemini-1.5-flash"  # Default model (can be any valid Google model)
     temperature: 0.7
+    max_tokens: null  # Optional: limit response length
+    top_p: 1.0  # Optional: nucleus sampling
+    top_k: null  # Optional: top-k sampling
 
 routing:
   enabled: true
 
   # Provider × Complexity Matrix
-  # This is the core routing table that maps (provider, complexity) → model
+  # Maps (provider, complexity) → model for intelligent routing and fallback
+  # Used by tiered fallback system when primary model fails
   routing_matrix:
     anthropic:
-      low: "claude-3-5-haiku-20241022"
-      medium: "claude-3-5-sonnet-20241022"
-      high: "claude-sonnet-4-20250514"
-      critical: "claude-opus-4-20250514"
+      low: "claude-3-5-haiku-20241022"        # Fast, cost-effective (128k context)
+      medium: "claude-3-5-sonnet-20241022"    # Balanced performance (200k context)
+      high: "claude-sonnet-4-20250514"        # High capability (200k context)
+      critical: "claude-opus-4-20250514"      # Maximum capability (200k context)
 
     openai:
-      low: "gpt-4o-mini-2024-07-18"
-      medium: "gpt-4o-2024-11-20"
-      high: "gpt-4o-2024-11-20"
-      critical: "o3-mini-2025-01-31"
+      low: "gpt-4o-mini-2024-07-18"           # Fast, cost-effective (128k context)
+      medium: "gpt-4o-2024-11-20"             # Balanced performance (128k context)
+      high: "gpt-4o-2024-11-20"               # High capability (128k context)
+      critical: "o3-mini-2025-01-31"          # Reasoning-focused (128k context)
 
     google:
-      low: "gemini-1.5-flash"
-      medium: "gemini-1.5-pro"
-      high: "gemini-1.5-pro"
-      critical: "gemini-1.5-pro"
+      low: "gemini-1.5-flash"                 # Fast, cost-effective (1M context)
+      medium: "gemini-1.5-pro"                # Balanced performance (2M context)
+      high: "gemini-1.5-pro"                  # High capability (2M context)
+      critical: "gemini-1.5-pro"              # Maximum capability (2M context)
 
   # Complexity Analysis Configuration
   complexity_analysis:
@@ -134,23 +149,206 @@ routing:
     # Maximum cost tier (low, medium, high, critical)
     max_cost_tier: "medium"
 
-  # Fallback Configuration
+  # Tiered Fallback Configuration
+  # Automatic fallback when LLM calls fail (new models work without code changes)
   fallback:
-    # Default provider when preferences unavailable
+    # Tier 1: Same provider, low complexity model from routing_matrix
+    # Tier 2: Switch to this fallback provider
     default_provider: "anthropic"
-    # Default model when routing fails
+    # Tier 3: Emergency fallback to first available provider
+    # Tier 4: Raise error with full context
+
+    # Default model when routing fails (overrides routing_matrix)
     default_model: "claude-3-5-haiku-20241022"
-    # Retry with lower complexity if model unavailable
+
+    # Retry with lower complexity if high-tier model unavailable
     retry_with_lower_complexity: true
+
+    # Log fallback attempts for debugging
+    log_fallback_attempts: true
+
+  # Activity-Based Routing Configuration
+  # Define specific activities with explicit provider/model pairs per complexity tier
+  # Activities are evaluated FIRST, before task_types and routing_matrix
+  activities:
+    code_generation:
+      low:
+        primary:
+          provider: "anthropic"
+          model: "claude-3-5-haiku-20241022"
+        fallbacks:
+          - provider: "openai"
+            model: "gpt-4o-mini-2024-07-18"
+      medium:
+        primary:
+          provider: "anthropic"
+          model: "claude-3-5-sonnet-20241022"
+        fallbacks:
+          - provider: "openai"
+            model: "gpt-4o-2024-11-20"
+      high:
+        primary:
+          provider: "anthropic"
+          model: "claude-sonnet-4-20250514"
+        fallbacks:
+          - provider: "openai"
+            model: "gpt-4o-2024-11-20"
+      critical:
+        primary:
+          provider: "openai"
+          model: "o3-mini-2025-01-31"
+        fallbacks:
+          - provider: "anthropic"
+            model: "claude-opus-4-20250514"
+
+    data_analysis:
+      low:
+        primary:
+          provider: "openai"
+          model: "gpt-4o-mini-2024-07-18"
+        fallbacks:
+          - provider: "google"
+            model: "gemini-1.5-flash"
+      medium:
+        primary:
+          provider: "openai"
+          model: "gpt-4o-2024-11-20"
+        fallbacks:
+          - provider: "anthropic"
+            model: "claude-3-5-sonnet-20241022"
+      high:
+        primary:
+          provider: "openai"
+          model: "gpt-4o-2024-11-20"
+        fallbacks:
+          - provider: "anthropic"
+            model: "claude-sonnet-4-20250514"
+
+    research:
+      # Use 'any' for complexity-agnostic routing
+      any:
+        primary:
+          provider: "google"
+          model: "gemini-1.5-pro"  # 2M context window
+        fallbacks:
+          - provider: "anthropic"
+            model: "claude-3-5-sonnet-20241022"
+          - provider: "openai"
+            model: "gpt-4o-2024-11-20"
+
+    creative_writing:
+      low:
+        primary:
+          provider: "anthropic"
+          model: "claude-3-5-haiku-20241022"
+      medium:
+        primary:
+          provider: "anthropic"
+          model: "claude-3-5-sonnet-20241022"
+        fallbacks:
+          - provider: "openai"
+            model: "gpt-4o-2024-11-20"
+      high:
+        primary:
+          provider: "anthropic"
+          model: "claude-sonnet-4-20250514"
+
+    customer_support:
+      any:
+        primary:
+          provider: "anthropic"
+          model: "claude-3-5-haiku-20241022"  # Fast and cheap
+        fallbacks:
+          - provider: "openai"
+            model: "gpt-4o-mini-2024-07-18"
+
+  # Task Type Definitions (for complexity analysis and provider preferences)
+  # Used when activity is NOT specified in routing_context
+  task_types:
+    general:
+      description: "General purpose tasks and queries"
+      provider_preference: ["anthropic", "openai", "google"]
+      default_complexity: "medium"
+      complexity_keywords:
+        low: ["simple", "basic", "quick", "summarize"]
+        medium: ["analyze", "process", "standard", "explain"]
+        high: ["complex", "detailed", "comprehensive", "advanced"]
+        critical: ["urgent", "critical", "important", "emergency"]
+
+    code_generation:
+      description: "Writing, refactoring, or debugging code"
+      provider_preference: ["anthropic", "openai"]  # Claude/GPT excel at code
+      default_complexity: "high"
+      complexity_keywords:
+        low: ["comment", "format", "simple function"]
+        medium: ["implement", "refactor", "debug"]
+        high: ["architecture", "system design", "complex algorithm"]
+        critical: ["security critical", "performance critical", "production"]
+
+    data_analysis:
+      description: "Analyzing data, creating reports, insights"
+      provider_preference: ["openai", "anthropic", "google"]
+      default_complexity: "medium"
+      complexity_keywords:
+        low: ["count", "sum", "average"]
+        medium: ["trend", "pattern", "correlation"]
+        high: ["prediction", "forecasting", "statistical"]
+        critical: ["real-time", "mission critical", "financial"]
+
+    creative_writing:
+      description: "Creative content generation, storytelling"
+      provider_preference: ["anthropic", "openai"]  # Claude excels at creative
+      default_complexity: "medium"
+      complexity_keywords:
+        low: ["tweet", "headline", "caption"]
+        medium: ["article", "blog post", "story"]
+        high: ["novel chapter", "screenplay", "comprehensive"]
+        critical: ["publication ready", "professional editing"]
+
+    research:
+      description: "Research, information synthesis, academic"
+      provider_preference: ["google", "anthropic", "openai"]  # Gemini's long context
+      default_complexity: "high"
+      complexity_keywords:
+        low: ["definition", "summary", "overview"]
+        medium: ["comparison", "analysis", "review"]
+        high: ["comprehensive research", "literature review", "synthesis"]
+        critical: ["publication", "peer review", "academic"]
+
+    customer_support:
+      description: "Customer service, support tickets, FAQs"
+      provider_preference: ["anthropic", "openai"]
+      default_complexity: "low"
+      complexity_keywords:
+        low: ["faq", "simple question", "basic support"]
+        medium: ["troubleshooting", "detailed question"]
+        high: ["complex issue", "escalation", "technical"]
+        critical: ["urgent", "vip customer", "critical issue"]
+
+    reasoning:
+      description: "Logic puzzles, problem solving, step-by-step reasoning"
+      provider_preference: ["openai", "anthropic"]  # o3-mini for reasoning
+      default_complexity: "high"
+      complexity_keywords:
+        low: ["basic logic", "simple calculation"]
+        medium: ["multi-step problem", "reasoning chain"]
+        high: ["complex reasoning", "proof", "theorem"]
+        critical: ["advanced mathematics", "research level"]
 
   # Performance Settings
   performance:
     # Cache routing decisions for identical inputs
     enable_routing_cache: true
-    # Cache TTL in seconds
+    # Cache TTL in seconds (5 minutes)
     cache_ttl: 300
-    # Maximum cache size
+    # Maximum cache size (number of entries)
     max_cache_size: 1000
+    # Timeout for LLM API calls (seconds)
+    request_timeout: 60
+    # Max retries before giving up
+    max_retries: 3
+    # Exponential backoff for retries
+    retry_backoff_factor: 2
 
 # Environment Variable Overrides
 # These allow runtime configuration without changing the file
@@ -159,3 +357,7 @@ environment_overrides:
   default_task_type: ${AGENTMAP_DEFAULT_TASK_TYPE:general}
   cost_optimization: ${AGENTMAP_COST_OPTIMIZATION:true}
   routing_cache_enabled: ${AGENTMAP_ROUTING_CACHE:true}
+  llm_openai_api_key: ${OPENAI_API_KEY:}
+  llm_anthropic_api_key: ${ANTHROPIC_API_KEY:}
+  llm_google_api_key: ${GOOGLE_API_KEY:}
+

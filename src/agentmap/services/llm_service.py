@@ -2,7 +2,7 @@
 LLM Service for centralized LLM calling in AgentMap.
 
 Provides a unified interface for calling different LLM providers while
-handling configuration, error handling, and provider abstraction.
+handling configuration, error handling, provider abstraction, and tiered fallback.
 """
 
 import os
@@ -15,6 +15,9 @@ from agentmap.exceptions import (
     LLMServiceError,
 )
 from agentmap.services.config import AppConfigService
+from agentmap.services.config.llm_models_config_service import LLMModelsConfigService
+from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
+from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.routing.routing_service import LLMRoutingService
 
@@ -41,8 +44,8 @@ class LLMService:
     """
     Centralized service for making LLM calls across different providers.
 
-    Handles provider abstraction, configuration loading, and error handling
-    while maintaining a simple interface for callers.
+    Handles provider abstraction, configuration loading, error handling,
+    and tiered fallback strategies while maintaining a simple interface for callers.
     """
 
     def __init__(
@@ -50,11 +53,17 @@ class LLMService:
         configuration: AppConfigService,
         logging_service: LoggingService,
         routing_service: LLMRoutingService,
+        llm_models_config_service: LLMModelsConfigService,
+        features_registry_service: Optional[FeaturesRegistryService] = None,
+        routing_config_service: Optional[LLMRoutingConfigService] = None,
     ):
         self.configuration = configuration
         self._clients = {}  # Cache for LangChain clients
         self._logger = logging_service.get_class_logger("agentmap.llm")
         self.routing_service = routing_service
+        self.llm_models_config = llm_models_config_service
+        self.features_registry = features_registry_service
+        self.routing_config = routing_config_service
 
         # Track whether routing is enabled
         self._routing_enabled = routing_service is not None
@@ -99,7 +108,6 @@ class LLMService:
             **kwargs,
         )
 
-    # TODO centralize the model constants. This shouldn't be here.
     def _get_default_model(self, provider: Optional[str] = None) -> str:
         """
         Get default model name for this provider.
@@ -113,13 +121,8 @@ class LLMService:
         if not provider:
             provider = self.provider_name
 
-        defaults = {
-            "anthropic": "claude-3-5-sonnet-20241022",
-            "openai": "gpt-3.5-turbo",
-            "google": "gemini-1.0-pro",
-        }
-        return defaults.get(provider, "claude-3-5-sonnet-20241022")
-
+        default_model = self.llm_models_config.get_default_model(provider)
+        return default_model or self.llm_models_config.get_fallback_model()
 
     def _normalize_provider(self, provider: str) -> str:
         """Normalize provider name and handle aliases."""
@@ -149,25 +152,19 @@ class LLMService:
 
     def _get_provider_defaults(self, provider: str) -> Dict[str, Any]:
         """Get default configuration values for a provider."""
-        defaults = {
-            "openai": {
-                "model": "gpt-3.5-turbo",
-                "temperature": 0.7,
-                "api_key": os.environ.get("OPENAI_API_KEY", ""),
-            },
-            "anthropic": {
-                "model": "claude-3-5-sonnet-20241022",
-                "temperature": 0.7,
-                "api_key": os.environ.get("ANTHROPIC_API_KEY", ""),
-            },
-            "google": {
-                "model": "gemini-1.0-pro",
-                "temperature": 0.7,
-                "api_key": os.environ.get("GOOGLE_API_KEY", ""),
-            },
-        }
+        default_model = self.llm_models_config.get_default_model(provider)
 
-        return defaults.get(provider, {})
+        if not default_model:
+            return {}
+
+        # Get API key environment variable name
+        api_key_env_var = self._get_api_key_env_var(provider)
+
+        return {
+            "model": default_model,
+            "temperature": 0.7,
+            "api_key": os.environ.get(api_key_env_var, ""),
+        }
 
     def _get_or_create_client(self, provider: str, config: Dict[str, Any]) -> Any:
         """Get or create a LangChain client for the provider."""
@@ -360,6 +357,169 @@ class LLMService:
                 **kwargs,
             )
 
+    def _get_fallback_model(
+        self, provider: str, complexity: str = "low"
+    ) -> Optional[str]:
+        """
+        Get fallback model from routing matrix.
+
+        Args:
+            provider: Provider name
+            complexity: Complexity level (default: 'low')
+
+        Returns:
+            Model name from routing matrix, or None if not found
+        """
+        if not self.routing_config:
+            return None
+
+        provider_matrix = self.routing_config.routing_matrix.get(provider.lower(), {})
+        return provider_matrix.get(complexity.lower())
+
+    def _try_with_fallback(
+        self,
+        original_provider: str,
+        original_model: str,
+        messages: List[Dict[str, str]],
+        error: Exception,
+        **kwargs,
+    ) -> str:
+        """
+        Attempt tiered fallback strategy when LLM call fails.
+
+        Tier 1: Same provider, lower complexity model from routing matrix
+        Tier 2: Configured fallback provider from routing.fallback.default_provider
+        Tier 3: Emergency fallback to first available provider
+        Tier 4: Raise error with full context
+
+        Args:
+            original_provider: Provider that failed
+            original_model: Model that failed
+            messages: Messages to send
+            error: Original error that triggered fallback
+            **kwargs: Additional parameters
+
+        Returns:
+            Response string from successful fallback
+
+        Raises:
+            LLMServiceError: If all fallback tiers exhausted
+        """
+        self._logger.error(
+            f"Model '{original_model}' failed for provider '{original_provider}': {error}"
+        )
+
+        attempted_fallbacks = []
+
+        # Tier 1: Same provider, low complexity model
+        if self.features_registry and self.features_registry.is_provider_available(
+            "llm", original_provider
+        ):
+            try:
+                fallback_model = self._get_fallback_model(original_provider, "low")
+                if fallback_model and fallback_model != original_model:
+                    self._logger.warning(
+                        f"Tier 1: Retrying with fallback model '{fallback_model}' "
+                        f"for provider '{original_provider}'"
+                    )
+                    attempted_fallbacks.append(f"{original_provider}:{fallback_model}")
+
+                    config = self._get_provider_config(original_provider)
+                    config["model"] = fallback_model
+                    client = self._get_or_create_client(original_provider, config)
+                    response = client.invoke(
+                        self._convert_messages_to_langchain(messages)
+                    )
+
+                    self._logger.info("Tier 1 fallback successful")
+                    return (
+                        response.content
+                        if hasattr(response, "content")
+                        else str(response)
+                    )
+            except Exception as e:
+                self._logger.warning(f"Tier 1 fallback failed: {e}")
+
+        # Tier 2: Configured fallback provider
+        if self.routing_config:
+            fallback_provider = self.routing_config.fallback.get("default_provider")
+            if (
+                fallback_provider
+                and fallback_provider != original_provider
+                and self.features_registry
+                and self.features_registry.is_provider_available(
+                    "llm", fallback_provider
+                )
+            ):
+                try:
+                    fallback_model = self._get_fallback_model(fallback_provider, "low")
+                    if fallback_model:
+                        self._logger.warning(
+                            f"Tier 2: Retrying with configured fallback provider "
+                            f"'{fallback_provider}' and model '{fallback_model}'"
+                        )
+                        attempted_fallbacks.append(
+                            f"{fallback_provider}:{fallback_model}"
+                        )
+
+                        config = self._get_provider_config(fallback_provider)
+                        config["model"] = fallback_model
+                        client = self._get_or_create_client(fallback_provider, config)
+                        response = client.invoke(
+                            self._convert_messages_to_langchain(messages)
+                        )
+
+                        self._logger.info("Tier 2 fallback successful")
+                        return (
+                            response.content
+                            if hasattr(response, "content")
+                            else str(response)
+                        )
+                except Exception as e:
+                    self._logger.warning(f"Tier 2 fallback failed: {e}")
+
+        # Tier 3: Emergency fallback - first available provider
+        if self.features_registry:
+            available_providers = self.features_registry.get_available_providers("llm")
+            for provider in available_providers:
+                if provider in [original_provider, fallback_provider]:
+                    continue  # Already tried these
+
+                try:
+                    fallback_model = self._get_fallback_model(provider, "low")
+                    if fallback_model:
+                        self._logger.warning(
+                            f"Tier 3: Emergency fallback to provider '{provider}' "
+                            f"with model '{fallback_model}'"
+                        )
+                        attempted_fallbacks.append(f"{provider}:{fallback_model}")
+
+                        config = self._get_provider_config(provider)
+                        config["model"] = fallback_model
+                        client = self._get_or_create_client(provider, config)
+                        response = client.invoke(
+                            self._convert_messages_to_langchain(messages)
+                        )
+
+                        self._logger.info("Tier 3 emergency fallback successful")
+                        return (
+                            response.content
+                            if hasattr(response, "content")
+                            else str(response)
+                        )
+                except Exception as e:
+                    self._logger.warning(f"Tier 3 fallback failed for {provider}: {e}")
+
+        # Tier 4: All fallbacks exhausted
+        error_msg = (
+            f"All fallback strategies exhausted for original request "
+            f"(provider: {original_provider}, model: {original_model}). "
+            f"Attempted fallbacks: {', '.join(attempted_fallbacks) if attempted_fallbacks else 'none'}. "
+            f"Original error: {error}"
+        )
+        self._logger.error(error_msg)
+        raise LLMServiceError(error_msg)
+
     def _call_llm_direct(
         self,
         provider: str,
@@ -426,19 +586,8 @@ class LLMService:
             error_msg = f"LLM call failed for provider {provider}: {str(e)}"
             self._logger.error(error_msg)
 
-            # If it's already one of our custom exception types, preserve it
-            if isinstance(
-                e,
-                (
-                    LLMConfigurationError,
-                    LLMDependencyError,
-                    LLMProviderError,
-                    LLMServiceError,
-                ),
-            ):
-                raise e
-            # Check for dependency errors first
-            elif (
+            # Check for dependency errors - these should NOT trigger fallback
+            if (
                 isinstance(e, ImportError)
                 or "dependencies" in str(e).lower()
                 or "install" in str(e).lower()
@@ -455,6 +604,30 @@ class LLMService:
                 raise LLMConfigurationError(
                     f"Authentication failed for {provider}: {str(e)}"
                 )
+
+            # For model errors or provider errors, try fallback if services available
+            if self.features_registry and self.routing_config:
+                try:
+                    # Get current model from config or parameter
+                    current_model = model or config.get("model", "unknown")
+                    return self._try_with_fallback(
+                        provider, current_model, messages, e, **kwargs
+                    )
+                except LLMServiceError:
+                    # Fallback exhausted, raise original error type
+                    pass
+
+            # If it's already one of our custom exception types, preserve it
+            if isinstance(
+                e,
+                (
+                    LLMConfigurationError,
+                    LLMDependencyError,
+                    LLMProviderError,
+                    LLMServiceError,
+                ),
+            ):
+                raise e
             elif "model" in str(e).lower():
                 raise LLMConfigurationError(
                     f"Model configuration error for {provider}: {str(e)}"

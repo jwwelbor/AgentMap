@@ -8,7 +8,7 @@ class Templates:
     def __init__(self, composer: IndentedTemplateComposer):
         """
         Initialize Templates with required IndentedTemplateComposer dependency.
-        
+
         Args:
             composer: IndentedTemplateComposer service (required, no default)
         """

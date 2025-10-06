@@ -13,9 +13,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from agentmap.builtin_definition_constants import BuiltinDefinitionConstants
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
-from agentmap.builtin_definition_constants import BuiltinDefinitionConstants
 
 
 class DependencyCheckerService:
@@ -361,7 +361,9 @@ class DependencyCheckerService:
         results = {}
 
         if category_lower == "llm":
-            supported_providers = BuiltinDefinitionConstants.get_supported_llm_providers()
+            supported_providers = (
+                BuiltinDefinitionConstants.get_supported_llm_providers()
+            )
             for provider in supported_providers:
                 if provider == "langchain":  # Skip base langchain entry
                     continue
@@ -382,8 +384,8 @@ class DependencyCheckerService:
 
         elif category_lower == "storage":
             supported_types = BuiltinDefinitionConstants.get_supported_storage_types()
-            
-            for storage_type in supported_types:                
+
+            for storage_type in supported_types:
                 is_available, missing = self._validate_storage_type(storage_type, force)
                 results[storage_type] = is_available
 

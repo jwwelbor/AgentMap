@@ -200,7 +200,7 @@ class GraphRegistryService:
             # Initialize nested structure if csv_hash doesn't exist
             hash_entry = self._registry_cache.get(csv_hash)
             is_new_hash = False
-            
+
             if csv_hash not in self._registry_cache:
                 self._registry_cache[csv_hash] = {}
                 hash_entry = self._registry_cache[csv_hash]

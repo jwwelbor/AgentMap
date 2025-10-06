@@ -163,10 +163,20 @@ class ApplicationContainer(containers.DeclarativeContainer):
         availability_cache_service,
     )
 
+    # LLM Models Config Service - centralized model definitions
+    # Must be registered before llm_routing_config_service since it's a dependency
+    llm_models_config_service = providers.Singleton(
+        "agentmap.services.config.llm_models_config_service.LLMModelsConfigService",
+        app_config_service,
+    )
+
     # LLM Routing Config Service with unified cache integration
     @staticmethod
     def _create_llm_routing_config_service(
-        app_config_service, logging_service, availability_cache_service
+        app_config_service,
+        logging_service,
+        llm_models_config_service,
+        availability_cache_service,
     ):
         """
         Create LLM routing config service with unified cache integration.
@@ -178,7 +188,10 @@ class ApplicationContainer(containers.DeclarativeContainer):
         )
 
         service = LLMRoutingConfigService(
-            app_config_service, logging_service, availability_cache_service
+            app_config_service,
+            logging_service,
+            llm_models_config_service,
+            availability_cache_service,
         )
 
         return service
@@ -187,6 +200,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         _create_llm_routing_config_service,
         app_config_service,
         logging_service,
+        llm_models_config_service,
         availability_cache_service,
     )
 
@@ -211,12 +225,15 @@ class ApplicationContainer(containers.DeclarativeContainer):
         prompt_complexity_analyzer,
     )
 
-    # LLM Service using string-based provider
+    # LLM Service using string-based provider with fallback support
     llm_service = providers.Singleton(
         "agentmap.services.llm_service.LLMService",
         app_config_service,
         logging_service,
         llm_routing_service,
+        llm_models_config_service,
+        features_registry_service,  # For provider availability checking
+        llm_routing_config_service,  # For routing matrix and fallback config
     )
 
     # Authentication service for API security
@@ -482,6 +499,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     config_validation_service = providers.Singleton(
         "agentmap.services.validation.config_validation_service.ConfigValidationService",
         logging_service,
+        llm_models_config_service,
     )
 
     # Function Resolution Service for dynamic function loading

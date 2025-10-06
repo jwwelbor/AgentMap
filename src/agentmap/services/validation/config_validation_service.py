@@ -9,6 +9,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from agentmap.models.config_models import ConfigModel
 from agentmap.models.validation.validation_models import ValidationResult
+from agentmap.services.config.llm_models_config_service import LLMModelsConfigService
 from agentmap.services.logging_service import LoggingService
 
 
@@ -19,9 +20,14 @@ class ConfigValidationService:
     Validates structure, types, paths, and provider configurations.
     """
 
-    def __init__(self, logging_service: LoggingService):
+    def __init__(
+        self,
+        logging_service: LoggingService,
+        llm_models_config_service: LLMModelsConfigService,
+    ):
         """Initialize the config validator."""
         self.logger = logging_service.get_logger("agentmap.config_validation")
+        self.llm_models_config = llm_models_config_service
 
         self.required_env_vars = {
             "openai": "OPENAI_API_KEY",
@@ -319,21 +325,13 @@ class ConfigValidationService:
         # Validate model name
         model = config.get("model")
         if model:
-            known_models = {
-                "openai": ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo-preview", "gpt-4o"],
-                "anthropic": [
-                    "claude-3-5-sonnet-20241022",
-                    "claude-3-opus-20240229",
-                    "claude-3-haiku-20240307",
-                ],
-                "google": ["gemini-1.0-pro", "gemini-1.5-pro-latest", "gemini-pro"],
-            }
+            known_models = self.llm_models_config.get_known_models(provider)
 
-            if provider in known_models and model not in known_models[provider]:
+            if known_models and model not in known_models:
                 result.add_info(
                     f"Using non-standard model for {provider}: {model}",
                     field=f"{field_prefix}.model",
-                    suggestion=f"Common models: {', '.join(known_models[provider])}",
+                    suggestion=f"Common models: {', '.join(known_models)}",
                 )
 
         # Validate temperature

@@ -1,5 +1,7 @@
 from __future__ import annotations
-from typing import Protocol, Iterable
+
+from typing import Iterable, Protocol
+
 from agentmap.models.embeddings import EmbeddingInput, EmbeddingOutput, Metric
 
 

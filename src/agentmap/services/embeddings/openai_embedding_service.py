@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import os
 from typing import Iterable
 
@@ -31,6 +32,7 @@ class OpenAIEmbeddingService:
         if not enable:
             return vec
         import math
+
         n = math.sqrt(sum(x * x for x in vec)) or 1.0
         return [x / n for x in vec]
 
@@ -58,5 +60,14 @@ class OpenAIEmbeddingService:
         outs: list[EmbeddingOutput] = []
         for _id, _vec, _meta in zip(ids, vectors, metas):
             v = self._maybe_normalize(list(_vec), normalize)
-            outs.append(EmbeddingOutput(id=_id, vector=v, dim=dim, model=model, metric=metric, metadata=_meta))
+            outs.append(
+                EmbeddingOutput(
+                    id=_id,
+                    vector=v,
+                    dim=dim,
+                    model=model,
+                    metric=metric,
+                    metadata=_meta,
+                )
+            )
         return outs

@@ -134,17 +134,17 @@ class TestAnthropicAgent(unittest.TestCase):
         self.assertEqual(agent3.provider, "anthropic")  # Should still be anthropic
     
     def test_anthropic_agent_initialization_with_default_model(self):
-        """Test AnthropicAgent initialization with Anthropic default model."""
+        """Test AnthropicAgent initialization with no model specified."""
         agent = AnthropicAgent(
             name="test_anthropic",
             prompt="Test prompt",
             context={},  # No model specified
             logger=self.mock_logger
         )
-        
-        # Should use Anthropic default model
+
+        # When no model is specified, agent.model is None (LLMService provides default at call time)
         self.assertEqual(agent.provider, "anthropic")
-        self.assertEqual(agent.model, "claude-3-5-sonnet-20241022")
+        self.assertIsNone(agent.model)  # Default model is provided by LLMService at runtime
         self.assertEqual(agent.temperature, 0.7)  # Default temperature
     
     def test_anthropic_agent_initialization_with_custom_model(self):
@@ -453,12 +453,12 @@ class TestAnthropicAgent(unittest.TestCase):
             prompt="I am Claude.",
             logger=self.mock_logger
         )
-        
+
         # Should have Anthropic defaults
         self.assertEqual(minimal_agent.name, "minimal_anthropic")
         self.assertEqual(minimal_agent.prompt, "I am Claude.")
         self.assertEqual(minimal_agent.provider, "anthropic")
-        self.assertEqual(minimal_agent.model, "claude-3-5-sonnet-20241022")
+        self.assertIsNone(minimal_agent.model)  # Default model provided by LLMService at runtime
         self.assertEqual(minimal_agent.temperature, 0.7)
         self.assertIsNone(minimal_agent.max_tokens)
     

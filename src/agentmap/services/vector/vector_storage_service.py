@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any, Iterable, Protocol
 
@@ -6,8 +7,15 @@ from agentmap.models.embeddings import EmbeddingOutput
 
 
 class VectorIndex(Protocol):
-    def upsert(self, ids: list[str], vectors: list[list[float]], metadatas: list[dict[str, Any]]) -> None: ...
-    def search(self, query: list[float], k: int, filters: dict[str, Any] | None = None) -> list[tuple[str, float, dict[str, Any]]]: ...
+    def upsert(
+        self,
+        ids: list[str],
+        vectors: list[list[float]],
+        metadatas: list[dict[str, Any]],
+    ) -> None: ...
+    def search(
+        self, query: list[float], k: int, filters: dict[str, Any] | None = None
+    ) -> list[tuple[str, float, dict[str, Any]]]: ...
 
 
 @dataclass
@@ -24,12 +32,18 @@ class InMemoryVectorIndex:
     @staticmethod
     def _cosine(a: list[float], b: list[float]) -> float:
         import math
+
         dot = sum(x * y for x, y in zip(a, b))
         na = math.sqrt(sum(x * x for x in a)) or 1.0
         nb = math.sqrt(sum(y * y for y in b)) or 1.0
         return dot / (na * nb)
 
-    def upsert(self, ids: list[str], vectors: list[list[float]], metadatas: list[dict[str, Any]]) -> None:
+    def upsert(
+        self,
+        ids: list[str],
+        vectors: list[list[float]],
+        metadatas: list[dict[str, Any]],
+    ) -> None:
         for i, v, m in zip(ids, vectors, metadatas):
             self._vecs[i] = (v, m)
 
@@ -70,7 +84,10 @@ class VectorStorageService:
         for i, emb in enumerate(vectors):
             ids.append(emb.id)
             vecs.append(emb.vector)
-            metas.append((metadatas[i] if i < len(metadatas) else {}) | {"collection": collection, "model": emb.model})
+            metas.append(
+                (metadatas[i] if i < len(metadatas) else {})
+                | {"collection": collection, "model": emb.model}
+            )
 
         self._index.upsert(ids, vecs, metas)
         return UpsertResult(count=len(ids))

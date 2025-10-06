@@ -1,11 +1,11 @@
 # Embedding services module
 
-from .protocols import EmbeddingService
-from .openai_embedding_service import OpenAIEmbeddingService
 from .http_service import HttpEmbeddingService
+from .openai_embedding_service import OpenAIEmbeddingService
+from .protocols import EmbeddingService
 
 __all__ = [
     "EmbeddingService",
-    "OpenAIEmbeddingService", 
+    "OpenAIEmbeddingService",
     "HttpEmbeddingService",
 ]

@@ -134,17 +134,17 @@ class TestGoogleAgent(unittest.TestCase):
         self.assertEqual(agent3.provider, "google")  # Should still be google
     
     def test_google_agent_initialization_with_default_model(self):
-        """Test GoogleAgent initialization with Google default model."""
+        """Test GoogleAgent initialization with no model specified."""
         agent = GoogleAgent(
             name="test_google",
             prompt="Test prompt",
             context={},  # No model specified
             logger=self.mock_logger
         )
-        
-        # Should use Google default model
+
+        # When no model is specified, agent.model is None (LLMService provides default at call time)
         self.assertEqual(agent.provider, "google")
-        self.assertEqual(agent.model, "gemini-1.0-pro")
+        self.assertIsNone(agent.model)  # Default model is provided by LLMService at runtime
         self.assertEqual(agent.temperature, 0.7)  # Default temperature
     
     def test_google_agent_initialization_with_custom_gemini_model(self):
@@ -452,12 +452,12 @@ class TestGoogleAgent(unittest.TestCase):
             prompt="I am Gemini.",
             logger=self.mock_logger
         )
-        
+
         # Should have Google defaults
         self.assertEqual(minimal_agent.name, "minimal_google")
         self.assertEqual(minimal_agent.prompt, "I am Gemini.")
         self.assertEqual(minimal_agent.provider, "google")
-        self.assertEqual(minimal_agent.model, "gemini-1.0-pro")
+        self.assertIsNone(minimal_agent.model)  # Default model provided by LLMService at runtime
         self.assertEqual(minimal_agent.temperature, 0.7)
         self.assertIsNone(minimal_agent.max_tokens)
     
@@ -571,7 +571,7 @@ class TestGoogleAgent(unittest.TestCase):
         self.assertEqual(agent.context.get("top_k"), 40)
     
     def test_google_agent_default_model_consistency(self):
-        """Test that GoogleAgent uses consistent default model."""
+        """Test that GoogleAgent uses consistent initialization when no model specified."""
         # Test multiple agents to ensure consistent defaults
         agents = []
         for i in range(3):
@@ -581,11 +581,11 @@ class TestGoogleAgent(unittest.TestCase):
                 logger=self.mock_logger
             )
             agents.append(agent)
-        
-        # All should have same default model
+
+        # All should have consistent initialization (model=None, LLMService provides default at runtime)
         for agent in agents:
             self.assertEqual(agent.provider, "google")
-            self.assertEqual(agent.model, "gemini-1.0-pro")
+            self.assertIsNone(agent.model)  # Default model provided by LLMService at runtime
             self.assertEqual(agent.temperature, 0.7)
 
 

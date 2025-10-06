@@ -17,20 +17,27 @@ from agentmap.runtime_api import ensure_initialized, inspect_graph, list_graphs
 
 # Simple response models without Config classes
 class WorkflowSummary(BaseModel):
-    """Summary of a workflow/graph."""
+    """Workflow metadata returned by the list endpoint."""
 
-    graph_id: str = Field(..., description="Graph identifier (workflow::graph)")
-    workflow: str = Field(..., description="Workflow name")
-    graph: str = Field(..., description="Graph name")
-    node_count: int = Field(..., description="Number of nodes")
-    description: Optional[str] = Field(None, description="Description")
+    name: str = Field(..., description="Workflow name")
+    filename: str = Field(..., description="Workflow CSV filename")
+    file_path: str = Field(..., description="Absolute path to workflow CSV")
+    file_size: int = Field(..., description="Workflow file size in bytes")
+    last_modified: float = Field(
+        ..., description="Last modified timestamp (epoch seconds)"
+    )
+    graph_count: int = Field(
+        ..., description="Number of graphs defined in the workflow"
+    )
+    total_nodes: int = Field(..., description="Total nodes across all graphs")
 
 
 class WorkflowListResponse(BaseModel):
     """List of available workflows."""
 
+    repository_path: str = Field(..., description="CSV repository path")
     workflows: List[WorkflowSummary] = Field(..., description="Available workflows")
-    total: int = Field(..., description="Total count")
+    total_count: int = Field(..., description="Total workflow count")
 
 
 class NodeInfo(BaseModel):
@@ -69,23 +76,63 @@ async def list_workflows(request: Request):
                 status_code=500, detail=result.get("error", "Failed to list graphs")
             )
 
-        graphs = result.get("outputs", {}).get("graphs", [])
+        outputs = result.get("outputs", {})
+        graphs = outputs.get("graphs", [])
+        metadata = result.get("metadata", {})
+        repository_path = metadata.get("repository_path", "")
 
-        # Transform to our simple response format
-        workflows = []
+        if not repository_path and graphs:
+            for graph in graphs:
+                repo_meta = graph.get("meta", {})
+                if repo_meta.get("repository_path"):
+                    repository_path = repo_meta["repository_path"]
+                    break
+
+        workflows_by_name = {}
         for graph in graphs:
-            graph_id = f"{graph.get('workflow', '')}::{graph.get('name', '')}"
-            workflows.append(
-                WorkflowSummary(
-                    graph_id=graph_id,
-                    workflow=graph.get("workflow", ""),
-                    graph=graph.get("name", ""),
-                    node_count=graph.get("node_count", 0),
-                    description=graph.get("description"),
-                )
-            )
+            workflow_name = graph.get("workflow") or graph.get("name")
+            if not workflow_name:
+                continue
 
-        return WorkflowListResponse(workflows=workflows, total=len(workflows))
+            base_data = {
+                "name": workflow_name,
+                "filename": graph.get("filename", ""),
+                "file_path": graph.get("file_path", ""),
+                "file_size": int(graph.get("file_size", 0) or 0),
+                "last_modified": float(graph.get("last_modified", 0.0) or 0.0),
+                "graph_count": int(graph.get("graph_count_in_workflow", 0) or 0),
+                "total_nodes": int(graph.get("total_nodes", 0) or 0),
+            }
+
+            existing = workflows_by_name.get(workflow_name)
+            if existing is None:
+                workflows_by_name[workflow_name] = base_data
+            else:
+                existing["graph_count"] = max(
+                    existing["graph_count"], base_data["graph_count"]
+                )
+                existing["total_nodes"] = max(
+                    existing["total_nodes"], base_data["total_nodes"]
+                )
+                existing["file_size"] = max(
+                    existing["file_size"], base_data["file_size"]
+                )
+                existing["last_modified"] = max(
+                    existing["last_modified"], base_data["last_modified"]
+                )
+
+        workflows = [
+            WorkflowSummary(**data)
+            for data in sorted(
+                workflows_by_name.values(), key=lambda item: item["name"]
+            )
+        ]
+
+        return WorkflowListResponse(
+            repository_path=str(repository_path),
+            workflows=workflows,
+            total_count=len(workflows),
+        )
 
     except AgentMapNotInitialized as e:
         raise HTTPException(status_code=503, detail=str(e))

@@ -29,6 +29,7 @@ class LLMRoutingConfigService:
         self,
         app_config_service: AppConfigService,
         logging_service: LoggingService,
+        llm_models_config_service,
         availability_cache_service=None,
     ):
         """
@@ -37,10 +38,12 @@ class LLMRoutingConfigService:
         Args:
             app_config_service: Application configuration service
             logging_service: Logging service
+            llm_models_config_service: LLM models configuration service
             availability_cache_service: Optional unified availability cache service
         """
         self._logger = logging_service.get_class_logger(self)
         self._app_config_service = app_config_service
+        self._llm_models_config_service = llm_models_config_service
         self._availability_cache_service = availability_cache_service
         self.config_dict = app_config_service.get_routing_config()
         self.enabled = self.config_dict.get("enabled", False)
@@ -330,12 +333,18 @@ class LLMRoutingConfigService:
 
     def get_fallback_model(self) -> str:
         """
-        Get the configured fallback model.
+        Get the configured fallback model from config or llm_models_config_service.
 
         Returns:
-            Fallback model name
+            Fallback model name from config, or system default if not configured
         """
-        return self.fallback.get("default_model", "claude-3-haiku-20240307")
+        # Try to get from fallback config first
+        config_model = self.fallback.get("default_model")
+        if config_model:
+            return config_model
+
+        # Fall back to llm_models_config_service
+        return self._llm_models_config_service.get_fallback_model()
 
     def is_cost_optimization_enabled(self) -> bool:
         """

@@ -35,11 +35,19 @@ class TestLLMRoutingService(unittest.TestCase):
         self.mock_routing_config.is_cost_optimization_enabled.return_value = True
         self.mock_routing_config.get_max_cost_tier.return_value = "high"
         self.mock_routing_config.get_fallback_provider.return_value = "anthropic"
-        self.mock_routing_config.get_fallback_model.return_value = "claude-3-sonnet"
-        self.mock_routing_config.get_model_for_complexity.return_value = "gpt-4"
+        self.mock_routing_config.get_fallback_model.return_value = "claude-3-7-sonnet-20250219"
+        # Mock should return from routing_matrix based on provider and complexity
+        def mock_get_model(provider, complexity):
+            matrix = {
+                "openai": {"low": "gpt-3.5-turbo", "medium": "gpt-4", "high": "gpt-4", "critical": "gpt-4"},
+                "anthropic": {"low": "claude-3-5-haiku-20241022", "medium": "claude-3-7-sonnet-20250219", "high": "claude-opus-4-20250514", "critical": "claude-opus-4-20250514"}
+            }
+            return matrix.get(provider, {}).get(complexity)
+
+        self.mock_routing_config.get_model_for_complexity.side_effect = mock_get_model
         self.mock_routing_config.routing_matrix = {
             "openai": {"low": "gpt-3.5-turbo", "medium": "gpt-4", "high": "gpt-4", "critical": "gpt-4"},
-            "anthropic": {"low": "claude-3-haiku", "medium": "claude-3-sonnet", "high": "claude-3-opus", "critical": "claude-3-opus"}
+            "anthropic": {"low": "claude-3-5-haiku-20241022", "medium": "claude-3-7-sonnet-20250219", "high": "claude-opus-4-20250514", "critical": "claude-opus-4-20250514"}
         }
         
         # Create mock RoutingCache
@@ -133,27 +141,29 @@ class TestLLMRoutingService(unittest.TestCase):
         self.mock_complexity_analyzer.determine_overall_complexity.return_value = TaskComplexity.HIGH
         
         # Execute test
-        with patch.object(self.service, 'select_optimal_model') as mock_select:
+        # Mock select_candidates to return empty so select_optimal_model is called
+        with patch.object(self.service, 'select_candidates', return_value=[]), \
+             patch.object(self.service, 'select_optimal_model') as mock_select:
             mock_decision = RoutingDecision(
                 provider="anthropic",
-                model="claude-3-opus",
+                model="claude-opus-4-20250514",
                 complexity=TaskComplexity.HIGH,
                 confidence=0.9,
                 reasoning="Selected for high complexity analysis",
                 fallback_used=False
             )
             mock_select.return_value = mock_decision
-            
+
             result = self.service.route_request(
                 prompt=prompt,
                 task_type=task_type,
                 available_providers=available_providers,
                 routing_context=routing_context
             )
-            
+
             # Verify result
             self.assertEqual(result.provider, "anthropic")
-            self.assertEqual(result.model, "claude-3-opus")
+            self.assertEqual(result.model, "claude-opus-4-20250514")
             self.assertEqual(result.complexity, TaskComplexity.HIGH)
             self.assertFalse(result.fallback_used)
             
@@ -220,24 +230,26 @@ class TestLLMRoutingService(unittest.TestCase):
         
         decision = RoutingDecision(
             provider="anthropic",
-            model="claude-3-opus",
+            model="claude-opus-4-20250514",
             complexity=TaskComplexity.HIGH,
             confidence=0.9,
             reasoning="New decision",
             fallback_used=False
         )
         
-        with patch.object(self.service, 'select_optimal_model', return_value=decision):
+        # Mock select_candidates to ensure select_optimal_model is called
+        with patch.object(self.service, 'select_candidates', return_value=[]), \
+             patch.object(self.service, 'select_optimal_model', return_value=decision):
             result = self.service.route_request(
                 prompt=prompt,
                 task_type=task_type,
                 available_providers=available_providers,
                 routing_context=routing_context
             )
-            
+
             # Verify decision was cached
             self.mock_cache.put.assert_called_once()
-            
+
             # Verify result
             self.assertEqual(result, decision)
     
@@ -253,8 +265,9 @@ class TestLLMRoutingService(unittest.TestCase):
             fallback_model="gpt-3.5-turbo"
         )
         
-        # Mock to trigger fallback
-        with patch.object(self.service, 'select_optimal_model') as mock_select:
+        # Mock to trigger fallback - need to mock select_candidates too
+        with patch.object(self.service, 'select_candidates', return_value=[]), \
+             patch.object(self.service, 'select_optimal_model') as mock_select:
             fallback_decision = RoutingDecision(
                 provider="openai",
                 model="gpt-3.5-turbo",
@@ -264,14 +277,14 @@ class TestLLMRoutingService(unittest.TestCase):
                 fallback_used=True
             )
             mock_select.return_value = fallback_decision
-            
+
             result = self.service.route_request(
                 prompt=prompt,
                 task_type=task_type,
                 available_providers=available_providers,
                 routing_context=routing_context
             )
-            
+
             # Verify fallback was used
             self.assertTrue(result.fallback_used)
             self.assertEqual(self.service._routing_stats["fallback_used"], 1)
@@ -359,7 +372,7 @@ class TestLLMRoutingService(unittest.TestCase):
         
         # Mock provider preference and model lookup
         self.mock_routing_config.get_provider_preference.return_value = ["anthropic"]
-        self.mock_routing_config.get_model_for_complexity.return_value = "claude-3-opus"
+        self.mock_routing_config.get_model_for_complexity.return_value = "claude-opus-4-20250514"
         
         # Execute test
         result = self.service.select_optimal_model(
@@ -368,7 +381,7 @@ class TestLLMRoutingService(unittest.TestCase):
         
         # Verify successful selection
         self.assertEqual(result.provider, "anthropic")
-        self.assertEqual(result.model, "claude-3-opus")
+        self.assertEqual(result.model, "claude-opus-4-20250514")
         self.assertEqual(result.complexity, complexity)
         self.assertFalse(result.fallback_used)
         self.assertGreaterEqual(result.confidence, 0.8)
@@ -386,7 +399,7 @@ class TestLLMRoutingService(unittest.TestCase):
         # Mock routing matrix to find model
         self.mock_routing_config.routing_matrix = {
             "openai": {"medium": "gpt-4"},
-            "anthropic": {"medium": "claude-3-sonnet"}
+            "anthropic": {"medium": "claude-3-7-sonnet-20250219"}
         }
         
         # Execute test
@@ -739,16 +752,17 @@ class TestLLMRoutingService(unittest.TestCase):
         """Test emergency fallback last resort with no matrix."""
         available_providers = ["unknown_provider"]
         reason = "Last resort test"
-        
-        # Mock empty routing matrix
+
+        # Mock empty routing matrix and fallback model
         self.mock_routing_config.routing_matrix = {}
-        
+        self.mock_routing_config.get_fallback_model.return_value = "claude-3-7-sonnet-20250219"
+
         # Execute test
         result = self.service._create_emergency_fallback(available_providers, reason)
-        
-        # Verify last resort fallback
+
+        # Verify last resort fallback - now uses config's fallback model
         self.assertEqual(result.provider, "unknown_provider")
-        self.assertEqual(result.model, "default-model")
+        self.assertEqual(result.model, "claude-3-7-sonnet-20250219")
         self.assertTrue(result.fallback_used)
         self.assertEqual(result.confidence, 0.1)  # Very low confidence
         self.assertIn("Last resort", result.reasoning)

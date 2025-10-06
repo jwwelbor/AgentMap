@@ -175,7 +175,6 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
         }
         return env_vars.get(provider, f"{provider.upper()}_API_KEY")
 
-
     def _resolve_prompt(self, prompt: str) -> str:
         """
         Resolve prompt using PromptManagerService if available.
@@ -258,15 +257,21 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
             "fallback_provider": self.context.get("fallback_provider"),
             "fallback_model": self.context.get("fallback_model"),
             "max_cost_tier": self.context.get("max_cost_tier"),
-            "retry_with_lower_complexity": self.context.get("retry_with_lower_complexity", True),
-
-            "activity": self.context.get("activity"),                 # e.g., "narrative", "code_review"
-            "router_profile": self.context.get("router_profile"),     # e.g., "quality_first", "cost_saver"
-
+            "retry_with_lower_complexity": self.context.get(
+                "retry_with_lower_complexity", True
+            ),
+            "activity": self.context.get(
+                "activity"
+            ),  # e.g., "narrative", "code_review"
+            "router_profile": self.context.get(
+                "router_profile"
+            ),  # e.g., "quality_first", "cost_saver"
             # Analyzer input context
             "input_context": {
                 "user_input": user_input,
-                "input_field_count": len([f for f in self.input_fields if f != self.memory_key]),
+                "input_field_count": len(
+                    [f for f in self.input_fields if f != self.memory_key]
+                ),
                 "memory_size": len(inputs.get(self.memory_key, [])),
                 **self.context.get("input_context", {}),
             },

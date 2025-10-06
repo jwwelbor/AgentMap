@@ -198,7 +198,7 @@ class TestRoutingContext(unittest.TestCase):
         
         # Verify all fields are present
         expected_keys = {
-            'task_type', 'routing_enabled', 'complexity_override', 'auto_detect_complexity',
+            'task_type', 'routing_enabled', 'activity', 'complexity_override', 'auto_detect_complexity',
             'provider_preference', 'excluded_providers', 'model_override', 'max_cost_tier',
             'prompt', 'input_context', 'memory_size', 'input_field_count',
             'cost_optimization', 'prefer_speed', 'prefer_quality',
@@ -262,13 +262,13 @@ class TestRoutingDecision(unittest.TestCase):
         """Test RoutingDecision creation with required fields."""
         decision = RoutingDecision(
             provider="anthropic",
-            model="claude-3-opus",
+            model="claude-opus-4-20250514",
             complexity=TaskComplexity.HIGH
         )
         
         # Verify required fields
         self.assertEqual(decision.provider, "anthropic")
-        self.assertEqual(decision.model, "claude-3-opus")
+        self.assertEqual(decision.model, "claude-opus-4-20250514")
         self.assertEqual(decision.complexity, TaskComplexity.HIGH)
         
         # Verify default values

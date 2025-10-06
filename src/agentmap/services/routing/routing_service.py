@@ -272,7 +272,9 @@ class LLMRoutingService:
             else RoutingContext.from_dict(routing_context)
         )
 
-        available = available_providers or list(self.routing_config.routing_matrix.keys())
+        available = available_providers or list(
+            self.routing_config.routing_matrix.keys()
+        )
         available_lower = [provider.lower() for provider in available]
         excluded = {provider.lower() for provider in ctx.excluded_providers}
 
@@ -315,7 +317,9 @@ class LLMRoutingService:
             provider_lower = provider.lower()
             if provider_lower in excluded:
                 continue
-            model = self.routing_config.get_model_for_complexity(provider_lower, complexity_key)
+            model = self.routing_config.get_model_for_complexity(
+                provider_lower, complexity_key
+            )
             if not model:
                 continue
             pair = (provider_lower, model)
@@ -326,9 +330,13 @@ class LLMRoutingService:
 
         # 3) Apply provider preference ordering when supplied
         if ctx.provider_preference:
-            preference_index = {p.lower(): i for i, p in enumerate(ctx.provider_preference)}
+            preference_index = {
+                p.lower(): i for i, p in enumerate(ctx.provider_preference)
+            }
             ordered.sort(
-                key=lambda item: preference_index.get(item["provider"].lower(), 1_000_000)
+                key=lambda item: preference_index.get(
+                    item["provider"].lower(), 1_000_000
+                )
             )
 
         return ordered
@@ -604,10 +612,11 @@ class LLMRoutingService:
                     fallback_used=True,
                 )
 
-        # Last resort: use a hardcoded fallback
+        # Last resort: use system fallback model
+        fallback_model = self.routing_config.get_fallback_model()
         return RoutingDecision(
             provider=provider,
-            model="default-model",
+            model=fallback_model,
             complexity=TaskComplexity.LOW,
             confidence=0.1,
             reasoning=f"Last resort fallback: {reason}",
@@ -680,7 +689,9 @@ class ActivityRoutingTable:
             return config["routing"].get("activities", {})
         return config.get("activities", {})
 
-    def plan(self, activity: Optional[str], complexity_key: str) -> List[Dict[str, str]]:
+    def plan(
+        self, activity: Optional[str], complexity_key: str
+    ) -> List[Dict[str, str]]:
         """
         Return ordered candidates for a given activity/complexity tier.
 

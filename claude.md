@@ -1,4 +1,103 @@
 Project: AgentMap
+
+# Claude Code Sub Agent Configuration
+## 🚨 CRITICAL: CONCURRENT EXECUTION FOR ALL ACTIONS
+
+**ABSOLUTE RULE**: ALL operations MUST be concurrent/parallel in a single message:
+
+### 🔴 MANDATORY CONCURRENT PATTERNS:
+1. **TodoWrite**: ALWAYS batch ALL todos in ONE call (5-10+ todos minimum)
+2. **Task tool**: ALWAYS spawn ALL agents in ONE message with full instructions
+3. **File operations**: ALWAYS batch ALL reads/writes/edits in ONE message
+4. **Bash commands**: ALWAYS batch ALL terminal operations in ONE message
+5. **Memory operations**: ALWAYS batch ALL memory store/retrieve in ONE message
+
+### ⚡ GOLDEN RULE: "1 MESSAGE = ALL RELATED OPERATIONS"
+
+**Examples of CORRECT concurrent execution:**
+```javascript
+// ✅ CORRECT: Everything in ONE message
+[Single Message]:
+  - TodoWrite { todos: [10+ todos with all statuses/priorities] }
+  - Task("Agent 1 with full instructions and hooks")
+  - Task("Agent 2 with full instructions and hooks")
+  - Task("Agent 3 with full instructions and hooks")
+  - Read("file1.js")
+  - Read("file2.js")
+  - Write("output1.js", content)
+  - Write("output2.js", content)
+  - Bash("npm install")
+  - Bash("npm test")
+  - Bash("npm run build")
+```
+
+**Examples of WRONG sequential execution:**
+```javascript
+// ❌ WRONG: Multiple messages (NEVER DO THIS)
+Message 1: TodoWrite { todos: [single todo] }
+Message 2: Task("Agent 1")
+Message 3: Task("Agent 2")
+Message 4: Read("file1.js")
+Message 5: Write("output1.js")
+Message 6: Bash("npm install")
+// This is 6x slower and breaks coordination!
+```
+
+### 🎯 CONCURRENT EXECUTION CHECKLIST:
+
+Before sending ANY message, ask yourself:
+- ✅ Are ALL related TodoWrite operations batched together?
+- ✅ Are ALL Task spawning operations in ONE message?
+- ✅ Are ALL file operations (Read/Write/Edit) batched together?
+- ✅ Are ALL bash commands grouped in ONE message?
+- ✅ Are ALL memory operations concurrent?
+
+## 🤖 Claude Sub-Agents Integration
+
+This project includes 15 specialized AI sub-agents for enhanced development.
+
+### Available Agents
+
+The following agents are installed in `.claude/agents/`:
+
+- **project-planner**: Strategic planning and task decomposition specialist
+- **api-developer**: Backend API development specialist with PRP awareness
+- **frontend-developer**: Modern web interface implementation specialist
+- **tdd-specialist**: Test-driven development and comprehensive testing expert
+- **code-reviewer**: Code quality, security, and best practices analyst
+- **debugger**: Error analysis and debugging specialist
+- **refactor**: Code refactoring and improvement specialist
+- **doc-writer**: Technical documentation specialist
+- **security-scanner**: Security vulnerability detection specialist
+- **devops-engineer**: CI/CD and deployment automation specialist
+- **product-manager**: Product requirements and user story specialist
+- **marketing-writer**: Technical marketing content specialist
+- **api-documenter**: OpenAPI/Swagger documentation specialist
+- **test-runner**: Automated test execution specialist
+- **shadcn-ui-builder**: UI/UX implementation with ShadCN components
+
+### Using Sub-Agents
+
+Agents work alongside your existing PRPs and can be invoked in several ways:
+
+1. **Direct execution**: `claude-agents run <agent> --task "description"`
+2. **Task tool in Claude Code**: `Task("agent-name: task description")`
+3. **Agent slash commands**: Located in `.claude/commands/agents/`
+
+### Memory System
+
+Agents share context and coordinate through:
+- **Memory Store**: `.swarm/memory.json` for persistent agent memory
+- **Context Sharing**: Agents can access shared project context
+- **PRP Integration**: Agents are aware of and can work with your PRPs
+
+### Best Practices
+
+- Use agents for specialized tasks that match their expertise
+- Agents can read and understand your PRPs for context
+- Multiple agents can work on different aspects of the same feature
+- Memory system allows agents to build on each other's work
+If ANY answer is "No", you MUST combine operations into a single message!
 role: Lead Python dev/architect; enforce DRY,SOLID,YAGNI; ask before decisions.
 
 context:
@@ -88,6 +187,71 @@ service_patterns:
     configuration: Use builder pattern if complex
     testing: MockServiceFactory for unit tests, real DI for integration
 
+simplicity_first:
+  core_principle: "Choose the simplest solution that works. This is NEW CODE - no backwards compatibility needed."
+  avoid_over_engineering:
+    no_unnecessary_wrappers: |
+      # ❌ Don't create wrapper classes for new integrations
+      class MyServiceAdapter(ExternalInterface):
+          def __init__(self, my_service: MyService):
+              self.my_service = my_service
+          def method(self): return self.my_service.method()
+      
+      # ✅ Make your service implement the interface directly  
+      class MyService(ExternalInterface):
+          def method(self): # Direct implementation
+    
+    no_premature_abstraction: |
+      # ❌ Don't create "flexible" abstractions for single use cases
+      class ConfigurableCheckpointStrategy:
+          def save(self, type: str, data: Any): # Complex dispatch logic
+      
+      # ✅ Implement what you need directly
+      class GraphCheckpointService(BaseCheckpointSaver):
+          def put(self, config, checkpoint): # Direct LangGraph implementation
+    
+    no_backwards_compatibility: |
+      # This is NEW CODE - don't maintain old interfaces
+      # ❌ Don't keep deprecated methods "just in case"
+      # ❌ Don't create migration layers for new features
+      # ❌ Don't worry about "breaking changes" in unreleased code
+      # ✅ Change interfaces to be better, simpler, clearer
+    
+    choose_direct_solutions:
+      adapter_pattern: "Only use when integrating with external code you can't modify"
+      facade_pattern: "Only use when simplifying complex external APIs"
+      wrapper_classes: "Only use when you need to add behavior to existing objects"
+      inheritance: "Use when there's genuine IS-A relationship and shared behavior"
+      composition: "Default choice - but don't over-compose with unnecessary layers"
+  
+  when_to_be_simple:
+    single_responsibility: "If a class does one thing well, don't split it unnecessarily"
+    new_integrations: "Implement external interfaces directly on your services"
+    data_transformation: "Use simple functions, not transformation pipelines"
+    configuration: "Use direct properties, not configuration builders (unless truly complex)"
+    error_handling: "Use exceptions and logging, not error handling frameworks"
+  
+  when_patterns_are_worth_it:
+    dependency_injection: "Yes - for testing and flexibility"
+    protocol_interfaces: "Yes - for clean contracts between services"
+    factory_pattern: "Yes - when object creation is complex or conditional"
+    service_layer: "Yes - to separate business logic from infrastructure"
+    single_responsibility: "Yes - each service should have one clear purpose"
+  
+  decision_framework:
+    ask_yourself:
+      - "Am I solving a problem that actually exists?"
+      - "Is this the simplest solution that works?"
+      - "Am I adding layers to avoid changing existing code I control?"
+      - "Will this pattern be used by more than one client?"
+      - "Does this add real value or just theoretical flexibility?"
+    red_flags:
+      - Creating wrappers around your own code
+      - "Future-proofing" for requirements that don't exist
+      - Multiple layers doing the same thing
+      - Patterns used because they're "best practice" without clear benefit
+      - Maintaining deprecated code paths in new features
+
 patterns:
   development_artifacts:
     workspace: dev-artifacts/{YYYY-MM-DD}-{task-name}/
@@ -133,6 +297,10 @@ patterns:
     - no files over 350 lines
     - no methods over 50 lines
     - no direct container access from services
+    - no wrapper classes around your own code
+    - no adapters for new integrations (implement interfaces directly)
+    - no abstract base classes with single implementations
+    - no "flexible" frameworks for single use cases
 
 quick_reference:
   service_injection_pattern: |

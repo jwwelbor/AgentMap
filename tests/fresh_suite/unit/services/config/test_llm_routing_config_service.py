@@ -25,7 +25,8 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         # Create mock services
         self.mock_app_config_service = Mock(spec=AppConfigService)
         self.mock_logging_service = self.mock_factory.create_mock_logging_service()
-        
+        self.mock_llm_models_config_service = self.mock_factory.create_mock_llm_models_config_service()
+
         # Set up routing configuration
         self.routing_config = {
             'enabled': True,
@@ -81,10 +82,11 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         }
         
         self.mock_app_config_service.get_routing_config.return_value = self.routing_config
-        
+
         self.llm_routing_service = LLMRoutingConfigService(
             app_config_service=self.mock_app_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service
         )
     
     def tearDown(self):
@@ -236,7 +238,8 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         
         service = LLMRoutingConfigService(
             app_config_service=self.mock_app_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service
         )
         
         errors = service.validate_AppConfigService()
@@ -256,7 +259,8 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         
         service = LLMRoutingConfigService(
             app_config_service=self.mock_app_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service
         )
         
         errors = service.validate_AppConfigService()
@@ -275,7 +279,8 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         
         service = LLMRoutingConfigService(
             app_config_service=self.mock_app_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service
         )
         
         errors = service.validate_AppConfigService()
@@ -290,7 +295,8 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         
         service = LLMRoutingConfigService(
             app_config_service=self.mock_app_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service
         )
         
         errors = service.validate_AppConfigService()
@@ -308,7 +314,8 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         
         service = LLMRoutingConfigService(
             app_config_service=self.mock_app_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service
         )
         
         errors = service.validate_AppConfigService()
@@ -335,7 +342,8 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         
         service = LLMRoutingConfigService(
             app_config_service=self.mock_app_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service
         )
         
         # Keys should be normalized to lowercase
@@ -356,7 +364,8 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         
         service = LLMRoutingConfigService(
             app_config_service=self.mock_app_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service
         )
         
         # Invalid task type should be filtered out

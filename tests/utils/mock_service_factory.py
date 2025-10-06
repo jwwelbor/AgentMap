@@ -650,9 +650,54 @@ class MockServiceFactory:
             return defaults.get(key, default)
         
         mock_service.get_value.side_effect = get_value
-        
+
         return mock_service
-    
+
+    @staticmethod
+    def create_mock_llm_models_config_service() -> Mock:
+        """
+        Create a pure Mock object for LLMModelsConfigService.
+
+        This Mock provides centralized LLM model configuration for testing,
+        matching the interface of LLMModelsConfigService. No longer includes
+        hardcoded model validation methods.
+
+        Returns:
+            Mock object with LLM model configuration methods
+
+        Example:
+            mock_models_config = MockServiceFactory.create_mock_llm_models_config_service()
+            default_model = mock_models_config.get_default_model("openai")
+            fallback_model = mock_models_config.get_fallback_model()
+        """
+        mock_service = Mock()
+
+        # Default models for each provider (matching config file)
+        default_models = {
+            "anthropic": "claude-3-5-sonnet-20241022",
+            "openai": "gpt-4o-mini",
+            "google": "gemini-1.5-flash",
+        }
+
+        def get_default_model(provider: str):
+            """Get default model for provider."""
+            return default_models.get(provider.lower())
+
+        def get_fallback_model():
+            """Get fallback model."""
+            return default_models["anthropic"]
+
+        def get_all_default_models():
+            """Get all default models."""
+            return default_models.copy()
+
+        # Configure mock methods
+        mock_service.get_default_model.side_effect = get_default_model
+        mock_service.get_fallback_model.side_effect = get_fallback_model
+        mock_service.get_all_default_models.side_effect = get_all_default_models
+
+        return mock_service
+
     @staticmethod
     def create_mock_node_registry_service() -> Mock:
         """

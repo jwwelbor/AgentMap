@@ -620,7 +620,7 @@ async def example_usage():
         tasks = []
         for i in range(5):
             task = session.post(
-                "http://localhost:8000/execution/my_workflow/my_graph",
+                "http://localhost:8000/execute/my_workflow/my_graph",
                 json={
                     "state": {"user_input": f"Request {i}"},
                     "config": {"async_execution": True}
