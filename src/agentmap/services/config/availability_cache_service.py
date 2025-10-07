@@ -464,12 +464,10 @@ class AvailabilityCacheService:
             self.invalidate_cache()
 
             # Discover and validate LLM providers
-            dependency_checker.discover_and_validate_providers("llm", force_check=True)
+            dependency_checker.discover_and_validate_providers("llm", force=True)
 
             # Discover and validate storage providers
-            dependency_checker.discover_and_validate_providers(
-                "storage", force_check=True
-            )
+            dependency_checker.discover_and_validate_providers("storage", force=True)
 
             if self._logger:
                 self._logger.info("Successfully refreshed availability cache")
