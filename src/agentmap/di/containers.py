@@ -53,6 +53,52 @@ class ApplicationContainer(containers.DeclarativeContainer):
         _create_and_initialize_logging_service, app_config_service
     )
 
+    # LEVEL 1: Utility Services (no business logic dependencies)
+
+    # Global model instances for shared state
+    features_registry_model = providers.Singleton(
+        "agentmap.models.features_registry.FeaturesRegistry"
+    )
+
+    agent_registry_model = providers.Singleton(
+        "agentmap.models.agent_registry.AgentRegistry"
+    )
+
+    # Validation Cache Service for caching validation results
+    validation_cache_service = providers.Singleton(
+        "agentmap.services.validation.validation_cache_service.ValidationCacheService"
+    )
+
+    # Execution Formatter Service for formatting graph execution results
+    # (development/testing)
+    execution_formatter_service = providers.Singleton(
+        "agentmap.services.execution_formatter_service.ExecutionFormatterService"
+    )
+
+    # Additional utility providers for common transformations
+
+    # Provider for getting specific configuration sections
+    logging_config = providers.Callable(
+        lambda app_config: app_config.get_logging_config(), app_config_service
+    )
+
+    execution_config = providers.Callable(
+        lambda app_config: app_config.get_execution_config(), app_config_service
+    )
+
+    prompts_config = providers.Callable(
+        lambda app_config: app_config.get_prompts_config(), app_config_service
+    )
+
+    custom_agents_config = providers.Callable(
+        lambda app_config: app_config.get_custom_agents_path(), app_config_service
+    )
+
+    # StateAdapterService for state management (no dependencies)
+    state_adapter_service = providers.Singleton(
+        "agentmap.services.state_adapter_service.StateAdapterService"
+    )
+
     # CACHE MANAGEMENT LAYER: Availability Cache Managers
     # =======================================================================
     # Cache managers must be initialized early to prevent duplicate cache
@@ -112,6 +158,14 @@ class ApplicationContainer(containers.DeclarativeContainer):
         _create_availability_cache_service,
         app_config_service,
         logging_service,
+    )
+
+    # Features registry service (operates on global features model)
+    features_registry_service = providers.Singleton(
+        "agentmap.services.features_registry_service.FeaturesRegistryService",
+        features_registry_model,
+        logging_service,
+        availability_cache_service,
     )
 
     # Cache management is now handled by the unified AvailabilityCacheService
@@ -277,52 +331,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         )
 
         return service
-
-    # LEVEL 1: Utility Services (no business logic dependencies)
-
-    # Global model instances for shared state
-    features_registry_model = providers.Singleton(
-        "agentmap.models.features_registry.FeaturesRegistry"
-    )
-
-    agent_registry_model = providers.Singleton(
-        "agentmap.models.agent_registry.AgentRegistry"
-    )
-
-    # Validation Cache Service for caching validation results
-    validation_cache_service = providers.Singleton(
-        "agentmap.services.validation.validation_cache_service.ValidationCacheService"
-    )
-
-    # Execution Formatter Service for formatting graph execution results
-    # (development/testing)
-    execution_formatter_service = providers.Singleton(
-        "agentmap.services.execution_formatter_service.ExecutionFormatterService"
-    )
-
-    # Additional utility providers for common transformations
-
-    # Provider for getting specific configuration sections
-    logging_config = providers.Callable(
-        lambda app_config: app_config.get_logging_config(), app_config_service
-    )
-
-    execution_config = providers.Callable(
-        lambda app_config: app_config.get_execution_config(), app_config_service
-    )
-
-    prompts_config = providers.Callable(
-        lambda app_config: app_config.get_prompts_config(), app_config_service
-    )
-
-    custom_agents_config = providers.Callable(
-        lambda app_config: app_config.get_custom_agents_path(), app_config_service
-    )
-
-    # StateAdapterService for state management (no dependencies)
-    state_adapter_service = providers.Singleton(
-        "agentmap.services.state_adapter_service.StateAdapterService"
-    )
 
     # FilePathService for centralized path validation and security
     file_path_service = providers.Singleton(
@@ -617,14 +625,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         custom_agent_declaration_manager,
         csv_graph_parser_service,
         logging_service,
-    )
-
-    # Features registry service (operates on global features model)
-    features_registry_service = providers.Singleton(
-        "agentmap.services.features_registry_service.FeaturesRegistryService",
-        features_registry_model,
-        logging_service,
-        availability_cache_service,
     )
 
     # Agent registry service (operates on global agent model)
