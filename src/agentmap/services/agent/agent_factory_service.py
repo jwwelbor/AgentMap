@@ -464,15 +464,17 @@ class AgentFactoryService:
         }
 
         # Add services based on what the agent constructor supports
+        # this should _always_ be there
         if "execution_tracker_service" in agent_params and execution_tracking_service:
             constructor_args["execution_tracker_service"] = execution_tracking_service
-            self.logger.debug(
+            self.logger.trace(
                 f"[AgentFactoryService] Adding execution_tracker_service to {node.name}"
             )
 
+        # this should _always_ be there
         if "execution_tracking_service" in agent_params and execution_tracking_service:
             constructor_args["execution_tracking_service"] = execution_tracking_service
-            self.logger.debug(
+            self.logger.trace(
                 f"[AgentFactoryService] Adding execution_tracking_service to {node.name}"
             )
 

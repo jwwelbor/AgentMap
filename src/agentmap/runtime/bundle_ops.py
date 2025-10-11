@@ -49,7 +49,7 @@ def update_bundle(
 
         # Get bundle service and force recreation of bundle
         graph_bundle_service = container.graph_bundle_service()
-        bundle = graph_bundle_service.get_or_create_bundle(
+        bundle, _ = graph_bundle_service.get_or_create_bundle(
             csv_path=csv_path,
             graph_name=resolved_graph_name,
             config_path=config_file,
@@ -161,7 +161,7 @@ def scaffold_agents(
 
         # Get bundle service - create bundle for analysis
         graph_bundle_service = container.graph_bundle_service()
-        bundle = graph_bundle_service.get_or_create_bundle(
+        bundle, _ = graph_bundle_service.get_or_create_bundle(
             csv_path=csv_path,
             graph_name=resolved_graph_name,
             config_path=config_file,

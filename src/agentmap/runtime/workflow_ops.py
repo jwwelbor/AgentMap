@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
+from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.exceptions.runtime_exceptions import (
     AgentMapError,
     AgentMapNotInitialized,
@@ -13,6 +14,7 @@ from agentmap.exceptions.runtime_exceptions import (
 from agentmap.exceptions.validation_exceptions import ValidationException
 from agentmap.runtime.runtime_manager import RuntimeManager
 from agentmap.services.graph.graph_runner_service import GraphRunnerService
+from agentmap.services.graph.graph_bundle_service import GraphBundleService
 
 from .init_ops import ensure_initialized, get_container
 
@@ -118,8 +120,8 @@ def run_workflow(
         csv_path, resolved_graph_name = _resolve_csv_path(graph_name, container)
 
         # Get bundle for execution
-        graph_bundle_service = container.graph_bundle_service()
-        bundle = graph_bundle_service.get_or_create_bundle(
+        graph_bundle_service: GraphBundleService = container.graph_bundle_service()
+        bundle, new_bundle = graph_bundle_service.get_or_create_bundle(
             csv_path=csv_path,
             graph_name=resolved_graph_name,
             config_path=config_file,
@@ -128,7 +130,9 @@ def run_workflow(
 
         # Execute using GraphRunnerService (proper orchestration service)
         graph_runner: GraphRunnerService = container.graph_runner_service()
-        result = graph_runner.run(bundle, inputs)
+
+        # validate agents if it's a new bundle
+        result = graph_runner.run(bundle, inputs, validate_agents=new_bundle)
 
         if result.success:
             return {
@@ -146,6 +150,21 @@ def run_workflow(
             error_msg = str(result.error)
             _raise_mapped_error(graph_name, error_msg)
 
+    except ExecutionInterruptedException as e:
+        # Execution was interrupted for human interaction - this is expected behavior
+        # Return a special response indicating the workflow is paused
+        return {
+            "success": False,
+            "interrupted": True,
+            "thread_id": e.thread_id,
+            "interaction_request": e.interaction_request,
+            "message": f"Execution interrupted for human interaction in thread: {e.thread_id}",
+            "metadata": {
+                "graph_name": graph_name,
+                "profile": profile,
+                "checkpoint_available": True,
+            },
+        }
     except (GraphNotFound, InvalidInputs, AgentMapNotInitialized):
         raise
     except FileNotFoundError as e:
@@ -365,7 +384,7 @@ def inspect_graph(
         graph_bundle_service = container.graph_bundle_service()
 
         try:
-            bundle = graph_bundle_service.get_or_create_bundle(
+            bundle, _ = graph_bundle_service.get_or_create_bundle(
                 csv_path=csv_path,
                 graph_name=resolved_graph_name,
                 config_path=config_file,
@@ -484,7 +503,7 @@ def validate_workflow(
 
         # Create bundle to check for missing declarations
         graph_bundle_service = container.graph_bundle_service()
-        bundle = graph_bundle_service.get_or_create_bundle(
+        bundle, _ = graph_bundle_service.get_or_create_bundle(
             csv_path=csv_path, graph_name=resolved_graph_name, config_path=config_file
         )
 

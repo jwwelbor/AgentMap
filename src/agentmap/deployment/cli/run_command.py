@@ -114,6 +114,31 @@ def run_command(
             force_create=force_create,
         )
 
+        # Check if execution was interrupted for human interaction
+        if result.get("interrupted", False):
+            # Execution suspended for human interaction
+            thread_id = result.get("thread_id")
+            message = result.get("message", "Execution interrupted for human interaction")
+
+            typer.secho(
+                f"⏸️  {message}", fg=typer.colors.YELLOW
+            )
+            typer.secho(
+                f"Thread ID: {thread_id}", fg=typer.colors.CYAN
+            )
+            typer.secho(
+                "Use 'agentmap resume <thread_id>' to continue execution after providing input",
+                fg=typer.colors.CYAN
+            )
+
+            if pretty and verbose:
+                metadata = result.get("metadata", {})
+                if metadata:
+                    typer.secho("ℹ️  Metadata:", fg=typer.colors.CYAN, bold=True)
+                    print_json(metadata)
+
+            raise typer.Exit(code=0)
+
         # Display result using CLI presenter for consistency
         if result.get("success", False):
             if pretty:

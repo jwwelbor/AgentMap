@@ -4,8 +4,12 @@ Interaction handling middleware for AgentMap.
 This service provides infrastructure for managing human-in-the-loop interactions
 by catching ExecutionInterruptedException, storing thread metadata, and coordinating
 with CLI handlers for interaction display and resumption.
+
+Uses pickle-based storage via FileStorageService to handle complex objects like
+GraphBundle that contain non-JSON-serializable types (e.g., sets).
 """
 
+import pickle
 import time
 from typing import Any, Dict, Optional
 
@@ -13,7 +17,7 @@ from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.human_interaction import HumanInteractionRequest
 from agentmap.services.logging_service import LoggingService
-from agentmap.services.storage.protocols import StorageService
+from agentmap.services.storage.system_manager import SystemStorageManager
 from agentmap.services.storage.types import WriteMode
 
 
@@ -31,23 +35,30 @@ class InteractionHandlerService:
 
     def __init__(
         self,
-        storage_service: StorageService,
+        system_storage_manager: SystemStorageManager,
         logging_service: LoggingService,
     ):
         """
         Initialize the interaction handler service.
 
         Args:
-            storage_service: Storage service for persisting interaction data
+            system_storage_manager: System storage manager for file-based storage
             logging_service: Service for logging operations
         """
-        self.storage_service = storage_service
         self.logger = logging_service.get_class_logger(self)
 
-        # Collection names for structured storage
-        self.interactions_collection = "interactions"
-        self.threads_collection = "interactions_threads"
-        self.responses_collection = "interactions_responses"
+        # Get file storage for interactions namespace
+        # This creates: cache/interactions/ directory
+        self.file_storage = system_storage_manager.get_file_storage("interactions")
+
+        # Collection names for structured storage (subdirectories)
+        self.requests_collection = "requests"
+        self.threads_collection = "threads"
+        self.responses_collection = "responses"
+
+        self.logger.info(
+            "[InteractionHandlerService] Initialized with pickle serialization"
+        )
 
     def handle_execution_interruption(
         self,
@@ -56,10 +67,11 @@ class InteractionHandlerService:
         bundle_context: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
-        Handle execution interruption for human interaction.
+        Handle execution interruption for suspend or human interaction.
 
         This method processes ExecutionInterruptedException by storing all necessary
-        metadata and displaying the interaction request to the user.
+        metadata. If interaction_request is present (HumanAgent), it stores and
+        displays the interaction. If None (SuspendAgent), it only stores thread metadata.
 
         Args:
             exception: The ExecutionInterruptedException containing interaction data
@@ -73,6 +85,26 @@ class InteractionHandlerService:
         self.logger.info(f"🔄 Handling execution interruption for thread: {thread_id}")
 
         try:
+            # Check if this is a suspend-only interruption (no human interaction)
+            if interaction_request is None:
+                self.logger.debug(
+                    f"Suspend-only interruption detected (no interaction_request) for thread: {thread_id}"
+                )
+
+                # For suspend-only, just store basic thread metadata
+                self._store_thread_metadata_suspend_only(
+                    thread_id=thread_id,
+                    checkpoint_data=checkpoint_data,
+                    bundle=bundle,
+                    bundle_context=bundle_context,
+                )
+
+                self.logger.info(
+                    f"✅ Suspend checkpoint stored for thread: {thread_id}"
+                )
+                return
+
+            # Human interaction path (interaction_request is present)
             # Step 1: Store interaction request
             self._store_interaction_request(interaction_request)
 
@@ -104,7 +136,7 @@ class InteractionHandlerService:
 
     def _store_interaction_request(self, request: HumanInteractionRequest) -> None:
         """
-        Store interaction request to persistent storage.
+        Store interaction request to persistent storage using pickle.
 
         Args:
             request: The human interaction request to store
@@ -122,19 +154,108 @@ class InteractionHandlerService:
             "status": "pending",
         }
 
-        result = self.storage_service.write(
-            collection=self.interactions_collection,
-            data=request_data,
-            document_id=str(request.id),
+        # Serialize to pickle
+        data_bytes = pickle.dumps(request_data)
+
+        result = self.file_storage.write(
+            collection=self.requests_collection,
+            data=data_bytes,
+            document_id=f"{request.id}.pkl",
             mode=WriteMode.WRITE,
+            binary_mode=True,
         )
 
         if not result.success:
-            raise RuntimeError(f"Failed to store interaction request: {result.error}")
+            raise RuntimeError(
+                f"Failed to store interaction request: {result.error}"
+            )
 
         self.logger.debug(
             f"📝 Stored interaction request: {request.id} for thread: {request.thread_id}"
         )
+
+    def _store_thread_metadata_suspend_only(
+        self,
+        thread_id: str,
+        checkpoint_data: Dict[str, Any],
+        bundle: Optional[GraphBundle] = None,
+        bundle_context: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Store thread metadata for suspend-only interruption (no human interaction).
+
+        This is used by SuspendAgent which doesn't require user interaction
+        but still needs to save checkpoint metadata for potential resumption.
+
+        Args:
+            thread_id: Thread ID for the execution
+            checkpoint_data: Checkpoint data from the exception
+            bundle: Optional GraphBundle for context extraction
+            bundle_context: Optional bundle context metadata
+        """
+        # Extract bundle information for rehydration
+        bundle_info = {}
+
+        if bundle_context:
+            bundle_info = bundle_context.copy()
+        elif bundle:
+            bundle_info = {
+                "csv_hash": getattr(bundle, "csv_hash", None),
+                "bundle_path": (
+                    str(bundle.bundle_path)
+                    if hasattr(bundle, "bundle_path") and bundle.bundle_path
+                    else None
+                ),
+                "csv_path": (
+                    str(bundle.csv_path)
+                    if hasattr(bundle, "csv_path") and bundle.csv_path
+                    else None
+                ),
+            }
+
+        # Create thread metadata for suspend-only (no interaction request)
+        # Get graph name from bundle, fallback to bundle_context, then checkpoint_data
+        graph_name = "unknown"
+        if bundle and hasattr(bundle, "graph_name"):
+            graph_name = bundle.graph_name
+        elif bundle_context and "graph_name" in bundle_context:
+            graph_name = bundle_context["graph_name"]
+        else:
+            # Last resort: try checkpoint_data (but this is usually the node name)
+            graph_name = checkpoint_data.get("graph_name", "unknown")
+
+        thread_metadata = {
+            "thread_id": thread_id,
+            "graph_name": graph_name,
+            "bundle_info": bundle_info,
+            "node_name": checkpoint_data.get("node_name", "unknown"),
+            "pending_interaction_id": None,  # No interaction for suspend-only
+            "status": "suspended",  # Different status for suspend vs paused
+            "created_at": time.time(),
+            "checkpoint_data": {
+                "inputs": checkpoint_data.get("inputs", {}),
+                "agent_context": checkpoint_data.get("agent_context", {}),
+                "execution_tracker": checkpoint_data.get("execution_tracker"),
+            },
+        }
+
+        # Serialize to pickle
+        data_bytes = pickle.dumps(thread_metadata)
+
+        result = self.file_storage.write(
+            collection=self.threads_collection,
+            data=data_bytes,
+            document_id=f"{thread_id}.pkl",
+            mode=WriteMode.WRITE,
+            binary_mode=True,
+        )
+
+        if not result.success:
+            raise RuntimeError(
+                f"Failed to store suspend thread metadata: {result.error}"
+            )
+
+        self.logger.debug(f"📝 Stored suspend-only thread metadata for: {thread_id}")
 
     def _store_thread_metadata(
         self,
@@ -177,10 +298,18 @@ class InteractionHandlerService:
             }
 
         # Create thread metadata
+        # Get graph name from bundle, fallback to bundle_context, then checkpoint_data
+        graph_name = interaction_request.node_name  # Fallback to node name
+        if bundle and hasattr(bundle, "graph_name"):
+            graph_name = bundle.graph_name
+        elif bundle_context and "graph_name" in bundle_context:
+            graph_name = bundle_context["graph_name"]
+        elif "graph_name" in checkpoint_data:
+            graph_name = checkpoint_data["graph_name"]
+
         thread_metadata = {
             "thread_id": thread_id,
-            "graph_name": checkpoint_data.get("node_name")
-            or interaction_request.node_name,
+            "graph_name": graph_name,
             "bundle_info": bundle_info,
             "node_name": interaction_request.node_name,
             "pending_interaction_id": str(interaction_request.id),
@@ -193,11 +322,15 @@ class InteractionHandlerService:
             },
         }
 
-        result = self.storage_service.write(
+        # Serialize to pickle
+        data_bytes = pickle.dumps(thread_metadata)
+
+        result = self.file_storage.write(
             collection=self.threads_collection,
-            data=thread_metadata,
-            document_id=thread_id,
+            data=data_bytes,
+            document_id=f"{thread_id}.pkl",
             mode=WriteMode.WRITE,
+            binary_mode=True,
         )
 
         if not result.success:
@@ -218,11 +351,14 @@ class InteractionHandlerService:
             Thread metadata dictionary if found, None otherwise
         """
         try:
-            thread_data = self.storage_service.read(
-                collection=self.threads_collection, document_id=thread_id
+            file_data = self.file_storage.read(
+                collection=self.threads_collection,
+                document_id=f"{thread_id}.pkl",
+                binary_mode=True,
             )
 
-            if thread_data:
+            if file_data:
+                thread_data = pickle.loads(file_data)
                 self.logger.debug(f"📖 Retrieved thread metadata for: {thread_id}")
                 return thread_data
             else:
@@ -235,25 +371,106 @@ class InteractionHandlerService:
             )
             return None
 
-    def mark_thread_resuming(self, thread_id: str) -> bool:
+    def save_interaction_response(
+        self,
+        response_id: str,
+        thread_id: str,
+        action: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Save user interaction response to storage.
+
+        Args:
+            response_id: Unique response ID
+            thread_id: Thread ID this response belongs to
+            action: User action (approve, reject, choose, respond, edit)
+            data: Optional additional response data
+
+        Returns:
+            True if save successful, False otherwise
+        """
+        try:
+            response_data = {
+                "response_id": response_id,
+                "thread_id": thread_id,
+                "action": action,
+                "data": data or {},
+                "timestamp": time.time(),
+            }
+
+            # Serialize to pickle
+            data_bytes = pickle.dumps(response_data)
+
+            result = self.file_storage.write(
+                collection=self.responses_collection,
+                data=data_bytes,
+                document_id=f"{response_id}.pkl",
+                mode=WriteMode.WRITE,
+                binary_mode=True,
+            )
+
+            if result.success:
+                self.logger.debug(
+                    f"📝 Saved interaction response: {response_id} for thread: {thread_id}"
+                )
+                return True
+            else:
+                self.logger.error(
+                    f"❌ Failed to save interaction response: {result.error}"
+                )
+                return False
+
+        except Exception as e:
+            self.logger.error(
+                f"❌ Error saving interaction response {response_id}: {str(e)}"
+            )
+            return False
+
+    def mark_thread_resuming(
+        self, thread_id: str, last_response_id: Optional[str] = None
+    ) -> bool:
         """
         Mark a thread as resuming after user response.
 
         Args:
             thread_id: Thread ID to update
+            last_response_id: Optional response ID to record
 
         Returns:
             True if update successful, False otherwise
         """
         try:
-            result = self.storage_service.write(
+            # Read existing thread metadata
+            file_data = self.file_storage.read(
                 collection=self.threads_collection,
-                data={
-                    "status": "resuming",
-                    "resumed_at": time.time(),
-                },
-                document_id=thread_id,
-                mode=WriteMode.UPDATE,
+                document_id=f"{thread_id}.pkl",
+                binary_mode=True,
+            )
+
+            if not file_data:
+                self.logger.error(
+                    f"❌ Cannot mark thread as resuming - thread not found: {thread_id}"
+                )
+                return False
+
+            # Deserialize, update, and reserialize
+            thread_data = pickle.loads(file_data)
+            thread_data["status"] = "resuming"
+            thread_data["resumed_at"] = time.time()
+            thread_data["pending_interaction_id"] = None
+
+            if last_response_id:
+                thread_data["last_response_id"] = last_response_id
+
+            data_bytes = pickle.dumps(thread_data)
+
+            result = self.file_storage.write(
+                collection=self.threads_collection,
+                data=data_bytes,
+                document_id=f"{thread_id}.pkl",
+                mode=WriteMode.WRITE,
+                binary_mode=True,
             )
 
             if result.success:
@@ -282,15 +499,33 @@ class InteractionHandlerService:
             True if update successful, False otherwise
         """
         try:
-            result = self.storage_service.write(
+            # Read existing thread metadata
+            file_data = self.file_storage.read(
                 collection=self.threads_collection,
-                data={
-                    "status": "completed",
-                    "completed_at": time.time(),
-                    "pending_interaction_id": None,
-                },
-                document_id=thread_id,
-                mode=WriteMode.UPDATE,
+                document_id=f"{thread_id}.pkl",
+                binary_mode=True,
+            )
+
+            if not file_data:
+                self.logger.error(
+                    f"❌ Cannot mark thread as completed - thread not found: {thread_id}"
+                )
+                return False
+
+            # Deserialize, update, and reserialize
+            thread_data = pickle.loads(file_data)
+            thread_data["status"] = "completed"
+            thread_data["completed_at"] = time.time()
+            thread_data["pending_interaction_id"] = None
+
+            data_bytes = pickle.dumps(thread_data)
+
+            result = self.file_storage.write(
+                collection=self.threads_collection,
+                data=data_bytes,
+                document_id=f"{thread_id}.pkl",
+                mode=WriteMode.WRITE,
+                binary_mode=True,
             )
 
             if result.success:
@@ -337,9 +572,11 @@ class InteractionHandlerService:
         """
         return {
             "service": "InteractionHandlerService",
-            "storage_service_available": self.storage_service is not None,
+            "storage_type": "pickle",
+            "storage_namespace": "interactions",
+            "file_storage_available": self.file_storage.is_healthy(),
             "collections": {
-                "interactions": self.interactions_collection,
+                "requests": self.requests_collection,
                 "threads": self.threads_collection,
                 "responses": self.responses_collection,
             },
@@ -350,5 +587,7 @@ class InteractionHandlerService:
                 "cli_interaction_display": True,
                 "lifecycle_management": True,
                 "cleanup_support": True,
+                "handles_sets": True,
+                "binary_storage": True,
             },
         }

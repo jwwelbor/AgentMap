@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.node import Node
@@ -729,136 +729,13 @@ class GraphBundleService:
 
         return bundle
 
-    # New static bundle creation methods
-
-    def create_static_bundle(
-        self, csv_path: Path, graph_name: Optional[str] = None
-    ) -> GraphBundle:
-        """
-        Create a static bundle using declaration-based analysis for fast bundle creation.
-
-        This method provides significantly faster bundle creation by using only declarations
-        without loading any implementations, eliminating circular dependencies.
-
-        Args:
-            csv_path: Path to CSV file containing graph definition
-            graph_name: Optional override for graph name
-
-        Returns:
-            StaticBundle containing declaration metadata without loaded implementations
-
-        Raises:
-            ValueError: If static bundle analyzer is not available
-            FileNotFoundError: If CSV file doesn't exist
-        """
-        if not self.static_bundle_analyzer:
-            raise ValueError(
-                "StaticBundleAnalyzer not available. "
-                "Cannot create static bundle without analyzer dependency."
-            )
-
-        start_time = datetime.now()
-
-        try:
-            static_bundle = self.static_bundle_analyzer.create_static_bundle(
-                csv_path=csv_path, graph_name=graph_name
-            )
-
-            end_time = datetime.now()
-            duration_ms = (end_time - start_time).total_seconds() * 1000
-
-            self.logger.info(
-                f"Created static bundle '{static_bundle.graph_name}' in {duration_ms:.2f}ms "
-                f"({len(static_bundle.nodes)} nodes, {len(static_bundle.declared_agent_types)} agent types)"
-            )
-
-            return static_bundle
-
-        except Exception as e:
-            self.logger.error(f"Failed to create static bundle: {e}")
-            raise
-
-    def try_create_static_bundle(
-        self, csv_path: Path, graph_name: Optional[str] = None
-    ) -> Optional[GraphBundle]:
-        """
-        Attempt to create static bundle
-
-        This method attempts static bundle creation first for performance,
-        and returns None if static creation fails, allowing fallback to dynamic creation.
-
-        Args:
-            csv_path: Path to CSV file containing graph definition
-            graph_name: Optional override for graph name
-
-        Returns:
-            StaticBundle if creation succeeds, None if static creation fails
-        """
-        if not self.static_bundle_analyzer:
-            self.logger.debug(
-                "StaticBundleAnalyzer not available, skipping static creation"
-            )
-            return None
-
-        try:
-            start_time = datetime.now()
-
-            static_bundle = self.static_bundle_analyzer.create_static_bundle(
-                csv_path=csv_path, graph_name=graph_name
-            )
-
-            end_time = datetime.now()
-            duration_ms = (end_time - start_time).total_seconds() * 1000
-
-            self.logger.info(
-                f"✅ Static bundle creation succeeded in {duration_ms:.2f}ms "
-                f"(vs ~{duration_ms * 10:.0f}ms for dynamic bundle)"
-            )
-
-            return static_bundle
-
-        except Exception as e:
-            self.logger.warning(
-                f"Static bundle creation failed (will fallback to dynamic): {e}"
-            )
-            return None
-
-    def is_static_bundle_available(self) -> bool:
-        """
-        Check if static bundle creation is available.
-
-        Returns:
-            True if StaticBundleAnalyzer is available for static bundle creation
-        """
-        return self.static_bundle_analyzer is not None
-
-    def get_bundle_creation_performance_info(self) -> Dict[str, Any]:
-        """
-        Get information about available bundle creation methods and their performance.
-
-        Returns:
-            Dictionary with performance information and available methods
-        """
-        info = {
-            "static_bundle_available": self.is_static_bundle_available(),
-            "dynamic_bundle_available": True,  # Always available
-            "recommended_method": (
-                "static" if self.is_static_bundle_available() else "dynamic"
-            ),
-            "performance_improvement": (
-                "~10x faster" if self.is_static_bundle_available() else "N/A"
-            ),
-        }
-
-        return info
-
     def get_or_create_bundle(
         self,
         csv_path: Path,
         graph_name: Optional[str] = None,
         config_path: Optional[str] = None,
         force_create: bool = False,
-    ) -> GraphBundle:
+    ) -> Tuple[GraphBundle, bool]:
         """
         Get existing bundle from cache or create a new one.
 
@@ -872,7 +749,9 @@ class GraphBundleService:
             config_path: Optional path to configuration file
 
         Returns:
-            GraphBundle ready for execution or scaffolding
+            Tuple containing:
+                GraphBundle ready for execution or scaffolding
+                Boolean indicating if bundle was created (True) or loaded (False)
 
         Raises:
             ValueError: If graph_registry_service is not available
@@ -896,9 +775,34 @@ class GraphBundleService:
         bundle = self.lookup_bundle(csv_hash, graph_name)
 
         if bundle and not force_create:
-            return bundle
+            # only load necessary classes
+            self.declaration_registry.load_for_bundle(bundle)
+            return (bundle, True)
 
-        bundle = self._create_bundle(csv_path, graph_name)
+        # load all classes for bundle creation
+        bundle = self._create_bundle(csv_path, csv_hash,graph_name)
+        return (bundle, False)
+
+    def _create_bundle(self, csv_path, csv_hash, graph_name) -> GraphBundle:
+        # Create new bundle for this specific graph
+        self.logger.info(
+            f"Creating new bundle for {csv_path} with graph '{graph_name or 'auto-detect'}'"
+        )
+        bundle = None
+
+        try:
+            # load all classes for a new bundle
+            self.declaration_registry.load_all()
+
+            bundle = self.static_bundle_analyzer.create_static_bundle(
+                csv_path, graph_name
+            )
+            self.logger.info("Created bundle using fast static analysis")
+        except FileNotFoundError as e:
+            self.logger.warning(f"CSV not found: {csv_path}")
+        except Exception as e:
+            self.logger.warning("Failed to create bundle using fast static analysis")
+            raise e
 
         bundle_path = self.file_path_service.get_bundle_path(
             csv_hash=csv_hash,
@@ -931,27 +835,6 @@ class GraphBundleService:
                 f"Missing declarations for agent types: {', '.join(bundle.missing_declarations)}. "
                 f"These agents will need to be defined before graph execution. execute 'scaffold' command"
             )
-
-        return bundle
-
-    def _create_bundle(self, csv_path, graph_name) -> GraphBundle:
-        # Create new bundle for this specific graph
-        self.logger.info(
-            f"Creating new bundle for {csv_path} with graph '{graph_name or 'auto-detect'}'"
-        )
-        bundle = None
-
-        try:
-            # Try fast path with static analysis first
-            bundle = self.static_bundle_analyzer.create_static_bundle(
-                csv_path, graph_name
-            )
-            self.logger.info("Created bundle using fast static analysis")
-        except FileNotFoundError as e:
-            self.logger.warning(f"CSV not found: {csv_path}")
-        except Exception as e:
-            self.logger.warning("Failed to create bundle using fast static analysis")
-            raise e
 
         return bundle
 

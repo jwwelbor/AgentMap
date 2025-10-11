@@ -25,7 +25,6 @@ from agentmap.models.execution.result import ExecutionResult
 from agentmap.models.human_interaction import HumanInteractionResponse
 from agentmap.runtime.workflow_ops import _resolve_csv_path
 from agentmap.services.state_adapter_service import StateAdapterService
-from agentmap.services.storage.types import WriteMode
 
 
 class WorkflowOrchestrationService:
@@ -160,26 +159,17 @@ class WorkflowOrchestrationService:
         container = initialize_di(config_file)
 
         # Step 2: Get required services
-        storage_service = container.json_storage_service()
+        interaction_handler = container.interaction_handler_service()
         graph_bundle_service = container.graph_bundle_service()
         graph_runner_service = container.graph_runner_service()
 
         try:
-            # Step 3: Load thread metadata from storage
-            thread_data = storage_service.read(
-                collection="interactions_threads", document_id=thread_id
-            )
+            # Step 3: Load thread metadata from pickle storage
+            thread_data = interaction_handler.get_thread_metadata(thread_id)
             if not thread_data:
                 raise ValueError(f"Thread '{thread_id}' not found in storage")
 
-            # Step 4: Load interaction request
-            request_id = thread_data.get("pending_interaction_id")
-            if not request_id:
-                raise ValueError(
-                    f"No pending interaction found for thread '{thread_id}'"
-                )
-
-            # Step 5: Rehydrate GraphBundle from stored metadata
+            # Step 4: Rehydrate GraphBundle from stored metadata
             bundle_info = thread_data.get("bundle_info", {})
             graph_name = thread_data.get("graph_name")
 
@@ -189,53 +179,53 @@ class WorkflowOrchestrationService:
             if not bundle:
                 raise RuntimeError("Failed to rehydrate GraphBundle from metadata")
 
-            # Step 6: Create and save HumanInteractionResponse
-            response = HumanInteractionResponse(
-                request_id=UUID(request_id),
-                action=response_action,
-                data=response_data or {},
-            )
-
-            save_result = storage_service.write(
-                collection="interactions_responses",
-                data={
-                    "request_id": str(response.request_id),
-                    "action": response.action,
-                    "data": response.data,
-                    "timestamp": response.timestamp.isoformat(),
-                },
-                document_id=str(response.request_id),
-                mode=WriteMode.WRITE,
-            )
-            if not save_result.success:
-                raise RuntimeError(f"Failed to save response: {save_result.error}")
-
-            # Step 7: Update thread status to 'resuming'
-            update_result = storage_service.write(
-                collection="interactions_threads",
-                data={
-                    "status": "resuming",
-                    "pending_interaction_id": None,
-                    "last_response_id": str(response.request_id),
-                },
-                document_id=thread_id,
-                mode=WriteMode.UPDATE,
-            )
-            if not update_result.success:
-                raise RuntimeError(
-                    f"Failed to update thread status: {update_result.error}"
-                )
-
-            # Step 8: Prepare checkpoint state with human response injected
+            # Step 5: Prepare checkpoint state
             checkpoint_data = thread_data.get("checkpoint_data", {})
             checkpoint_state = checkpoint_data.copy()
-            checkpoint_state["__human_response"] = {
-                "action": response.action,
-                "data": response.data,
-                "request_id": str(response.request_id),
-            }
 
-            # Step 9: Delegate to business logic layer
+            # Step 6: Handle human interaction response (if applicable)
+            request_id = thread_data.get("pending_interaction_id")
+
+            if request_id:
+                # This is a human-interaction suspend - save response
+                response = HumanInteractionResponse(
+                    request_id=UUID(request_id),
+                    action=response_action,
+                    data=response_data or {},
+                )
+
+                # Save response using InteractionHandlerService
+                save_success = interaction_handler.save_interaction_response(
+                    response_id=str(response.request_id),
+                    thread_id=thread_id,
+                    action=response.action,
+                    data=response.data,
+                )
+                if not save_success:
+                    raise RuntimeError("Failed to save interaction response")
+
+                # Update thread status to 'resuming' with response ID
+                update_success = interaction_handler.mark_thread_resuming(
+                    thread_id=thread_id, last_response_id=str(response.request_id)
+                )
+                if not update_success:
+                    raise RuntimeError("Failed to update thread status to resuming")
+
+                # Inject human response into checkpoint state
+                checkpoint_state["__human_response"] = {
+                    "action": response.action,
+                    "data": response.data,
+                    "request_id": str(response.request_id),
+                }
+            else:
+                # This is a suspend-only (no human interaction) - just mark as resuming
+                update_success = interaction_handler.mark_thread_resuming(
+                    thread_id=thread_id
+                )
+                if not update_success:
+                    raise RuntimeError("Failed to update thread status to resuming")
+
+            # Step 7: Delegate to business logic layer
             result = graph_runner_service.resume_from_checkpoint(
                 bundle=bundle,
                 thread_id=thread_id,

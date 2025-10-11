@@ -6,11 +6,15 @@ enabling pause/resume functionality for various scenarios like human interventio
 debugging, or long-running processes.
 
 Now implements LangGraph's BaseCheckpointSaver for direct integration.
+
+Uses SystemStorageManager with FileStorageService for binary pickle storage
+in cache/checkpoints/ namespace. This avoids magic strings and follows
+AgentMap's centralized path management patterns.
 """
 
-import json
+import pickle
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
 from langgraph.checkpoint.base import (
@@ -22,28 +26,32 @@ from langgraph.checkpoint.base import (
 
 from agentmap.models.storage.types import StorageResult, WriteMode
 from agentmap.services.logging_service import LoggingService
-from agentmap.services.storage.json_service import JSONStorageService
+from agentmap.services.storage.system_manager import SystemStorageManager
 
 
 class GraphCheckpointService(BaseCheckpointSaver):
-    """Service for managing graph execution checkpoints with direct LangGraph integration."""
+    """Service for managing graph execution checkpoints with pickle serialization."""
 
     def __init__(
         self,
-        json_storage_service: JSONStorageService,
+        system_storage_manager: SystemStorageManager,
         logging_service: LoggingService,
     ):
         """
         Initialize the graph checkpoint service.
 
         Args:
-            json_storage_service: JSON storage service for checkpoint persistence
+            system_storage_manager: System storage manager for checkpoint file storage
             logging_service: Logging service for obtaining logger instances
         """
         super().__init__()
-        self.storage = json_storage_service
         self.logger = logging_service.get_class_logger(self)
-        self.checkpoint_collection = "langgraph_checkpoints"
+
+        # Get file storage for checkpoints namespace
+        # This creates: cache/checkpoints/ directory
+        self.file_storage = system_storage_manager.get_file_storage("checkpoints")
+
+        self.logger.info("[GraphCheckpointService] Initialized with pickle serialization")
 
     # ===== LangGraph BaseCheckpointSaver Implementation =====
 
@@ -58,100 +66,138 @@ class GraphCheckpointService(BaseCheckpointSaver):
         thread_id = config["configurable"]["thread_id"]
         checkpoint_id = str(uuid4())
 
-        checkpoint_doc = {
-            "checkpoint_id": checkpoint_id,
-            "thread_id": thread_id,
-            "checkpoint_data": self._serialize_checkpoint(checkpoint),
-            "metadata": self._serialize_metadata(metadata),
-            "timestamp": datetime.utcnow().isoformat(),
-            "version": "2.0",
-            "new_versions": new_versions or {},
-        }
+        try:
+            # Serialize checkpoint to pickle bytes
+            checkpoint_bytes = self._serialize_checkpoint(checkpoint)
 
-        result = self.storage.write(
-            collection=self.checkpoint_collection,
-            data=checkpoint_doc,
-            document_id=f"{thread_id}_{checkpoint_id}",
-            mode=WriteMode.WRITE,
-        )
+            # Serialize metadata to pickle bytes
+            metadata_bytes = self._serialize_metadata(metadata)
 
-        if result.success:
-            self.logger.debug(
-                f"LangGraph checkpoint saved: thread_id={thread_id}, checkpoint_id={checkpoint_id}"
+            # Create checkpoint document
+            checkpoint_doc = {
+                "checkpoint": checkpoint_bytes,
+                "metadata": metadata_bytes,
+                "timestamp": datetime.utcnow().isoformat(),
+                "version": "2.0",
+                "new_versions": new_versions or {},
+            }
+
+            # Serialize entire document
+            document_bytes = pickle.dumps(checkpoint_doc)
+
+            # Save to file storage
+            # collection="" means use namespace root (checkpoints/)
+            # document_id is the filename
+            result = self.file_storage.write(
+                collection="",  # Use namespace root
+                data=document_bytes,
+                document_id=f"{thread_id}_{checkpoint_id}.pkl",
+                mode=WriteMode.WRITE,
+                binary_mode=True,
             )
-            return {"success": True, "checkpoint_id": checkpoint_id}
-        else:
-            raise Exception(f"Checkpoint save failed: {result.error}")
+
+            if result.success:
+                self.logger.debug(
+                    f"Checkpoint saved: thread={thread_id}, id={checkpoint_id}, "
+                    f"size={len(document_bytes)} bytes"
+                )
+                return {"success": True, "checkpoint_id": checkpoint_id}
+            else:
+                raise Exception(f"Checkpoint save failed: {result.error}")
+
+        except Exception as e:
+            error_msg = f"Failed to save checkpoint: {str(e)}"
+            self.logger.error(error_msg)
+            return {"success": False, "error": error_msg}
 
     def get_tuple(self, config: Dict[str, Any]) -> Optional[CheckpointTuple]:
         """Load the latest checkpoint for a thread (LangGraph interface)."""
         thread_id = config["configurable"]["thread_id"]
 
-        checkpoints = self._get_thread_checkpoints(thread_id)
-        if not checkpoints:
-            return None
-
-        latest = max(checkpoints, key=lambda x: x.get("timestamp", ""))
-
-        checkpoint = self._deserialize_checkpoint(latest["checkpoint_data"])
-        metadata = self._deserialize_metadata(latest["metadata"])
-
-        return CheckpointTuple(
-            config=config, checkpoint=checkpoint, metadata=metadata, parent_config=None
-        )
-
-    # ===== Helper Methods for LangGraph Integration =====
-
-    def _serialize_checkpoint(self, checkpoint: Checkpoint) -> str:
-        """Serialize checkpoint to JSON string."""
-        serializable = {
-            "channel_values": checkpoint.channel_values,
-            "channel_versions": checkpoint.channel_versions,
-            "versions_seen": checkpoint.versions_seen,
-        }
-        return json.dumps(serializable)
-
-    def _deserialize_checkpoint(self, checkpoint_data: str) -> Checkpoint:
-        """Deserialize checkpoint from JSON string."""
-        data = json.loads(checkpoint_data)
-        return Checkpoint(
-            channel_values=data["channel_values"],
-            channel_versions=data["channel_versions"],
-            versions_seen=data["versions_seen"],
-        )
-
-    def _serialize_metadata(self, metadata: CheckpointMetadata) -> str:
-        """Serialize metadata to JSON string."""
-        return json.dumps(metadata)
-
-    def _deserialize_metadata(self, metadata_data: str) -> CheckpointMetadata:
-        """Deserialize metadata from JSON string."""
-        return json.loads(metadata_data)
-
-    def _get_thread_checkpoints(self, thread_id: str) -> List[Dict[str, Any]]:
-        """Get all checkpoints for a thread."""
         try:
-            # Query for all checkpoints with this thread_id
-            query = {"thread_id": thread_id}
-            results = self.storage.read(
-                collection=self.checkpoint_collection,
-                query=query,
+            # List all checkpoint files for this thread
+            # FileStorageService.read() with no document_id lists files
+            files = self.file_storage.read(collection="")
+
+            if not files:
+                return None
+
+            # Filter files by thread_id prefix
+            thread_files = [f for f in files if f.startswith(f"{thread_id}_")]
+
+            if not thread_files:
+                return None
+
+            # Find the latest checkpoint file
+            # We need to get file metadata to sort by timestamp
+            latest_file = None
+            latest_timestamp = None
+
+            for filename in thread_files:
+                # Read the file
+                file_data = self.file_storage.read(
+                    collection="", document_id=filename, binary_mode=True
+                )
+
+                if file_data:
+                    # Deserialize document
+                    checkpoint_doc = pickle.loads(file_data)
+                    timestamp = checkpoint_doc.get("timestamp", "")
+
+                    if latest_timestamp is None or timestamp > latest_timestamp:
+                        latest_timestamp = timestamp
+                        latest_file = checkpoint_doc
+
+            if not latest_file:
+                return None
+
+            # Deserialize checkpoint and metadata
+            checkpoint = self._deserialize_checkpoint(latest_file["checkpoint"])
+            metadata = self._deserialize_metadata(latest_file["metadata"])
+
+            return CheckpointTuple(
+                config=config,
+                checkpoint=checkpoint,
+                metadata=metadata,
+                parent_config=None,
             )
 
-            if not results:
-                return []
-
-            # Convert to list if dict
-            if isinstance(results, dict):
-                return list(results.values())
-            elif isinstance(results, list):
-                return results
-            else:
-                return [results]
-
         except Exception as e:
-            self.logger.error(f"Error getting thread checkpoints: {str(e)}")
-            return []
+            self.logger.error(f"Failed to load checkpoint for thread {thread_id}: {str(e)}")
+            return None
+
+    # ===== Helper Methods for Pickle Serialization =====
+
+    def _serialize_checkpoint(self, checkpoint: Checkpoint) -> bytes:
+        """Serialize checkpoint using pickle.
+
+        Args:
+            checkpoint: LangGraph Checkpoint (TypedDict/dict with channel_values,
+                       channel_versions, versions_seen)
+
+        Returns:
+            Binary pickle data
+        """
+        return pickle.dumps(checkpoint)
+
+    def _deserialize_checkpoint(self, data: bytes) -> Checkpoint:
+        """Deserialize checkpoint from pickle.
+
+        Args:
+            data: Binary pickle data
+
+        Returns:
+            Checkpoint dict
+        """
+        return pickle.loads(data)
+
+    def _serialize_metadata(self, metadata: CheckpointMetadata) -> bytes:
+        """Serialize metadata using pickle."""
+        return pickle.dumps(metadata)
+
+    def _deserialize_metadata(self, data: bytes) -> CheckpointMetadata:
+        """Deserialize metadata from pickle."""
+        return pickle.loads(data)
 
     # ===== GraphCheckpointServiceProtocol Implementation =====
 
@@ -240,7 +286,8 @@ class GraphCheckpointService(BaseCheckpointSaver):
                 return None
 
             # Extract the execution state from channel_values
-            execution_state = tuple_result.checkpoint.channel_values
+            # Note: Checkpoint is a TypedDict (dict), so use dict access
+            execution_state = tuple_result.checkpoint["channel_values"]
 
             # Combine checkpoint data with metadata for protocol consumers
             checkpoint_data = {
@@ -248,8 +295,8 @@ class GraphCheckpointService(BaseCheckpointSaver):
                 "execution_state": execution_state,
                 "metadata": tuple_result.metadata,
                 "config": tuple_result.config,
-                "channel_versions": tuple_result.checkpoint.channel_versions,
-                "versions_seen": tuple_result.checkpoint.versions_seen,
+                "channel_versions": tuple_result.checkpoint["channel_versions"],
+                "versions_seen": tuple_result.checkpoint["versions_seen"],
             }
 
             self.logger.debug(f"Loaded checkpoint for thread_id={thread_id}")
@@ -269,8 +316,9 @@ class GraphCheckpointService(BaseCheckpointSaver):
         """
         return {
             "service_name": "GraphCheckpointService",
-            "langgraph_collection": self.checkpoint_collection,
-            "storage_available": self.storage.is_healthy(),
+            "storage_type": "pickle",
+            "storage_namespace": "checkpoints",
+            "storage_available": self.file_storage.is_healthy(),
             "capabilities": {
                 # LangGraph capabilities
                 "langgraph_put": True,
@@ -278,6 +326,9 @@ class GraphCheckpointService(BaseCheckpointSaver):
                 # Protocol capabilities
                 "protocol_save_checkpoint": True,
                 "protocol_load_checkpoint": True,
+                # Serialization
+                "handles_sets": True,
+                "binary_storage": True,
             },
             "implements_base_checkpoint_saver": True,
             "implements_protocol": True,

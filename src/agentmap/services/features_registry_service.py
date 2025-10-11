@@ -352,7 +352,7 @@ class FeaturesRegistryService:
             "capability.nlp", "fuzzywuzzy"
         )
         if cached is not None:
-            self.logger.debug(
+            self.logger.trace(
                 "[FeaturesRegistryService] Cache hit for capability.nlp.fuzzywuzzy"
             )
             return cached.get("available", False)
@@ -418,7 +418,7 @@ class FeaturesRegistryService:
             "capability.nlp", "spacy"
         )
         if cached is not None:
-            self.logger.debug(
+            self.logger.trace(
                 "[FeaturesRegistryService] Cache hit for capability.nlp.spacy"
             )
             return cached.get("available", False)

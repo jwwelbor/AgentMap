@@ -14,6 +14,10 @@ from typing import Any, Dict, List, Optional, Union
 
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.types import StorageResult, WriteMode
+from agentmap.services.config.storage_config_service import StorageConfigService
+from agentmap.services.file_path_service import FilePathService
+from agentmap.services.logging_service import LoggingService
+
 
 
 class FileStorageService(BaseStorageService):
@@ -25,6 +29,32 @@ class FileStorageService(BaseStorageService):
     - Document files (.pdf, .docx, .doc) via LangChain loaders
     - Binary files (.png, .jpg, .zip, etc.) for basic read/write
     """
+    def __init__(
+        self,
+        provider_name: str,
+        configuration: StorageConfigService,  # StorageConfigService (avoid circular import)
+        logging_service: LoggingService,  # LoggingService (avoid circular import)
+        file_path_service: FilePathService,
+        base_directory: Optional[str] = None,
+    ):
+        """
+        Initialize JSONStorageService.
+
+        Args:
+            provider_name: Name of the storage provider
+            configuration: Storage configuration service
+            logging_service: Logging service for creating loggers
+            file_path_service: Optional file path service for path validation
+            base_directory: Optional base directory for system storage operations
+        """
+        # Call parent's __init__ with all parameters for injection support
+        super().__init__(
+            provider_name,
+            configuration,
+            logging_service,
+            file_path_service,
+            base_directory,
+        )
 
     def _initialize_client(self) -> Dict[str, Any]:
         """
@@ -36,7 +66,20 @@ class FileStorageService(BaseStorageService):
         Raises:
             OSError: If base directory cannot be created or accessed
         """
-        base_dir = self._config.get_option("base_directory", "./data/files")
+        # Handle system storage (dict configuration) vs user storage (StorageConfigService)
+        if self.provider_name.startswith("system_file"):
+            base_dir = self.configuration.get("base_directory", "./data/cache/files")
+        else:
+            base_dir = self._config.get_option("base_directory", "./data/files")
+
+        encoding = self.configuration.get("encoding", "utf-8")
+        chunk_size = int(self.configuration.get("chunk_size", 1000))
+        chunk_overlap = int(self.configuration.get("chunk_overlap", 200))
+        should_split = self.configuration.get("should_split", False)
+        include_metadata = self.configuration.get("include_metadata", True)
+        newline = self.configuration.get("newline")
+        allow_binary = self.configuration.get("allow_binary", True)
+        max_file_size = self.configuration.get("max_file_size")
 
         # Ensure base directory exists - fail fast if we can't create it
         try:
@@ -47,14 +90,14 @@ class FileStorageService(BaseStorageService):
         # Extract configuration options (based on FileReaderAgent/FileWriterAgent context)
         config = {
             "base_directory": base_dir,
-            "encoding": self._config.get_option("encoding", "utf-8"),
-            "chunk_size": int(self._config.get_option("chunk_size", 1000)),
-            "chunk_overlap": int(self._config.get_option("chunk_overlap", 200)),
-            "should_split": self._config.get_option("should_split", False),
-            "include_metadata": self._config.get_option("include_metadata", True),
-            "newline": self._config.get_option("newline"),
-            "allow_binary": self._config.get_option("allow_binary", True),
-            "max_file_size": self._config.get_option("max_file_size"),
+            "encoding": encoding,
+            "chunk_size": chunk_size,
+            "chunk_overlap": chunk_overlap,
+            "should_split": should_split,
+            "include_metadata": include_metadata,
+            "newline": newline,
+            "allow_binary": allow_binary,
+            "max_file_size": max_file_size,
         }
 
         return config

@@ -95,7 +95,7 @@ class AgentServiceInjectionService:
             Exception: If service is unavailable or configuration fails
         """
         agent_name = getattr(agent, "name", "unknown")
-        self.logger.debug(
+        self.logger.trace(
             f"[AgentServiceInjectionService] Configuring core services for agent: {agent_name}"
         )
 
@@ -230,7 +230,7 @@ class AgentServiceInjectionService:
                     f"[AgentServiceInjectionService] Configured {core_services_configured} core services for {agent_name}"
                 )
             else:
-                self.logger.debug(
+                self.logger.trace(
                     f"[AgentServiceInjectionService] No core services configured for {agent_name} (agent does not implement core service protocols)"
                 )
 
@@ -261,7 +261,7 @@ class AgentServiceInjectionService:
             Exception: If storage service is unavailable or configuration fails
         """
         agent_name = getattr(agent, "name", "unknown")
-        self.logger.debug(
+        self.logger.trace(
             f"[AgentServiceInjectionService] Configuring storage services for agent: {agent_name}"
         )
 
@@ -407,7 +407,7 @@ class AgentServiceInjectionService:
                     f"[AgentServiceInjectionService] Configured {storage_services_configured} storage services for {agent_name}"
                 )
             else:
-                self.logger.debug(
+                self.logger.trace(
                     f"[AgentServiceInjectionService] No storage services configured for {agent_name} (agent does not implement storage protocols)"
                 )
 

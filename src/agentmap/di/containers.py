@@ -565,7 +565,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         registry.add_source(custom_yaml_source)
 
         # Load all declarations from sources
-        registry.load_all()
+        # registry.load_all()
 
         logger = logging_service.get_class_logger(registry)
         logger.info(f"Initialized declaration registry")
@@ -779,16 +779,16 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     graph_checkpoint_service = providers.Singleton(
         "agentmap.services.graph.graph_checkpoint_service.GraphCheckpointService",
-        json_storage_service,  # Direct injection
+        system_storage_manager,  # Use SystemStorageManager for pickle checkpoint storage
         logging_service,
     )
 
     # Interaction Handler Service for human-in-the-loop interactions
     @staticmethod
-    def _create_interaction_handler_service(json_storage_service, logging_service):
+    def _create_interaction_handler_service(system_storage_manager, logging_service):
         """Create interaction handler service for human-in-the-loop workflows."""
         try:
-            if json_storage_service is None:
+            if system_storage_manager is None:
                 logger = logging_service.get_logger("agentmap.interaction")
                 logger.info(
                     "JSON storage service not available - interaction handler disabled"
@@ -800,7 +800,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
             )
 
             return InteractionHandlerService(
-                storage_service=json_storage_service,
+                system_storage_manager=system_storage_manager,
                 logging_service=logging_service,
             )
         except Exception as e:
@@ -810,7 +810,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     interaction_handler_service = providers.Singleton(
         _create_interaction_handler_service,
-        json_storage_service,
+        system_storage_manager,
         logging_service,
     )
 

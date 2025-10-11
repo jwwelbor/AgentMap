@@ -77,6 +77,7 @@ class GraphRunnerService:
         parent_graph_name: Optional[str] = None,
         parent_tracker: Optional[Any] = None,
         is_subgraph: bool = False,
+        validate_agents: bool = False
     ) -> ExecutionResult:
         """
         Run graph execution using a prepared bundle.
@@ -136,19 +137,20 @@ class GraphRunnerService:
                 bundle, execution_tracker
             )
 
-            # Validate instantiation
-            validation = self.graph_instantiation.validate_instantiation(
-                bundle_with_instances
-            )
-            if not validation["valid"]:
-                raise RuntimeError(
-                    f"Agent instantiation validation failed: {validation}"
+            if validate_agents:
+                # Validate instantiation
+                validation = self.graph_instantiation.validate_instantiation(
+                    bundle_with_instances
                 )
+                if not validation["valid"]:
+                    raise RuntimeError(
+                        f"Agent instantiation validation failed: {validation}"
+                    )
 
-            self.logger.debug(
-                f"[GraphRunnerService] Instantiation completed: "
-                f"{validation['instantiated_nodes']} agents ready"
-            )
+                self.logger.debug(
+                    f"[GraphRunnerService] Instantiation completed: "
+                    f"{validation['instantiated_nodes']} agents ready"
+                )
 
             # Phase 4: Assembly - build the executable graph
             self.logger.debug(
