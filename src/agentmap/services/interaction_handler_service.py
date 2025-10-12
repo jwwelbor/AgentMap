@@ -166,9 +166,7 @@ class InteractionHandlerService:
         )
 
         if not result.success:
-            raise RuntimeError(
-                f"Failed to store interaction request: {result.error}"
-            )
+            raise RuntimeError(f"Failed to store interaction request: {result.error}")
 
         self.logger.debug(
             f"📝 Stored interaction request: {request.id} for thread: {request.thread_id}"

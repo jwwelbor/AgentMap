@@ -23,6 +23,7 @@ from agentmap.services.graph.graph_agent_instantiation_service import (
 )
 from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
 from agentmap.services.graph.graph_bootstrap_service import GraphBootstrapService
+from agentmap.services.graph.graph_checkpoint_service import GraphCheckpointService
 from agentmap.services.graph.graph_execution_service import GraphExecutionService
 from agentmap.services.interaction_handler_service import InteractionHandlerService
 from agentmap.services.logging_service import LoggingService
@@ -53,6 +54,7 @@ class GraphRunnerService:
         execution_tracking_service: ExecutionTrackingService,
         logging_service: LoggingService,
         interaction_handler_service: InteractionHandlerService,
+        graph_checkpoint_service: GraphCheckpointService,
     ):
         """Initialize orchestration service with all pipeline services."""
         self.app_config = app_config_service
@@ -66,6 +68,7 @@ class GraphRunnerService:
         self.logging_service = logging_service  # Store logging service for internal use
         self.logger = logging_service.get_class_logger(self)
         self.interaction_handler = interaction_handler_service
+        self.graph_checkpoint = graph_checkpoint_service
 
         # Check configuration for execution approach
         self.logger.info("GraphRunnerService initialized")
@@ -77,7 +80,7 @@ class GraphRunnerService:
         parent_graph_name: Optional[str] = None,
         parent_tracker: Optional[Any] = None,
         is_subgraph: bool = False,
-        validate_agents: bool = False
+        validate_agents: bool = False,
     ) -> ExecutionResult:
         """
         Run graph execution using a prepared bundle.
@@ -403,7 +406,9 @@ class GraphRunnerService:
                 )
 
             # Phase 3: Assembly with checkpoint support
-            self.logger.debug(f"Reassembling graph for checkpoint resume")
+            self.logger.debug(
+                f"Reassembling graph for checkpoint resume WITH checkpointer"
+            )
 
             from agentmap.models.graph import Graph
 
@@ -413,13 +418,14 @@ class GraphRunnerService:
                 entry_point=bundle_with_instances.entry_point,
             )
 
-            # Assemble with checkpoint service
-            executable_graph = self.graph_assembly.assemble_graph(
+            # Assemble WITH checkpoint service for proper resume
+            executable_graph = self.graph_assembly.assemble_with_checkpoint(
                 graph=graph,
                 agent_instances=bundle_with_instances.node_instances,
-                orchestrator_node_registry=self._create_node_registry_from_bundle(
+                node_definitions=self._create_node_registry_from_bundle(
                     bundle_with_instances
                 ),
+                checkpointer=self.graph_checkpoint,  # ✅ Pass checkpointer!
             )
 
             # Phase 4: Resume execution with checkpoint

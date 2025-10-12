@@ -51,7 +51,9 @@ class GraphCheckpointService(BaseCheckpointSaver):
         # This creates: cache/checkpoints/ directory
         self.file_storage = system_storage_manager.get_file_storage("checkpoints")
 
-        self.logger.info("[GraphCheckpointService] Initialized with pickle serialization")
+        self.logger.info(
+            "[GraphCheckpointService] Initialized with pickle serialization"
+        )
 
     # ===== LangGraph BaseCheckpointSaver Implementation =====
 
@@ -163,7 +165,9 @@ class GraphCheckpointService(BaseCheckpointSaver):
             )
 
         except Exception as e:
-            self.logger.error(f"Failed to load checkpoint for thread {thread_id}: {str(e)}")
+            self.logger.error(
+                f"Failed to load checkpoint for thread {thread_id}: {str(e)}"
+            )
             return None
 
     # ===== Helper Methods for Pickle Serialization =====

@@ -12,12 +12,11 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from agentmap.services.storage.base import BaseStorageService
-from agentmap.services.storage.types import StorageResult, WriteMode
 from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.file_path_service import FilePathService
 from agentmap.services.logging_service import LoggingService
-
+from agentmap.services.storage.base import BaseStorageService
+from agentmap.services.storage.types import StorageResult, WriteMode
 
 
 class FileStorageService(BaseStorageService):
@@ -29,6 +28,7 @@ class FileStorageService(BaseStorageService):
     - Document files (.pdf, .docx, .doc) via LangChain loaders
     - Binary files (.png, .jpg, .zip, etc.) for basic read/write
     """
+
     def __init__(
         self,
         provider_name: str,

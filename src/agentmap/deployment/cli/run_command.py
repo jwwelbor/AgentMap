@@ -118,17 +118,15 @@ def run_command(
         if result.get("interrupted", False):
             # Execution suspended for human interaction
             thread_id = result.get("thread_id")
-            message = result.get("message", "Execution interrupted for human interaction")
+            message = result.get(
+                "message", "Execution interrupted for human interaction"
+            )
 
-            typer.secho(
-                f"⏸️  {message}", fg=typer.colors.YELLOW
-            )
-            typer.secho(
-                f"Thread ID: {thread_id}", fg=typer.colors.CYAN
-            )
+            typer.secho(f"⏸️  {message}", fg=typer.colors.YELLOW)
+            typer.secho(f"Thread ID: {thread_id}", fg=typer.colors.CYAN)
             typer.secho(
                 "Use 'agentmap resume <thread_id>' to continue execution after providing input",
-                fg=typer.colors.CYAN
+                fg=typer.colors.CYAN,
             )
 
             if pretty and verbose:

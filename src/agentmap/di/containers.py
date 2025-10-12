@@ -873,6 +873,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         execution_tracking_service,
         logging_service,
         interaction_handler_service,
+        graph_checkpoint_service,  # Add checkpoint service for resume functionality
     )
 
     # Provider for checking service availability

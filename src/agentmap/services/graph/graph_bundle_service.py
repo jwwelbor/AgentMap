@@ -780,7 +780,7 @@ class GraphBundleService:
             return (bundle, True)
 
         # load all classes for bundle creation
-        bundle = self._create_bundle(csv_path, csv_hash,graph_name)
+        bundle = self._create_bundle(csv_path, csv_hash, graph_name)
         return (bundle, False)
 
     def _create_bundle(self, csv_path, csv_hash, graph_name) -> GraphBundle:

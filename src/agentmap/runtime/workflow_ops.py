@@ -13,8 +13,8 @@ from agentmap.exceptions.runtime_exceptions import (
 )
 from agentmap.exceptions.validation_exceptions import ValidationException
 from agentmap.runtime.runtime_manager import RuntimeManager
-from agentmap.services.graph.graph_runner_service import GraphRunnerService
 from agentmap.services.graph.graph_bundle_service import GraphBundleService
+from agentmap.services.graph.graph_runner_service import GraphRunnerService
 
 from .init_ops import ensure_initialized, get_container
 
