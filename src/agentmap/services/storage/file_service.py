@@ -68,18 +68,28 @@ class FileStorageService(BaseStorageService):
         """
         # Handle system storage (dict configuration) vs user storage (StorageConfigService)
         if self.provider_name.startswith("system_file"):
-            base_dir = self.configuration.get("base_directory", "./data/cache/files")
+            # System storage: use dict access on configuration
+            base_dir = self.configuration["base_directory"]
+            encoding = self.configuration.get("encoding", "utf-8")
+            chunk_size = int(self.configuration.get("chunk_size", 1000))
+            chunk_overlap = int(self.configuration.get("chunk_overlap", 200))
+            should_split = self.configuration.get("should_split", False)
+            include_metadata = self.configuration.get("include_metadata", True)
+            newline = self.configuration.get("newline")
+            allow_binary = self.configuration.get("allow_binary", True)
+            max_file_size = self.configuration.get("max_file_size")
         else:
-            base_dir = self._config.get_option("base_directory", "./data/files")
-
-        encoding = self.configuration.get("encoding", "utf-8")
-        chunk_size = int(self.configuration.get("chunk_size", 1000))
-        chunk_overlap = int(self.configuration.get("chunk_overlap", 200))
-        should_split = self.configuration.get("should_split", False)
-        include_metadata = self.configuration.get("include_metadata", True)
-        newline = self.configuration.get("newline")
-        allow_binary = self.configuration.get("allow_binary", True)
-        max_file_size = self.configuration.get("max_file_size")
+            # User storage: use get_file_config() to get config dict, then dict.get()
+            file_config = self.configuration.get_file_config()
+            base_dir = file_config.get("base_directory", "./data/files")
+            encoding = file_config.get("encoding", "utf-8")
+            chunk_size = int(file_config.get("chunk_size", 1000))
+            chunk_overlap = int(file_config.get("chunk_overlap", 200))
+            should_split = file_config.get("should_split", False)
+            include_metadata = file_config.get("include_metadata", True)
+            newline = file_config.get("newline")
+            allow_binary = file_config.get("allow_binary", True)
+            max_file_size = file_config.get("max_file_size")
 
         # Ensure base directory exists - fail fast if we can't create it
         try:
@@ -220,13 +230,18 @@ class FileStorageService(BaseStorageService):
                         )
 
         # Get base directory and resolve it
-        base_dir = Path(self.client["base_directory"]).resolve()
+        base_dir_path = Path(self.client["base_directory"])
+        base_dir = base_dir_path.resolve()
 
-        # Resolve file_path relative to base_dir to handle relative paths correctly
-        if Path(file_path).is_absolute():
-            full_path = Path(file_path).resolve()
+        raw_path = Path(file_path)
+        if raw_path.is_absolute():
+            full_path = raw_path.resolve()
         else:
-            full_path = (base_dir / file_path).resolve()
+            try:
+                relative_suffix = raw_path.relative_to(base_dir_path)
+            except ValueError:
+                relative_suffix = raw_path
+            full_path = (base_dir / relative_suffix).resolve()
 
         try:
             # Check if the resolved path is within base directory

@@ -45,7 +45,10 @@ class TestGraphAgent(unittest.TestCase):
             function_mappings={},
             csv_hash="test_hash"
         )
-        self.mock_graph_bundle_service.get_or_create_bundle.return_value = mock_bundle
+        self.mock_graph_bundle_service.get_or_create_bundle.return_value = (
+            mock_bundle,
+            False,
+        )
         
         # Configure function resolution service mock
         self.mock_function_resolution_service.extract_func_ref.return_value = "test.mapping_function"

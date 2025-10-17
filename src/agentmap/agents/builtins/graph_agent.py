@@ -368,7 +368,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
 
         # Get or create bundle using the service
         try:
-            bundle = bundle_service.get_or_create_bundle(
+            bundle, _ = bundle_service.get_or_create_bundle(
                 csv_path=csv_path,
                 graph_name=self.subgraph_name,
                 config_path=getattr(self, "config_path", None),

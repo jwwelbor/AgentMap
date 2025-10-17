@@ -85,12 +85,12 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
             ExecutionResult from graph execution
         """
         # Step 1: Create bundle from CSV (using correct API)
-        bundle = self.graph_bundle_service.get_or_create_bundle(
+        bundle, _ = self.graph_bundle_service.get_or_create_bundle(
             csv_path=Path(csv_path),
             graph_name=graph_name,
             config_path=str(Path(self.temp_dir) / "integration_test_config.yaml")
         )
-        
+
         # Step 2: Execute bundle using GraphRunnerService with initial state
         result = self.graph_runner_service.run(bundle, initial_state=initial_state)
         

@@ -1,20 +1,16 @@
 """
-Unit tests for WorkflowOrchestrationService - Service Layer Resume Functionality.
+Unit tests for WorkflowOrchestrationService resume logic.
 
-Tests the resume_workflow() static method and _rehydrate_bundle_from_metadata helper.
-Uses MockServiceFactory for isolated testing following AgentMap testing patterns.
+Validates suspend and human-interaction resume flows against the interaction
+handler surface that now backs WorkflowOrchestrationService.
 """
 
-import json
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, call, patch
-from uuid import UUID, uuid4
+from unittest.mock import MagicMock, Mock, patch
+from uuid import uuid4
 
-from agentmap.exceptions.runtime_exceptions import AgentMapError
 from agentmap.models.execution.result import ExecutionResult
-from agentmap.models.human_interaction import HumanInteractionResponse
-from agentmap.services.storage.types import StorageResult, WriteMode
 from agentmap.services.workflow_orchestration_service import (
     WorkflowOrchestrationService,
     _rehydrate_bundle_from_metadata,
@@ -26,36 +22,42 @@ class TestWorkflowOrchestrationServiceResume(unittest.TestCase):
     """Test WorkflowOrchestrationService.resume_workflow() method."""
 
     def setUp(self):
-        """Set up test fixtures."""
         self.mock_factory = MockServiceFactory()
         self.thread_id = "test_thread_123"
         self.request_id = str(uuid4())
         self.response_action = "approve"
         self.response_data = {"reason": "looks good"}
 
-    @patch("agentmap.services.workflow_orchestration_service.initialize_di")
-    def test_resume_workflow_success(self, mock_initialize_di):
-        """Test successful resume workflow with all steps working correctly."""
-        # Setup mock container and services
+    def _create_container_with_mocks(
+        self,
+        *,
+        thread_data,
+        save_success=True,
+        update_success=True,
+        pending_interaction=True,
+    ):
+        """Create a DI container mock wired with the current interaction handler API."""
         mock_container = MagicMock()
-        mock_initialize_di.return_value = mock_container
-        
-        # Create a mock storage service directly since create_storage_service doesn't exist
-        mock_storage = Mock()
-        mock_storage.read.return_value = None
-        mock_storage.write.return_value = Mock(success=True, error=None)
-        mock_storage.delete.return_value = Mock(success=True, error=None)
-        mock_storage.exists.return_value = False
+
+        mock_interaction_handler = Mock()
+        mock_interaction_handler.get_thread_metadata.return_value = thread_data
+        mock_interaction_handler.save_interaction_response.return_value = save_success
+        mock_interaction_handler.mark_thread_resuming.return_value = update_success
+
         mock_graph_bundle_service = self.mock_factory.create_mock_graph_bundle_service()
-        # Create a mock graph runner service directly
         mock_graph_runner = Mock()
-        mock_graph_runner.resume_from_checkpoint.return_value = Mock()
-        
-        mock_container.json_storage_service.return_value = mock_storage
+
+        mock_container.interaction_handler_service.return_value = (
+            mock_interaction_handler
+        )
         mock_container.graph_bundle_service.return_value = mock_graph_bundle_service
         mock_container.graph_runner_service.return_value = mock_graph_runner
-        
-        # Setup thread data with pending interaction
+
+        return mock_container, mock_interaction_handler, mock_graph_bundle_service, mock_graph_runner
+
+    @patch("agentmap.services.workflow_orchestration_service.initialize_di")
+    def test_resume_workflow_success(self, mock_initialize_di):
+        """Thread with pending interaction saves response and resumes execution."""
         thread_data = {
             "thread_id": self.thread_id,
             "status": "paused",
@@ -63,8 +65,8 @@ class TestWorkflowOrchestrationServiceResume(unittest.TestCase):
             "graph_name": "test_graph",
             "node_name": "human_node",
             "bundle_info": {
-                "csv_hash": "abc123",
                 "bundle_path": "/path/to/bundle",
+                "csv_hash": "abc123",
                 "csv_path": "/path/to/test.csv",
             },
             "checkpoint_data": {
@@ -72,21 +74,20 @@ class TestWorkflowOrchestrationServiceResume(unittest.TestCase):
                 "state": "waiting",
             },
         }
-        
-        mock_storage.read.return_value = thread_data
-        
-        # Setup successful save operations
-        mock_storage.write.return_value = StorageResult(success=True, document_id=self.request_id)
-        
-        # Setup bundle rehydration
+
+        (
+            mock_container,
+            mock_interaction_handler,
+            mock_graph_bundle_service,
+            mock_graph_runner,
+        ) = self._create_container_with_mocks(thread_data=thread_data)
+
         mock_bundle = MagicMock()
         mock_bundle.graph_name = "test_graph"
-        # Ensure all bundle service methods return the same mock bundle
         mock_graph_bundle_service.load_bundle.return_value = mock_bundle
         mock_graph_bundle_service.lookup_bundle.return_value = mock_bundle
-        mock_graph_bundle_service.get_or_create_bundle.return_value = mock_bundle
-        
-        # Setup successful resume
+        mock_graph_bundle_service.get_or_create_bundle.return_value = (mock_bundle, False)
+
         expected_result = ExecutionResult(
             success=True,
             graph_name="test_graph",
@@ -95,261 +96,270 @@ class TestWorkflowOrchestrationServiceResume(unittest.TestCase):
             total_duration=5.0,
         )
         mock_graph_runner.resume_from_checkpoint.return_value = expected_result
-        
-        # Execute
+
+        mock_initialize_di.return_value = mock_container
+
         result = WorkflowOrchestrationService.resume_workflow(
             thread_id=self.thread_id,
             response_action=self.response_action,
             response_data=self.response_data,
             config_file=None,
         )
-        
-        # Verify
+
         self.assertEqual(result, expected_result)
-        
-        # Verify DI initialization
-        mock_initialize_di.assert_called_once_with(None)
-        
-        # Verify thread data was loaded
-        mock_storage.read.assert_called_once_with(
-            collection="interactions_threads",
-            document_id=self.thread_id,
+
+        mock_interaction_handler.get_thread_metadata.assert_called_once_with(
+            self.thread_id
         )
-        
-        # Verify response was saved
-        calls = mock_storage.write.call_args_list
-        self.assertEqual(len(calls), 2)
-        
-        # First call saves the response
-        response_call = calls[0]
-        self.assertEqual(response_call.kwargs["collection"], "interactions_responses")
-        self.assertEqual(response_call.kwargs["document_id"], self.request_id)
-        self.assertEqual(response_call.kwargs["mode"], WriteMode.WRITE)
-        saved_data = response_call.kwargs["data"]
-        self.assertEqual(saved_data["request_id"], self.request_id)
-        self.assertEqual(saved_data["action"], self.response_action)
-        self.assertEqual(saved_data["data"], self.response_data)
-        
-        # Second call updates thread status
-        thread_update_call = calls[1]
-        self.assertEqual(thread_update_call.kwargs["collection"], "interactions_threads")
-        self.assertEqual(thread_update_call.kwargs["document_id"], self.thread_id)
-        self.assertEqual(thread_update_call.kwargs["mode"], WriteMode.UPDATE)
-        update_data = thread_update_call.kwargs["data"]
-        self.assertEqual(update_data["status"], "resuming")
-        self.assertIsNone(update_data["pending_interaction_id"])
-        self.assertEqual(update_data["last_response_id"], self.request_id)
-        
-        # Verify bundle was loaded
-        mock_graph_bundle_service.load_bundle.assert_called_once_with(Path("/path/to/bundle"))
-        
-        # Verify resume was called with correct state
+        mock_interaction_handler.save_interaction_response.assert_called_once_with(
+            response_id=self.request_id,
+            thread_id=self.thread_id,
+            action=self.response_action,
+            data=self.response_data,
+        )
+        mock_interaction_handler.mark_thread_resuming.assert_called_once_with(
+            thread_id=self.thread_id, last_response_id=self.request_id
+        )
+
+        mock_graph_bundle_service.load_bundle.assert_called_once_with(
+            Path("/path/to/bundle")
+        )
         mock_graph_runner.resume_from_checkpoint.assert_called_once()
-        call_args = mock_graph_runner.resume_from_checkpoint.call_args
-        # Verify that a bundle was passed (the exact mock object may vary due to DI container behavior)
-        self.assertIsNotNone(call_args.kwargs["bundle"])
-        self.assertEqual(call_args.kwargs["thread_id"], self.thread_id)
-        self.assertEqual(call_args.kwargs["resume_node"], "human_node")
-        
-        # Verify checkpoint state includes human response
-        checkpoint_state = call_args.kwargs["checkpoint_state"]
-        self.assertIn("__human_response", checkpoint_state)
+        call_kwargs = mock_graph_runner.resume_from_checkpoint.call_args.kwargs
+        checkpoint_state = call_kwargs["checkpoint_state"]
         self.assertEqual(checkpoint_state["__human_response"]["action"], self.response_action)
         self.assertEqual(checkpoint_state["__human_response"]["data"], self.response_data)
-        self.assertEqual(checkpoint_state["__human_response"]["request_id"], self.request_id)
+        self.assertEqual(
+            checkpoint_state["__human_response"]["request_id"], self.request_id
+        )
 
     @patch("agentmap.services.workflow_orchestration_service.initialize_di")
     def test_resume_workflow_thread_not_found(self, mock_initialize_di):
-        """Test resume workflow when thread is not found in storage."""
-        # Setup mock container and services
-        mock_container = MagicMock()
+        """Missing thread metadata raises a wrapped RuntimeError."""
+        (
+            mock_container,
+            mock_interaction_handler,
+            _,
+            _,
+        ) = self._create_container_with_mocks(thread_data=None)
+
         mock_initialize_di.return_value = mock_container
-        
-        # Create a mock storage service directly since create_storage_service doesn't exist
-        mock_storage = Mock()
-        mock_storage.read.return_value = None
-        mock_storage.write.return_value = Mock(success=True, error=None)
-        mock_storage.delete.return_value = Mock(success=True, error=None)
-        mock_storage.exists.return_value = False
-        mock_container.json_storage_service.return_value = mock_storage
-        
-        # Thread not found
-        mock_storage.read.return_value = None
-        
-        # Execute and verify exception
+        mock_interaction_handler.get_thread_metadata.return_value = None
+
         with self.assertRaises(RuntimeError) as context:
             WorkflowOrchestrationService.resume_workflow(
                 thread_id=self.thread_id,
                 response_action=self.response_action,
                 response_data=self.response_data,
             )
-        
-        self.assertIn(f"Thread '{self.thread_id}' not found", str(context.exception))
+
+        self.assertIn(
+            f"Thread '{self.thread_id}' not found", str(context.exception)
+        )
 
     @patch("agentmap.services.workflow_orchestration_service.initialize_di")
     def test_resume_workflow_no_pending_interaction(self, mock_initialize_di):
-        """Test resume workflow when thread has no pending interaction."""
-        # Setup mock container and services
-        mock_container = MagicMock()
-        mock_initialize_di.return_value = mock_container
-        
-        # Create a mock storage service directly since create_storage_service doesn't exist
-        mock_storage = Mock()
-        mock_storage.read.return_value = None
-        mock_storage.write.return_value = Mock(success=True, error=None)
-        mock_storage.delete.return_value = Mock(success=True, error=None)
-        mock_storage.exists.return_value = False
-        mock_container.json_storage_service.return_value = mock_storage
-        
-        # Thread exists but no pending interaction
+        """Suspend-only threads resume without storing a human response."""
         thread_data = {
             "thread_id": self.thread_id,
-            "status": "completed",
-            "pending_interaction_id": None,  # No pending interaction
+            "status": "suspended",
+            "pending_interaction_id": None,
+            "graph_name": "test_graph",
+            "node_name": "resume_node",
+            "bundle_info": {"bundle_path": "/path/to/bundle"},
+            "checkpoint_data": {"state": "paused"},
         }
-        mock_storage.read.return_value = thread_data
-        
-        # Execute and verify exception
-        with self.assertRaises(RuntimeError) as context:
-            WorkflowOrchestrationService.resume_workflow(
-                thread_id=self.thread_id,
-                response_action=self.response_action,
-            )
-        
-        self.assertIn("No pending interaction found", str(context.exception))
+
+        (
+            mock_container,
+            mock_interaction_handler,
+            mock_graph_bundle_service,
+            mock_graph_runner,
+        ) = self._create_container_with_mocks(thread_data=thread_data)
+
+        mock_bundle = MagicMock()
+        mock_bundle.graph_name = "test_graph"
+        mock_graph_bundle_service.load_bundle.return_value = mock_bundle
+
+        expected_result = ExecutionResult(
+            success=True,
+            graph_name="test_graph",
+            final_state={},
+            execution_summary="Resume complete",
+            total_duration=1.0,
+        )
+        mock_graph_runner.resume_from_checkpoint.return_value = expected_result
+
+        mock_initialize_di.return_value = mock_container
+
+        result = WorkflowOrchestrationService.resume_workflow(
+            thread_id=self.thread_id,
+            response_action="",
+            config_file=None,
+        )
+
+        self.assertEqual(result, expected_result)
+        mock_interaction_handler.save_interaction_response.assert_not_called()
+        mock_interaction_handler.mark_thread_resuming.assert_called_once_with(
+            thread_id=self.thread_id
+        )
 
     @patch("agentmap.services.workflow_orchestration_service.initialize_di")
     @patch("agentmap.services.workflow_orchestration_service._rehydrate_bundle_from_metadata")
     def test_resume_workflow_bundle_rehydration_failure(
         self, mock_rehydrate, mock_initialize_di
     ):
-        """Test resume workflow when bundle rehydration fails."""
-        # Setup mock container and services
-        mock_container = MagicMock()
-        mock_initialize_di.return_value = mock_container
-        
-        # Create a mock storage service directly since create_storage_service doesn't exist
-        mock_storage = Mock()
-        mock_storage.read.return_value = None
-        mock_storage.write.return_value = Mock(success=True, error=None)
-        mock_storage.delete.return_value = Mock(success=True, error=None)
-        mock_storage.exists.return_value = False
-        mock_graph_bundle_service = self.mock_factory.create_mock_graph_bundle_service()
-        
-        mock_container.json_storage_service.return_value = mock_storage
-        mock_container.graph_bundle_service.return_value = mock_graph_bundle_service
-        
-        # Setup thread data
+        """Rehydration failure produces a wrapped RuntimeError."""
         thread_data = {
             "thread_id": self.thread_id,
             "pending_interaction_id": self.request_id,
-            "bundle_info": {"csv_hash": "abc123"},
+            "bundle_info": {"csv_hash": "missing"},
             "graph_name": "test_graph",
         }
-        mock_storage.read.return_value = thread_data
-        
-        # Bundle rehydration fails
+
+        (
+            mock_container,
+            mock_interaction_handler,
+            _,
+            _,
+        ) = self._create_container_with_mocks(thread_data=thread_data)
+
         mock_rehydrate.return_value = None
-        
-        # Execute and verify exception
+        mock_initialize_di.return_value = mock_container
+
         with self.assertRaises(RuntimeError) as context:
             WorkflowOrchestrationService.resume_workflow(
                 thread_id=self.thread_id,
                 response_action=self.response_action,
             )
-        
-        self.assertIn("Failed to rehydrate GraphBundle", str(context.exception))
+
+        self.assertIn(
+            "Failed to rehydrate GraphBundle", str(context.exception)
+        )
 
     @patch("agentmap.services.workflow_orchestration_service.initialize_di")
     def test_resume_workflow_response_save_failure(self, mock_initialize_di):
-        """Test resume workflow when saving response fails."""
-        # Setup mock container and services
-        mock_container = MagicMock()
-        mock_initialize_di.return_value = mock_container
-        
-        # Create a mock storage service directly since create_storage_service doesn't exist
-        mock_storage = Mock()
-        mock_storage.read.return_value = None
-        mock_storage.write.return_value = Mock(success=True, error=None)
-        mock_storage.delete.return_value = Mock(success=True, error=None)
-        mock_storage.exists.return_value = False
-        mock_graph_bundle_service = self.mock_factory.create_mock_graph_bundle_service()
-        
-        mock_container.json_storage_service.return_value = mock_storage
-        mock_container.graph_bundle_service.return_value = mock_graph_bundle_service
-        
-        # Setup thread data
+        """Failed interaction response persistence surfaces as RuntimeError."""
         thread_data = {
             "thread_id": self.thread_id,
             "pending_interaction_id": self.request_id,
             "bundle_info": {"bundle_path": "/path/to/bundle"},
             "graph_name": "test_graph",
         }
-        mock_storage.read.return_value = thread_data
-        
-        # Setup bundle
-        mock_bundle = MagicMock()
-        mock_graph_bundle_service.load_bundle.return_value = mock_bundle
-        
-        # Response save fails
-        mock_storage.write.return_value = StorageResult(
-            success=False, error="Database write failed"
+
+        (
+            mock_container,
+            mock_interaction_handler,
+            mock_graph_bundle_service,
+            _,
+        ) = self._create_container_with_mocks(
+            thread_data=thread_data, save_success=False
         )
-        
-        # Execute and verify exception
+
+        mock_bundle = MagicMock()
+        mock_bundle.graph_name = "test_graph"
+        mock_graph_bundle_service.load_bundle.return_value = mock_bundle
+
+        mock_initialize_di.return_value = mock_container
+
         with self.assertRaises(RuntimeError) as context:
             WorkflowOrchestrationService.resume_workflow(
                 thread_id=self.thread_id,
                 response_action=self.response_action,
             )
-        
-        self.assertIn("Failed to save response", str(context.exception))
+
+        self.assertIn("Failed to save interaction response", str(context.exception))
 
     @patch("agentmap.services.workflow_orchestration_service.initialize_di")
     def test_resume_workflow_thread_update_failure(self, mock_initialize_di):
-        """Test resume workflow when updating thread status fails."""
-        # Setup mock container and services
-        mock_container = MagicMock()
-        mock_initialize_di.return_value = mock_container
-        
-        # Create a mock storage service directly since create_storage_service doesn't exist
-        mock_storage = Mock()
-        mock_storage.read.return_value = None
-        mock_storage.write.return_value = Mock(success=True, error=None)
-        mock_storage.delete.return_value = Mock(success=True, error=None)
-        mock_storage.exists.return_value = False
-        mock_graph_bundle_service = self.mock_factory.create_mock_graph_bundle_service()
-        
-        mock_container.json_storage_service.return_value = mock_storage
-        mock_container.graph_bundle_service.return_value = mock_graph_bundle_service
-        
-        # Setup thread data
+        """Thread update failure surfaces as RuntimeError."""
         thread_data = {
             "thread_id": self.thread_id,
             "pending_interaction_id": self.request_id,
             "bundle_info": {"bundle_path": "/path/to/bundle"},
             "graph_name": "test_graph",
         }
-        mock_storage.read.return_value = thread_data
-        
-        # Setup bundle
+
+        (
+            mock_container,
+            mock_interaction_handler,
+            mock_graph_bundle_service,
+            _,
+        ) = self._create_container_with_mocks(
+            thread_data=thread_data, update_success=False
+        )
+
         mock_bundle = MagicMock()
+        mock_bundle.graph_name = "test_graph"
         mock_graph_bundle_service.load_bundle.return_value = mock_bundle
-        
-        # First write (response) succeeds, second (thread update) fails
-        mock_storage.write.side_effect = [
-            StorageResult(success=True, document_id=self.request_id),
-            StorageResult(success=False, error="Update failed"),
-        ]
-        
-        # Execute and verify exception
+
+        mock_initialize_di.return_value = mock_container
+
         with self.assertRaises(RuntimeError) as context:
             WorkflowOrchestrationService.resume_workflow(
                 thread_id=self.thread_id,
                 response_action=self.response_action,
             )
-        
-        self.assertIn("Failed to update thread status", str(context.exception))
 
-if __name__ == "__main__":
-    unittest.main()
+        self.assertIn(
+            "Failed to update thread status to resuming", str(context.exception)
+        )
+
+
+class TestRehydrateBundleHelper(unittest.TestCase):
+    """Unit tests for _rehydrate_bundle_from_metadata helper."""
+
+    def setUp(self):
+        self.mock_service = Mock()
+
+    def test_rehydrate_bundle_from_path(self):
+        mock_bundle = Mock()
+        self.mock_service.load_bundle.return_value = mock_bundle
+
+        result = _rehydrate_bundle_from_metadata(
+            {"bundle_path": "/tmp/bundle.pkl"},
+            "test_graph",
+            self.mock_service,
+        )
+
+        self.assertEqual(result, mock_bundle)
+        self.mock_service.load_bundle.assert_called_once_with(Path("/tmp/bundle.pkl"))
+
+    def test_rehydrate_bundle_lookup(self):
+        mock_bundle = Mock()
+        self.mock_service.lookup_bundle.return_value = mock_bundle
+
+        result = _rehydrate_bundle_from_metadata(
+            {"csv_hash": "123"},
+            "test_graph",
+            self.mock_service,
+        )
+
+        self.assertEqual(result, mock_bundle)
+        self.mock_service.lookup_bundle.assert_called_once_with("123", "test_graph")
+
+    def test_rehydrate_bundle_recreate(self):
+        mock_bundle = Mock()
+        self.mock_service.get_or_create_bundle.return_value = (mock_bundle, False)
+
+        result = _rehydrate_bundle_from_metadata(
+            {"csv_path": "/tmp/workflow.csv"},
+            "test_graph",
+            self.mock_service,
+        )
+
+        self.assertEqual(result, mock_bundle)
+        self.mock_service.get_or_create_bundle.assert_called_once_with(
+            csv_path=Path("/tmp/workflow.csv"), graph_name="test_graph"
+        )
+
+    def test_rehydrate_bundle_failure(self):
+        self.mock_service.load_bundle.side_effect = RuntimeError("boom")
+
+        result = _rehydrate_bundle_from_metadata(
+            {"bundle_path": "/tmp/bundle.pkl"},
+            "test_graph",
+            self.mock_service,
+        )
+
+        self.assertIsNone(result)

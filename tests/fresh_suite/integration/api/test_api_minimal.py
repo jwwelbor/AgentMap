@@ -45,7 +45,10 @@ class TestAPIBasics(unittest.TestCase):
         # Mock graph bundle service
         mock_graph_bundle = Mock()
         mock_bundle = Mock()
-        mock_graph_bundle.get_or_create_bundle.return_value = mock_bundle
+        mock_graph_bundle.get_or_create_bundle.return_value = (
+            mock_bundle,
+            False,
+        )
         self.container.graph_bundle_service.return_value = mock_graph_bundle
         
         # Mock logging service (optional)

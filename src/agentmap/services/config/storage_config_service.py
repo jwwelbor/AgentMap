@@ -178,6 +178,15 @@ class StorageConfigService:
         """
         return self._config_data.get("blob", {})
 
+    def get_file_config(self) -> Dict[str, Any]:
+        """
+        Get file storage configuration.
+
+        Returns:
+            Dictionary containing file storage configuration
+        """
+        return self._config_data.get("file", {})
+
     def get_provider_config(self, provider: str) -> Dict[str, Any]:
         """
         Get configuration for a specific storage provider.

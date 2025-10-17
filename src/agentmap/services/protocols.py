@@ -218,6 +218,71 @@ class GraphBundleServiceProtocol(Protocol):
 
 
 @runtime_checkable
+class MessagingServiceProtocol(Protocol):
+    """Protocol for messaging service interface used by agents."""
+
+    async def publish_message(
+        self,
+        topic: str,
+        message_type: str,
+        payload: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+        provider: Optional[Any] = None,  # CloudProvider
+        priority: Any = None,  # MessagePriority
+        thread_id: Optional[str] = None,
+    ) -> Any:  # StorageResult
+        """
+        Publish a message to a cloud topic.
+
+        Args:
+            topic: Topic/queue name to publish to
+            message_type: Type of message (e.g., "task_request", "graph_trigger")
+            payload: Message payload data
+            metadata: Optional metadata for the message
+            provider: Specific provider to use (or use default)
+            priority: Message priority
+            thread_id: Thread ID for correlation
+
+        Returns:
+            StorageResult indicating success/failure
+        """
+        ...
+
+    def apply_template(
+        self, template_name: str, variables: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Apply a message template with variables.
+
+        Args:
+            template_name: Name of the template to apply
+            variables: Variables to substitute in the template
+
+        Returns:
+            Processed template with variables applied
+        """
+        ...
+
+    def get_service_info(self) -> Dict[str, Any]:
+        """
+        Get service information for debugging.
+
+        Returns:
+            Service information including available providers and configuration
+        """
+        ...
+
+    def get_available_providers(self) -> List[str]:
+        """
+        Get list of available messaging providers.
+
+        Returns:
+            List of provider names that are available
+        """
+        ...
+
+
+@runtime_checkable
 class GraphBundleCapableAgent(Protocol):
     """Protocol for agents that can use graph bundle services."""
 
@@ -228,46 +293,6 @@ class GraphBundleCapableAgent(Protocol):
         ...
 
 
-@runtime_checkable
-class GraphCheckpointServiceProtocol(Protocol):
-    """Protocol for graph checkpoint service interface used by agents."""
-
-    def save_checkpoint(
-        self,
-        thread_id: str,
-        node_name: str,
-        checkpoint_type: str,
-        metadata: Dict[str, Any],
-        execution_state: Dict[str, Any],
-    ) -> Any:
-        """
-        Save a graph execution checkpoint.
-
-        Args:
-            thread_id: Unique identifier for the execution thread
-            node_name: Name of the node where checkpoint occurs
-            checkpoint_type: Type of checkpoint
-            metadata: Type-specific metadata
-            execution_state: Current execution state data
-
-        Returns:
-            Result of the save operation
-        """
-        ...
-
-    def load_checkpoint(self, thread_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Load the latest checkpoint for a thread.
-
-        Args:
-            thread_id: Thread ID to load checkpoint for
-
-        Returns:
-            Checkpoint data or None if not found
-        """
-        ...
-
-
 # Agent capability protocols for service configuration
 @runtime_checkable
 class LLMCapableAgent(Protocol):
@@ -275,6 +300,17 @@ class LLMCapableAgent(Protocol):
 
     def configure_llm_service(self, llm_service: LLMServiceProtocol) -> None:
         """Configure LLM service for this agent."""
+        ...
+
+
+@runtime_checkable
+class MessagingCapableAgent(Protocol):
+    """Protocol for agents that can use messaging services."""
+
+    def configure_messaging_service(
+        self, messaging_service: MessagingServiceProtocol
+    ) -> None:
+        """Configure messaging service for this agent."""
         ...
 
 
@@ -442,17 +478,6 @@ class PromptCapableAgent(Protocol):
         self, prompt_service: PromptManagerServiceProtocol
     ) -> None:
         """Configure prompt manager service for this agent."""
-        ...
-
-
-@runtime_checkable
-class CheckpointCapableAgent(Protocol):
-    """Protocol for agents that can use graph checkpoint services."""
-
-    def configure_checkpoint_service(
-        self, checkpoint_service: GraphCheckpointServiceProtocol
-    ) -> None:
-        """Configure graph checkpoint service for this agent."""
         ...
 
 

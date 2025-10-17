@@ -48,7 +48,10 @@ class MockServices:
         """Return a mock graph bundle service."""
         mock_bundle_service = Mock()
         mock_bundle = Mock()
-        mock_bundle_service.get_or_create_bundle.return_value = mock_bundle
+        mock_bundle_service.get_or_create_bundle.return_value = (
+            mock_bundle,
+            False,
+        )
         return mock_bundle_service
     
     def logging_service(self):

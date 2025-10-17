@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -15,7 +16,7 @@ class ExecutionTrackingService:
         self.logging_service = logging_service
         self.logger.info("[ExecutionTrackingService] Initialized")
 
-    def create_tracker(self) -> ExecutionTracker:
+    def create_tracker(self, thread_id: Optional[str] = None) -> ExecutionTracker:
         tracking_config = self.config.get_tracking_config()
 
         track_inputs = tracking_config.get("track_inputs", False)
@@ -30,6 +31,8 @@ class ExecutionTrackingService:
             track_inputs=track_inputs,
             track_outputs=track_outputs,
             minimal_mode=minimal_mode,
+            # pass exeisting thread ID or Generate unique thread ID for checkpoint support
+            thread_id=thread_id or str(uuid.uuid4()),
         )
 
     def record_node_start(

@@ -7,7 +7,6 @@ from agentmap.services.llm_service import LLMService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.protocols import (
     BlobStorageCapableAgent,
-    CheckpointCapableAgent,
     LLMCapableAgent,
     OrchestrationCapableAgent,
     PromptCapableAgent,
@@ -158,27 +157,6 @@ class AgentServiceInjectionService:
                 except Exception as e:
                     self.logger.error(
                         f"[AgentServiceInjectionService] ❌ Failed to configure prompt service for {agent_name}: {e}"
-                    )
-                    raise
-
-            # Configure checkpoint service (strict mode)
-            if isinstance(agent, CheckpointCapableAgent):
-                if self.graph_checkpoint_service is None:
-                    error_msg = (
-                        f"Checkpoint service not available for agent {agent_name}"
-                    )
-                    self.logger.error(f"[AgentServiceInjectionService] ❌ {error_msg}")
-                    raise Exception(error_msg)
-
-                try:
-                    agent.configure_checkpoint_service(self.graph_checkpoint_service)
-                    self.logger.debug(
-                        f"[AgentServiceInjectionService] ✅ Configured checkpoint service for {agent_name}"
-                    )
-                    core_services_configured += 1
-                except Exception as e:
-                    self.logger.error(
-                        f"[AgentServiceInjectionService] ❌ Failed to configure checkpoint service for {agent_name}: {e}"
                     )
                     raise
 
@@ -664,11 +642,6 @@ class AgentServiceInjectionService:
                     PromptCapableAgent,
                     "prompt_manager_service",
                     "configure_prompt_service",
-                ),
-                (
-                    CheckpointCapableAgent,
-                    "graph_checkpoint_service",
-                    "configure_checkpoint_service",
                 ),
                 (
                     OrchestrationCapableAgent,

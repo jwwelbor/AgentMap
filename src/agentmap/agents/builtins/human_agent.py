@@ -2,17 +2,21 @@
 import logging
 from typing import Any, Dict, List, Optional
 
+from langgraph.types import interrupt
+
 from agentmap.agents.builtins.suspend_agent import SuspendAgent
-from agentmap.models.human_interaction import HumanInteractionRequest, InteractionType
+from agentmap.models.human_interaction import InteractionType
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
-from agentmap.services.protocols import (
-    GraphCheckpointServiceProtocol,
-)
 from agentmap.services.state_adapter_service import StateAdapterService
 
 
-class HumanAgent(SuspendAgent):  # inherited CheckpointCapableAgent
-    """Agent that pauses execution for human interaction."""
+class HumanAgent(SuspendAgent):
+    """
+    Agent that pauses execution for human interaction using LangGraph's interrupt() pattern.
+
+    On first call: Raises GraphInterrupt with interaction request
+    On resume: Processes human response and returns appropriate value
+    """
 
     def __init__(
         self,
@@ -20,10 +24,6 @@ class HumanAgent(SuspendAgent):  # inherited CheckpointCapableAgent
         state_adapter_service: StateAdapterService,
         name: str,
         prompt: str,
-        interaction_type: str = "text_input",
-        options: Optional[List[str]] = None,
-        timeout_seconds: Optional[int] = None,
-        default_action: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None,
         logger: Optional[logging.Logger] = None,
     ):
@@ -36,6 +36,17 @@ class HumanAgent(SuspendAgent):  # inherited CheckpointCapableAgent
             state_adapter_service=state_adapter_service,
         )
         # Parse interaction type
+
+        # interaction_type: str = "text_input",
+        # options: Optional[List[str]] = None,
+        # timeout_seconds: Optional[int] = None,
+        # default_action: Optional[str] = None,
+
+        interaction_type = context.get("interaction_type", "text_input")
+        options = context.get("options")
+        timeout_seconds = context.get("timeout_seconds")
+        default_option = context.get("default_option")
+
         try:
             self.interaction_type = InteractionType(interaction_type.lower())
         except ValueError:
@@ -48,69 +59,46 @@ class HumanAgent(SuspendAgent):  # inherited CheckpointCapableAgent
         # Store interaction configuration
         self.options = options or []
         self.timeout_seconds = timeout_seconds
-        self.default_action = default_action
+        self.default_option = default_option
 
     def process(self, inputs: Dict[str, Any]) -> Any:
-        self.log_info(f"[HumanAgent] {self.name} initiating human interaction")
+        """
+        Pause for human interaction using LangGraph's interrupt() pattern.
+
+        On first call: Raises GraphInterrupt with interaction request
+        On resume: Processes human response and returns appropriate value
+
+        The interrupt metadata includes all information needed to display
+        the interaction request to the user.
+        """
         thread_id = self._get_or_create_thread_id()
         formatted_prompt = self._format_prompt_with_inputs(inputs)
 
-        if "__human_response" in inputs:
-            human_response = inputs.pop("__human_response")
-            resuming_flag = inputs.pop("__resuming_from_human_interaction", False)
-
-            self.log_info(
-                f"[HumanAgent] Resuming with human response: "
-                f"action={human_response['action']}, "
-                f"from_node={human_response.get('responded_at_node', 'unknown')}"
-            )
-
-            # Process the human response and return appropriate output
-            return self._process_human_response(human_response, inputs)
-
-        # Otherwise, initiate interruption as normal
         self.log_info(f"[HumanAgent] {self.name} initiating human interaction")
 
-        interaction_request = HumanInteractionRequest(
-            thread_id=thread_id,
-            node_name=self.name,
-            interaction_type=self.interaction_type,
-            prompt=formatted_prompt,
-            context=inputs,
-            options=self.options,
-            timeout_seconds=self.timeout_seconds,
+        # Use LangGraph's interrupt() - pass interaction request as metadata
+        # On first call: This raises GraphInterrupt
+        # On resume: This returns the human response from Command(resume=value)
+        human_response = interrupt(
+            {
+                "type": "human_interaction",
+                "thread_id": thread_id,
+                "node_name": self.name,
+                "interaction_type": self.interaction_type.value,
+                "prompt": formatted_prompt,
+                "options": self.options,
+                "default_option": self.default_option,
+                "timeout_seconds": self.timeout_seconds,
+                "inputs": inputs,
+                "context": self.context,
+            }
         )
 
-        checkpoint_data = self._build_checkpoint_data(inputs)
+        # This code only runs on resume!
+        self.log_info(f"[HumanAgent] Resuming with human response: {human_response}")
 
-        # Save a checkpoint (reuses parent's method)
-        self._save_checkpoint(
-            thread_id=thread_id,
-            node_name=self.name,
-            checkpoint_type="human_intervention",
-            metadata={
-                "interaction_request": {
-                    "id": str(interaction_request.id),
-                    "type": interaction_request.interaction_type.value,
-                    "prompt": interaction_request.prompt,
-                    "options": interaction_request.options,
-                    "timeout_seconds": interaction_request.timeout_seconds,
-                },
-                "agent_config": {
-                    "name": self.name,
-                    "interaction_type": self.interaction_type.value,
-                    "default_action": self.default_action,
-                },
-            },
-            execution_state=checkpoint_data,
-        )
-
-        # Raise the standardized interrupt with a HumanInteractionRequest
-        self._interrupt(
-            thread_id=thread_id,
-            checkpoint_data=checkpoint_data,
-            interaction_request=interaction_request,
-        )
+        # Process the response and return the appropriate value
+        return self._process_human_response(human_response, inputs)
 
     def _process_human_response(
         self, human_response: Dict[str, Any], inputs: Dict[str, Any]

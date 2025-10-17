@@ -67,14 +67,14 @@ class BuiltinDefinitionConstants:
             "class_path": "agentmap.agents.builtins.suspend_agent.SuspendAgent",
             "category": "core",
             "requires": [],
-            "protocols_implemented": ["CheckpointCapableAgent"],
+            "protocols_implemented": [],
             "source": "builtin",
         },
         "human": {
             "class_path": "agentmap.agents.builtins.human_agent.HumanAgent",
             "category": "core",
             "requires": [],
-            "protocols_implemented": ["CheckpointCapableAgent"],
+            "protocols_implemented": [],
             "source": "builtin",
         },
         "graph": {
@@ -330,14 +330,6 @@ class BuiltinDefinitionConstants:
             "singleton": True,
             "required_services": ["logging_service"],
             "implements": ["OrchestrationCapableAgent"],
-            "source": "builtin",
-        },
-        # ============ GRAPH SERVICES ============
-        "graph_checkpoint_service": {
-            "class_path": "agentmap.services.graph.graph_checkpoint_service.GraphCheckpointService",
-            "singleton": True,
-            "required_services": ["logging_service"],
-            "implements": ["CheckpointCapableAgent", "GraphCheckpointServiceProtocol"],
             "source": "builtin",
         },
         # ============ STORAGE SERVICES ============

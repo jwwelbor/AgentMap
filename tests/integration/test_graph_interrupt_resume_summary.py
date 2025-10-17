@@ -181,30 +181,36 @@ class TestGraphInterruptResumeSummary(unittest.TestCase):
         from agentmap.services.graph.graph_checkpoint_service import GraphCheckpointService
         from langgraph.checkpoint.base import BaseCheckpointSaver
         from unittest.mock import Mock
-        
-        # Create mock services
-        mock_json_storage = Mock()
+
+        # Create mock services with new structure
+        mock_system_storage_manager = Mock()
+        mock_file_storage = Mock()
         mock_logging = Mock()
-        mock_json_storage.is_healthy.return_value = True
-        
-        # Create checkpoint service
+
+        # Configure storage manager to return file storage
+        mock_system_storage_manager.get_file_storage.return_value = mock_file_storage
+        mock_file_storage.is_healthy.return_value = True
+
+        # Create checkpoint service with new parameter name
         checkpoint_service = GraphCheckpointService(
-            json_storage_service=mock_json_storage,
+            system_storage_manager=mock_system_storage_manager,
             logging_service=mock_logging
         )
-        
+
         # Verify integration points
         self.assertIsInstance(checkpoint_service, BaseCheckpointSaver)
         self.assertTrue(hasattr(checkpoint_service, 'put'))
         self.assertTrue(hasattr(checkpoint_service, 'get_tuple'))
         self.assertTrue(callable(checkpoint_service.put))
         self.assertTrue(callable(checkpoint_service.get_tuple))
-        
-        # Verify service configuration
+
+        # Verify service configuration with new fields
         info = checkpoint_service.get_service_info()
         self.assertIn("service_name", info)
-        self.assertIn("capabilities", info) 
+        self.assertIn("capabilities", info)
         self.assertIn("storage_available", info)
+        self.assertEqual(info["storage_type"], "pickle")
+        self.assertEqual(info["storage_namespace"], "checkpoints")
         self.assertTrue(info["implements_base_checkpoint_saver"])
 
     def test_comprehensive_data_flow(self):

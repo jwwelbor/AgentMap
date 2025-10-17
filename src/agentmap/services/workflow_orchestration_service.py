@@ -109,7 +109,7 @@ class WorkflowOrchestrationService:
 
         # Step 6: Get or create bundle (same as run_command.py)
         graph_bundle_service = container.graph_bundle_service()
-        bundle = graph_bundle_service.get_or_create_bundle(
+        bundle, _ = graph_bundle_service.get_or_create_bundle(
             csv_path=csv_path, graph_name=resolved_graph_name, config_path=config_file
         )
 
@@ -185,6 +185,13 @@ class WorkflowOrchestrationService:
 
             # Step 6: Handle human interaction response (if applicable)
             request_id = thread_data.get("pending_interaction_id")
+
+            # Validate that response_action is only provided when there's a pending interaction
+            if response_action and not request_id:
+                raise ValueError(
+                    f"No pending interaction found for thread '{thread_id}'. "
+                    "Cannot provide response_action without a pending interaction."
+                )
 
             if request_id:
                 # This is a human-interaction suspend - save response
@@ -264,7 +271,7 @@ def _rehydrate_bundle_from_metadata(
 
         # Method 3: Recreate from CSV path
         if csv_path:
-            bundle = graph_bundle_service.get_or_create_bundle(
+            bundle, _ = graph_bundle_service.get_or_create_bundle(
                 csv_path=Path(csv_path), graph_name=graph_name
             )
             if bundle:

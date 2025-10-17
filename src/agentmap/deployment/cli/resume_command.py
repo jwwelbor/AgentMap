@@ -20,8 +20,8 @@ from agentmap.runtime_api import ensure_initialized, resume_workflow
 
 def resume_command(
     thread_id: str = typer.Argument(..., help="Thread ID to resume"),
-    response: str = typer.Argument(
-        ..., help="Response action (e.g., approve, reject, choose, respond, edit)"
+    response: Optional[str] = typer.Argument(
+        None, help="Response action (e.g., approve, reject, choose, respond, edit)"
     ),
     data: Optional[str] = typer.Option(
         None, "--data", "-d", help="Additional data as JSON string"

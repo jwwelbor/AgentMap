@@ -15,8 +15,6 @@ from .node import Node
 class Graph:
     """Pure data container for graph structure.
 
-    This model only holds data - all business logic belongs in GraphService.
-
     Attributes:
         name: The name of the graph
         entry_point: Optional entry point node name

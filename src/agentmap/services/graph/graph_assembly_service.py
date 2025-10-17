@@ -52,7 +52,6 @@ class GraphAssemblyService:
             State schema type (dict, pydantic model, or other LangGraph-compatible schema)
         """
         try:
-            # Try to get state schema configuration
             execution_config = self.config.get_execution_config()
             state_schema_config = execution_config.get("graph", {}).get(
                 "state_schema", "dict"
@@ -60,37 +59,101 @@ class GraphAssemblyService:
 
             if state_schema_config == "dict":
                 return dict
-            elif state_schema_config == "pydantic":
-                # Try to import pydantic and return BaseModel or a custom model
-                try:
-                    from pydantic import BaseModel
 
-                    # Could be configured to use a specific model class
-                    model_class = execution_config.get("graph", {}).get(
-                        "state_model_class"
-                    )
-                    if model_class:
-                        # Would need to dynamically import the specified class
-                        # For now, return BaseModel as a safe default
-                        return BaseModel
-                    return BaseModel
-                except ImportError:
-                    self.logger.warning(
-                        "Pydantic requested but not available, falling back to dict"
-                    )
-                    return dict
-            else:
-                # Custom state schema - would need specific handling
-                self.logger.warning(
-                    f"Unknown state schema type '{state_schema_config}', falling back to dict"
-                )
-                return dict
+            if state_schema_config == "pydantic":
+                return self._get_pydantic_schema(execution_config)
+
+            # Unknown schema type
+            self.logger.warning(
+                f"Unknown state schema type '{state_schema_config}', falling back to dict"
+            )
+            return dict
 
         except Exception as e:
             self.logger.debug(
                 f"Could not read state schema from config: {e}, using dict"
             )
             return dict
+
+    def _get_pydantic_schema(self, execution_config: Dict[str, Any]):
+        """Get pydantic BaseModel schema from configuration."""
+        try:
+            from pydantic import BaseModel
+
+            model_class = execution_config.get("graph", {}).get("state_model_class")
+            # TODO: Implement dynamic model class import when needed
+            return BaseModel
+        except ImportError:
+            self.logger.warning(
+                "Pydantic requested but not available, falling back to dict"
+            )
+            return dict
+
+    def _initialize_builder(self) -> None:
+        """Initialize a fresh StateGraph builder and reset orchestrator tracking."""
+        state_schema = self._get_state_schema_from_config()
+        self.builder = StateGraph(state_schema=state_schema)
+        self.orchestrator_nodes = []
+        self.injection_stats = {
+            "orchestrators_found": 0,
+            "orchestrators_injected": 0,
+            "injection_failures": 0,
+        }
+
+    def _validate_graph(self, graph: Graph) -> None:
+        """Validate graph has nodes."""
+        if not graph.nodes:
+            raise ValueError(f"Graph '{graph.name}' has no nodes")
+
+    def _ensure_entry_point(self, graph: Graph) -> None:
+        """Ensure graph has an entry point, detecting one if needed."""
+        if not graph.entry_point:
+            graph.entry_point = self.graph_factory_service.detect_entry_point(graph)
+            self.logger.debug(f"🚪 Factory detected entry point: '{graph.entry_point}'")
+        else:
+            self.logger.debug(
+                f"🚪 Using pre-existing graph entry point: '{graph.entry_point}'"
+            )
+
+    def _process_all_nodes(self, graph: Graph, agent_instances: Dict[str, Any]) -> None:
+        """Process all nodes and their edges."""
+        node_names = list(graph.nodes.keys())
+        self.logger.debug(f"Processing {len(node_names)} nodes: {node_names}")
+
+        for node_name, node in graph.nodes.items():
+            if node_name not in agent_instances:
+                raise ValueError(f"No agent instance found for node: {node_name}")
+            agent_instance = agent_instances[node_name]
+            self.add_node(node_name, agent_instance)
+            self.process_node_edges(node_name, node.edges)
+
+    def _add_orchestrator_routers(self, graph: Graph) -> None:
+        """Add dynamic routers for all orchestrator nodes."""
+        if not self.orchestrator_nodes:
+            return
+
+        self.logger.debug(
+            f"Adding dynamic routers for {len(self.orchestrator_nodes)} orchestrator nodes"
+        )
+        for orch_node_name in self.orchestrator_nodes:
+            node = graph.nodes.get(orch_node_name)
+            failure_target = node.edges.get("failure") if node else None
+            self._add_dynamic_router(orch_node_name, failure_target)
+
+    def _compile_graph(
+        self, graph: Graph, checkpointer: Optional[BaseCheckpointSaver] = None
+    ) -> Any:
+        """Compile the graph with optional checkpoint support."""
+        if checkpointer:
+            compiled_graph = self.builder.compile(checkpointer=checkpointer)
+            self.logger.debug(
+                f"✅ Graph '{graph.name}' compiled with checkpoint support"
+            )
+        else:
+            compiled_graph = self.builder.compile()
+            self.logger.debug(f"✅ Graph '{graph.name}' compiled successfully")
+
+        return compiled_graph
 
     def assemble_graph(
         self,
@@ -104,7 +167,7 @@ class GraphAssemblyService:
         Args:
             graph: Graph domain model with nodes and configuration
             agent_instances: Dictionary mapping node names to agent instances
-            node_registry: Optional node registry for orchestrator injection
+            orchestrator_node_registry: Optional node registry for orchestrator injection
 
         Returns:
             Compiled executable graph
@@ -113,67 +176,9 @@ class GraphAssemblyService:
             ValueError: If graph has no nodes or missing agent instances
         """
         self.logger.info(f"🚀 Starting graph assembly: '{graph.name}'")
-
-        # Validate graph has nodes
-        if not graph.nodes:
-            raise ValueError(f"Graph '{graph.name}' has no nodes")
-
-        # Create fresh StateGraph builder for each compilation to avoid LangGraph conflicts
-        state_schema = self._get_state_schema_from_config()
-        self.builder = StateGraph(state_schema=state_schema)
-        self.orchestrator_nodes = []
-        self.injection_stats = {
-            "orchestrators_found": 0,
-            "orchestrators_injected": 0,
-            "injection_failures": 0,
-        }
-
-        self.orchestrator_node_registry = orchestrator_node_registry
-
-        # Add all nodes and process their edges
-        node_names = list(graph.nodes.keys())
-
-        self.logger.debug(f"Processing {len(node_names)} nodes: {node_names}")
-
-        # ENSURE consistent entry point using factory (in case graph doesn't have one)
-        if not graph.entry_point:
-            graph.entry_point = self.graph_factory_service.detect_entry_point(graph)
-            self.logger.debug(f"🚪 Factory detected entry point: '{graph.entry_point}'")
-        else:
-            self.logger.debug(
-                f"🚪 Using pre-existing graph entry point: '{graph.entry_point}'"
-            )
-
-        for node_name, node in graph.nodes.items():
-            # Get agent instance from the provided agent_instances dictionary
-            if node_name not in agent_instances:
-                raise ValueError(f"No agent instance found for node: {node_name}")
-            agent_instance = agent_instances[node_name]
-            self.add_node(
-                node_name, agent_instance
-            )  # detects orchestrator nodes and adds to self.orchestrator_nodes
-            self.process_node_edges(node_name, node.edges)
-
-        # Set entry point
-        if graph.entry_point:
-            self.builder.set_entry_point(graph.entry_point)
-            self.logger.debug(f"🚪 Set entry point: '{graph.entry_point}'")
-
-        # Add dynamic routers for orchestrator nodes
-        if self.orchestrator_nodes:
-            self.logger.debug(
-                f"Adding dynamic routers for {len(self.orchestrator_nodes)} orchestrator nodes"
-            )
-            for orch_node_name in self.orchestrator_nodes:
-                # Get the node's failure edge if it exists
-                node = graph.nodes.get(orch_node_name)
-                failure_target = node.edges.get("failure") if node else None
-                self._add_dynamic_router(orch_node_name, failure_target)
-
-        # Compile and return the executable LangGraph
-        compiled_graph = self.builder.compile()
-        self.logger.debug(f"✅ Graph '{graph.name}' compiled successfully")
-        return compiled_graph
+        return self._assemble_graph_common(
+            graph, agent_instances, orchestrator_node_registry, checkpointer=None
+        )
 
     def assemble_with_checkpoint(
         self,
@@ -202,75 +207,34 @@ class GraphAssemblyService:
         self.logger.info(
             f"🚀 Starting checkpoint-enabled graph assembly: '{graph.name}'"
         )
-
-        # Validate graph has nodes
-        if not graph.nodes:
-            raise ValueError(f"Graph '{graph.name}' has no nodes")
-
-        # Create fresh StateGraph builder for each compilation to avoid LangGraph conflicts
-        state_schema = self._get_state_schema_from_config()
-        self.builder = StateGraph(state_schema=state_schema)
-        self.orchestrator_nodes = []
-        self.injection_stats = {
-            "orchestrators_found": 0,
-            "orchestrators_injected": 0,
-            "injection_failures": 0,
-        }
-
-        self.orchestrator_node_registry = node_definitions
-
-        # Add all nodes and process their edges (same as standard assembly)
-        node_names = list(graph.nodes.keys())
-        self.logger.debug(
-            f"Processing {len(node_names)} nodes with checkpoint support: {node_names}"
+        return self._assemble_graph_common(
+            graph, agent_instances, node_definitions, checkpointer
         )
 
-        # ENSURE consistent entry point using factory (in case graph doesn't have one)
-        if not graph.entry_point:
-            graph.entry_point = self.graph_factory_service.detect_entry_point(graph)
-            self.logger.debug(f"🚪 Factory detected entry point: '{graph.entry_point}'")
-        else:
-            self.logger.debug(
-                f"🚪 Using pre-existing graph entry point: '{graph.entry_point}'"
-            )
+    def _assemble_graph_common(
+        self,
+        graph: Graph,
+        agent_instances: Dict[str, Any],
+        orchestrator_node_registry: Optional[Dict[str, Any]],
+        checkpointer: Optional[BaseCheckpointSaver],
+    ) -> Any:
+        """Common assembly logic for both standard and checkpoint-enabled graphs."""
+        self._validate_graph(graph)
+        self._initialize_builder()
 
-        for node_name, node in graph.nodes.items():
-            # Get agent instance from the provided agent_instances dictionary
-            if node_name not in agent_instances:
-                raise ValueError(f"No agent instance found for node: {node_name}")
-            agent_instance = agent_instances[node_name]
-            self.add_node(node_name, agent_instance)
-            self.process_node_edges(node_name, node.edges)
+        self.orchestrator_node_registry = orchestrator_node_registry
+
+        self._ensure_entry_point(graph)
+        self._process_all_nodes(graph, agent_instances)
 
         # Set entry point
         if graph.entry_point:
             self.builder.set_entry_point(graph.entry_point)
             self.logger.debug(f"🚪 Set entry point: '{graph.entry_point}'")
 
-        # Add dynamic routers for orchestrator nodes
-        if self.orchestrator_nodes:
-            self.logger.debug(
-                f"Adding dynamic routers for {len(self.orchestrator_nodes)} orchestrator nodes"
-            )
-            for orch_node_name in self.orchestrator_nodes:
-                # Get the node's failure edge if it exists
-                node = graph.nodes.get(orch_node_name)
-                failure_target = node.edges.get("failure") if node else None
-                self._add_dynamic_router(orch_node_name, failure_target)
+        self._add_orchestrator_routers(graph)
 
-        # Compile with checkpoint support
-        if checkpointer:
-            compiled_graph = self.builder.compile(checkpointer=checkpointer)
-            self.logger.debug(
-                f"✅ Graph '{graph.name}' compiled with checkpoint support"
-            )
-        else:
-            compiled_graph = self.builder.compile()
-            self.logger.debug(
-                f"✅ Graph '{graph.name}' compiled without checkpoint support"
-            )
-
-        return compiled_graph
+        return self._compile_graph(graph, checkpointer)
 
     def add_node(self, name: str, agent_instance: Any) -> None:
         """
@@ -318,16 +282,12 @@ class GraphAssemblyService:
             node_name: Source node name
             edges: Dictionary of edge conditions to target nodes
         """
-        # For orchestrator nodes, we handle edges differently
-        # They use dynamic routing for main flow but may have failure edges
+        # Orchestrator nodes use dynamic routing - only log failure edges
         if node_name in self.orchestrator_nodes:
-            # Only process failure edges for orchestrator nodes
             if edges and "failure" in edges:
-                failure_target = edges["failure"]
                 self.logger.debug(
-                    f"Adding failure edge for orchestrator '{node_name}' → {failure_target}"
+                    f"Adding failure edge for orchestrator '{node_name}' → {edges['failure']}"
                 )
-                # We'll handle this in the dynamic router
             return
 
         if not edges:
@@ -337,44 +297,57 @@ class GraphAssemblyService:
             f"Processing edges for node '{node_name}': {list(edges.keys())}"
         )
 
-        has_func = False
-        for condition, target in edges.items():
+        # Check for function-based routing first
+        if self._try_add_function_edge(node_name, edges):
+            return
+
+        # Handle standard edge types
+        self._add_standard_edges(node_name, edges)
+
+    def _try_add_function_edge(self, node_name: str, edges: Dict[str, str]) -> bool:
+        """
+        Try to add function-based routing edge.
+
+        Returns:
+            True if function edge was added, False otherwise
+        """
+        for target in edges.values():
             func_ref = self.function_resolution.extract_func_ref(target)
             if func_ref:
                 success = edges.get("success")
                 failure = edges.get("failure")
                 self._add_function_edge(node_name, func_ref, success, failure)
-                has_func = True
-                break
+                return True
+        return False
 
-        if not has_func:
-            if "success" in edges and "failure" in edges:
-                self._add_success_failure_edge(
-                    node_name, edges["success"], edges["failure"]
-                )
-            elif "success" in edges:
+    def _add_standard_edges(self, node_name: str, edges: Dict[str, str]) -> None:
+        """Add standard edge types (success/failure/default)."""
+        has_success = "success" in edges
+        has_failure = "failure" in edges
 
-                def success_only(state):
-                    return (
-                        edges["success"]
-                        if state.get("last_action_success", True)
-                        else None
-                    )
-
-                self._add_conditional_edge(node_name, success_only)
-            elif "failure" in edges:
-
-                def failure_only(state):
-                    return (
-                        edges["failure"]
-                        if not state.get("last_action_success", True)
-                        else None
-                    )
-
-                self._add_conditional_edge(node_name, failure_only)
-            elif "default" in edges:
-                self.builder.add_edge(node_name, edges["default"])
-                self.logger.debug(f"[{node_name}] → default → {edges['default']}")
+        if has_success and has_failure:
+            self._add_success_failure_edge(
+                node_name, edges["success"], edges["failure"]
+            )
+        elif has_success:
+            self._add_conditional_edge(
+                node_name,
+                lambda state: (
+                    edges["success"] if state.get("last_action_success", True) else None
+                ),
+            )
+        elif has_failure:
+            self._add_conditional_edge(
+                node_name,
+                lambda state: (
+                    edges["failure"]
+                    if not state.get("last_action_success", True)
+                    else None
+                ),
+            )
+        elif "default" in edges:
+            self.builder.add_edge(node_name, edges["default"])
+            self.logger.debug(f"[{node_name}] → default → {edges['default']}")
 
     def _add_conditional_edge(self, source: str, func: Callable) -> None:
         """Add a conditional edge to the graph."""
@@ -422,37 +395,29 @@ class GraphAssemblyService:
             self.logger.debug(f"  Failure target: {failure_target}")
 
         def dynamic_router(state):
-            # First check if there was an error/failure
+            # Check for failure first (early return pattern)
             if failure_target:
                 last_success = self.state_adapter.get_value(
                     state, "last_action_success", True
                 )
                 if not last_success:
                     self.logger.debug(
-                        f"Orchestrator '{node_name}' routing to failure target: {failure_target}"
+                        f"Orchestrator '{node_name}' routing to failure: {failure_target}"
                     )
                     return failure_target
 
-            # Normal dynamic routing based on __next_node
+            # Check for dynamic next_node
             next_node = self.state_adapter.get_value(state, "__next_node")
-            if next_node:
-                # Clear the __next_node to prevent infinite loops
-                self.state_adapter.set_value(state, "__next_node", None)
-                # Return the next node without validation
-                # The orchestrator may route to nodes passed dynamically at runtime
-                self.logger.debug(f"Orchestrator '{node_name}' routing to: {next_node}")
-                return next_node
+            if not next_node:
+                return None
 
-            # No next_node set
-            return None
+            # Clear __next_node and route to it
+            self.state_adapter.set_value(state, "__next_node", None)
+            self.logger.debug(f"Orchestrator '{node_name}' routing to: {next_node}")
+            return next_node
 
-        # For orchestrators, we need to handle dynamic routing differently
-        # The orchestrator can route to ANY node, including ones passed at runtime
-        # So we use a path_map=None to allow any destination
-        self.builder.add_conditional_edges(
-            node_name, dynamic_router, path_map=None  # Allow any destination
-        )
-
+        # Allow orchestrator to route to any node (including runtime-provided nodes)
+        self.builder.add_conditional_edges(node_name, dynamic_router, path_map=None)
         self.logger.debug(f"[{node_name}] → dynamic router added with open routing")
 
     def get_injection_summary(self) -> Dict[str, int]:

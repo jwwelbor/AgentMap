@@ -1,189 +1,233 @@
-"""
-Working unit tests for GraphCheckpointService - core functionality.
+"""Unit tests for the modern GraphCheckpointService implementation."""
 
-Tests the checkpoint service basic operations without complex LangGraph integration.
-Focuses on testing the actual business logic and data handling.
-"""
-
+import pickle
 import unittest
-from unittest.mock import Mock
+from typing import Any, Dict, Optional
+from unittest import mock
 
 from agentmap.services.graph.graph_checkpoint_service import GraphCheckpointService
 from agentmap.services.storage.types import StorageResult, WriteMode
 
 
-class TestGraphCheckpointServiceCore(unittest.TestCase):
-    """Test GraphCheckpointService core functionality."""
+class InMemoryFileStorage:
+    """Simple in-memory file storage stub mimicking FileStorageService."""
 
-    def setUp(self):
-        """Set up test fixtures using basic mocks."""
-        self.mock_json_storage = Mock()
-        self.mock_logging = Mock()
-        self.mock_logger = Mock()
-        self.mock_logging.get_class_logger.return_value = self.mock_logger
-        
-        # Configure successful storage operations by default
-        self.mock_json_storage.write.return_value = StorageResult(success=True, error=None)
-        self.mock_json_storage.read.return_value = []
-        self.mock_json_storage.is_healthy.return_value = True
-        
-        # Create service under test
-        self.checkpoint_service = GraphCheckpointService(
-            json_storage_service=self.mock_json_storage,
-            logging_service=self.mock_logging
+    def __init__(self):
+        self._collections: Dict[str, Dict[str, bytes]] = {}
+
+    def _bucket(self, collection: Optional[str]) -> Dict[str, bytes]:
+        key = collection or ""
+        return self._collections.setdefault(key, {})
+
+    def write(
+        self,
+        *,
+        collection: Optional[str],
+        data: bytes,
+        document_id: str,
+        mode: WriteMode,
+        binary_mode: bool = False,
+    ) -> StorageResult:
+        if not binary_mode:
+            # Implementation always writes pickle bytes; enforce expectation
+            raise ValueError("GraphCheckpointService should write in binary mode")
+        self._bucket(collection)[document_id] = data
+        return StorageResult(success=True)
+
+    def read(
+        self,
+        *,
+        collection: Optional[str],
+        document_id: Optional[str] = None,
+        binary_mode: bool = False,
+    ) -> Any:
+        bucket = self._bucket(collection)
+        if document_id is None:
+            # LangGraph checkpoint saver expects a sequence of filenames
+            return list(bucket.keys())
+        return bucket.get(document_id)
+
+    def delete(
+        self,
+        *,
+        collection: Optional[str],
+        document_id: str,
+    ) -> StorageResult:
+        bucket = self._bucket(collection)
+        bucket.pop(document_id, None)
+        return StorageResult(success=True)
+
+    def exists(
+        self,
+        *,
+        collection: Optional[str],
+        document_id: str,
+    ) -> bool:
+        return document_id in self._bucket(collection)
+
+
+class TestGraphCheckpointServiceCore(unittest.TestCase):
+    """Validate core behaviour of GraphCheckpointService."""
+
+    def setUp(self) -> None:
+        self.file_storage = InMemoryFileStorage()
+        self.system_storage_manager = mock.Mock()
+        self.system_storage_manager.get_file_storage.return_value = self.file_storage
+
+        self.logging_service = mock.Mock()
+        self.logger = mock.Mock()
+        self.logging_service.get_class_logger.return_value = self.logger
+
+        self.service = GraphCheckpointService(
+            system_storage_manager=self.system_storage_manager,
+            logging_service=self.logging_service,
         )
 
-    def test_initialization(self):
-        """Test service initialization."""
-        self.assertIsNotNone(self.checkpoint_service)
-        self.assertEqual(self.checkpoint_service.storage, self.mock_json_storage)
-        self.assertEqual(self.checkpoint_service.checkpoint_collection, "langgraph_checkpoints")
+    def test_initialization_uses_file_storage_namespace(self):
+        self.system_storage_manager.get_file_storage.assert_called_once_with(
+            "checkpoints"
+        )
+        self.assertIs(self.service.file_storage, self.file_storage)
 
-    def test_get_service_info(self):
-        """Test service information retrieval."""
-        info = self.checkpoint_service.get_service_info()
-        
-        # Verify basic service info
+    def test_put_persists_checkpoint_document(self):
+        config = {"configurable": {"thread_id": "thread-123"}}
+        checkpoint = {"state": {"value": 1}, "versions_seen": {"node": {"a", "b"}}}
+        metadata = {"source": "unit"}
+
+        result = self.service.put(config=config, checkpoint=checkpoint, metadata=metadata)
+
+        self.assertTrue(result["success"])
+        stored = self.file_storage.read(collection="")
+        self.assertEqual(len(stored), 1)
+        document_id = stored[0]
+        payload = pickle.loads(self.file_storage.read(collection="", document_id=document_id, binary_mode=True))
+
+        self.assertIn("checkpoint", payload)
+        self.assertIn("metadata", payload)
+        restored_checkpoint = self.service.serde.loads_typed(payload["checkpoint"])
+        self.assertIsInstance(restored_checkpoint["versions_seen"]["node"], list)
+
+    def test_put_handles_storage_failure(self):
+        self.service.file_storage.write = mock.Mock(
+            return_value=StorageResult(success=False, error="boom")
+        )
+
+        config = {"configurable": {"thread_id": "thread-err"}}
+        checkpoint = {"state": {}}
+        metadata = {}
+
+        result = self.service.put(config=config, checkpoint=checkpoint, metadata=metadata)
+
+        self.assertFalse(result["success"])
+        self.assertIn("error", result)
+        self.logger.error.assert_called()
+
+    def test_get_tuple_returns_latest_checkpoint(self):
+        config = {"configurable": {"thread_id": "thread-1"}}
+        checkpoint1 = {"state": {"value": "first"}}
+        checkpoint2 = {"state": {"value": "second"}}
+
+        self.service.put(config=config, checkpoint=checkpoint1, metadata={"idx": 1})
+        self.service.put(config=config, checkpoint=checkpoint2, metadata={"idx": 2})
+
+        result = self.service.get_tuple(config)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.checkpoint["state"]["value"], "second")
+        self.assertEqual(result.metadata["idx"], 2)
+
+    def test_get_tuple_returns_none_for_missing_thread(self):
+        config = {"configurable": {"thread_id": "missing"}}
+        self.assertIsNone(self.service.get_tuple(config))
+
+    def test_get_tuple_handles_identical_timestamps(self):
+        """Test that when timestamps are identical, latest file wins (insertion order)."""
+        config = {"configurable": {"thread_id": "thread-timing"}}
+        checkpoint1 = {"state": {"value": "first"}}
+        checkpoint2 = {"state": {"value": "second"}}
+
+        # Mock datetime to return the same timestamp for both checkpoints
+        with mock.patch("agentmap.services.graph.graph_checkpoint_service.datetime") as mock_dt:
+            fixed_time = "2025-10-15T12:00:00.000000"
+            mock_dt.utcnow.return_value.isoformat.return_value = fixed_time
+
+            self.service.put(config=config, checkpoint=checkpoint1, metadata={"idx": 1})
+            self.service.put(config=config, checkpoint=checkpoint2, metadata={"idx": 2})
+
+        # Should return the second checkpoint (latest by insertion order)
+        result = self.service.get_tuple(config)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.checkpoint["state"]["value"], "second")
+        self.assertEqual(result.metadata["idx"], 2)
+
+    def test_put_writes_saves_write_documents(self):
+        config = {"configurable": {"thread_id": "thread-w"}}
+        task_id = "task-7"
+        writes = [("state", {"foo": "bar"})]
+
+        self.service.put_writes(config=config, writes=writes, task_id=task_id)
+
+        stored = self.file_storage.read(collection="writes")
+        self.assertEqual(len(stored), 1)
+        document_id = stored[0]
+        payload = pickle.loads(
+            self.file_storage.read(
+                collection="writes", document_id=document_id, binary_mode=True
+            )
+        )
+        raw_restored_writes = self.service.serde.loads_typed(payload["writes"])
+        normalised_writes = [
+            tuple(entry) if isinstance(entry, list) and len(entry) == 2 else entry
+            for entry in raw_restored_writes
+        ]
+        self.assertEqual(normalised_writes, list(writes))
+        self.assertEqual(payload["task_id"], task_id)
+
+    def test_get_service_info_matches_new_contract(self):
+        info = self.service.get_service_info()
         self.assertEqual(info["service_name"], "GraphCheckpointService")
-        self.assertEqual(info["langgraph_collection"], "langgraph_checkpoints")
+        self.assertEqual(info["storage_type"], "pickle")
         self.assertTrue(info["storage_available"])
         self.assertTrue(info["capabilities"]["langgraph_put"])
-        self.assertTrue(info["capabilities"]["langgraph_get_tuple"])
         self.assertTrue(info["implements_base_checkpoint_saver"])
-
-    def test_get_service_info_unhealthy_storage(self):
-        """Test service information when storage is unhealthy."""
-        self.mock_json_storage.is_healthy.return_value = False
-        
-        info = self.checkpoint_service.get_service_info()
-        self.assertFalse(info["storage_available"])
-
-    def test_get_thread_checkpoints_empty(self):
-        """Test getting checkpoints for thread with no checkpoints."""
-        self.mock_json_storage.read.return_value = None
-        
-        checkpoints = self.checkpoint_service._get_thread_checkpoints("empty_thread")
-        self.assertEqual(checkpoints, [])
-
-    def test_get_thread_checkpoints_with_dict_result(self):
-        """Test getting checkpoints when storage returns dict."""
-        mock_data = {
-            "checkpoint1": {"thread_id": "test", "data": "value1"},
-            "checkpoint2": {"thread_id": "test", "data": "value2"}
-        }
-        self.mock_json_storage.read.return_value = mock_data
-        
-        checkpoints = self.checkpoint_service._get_thread_checkpoints("test_thread")
-        
-        self.assertEqual(len(checkpoints), 2)
-        self.assertIn({"thread_id": "test", "data": "value1"}, checkpoints)
-        self.assertIn({"thread_id": "test", "data": "value2"}, checkpoints)
-
-    def test_get_thread_checkpoints_with_list_result(self):
-        """Test getting checkpoints when storage returns list."""
-        mock_data = [
-            {"thread_id": "test", "data": "value1"},
-            {"thread_id": "test", "data": "value2"}
-        ]
-        self.mock_json_storage.read.return_value = mock_data
-        
-        checkpoints = self.checkpoint_service._get_thread_checkpoints("test_thread")
-        self.assertEqual(checkpoints, mock_data)
-
-    def test_get_thread_checkpoints_error_handling(self):
-        """Test error handling in checkpoint retrieval."""
-        self.mock_json_storage.read.side_effect = Exception("Storage error")
-        
-        checkpoints = self.checkpoint_service._get_thread_checkpoints("error_thread")
-        self.assertEqual(checkpoints, [])
-        
-        # Verify error was logged
-        self.mock_logger.error.assert_called()
-        error_call = self.mock_logger.error.call_args[0][0]
-        self.assertIn("Error getting thread checkpoints", error_call)
-
-    def test_metadata_serialization_deserialization(self):
-        """Test metadata serialization and deserialization."""
-        test_metadata = {"source": "test", "step": 1, "nested": {"key": "value"}}
-        
-        # Test serialization
-        serialized = self.checkpoint_service._serialize_metadata(test_metadata)
-        self.assertIsInstance(serialized, str)
-        
-        # Test deserialization
-        deserialized = self.checkpoint_service._deserialize_metadata(serialized)
-        self.assertEqual(deserialized, test_metadata)
-
-    def test_storage_query_parameters(self):
-        """Test that storage is called with correct query parameters."""
-        thread_id = "test_thread_123"
-        
-        # Call method that queries storage
-        self.checkpoint_service._get_thread_checkpoints(thread_id)
-        
-        # Verify storage was called with correct parameters
-        self.mock_json_storage.read.assert_called_once_with(
-            collection="langgraph_checkpoints",
-            query={"thread_id": thread_id}
-        )
-
-    def test_inheritance_from_base_checkpoint_saver(self):
-        """Test that the service inherits from BaseCheckpointSaver."""
-        from langgraph.checkpoint.base import BaseCheckpointSaver
-        
-        self.assertIsInstance(self.checkpoint_service, BaseCheckpointSaver)
-
-    def test_service_has_required_methods(self):
-        """Test that the service implements required methods."""
-        # These are the key methods that should exist
-        required_methods = [
-            'put', 'get_tuple', '_serialize_checkpoint', '_deserialize_checkpoint',
-            '_serialize_metadata', '_deserialize_metadata', '_get_thread_checkpoints'
-        ]
-        
-        for method_name in required_methods:
-            self.assertTrue(hasattr(self.checkpoint_service, method_name))
-            self.assertTrue(callable(getattr(self.checkpoint_service, method_name)))
 
 
 class TestInterruptResumeWorkflowCore(unittest.TestCase):
-    """Test core interrupt and resume workflow functionality."""
+    """Backward-compatible checks for interrupt/resume models."""
 
     def test_execution_interrupted_exception_structure(self):
-        """Test that ExecutionInterruptedException has the right structure."""
+        from uuid import uuid4
+
         from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
         from agentmap.models.human_interaction import HumanInteractionRequest, InteractionType
-        from uuid import uuid4
-        
-        # Create test data
+
         thread_id = "workflow_test_thread"
         interaction_request = HumanInteractionRequest(
             id=uuid4(),
             thread_id=thread_id,
             node_name="test_node",
             interaction_type=InteractionType.TEXT_INPUT,
-            prompt="Test prompt"
+            prompt="Test prompt",
         )
         checkpoint_data = {"test": "data"}
-        
-        # Create exception
+
         exception = ExecutionInterruptedException(
             thread_id=thread_id,
             interaction_request=interaction_request,
-            checkpoint_data=checkpoint_data
+            checkpoint_data=checkpoint_data,
         )
-        
-        # Verify structure
+
         self.assertEqual(exception.thread_id, thread_id)
         self.assertEqual(exception.interaction_request, interaction_request)
         self.assertEqual(exception.checkpoint_data, checkpoint_data)
         self.assertIn(thread_id, str(exception))
 
     def test_human_interaction_request_structure(self):
-        """Test HumanInteractionRequest model structure."""
-        from agentmap.models.human_interaction import HumanInteractionRequest, InteractionType
         from uuid import uuid4
-        
+
+        from agentmap.models.human_interaction import HumanInteractionRequest, InteractionType
+
         request_id = uuid4()
         request = HumanInteractionRequest(
             id=request_id,
@@ -193,10 +237,9 @@ class TestInterruptResumeWorkflowCore(unittest.TestCase):
             prompt="Please approve",
             context={"key": "value"},
             options=["approve", "reject"],
-            timeout_seconds=300
+            timeout_seconds=300,
         )
-        
-        # Verify all fields are preserved
+
         self.assertEqual(request.id, request_id)
         self.assertEqual(request.thread_id, "test_thread")
         self.assertEqual(request.node_name, "test_node")
@@ -206,20 +249,14 @@ class TestInterruptResumeWorkflowCore(unittest.TestCase):
         self.assertEqual(request.options, ["approve", "reject"])
         self.assertEqual(request.timeout_seconds, 300)
 
-    def test_interaction_workflow_components_exist(self):
-        """Test that all required workflow components exist and are importable."""
-        # These should all import successfully
+    def test_required_components_are_importable(self):
         try:
-            from agentmap.services.graph.graph_checkpoint_service import GraphCheckpointService
-            from agentmap.services.interaction_handler_service import InteractionHandlerService  
             from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
             from agentmap.models.human_interaction import HumanInteractionRequest, InteractionType
-            
-            # If we get here, all imports succeeded
-            self.assertTrue(True)
-            
-        except ImportError as e:
-            self.fail(f"Required component could not be imported: {e}")
+            from agentmap.services.graph.graph_checkpoint_service import GraphCheckpointService
+            from agentmap.services.interaction_handler_service import InteractionHandlerService
+        except ImportError as exc:  # pragma: no cover - explicit failure for missing deps
+            self.fail(f"Required component could not be imported: {exc}")
 
 
 if __name__ == "__main__":

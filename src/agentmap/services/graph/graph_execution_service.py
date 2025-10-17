@@ -8,6 +8,8 @@ Simplified to focus on execution rather than graph building.
 import time
 from typing import Any, Dict, Optional
 
+from langgraph.errors import GraphInterrupt
+
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.models.execution.result import ExecutionResult
 from agentmap.services.execution_policy_service import ExecutionPolicyService
@@ -58,6 +60,7 @@ class GraphExecutionService:
         graph_name: str,
         initial_state: Dict[str, Any],
         execution_tracker: Any,
+        config: Optional[Dict[str, Any]] = None,
     ) -> ExecutionResult:
         """
         Execute a pre-compiled/assembled graph.
@@ -67,6 +70,7 @@ class GraphExecutionService:
             graph_name: Name of the graph for tracking
             initial_state: Initial state dictionary
             execution_tracker: Pre-created execution tracker with agents configured
+            config: Optional LangGraph config (for checkpoint support with thread_id)
 
         Returns:
             ExecutionResult with complete execution details
@@ -85,9 +89,9 @@ class GraphExecutionService:
                 f"[GraphExecutionService] Initial state keys: {list(initial_state.keys())}"
             )
 
-            # Invoke the graph
+            # Invoke the graph (with optional config for checkpoint support)
             try:
-                final_state = executable_graph.invoke(initial_state)
+                final_state = executable_graph.invoke(initial_state, config=config)
             except ExecutionInterruptedException as e:
                 # Handle execution interruption for human interaction
                 self.logger.info(
@@ -144,7 +148,7 @@ class GraphExecutionService:
 
             return result
 
-        except ExecutionInterruptedException:
+        except GraphInterrupt:
             # Re-raise interruption exceptions without wrapping
             raise
 

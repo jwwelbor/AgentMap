@@ -14,7 +14,6 @@ from agentmap.services.csv_graph_parser_service import CSVGraphParserService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.protocols import (
     BlobStorageCapableAgent,
-    CheckpointCapableAgent,
     CSVCapableAgent,
     FileCapableAgent,
     JSONCapableAgent,
@@ -51,7 +50,6 @@ class ProtocolBasedRequirementsAnalyzer:
         "MemoryCapableAgent": "memory_service",
         "BlobStorageCapableAgent": "blob_storage_service",
         "DatabaseCapableAgent": "database_service",
-        "CheckpointCapableAgent": "checkpoint_service",
         "OrchestrationCapableAgent": "orchestrator_service",
     }
 
@@ -248,7 +246,6 @@ class ProtocolBasedRequirementsAnalyzer:
             "VectorCapableAgent": VectorCapableAgent,
             "MemoryCapableAgent": MemoryCapableAgent,
             "BlobStorageCapableAgent": BlobStorageCapableAgent,
-            "CheckpointCapableAgent": CheckpointCapableAgent,
             "OrchestrationCapableAgent": OrchestrationCapableAgent,
         }
 

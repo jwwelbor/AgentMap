@@ -13,12 +13,12 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Dict, Any
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
+from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.models.execution.result import ExecutionResult
 from agentmap.services.workflow_orchestration_service import WorkflowOrchestrationService
-from agentmap.services.storage.types import StorageResult, WriteMode
-from tests.utils.mock_service_factory import MockServiceFactory
 
 
 class TestWorkflowOrchestrationIntegration(unittest.TestCase):
@@ -283,39 +283,66 @@ test_graph,end_node,echo,Echo the result,End node,{},result,final_output,,,
         self.assertIn("Thread 'nonexistent_thread' not found", str(context.exception))
 
     def test_resume_workflow_no_pending_interaction(self):
-        """Test resume when thread has no pending interaction."""
-        # This would require setting up real storage with thread data
-        # For now, verify the error handling path
-        
-        # First create a thread with no pending interaction
+        """Suspend-only threads resume using stored checkpoint metadata."""
         from agentmap.di import initialize_di
-        
+
         container = initialize_di(str(self.config_file))
-        storage_service = container.json_storage_service()
-        
-        # Save thread data without pending interaction
-        thread_data = {
-            "thread_id": self.thread_id,
-            "status": "completed",
-            "pending_interaction_id": None,  # No pending interaction
-        }
-        
-        storage_service.write(
-            collection="interactions_threads",
-            data=thread_data,
-            document_id=self.thread_id,
-            mode=WriteMode.WRITE
+        interaction_handler = container.interaction_handler_service()
+        graph_bundle_service = container.graph_bundle_service()
+
+        bundle, _ = graph_bundle_service.get_or_create_bundle(
+            csv_path=self.csv_file,
+            graph_name="test_graph",
+            config_path=str(self.config_file),
         )
-        
-        # Try to resume - should fail
-        with self.assertRaises(RuntimeError) as context:
-            WorkflowOrchestrationService.resume_workflow(
+
+        checkpoint_data = {
+            "node_name": "start_node",
+            "inputs": {},
+            "agent_context": {},
+            "execution_tracker": None,
+        }
+
+        exception = ExecutionInterruptedException(
+            thread_id=self.thread_id,
+            interaction_request=None,
+            checkpoint_data=checkpoint_data,
+        )
+
+        interaction_handler.handle_execution_interruption(exception, bundle=bundle)
+
+        mock_graph_runner = Mock()
+        expected_result = ExecutionResult(
+            success=True,
+            graph_name="test_graph",
+            final_state={"status": "resumed"},
+            execution_summary="Resume completed",
+            total_duration=1.0,
+        )
+        mock_graph_runner.resume_from_checkpoint.return_value = expected_result
+
+        with patch(
+            "agentmap.services.workflow_orchestration_service.initialize_di",
+            return_value=container,
+        ), patch.object(
+            container, "interaction_handler_service", return_value=interaction_handler
+        ), patch.object(
+            container, "graph_bundle_service", return_value=graph_bundle_service
+        ), patch.object(
+            container, "graph_runner_service", return_value=mock_graph_runner
+        ):
+            result = WorkflowOrchestrationService.resume_workflow(
                 thread_id=self.thread_id,
-                response_action="approve",
-                config_file=str(self.config_file)
+                response_action="",
+                config_file=str(self.config_file),
             )
-        
-        self.assertIn("No pending interaction found", str(context.exception))
+
+        self.assertEqual(result, expected_result)
+        mock_graph_runner.resume_from_checkpoint.assert_called_once()
+
+        updated_metadata = interaction_handler.get_thread_metadata(self.thread_id)
+        self.assertIsNotNone(updated_metadata)
+        self.assertEqual(updated_metadata["status"], "resuming")
 
 
 class TestBundleRehydrationIntegration(unittest.TestCase):

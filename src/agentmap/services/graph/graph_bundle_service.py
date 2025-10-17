@@ -80,6 +80,46 @@ class GraphBundleService:
             [protocol_requirements_analyzer, agent_factory_service]
         )
 
+    def requires_checkpoint_support(self, bundle: GraphBundle) -> bool:
+        """Determine if the supplied bundle needs checkpoint support."""
+
+        if bundle is None:
+            self.logger.debug(
+                "[GraphBundleService] No bundle supplied for checkpoint analysis"
+            )
+            return False
+
+        interrupt_capable_types = {"human", "suspend"}
+
+        required_agents = getattr(bundle, "required_agents", None)
+        if required_agents:
+            normalized_agents = {
+                str(agent).split(":")[-1].strip().lower()
+                for agent in required_agents
+                if isinstance(agent, str) and agent.strip()
+            }
+            intersection = interrupt_capable_types & normalized_agents
+            if intersection:
+                matched = ", ".join(sorted(intersection))
+                self.logger.debug(
+                    f"[GraphBundleService] Bundle '{bundle.graph_name}' requires"
+                    f" checkpoint support due to agents: {matched}"
+                )
+                return True
+
+            self.logger.debug(
+                f"[GraphBundleService] Bundle '{bundle.graph_name}' does not require"
+                " checkpoint support (no interrupt-capable agents declared)"
+            )
+            return False
+
+        # Fallback behavior removed - bundles without required_agents don't get checkpoint support
+        self.logger.debug(
+            f"[GraphBundleService] Bundle '{bundle.graph_name}' has no required_agents; "
+            "checkpoint support not required"
+        )
+        return False
+
     # ==========================================
     # Phase 1: Critical Metadata Extraction
     # ===========================================

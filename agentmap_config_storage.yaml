@@ -13,7 +13,6 @@ json:
   #   allow_nan: true
   #   sort_keys: false
 
-
 csv:
   enabled: true
   # Default directory for CSV files if not specified

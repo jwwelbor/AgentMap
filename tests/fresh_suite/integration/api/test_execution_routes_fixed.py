@@ -88,7 +88,8 @@ class TestExecutionRoutes(TestCase):
         mock_ensure_initialized.assert_called_once()
         mock_run_workflow.assert_called_once_with(
             graph_name="test_workflow::TestGraph",
-            inputs={"input": "test_data"}
+            inputs={"input": "test_data"},
+            force_create=False
         )
 
     @patch('agentmap.deployment.http.api.routes.execute.ensure_initialized')
@@ -184,7 +185,8 @@ class TestExecutionRoutes(TestCase):
         mock_ensure_initialized.assert_called_once()
         mock_run_workflow.assert_called_once_with(
             graph_name="legacy_workflow::LegacyGraph",
-            inputs={"test": "data"}
+            inputs={"test": "data"},
+            force_create=False
         )
 
     @patch('agentmap.deployment.http.api.routes.execute.ensure_initialized')
@@ -273,7 +275,8 @@ class TestExecutionRoutes(TestCase):
         mock_ensure_initialized.assert_called_once()
         mock_run_workflow.assert_called_once_with(
             graph_name="simple_workflow",
-            inputs={"input": "test"}
+            inputs={"input": "test"},
+            force_create=False
         )
 
     @patch('agentmap.deployment.http.api.routes.execute.ensure_initialized')

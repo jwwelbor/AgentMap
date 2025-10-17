@@ -10,6 +10,8 @@ import time
 import uuid
 from typing import Any, Dict, Optional, Tuple
 
+from langgraph.errors import GraphInterrupt
+
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.protocols import (
@@ -210,7 +212,7 @@ class BaseAgent:
         tracker = self.current_execution_tracker
         if tracker is None:
             raise ValueError(
-                f"No ExzecutionTracker set for agent '{self.name}'. "
+                f"No ExecutionTracker set for agent '{self.name}'. "
                 "Tracker must be distributed to agents before graph execution starts."
             )
 
@@ -222,12 +224,21 @@ class BaseAgent:
 
         try:
             # Pre-processing hook for subclasses
+            self.log_trace(
+                f"\n*** AGENT {self.name} PRE-PROCESS START [{execution_id}] ***"
+            )
             state, inputs = self._pre_process(state, inputs)
 
+            self.log_trace(
+                f"\n*** AGENT {self.name} PROCESS START [{execution_id}] ***"
+            )
             # Process inputs to get output
             output = self.process(inputs)
 
             # Post-processing hook for subclasses
+            self.log_trace(
+                f"\n*** AGENT {self.name} POST-PROCESS START [{execution_id}] ***"
+            )
             state, output = self._post_process(state, inputs, output)
 
             # Record success using service
@@ -248,11 +259,12 @@ class BaseAgent:
 
             return state
 
-        except ExecutionInterruptedException as e:
+        except GraphInterrupt:
+            # LangGraph interrupt pattern - re-raise to let LangGraph handle checkpoint
             tracking_service.record_node_result(
-                tracker, self.name, True, result={"status": "interrupted"}
+                tracker, self.name, True, result={"status": "suspended"}
             )
-            self.log_info(f"Execution interrupted in {self.name}")
+            self.log_info(f"Graph execution suspended in {self.name}")
             raise
 
         except Exception as e:

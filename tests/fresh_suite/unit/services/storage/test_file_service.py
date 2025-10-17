@@ -57,9 +57,10 @@ class TestFileStorageService(unittest.TestCase):
         """Set up test fixtures with mocked dependencies."""
         # Create temporary directory for testing
         self.temp_dir = tempfile.mkdtemp()
-        
+
         # Create mock services using MockServiceFactory
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        self.mock_file_path_service = MockServiceFactory.create_mock_file_path_service()
         self.mock_storage_config_service = MockServiceFactory.create_mock_storage_config_service({
             "file": {
                 "enabled": True,
@@ -93,7 +94,8 @@ class TestFileStorageService(unittest.TestCase):
         self.service = FileStorageService(
             provider_name="file",
             configuration=self.mock_storage_config_service,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            file_path_service=self.mock_file_path_service
         )
         
         # Get the mock logger for verification
@@ -192,7 +194,8 @@ class TestFileStorageService(unittest.TestCase):
             bad_service = FileStorageService(
                 provider_name="file",
                 configuration=bad_config,
-                logging_service=self.mock_logging_service
+                logging_service=self.mock_logging_service,
+                file_path_service=self.mock_file_path_service
             )
             # Try to access the client to trigger initialization
             _ = bad_service.client
@@ -411,7 +414,8 @@ class TestFileStorageService(unittest.TestCase):
         no_binary_service = FileStorageService(
             provider_name="file",
             configuration=no_binary_config,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            file_path_service=self.mock_file_path_service
         )
         
         # Try to write binary content
@@ -869,22 +873,20 @@ class TestFileStorageService(unittest.TestCase):
         
         for invalid_path in invalid_configs:
             try:
-                bad_config = MockServiceFactory.create_mock_app_config_service({
-                    "storage": {
-                        "file": {
-                            "options": {
-                                "base_directory": invalid_path
-                            }
-                        }
+                bad_config = MockServiceFactory.create_mock_storage_config_service({
+                    "file": {
+                        "enabled": True,
+                        "base_directory": invalid_path
                     }
                 })
-                
+
                 # Service creation or health check should fail
                 try:
                     bad_service = FileStorageService(
                         provider_name="file",
                         configuration=bad_config,
-                        logging_service=self.mock_logging_service
+                        logging_service=self.mock_logging_service,
+                        file_path_service=self.mock_file_path_service
                     )
                     # If service creation succeeds, health check should fail
                     self.assertFalse(bad_service.health_check(),
@@ -892,7 +894,7 @@ class TestFileStorageService(unittest.TestCase):
                 except Exception:
                     # Exception during service creation is acceptable
                     pass
-                    
+
             except Exception:
                 # Any exception is acceptable for invalid paths
                 pass
@@ -904,21 +906,19 @@ class TestFileStorageService(unittest.TestCase):
     def test_encoding_configuration(self):
         """Test custom encoding configuration."""
         # Create service with different encoding
-        custom_config = MockServiceFactory.create_mock_app_config_service({
-            "storage": {
-                "file": {
-                    "options": {
-                        "base_directory": self.temp_dir,
-                        "encoding": "latin-1"
-                    }
-                }
+        custom_config = MockServiceFactory.create_mock_storage_config_service({
+            "file": {
+                "enabled": True,
+                "base_directory": self.temp_dir,
+                "encoding": "latin-1"
             }
         })
-        
+
         custom_service = FileStorageService(
             provider_name="file",
             configuration=custom_config,
-            logging_service=self.mock_logging_service
+            logging_service=self.mock_logging_service,
+            file_path_service=self.mock_file_path_service
         )
         
         # Test with content that has special characters

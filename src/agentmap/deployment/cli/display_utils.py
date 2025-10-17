@@ -6,7 +6,7 @@ Functions here only format and display information to the user.
 """
 
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import typer
 
@@ -141,6 +141,38 @@ def _display_interaction_instructions(request: HumanInteractionRequest) -> None:
 
     # Common cancel option
     typer.echo("\n  Cancel: agentmap resume {thread_id} --action cancel")
+
+
+def display_resume_instructions(
+    thread_id: str,
+    graph_name: str,
+    interrupt_type: str,
+    config_file: Optional[str] = None,
+) -> None:
+    """Display formatted resume instructions for interrupted workflows."""
+
+    icon = "👤" if interrupt_type == "human_interaction" else "🔄"
+    header = "=" * 60
+
+    typer.secho("\n" + header, fg=typer.colors.BLUE)
+    typer.secho(f"{icon}  EXECUTION PAUSED", fg=typer.colors.YELLOW, bold=True)
+    typer.secho(f"Graph: {graph_name}", fg=typer.colors.CYAN)
+    typer.secho(f"Thread ID: {thread_id}", fg=typer.colors.CYAN)
+
+    typer.secho("\n📋 Resume Command", fg=typer.colors.GREEN, bold=True)
+    config_arg = f" --config {config_file}" if config_file else ""
+    base_command = f'agentmap resume {thread_id} "<response>"{config_arg}'
+    typer.echo(f"  {base_command}")
+
+    if interrupt_type == "human_interaction":
+        typer.echo("\n💡 Examples:")
+        typer.echo(f'  • Approval: agentmap resume {thread_id} "approve"{config_arg}')
+        typer.echo(f'  • Rejection: agentmap resume {thread_id} "reject"{config_arg}')
+        typer.echo(f'  • Text: agentmap resume {thread_id} "your response"{config_arg}')
+    else:
+        typer.echo("\nℹ️  Provide the external result when ready and resume the run.")
+
+    typer.secho(header + "\n", fg=typer.colors.BLUE)
 
 
 def display_resume_result(result: Dict[str, Any]) -> None:

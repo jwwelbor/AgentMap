@@ -20,7 +20,6 @@ from agentmap.services.protocols import (
     VectorCapableAgent,
     MemoryCapableAgent,
     BlobStorageCapableAgent,
-    CheckpointCapableAgent,
     OrchestrationCapableAgent,
 )
 
@@ -57,7 +56,6 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
             "MemoryCapableAgent": "memory_service",
             "BlobStorageCapableAgent": "blob_storage_service",
             "DatabaseCapableAgent": "database_service",
-            "CheckpointCapableAgent": "checkpoint_service",
             "OrchestrationCapableAgent": "orchestrator_service",
         }
 

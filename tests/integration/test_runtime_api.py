@@ -154,7 +154,10 @@ class TestRunWorkflow:
         # Configure bundle creation
         mock_bundle = Mock()
         mock_bundle.graph_name = "test_graph"
-        mock_bundle_service.get_or_create_bundle.return_value = mock_bundle
+        mock_bundle_service.get_or_create_bundle.return_value = (
+            mock_bundle,
+            False,
+        )
         
         # Configure runner execution
         mock_runner_service.run.return_value = mock_result
@@ -201,6 +204,7 @@ class TestRunWorkflow:
         mock_result = Mock()
         mock_result.success = False
         mock_result.error = "Graph not found in CSV"
+        mock_result.final_state = {}  # Empty dict to prevent interruption path
         
         # Configure container services
         mock_container.app_config_service.return_value = mock_app_config
@@ -220,13 +224,16 @@ class TestRunWorkflow:
             
             # Configure bundle creation
             mock_bundle = Mock()
-            mock_bundle_service.get_or_create_bundle.return_value = mock_bundle
+            mock_bundle_service.get_or_create_bundle.return_value = (
+                mock_bundle,
+                False,
+            )
             
             # Configure runner execution
             mock_runner_service.run.return_value = mock_result
             
             mock_runtime_manager.get_container.return_value = mock_container
-            
+
             # Test
             with pytest.raises(GraphNotFound, match="not found"):
                 run_workflow("missing_graph", {"input": "test"})

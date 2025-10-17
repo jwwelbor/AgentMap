@@ -26,3 +26,4 @@ class ExecutionTracker:
     track_inputs: bool = False
     track_outputs: bool = False
     minimal_mode: bool = False
+    thread_id: Optional[str] = None  # LangGraph thread ID for checkpoint support

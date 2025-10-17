@@ -17,6 +17,7 @@ from agentmap.deployment.cli.refresh_command import refresh_cmd
 from agentmap.deployment.cli.resume_command import resume_command
 from agentmap.deployment.cli.run_command import run_command
 from agentmap.deployment.cli.scaffold_command import scaffold_command
+from agentmap.deployment.cli.serve_command import serve_command
 from agentmap.deployment.cli.update_bundle_command import update_bundle_command
 from agentmap.deployment.cli.validate_command import validate_command
 
@@ -69,6 +70,7 @@ app.command("scaffold")(scaffold_command)
 app.command("update-bundle")(update_bundle_command)
 # app.command("export")(export_command)
 app.command("resume")(resume_command)
+app.command("serve")(serve_command)
 
 
 # ============================================================================

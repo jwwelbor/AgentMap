@@ -146,6 +146,28 @@ def run_workflow(
                 },
             }
         else:
+            # Check if this is an interruption (suspend/human interaction)
+            # LangGraph's GraphInterrupt pattern stores this in final_state
+            if result.final_state.get("__interrupted"):
+                thread_id = result.final_state.get("__thread_id")
+                interrupt_info = result.final_state.get("__interrupt_info", {})
+
+                return {
+                    "success": False,
+                    "interrupted": True,
+                    "thread_id": thread_id,
+                    "message": f"Execution interrupted in thread: {thread_id}",
+                    "interrupt_info": interrupt_info,
+                    "execution_summary": result.execution_summary,
+                    "metadata": {
+                        "graph_name": graph_name,
+                        "profile": profile,
+                        "checkpoint_available": True,
+                        "interrupt_type": interrupt_info.get("type", "unknown"),
+                        "node_name": interrupt_info.get("node_name", "unknown"),
+                    },
+                }
+
             # Map execution errors to appropriate exceptions
             error_msg = str(result.error)
             _raise_mapped_error(graph_name, error_msg)

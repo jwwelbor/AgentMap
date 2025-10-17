@@ -11,6 +11,7 @@ GraphBundle that contain non-JSON-serializable types (e.g., sets).
 
 import pickle
 import time
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
@@ -157,7 +158,7 @@ class InteractionHandlerService:
         # Serialize to pickle
         data_bytes = pickle.dumps(request_data)
 
-        result = self.file_storage.write(
+        result = self._write_collection(
             collection=self.requests_collection,
             data=data_bytes,
             document_id=f"{request.id}.pkl",
@@ -171,6 +172,56 @@ class InteractionHandlerService:
         self.logger.debug(
             f"📝 Stored interaction request: {request.id} for thread: {request.thread_id}"
         )
+
+    def _normalize_collection_name(self, collection: str) -> str:
+        """Normalize storage collection to be relative to the base directory."""
+
+        if not collection:
+            return ""
+
+        base_dir = str(self.file_storage.client.get("base_directory", ""))
+        base_dir_normalized = base_dir.replace("\\", "/").rstrip("/")
+        collection_normalized = str(collection).replace("\\", "/").strip("/")
+
+        if base_dir_normalized and collection_normalized.startswith(
+            base_dir_normalized
+        ):
+            remainder = collection_normalized[len(base_dir_normalized) :].lstrip("/")
+            return remainder or ""
+
+        return collection_normalized
+
+    def _write_collection(self, collection: str, **kwargs):
+        normalized_collection = self._normalize_collection_name(collection)
+        return self.file_storage.write(collection=normalized_collection, **kwargs)
+
+    def _read_collection(self, collection: str, **kwargs):
+        normalized_collection = self._normalize_collection_name(collection)
+        return self.file_storage.read(collection=normalized_collection, **kwargs)
+
+    def _find_legacy_thread_file(self, thread_id: str) -> Optional[Path]:
+        """Locate legacy-stored thread metadata files within the interactions namespace."""
+
+        base_dir_value = self.file_storage.client.get("base_directory")
+        if not base_dir_value:
+            return None
+
+        base_dir = Path(base_dir_value)
+        expected_dir = base_dir / self._normalize_collection_name(
+            self.threads_collection
+        )
+        expected_path = expected_dir / f"{thread_id}.pkl"
+        if expected_path.exists():
+            return expected_path
+
+        if not base_dir.exists():
+            return None
+
+        for path in base_dir.rglob(f"{thread_id}.pkl"):
+            if path != expected_path:
+                return path
+
+        return None
 
     def _store_thread_metadata_suspend_only(
         self,
@@ -240,7 +291,7 @@ class InteractionHandlerService:
         # Serialize to pickle
         data_bytes = pickle.dumps(thread_metadata)
 
-        result = self.file_storage.write(
+        result = self._write_collection(
             collection=self.threads_collection,
             data=data_bytes,
             document_id=f"{thread_id}.pkl",
@@ -323,7 +374,7 @@ class InteractionHandlerService:
         # Serialize to pickle
         data_bytes = pickle.dumps(thread_metadata)
 
-        result = self.file_storage.write(
+        result = self._write_collection(
             collection=self.threads_collection,
             data=data_bytes,
             document_id=f"{thread_id}.pkl",
@@ -349,7 +400,7 @@ class InteractionHandlerService:
             Thread metadata dictionary if found, None otherwise
         """
         try:
-            file_data = self.file_storage.read(
+            file_data = self._read_collection(
                 collection=self.threads_collection,
                 document_id=f"{thread_id}.pkl",
                 binary_mode=True,
@@ -359,9 +410,30 @@ class InteractionHandlerService:
                 thread_data = pickle.loads(file_data)
                 self.logger.debug(f"📖 Retrieved thread metadata for: {thread_id}")
                 return thread_data
-            else:
+
+            # Fallback for legacy storage paths (nested collection names)
+            legacy_file = self._find_legacy_thread_file(thread_id)
+            if legacy_file is None:
                 self.logger.warning(f"❌ No thread metadata found for: {thread_id}")
                 return None
+
+            with legacy_file.open("rb") as f:
+                thread_data = pickle.load(f)
+
+            self.logger.debug(
+                f"📦 Migrating legacy thread metadata for {thread_id} from {legacy_file}"
+            )
+
+            # Rewrite to normalized location for future accesses
+            self._write_collection(
+                collection=self.threads_collection,
+                data=pickle.dumps(thread_data),
+                document_id=f"{thread_id}.pkl",
+                mode=WriteMode.WRITE,
+                binary_mode=True,
+            )
+
+            return thread_data
 
         except Exception as e:
             self.logger.error(
@@ -400,7 +472,7 @@ class InteractionHandlerService:
             # Serialize to pickle
             data_bytes = pickle.dumps(response_data)
 
-            result = self.file_storage.write(
+            result = self._write_collection(
                 collection=self.responses_collection,
                 data=data_bytes,
                 document_id=f"{response_id}.pkl",
@@ -440,17 +512,24 @@ class InteractionHandlerService:
         """
         try:
             # Read existing thread metadata
-            file_data = self.file_storage.read(
+            file_data = self._read_collection(
                 collection=self.threads_collection,
                 document_id=f"{thread_id}.pkl",
                 binary_mode=True,
             )
 
             if not file_data:
-                self.logger.error(
-                    f"❌ Cannot mark thread as resuming - thread not found: {thread_id}"
+                legacy_file = self._find_legacy_thread_file(thread_id)
+                if not legacy_file:
+                    self.logger.error(
+                        f"❌ Cannot mark thread as resuming - thread not found: {thread_id}"
+                    )
+                    return False
+                with legacy_file.open("rb") as f:
+                    file_data = f.read()
+                self.logger.debug(
+                    f"📦 Migrating legacy thread metadata for resuming: {thread_id}"
                 )
-                return False
 
             # Deserialize, update, and reserialize
             thread_data = pickle.loads(file_data)
@@ -463,7 +542,7 @@ class InteractionHandlerService:
 
             data_bytes = pickle.dumps(thread_data)
 
-            result = self.file_storage.write(
+            result = self._write_collection(
                 collection=self.threads_collection,
                 data=data_bytes,
                 document_id=f"{thread_id}.pkl",
@@ -498,17 +577,24 @@ class InteractionHandlerService:
         """
         try:
             # Read existing thread metadata
-            file_data = self.file_storage.read(
+            file_data = self._read_collection(
                 collection=self.threads_collection,
                 document_id=f"{thread_id}.pkl",
                 binary_mode=True,
             )
 
             if not file_data:
-                self.logger.error(
-                    f"❌ Cannot mark thread as completed - thread not found: {thread_id}"
+                legacy_file = self._find_legacy_thread_file(thread_id)
+                if not legacy_file:
+                    self.logger.error(
+                        f"❌ Cannot mark thread as completed - thread not found: {thread_id}"
+                    )
+                    return False
+                with legacy_file.open("rb") as f:
+                    file_data = f.read()
+                self.logger.debug(
+                    f"📦 Migrating legacy thread metadata for completion: {thread_id}"
                 )
-                return False
 
             # Deserialize, update, and reserialize
             thread_data = pickle.loads(file_data)
@@ -518,7 +604,7 @@ class InteractionHandlerService:
 
             data_bytes = pickle.dumps(thread_data)
 
-            result = self.file_storage.write(
+            result = self._write_collection(
                 collection=self.threads_collection,
                 data=data_bytes,
                 document_id=f"{thread_id}.pkl",

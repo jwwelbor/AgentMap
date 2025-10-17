@@ -5,16 +5,17 @@ This service handles saving and loading execution checkpoints for graph workflow
 enabling pause/resume functionality for various scenarios like human intervention,
 debugging, or long-running processes.
 
-Now implements LangGraph's BaseCheckpointSaver for direct integration.
+Implements LangGraph's BaseCheckpointSaver for direct integration. Uses LangGraph's
+serde (JsonPlusSerializer) for checkpoint serialization, which properly handles
+complex Python types (sets, dates, UUIDs, etc.) through msgpack/JSON encoding.
 
-Uses SystemStorageManager with FileStorageService for binary pickle storage
-in cache/checkpoints/ namespace. This avoids magic strings and follows
-AgentMap's centralized path management patterns.
+Storage: Uses SystemStorageManager with FileStorageService for file-based storage
+in cache/checkpoints/ namespace. Checkpoint documents are pickled for fast I/O.
 """
 
 import pickle
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence, Tuple
 from uuid import uuid4
 
 from langgraph.checkpoint.base import (
@@ -52,7 +53,7 @@ class GraphCheckpointService(BaseCheckpointSaver):
         self.file_storage = system_storage_manager.get_file_storage("checkpoints")
 
         self.logger.info(
-            "[GraphCheckpointService] Initialized with pickle serialization"
+            "[GraphCheckpointService] Initialized with serde-based serialization"
         )
 
     # ===== LangGraph BaseCheckpointSaver Implementation =====
@@ -69,22 +70,37 @@ class GraphCheckpointService(BaseCheckpointSaver):
         checkpoint_id = str(uuid4())
 
         try:
-            # Serialize checkpoint to pickle bytes
-            checkpoint_bytes = self._serialize_checkpoint(checkpoint)
+            # NOTE: LangGraph sometimes creates checkpoints with sets in versions_seen.
+            # The serde (JsonPlusSerializer) can handle this, but we need to make a copy
+            # first to avoid modifying the original checkpoint passed by LangGraph.
+            checkpoint_copy = {**checkpoint}
 
-            # Serialize metadata to pickle bytes
-            metadata_bytes = self._serialize_metadata(metadata)
+            # Convert sets to lists in versions_seen for proper serialization
+            if "versions_seen" in checkpoint_copy:
+                versions_seen = checkpoint_copy["versions_seen"]
+                if isinstance(versions_seen, dict):
+                    checkpoint_copy["versions_seen"] = {
+                        k: list(v) if isinstance(v, set) else v
+                        for k, v in versions_seen.items()
+                    }
+
+            # Use serde to serialize checkpoint (LangGraph way)
+            # This handles complex types properly
+            checkpoint_typed = self.serde.dumps_typed(checkpoint_copy)
+
+            # Use serde to serialize metadata
+            metadata_typed = self.serde.dumps_typed(metadata)
 
             # Create checkpoint document
             checkpoint_doc = {
-                "checkpoint": checkpoint_bytes,
-                "metadata": metadata_bytes,
+                "checkpoint": checkpoint_typed,  # tuple[str, bytes] from dumps_typed
+                "metadata": metadata_typed,  # tuple[str, bytes] from dumps_typed
                 "timestamp": datetime.utcnow().isoformat(),
                 "version": "2.0",
                 "new_versions": new_versions or {},
             }
 
-            # Serialize entire document
+            # Serialize entire document with pickle
             document_bytes = pickle.dumps(checkpoint_doc)
 
             # Save to file storage
@@ -115,6 +131,7 @@ class GraphCheckpointService(BaseCheckpointSaver):
     def get_tuple(self, config: Dict[str, Any]) -> Optional[CheckpointTuple]:
         """Load the latest checkpoint for a thread (LangGraph interface)."""
         thread_id = config["configurable"]["thread_id"]
+        self.logger.trace(f"Loading checkpoint for thread {thread_id}")
 
         try:
             # List all checkpoint files for this thread
@@ -122,12 +139,14 @@ class GraphCheckpointService(BaseCheckpointSaver):
             files = self.file_storage.read(collection="")
 
             if not files:
+                self.logger.trace(f"no files found for thread {thread_id}")
                 return None
 
             # Filter files by thread_id prefix
             thread_files = [f for f in files if f.startswith(f"{thread_id}_")]
 
             if not thread_files:
+                self.logger.debug(f"no files found for thread {thread_id}")
                 return None
 
             # Find the latest checkpoint file
@@ -146,16 +165,33 @@ class GraphCheckpointService(BaseCheckpointSaver):
                     checkpoint_doc = pickle.loads(file_data)
                     timestamp = checkpoint_doc.get("timestamp", "")
 
-                    if latest_timestamp is None or timestamp > latest_timestamp:
+                    # Use >= to prefer later files when timestamps are identical
+                    # (files are in insertion order, so later = more recent)
+                    if latest_timestamp is None or timestamp >= latest_timestamp:
                         latest_timestamp = timestamp
                         latest_file = checkpoint_doc
 
             if not latest_file:
+                self.logger.debug(f"no files found for thread {thread_id}")
                 return None
 
-            # Deserialize checkpoint and metadata
-            checkpoint = self._deserialize_checkpoint(latest_file["checkpoint"])
-            metadata = self._deserialize_metadata(latest_file["metadata"])
+            # Deserialize checkpoint and metadata using serde (LangGraph way)
+            checkpoint = self.serde.loads_typed(latest_file["checkpoint"])
+            metadata = self.serde.loads_typed(latest_file["metadata"])
+
+            self.logger.trace(f"Loaded checkpoint for thread {thread_id}: {checkpoint}")
+            self.logger.trace(f"Loaded metadata for thread {thread_id}: {metadata}")
+
+            # NOTE: After deserialization, serde may reconstruct sets from tuples.
+            # We need to convert them back to lists for JSON compatibility when
+            # LangGraph uses the checkpoint internally.
+            if "versions_seen" in checkpoint:
+                versions_seen = checkpoint["versions_seen"]
+                if isinstance(versions_seen, dict):
+                    checkpoint["versions_seen"] = {
+                        k: list(v) if isinstance(v, set) else v
+                        for k, v in versions_seen.items()
+                    }
 
             return CheckpointTuple(
                 config=config,
@@ -170,146 +206,80 @@ class GraphCheckpointService(BaseCheckpointSaver):
             )
             return None
 
-    # ===== Helper Methods for Pickle Serialization =====
-
-    def _serialize_checkpoint(self, checkpoint: Checkpoint) -> bytes:
-        """Serialize checkpoint using pickle.
-
-        Args:
-            checkpoint: LangGraph Checkpoint (TypedDict/dict with channel_values,
-                       channel_versions, versions_seen)
-
-        Returns:
-            Binary pickle data
-        """
-        return pickle.dumps(checkpoint)
-
-    def _deserialize_checkpoint(self, data: bytes) -> Checkpoint:
-        """Deserialize checkpoint from pickle.
-
-        Args:
-            data: Binary pickle data
-
-        Returns:
-            Checkpoint dict
-        """
-        return pickle.loads(data)
-
-    def _serialize_metadata(self, metadata: CheckpointMetadata) -> bytes:
-        """Serialize metadata using pickle."""
-        return pickle.dumps(metadata)
-
-    def _deserialize_metadata(self, data: bytes) -> CheckpointMetadata:
-        """Deserialize metadata from pickle."""
-        return pickle.loads(data)
-
-    # ===== GraphCheckpointServiceProtocol Implementation =====
-
-    def save_checkpoint(
+    def put_writes(
         self,
-        thread_id: str,
-        node_name: str,
-        checkpoint_type: str,
-        metadata: Dict[str, Any],
-        execution_state: Dict[str, Any],
-    ) -> StorageResult:
+        config: Dict[str, Any],
+        writes: Sequence[Tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
+    ) -> None:
         """
-        Save a checkpoint using the protocol interface.
+        Store intermediate writes linked to a checkpoint (LangGraph interface).
 
-        Maps simple protocol parameters to LangGraph's checkpoint format.
+        This method is called by LangGraph to store intermediate state updates
+        (writes) that occur during graph execution, before they're committed
+        to the checkpoint.
 
         Args:
-            thread_id: Unique identifier for the execution thread
-            node_name: Name of the node where checkpoint occurs
-            checkpoint_type: Type of checkpoint (e.g., "suspend", "human_interaction")
-            metadata: Type-specific metadata
-            execution_state: Current execution state data
-
-        Returns:
-            StorageResult indicating success/failure
+            config: Configuration containing thread_id for correlation
+            writes: List of (channel, value) tuples representing state updates
+            task_id: Identifier for the task creating the writes
+            task_path: Path of the task creating the writes (optional)
         """
-        try:
-            # Create LangGraph config
-            config = {"configurable": {"thread_id": thread_id}}
+        thread_id = config["configurable"]["thread_id"]
 
-            # Map execution_state to LangGraph checkpoint format
-            # The execution_state becomes the channel_values in LangGraph
-            checkpoint = Checkpoint(
-                channel_values=execution_state,
-                channel_versions={"execution_state": 1},
-                versions_seen={"execution_state": 1},
+        try:
+            # Serialize writes using serde (handles complex types)
+            writes_typed = self.serde.dumps_typed(list(writes))
+
+            # Create writes document
+            writes_doc = {
+                "writes": writes_typed,  # tuple[str, bytes] from dumps_typed
+                "task_id": task_id,
+                "task_path": task_path,
+                "timestamp": datetime.utcnow().isoformat(),
+                "version": "2.0",
+            }
+
+            # Serialize document with pickle
+            document_bytes = pickle.dumps(writes_doc)
+
+            # Generate unique ID for this writes batch
+            writes_id = str(uuid4())
+
+            # Save to file storage in writes subdirectory
+            # Uses pattern: <thread_id>_writes_<writes_id>.pkl
+            result = self.file_storage.write(
+                collection="writes",  # Subdirectory for writes
+                data=document_bytes,
+                document_id=f"{thread_id}_writes_{writes_id}.pkl",
+                mode=WriteMode.WRITE,
+                binary_mode=True,
             )
 
-            # Combine protocol metadata with checkpoint-specific metadata
-            combined_metadata = {
-                "node_name": node_name,
-                "checkpoint_type": checkpoint_type,
-                "protocol_version": "1.0",
-                **metadata,
-            }
-
-            # Use the LangGraph interface
-            result = self.put(config, checkpoint, combined_metadata)
-
-            if result.get("success"):
-                self.logger.info(
-                    f"Protocol checkpoint saved: thread_id={thread_id}, "
-                    f"node={node_name}, type={checkpoint_type}"
-                )
-                return StorageResult(
-                    success=True,
-                    data={"checkpoint_id": result["checkpoint_id"]},
-                    error=None,
+            if result.success:
+                self.logger.debug(
+                    f"Writes saved: thread={thread_id}, task={task_id}, "
+                    f"writes_id={writes_id}, count={len(writes)}"
                 )
             else:
-                return StorageResult(
-                    success=False, data=None, error="LangGraph put() returned failure"
+                self.logger.error(
+                    f"Failed to save writes: thread={thread_id}, "
+                    f"error={result.error}"
                 )
 
         except Exception as e:
-            error_msg = f"Failed to save checkpoint: {str(e)}"
-            self.logger.error(error_msg)
-            return StorageResult(success=False, data=None, error=error_msg)
+            # Log error but don't raise - LangGraph expects this to be resilient
+            self.logger.error(
+                f"Error saving writes for thread {thread_id}, "
+                f"task {task_id}: {str(e)}"
+            )
 
-    def load_checkpoint(self, thread_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Load the latest checkpoint for a thread using the protocol interface.
+    # Note: We use self.serde (JsonPlusSerializer by default from BaseCheckpointSaver)
+    # for all serialization/deserialization. This handles sets and other complex
+    # types properly through dumps_typed/loads_typed methods.
 
-        Args:
-            thread_id: Thread ID to load checkpoint for
-
-        Returns:
-            Checkpoint data or None if not found
-        """
-        try:
-            config = {"configurable": {"thread_id": thread_id}}
-            tuple_result = self.get_tuple(config)
-
-            if tuple_result is None:
-                self.logger.debug(f"No checkpoint found for thread_id={thread_id}")
-                return None
-
-            # Extract the execution state from channel_values
-            # Note: Checkpoint is a TypedDict (dict), so use dict access
-            execution_state = tuple_result.checkpoint["channel_values"]
-
-            # Combine checkpoint data with metadata for protocol consumers
-            checkpoint_data = {
-                "thread_id": thread_id,
-                "execution_state": execution_state,
-                "metadata": tuple_result.metadata,
-                "config": tuple_result.config,
-                "channel_versions": tuple_result.checkpoint["channel_versions"],
-                "versions_seen": tuple_result.checkpoint["versions_seen"],
-            }
-
-            self.logger.debug(f"Loaded checkpoint for thread_id={thread_id}")
-            return checkpoint_data
-
-        except Exception as e:
-            error_msg = f"Failed to load checkpoint for thread_id={thread_id}: {str(e)}"
-            self.logger.error(error_msg)
-            return None
+    # ===== GraphCheckpointServiceProtocol Implementation =====
 
     def get_service_info(self) -> Dict[str, Any]:
         """
@@ -322,18 +292,15 @@ class GraphCheckpointService(BaseCheckpointSaver):
             "service_name": "GraphCheckpointService",
             "storage_type": "pickle",
             "storage_namespace": "checkpoints",
-            "storage_available": self.file_storage.is_healthy(),
+            "storage_available": self.file_storage is not None,
             "capabilities": {
                 # LangGraph capabilities
                 "langgraph_put": True,
                 "langgraph_get_tuple": True,
-                # Protocol capabilities
-                "protocol_save_checkpoint": True,
-                "protocol_load_checkpoint": True,
+                "langgraph_put_writes": True,
                 # Serialization
                 "handles_sets": True,
                 "binary_storage": True,
             },
             "implements_base_checkpoint_saver": True,
-            "implements_protocol": True,
         }

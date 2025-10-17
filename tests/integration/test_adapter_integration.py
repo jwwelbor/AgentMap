@@ -94,7 +94,10 @@ test_graph,End,EndAgent,Final node,ProcessAgent"""
             
             mock_bundle = Mock()
             mock_bundle.graph_name = "test_graph"
-            mock_bundle_service.get_or_create_bundle.return_value = mock_bundle
+            mock_bundle_service.get_or_create_bundle.return_value = (
+                mock_bundle,
+                False,
+            )
             mock_runner_service.run.return_value = mock_result
             
             mock_runtime_manager.get_container.return_value = mock_container
@@ -240,7 +243,10 @@ test_graph,End,EndAgent,Final node,ProcessAgent"""
             mock_bundle.edges = ["edge1"]
             mock_bundle.missing_declarations = set()
             mock_bundle.graph_name = "test_graph"
-            mock_bundle_service.get_or_create_bundle.return_value = mock_bundle
+            mock_bundle_service.get_or_create_bundle.return_value = (
+                mock_bundle,
+                False,
+            )
             
             mock_runtime_manager.get_container.return_value = mock_container
             

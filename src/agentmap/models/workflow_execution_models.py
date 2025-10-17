@@ -137,14 +137,14 @@ def create_workflow_router(container=None) -> APIRouter:
                     )
 
             # Get or create bundle (same as CLI)
-            bundle = graph_bundle_service.get_or_create_bundle(
+            bundle, from_cache = graph_bundle_service.get_or_create_bundle(
                 csv_path=workflow_file,
                 graph_name=graph,
                 config_path=None,  # Use default config
             )
 
             # Check if bundle was cached
-            bundle_cached = bundle is not None
+            bundle_cached = from_cache
 
             # Execute using bundle
             import time
@@ -431,7 +431,7 @@ def execute_workflow_from_cli_pattern(
         raise FileNotFoundError(f"Workflow '{workflow_name}' not found in repository")
 
     # Get or create bundle (exact same as CLI)
-    bundle = graph_bundle_service.get_or_create_bundle(
+    bundle, _ = graph_bundle_service.get_or_create_bundle(
         csv_path=csv_path, graph_name=graph_name, config_path=config_path
     )
 

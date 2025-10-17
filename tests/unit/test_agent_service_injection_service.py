@@ -1,7 +1,7 @@
 """
 Comprehensive tests for AgentServiceInjectionService.
 
-Tests all 11 capability protocols, error handling, logging, and performance
+Tests all 10 capability protocols, error handling, logging, and performance
 to verify the refactored service injection works correctly with no regressions.
 """
 
@@ -14,7 +14,6 @@ from unittest.mock import MagicMock, Mock, patch
 from agentmap.services.agent.agent_service_injection_service import AgentServiceInjectionService
 from agentmap.services.protocols import (
     BlobStorageCapableAgent,
-    CheckpointCapableAgent,
     LLMCapableAgent,
     OrchestrationCapableAgent,
     PromptCapableAgent,
@@ -86,17 +85,6 @@ class MockOrchestratorService:
     
     def orchestrate(self, request: Any) -> Any:
         return {"status": "orchestrated"}
-
-
-class MockGraphCheckpointService:
-    """Mock graph checkpoint service for testing."""
-    
-    def save_checkpoint(self, thread_id: str, node_name: str, checkpoint_type: str, 
-                       metadata: Dict[str, Any], execution_state: Dict[str, Any]) -> Any:
-        return {"saved": True}
-    
-    def load_checkpoint(self, thread_id: str) -> Optional[Dict[str, Any]]:
-        return {"loaded": True}
 
 
 class MockBlobStorageService:
@@ -198,17 +186,6 @@ class MockPromptOnlyAgent(PromptCapableAgent):
         self.prompt_manager_service = prompt_service
 
 
-class MockCheckpointOnlyAgent(CheckpointCapableAgent):
-    """Mock agent implementing only CheckpointCapableAgent."""
-    
-    def __init__(self, name: str = "checkpoint_agent"):
-        self.name = name
-        self.graph_checkpoint_service = None
-    
-    def configure_checkpoint_service(self, checkpoint_service: Any) -> None:
-        self.graph_checkpoint_service = checkpoint_service
-
-
 class MockOrchestrationOnlyAgent(OrchestrationCapableAgent):
     """Mock agent implementing only OrchestrationCapableAgent."""
     
@@ -269,19 +246,18 @@ class MockMultiStorageAgent(CSVCapableAgent, JSONCapableAgent, FileCapableAgent)
         self.file_service = file_service
 
 
-class MockAllServicesAgent(LLMCapableAgent, StorageCapableAgent, PromptCapableAgent, 
-                            CheckpointCapableAgent, OrchestrationCapableAgent, BlobStorageCapableAgent,
+class MockAllServicesAgent(LLMCapableAgent, StorageCapableAgent, PromptCapableAgent,
+                            OrchestrationCapableAgent, BlobStorageCapableAgent,
                             CSVCapableAgent, JSONCapableAgent, FileCapableAgent, 
                             VectorCapableAgent, MemoryCapableAgent):
-    """Mock agent implementing all 11 protocols."""
-    
+    """Mock agent implementing all 10 protocols."""
+
     def __init__(self, name: str = "all_services_agent"):
         self.name = name
         # Core services
         self.llm_service = None
         self.storage_service = None  # Generic storage
         self.prompt_manager_service = None
-        self.graph_checkpoint_service = None
         self.orchestrator_service = None
         self.blob_storage_service = None
         # Storage-specific services
@@ -300,10 +276,7 @@ class MockAllServicesAgent(LLMCapableAgent, StorageCapableAgent, PromptCapableAg
     
     def configure_prompt_service(self, prompt_service: Any) -> None:
         self.prompt_manager_service = prompt_service
-    
-    def configure_checkpoint_service(self, checkpoint_service: Any) -> None:
-        self.graph_checkpoint_service = checkpoint_service
-    
+
     def configure_orchestrator_service(self, orchestrator_service: Any) -> None:
         self.orchestrator_service = orchestrator_service
     
@@ -355,9 +328,8 @@ class TestAgentServiceInjectionService(unittest.TestCase):
         self.logging_service = MockLoggingService()
         self.prompt_manager_service = MockPromptManagerService()
         self.orchestrator_service = MockOrchestratorService()
-        self.graph_checkpoint_service = MockGraphCheckpointService()
         self.blob_storage_service = MockBlobStorageService()
-        
+
         # Create service injection instance with all services available
         self.injection_service = AgentServiceInjectionService(
             llm_service=self.llm_service,
@@ -365,7 +337,6 @@ class TestAgentServiceInjectionService(unittest.TestCase):
             logging_service=self.logging_service,
             prompt_manager_service=self.prompt_manager_service,
             orchestrator_service=self.orchestrator_service,
-            graph_checkpoint_service=self.graph_checkpoint_service,
             blob_storage_service=self.blob_storage_service,
         )
     
@@ -445,15 +416,6 @@ class TestAgentServiceInjectionService(unittest.TestCase):
         self.assertEqual(configured, 1, "Should configure 1 service")
         self.assertIsNotNone(agent.prompt_manager_service, "Prompt service should be configured")
     
-    def test_checkpoint_protocol_injection(self):
-        """Test Checkpoint service injection works correctly."""
-        agent = MockCheckpointOnlyAgent("test_checkpoint_agent")
-        
-        configured = self.injection_service.configure_core_services(agent)
-        
-        self.assertEqual(configured, 1, "Should configure 1 service")
-        self.assertIsNotNone(agent.graph_checkpoint_service, "Checkpoint service should be configured")
-    
     def test_orchestration_protocol_injection(self):
         """Test Orchestration service injection works correctly."""
         agent = MockOrchestrationOnlyAgent("test_orchestration_agent")
@@ -497,28 +459,27 @@ class TestAgentServiceInjectionService(unittest.TestCase):
         self.assertIsNotNone(agent.file_service, "File service should be configured")
     
     def test_all_protocols(self):
-        """Test agent implementing all 11 protocols."""
+        """Test agent implementing all 10 protocols."""
         agent = MockAllServicesAgent("test_all_services_agent")
-        
+
         # Configure core services
         core_configured = self.injection_service.configure_core_services(agent)
-        self.assertEqual(core_configured, 6, "Should configure 6 core services")
-        
+        self.assertEqual(core_configured, 5, "Should configure 5 core services")
+
         # Configure storage services  
         storage_configured = self.injection_service.configure_storage_services(agent)
         self.assertEqual(storage_configured, 5, "Should configure 5 storage services")
-        
+
         # Test unified configuration
         summary = self.injection_service.configure_all_services(agent)
-        self.assertEqual(summary["core_services_configured"], 6)
+        self.assertEqual(summary["core_services_configured"], 5)
         self.assertEqual(summary["storage_services_configured"], 5)
-        self.assertEqual(summary["total_services_configured"], 11)
-        
+        self.assertEqual(summary["total_services_configured"], 10)
+
         # Verify all services are configured
         self.assertIsNotNone(agent.llm_service, "LLM service should be configured")
         self.assertIsNotNone(agent.storage_service, "Storage service should be configured")
         self.assertIsNotNone(agent.prompt_manager_service, "Prompt service should be configured")
-        self.assertIsNotNone(agent.graph_checkpoint_service, "Checkpoint service should be configured")
         self.assertIsNotNone(agent.orchestrator_service, "Orchestration service should be configured")
         self.assertIsNotNone(agent.blob_storage_service, "Blob storage service should be configured")
         self.assertIsNotNone(agent.csv_service, "CSV service should be configured")
@@ -592,28 +553,6 @@ class TestAgentServiceInjectionService(unittest.TestCase):
             f"Exception should mention prompt service not available: {context.exception}"
         )
         self.assertIsNone(agent.prompt_manager_service, "Service should not be configured")
-    
-    def test_missing_optional_checkpoint_service(self):
-        """Test strict exception handling when checkpoint service is None."""
-        injection_service = AgentServiceInjectionService(
-            llm_service=self.llm_service,
-            storage_service_manager=self.storage_service_manager,
-            logging_service=self.logging_service,
-            graph_checkpoint_service=None,  # Missing optional service
-        )
-        agent = MockCheckpointOnlyAgent("test_checkpoint_agent")
-        
-        # Should raise exception in strict mode
-        with self.assertRaises(Exception) as context:
-            injection_service.configure_core_services(agent)
-        
-        # Verify exception contains relevant information
-        error_message = str(context.exception).lower()
-        self.assertTrue(
-            "checkpoint" in error_message and "not available" in error_message,
-            f"Exception should mention checkpoint service not available: {context.exception}"
-        )
-        self.assertIsNone(agent.graph_checkpoint_service, "Service should not be configured")
     
     def test_missing_optional_orchestration_service(self):
         """Test strict exception handling when orchestration service is None."""
@@ -741,13 +680,13 @@ class TestAgentServiceInjectionService(unittest.TestCase):
         summary = self.injection_service.configure_all_services(agent)
         
         # Check that summary information is available
-        self.assertEqual(summary["total_services_configured"], 11)
+        self.assertEqual(summary["total_services_configured"], 10)
         self.assertIn("configuration_status", summary)
     
     # ===== PERFORMANCE TESTS =====
     
     def test_protocol_checking_performance(self):
-        """Measure time for protocol checking across 11 protocols."""
+        """Measure time for protocol checking across 10 protocols."""
         agent = MockAllServicesAgent("test_performance_agent")
         
         # Measure core services configuration
@@ -808,12 +747,12 @@ class TestAgentServiceInjectionService(unittest.TestCase):
         self.assertIn("implemented_protocols", status)
         self.assertIn("service_injection_potential", status)
         
-        # Should show all 11 protocols as implemented
-        self.assertEqual(len(status["implemented_protocols"]), 11)
-        
+        # Should show all 10 protocols as implemented
+        self.assertEqual(len(status["implemented_protocols"]), 10)
+
         # Check that summary shows high readiness
         summary = status["summary"]
-        self.assertEqual(summary["total_protocols_implemented"], 11)
+        self.assertEqual(summary["total_protocols_implemented"], 10)
         self.assertTrue(summary["core_services_ready"])
     
     def test_get_service_availability_status(self):
