@@ -389,6 +389,7 @@ Choose your deployment approach:
 
 - **[Configuration Reference](./configuration)**: Complete configuration options
 - **[CLI Commands Reference](deployment/cli-commands)**: Command-line interface documentation
+- **[HTTP API Reference](./http-api-reference)**: Complete REST API endpoint documentation
 - **[Troubleshooting](./troubleshooting)**: Common issues and solutions
 - **[Performance Optimization](./performance)**: Optimization best practices
 
@@ -396,4 +397,4 @@ Choose your deployment approach:
 
 **Quick Links:**
 - [CLI Deployment](./cli-deployment) | [FastAPI Standalone](./fastapi-standalone) | [Integration Guide](./fastapi-integration)
-- [Configuration](./configuration) | [Monitoring](./monitoring) | [Troubleshooting](./troubleshooting)
+- [HTTP API Reference](./http-api-reference) | [Configuration](./configuration) | [Monitoring](./monitoring) | [Troubleshooting](./troubleshooting)

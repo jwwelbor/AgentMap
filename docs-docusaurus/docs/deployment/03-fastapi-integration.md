@@ -839,6 +839,7 @@ engine = create_engine(
 
 ## Next Steps
 
+- **[HTTP API Reference](./http-api-reference)**: Complete REST API endpoint documentation
 - **[Configuration Reference](./configuration)**: Advanced configuration options
 - **[Monitoring Guide](./monitoring)**: Production monitoring and observability
 - **[Performance Tuning](./performance)**: Optimization best practices
@@ -848,6 +849,7 @@ engine = create_engine(
 ## Related Resources
 
 - **[FastAPI Standalone](./fastapi-standalone)**: Standalone service deployment
+- **[HTTP API Reference](./http-api-reference)**: Complete API reference
 - **[Agent Development](/docs/guides/development/agents/agent-development)**: Custom agent creation
 - **[Example Workflows](/docs/templates/)**: Real-world usage patterns
 - **[Troubleshooting](./troubleshooting)**: Common issues and solutions
@@ -856,4 +858,4 @@ engine = create_engine(
 
 **Quick Links:**
 - [Deployment Overview](./index) | [CLI Deployment](./cli-deployment) | [FastAPI Standalone](./fastapi-standalone)
-- [Configuration](./configuration) | [Monitoring](./monitoring) | [Troubleshooting](./troubleshooting)
+- [HTTP API Reference](./http-api-reference) | [Configuration](./configuration) | [Monitoring](./monitoring) | [Troubleshooting](./troubleshooting)

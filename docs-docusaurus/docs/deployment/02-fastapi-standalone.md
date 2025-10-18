@@ -1007,6 +1007,7 @@ if __name__ == "__main__":
 
 ## Next Steps
 
+- **[HTTP API Reference](./http-api-reference)**: Complete REST API endpoint documentation
 - **[FastAPI Integration](./fastapi-integration)**: Integrate with existing applications
 - **[Configuration Reference](./configuration)**: Advanced configuration options
 - **[Monitoring Guide](./monitoring)**: Production monitoring and observability
@@ -1017,11 +1018,11 @@ if __name__ == "__main__":
 
 - **[CLI Deployment](./cli-deployment)**: Command-line deployment option
 - **[Example Workflows](/docs/templates/)**: Real-world usage patterns
-- **[API Documentation](/docs/reference/api)**: Complete API reference
+- **[HTTP API Reference](./http-api-reference)**: Complete API reference
 - **[Troubleshooting](./troubleshooting)**: Common issues and solutions
 
 ---
 
 **Quick Links:**
 - [Deployment Overview](./index) | [CLI Deployment](./cli-deployment) | [Integration Guide](./fastapi-integration)
-- [Configuration](./configuration) | [Monitoring](./monitoring) | [Troubleshooting](./troubleshooting)
+- [HTTP API Reference](./http-api-reference) | [Configuration](./configuration) | [Monitoring](./monitoring) | [Troubleshooting](./troubleshooting)
