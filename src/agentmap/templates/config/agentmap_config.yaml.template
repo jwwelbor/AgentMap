@@ -361,3 +361,94 @@ environment_overrides:
   llm_anthropic_api_key: ${ANTHROPIC_API_KEY:}
   llm_google_api_key: ${GOOGLE_API_KEY:}
 
+# Messaging Configuration
+# Configure message publishing for workflow events, graph triggers, and auto-resume
+messaging:
+  # Default messaging provider (local, aws, gcp, azure)
+  default_provider: "local"
+
+  # Provider configurations
+  providers:
+    local:
+      enabled: true
+      storage_path: "agentmap_data/messages"  # Where to store local messages
+
+    # AWS SNS/SQS configuration (uncomment to enable)
+    # aws:
+    #   enabled: false
+    #   region: "us-east-1"
+    #   sns_topic_arn: ""  # ARN of SNS topic
+    #   sqs_queue_url: ""  # URL of SQS queue
+    #   access_key_id: ""  # Or use AWS_ACCESS_KEY_ID env var
+    #   secret_access_key: ""  # Or use AWS_SECRET_ACCESS_KEY env var
+
+    # GCP Pub/Sub configuration (uncomment to enable)
+    # gcp:
+    #   enabled: false
+    #   project_id: ""
+    #   topic_id: ""
+    #   credentials_path: ""  # Path to service account JSON
+
+    # Azure Service Bus configuration (uncomment to enable)
+    # azure:
+    #   enabled: false
+    #   connection_string: ""  # Or use AZURE_SERVICEBUS_CONNECTION_STRING env var
+    #   topic_name: ""
+
+  # Retry policy for message publishing
+  retry_policy:
+    max_retries: 3
+    backoff_seconds: [1, 2, 4]
+
+  # Message Templates
+  # Templates use Python string.Template syntax with $variable_name
+  # Available variables depend on message type (see documentation)
+  message_templates:
+    # Graph Trigger Template - Used to trigger another AgentMap graph
+    # Use with: send_graph_message: true, graph_message_template: "default_graph_trigger"
+    default_graph_trigger:
+      event_type: "$event_type"
+      graph: "$graph"  # Which graph to execute
+      state: "$inputs"  # Inputs for serverless handler (renamed from inputs for compatibility)
+      thread_id: "$thread_id"  # Parent thread ID for correlation
+      node_name: "$node_name"
+      workflow: "$workflow"
+      timestamp: "$timestamp"
+      context: "$context"
+
+    # Node Suspend Template - Used to trigger external processing
+    # Use with: send_node_message: true, node_message_template: "default_node_suspend"
+    default_node_suspend:
+      event_type: "$event_type"
+      thread_id: "$thread_id"  # Thread to resume after external processing
+      node_name: "$node_name"
+      workflow: "$workflow"
+      graph: "$graph"
+      timestamp: "$timestamp"
+      inputs: "$inputs"  # NOT "state" - for external processing reference
+      context: "$context"
+
+    # Auto Resume Template - Used for serverless auto-resume triggers
+    # Use with: send_resume_message: true, resume_message_template: "default_auto_resume"
+    default_auto_resume:
+      event_type: "$event_type"
+      action: "resume"  # Tells serverless handler to resume
+      thread_id: "$thread_id"  # Which thread to resume
+      resume_value: "$resume_value"  # Value to pass to resumed workflow
+      node_name: "$node_name"
+      workflow: "$workflow"
+      graph: "$graph"
+      timestamp: "$timestamp"
+      suspension_duration_seconds: "$suspension_duration_seconds"
+      context: "$context"
+
+    # Custom Templates - Add your own templates here
+    # Example: Lambda trigger with custom fields
+    # lambda_approval_trigger:
+    #   trigger_type: "workflow_suspended"
+    #   function_name: "approval-processor"
+    #   thread_id: "$thread_id"
+    #   workflow: "$workflow"
+    #   approval_data: "$inputs"
+    #   correlation_id: "$context.correlation_id"
+

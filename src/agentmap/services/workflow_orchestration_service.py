@@ -183,17 +183,16 @@ class WorkflowOrchestrationService:
             checkpoint_data = thread_data.get("checkpoint_data", {})
             checkpoint_state = checkpoint_data.copy()
 
-            # Step 6: Handle human interaction response (if applicable)
+            # Step 6: Handle both HumanAgent (with interaction) and SuspendAgent (without)
             request_id = thread_data.get("pending_interaction_id")
 
-            # Validate that response_action is only provided when there's a pending interaction
-            if response_action and not request_id:
-                raise ValueError(
-                    f"No pending interaction found for thread '{thread_id}'. "
-                    "Cannot provide response_action without a pending interaction."
-                )
-
             if request_id:
+                # HumanAgent path - requires human interaction response
+                if not response_action:
+                    raise ValueError(
+                        f"Pending interaction '{request_id}' requires a response_action"
+                    )
+
                 # This is a human-interaction suspend - save response
                 response = HumanInteractionResponse(
                     request_id=UUID(request_id),
@@ -225,12 +224,20 @@ class WorkflowOrchestrationService:
                     "request_id": str(response.request_id),
                 }
             else:
-                # This is a suspend-only (no human interaction) - just mark as resuming
+                # SuspendAgent path - no human interaction required
+                # Mark thread as resuming
                 update_success = interaction_handler.mark_thread_resuming(
                     thread_id=thread_id
                 )
                 if not update_success:
                     raise RuntimeError("Failed to update thread status to resuming")
+
+                # If response_action provided, pass it as the resume value
+                # SuspendAgent will receive this via interrupt() return value
+                if response_action:
+                    checkpoint_state["__resume_value"] = response_action
+                if response_data:
+                    checkpoint_state["__resume_data"] = response_data
 
             # Step 7: Delegate to business logic layer
             result = graph_runner_service.resume_from_checkpoint(

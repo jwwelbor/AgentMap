@@ -125,6 +125,10 @@ class BaseHandler:
             # Log trigger information
             self._log_trigger_info(trigger_type, correlation_id, parsed_data)
 
+            # Check for resume action (auto-resume via message)
+            if parsed_data.get("action") == "resume":
+                return await self._handle_resume_action(parsed_data, correlation_id)
+
             # Build execution parameters
             graph_name = parsed_data.get("graph")
             if not graph_name:
@@ -238,3 +242,42 @@ class BaseHandler:
         print(traceback.format_exc())
 
         return self._format_error_response("Internal server error", 500, correlation_id)
+
+    async def _handle_resume_action(
+        self, parsed_data: Dict[str, Any], correlation_id: str
+    ) -> Dict[str, Any]:
+        """
+        Handle resume action from message broker (auto-resume pattern).
+
+        Args:
+            parsed_data: Parsed event data containing resume information
+            correlation_id: Request correlation ID for logging
+
+        Returns:
+            Dict containing HTTP response data
+        """
+        thread_id = parsed_data.get("thread_id")
+        if not thread_id:
+            raise InvalidInputs("Resume action requires thread_id")
+
+        resume_value = parsed_data.get("resume_value")
+
+        # Build resume token for runtime facade
+        import json
+
+        resume_token = json.dumps({
+            "thread_id": thread_id,
+            "response_action": "continue",
+            "response_data": resume_value
+        })
+
+        # ✅ FACADE PATTERN: Use runtime facade for resume
+        from agentmap.runtime_api import resume_workflow
+
+        result = resume_workflow(
+            resume_token=resume_token,
+            config_file=self.config_file
+        )
+
+        # Format HTTP response
+        return self._format_http_response(result, correlation_id)

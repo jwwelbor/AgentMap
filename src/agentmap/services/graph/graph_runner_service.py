@@ -540,7 +540,8 @@ class GraphRunnerService:
             # Resume with Command pattern (None for suspend, value for human_interaction)
             from langgraph.types import Command
 
-            resume_value = checkpoint_state.get("__human_response")
+            # Check for both human interaction response and suspend resume value
+            resume_value = checkpoint_state.get("__human_response") or checkpoint_state.get("__resume_value")
             self.logger.debug(
                 f"Resuming with value: {resume_value} (type: {type(resume_value).__name__})"
             )

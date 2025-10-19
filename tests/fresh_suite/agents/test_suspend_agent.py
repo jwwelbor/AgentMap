@@ -42,8 +42,8 @@ class TestSuspendAgent(unittest.TestCase):
         self.agent.set_execution_tracker(self.mock_execution_tracker)
 
     @patch("agentmap.agents.builtins.suspend_agent.interrupt")
-    def test_resume_sets_output_field_with_resume_bundle(self, mock_interrupt):
-        """SuspendAgent run should store resume payload using configured output field."""
+    def test_resume_returns_raw_value_directly(self, mock_interrupt):
+        """SuspendAgent returns raw resume value without wrapping."""
 
         resume_payload = {"result": "processed"}
         mock_interrupt.return_value = resume_payload
@@ -55,11 +55,8 @@ class TestSuspendAgent(unittest.TestCase):
 
         result_state = self.agent.run(initial_state)
 
-        # Current implementation returns simplified output without suspended/resumed flags
-        expected_output = {
-            "resume_value": resume_payload,
-            "node_name": "wait_external",
-        }
+        # New implementation returns raw resume value
+        expected_output = resume_payload
         self.mock_state_adapter_service.set_value.assert_called_with(
             initial_state,
             "external_result",
