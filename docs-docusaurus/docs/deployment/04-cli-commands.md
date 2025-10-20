@@ -198,12 +198,11 @@ Options:
 
 ### View Configuration
 
-```bash
-agentmap config
-```
+> **Note:** The `config` command is currently under development. Use `agentmap diagnose` to view system configuration information.
 
-Options:
-- `--path`, `-p`: Path to config file to display
+```bash
+agentmap diagnose
+```
 
 ## ✨ Simplified Graph Naming Syntax
 
@@ -232,8 +231,7 @@ agentmap run --csv workflows.csv::ProductSupport --state '{"product": "AgentMap"
 
 # Works with all commands
 agentmap scaffold --csv complex_workflows.csv::SpecificGraph
-agentmap compile --csv production.csv::MainFlow
-agentmap export --csv analysis.csv::DataProcessor --format python
+agentmap validate --csv production.csv::MainFlow
 ```
 
 ### HTTP API Integration
@@ -476,79 +474,21 @@ agentmap scaffold --csv ./workflows/special_workflow.csv
 
 ## Export and Compile Commands
 
-### Export a Graph
-
-```bash
-agentmap export -g graph_name -o output.py
-```
-
-Options:
-- `--graph`, `-g`: Graph name to export
-- `--output`, `-o`: Output file path
-- `--format`, `-f`: Export format (python, source, debug, documentation)
-- `--csv`: CSV path override
-- `--state-schema`, `-s`: State schema type (dict, pydantic:ModelName, custom)
-- `--config`, `-c`: Path to custom config file
-
-**Supported Export Formats:**
-- **python**: Complete executable Python code with imports (production ready)
-- **source**: Basic code template for prototyping and scaffolding
-- **debug**: Enhanced format with metadata and debugging information
-- **documentation**: Generate Markdown or HTML documentation
-
-**Note:** For pickle persistence, use the compile command instead. The export command focuses on human-readable formats.
-
-**Examples:**
-```bash
-# Export production-ready Python code
-agentmap export --graph MyWorkflow --format python --output workflow.py
-
-# Export basic source template
-agentmap export --graph MyWorkflow --format source --output template.py
-
-# Export with debug information for development
-agentmap export --graph MyWorkflow --format debug --output analysis.py
-
-# Generate workflow documentation
-agentmap export --graph MyWorkflow --format documentation --output docs.md
-
-# Export with custom state schema
-agentmap export --graph MyWorkflow --format python \
-  --state-schema "pydantic:MyStateModel" --output workflow.py
-```
-
-For comprehensive export format documentation, see the **[Export Formats Guide](../guides/deployment/export-formats)** and **[Export Reference](../reference/export-reference)**.
-
-### Compile Graphs
-
-```bash
-agentmap compile [OPTIONS]
-```
-
-Options:
-- `--graph`, `-g`: Compile a single graph
-- `--output`, `-o`: Output directory for compiled graphs
-- `--csv`: CSV path override
-- `--state-schema`, `-s`: State schema type
-- `--config`, `-c`: Path to custom config file
+> **Note:** The `export` and `compile` commands are currently under development and not yet available in the CLI. These features are planned for a future release. Currently, you can run workflows directly using the `agentmap run` command.
 
 ## Validation Commands
 
-AgentMap provides several commands to validate workflows and configurations. For detailed information, see the [Validation Commands](./08-cli-validation) documentation.
+AgentMap provides workflow validation through the validate command:
 
 ```bash
-# Validate CSV workflow files
-agentmap validate-csv --csv workflow.csv
+# Validate a workflow
+agentmap validate --csv workflow.csv
 
-# Validate configuration
-agentmap validate-config --config custom_config.yaml
-
-# Validate both CSV and configuration
-agentmap validate-all
-
-# Manage validation cache
-agentmap validate-cache --stats
+# Validate with custom configuration
+agentmap validate --csv workflow.csv --config custom_config.yaml
 ```
+
+> **Note:** Additional validation commands (`validate-csv`, `validate-config`, `validate-all`, `validate-cache`) are planned for future releases. Currently, use the `validate` command for workflow validation.
 
 ## Diagnostic Commands
 
@@ -583,9 +523,9 @@ agentmap resume thread_12345 respond --data '{"user_response": "Yes, proceed"}'
 
 2. **Validate workflow structure**
    ```bash
-   agentmap validate-csv --csv customer_workflow.csv
+   agentmap validate --csv customer_workflow.csv
    # Expected output:
-   # ✅ CSV validation successful
+   # ✅ Workflow validation successful
    # ✅ Found 5 nodes in workflow
    # ✅ All required columns present
    ```
@@ -614,34 +554,28 @@ agentmap resume thread_12345 respond --data '{"user_response": "Yes, proceed"}'
    # ✅ All 5 nodes executed successfully
    ```
 
-6. **Compile for production**
+6. **Deploy workflow** (when ready for production)
    ```bash
-   agentmap compile --graph CustomerWorkflow --output ./compiled/
+   # Workflows are executed directly - no compilation step needed
+   agentmap run --graph CustomerWorkflow --csv customer_workflow.csv
    # Expected output:
-   # ✅ Graph compiled successfully
-   # ✅ Output saved to: ./compiled/CustomerWorkflow.pkl
-   # ✅ Ready for production deployment
+   # ✅ Graph execution completed successfully
+   # ✅ Execution time: 2.34s
+   # ✅ Ready for production use via CLI or HTTP API
    ```
 
 ### Configuration Management
 
 ```bash
 # View current configuration
-agentmap config
+agentmap diagnose
 # Expected output:
-# Configuration loaded from: /path/to/agentmap_config.yaml
+# 🔍 AgentMap System Diagnosis
+# ✅ Configuration: Valid
 # ✅ CSV Path: ./workflows/
 # ✅ Custom Agents: ./custom_agents/
-# ✅ Compiled Graphs: ./compiled/
 # ✅ Storage: Local file system
-
-# View specific configuration section
-agentmap config --section execution
-# Expected output:
-# Execution Configuration:
-# ✅ Auto-compile: true
-# ✅ Tracking enabled: false
-# ✅ Success policy: all_nodes
+# ✅ Dependencies: All available
 
 # Use custom config file
 agentmap run --config ./configs/production.yaml --graph ProductionFlow
@@ -675,24 +609,11 @@ agentmap run --graph TestFlow --track-detailed
 #    Nodes executed: 4
 #    Success rate: 100%
 
-# Auto-compile before running
-agentmap run --graph TestFlow --autocompile
+# Run with custom configuration
+agentmap run --graph TestFlow --config custom_config.yaml
 # Expected output:
-# ℹ️  Auto-compiling graph...
-# ✅ Compilation completed
+# ℹ️  Using configuration from: custom_config.yaml
 # ✅ Graph execution completed
-
-# Export for inspection with debug information
-agentmap export --graph TestFlow --format debug --output ./debug/
-# Expected output:
-# ✅ Graph exported to: ./debug/TestFlow_debug.py
-# ℹ️  Review the generated code and metadata for debugging
-
-# Export basic source template
-agentmap export --graph TestFlow --format source --output ./templates/
-# Expected output:
-# ✅ Graph exported to: ./templates/TestFlow_source.py
-# ℹ️  Use as starting point for custom implementation
 ```
 
 ## Environment Variables
@@ -737,20 +658,12 @@ agentmap diagnose
 # ✅ Compiled graphs: 2 found
 
 # Validate specific workflow
-agentmap validate-csv --csv production_workflow.csv
+agentmap validate --csv production_workflow.csv
 # Expected output:
-# ✅ CSV structure valid
+# ✅ Workflow structure valid
 # ✅ All agent types available
 # ✅ Dependency chain complete
 # ⚠️  Warning: Large prompt in node 'process_data'
-
-# Check configuration validity
-agentmap validate-config
-# Expected output:
-# ✅ Configuration file syntax valid
-# ✅ All required paths exist
-# ✅ Storage configuration valid
-# ❌ Error: Invalid LLM API key format
 ```
 
 ### Performance Monitoring
@@ -800,48 +713,29 @@ agentmap validate-dependencies --graph MyWorkflow
 # ℹ️  Suggestion: Update to use WeatherService v2
 
 # Clear cache and rebuild
-agentmap clear-cache
-agentmap compile --graph MyWorkflow --force
+agentmap refresh
 # Expected output:
 # ✅ Cache cleared
-# ✅ Force compilation completed
-# ℹ️  All compiled graphs refreshed
+# ✅ Bundle cache refreshed
+# ℹ️  Ready for clean workflow execution
 ```
 
 ## Advanced CLI Features
 
 ### Batch Operations
 
-```bash
-# Compile all graphs in directory
-agentmap compile-all --csv-dir ./workflows/
-# Expected output:
-# ✅ Compiled: CustomerOnboarding (3.2s)
-# ✅ Compiled: OrderProcessing (2.1s)
-# ❌ Failed: PaymentWorkflow (missing WeatherAgent)
-# 📊 Summary: 2/3 successful
-
-# Validate all workflows
-agentmap validate-all --csv-dir ./workflows/
-# Expected output:
-# ✅ CustomerOnboarding.csv: Valid
-# ⚠️  OrderProcessing.csv: 1 warning
-# ❌ PaymentWorkflow.csv: 2 errors
-```
+> **Note:** Batch operations for multiple workflows are planned for a future release. Currently, validate and run workflows individually using the respective commands.
 
 ### Integration with CI/CD
 
 ```bash
-# Validate for CI/CD pipeline
-agentmap validate-all --format json --output validation_report.json
-# Generates JSON report for automated processing
+# Validate workflow in CI/CD pipeline
+agentmap validate --csv workflow.csv
+# Exit code 0 if valid, non-zero if validation fails
 
-# Export deployment package
-agentmap package --graph ProductionWorkflow --output deployment.tar.gz
-# Expected output:
-# ✅ Packaging workflow for deployment
-# ✅ Including: compiled graph, dependencies, config
-# ✅ Package created: deployment.tar.gz (2.3MB)
+# Run workflow in CI/CD
+agentmap run --csv workflow.csv --state '{"input": "test"}'
+# Exit code 0 if successful, non-zero if execution fails
 ```
 
 ## Output Formats and Logging
@@ -861,17 +755,9 @@ agentmap run --graph MyWorkflow --format json
 # }
 
 # Structured validation output
-agentmap validate-csv --csv workflow.csv --format json
-# Output:
-# {
-#   "valid": true,
-#   "errors": [],
-#   "warnings": ["Large prompt in node 'process'"],
-#   "statistics": {
-#     "nodes": 5,
-#     "agents_used": ["input", "llm", "output"]
-#   }
-# }
+agentmap validate --csv workflow.csv
+# Output includes validation results and any warnings/errors
+# Exit code 0 indicates validation success
 ```
 
 ### Logging Configuration
@@ -889,35 +775,19 @@ agentmap run --graph MyWorkflow --log-format json
 
 ## Security and Production
 
-### Secure Execution
-
-```bash
-# Run in sandbox mode (limited permissions)
-agentmap run --graph MyWorkflow --sandbox
-
-# Validate security before deployment
-agentmap security-check --graph MyWorkflow
-# Expected output:
-# 🔒 Security Analysis: MyWorkflow
-# ✅ No file system access outside workspace
-# ✅ No network access to sensitive endpoints
-# ⚠️  Warning: Custom agent executes shell commands
-# ℹ️  Review: custom_agents/system_agent.py:45
-```
-
 ### Production Deployment
 
-```bash
-# Create production build
-agentmap build --graph MyWorkflow --env production
-# Expected output:
-# ✅ Production build created
-# ✅ Optimizations applied
-# ✅ Security validations passed
-# 📦 Build artifacts in: ./dist/MyWorkflow/
+For production deployment, you can use either:
 
-# Deploy to production
-agentmap deploy --build ./dist/MyWorkflow/ --target production
+1. **CLI deployment**: Run workflows directly via `agentmap run`
+2. **HTTP API deployment**: Use `agentmap serve` to start the HTTP API server
+
+```bash
+# Start HTTP API server for production
+agentmap serve --host 0.0.0.0 --port 8000
+
+# Or run workflows directly in production scripts
+agentmap run --csv production_workflow.csv --config production_config.yaml
 ```
 
 ## Related Documentation

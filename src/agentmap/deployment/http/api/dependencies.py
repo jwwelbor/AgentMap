@@ -163,8 +163,7 @@ def requires_auth(permission: Optional[str] = None) -> Callable:
 
                 # Authenticate the request
                 if not auth_token:
-                    # Check if endpoint is public or auth is disabled
-                    if not auth_service.is_authentication_enabled():
+                    if auth_disabled:
                         auth_context = AuthContext(
                             authenticated=True,
                             auth_method="disabled",

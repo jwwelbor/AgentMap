@@ -320,7 +320,7 @@ jobs:
       - name: Install AgentMap
         run: pip install agentmap
       - name: Validate Workflows
-        run: agentmap validate-csv workflows/
+        run: agentmap validate --csv workflows/workflow.csv
       - name: Test Workflows
         run: agentmap run --graph TestSuite
 ```
