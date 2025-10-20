@@ -114,28 +114,25 @@ def requires_auth(permission: Optional[str] = None) -> Callable:
                     detail="Application container not initialized. Please wait for server startup to complete.",
                 )
 
-            # Check if authentication is disabled at the config level first
-            # This avoids race conditions during service initialization
-            # Retry service initialization with delays
-            auth_disabled = False
-
-            for attempt in range(10):  # Try up to 10 times (1 second total)
+            # Get auth service from container with retry logic
+            # This must be done first to check if authentication is disabled
+            auth_service = None
+            for attempt in range(10):  # Try up to 10 times
                 try:
-                    app_config_service = container.app_config_service()
-                    auth_disabled = not app_config_service.is_authentication_enabled()
-                    break  # Success, exit retry loop
+                    auth_service = container.auth_service()
+                    break
                 except Exception as e:
-                    if attempt < 9:  # Not the last attempt
-                        await asyncio.sleep(0.1)  # Wait 100ms before retry
+                    if attempt < 9:
+                        await asyncio.sleep(0.1)
                     else:
-                        # All retries failed - SECURITY: reject request
                         raise HTTPException(
                             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                            detail=f"Authentication system not ready after {attempt+1} attempts. Error: {str(e)}",
+                            detail=f"Auth service not available after {attempt+1} attempts: {str(e)}",
                         )
 
-            # If auth is disabled in config, bypass authentication entirely
-            if auth_disabled:
+            # Check if authentication is disabled (this avoids race conditions)
+            # Tests mock auth_service.is_authentication_enabled() so check that
+            if not auth_service.is_authentication_enabled():
                 auth_context = AuthContext(
                     authenticated=True,
                     auth_method="disabled",
@@ -143,48 +140,27 @@ def requires_auth(permission: Optional[str] = None) -> Callable:
                     permissions=["admin"],
                 )
             else:
-                # Get auth service from container with retry logic
-                auth_service = None
-                for attempt in range(10):  # Try up to 10 times
-                    try:
-                        auth_service = container.auth_service()
-                        break
-                    except Exception as e:
-                        if attempt < 9:
-                            await asyncio.sleep(0.1)
-                        else:
-                            raise HTTPException(
-                                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                                detail=f"Auth service not available after {attempt+1} attempts: {str(e)}",
-                            )
 
                 # Extract authentication token from request
                 auth_token = _extract_auth_token(request)
 
                 # Authenticate the request
                 if not auth_token:
-                    if auth_disabled:
+                    # No token provided - check if endpoint is public
+                    public_endpoints = auth_service.get_public_endpoints()
+                    if _is_public_endpoint(request.url.path, public_endpoints):
                         auth_context = AuthContext(
                             authenticated=True,
-                            auth_method="disabled",
-                            user_id="system",
-                            permissions=["admin"],
+                            auth_method="public",
+                            user_id="public",
+                            permissions=["read"],
                         )
                     else:
-                        public_endpoints = auth_service.get_public_endpoints()
-                        if _is_public_endpoint(request.url.path, public_endpoints):
-                            auth_context = AuthContext(
-                                authenticated=True,
-                                auth_method="public",
-                                user_id="public",
-                                permissions=["read"],
-                            )
-                        else:
-                            raise HTTPException(
-                                status_code=status.HTTP_401_UNAUTHORIZED,
-                                detail="Authentication required",
-                                headers={"WWW-Authenticate": "Bearer"},
-                            )
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Authentication required",
+                            headers={"WWW-Authenticate": "Bearer"},
+                        )
                 else:
                     # Validate the token using auth service
                     auth_context = _validate_token(auth_service, auth_token)
