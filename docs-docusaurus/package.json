@@ -44,7 +44,7 @@
     "@docusaurus/module-type-aliases": "^3.0.0",
     "@docusaurus/types": "^3.0.0",
     "typescript": "~5.2.2",
-    "playwright": "^1.47.0"
+    "playwright": "^1.55.1"
   },
   "browserslist": {
     "production": [
