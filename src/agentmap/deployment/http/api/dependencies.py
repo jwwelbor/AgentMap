@@ -89,62 +89,99 @@ def requires_auth(permission: Optional[str] = None) -> Callable:
                     detail=f"Request object not found. Args types: {arg_types}, Kwargs: {kwarg_info}",
                 )
 
-            # Get container from request app state
-            try:
-                container = request.app.state.container
-            except AttributeError:
+            # Get container from request app state with retry for lifespan race condition
+            import asyncio
+            import time
+
+            container = None
+            max_retries = 10
+            retry_delay = 0.1  # 100ms
+
+            for attempt in range(max_retries):
+                try:
+                    container = request.app.state.container
+                    if container is not None:
+                        break
+                except AttributeError:
+                    pass
+
+                # Wait before retrying
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+
+            if container is None:
                 raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Application container not found in app state",
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Application container not initialized. Please wait for server startup to complete.",
                 )
 
-            # Get auth service from container
+            # Check if authentication is disabled at the config level first
+            # This avoids race conditions during service initialization
+            auth_disabled = False
             try:
-                auth_service = container.auth_service()
-            except Exception as e:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Auth service not available: {str(e)}",
+                app_config_service = container.app_config_service()
+                auth_config = app_config_service.get("authentication", {})
+                auth_disabled = not auth_config.get("enabled", True)
+            except Exception:
+                # If we can't get config service, fall back to auth service check
+                pass
+
+            # If auth is disabled in config, bypass authentication entirely
+            if auth_disabled:
+                auth_context = AuthContext(
+                    authenticated=True,
+                    auth_method="disabled",
+                    user_id="system",
+                    permissions=["admin"],
                 )
-
-            # Extract authentication token from request
-            auth_token = _extract_auth_token(request)
-
-            # Authenticate the request
-            if not auth_token:
-                # Check if endpoint is public or auth is disabled
-                if not auth_service.is_authentication_enabled():
-                    auth_context = AuthContext(
-                        authenticated=True,
-                        auth_method="disabled",
-                        user_id="system",
-                        permissions=["admin"],
+            else:
+                # Get auth service from container
+                try:
+                    auth_service = container.auth_service()
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Auth service not available: {str(e)}",
                     )
-                else:
-                    public_endpoints = auth_service.get_public_endpoints()
-                    if _is_public_endpoint(request.url.path, public_endpoints):
+
+                # Extract authentication token from request
+                auth_token = _extract_auth_token(request)
+
+                # Authenticate the request
+                if not auth_token:
+                    # Check if endpoint is public or auth is disabled
+                    if not auth_service.is_authentication_enabled():
                         auth_context = AuthContext(
                             authenticated=True,
-                            auth_method="public",
-                            user_id="public",
-                            permissions=["read"],
+                            auth_method="disabled",
+                            user_id="system",
+                            permissions=["admin"],
                         )
                     else:
+                        public_endpoints = auth_service.get_public_endpoints()
+                        if _is_public_endpoint(request.url.path, public_endpoints):
+                            auth_context = AuthContext(
+                                authenticated=True,
+                                auth_method="public",
+                                user_id="public",
+                                permissions=["read"],
+                            )
+                        else:
+                            raise HTTPException(
+                                status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Authentication required",
+                                headers={"WWW-Authenticate": "Bearer"},
+                            )
+                else:
+                    # Validate the token using auth service
+                    auth_context = _validate_token(auth_service, auth_token)
+
+                    if not auth_context.authenticated:
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Authentication required",
+                            detail="Invalid authentication credentials",
                             headers={"WWW-Authenticate": "Bearer"},
                         )
-            else:
-                # Validate the token using auth service
-                auth_context = _validate_token(auth_service, auth_token)
-
-                if not auth_context.authenticated:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid authentication credentials",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
 
             # Check permissions if specified
             if permission and not _check_permission(auth_context, permission):

@@ -166,10 +166,14 @@ class SuspendAgent(BaseAgent, MessagingCapableAgent):
         # Messaging failures - log but don't raise
         try:
             payload = self._build_suspension_payload(thread_id, inputs)
-            template_name = self.context.get("suspend_message_template", "default_suspend")
+            template_name = self.context.get(
+                "suspend_message_template", "default_suspend"
+            )
 
             # Apply template with variables
-            message_data = self._messaging_service.apply_template(template_name, payload)
+            message_data = self._messaging_service.apply_template(
+                template_name, payload
+            )
 
             # Publish message asynchronously
             topic = self.context.get("suspend_message_topic", "workflow_events")
@@ -222,9 +226,13 @@ class SuspendAgent(BaseAgent, MessagingCapableAgent):
             duration = resume_timestamp - suspend_timestamp
 
             payload = self._build_resume_payload(thread_id, resume_value, duration)
-            template_name = self.context.get("resume_message_template", "default_resume")
+            template_name = self.context.get(
+                "resume_message_template", "default_resume"
+            )
 
-            message_data = self._messaging_service.apply_template(template_name, payload)
+            message_data = self._messaging_service.apply_template(
+                template_name, payload
+            )
 
             topic = self.context.get("resume_message_topic", "workflow_events")
             asyncio.create_task(
@@ -278,7 +286,9 @@ class SuspendAgent(BaseAgent, MessagingCapableAgent):
             template_name = self.context.get("graph_message_template", "default_graph")
 
             # Apply template with variables
-            message_data = self._messaging_service.apply_template(template_name, payload)
+            message_data = self._messaging_service.apply_template(
+                template_name, payload
+            )
 
             # Publish message asynchronously
             topic = self.context.get("graph_message_topic", "workflow_events")
@@ -311,7 +321,9 @@ class SuspendAgent(BaseAgent, MessagingCapableAgent):
             Dictionary with suspension event data
         """
         tracker = self.current_execution_tracker
-        workflow_name = getattr(tracker, "workflow_name", "unknown") if tracker else "unknown"
+        workflow_name = (
+            getattr(tracker, "workflow_name", "unknown") if tracker else "unknown"
+        )
         graph_name = getattr(tracker, "graph_name", "unknown") if tracker else "unknown"
 
         return {
@@ -340,7 +352,9 @@ class SuspendAgent(BaseAgent, MessagingCapableAgent):
             Dictionary with resume event data for serverless auto-resume
         """
         tracker = self.current_execution_tracker
-        workflow_name = getattr(tracker, "workflow_name", "unknown") if tracker else "unknown"
+        workflow_name = (
+            getattr(tracker, "workflow_name", "unknown") if tracker else "unknown"
+        )
         graph_name = getattr(tracker, "graph_name", "unknown") if tracker else "unknown"
 
         return {
@@ -370,7 +384,9 @@ class SuspendAgent(BaseAgent, MessagingCapableAgent):
             Dictionary with graph event data for serverless consumption
         """
         tracker = self.current_execution_tracker
-        workflow_name = getattr(tracker, "workflow_name", "unknown") if tracker else "unknown"
+        workflow_name = (
+            getattr(tracker, "workflow_name", "unknown") if tracker else "unknown"
+        )
         graph_name = getattr(tracker, "graph_name", "unknown") if tracker else "unknown"
 
         return {

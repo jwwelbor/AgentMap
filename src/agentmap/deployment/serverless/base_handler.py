@@ -265,18 +265,19 @@ class BaseHandler:
         # Build resume token for runtime facade
         import json
 
-        resume_token = json.dumps({
-            "thread_id": thread_id,
-            "response_action": "continue",
-            "response_data": resume_value
-        })
+        resume_token = json.dumps(
+            {
+                "thread_id": thread_id,
+                "response_action": "continue",
+                "response_data": resume_value,
+            }
+        )
 
         # ✅ FACADE PATTERN: Use runtime facade for resume
         from agentmap.runtime_api import resume_workflow
 
         result = resume_workflow(
-            resume_token=resume_token,
-            config_file=self.config_file
+            resume_token=resume_token, config_file=self.config_file
         )
 
         # Format HTTP response

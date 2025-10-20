@@ -541,7 +541,9 @@ class GraphRunnerService:
             from langgraph.types import Command
 
             # Check for both human interaction response and suspend resume value
-            resume_value = checkpoint_state.get("__human_response") or checkpoint_state.get("__resume_value")
+            resume_value = checkpoint_state.get(
+                "__human_response"
+            ) or checkpoint_state.get("__resume_value")
             self.logger.debug(
                 f"Resuming with value: {resume_value} (type: {type(resume_value).__name__})"
             )
