@@ -91,11 +91,10 @@ def requires_auth(permission: Optional[str] = None) -> Callable:
 
             # Get container from request app state with retry for lifespan race condition
             import asyncio
-            import time
 
             container = None
-            max_retries = 10
-            retry_delay = 0.1  # 100ms
+            max_retries = 20  # Increased from 10
+            retry_delay = 0.15  # Increased from 0.1s to 150ms (total 3 seconds)
 
             for attempt in range(max_retries):
                 try:
@@ -117,14 +116,23 @@ def requires_auth(permission: Optional[str] = None) -> Callable:
 
             # Check if authentication is disabled at the config level first
             # This avoids race conditions during service initialization
+            # Retry service initialization with delays
             auth_disabled = False
-            try:
-                app_config_service = container.app_config_service()
-                auth_config = app_config_service.get("authentication", {})
-                auth_disabled = not auth_config.get("enabled", True)
-            except Exception:
-                # If we can't get config service, fall back to auth service check
-                pass
+
+            for attempt in range(10):  # Try up to 10 times (1 second total)
+                try:
+                    app_config_service = container.app_config_service()
+                    auth_disabled = not app_config_service.is_authentication_enabled()
+                    break  # Success, exit retry loop
+                except Exception as e:
+                    if attempt < 9:  # Not the last attempt
+                        await asyncio.sleep(0.1)  # Wait 100ms before retry
+                    else:
+                        # All retries failed - SECURITY: reject request
+                        raise HTTPException(
+                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail=f"Authentication system not ready after {attempt+1} attempts. Error: {str(e)}",
+                        )
 
             # If auth is disabled in config, bypass authentication entirely
             if auth_disabled:
@@ -135,14 +143,20 @@ def requires_auth(permission: Optional[str] = None) -> Callable:
                     permissions=["admin"],
                 )
             else:
-                # Get auth service from container
-                try:
-                    auth_service = container.auth_service()
-                except Exception as e:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Auth service not available: {str(e)}",
-                    )
+                # Get auth service from container with retry logic
+                auth_service = None
+                for attempt in range(10):  # Try up to 10 times
+                    try:
+                        auth_service = container.auth_service()
+                        break
+                    except Exception as e:
+                        if attempt < 9:
+                            await asyncio.sleep(0.1)
+                        else:
+                            raise HTTPException(
+                                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                detail=f"Auth service not available after {attempt+1} attempts: {str(e)}",
+                            )
 
                 # Extract authentication token from request
                 auth_token = _extract_auth_token(request)

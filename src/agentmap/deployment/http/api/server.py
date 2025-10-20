@@ -55,6 +55,15 @@ def create_lifespan(config_file: Optional[str] = None):
             container = get_container()
             app.state.container = container
 
+            # ✅ FIX: Pre-warm critical services to prevent race conditions
+            # TestClient may send requests immediately, so ensure services are ready
+            try:
+                _ = container.app_config_service()
+                _ = container.auth_service()
+            except Exception:
+                # Services will be initialized on first use if pre-warm fails
+                pass
+
             print("AgentMap runtime initialized successfully")
             yield
         except Exception as e:
