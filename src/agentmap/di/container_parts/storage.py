@@ -1,4 +1,5 @@
 """Storage container part with configuration and storage managers."""
+
 from __future__ import annotations
 
 from dependency_injector import containers, providers
@@ -19,10 +20,10 @@ class StorageContainer(containers.DeclarativeContainer):
         app_config_service,
         availability_cache_service,
     ):
-        from agentmap.services.config.storage_config_service import StorageConfigService
         from agentmap.exceptions.service_exceptions import (
             StorageConfigurationNotAvailableException,
         )
+        from agentmap.services.config.storage_config_service import StorageConfigService
 
         storage_config_path = app_config_service.get_storage_config_path()
         try:
@@ -58,7 +59,9 @@ class StorageContainer(containers.DeclarativeContainer):
             )
             return None
         try:
-            from agentmap.services.storage.blob_storage_service import BlobStorageService
+            from agentmap.services.storage.blob_storage_service import (
+                BlobStorageService,
+            )
 
             return BlobStorageService(
                 storage_config_service,
@@ -112,10 +115,10 @@ class StorageContainer(containers.DeclarativeContainer):
         file_path_service,
         blob_storage_service,
     ):
-        from agentmap.services.storage.manager import StorageServiceManager
         from agentmap.exceptions.service_exceptions import (
             StorageConfigurationNotAvailableException,
         )
+        from agentmap.services.storage.manager import StorageServiceManager
 
         if storage_config_service is None:
             logging_service.get_logger("agentmap.storage").info(

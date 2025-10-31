@@ -521,6 +521,8 @@ class GraphBundleService:
                 "prompt": node.prompt,
                 "description": node.description,
                 "edges": node.edges,
+                "tool_source": node.tool_source,
+                "available_tools": node.available_tools,
             }
 
         # Helper function to convert sets to sorted lists for JSON serialization
@@ -611,6 +613,8 @@ class GraphBundleService:
                     output=node_data.get("output"),
                     prompt=node_data.get("prompt"),
                     description=node_data.get("description"),
+                    tool_source=node_data.get("tool_source"),
+                    available_tools=node_data.get("available_tools"),
                 )
                 node.edges = node_data.get("edges", {})
                 nodes[name] = node

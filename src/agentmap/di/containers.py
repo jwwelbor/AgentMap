@@ -1,4 +1,5 @@
 """Composable dependency-injection container built from modular parts."""
+
 from __future__ import annotations
 
 from dependency_injector import containers, providers
@@ -13,10 +14,14 @@ from .container_parts.storage import StorageContainer
 from .utils import create_optional_service, safe_get_service
 
 
-def _expose(container_provider: providers.Provider, attribute: str) -> providers.Callable:
+def _expose(
+    container_provider: providers.Provider, attribute: str
+) -> providers.Callable:
     """Return a provider that resolves an attribute from a nested container."""
 
-    return providers.Callable(lambda container: getattr(container, attribute)(), container_provider)
+    return providers.Callable(
+        lambda container: getattr(container, attribute)(), container_provider
+    )
 
 
 class ApplicationContainer(containers.DeclarativeContainer):
@@ -69,7 +74,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
         agent_registry_service=_expose(_bootstrap, "agent_registry_service"),
         csv_graph_parser_service=_expose(_bootstrap, "csv_graph_parser_service"),
         static_bundle_analyzer=_expose(_bootstrap, "static_bundle_analyzer"),
-        declaration_registry_service=_expose(_bootstrap, "declaration_registry_service"),
+        declaration_registry_service=_expose(
+            _bootstrap, "declaration_registry_service"
+        ),
         custom_agent_declaration_manager=_expose(
             _bootstrap, "custom_agent_declaration_manager"
         ),
@@ -138,9 +145,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         _bootstrap, "custom_agent_declaration_manager"
     )
     static_bundle_analyzer = _expose(_bootstrap, "static_bundle_analyzer")
-    dependency_checker_service = _expose(
-        _bootstrap, "dependency_checker_service"
-    )
+    dependency_checker_service = _expose(_bootstrap, "dependency_checker_service")
     config_validation_service = _expose(_bootstrap, "config_validation_service")
     csv_validation_service = _expose(_bootstrap, "csv_validation_service")
     validation_service = _expose(_bootstrap, "validation_service")

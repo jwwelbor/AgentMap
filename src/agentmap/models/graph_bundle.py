@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
+from langchain_core.tools import Tool
+
 from .node import Node
 
 
@@ -53,6 +55,11 @@ class GraphBundle:
     created_at: Optional[str] = None  # NEW: Creation timestamp
     missing_declarations: Optional[Set[str]] = (
         None  # NEW: Agent types without declarations
+    )
+
+    # AGM-TOOLS-001: Tool caching
+    tools: Optional[Dict[str, List[Tool]]] = (
+        None  # Cache for loaded tools, keyed by node name
     )
 
     def __post_init__(self):
@@ -100,6 +107,8 @@ class GraphBundle:
                 self.created_at = datetime.utcnow().isoformat()
             if self.missing_declarations is None:
                 self.missing_declarations = set()
+            if self.tools is None:
+                self.tools = {}
 
         # If completely empty, set safe defaults
         else:
@@ -121,6 +130,7 @@ class GraphBundle:
 
             self.created_at = datetime.utcnow().isoformat()
             self.missing_declarations = set()
+            self.tools = {}
 
     @staticmethod
     def prepare_nodes_for_storage(nodes: Dict[str, Node]) -> Dict[str, Node]:

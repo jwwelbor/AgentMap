@@ -1,0 +1,9 @@
+{
+  "enabledMcpjsonServers": [
+    "workspace-code-search",
+    "mcp-sequentialthinking-tools"
+  ],
+  "disabledMcpjsonServers": [
+    "mcp-pytest"
+  ]
+}

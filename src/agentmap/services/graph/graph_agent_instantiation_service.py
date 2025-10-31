@@ -18,8 +18,13 @@ from agentmap.services.execution_tracking_service import ExecutionTrackingServic
 from agentmap.services.graph.graph_bundle_service import GraphBundleService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.prompt_manager_service import PromptManagerService
-from agentmap.services.protocols import GraphBundleCapableAgent
+from agentmap.services.protocols import (
+    GraphBundleCapableAgent,
+    ToolCapableAgent,
+    ToolSelectionCapableAgent,
+)
 from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.services.tool_loader import load_tools_from_module
 
 
 class GraphAgentInstantiationService:
@@ -136,6 +141,13 @@ class GraphAgentInstantiationService:
         if bundle.node_instances is None:
             bundle.node_instances = {}
 
+        # Initialize tools cache if not present
+        if bundle.tools is None:
+            bundle.tools = {}
+
+        # Phase 2: Tool Loading - Load tools from modules before agent instantiation
+        self._load_tools_for_nodes(bundle)
+
         # Create node registry for orchestrator agents (contains node definitions)
         node_definitions_registry = self._create_node_definitions_registry(bundle)
 
@@ -150,6 +162,7 @@ class GraphAgentInstantiationService:
                 )
 
                 # Step 1: Create agent instance using factory
+                # AGM-TOOLS-001: Pass bundle.tools to factory for ToolAgent support
                 agent_instance = self.agent_factory.create_agent_instance(
                     node=node,
                     graph_name=graph_name,
@@ -159,6 +172,7 @@ class GraphAgentInstantiationService:
                     state_adapter_service=self.state_adapter,
                     prompt_manager_service=self.prompt_manager,
                     node_registry=node_definitions_registry,
+                    bundle_tools=bundle.tools if bundle.tools else None,
                 )
 
                 # Step 2: Inject services using injection service
@@ -180,6 +194,16 @@ class GraphAgentInstantiationService:
                     self.logger.debug(
                         f"[GraphAgentInstantiationService] Injected GraphBundleService into {node_name}"
                     )
+
+                # Phase 3: Tool Binding - Configure tools for ToolCapableAgent instances
+                if isinstance(agent_instance, ToolCapableAgent):
+                    tools = bundle.tools.get(node_name, [])
+                    if tools:
+                        agent_instance.configure_tools(tools)
+                        tool_names = [t.name for t in tools]
+                        self.logger.info(
+                            f"[GraphAgentInstantiationService] ✅ Configured {len(tools)} tools for {node_name}: {', '.join(tool_names)}"
+                        )
 
                 # Step 3: Store instance in node_registry
                 bundle.node_instances[node_name] = agent_instance
@@ -400,3 +424,99 @@ class GraphAgentInstantiationService:
                 summary["missing"] += 1
 
         return summary
+
+    def _load_tools_for_nodes(self, bundle: GraphBundle) -> None:
+        """
+        Load tools from modules for all nodes that specify tool sources.
+
+        This method processes each node's tool_source field and loads the specified
+        tools into bundle.tools[node_name] for later binding during agent instantiation.
+
+        Args:
+            bundle: GraphBundle with nodes that may require tools
+
+        Raises:
+            ImportError: If a tool module cannot be imported
+            ValueError: If specified tools are not found in the module
+        """
+        if not bundle.nodes:
+            return
+
+        loaded_count = 0
+        for node_name, node in bundle.nodes.items():
+            # Skip nodes without tool_source or with "toolnode" (special case)
+            tool_source = getattr(node, "tool_source", None)
+            if not tool_source or tool_source.lower() == "toolnode":
+                continue
+
+            try:
+                # Load all tools from the module
+                self.logger.debug(
+                    f"[GraphAgentInstantiationService] Loading tools from: {tool_source}"
+                )
+                all_tools = load_tools_from_module(tool_source)
+
+                # Filter to available_tools if specified
+                available_tools = getattr(node, "available_tools", None)
+                if available_tools:
+                    # Filter tools by name
+                    tools = [t for t in all_tools if t.name in available_tools]
+
+                    # Validate all requested tools were found
+                    found_names = {t.name for t in tools}
+                    requested_names = set(available_tools)
+                    missing = requested_names - found_names
+
+                    if missing:
+                        available_names = [t.name for t in all_tools]
+                        raise ValueError(
+                            f"Tools not found in {tool_source}: {sorted(missing)}\n"
+                            f"Available tools: {sorted(available_names)}\n"
+                            f"Suggestions:\n"
+                            f"  • Check spelling in AvailableTools column\n"
+                            f"  • Verify @tool decorated functions exist in module"
+                        )
+                else:
+                    # Use all tools from module
+                    tools = all_tools
+
+                # Store in bundle
+                bundle.tools[node_name] = tools
+                tool_names = [t.name for t in tools]
+                loaded_count += 1
+
+                self.logger.info(
+                    f"[GraphAgentInstantiationService] ✅ Loaded {len(tools)} tools for {node_name}: {', '.join(tool_names)}"
+                )
+
+            except ImportError as e:
+                error_msg = (
+                    f"Failed to load tools for node {node_name}: {str(e)}\n"
+                    f"Tool source: {tool_source}\n"
+                    f"Suggestions:\n"
+                    f"  • Check ToolSource column in CSV\n"
+                    f"  • Verify the file path is correct\n"
+                    f"  • Ensure the module exists and is accessible"
+                )
+                self.logger.error(f"[GraphAgentInstantiationService] ❌ {error_msg}")
+                raise ImportError(error_msg) from e
+
+            except ValueError as e:
+                # Re-raise with context
+                self.logger.error(
+                    f"[GraphAgentInstantiationService] ❌ Tool validation failed for {node_name}: {str(e)}"
+                )
+                raise
+
+            except Exception as e:
+                error_msg = (
+                    f"Unexpected error loading tools for node {node_name}: {str(e)}\n"
+                    f"Tool source: {tool_source}"
+                )
+                self.logger.error(f"[GraphAgentInstantiationService] ❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
+
+        if loaded_count > 0:
+            self.logger.info(
+                f"[GraphAgentInstantiationService] ✅ Tool loading complete: {loaded_count} nodes configured with tools"
+            )

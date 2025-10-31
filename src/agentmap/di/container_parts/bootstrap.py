@@ -1,4 +1,5 @@
 """Bootstrap container part: declarations, registries, and validation services."""
+
 from __future__ import annotations
 
 from dependency_injector import containers, providers
@@ -53,7 +54,9 @@ class BootstrapContainer(containers.DeclarativeContainer):
         registry = DeclarationRegistryService(app_config_service, logging_service)
         parser = DeclarationParser(logging_service)
         registry.add_source(PythonDeclarationSource(parser, logging_service))
-        registry.add_source(CustomAgentYAMLSource(app_config_service, parser, logging_service))
+        registry.add_source(
+            CustomAgentYAMLSource(app_config_service, parser, logging_service)
+        )
         registry.load_all()
         logging_service.get_class_logger(registry).info(
             "Initialized declaration registry"

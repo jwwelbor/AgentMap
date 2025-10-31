@@ -25,6 +25,8 @@ class Node:
         output: Optional[str] = None,
         prompt: Optional[str] = None,
         description: Optional[str] = None,
+        tool_source: Optional[str] = None,
+        available_tools: Optional[List[str]] = None,
     ) -> None:
         """
         Initialize a workflow node with properties.
@@ -37,6 +39,8 @@ class Node:
             output: Output field name
             prompt: Prompt template for the node
             description: Human-readable description of the node
+            tool_source: Path to Python module containing @tool functions
+            available_tools: List of tool names to load from tool_source
         """
         self.name = name
         self.context = context
@@ -45,6 +49,8 @@ class Node:
         self.output = output
         self.prompt = prompt
         self.description = description
+        self.tool_source = tool_source
+        self.available_tools = available_tools
         self.edges: Dict[str, str] = {}  # condition: next_node
 
     def add_edge(self, condition: str, target_node: str) -> None:

@@ -1,4 +1,5 @@
 """Core container part with configuration, logging, and shared cross-cutting services."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -53,7 +54,9 @@ class CoreContainer(containers.DeclarativeContainer):
             cache_dir = app_config_service.get_cache_path() or "agentmap_data/cache"
             cache_path = Path(cache_dir) / "unified_availability.json"
             cache_path.parent.mkdir(parents=True, exist_ok=True)
-            service = AvailabilityCacheService(cache_file_path=cache_path, logger=logger)
+            service = AvailabilityCacheService(
+                cache_file_path=cache_path, logger=logger
+            )
             try:
                 config_files = [
                     app_config_service.get_config_file_path(),

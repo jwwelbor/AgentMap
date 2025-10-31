@@ -1,0 +1,7 @@
+GraphName,Node,AgentType,Tool_Source,Available_Tools,Prompt,Input_Fields,Output_Field,Success_Next,Failure_Next,Context
+MixedDemo,Start,input,,,Enter a number and some text,number|text,inputs,ProcessNumber,HandleError,
+MixedDemo,ProcessNumber,tool_agent,examples/tools/calculator_tools.py,"add(""adds numbers"")|multiply(""multiplies numbers"")",Calculate square (multiply by itself),number,squared,ProcessText,HandleError,"{""matching_strategy"": ""algorithm""}"
+MixedDemo,ProcessText,tool_agent,examples/tools/string_tools.py,"uppercase(""makes text uppercase"")|reverse(""reverses text"")",Make text uppercase,text,upper_text,Combine,HandleError,"{""matching_strategy"": ""algorithm""}"
+MixedDemo,Combine,echo,,,Number squared: {squared} | Text: {upper_text},"squared|upper_text",result,End,,
+MixedDemo,HandleError,echo,,,Error: {error},error,error_msg,End,,
+MixedDemo,End,echo,,,Workflow complete,result,final,,

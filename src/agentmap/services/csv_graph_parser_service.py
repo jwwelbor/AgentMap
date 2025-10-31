@@ -43,6 +43,8 @@ class CSVGraphParserService:
             "Edge",
             "Success_Next",
             "Failure_Next",
+            "Tool_Source",
+            "Available_Tools",
         }
         self.all_columns = self.required_columns | self.optional_columns
 
@@ -76,6 +78,8 @@ class CSVGraphParserService:
                 "on_failure",
             ],
             "Context": ["context", "Config", "Configuration"],
+            "Tool_Source": ["tool_source", "ToolSource", "ToolFile", "ToolModule"],
+            "Available_Tools": ["available_tools", "AvailableTools", "Tools", "ToolList"],
         }
 
         self.logger.info("[CSVGraphParserService] Initialized")
@@ -310,6 +314,15 @@ class CSVGraphParserService:
         success_next = self._safe_get_field(row, "Success_Next").strip() or None
         failure_next = self._safe_get_field(row, "Failure_Next").strip() or None
 
+        # Parse tool information
+        tool_source = self._safe_get_field(row, "Tool_Source").strip() or None
+        available_tools_str = self._safe_get_field(row, "Available_Tools").strip()
+        available_tools = (
+            [tool.strip() for tool in available_tools_str.split("|") if tool.strip()]
+            if available_tools_str
+            else None
+        )
+
         node_spec = NodeSpec(
             name=node_name,
             graph_name=graph_name,
@@ -322,6 +335,8 @@ class CSVGraphParserService:
             edge=edge,
             success_next=success_next,
             failure_next=failure_next,
+            tool_source=tool_source,
+            available_tools=available_tools,
             line_number=line_number,
         )
 
@@ -512,6 +527,8 @@ class CSVGraphParserService:
                     output=node_spec.output_field,
                     prompt=node_spec.prompt,
                     description=node_spec.description,
+                    tool_source=node_spec.tool_source,
+                    available_tools=node_spec.available_tools,
                 )
 
                 # Add edge information

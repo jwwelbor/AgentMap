@@ -1,0 +1,4 @@
+GraphName,Node,AgentType,Tool_Source,Available_Tools,Prompt,Input_Fields,Output_Field,Success_Next,Context
+SimpleCalc,GetNumbers,input,,,Enter two numbers to add,a|b,numbers,Calculate,
+SimpleCalc,Calculate,tool_agent,examples/tools/calculator_tools.py,add,Add the numbers,a|b,result,ShowResult,"{""matching_strategy"": ""algorithm""}"
+SimpleCalc,ShowResult,echo,,,Result: {result},result,output,,

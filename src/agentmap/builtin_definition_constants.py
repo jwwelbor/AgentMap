@@ -237,6 +237,14 @@ class BuiltinDefinitionConstants:
             "protocols_implemented": ["LLMCapableAgent", "OrchestrationCapableAgent"],
             "source": "builtin",
         },
+        # AGM-TOOLS-001: Tool agent for intelligent tool selection and execution
+        "tool_agent": {
+            "class_path": "agentmap.agents.builtins.tool_agent.ToolAgent",
+            "category": "mixed",
+            "requires": ["orchestrator_service"],
+            "protocols_implemented": ["LLMCapableAgent", "ToolSelectionCapableAgent"],
+            "source": "builtin",
+        },
     }
 
     # ============ SERVICE DEFINITIONS ============

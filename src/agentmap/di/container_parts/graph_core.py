@@ -1,4 +1,5 @@
 """Graph core container part: graph assembly, bundle management, and execution."""
+
 from __future__ import annotations
 
 from dependency_injector import containers, providers

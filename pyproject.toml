@@ -1,14 +1,19 @@
-[tool.poetry]
+[project]
 name = "agentmap"
-version = "0.9.103" #change here and in /src/agentmap/_version.py
+version = "0.9.103"
 description = "AgentMap: Build and deploy LangGraph agentic workflows from CSV files for fun and profit!"
-authors = ["John Welborn <jwwelbor@gmail.com>"]
+authors = [{ name = "John Welborn", email = "jwwelbor@gmail.com" }]
+requires-python = ">=3.11,<4.0"
 readme = "README.md"
 license = "MIT"
-homepage = "https://jwwelbor.github.io/AgentMap"
-repository = "https://github.com/jwwelbor/AgentMap"
-documentation = "https://jwwelbor.github.io/AgentMap"
-keywords = ["ai", "agents", "workflows", "langgraph", "csv", "automation"]
+keywords = [
+    "ai",
+    "agents",
+    "workflows",
+    "langgraph",
+    "csv",
+    "automation",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -20,44 +25,32 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-packages = [{include = "agentmap", from = "src"}]
+dependencies = [
+    "python-multipart>=0.0.9",
+    "typer>=0.12.3",
+    "fastapi>=0.111.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.6.3",
+    "pandas>=2.2.1",
+    "dill>=0.3.6",
+    "langgraph>=0.3.5,<0.4.0",
+    "langchain-core>=0.1.0",
+    "langchain>=0.1.0",
+    "langchain-community>=0.3.23",
+    "pyyaml>=6.0.0",
+    "packaging>=23.0",
+    "dependency_injector>=4.41.0",
+    "toml>=0.10.2,<0.11",
+    "uvicorn>=0.34.3,<0.35",
+    "autoflake>=2.3.1,<3",
+    "pathvalidate>=3.3.1,<4",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.11,<4.0"
-python-multipart = ">=0.0.9"
-typer = ">=0.12.3"
-fastapi = ">=0.111.0"
-httpx = ">=0.27.0"
-pydantic = ">=2.6.3"
-pandas = ">=2.2.1"
-dill = ">=0.3.6"
-langgraph = ">=0.3.5,<0.4.0"
-langchain-core = ">=0.1.0"
-langchain = ">=0.1.0"
-langchain-community = ">=0.3.23"
-langchain-openai = ">=0.3.17"
-pyyaml = ">=6.0.0"
-packaging = ">=23.0"
-dependency_injector = ">=4.41.0"
-langchain-anthropic = ">=0.3.13,<0.4.0"
-toml = "^0.10.2"
-uvicorn = "^0.34.3"
-autoflake = "^2.3.1"
-
-# Optional dependencies for extras
-langsmith = {version = "*", optional = true}
-langchain-google-genai = {version = "*", optional = true}
-firebase-admin = {version = "*", optional = true}
-unstructured = {version = "*", optional = true}
-python-docx = {version = "*", optional = true}
-chromadb = {version = "*", optional = true}
-pathvalidate = "^3.3.1"
-
-[tool.poetry.extras]
+[project.optional-dependencies]
 llm = [
     "langsmith",
-    "langchain-openai",
-    "langchain-anthropic", 
+    "langchain-openai>=0.3.17",
+    "langchain-anthropic>=0.3.13,<0.4.0",
     "langchain-google-genai",
 ]
 storage = [
@@ -68,8 +61,8 @@ storage = [
 ]
 all = [
     "langsmith",
-    "langchain-openai",
-    "langchain-anthropic", 
+    "langchain-openai>=0.3.17",
+    "langchain-anthropic>=0.3.13,<0.4.0",
     "langchain-google-genai",
     "firebase-admin",
     "unstructured",
@@ -77,35 +70,47 @@ all = [
     "chromadb",
 ]
 
-[tool.poetry.scripts]
+[project.urls]
+Homepage = "https://jwwelbor.github.io/AgentMap"
+Repository = "https://github.com/jwwelbor/AgentMap"
+Documentation = "https://jwwelbor.github.io/AgentMap"
+"Bug Tracker" = "https://github.com/jwwelbor/AgentMap/issues"
+Changelog = "https://github.com/jwwelbor/AgentMap/blob/main/CHANGELOG.md"
+
+[project.scripts]
 agentmap = "agentmap.cli:app"
 agentmap-server = "agentmap.server_cli:main"
 
-[tool.poetry.group.dev.dependencies]
-pytest = ">=8.0.0"
-pytest-mock = ">=3.12.0"
-pytest-cov = ">=4.0.0"
-pytest-asyncio = ">=0.21.0"
-black = ">=23.0.0"
-isort = ">=5.12.0"
-flake8 = ">=6.0.0"
-psutil = "^7.0.0"
-mypy = ">=1.0.0"
-pre-commit = ">=3.0.0"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
-
-[tool.poetry.urls]
-"Bug Tracker" = "https://github.com/jwwelbor/AgentMap/issues"
-"Changelog" = "https://github.com/jwwelbor/AgentMap/blob/main/CHANGELOG.md"
-
-# Package data inclusion
-[tool.poetry.plugins."agentmap.prompts"]
+[project.entry-points."agentmap.prompts"]
 system = "agentmap.prompts.system"
 
-# Testing configuration
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-mock>=3.12.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "psutil>=7.0.0,<8",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/agentmap"]
+
+[tool.hatch.build.targets.wheel]
+include = ["src/agentmap"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/agentmap" = "agentmap"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
@@ -114,7 +119,6 @@ python_classes = "Test*"
 python_functions = "test_*"
 addopts = "--cov=agentmap --cov-report=term-missing --cov-report=html"
 
-# Code formatting
 [tool.black]
 line-length = 88
 target-version = ['py311']
@@ -142,7 +146,6 @@ force_grid_wrap = 0
 use_parentheses = true
 ensure_newline_before_comments = true
 
-# Type checking configuration
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true
@@ -150,7 +153,6 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 exclude = ["tests/", "build/"]
 
-# Coverage configuration
 [tool.coverage.run]
 source = ["src"]
 omit = ["*/tests/*", "*/test_*"]

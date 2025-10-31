@@ -1,0 +1,6 @@
+GraphName,Node,AgentType,Tool_Source,Available_Tools,Prompt,Input_Fields,Output_Field,Success_Next,Context
+TextFlow,GetText,input,,,Enter text to process,,text,ToUpper,
+TextFlow,ToUpper,tool_agent,examples/tools/string_tools.py,uppercase,Convert to uppercase,text,upper_text,Reverse,"{""matching_strategy"": ""algorithm""}"
+TextFlow,Reverse,tool_agent,examples/tools/string_tools.py,reverse,Reverse the text,upper_text,reversed_text,CountWords,"{""matching_strategy"": ""algorithm""}"
+TextFlow,CountWords,tool_agent,examples/tools/string_tools.py,count_words,Count words in original text,text,word_count,ShowResults,"{""matching_strategy"": ""algorithm""}"
+TextFlow,ShowResults,echo,,,Processed: {reversed_text} (Original had {word_count} words),"reversed_text|word_count",output,,

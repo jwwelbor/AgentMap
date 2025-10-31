@@ -1,4 +1,5 @@
 """Host registry container part with helper utilities."""
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Type

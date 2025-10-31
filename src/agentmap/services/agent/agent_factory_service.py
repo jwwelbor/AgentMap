@@ -210,6 +210,7 @@ class AgentFactoryService:
         state_adapter_service: Optional[Any] = None,
         prompt_manager_service: Optional[Any] = None,
         node_registry: Optional[Dict[str, Any]] = None,
+        bundle_tools: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """
         Create agent instance with full instantiation and context.
@@ -225,6 +226,7 @@ class AgentFactoryService:
             state_adapter_service: Service for state management
             prompt_manager_service: Service for prompt management (optional)
             node_registry: Node registry for OrchestratorAgent (optional)
+            bundle_tools: Optional dictionary of tools from bundle, keyed by node name (AGM-TOOLS-001)
 
         Returns:
             Configured agent instance
@@ -266,6 +268,19 @@ class AgentFactoryService:
             f"[AgentFactoryService] Instantiating {agent_class.__name__} as node '{node.name}'"
         )
 
+        # AGM-TOOLS-001: Retrieve tools for this node if bundle_tools provided
+        node_tools = None
+        if bundle_tools and node.name in bundle_tools:
+            node_tools = bundle_tools[node.name]
+            self.logger.debug(
+                f"[AgentFactoryService] Found {len(node_tools)} tools for node: {node.name}"
+            )
+        elif agent_type == "tool_agent":
+            # tool_agent expects tools but none found - log warning
+            self.logger.warning(
+                f"[AgentFactoryService] ToolAgent node '{node.name}' has no tools in bundle"
+            )
+
         # Step 3: Build constructor arguments based on agent signature inspection
         constructor_args = self._build_constructor_args(
             agent_class,
@@ -274,6 +289,7 @@ class AgentFactoryService:
             execution_tracking_service,
             state_adapter_service,
             prompt_manager_service,
+            tools=node_tools,
         )
 
         # Step 4: Create agent instance
@@ -434,6 +450,7 @@ class AgentFactoryService:
         execution_tracking_service: Optional[Any],
         state_adapter_service: Optional[Any],
         prompt_manager_service: Optional[Any],
+        tools: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Build constructor arguments based on agent signature inspection.
@@ -447,6 +464,7 @@ class AgentFactoryService:
             execution_tracking_service: Optional execution tracking service
             state_adapter_service: Optional state adapter service
             prompt_manager_service: Optional prompt manager service
+            tools: Optional list of LangChain tools for ToolAgent
 
         Returns:
             Dictionary of constructor arguments
@@ -488,6 +506,14 @@ class AgentFactoryService:
             constructor_args["prompt_manager_service"] = prompt_manager_service
             self.logger.debug(
                 f"[AgentFactoryService] Adding prompt_manager_service to {node.name}"
+            )
+
+        # AGM-TOOLS-001: Add tools for ToolAgent
+        if "tools" in agent_params:
+            constructor_args["tools"] = tools if tools is not None else []
+            tool_count = len(tools) if tools else 0
+            self.logger.debug(
+                f"[AgentFactoryService] Adding {tool_count} tools to {node.name}"
             )
 
         return constructor_args

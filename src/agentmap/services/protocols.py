@@ -16,6 +16,8 @@ from typing import (
     runtime_checkable,
 )
 
+from langchain_core.tools import Tool
+
 # Declaration system imports
 from agentmap.models.declaration_models import AgentDeclaration, ServiceDeclaration
 
@@ -580,4 +582,44 @@ class VectorStorageCapableAgent(Protocol):
         self, vector_service: VectorStorageServiceProtocol
     ) -> None:
         """Configure vector storage service for this agent."""
+        ...
+
+
+@runtime_checkable
+class ToolCapableAgent(Protocol):
+    """
+    Protocol for agents that can be configured with tools.
+
+    Agents implementing this protocol can receive and use LangChain tools
+    for enhanced functionality like web search, calculations, or custom operations.
+    """
+
+    def configure_tools(self, tools: List[Tool]) -> None:
+        """
+        Configure tools for this agent.
+
+        Args:
+            tools: List of LangChain Tool instances to make available to the agent
+        """
+        ...
+
+
+@runtime_checkable
+class ToolSelectionCapableAgent(Protocol):
+    """
+    Protocol for agents that need orchestrator service for tool selection.
+
+    Agents implementing this protocol can leverage the OrchestratorService
+    to intelligently select and route tool execution based on context.
+    """
+
+    def configure_orchestrator_service(
+        self, orchestrator_service: Any  # OrchestratorService
+    ) -> None:
+        """
+        Configure orchestrator service for this agent.
+
+        Args:
+            orchestrator_service: OrchestratorService instance for tool selection and routing
+        """
         ...

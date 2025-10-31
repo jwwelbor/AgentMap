@@ -9,7 +9,10 @@ from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.function_resolution_service import FunctionResolutionService
 from agentmap.services.graph.graph_factory_service import GraphFactoryService
 from agentmap.services.logging_service import LoggingService
-from agentmap.services.protocols import OrchestrationCapableAgent
+from agentmap.services.protocols import (
+    OrchestrationCapableAgent,
+    ToolSelectionCapableAgent,
+)
 from agentmap.services.state_adapter_service import StateAdapterService
 
 
@@ -247,7 +250,9 @@ class GraphAssemblyService:
         self.builder.add_node(name, agent_instance.run)
         class_name = agent_instance.__class__.__name__
 
-        if isinstance(agent_instance, OrchestrationCapableAgent):
+        # Only orchestrator agents (not tool selection agents) get dynamic routing
+        # ToolSelectionCapableAgent uses orchestrator service for tool selection but uses conditional routing
+        if isinstance(agent_instance, OrchestrationCapableAgent) and not isinstance(agent_instance, ToolSelectionCapableAgent):
             self.orchestrator_nodes.append(name)
             self.injection_stats["orchestrators_found"] += 1
             try:

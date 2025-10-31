@@ -29,6 +29,10 @@ class NodeSpec:
     success_next: Optional[str] = None
     failure_next: Optional[str] = None
 
+    # Tool information
+    available_tools: Optional[List[str]] = None
+    tool_source: Optional[str] = None
+
     # Metadata
     line_number: Optional[int] = None
 
