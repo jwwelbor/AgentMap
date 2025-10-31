@@ -5,6 +5,7 @@ Follows OrchestratorAgent pattern: data container with service delegation.
 Delegates tool selection to OrchestratorService and executes via LangGraph ToolNode.
 """
 
+import inspect
 import re
 import uuid
 from typing import Any, Dict, Optional
@@ -134,15 +135,93 @@ class ToolAgent(BaseAgent, LLMCapableAgent, ToolSelectionCapableAgent):
         return self._execute_tool(tool, inputs)
 
     def _execute_tool(self, tool, inputs):
-        """Execute tool using LangGraph's ToolNode."""
+        """Execute tool using LangGraph's ToolNode with parameter mapping."""
+        # Map state field names to tool parameter names
+        mapped_args = self._map_inputs_to_tool_params(tool, inputs)
+
         tool_call = {
             "name": tool.name,
-            "args": inputs,
+            "args": mapped_args,
             "id": str(uuid.uuid4()),
         }
         ai_message = AIMessage(content="", tool_calls=[tool_call])
         result = self.tool_node.invoke({"messages": [ai_message]})
         return result["messages"][-1].content
+
+    def _map_inputs_to_tool_params(self, tool, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Map state field names to tool parameter names.
+
+        For single-parameter tools, maps the input field value to the tool's parameter name.
+        For multi-parameter tools, attempts to match by name or position.
+
+        Args:
+            tool: The tool to execute
+            inputs: Dictionary of input values from state (using state field names)
+
+        Returns:
+            Dictionary with keys matching the tool's expected parameter names
+        """
+        # Get tool's expected parameters
+        try:
+            tool_params = list(inspect.signature(tool.func).parameters.keys())
+        except (AttributeError, ValueError, TypeError):
+            # If we can't inspect, return inputs as-is
+            self.log_debug("Could not inspect tool signature, using raw inputs")
+            return inputs
+
+        # If no parameters expected, return empty dict
+        if not tool_params:
+            return {}
+
+        # If tool expects exactly what we have (parameter names match), use as-is
+        if set(tool_params) == set(inputs.keys()):
+            self.log_debug(f"Parameter names match exactly: {tool_params}")
+            return inputs
+
+        # Single-parameter tool optimization
+        if len(tool_params) == 1:
+            param_name = tool_params[0]
+            # Use the first input field value mapped to the tool's parameter name
+            if self.input_fields and len(self.input_fields) > 0:
+                input_field = self.input_fields[0]
+                if input_field in inputs:
+                    mapped = {param_name: inputs[input_field]}
+                    self.log_debug(
+                        f"Mapped single parameter: '{input_field}' → '{param_name}'"
+                    )
+                    return mapped
+
+            # Fallback: use first available input value
+            if inputs:
+                first_value = next(iter(inputs.values()))
+                self.log_debug(
+                    f"Single parameter fallback: using first input as '{param_name}'"
+                )
+                return {param_name: first_value}
+
+        # Multi-parameter tool: try to match by name, then by position
+        mapped = {}
+        remaining_inputs = list(inputs.items())
+
+        for i, param_name in enumerate(tool_params):
+            # Try exact name match first
+            if param_name in inputs:
+                mapped[param_name] = inputs[param_name]
+            # Try positional mapping using input_fields order
+            elif self.input_fields and i < len(self.input_fields):
+                input_field = self.input_fields[i]
+                if input_field in inputs:
+                    mapped[param_name] = inputs[input_field]
+                    self.log_debug(
+                        f"Positional mapping: '{input_field}' → '{param_name}'"
+                    )
+            # Fallback: use remaining inputs in order
+            elif i < len(remaining_inputs):
+                mapped[param_name] = remaining_inputs[i][1]
+
+        self.log_debug(f"Multi-parameter mapping complete: {len(mapped)}/{len(tool_params)} parameters mapped")
+        return mapped
 
     def _resolve_tool_descriptions(self, tools, context):
         """
