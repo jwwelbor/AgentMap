@@ -148,7 +148,9 @@ class ToolAgent(BaseAgent, LLMCapableAgent, ToolSelectionCapableAgent):
         result = self.tool_node.invoke({"messages": [ai_message]})
         return result["messages"][-1].content
 
-    def _map_inputs_to_tool_params(self, tool, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    def _map_inputs_to_tool_params(
+        self, tool, inputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Map state field names to tool parameter names.
 
@@ -220,7 +222,9 @@ class ToolAgent(BaseAgent, LLMCapableAgent, ToolSelectionCapableAgent):
             elif i < len(remaining_inputs):
                 mapped[param_name] = remaining_inputs[i][1]
 
-        self.log_debug(f"Multi-parameter mapping complete: {len(mapped)}/{len(tool_params)} parameters mapped")
+        self.log_debug(
+            f"Multi-parameter mapping complete: {len(mapped)}/{len(tool_params)} parameters mapped"
+        )
         return mapped
 
     def _resolve_tool_descriptions(self, tools, context):

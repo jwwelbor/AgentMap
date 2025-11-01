@@ -253,7 +253,9 @@ class GraphAssemblyService:
         # Only orchestrator agents (not tool selection agents) get dynamic routing
         # OrchestrationCapableAgent has node_registry for dynamic routing
         # ToolSelectionCapableAgent uses orchestrator service for tool selection but uses conditional routing
-        if isinstance(agent_instance, OrchestrationCapableAgent) and hasattr(agent_instance, 'node_registry'):
+        if isinstance(agent_instance, OrchestrationCapableAgent) and hasattr(
+            agent_instance, "node_registry"
+        ):
             self.orchestrator_nodes.append(name)
             self.injection_stats["orchestrators_found"] += 1
             try:

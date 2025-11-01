@@ -79,7 +79,12 @@ class CSVGraphParserService:
             ],
             "Context": ["context", "Config", "Configuration"],
             "Tool_Source": ["tool_source", "ToolSource", "ToolFile", "ToolModule"],
-            "Available_Tools": ["available_tools", "AvailableTools", "Tools", "ToolList"],
+            "Available_Tools": [
+                "available_tools",
+                "AvailableTools",
+                "Tools",
+                "ToolList",
+            ],
         }
 
         self.logger.info("[CSVGraphParserService] Initialized")
