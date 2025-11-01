@@ -485,7 +485,14 @@ class PromptCapableAgent(Protocol):
 
 @runtime_checkable
 class OrchestrationCapableAgent(Protocol):
-    """Protocol for agents that can use orchestration services."""
+    """Protocol for agents that can use orchestration services for dynamic routing.
+
+    Distinguishing feature: Orchestration agents have a node_registry attribute
+    that stores available routing targets, while ToolSelectionCapableAgent
+    agents use the orchestrator only for tool selection, not dynamic routing.
+    """
+
+    node_registry: Dict[str, Any]  # Registry of available nodes for routing
 
     def configure_orchestrator_service(
         self, orchestrator_service: Any  # OrchestratorService

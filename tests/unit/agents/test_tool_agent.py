@@ -337,7 +337,8 @@ class TestToolAgent(unittest.TestCase):
         agent = ToolAgent(
             name="test_agent",
             prompt="Test",
-            tools=[self.mock_tool_1]
+            tools=[self.mock_tool_1],
+            logger=self.mock_logging.get_class_logger("test")
         )
 
         inputs = {"location": "Seattle"}

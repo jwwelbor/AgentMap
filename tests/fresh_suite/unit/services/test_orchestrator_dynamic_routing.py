@@ -104,24 +104,41 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         
         graph.nodes = nodes
         graph.entry_point = "Start"
-        
+
         # Mock the builder to avoid actual compilation
-        mock_builder = Mock()
-        self.assembly_service.builder = mock_builder
-        
-        # Mock compile to return a valid result
-        mock_builder.compile.return_value = Mock()
-        
+        # We need to mock _initialize_builder to prevent it from creating a real StateGraph
+        original_init_builder = self.assembly_service._initialize_builder
+
+        def mock_init_builder():
+            """Mock that preserves orchestrator tracking but uses mock builder."""
+            self.assembly_service.orchestrator_nodes = []
+            self.assembly_service.injection_stats = {
+                "orchestrators_found": 0,
+                "orchestrators_injected": 0,
+                "injection_failures": 0
+            }
+            # Keep using the mock builder instead of creating a real StateGraph
+            if not hasattr(self.assembly_service, '_mock_builder_set'):
+                mock_builder = Mock()
+                mock_builder.compile.return_value = Mock()
+                mock_builder.add_node = Mock()
+                mock_builder.set_entry_point = Mock()
+                mock_builder.add_conditional_edges = Mock()
+                self.assembly_service.builder = mock_builder
+                self.assembly_service._mock_builder_set = True
+
+        self.assembly_service._initialize_builder = mock_init_builder
+
         # Assemble the graph with a test registry
         test_registry = {"NodeA": {}, "NodeB": {}, "NodeC": {}}
-        
+
         # Call assemble_graph which should detect the orchestrator and inject the registry
         compiled_graph = self.assembly_service.assemble_graph(
-            graph, 
+            graph,
             mock_agents,  # Pass agent instances directly
             orchestrator_node_registry=test_registry
         )
-        
+
         # Verify ONLY the orchestrator was identified (not all 6 nodes)
         self.assertIn("Orchestrator", self.assembly_service.orchestrator_nodes)
         self.assertEqual(len(self.assembly_service.orchestrator_nodes), 1)
@@ -193,12 +210,15 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         """Test handling of orchestrator service injection failures."""
         # Create orchestrator that will fail configure_orchestrator_service
         class FailingOrchestratorAgent:
+            def __init__(self):
+                self.node_registry = {}  # Required for OrchestrationCapableAgent detection
+
             def configure_orchestrator_service(self, orchestrator_service):
                 raise RuntimeError("Service configuration failed")
-            
+
             def run(self, state):
                 return {"result": "test"}
-        
+
         failing_agent = FailingOrchestratorAgent()
         
         # Create graph with failing agent

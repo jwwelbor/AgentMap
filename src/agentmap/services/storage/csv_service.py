@@ -852,9 +852,12 @@ class CSVStorageService(BaseStorageService):
 
             # First check if there's a batch column (multi-row document_id)
             batch_column = "_document_id"
+            id_column = None  # Track which column was used for deletion
+
             if batch_column in df.columns:
                 # Delete all rows with matching document_id
                 df_filtered = df[df[batch_column] != document_id]
+                id_column = batch_column
             else:
                 # Try smart ID column detection for single row
                 id_column = id_field if id_field else self._detect_id_column(df)
@@ -894,11 +897,21 @@ class CSVStorageService(BaseStorageService):
             # Write back the filtered data
             self._write_csv_file(df_filtered, file_path, mode="w")
 
+            # Convert document_id to match the ID column type for consistency
+            result_document_id = document_id
+            if id_column and id_column in df.columns:
+                try:
+                    if pd.api.types.is_numeric_dtype(df[id_column]):
+                        result_document_id = pd.to_numeric(document_id)
+                except (ValueError, TypeError):
+                    # Keep as string if conversion fails
+                    pass
+
             return self._create_success_result(
                 "delete",
                 collection=collection,
                 file_path=file_path,
-                document_id=document_id,
+                document_id=result_document_id,
                 total_affected=deleted_count,
             )
 

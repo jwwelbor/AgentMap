@@ -76,21 +76,21 @@ def multiply(a: int, b: int) -> int:
             pass
 
     def test_csv_parsing_with_tool_fields(self):
-        """Test CSV row parsing with AvailableTools and ToolSource fields."""
+        """Test CSV row parsing with Available_Tools and Tool_Source fields."""
         csv_row_data = {
             "GraphName": "TestGraph",
             "Node": "ToolNode",
             "AgentType": "tool_agent",
-            "AvailableTools": "add|subtract|multiply",
-            "ToolSource": "calculator_tools.py",
+            "Available_Tools": "add|subtract|multiply",
+            "Tool_Source": "calculator_tools.py",
             "Prompt": "Perform calculation",
         }
 
         # Validate CSV row with tool fields
         csv_row = CSVRowModel(**csv_row_data)
 
-        assert csv_row.AvailableTools == "add|subtract|multiply"
-        assert csv_row.ToolSource == "calculator_tools.py"
+        assert csv_row.Available_Tools == "add|subtract|multiply"
+        assert csv_row.Tool_Source == "calculator_tools.py"
         assert csv_row.AgentType == "tool_agent"
 
     def test_csv_parsing_backward_compatibility(self):
@@ -105,8 +105,8 @@ def multiply(a: int, b: int) -> int:
         # Should parse successfully without tool fields
         csv_row = CSVRowModel(**csv_row_data)
 
-        assert csv_row.AvailableTools is None
-        assert csv_row.ToolSource is None
+        assert csv_row.Available_Tools is None
+        assert csv_row.Tool_Source is None
         assert csv_row.AgentType == "echo"
 
     def test_tool_loading_from_module(self, temp_tool_module):
@@ -293,60 +293,60 @@ def regular_function():
         assert "multiply" in agent.tool_descriptions["multiply"]["description"].lower()
 
     def test_csv_validation_tool_source_format(self):
-        """Test CSV validation for ToolSource format."""
+        """Test CSV validation for Tool_Source format."""
         # Valid .py file
         csv_row_valid = CSVRowModel(
             GraphName="Test",
             Node="Tool1",
-            ToolSource="my_tools.py",
-            AvailableTools="tool1|tool2",
+            Tool_Source="my_tools.py",
+            Available_Tools="tool1|tool2",
         )
-        assert csv_row_valid.ToolSource == "my_tools.py"
+        assert csv_row_valid.Tool_Source == "my_tools.py"
 
         # Valid toolnode keyword
         csv_row_toolnode = CSVRowModel(
             GraphName="Test",
             Node="Tool2",
-            ToolSource="toolnode",
-            AvailableTools="tool1",
+            Tool_Source="toolnode",
+            Available_Tools="tool1",
         )
-        assert csv_row_toolnode.ToolSource == "toolnode"
+        assert csv_row_toolnode.Tool_Source == "toolnode"
 
         # Invalid format
         with pytest.raises(ValueError) as exc_info:
             CSVRowModel(
                 GraphName="Test",
                 Node="Tool3",
-                ToolSource="invalid_format",
-                AvailableTools="tool1",
+                Tool_Source="invalid_format",
+                Available_Tools="tool1",
             )
         assert "must be either 'toolnode' or a .py file path" in str(
             exc_info.value
         ).lower()
 
     def test_csv_validation_available_tools_format(self):
-        """Test CSV validation for AvailableTools format."""
+        """Test CSV validation for Available_Tools format."""
         # Valid pipe-separated tools
         csv_row = CSVRowModel(
             GraphName="Test",
             Node="Tool1",
-            AvailableTools="tool_one|tool_two|tool_three",
-            ToolSource="tools.py",
+            Available_Tools="tool_one|tool_two|tool_three",
+            Tool_Source="tools.py",
         )
-        assert csv_row.AvailableTools == "tool_one|tool_two|tool_three"
+        assert csv_row.Available_Tools == "tool_one|tool_two|tool_three"
 
         # Invalid tool name (non-alphanumeric)
         with pytest.raises(ValueError) as exc_info:
             CSVRowModel(
                 GraphName="Test",
                 Node="Tool2",
-                AvailableTools="valid-tool|invalid.tool",
-                ToolSource="tools.py",
+                Available_Tools="valid-tool|invalid.tool",
+                Tool_Source="tools.py",
             )
         assert "invalid tool name" in str(exc_info.value).lower()
 
     def test_csv_warning_tools_without_source(self):
-        """Test warning when AvailableTools specified without ToolSource."""
+        """Test warning when Available_Tools specified without Tool_Source."""
         import warnings
 
         with warnings.catch_warnings(record=True) as w:
@@ -355,12 +355,12 @@ def regular_function():
             CSVRowModel(
                 GraphName="Test",
                 Node="ToolNode",
-                AvailableTools="tool1|tool2",
-                # ToolSource intentionally missing
+                Available_Tools="tool1|tool2",
+                # Tool_Source intentionally missing
             )
 
             assert len(w) == 1
-            assert "AvailableTools but no ToolSource" in str(w[0].message)
+            assert "Available_Tools but no Tool_Source" in str(w[0].message)
 
     def test_backward_compatibility_workflows(self, initialized_agentmap):
         """Test that existing workflows without tools continue working."""
@@ -374,8 +374,8 @@ def regular_function():
         )
 
         # Should have no tool fields
-        assert csv_row.AvailableTools is None
-        assert csv_row.ToolSource is None
+        assert csv_row.Available_Tools is None
+        assert csv_row.Tool_Source is None
 
         # Existing agent types should still work
         assert csv_row.AgentType == "echo"
