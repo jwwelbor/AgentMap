@@ -555,7 +555,7 @@ class GraphScaffoldService:
         """
         # Search through bundle nodes for matching agent type
         for node_name, node in bundle.nodes.items():
-            if node.agent_type == agent_type:
+            if node.agent_type.lower() == agent_type.lower():
                 # Convert Node object to info dict format expected by _scaffold_agent
                 return {
                     "agent_type": agent_type,
