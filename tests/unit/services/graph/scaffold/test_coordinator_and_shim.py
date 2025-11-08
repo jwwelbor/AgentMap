@@ -2,6 +2,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
+from agentmap.models.graph_bundle import GraphBundle
+from agentmap.models.node import Node
+from agentmap.models.scaffold_types import ScaffoldOptions
 from agentmap.services.graph.scaffold.coordinator import GraphScaffoldService
 from agentmap.services.graph.graph_scaffold_service import GraphScaffoldService as ShimImport
 from tests.utils.mock_service_factory import MockServiceFactory
@@ -77,6 +80,92 @@ class TestGraphScaffoldCoordinatorAndShim(unittest.TestCase):
             # Verify template composer was called
             self.mock_template_composer.compose_template.assert_called_once()
             self.mock_template_composer.compose_function_template.assert_called_once()
+
+    def test_scaffold_from_bundle_case_insensitive_agent_types(self):
+        """
+        Test that scaffold_from_bundle correctly matches agent types case-insensitively.
+
+        Regression test for bug where CSV had "OpenAIAgent" but missing_declarations
+        contained "openaiagent" (lowercase), causing scaffold to fail because comparison
+        was case-sensitive.
+        """
+        # Create service with mocked dependencies
+        svc = GraphScaffoldService(
+            app_config_service=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            function_resolution_service=self.mock_function_resolution_service,
+            agent_registry_service=self.mock_agent_registry_service,
+            template_composer=self.mock_template_composer,
+            custom_agent_declaration_manager=self.mock_custom_agent_declaration_manager,
+            bundle_update_service=self.mock_bundle_update_service,
+        )
+
+        # Create a bundle with mixed case agent types (as they appear in CSV)
+        # The CSV parser preserves case, but static_bundle_analyzer normalizes to lowercase
+        node1 = Node(
+            name="WeatherNode",
+            agent_type="OpenAIAgent",  # CamelCase as in CSV
+            context="Get weather data",
+            prompt="Get weather for {location}",
+            inputs=["location"],
+            output="weather_data"
+        )
+
+        node2 = Node(
+            name="AnalyzerNode",
+            agent_type="WeatherAnalyzer",  # CamelCase as in CSV
+            context="Analyze weather",
+            prompt="Analyze the weather data",
+            inputs=["weather_data"],
+            output="analysis"
+        )
+
+        # Create bundle with lowercase missing_declarations (as static_bundle_analyzer does)
+        bundle = GraphBundle(
+            graph_name="TestGraph",
+            nodes={"WeatherNode": node1, "AnalyzerNode": node2},
+            csv_hash="test_hash_123",
+            entry_point="WeatherNode",
+            validation_metadata={},
+            missing_declarations={"openaiagent", "weatheranalyzer"},  # lowercase!
+            agent_mappings={},
+            builtin_agents=set(),
+            custom_agents={"openaiagent", "weatheranalyzer"}
+        )
+
+        # Mock bundle update service to return the bundle as-is
+        self.mock_bundle_update_service.update_bundle_from_declarations.return_value = bundle
+
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+
+            options = ScaffoldOptions(
+                graph_name="TestGraph",
+                output_path=tmp_path,
+                overwrite_existing=False
+            )
+
+            # This should succeed - the case-insensitive comparison should find the nodes
+            result = svc.scaffold_from_bundle(bundle, options)
+
+            # Verify that agents were scaffolded (not skipped due to case mismatch)
+            self.assertEqual(result.scaffolded_count, 2,
+                "Should scaffold 2 agents despite case mismatch between "
+                "missing_declarations (lowercase) and node.agent_type (CamelCase)")
+
+            # Verify files were created with lowercase names
+            expected_file1 = tmp_path / "openaiagent_agent.py"
+            expected_file2 = tmp_path / "weatheranalyzer_agent.py"
+
+            self.assertTrue(expected_file1.exists(),
+                f"Should create openaiagent_agent.py, created files: {result.created_files}")
+            self.assertTrue(expected_file2.exists(),
+                f"Should create weatheranalyzer_agent.py, created files: {result.created_files}")
+
+            # Verify no errors occurred
+            self.assertEqual(len(result.errors), 0,
+                f"Should have no errors, but got: {result.errors}")
 
 
 if __name__ == '__main__':
