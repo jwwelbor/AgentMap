@@ -1,0 +1,6 @@
+GraphName,Node,AgentType,Input_Fields,Output_Field,Success_Next,Failure_Next,Prompt,Context
+gm_orchestration,GetInput,input,,user_input,Router,,What would you like to do?,
+gm_orchestration,Router,orchestrator,user_input,selected_action,,,Route to the best action based on user input,"{""matching_strategy"":""tiered"",""confidence_threshold"":0.7}"
+gm_orchestration,GetDrink,default,user_input,result,End,,Getting you a drink: {user_input},
+gm_orchestration,GetFood,default,user_input,result,End,,Getting you food: {user_input},
+gm_orchestration,End,success,result,,,,Task completed: {result},

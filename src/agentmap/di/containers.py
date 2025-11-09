@@ -65,6 +65,16 @@ class ApplicationContainer(containers.DeclarativeContainer):
         logging_service=_expose(_core, "logging_service"),
     )
 
+    # Create orchestrator_service early to avoid circular dependency
+    # (GraphCoreContainer needs it, but GraphAgentContainer is defined later)
+    _orchestrator_service = providers.Singleton(
+        "agentmap.services.orchestrator_service.OrchestratorService",
+        _expose(_core, "prompt_manager_service"),
+        _expose(_core, "logging_service"),
+        _expose(_llm, "llm_service"),
+        _expose(_bootstrap, "features_registry_service"),
+    )
+
     _graph_core = providers.Container(
         GraphCoreContainer,
         app_config_service=_expose(_core, "app_config_service"),
@@ -84,6 +94,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         json_storage_service=_expose(_storage, "json_storage_service"),
         system_storage_manager=_expose(_storage, "system_storage_manager"),
         file_path_service=_expose(_core, "file_path_service"),
+        orchestrator_service=_orchestrator_service,
     )
 
     _graph_agent = providers.Container(
@@ -102,6 +113,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         execution_tracking_service=_expose(_graph_core, "execution_tracking_service"),
         state_adapter_service=_expose(_graph_core, "state_adapter_service"),
         graph_bundle_service=_expose(_graph_core, "graph_bundle_service"),
+        orchestrator_service=_orchestrator_service,
     )
 
     # --- Core re-exports --------------------------------------------------------
@@ -188,7 +200,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # --- Graph agent re-exports -------------------------------------------------
 
-    orchestrator_service = _expose(_graph_agent, "orchestrator_service")
+    orchestrator_service = _orchestrator_service
     agent_factory_service = _expose(_graph_agent, "agent_factory_service")
     agent_service_injection_service = _expose(
         _graph_agent, "agent_service_injection_service"

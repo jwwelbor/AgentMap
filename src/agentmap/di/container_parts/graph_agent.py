@@ -20,14 +20,7 @@ class GraphAgentContainer(containers.DeclarativeContainer):
     execution_tracking_service = providers.Dependency()
     state_adapter_service = providers.Dependency()
     graph_bundle_service = providers.Dependency()
-
-    orchestrator_service = providers.Singleton(
-        "agentmap.services.orchestrator_service.OrchestratorService",
-        prompt_manager_service,
-        logging_service,
-        llm_service,
-        features_registry_service,
-    )
+    orchestrator_service = providers.Dependency()
 
     agent_factory_service = providers.Singleton(
         "agentmap.services.agent.agent_factory_service.AgentFactoryService",
