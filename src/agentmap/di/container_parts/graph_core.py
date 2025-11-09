@@ -21,6 +21,7 @@ class GraphCoreContainer(containers.DeclarativeContainer):
     json_storage_service = providers.Dependency()
     system_storage_manager = providers.Dependency()
     file_path_service = providers.Dependency()
+    orchestrator_service = providers.Dependency()
 
     execution_formatter_service = providers.Singleton(
         "agentmap.services.execution_formatter_service.ExecutionFormatterService"
@@ -55,7 +56,7 @@ class GraphCoreContainer(containers.DeclarativeContainer):
         features_registry_service,
         function_resolution_service,
         graph_factory_service,
-        "agentmap.services.orchestrator_service.OrchestratorService",
+        orchestrator_service,
     )
 
     protocol_requirements_analyzer = providers.Singleton(
