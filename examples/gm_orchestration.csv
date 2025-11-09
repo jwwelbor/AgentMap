@@ -1,0 +1,5 @@
+GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+gm_orchestration,UserInput,Orchestrator,,input,,,input,input,What do you want to do?
+gm_orchestration,Orchestrator,,,orchestrator,,ErrorHandler,input,orchestrator_result,
+gm_orchestration,EndNode,,,default,,,input,,End the session
+gm_orchestration,ErrorHandler,,,echo,,,output,,Handle the error
