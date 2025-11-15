@@ -390,39 +390,34 @@ class TestAnthropicAgent(unittest.TestCase):
         # Configure state adapter behavior
         def mock_get_inputs(state, input_fields):
             return {field: state.get(field) for field in input_fields if field in state}
-        
-        def mock_set_value(state, field, value):
-            updated_state = state.copy()
-            updated_state[field] = value
-            return updated_state
-        
+
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
-        
+
         # The execution tracking service methods are already configured by MockServiceFactory
-        
+
         # Test state
         test_state = {
             "prompt": "What is constitutional AI?",
             "context": "Anthropic's approach to AI alignment",
             "other_field": "preserved"
         }
-        
+
         # Execute run method
         result_state = agent.run(test_state)
-        
+
         # Verify LLM was called with Anthropic provider
         self.mock_llm_service.call_llm.assert_called_once()
         call_args = self.mock_llm_service.call_llm.call_args
         self.assertEqual(call_args.kwargs["provider"], "anthropic")
-        
-        # Verify state was updated with response
+
+        # NEW BEHAVIOR: Returns partial state update (only output field)
         self.assertIn("response", result_state)
         self.assertEqual(result_state["response"], "Mock Anthropic response for testing")
-        
-        # Verify original fields are preserved
-        self.assertEqual(result_state["other_field"], "preserved")
-        
+
+        # Original fields are NOT in result - only output field
+        self.assertNotIn("other_field", result_state)
+        self.assertEqual(len(result_state), 1)  # Only response field
+
         # Verify tracking calls (inherited behavior via execution tracking service)
         self.mock_execution_tracking_service.record_node_start.assert_called_once()
         self.mock_execution_tracking_service.record_node_result.assert_called_once()

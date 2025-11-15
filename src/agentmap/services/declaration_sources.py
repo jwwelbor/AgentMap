@@ -119,7 +119,7 @@ class PythonDeclarationSource(DeclarationSource):
             try:
                 declaration = self.parser.parse_agent(agent_type, agent_data, "builtin")
                 agents[agent_type] = declaration
-                self.logger.debug(f"Loaded built-in agent: {agent_type}")
+                self.logger.trace(f"Loaded built-in agent: {agent_type}")
             except Exception as e:
                 self.logger.error(f"Failed to load built-in agent '{agent_type}': {e}")
                 continue
@@ -143,7 +143,7 @@ class PythonDeclarationSource(DeclarationSource):
                     service_name, service_data, "builtin"
                 )
                 services[service_name] = declaration
-                self.logger.debug(f"Loaded built-in service: {service_name}")
+                self.logger.trace(f"Loaded built-in service: {service_name}")
             except Exception as e:
                 self.logger.error(
                     f"Failed to load built-in service '{service_name}': {e}"
@@ -212,7 +212,7 @@ class YAMLDeclarationSource(DeclarationSource):
                     full_agent_type, agent_data, f"yaml:{self.path}"
                 )
                 agents[full_agent_type] = declaration
-                self.logger.debug(f"Loaded YAML agent: {full_agent_type}")
+                self.logger.trace(f"Loaded YAML agent: {full_agent_type}")
             except Exception as e:
                 self.logger.error(f"Failed to load YAML agent '{agent_type}': {e}")
                 continue
@@ -250,7 +250,7 @@ class YAMLDeclarationSource(DeclarationSource):
                     full_service_name, service_data, f"yaml:{self.path}"
                 )
                 services[full_service_name] = declaration
-                self.logger.debug(f"Loaded YAML service: {full_service_name}")
+                self.logger.trace(f"Loaded YAML service: {full_service_name}")
             except Exception as e:
                 self.logger.error(f"Failed to load YAML service '{service_name}': {e}")
                 continue
@@ -359,7 +359,7 @@ class CustomAgentYAMLSource(DeclarationSource):
                     agent_type, normalized_data, f"yaml:{file_path}"
                 )
                 agents[agent_type] = declaration
-                self.logger.debug(f"Loaded custom agent: {agent_type}")
+                self.logger.trace(f"Loaded custom agent: {agent_type}")
             except Exception as e:
                 self.logger.error(f"Failed to load custom agent '{agent_type}': {e}")
                 continue

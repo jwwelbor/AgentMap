@@ -1,0 +1,7 @@
+GraphName,Node,AgentType,Edge,Success_Next,Failure_Next,Output_Field,Description
+SimpleFanOut,Start,input,ProcessA|ProcessB|ProcessC,,,input_data,Initial data distribution node
+SimpleFanOut,ProcessA,echo,Consolidate,,,result_a,Process branch A
+SimpleFanOut,ProcessB,echo,Consolidate,,,result_b,Process branch B
+SimpleFanOut,ProcessC,echo,Consolidate,,,result_c,Process branch C
+SimpleFanOut,Consolidate,aggregator,End,,,consolidated_results,Consolidate parallel results
+SimpleFanOut,End,output,,,,final_output,Final output node

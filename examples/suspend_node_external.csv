@@ -1,0 +1,5 @@
+workflow,graph,name,agent_type,prompt,context,input_fields,output_field,edges
+external_processing_example,main,start,input,Enter approval request data,,request_input,approval_data,
+external_processing_example,main,wait_external_approval,suspend,Waiting for external approval system,"{""send_suspend_message"": true, ""suspend_message_template"": ""default_node_suspend"", ""suspend_message_topic"": ""approval_events""}",approval_data,approval_decision,start
+external_processing_example,main,process_approval,default,Process approval decision,,"approval_decision",result,wait_external_approval
+external_processing_example,main,end,echo,Approval complete,,"result",,process_approval

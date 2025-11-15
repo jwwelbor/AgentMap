@@ -1,0 +1,5 @@
+workflow,graph,name,agent_type,prompt,context,input_fields,output_field,edges
+graph_trigger_example,main,start,input,Provide sub-workflow data,,user_input,workflow_data,
+graph_trigger_example,main,trigger_sub_workflow,suspend,Launch sub-workflow processing,"{""send_graph_message"": true, ""graph_message_template"": ""default_graph_trigger"", ""graph_message_topic"": ""graph_triggers""}",workflow_data,sub_result,start
+graph_trigger_example,main,process_result,default,Process sub-workflow results,,"sub_result",final_output,trigger_sub_workflow
+graph_trigger_example,main,end,echo,Complete,,"final_output",,process_result

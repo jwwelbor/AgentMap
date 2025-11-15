@@ -1,0 +1,7 @@
+GraphName,Node,AgentType,Edge,Success_Next,Failure_Next,Output_Field,Input_Fields,Description
+MapReduce,DataPrep,input,Analyzer1|Analyzer2|Analyzer3,,,prepared_data,,Prepare data for parallel analysis
+MapReduce,Analyzer1,echo,Summary,,,analysis_a,prepared_data,Analyze data - branch 1
+MapReduce,Analyzer2,echo,Summary,,,analysis_b,prepared_data,Analyze data - branch 2
+MapReduce,Analyzer3,echo,Summary,,,analysis_c,prepared_data,Analyze data - branch 3
+MapReduce,Summary,aggregator,Output,,,summary_report,analysis_a|analysis_b|analysis_c,Summarize all analyses
+MapReduce,Output,output,,,,final_report,summary_report,Generate final output

@@ -48,7 +48,7 @@ class DeclarationParser:
         Raises:
             ValueError: If data format is invalid or required fields are missing
         """
-        self.logger.debug(f"Parsing agent declaration for type: {agent_type}")
+        self.logger.trace(f"Parsing agent declaration for type: {agent_type}")
 
         try:
             if isinstance(data, str):
@@ -123,7 +123,7 @@ class DeclarationParser:
         Raises:
             ValueError: If data format is invalid or required fields are missing
         """
-        self.logger.debug(f"Parsing service declaration for: {service_name}")
+        self.logger.trace(f"Parsing service declaration for: {service_name}")
 
         try:
             if isinstance(data, str):

@@ -70,15 +70,24 @@ class FailureAgent(BaseAgent):
 
         Returns:
             Tuple of (state, output) with success flag set to False
+
+        Note: For partial state update pattern (parallel execution), we return a dict
+        with both the result message and the last_action_success flag.
         """
-        # We'll set this flag now to make it available in the state, but BaseAgent will set it again
-        state = StateAdapterService.set_value(state, "last_action_success", False)
-
-        # We can modify the output if needed
+        # Modify the output message
         if output:
-            output = f"{output} (Will force FAILURE branch)"
+            result_message = f"{output} (Will force FAILURE branch)"
+        else:
+            result_message = output
 
-        return state, output
+        # Return a dict with state updates for parallel execution
+        # BaseAgent will recognize the 'state_updates' key and merge all fields
+        return state, {
+            'state_updates': {
+                self.output_field: result_message,
+                'last_action_success': False
+            }
+        }
 
     def _get_child_service_info(self) -> Optional[Dict[str, Any]]:
         """

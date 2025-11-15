@@ -264,20 +264,27 @@ class BranchingAgent(BaseAgent):
 
         Returns:
             Tuple of (state, output) with success flag set
+
+        Note: For partial state update pattern (parallel execution), we return a dict
+        with both the result message and the last_action_success flag.
         """
         # Determine success based on inputs
         success = self._determine_success(inputs)
 
-        # Set the last_action_success flag based on decision
-        state = StateAdapterService.set_value(state, "last_action_success", success)
-
         # Modify output to indicate branch direction
         if not success:
-            output = f"{output} (Will trigger FAILURE branch)"
+            result_message = f"{output} (Will trigger FAILURE branch)"
         else:
-            output = f"{output} (Will trigger SUCCESS branch)"
+            result_message = f"{output} (Will trigger SUCCESS branch)"
 
-        return state, output
+        # Return a dict with state updates for parallel execution
+        # BaseAgent will recognize the 'state_updates' key and merge all fields
+        return state, {
+            'state_updates': {
+                self.output_field: result_message,
+                'last_action_success': success
+            }
+        }
 
     def get_configuration_info(self) -> Dict[str, Any]:
         """

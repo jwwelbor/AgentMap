@@ -1,0 +1,7 @@
+workflow,graph,name,agent_type,prompt,context,input_fields,output_field,routing,edges
+serverless_approval,main,start,InputAgent,Start approval workflow,{},,"approval_request",,
+serverless_approval,main,validate,LLMAgent,Validate approval request,"{llm_provider: ""openai"", model: ""gpt-4""}","approval_request","validation_result",,start
+serverless_approval,main,wait_approval,SuspendAgent,Suspend and trigger serverless approval,"{send_suspend_message: true, send_resume_message: true, send_graph_message: true, suspend_message_topic: ""workflow_events"", resume_message_topic: ""workflow_events"", graph_message_topic: ""serverless_triggers"", graph_message_template: ""lambda_trigger""}","validation_result","approval_decision",,validate
+serverless_approval,main,process_approval,LLMAgent,Process approval decision,"{llm_provider: ""openai""}","approval_decision,approval_request","processed_result",,wait_approval
+serverless_approval,main,notify,LLMAgent,Send approval notification,"{llm_provider: ""anthropic""}","processed_result","notification_result",,process_approval
+serverless_approval,main,end,OutputAgent,Complete workflow,{},"notification_result",,,notify

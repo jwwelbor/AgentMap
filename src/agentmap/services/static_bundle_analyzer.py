@@ -7,7 +7,7 @@ eliminating circular dependencies and providing 10x performance improvement.
 
 import hashlib
 from pathlib import Path
-from typing import Optional, Set, Tuple
+from typing import Any, Dict, Optional, Set, Tuple
 from uuid import uuid4
 
 from agentmap.models.graph_bundle import GraphBundle
@@ -172,6 +172,8 @@ class StaticBundleAnalyzer:
             "agent_type_count": len(agent_types),
             "created_via": "static_analysis",
             "has_missing": len(missing_declarations) > 0,
+            "has_parallel_routing": self._has_parallel_routing(nodes),
+            "parallel_edge_count": self._count_parallel_edges(nodes),
         }
 
         # protocol map will contain all protocol mappings
@@ -335,3 +337,86 @@ class StaticBundleAnalyzer:
             f"Could not determine if agent '{agent_type}' is builtin, assuming custom"
         )
         return False
+
+    def _has_parallel_routing(self, nodes: dict[str, Node]) -> bool:
+        """Check if graph contains any parallel routing edges.
+
+        Args:
+            nodes: Dictionary of node name to Node objects
+
+        Returns:
+            True if any node has parallel edges, False otherwise
+        """
+        for node in nodes.values():
+            for condition, targets in node.edges.items():
+                if isinstance(targets, list) and len(targets) > 1:
+                    return True
+        return False
+
+    def _count_parallel_edges(self, nodes: dict[str, Node]) -> int:
+        """Count number of parallel edges in the graph.
+
+        Args:
+            nodes: Dictionary of node name to Node objects
+
+        Returns:
+            Count of edges with multiple targets
+        """
+        count = 0
+        for node in nodes.values():
+            for condition, targets in node.edges.items():
+                if isinstance(targets, list) and len(targets) > 1:
+                    count += 1
+        return count
+
+    def _analyze_parallel_patterns(self, nodes: dict[str, Node]) -> Dict[str, Any]:
+        """Analyze parallel routing patterns in the graph.
+
+        Identifies fan-out, fan-in, and parallel opportunities for optimization.
+
+        Args:
+            nodes: Dictionary of node name to Node objects
+
+        Returns:
+            Dictionary with parallel pattern analysis:
+            - fan_out_nodes: Nodes that route to multiple targets
+            - fan_in_nodes: Nodes that receive from multiple sources
+            - parallel_groups: Groups of nodes that execute in parallel
+            - max_parallelism: Maximum number of parallel branches
+        """
+        fan_out_nodes = []
+        fan_in_count = {}
+        parallel_groups = []
+        max_parallelism = 1
+
+        # Find fan-out nodes (nodes with parallel edges)
+        for node_name, node in nodes.items():
+            for condition, targets in node.edges.items():
+                if isinstance(targets, list) and len(targets) > 1:
+                    fan_out_nodes.append({
+                        "node": node_name,
+                        "condition": condition,
+                        "targets": targets,
+                        "parallelism": len(targets)
+                    })
+                    parallel_groups.append(targets)
+                    max_parallelism = max(max_parallelism, len(targets))
+
+                    # Track fan-in (nodes receiving from parallel source)
+                    for target in targets:
+                        fan_in_count[target] = fan_in_count.get(target, 0) + 1
+
+        # Identify actual fan-in nodes (nodes with multiple incoming edges)
+        fan_in_nodes = [
+            {"node": node, "incoming_count": count}
+            for node, count in fan_in_count.items()
+            if count > 1
+        ]
+
+        return {
+            "fan_out_nodes": fan_out_nodes,
+            "fan_in_nodes": fan_in_nodes,
+            "parallel_groups": parallel_groups,
+            "max_parallelism": max_parallelism,
+            "has_parallel": len(fan_out_nodes) > 0
+        }

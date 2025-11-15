@@ -1,0 +1,7 @@
+workflow,graph,name,agent_type,prompt,context,input_fields,output_field,routing,edges
+api_integration,main,start,InputAgent,Start API integration,{},,"api_request",,
+api_integration,main,prepare,LLMAgent,Prepare API request,"{llm_provider: ""anthropic""}","api_request","prepared_request",,start
+api_integration,main,wait_api_response,SuspendAgent,Wait for external API callback,"{send_suspend_message: true, send_resume_message: true, suspend_message_topic: ""api_callbacks"", resume_message_topic: ""api_callbacks""}","prepared_request","api_response",,prepare
+api_integration,main,process_response,LLMAgent,Process API response,"{llm_provider: ""anthropic""}","api_response","processed_data",,wait_api_response
+api_integration,main,store_results,LLMAgent,Store processed results,"{llm_provider: ""openai""}","processed_data","stored_results",,process_response
+api_integration,main,end,OutputAgent,Complete workflow,{},"stored_results",,,store_results

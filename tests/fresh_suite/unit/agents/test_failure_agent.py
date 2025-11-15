@@ -225,71 +225,65 @@ class TestFailureAgent(unittest.TestCase):
     # 3. Post-Processing Behavior Tests (Unique to FailureAgent)
     # =============================================================================
     
-    @patch.object(StateAdapterService, 'set_value')
-    def test_post_process_sets_failure_flag(self, mock_set_value):
+    def test_post_process_sets_failure_flag(self):
         """Test that _post_process method sets last_action_success=False."""
-        # Mock set_value to return modified state
-        def mock_set_value_impl(state, key, value):
-            updated_state = state.copy() if isinstance(state, dict) else state
-            if isinstance(updated_state, dict):
-                updated_state[key] = value
-            return updated_state
-        
-        mock_set_value.side_effect = mock_set_value_impl
-        
         # Setup test data
         test_state = {"current_step": "processing", "last_action_success": True}
         test_inputs = {"operation": "test_op"}
         original_output = "Original output message"
-        
+
         # Call _post_process directly
         result_state, result_output = self.agent._post_process(test_state, test_inputs, original_output)
-        
-        # Verify StateAdapterService.set_value was called with failure flag
-        mock_set_value.assert_called_once_with(test_state, "last_action_success", False)
-        
-        # Verify output was modified to indicate failure branch
-        expected_output = "Original output message (Will force FAILURE branch)"
-        self.assertEqual(result_output, expected_output)
-        
-        # Verify state was returned (possibly modified)
+
+        # Verify output is a dict with state_updates
+        self.assertIsInstance(result_output, dict)
+        self.assertIn('state_updates', result_output)
+
+        # Verify state updates contain both result and last_action_success
+        state_updates = result_output['state_updates']
+        self.assertEqual(state_updates['last_action_success'], False)
+        expected_message = "Original output message (Will force FAILURE branch)"
+        self.assertEqual(state_updates['failure_result'], expected_message)
+
+        # Verify state was returned unchanged
         self.assertIsNotNone(result_state)
+        self.assertEqual(result_state, test_state)
     
-    @patch.object(StateAdapterService, 'set_value')
-    def test_post_process_with_none_output(self, mock_set_value):
+    def test_post_process_with_none_output(self):
         """Test _post_process behavior when output is None."""
-        mock_set_value.return_value = {"last_action_success": False}
-        
         test_state = {"current_step": "processing"}
         test_inputs = {"operation": "test_op"}
         original_output = None
-        
+
         # Call _post_process with None output
         result_state, result_output = self.agent._post_process(test_state, test_inputs, original_output)
-        
-        # Verify StateAdapterService.set_value was still called
-        mock_set_value.assert_called_once_with(test_state, "last_action_success", False)
-        
-        # Verify output remains None when original output is None
-        self.assertIsNone(result_output)
+
+        # Verify output is a dict with state_updates
+        self.assertIsInstance(result_output, dict)
+        self.assertIn('state_updates', result_output)
+
+        # Verify state updates contain last_action_success=False and None for output field
+        state_updates = result_output['state_updates']
+        self.assertEqual(state_updates['last_action_success'], False)
+        self.assertIsNone(state_updates['failure_result'])
     
-    @patch.object(StateAdapterService, 'set_value')
-    def test_post_process_with_empty_output(self, mock_set_value):
+    def test_post_process_with_empty_output(self):
         """Test _post_process behavior when output is empty string."""
-        mock_set_value.return_value = {"last_action_success": False}
-        
         test_state = {"current_step": "processing"}
         test_inputs = {"operation": "test_op"}
         original_output = ""
-        
+
         # Call _post_process with empty output
         result_state, result_output = self.agent._post_process(test_state, test_inputs, original_output)
-        
-        # Verify StateAdapterService.set_value was called
-        mock_set_value.assert_called_once_with(test_state, "last_action_success", False)
-        
-        # Verify empty output is not modified (falsy check)
-        self.assertEqual(result_output, "")
+
+        # Verify output is a dict with state_updates
+        self.assertIsInstance(result_output, dict)
+        self.assertIn('state_updates', result_output)
+
+        # Verify state updates contain last_action_success=False and empty string for output field
+        state_updates = result_output['state_updates']
+        self.assertEqual(state_updates['last_action_success'], False)
+        self.assertEqual(state_updates['failure_result'], "")
     
     def test_post_process_output_modification(self):
         """Test that _post_process correctly modifies output message."""
@@ -307,20 +301,23 @@ class TestFailureAgent(unittest.TestCase):
                 'expected': 'Message with special chars !@#$% (Will force FAILURE branch)'
             }
         ]
-        
-        with patch.object(StateAdapterService, 'set_value') as mock_set_value:
-            mock_set_value.return_value = {"last_action_success": False}
-            
-            for case in test_cases:
-                with self.subTest(original=case['original']):
-                    test_state = {}
-                    test_inputs = {}
-                    
-                    result_state, result_output = self.agent._post_process(
-                        test_state, test_inputs, case['original']
-                    )
-                    
-                    self.assertEqual(result_output, case['expected'])
+
+        for case in test_cases:
+            with self.subTest(original=case['original']):
+                test_state = {}
+                test_inputs = {}
+
+                result_state, result_output = self.agent._post_process(
+                    test_state, test_inputs, case['original']
+                )
+
+                # Verify output is a dict with state_updates
+                self.assertIsInstance(result_output, dict)
+                self.assertIn('state_updates', result_output)
+
+                # Verify the output field contains the expected message
+                state_updates = result_output['state_updates']
+                self.assertEqual(state_updates['failure_result'], case['expected'])
     
     # =============================================================================
     # 4. Infrastructure Integration Tests
@@ -471,39 +468,32 @@ class TestFailureAgent(unittest.TestCase):
             "other_field": "should be preserved",
             "last_action_success": True  # Will be overridden by FailureAgent
         }
-        
+
         # Configure state adapter to return proper inputs
         def mock_get_inputs(state, input_fields):
             return {field: state.get(field) for field in input_fields if field in state}
-        
-        def mock_set_value(state, field, value):
-            updated_state = state.copy()
-            updated_state[field] = value
-            return updated_state
-        
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
-        
-        # Mock the StateAdapterService.set_value static method for post-processing
-        with patch.object(StateAdapterService, 'set_value', side_effect=mock_set_value):
-            # IMPORTANT: Set execution tracker before calling run() - required by BaseAgent
-            self.agent.set_execution_tracker(self.mock_tracker)
-            
-            # Execute run method
-            result_state = self.agent.run(test_state)
-        
+
+        # IMPORTANT: Set execution tracker before calling run() - required by BaseAgent
+        self.agent.set_execution_tracker(self.mock_tracker)
+
+        # Execute run method
+        result_state = self.agent.run(test_state)
+
         # Verify state was updated with failure message
         self.assertIn("failure_result", result_state)
         failure_message = result_state["failure_result"]
         self.assertIn("test_failure executed (will set last_action_success=False)", failure_message)
         self.assertIn("(Will force FAILURE branch)", failure_message)
-        
+
         # Verify failure flag was set by post-processing
         self.assertEqual(result_state["last_action_success"], False)
-        
-        # Verify original fields are preserved
-        self.assertEqual(result_state["other_field"], "should be preserved")
-        
+
+        # Original fields are NOT in result - FailureAgent returns TWO fields
+        # (failure_result and last_action_success)
+        self.assertNotIn("other_field", result_state)
+        self.assertEqual(len(result_state), 2)  # failure_result + last_action_success
+
         # Verify tracking methods were called on the execution tracking service
         self.mock_execution_tracking_service.record_node_start.assert_called()
         self.mock_execution_tracking_service.record_node_result.assert_called()

@@ -427,16 +427,11 @@ class TestSuspendAgentMessaging(unittest.TestCase):
         # Act
         result_state = agent.run(initial_state)
 
-        # Assert - verify raw value returned (not wrapped)
-        self.mock_state_adapter_service.set_value.assert_called_with(
-            initial_state,
-            "result",
-            resume_payload,  # Should be raw value, not {"resume_value": ...}
-        )
-
-        # Verify result state contains raw value
+        # NEW BEHAVIOR: Returns partial state update (only output field)
+        # set_value is not called - just returns {output_field: value}
         self.assertIn("result", result_state)
         self.assertEqual(result_state["result"], resume_payload)
+        self.assertEqual(len(result_state), 1)  # Only output field
 
         # Verify NOT wrapped structure
         self.assertNotIn("resume_value", result_state["result"])
@@ -468,11 +463,11 @@ class TestSuspendAgentMessaging(unittest.TestCase):
         # Act
         result_state = agent.run(initial_state)
 
-        # Assert - when output is None, BaseAgent.run() does NOT call set_value
-        # It returns the state as-is (since output is None at line 248-252 of BaseAgent)
-        # So we expect the result to still be None from the initial state
-        self.assertIn("result", result_state)
-        self.assertIsNone(result_state["result"])
+        # NEW BEHAVIOR: When output is None, BaseAgent.run() returns empty dict
+        # (Line 250-266 in base_agent.py: if output_field and output is not None)
+        # Since output is None, it skips setting the field and returns {}
+        self.assertEqual(result_state, {})
+        self.assertEqual(len(result_state), 0)
 
     # --- Custom Topic and Template Tests ---
 

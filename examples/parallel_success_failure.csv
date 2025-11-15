@@ -1,0 +1,9 @@
+GraphName,Node,AgentType,Edge,Success_Next,Failure_Next,Output_Field,Input_Fields,Description
+ConditionalParallel,Validator,validator,,SuccessA|SuccessB,ErrorA|ErrorB,validation_result,,Validate input with conditional parallel routing
+ConditionalParallel,SuccessA,echo,Consolidate,,,success_a,validation_result,Success branch A
+ConditionalParallel,SuccessB,echo,Consolidate,,,success_b,validation_result,Success branch B
+ConditionalParallel,ErrorA,echo,ErrorHandler,,,error_a,validation_result,Error branch A
+ConditionalParallel,ErrorB,echo,ErrorHandler,,,error_b,validation_result,Error branch B
+ConditionalParallel,Consolidate,aggregator,End,,,consolidated_success,success_a|success_b,Consolidate success paths
+ConditionalParallel,ErrorHandler,aggregator,End,,,handled_errors,error_a|error_b,Handle all errors
+ConditionalParallel,End,output,,,,final_output,consolidated_success|handled_errors,Final output node

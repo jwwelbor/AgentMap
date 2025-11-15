@@ -8,7 +8,7 @@ interface between CSV parsing and graph building.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 
 @dataclass
@@ -25,9 +25,10 @@ class NodeSpec:
     output_field: Optional[str] = None
 
     # Edge information (raw from CSV)
-    edge: Optional[str] = None
-    success_next: Optional[str] = None
-    failure_next: Optional[str] = None
+    # Support both single target (str) and multiple targets (list[str]) for parallel execution
+    edge: Optional[Union[str, List[str]]] = None
+    success_next: Optional[Union[str, List[str]]] = None
+    failure_next: Optional[Union[str, List[str]]] = None
 
     # Tool information
     available_tools: Optional[List[str]] = None
@@ -35,6 +36,35 @@ class NodeSpec:
 
     # Metadata
     line_number: Optional[int] = None
+
+    def is_parallel_edge(self, edge_type: str) -> bool:
+        """Check if specified edge type has multiple targets.
+
+        Args:
+            edge_type: One of 'edge', 'success_next', 'failure_next'
+
+        Returns:
+            True if edge has multiple targets, False otherwise
+        """
+        edge_value = getattr(self, edge_type, None)
+        return isinstance(edge_value, list) and len(edge_value) > 1
+
+    def get_edge_targets(self, edge_type: str) -> List[str]:
+        """Get edge targets as a list (always returns list).
+
+        Args:
+            edge_type: One of 'edge', 'success_next', 'failure_next'
+
+        Returns:
+            List of target node names (may be empty, single, or multiple)
+        """
+        edge_value = getattr(self, edge_type, None)
+        if edge_value is None:
+            return []
+        elif isinstance(edge_value, str):
+            return [edge_value]
+        else:
+            return edge_value
 
 
 @dataclass

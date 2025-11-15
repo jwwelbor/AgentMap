@@ -438,14 +438,7 @@ class TestLLMAgent(unittest.TestCase):
         # Configure state adapter behavior
         def mock_get_inputs(state, input_fields):
             return {field: state.get(field) for field in input_fields if field in state}
-        
-        def mock_set_value(state, field, value):
-            updated_state = state.copy()
-            updated_state[field] = value
-            return updated_state
-        
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
         
         # CRITICAL: Set execution tracker on agent (required by new architecture)
         self.agent.set_execution_tracker(self.mock_tracker)
@@ -469,8 +462,9 @@ class TestLLMAgent(unittest.TestCase):
         self.assertIn("response", result_state)
         self.assertEqual(result_state["response"], "Mock LLM response for testing")
         
-        # Verify original fields are preserved
-        self.assertEqual(result_state["other_field"], "preserved")
+        # Original fields are NOT in result - only output field
+        self.assertNotIn("other_field", result_state)
+        self.assertEqual(len(result_state), 1)  # Only output field
         
         # Verify tracking calls (inherited behavior via execution tracking service)
         self.mock_execution_tracking_service.record_node_start.assert_called_once()

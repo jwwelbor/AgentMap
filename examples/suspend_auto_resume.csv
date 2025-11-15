@@ -1,0 +1,6 @@
+workflow,graph,name,agent_type,prompt,context,input_fields,output_field,edges
+auto_resume_example,main,start,input,Provide processing data,,batch_input,batch_data,
+auto_resume_example,main,chunk_processor_1,suspend,Process chunk 1 (auto-resume),"{""send_resume_message"": true, ""resume_message_template"": ""default_auto_resume"", ""resume_message_topic"": ""resume_triggers""}",batch_data,chunk1_result,start
+auto_resume_example,main,chunk_processor_2,suspend,Process chunk 2 (auto-resume),"{""send_resume_message"": true, ""resume_message_template"": ""default_auto_resume"", ""resume_message_topic"": ""resume_triggers""}",chunk1_result,chunk2_result,chunk_processor_1
+auto_resume_example,main,aggregate,default,Aggregate all results,,"chunk2_result",final_result,chunk_processor_2
+auto_resume_example,main,end,echo,Processing complete,,"final_result",,aggregate

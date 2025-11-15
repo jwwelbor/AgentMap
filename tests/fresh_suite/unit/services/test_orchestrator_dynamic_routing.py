@@ -109,7 +109,7 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         # We need to mock _initialize_builder to prevent it from creating a real StateGraph
         original_init_builder = self.assembly_service._initialize_builder
 
-        def mock_init_builder():
+        def mock_init_builder(graph=None):
             """Mock that preserves orchestrator tracking but uses mock builder."""
             self.assembly_service.orchestrator_nodes = []
             self.assembly_service.injection_stats = {

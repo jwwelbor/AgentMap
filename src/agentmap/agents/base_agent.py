@@ -244,20 +244,40 @@ class BaseAgent:
             # Record success using service
             tracking_service.record_node_result(tracker, self.name, True, result=output)
 
-            # Set the final output if we have an output field
-            if self.output_field and output is not None:
-                state = self.state_adapter_service.set_value(
-                    state, self.output_field, output
-                )
-                self.log_debug(f"Set output field '{self.output_field}' = {output}")
+            # Return partial state update (supports multiple fields for parallel execution)
+            # This enables parallel execution - LangGraph merges partial updates
+            # from concurrent nodes without conflicts
 
+            # SPECIAL CASE: If output is a dict with 'state_updates' key,
+            # the agent wants to update multiple state fields (e.g., BranchingAgent)
+            if isinstance(output, dict) and 'state_updates' in output:
+                state_updates = output['state_updates']
+                self.log_debug(f"Returning multiple state updates: {list(state_updates.keys())}")
+                end_time = time.time()
+                duration = end_time - start_time
+                self.log_trace(
+                    f"\n*** AGENT {self.name} RUN COMPLETED [{execution_id}] in {duration:.4f}s ***"
+                )
+                return state_updates
+
+            # NORMAL CASE: Return only the output field
+            if self.output_field and output is not None:
+                self.log_debug(f"Set output field '{self.output_field}' = {output}")
+                end_time = time.time()
+                duration = end_time - start_time
+                self.log_trace(
+                    f"\n*** AGENT {self.name} RUN COMPLETED [{execution_id}] in {duration:.4f}s ***"
+                )
+                # Return only the updated field (partial update pattern)
+                return {self.output_field: output}
+
+            # No output field - return empty dict (no updates)
             end_time = time.time()
             duration = end_time - start_time
             self.log_trace(
                 f"\n*** AGENT {self.name} RUN COMPLETED [{execution_id}] in {duration:.4f}s ***"
             )
-
-            return state
+            return {}
 
         except GraphInterrupt:
             # LangGraph interrupt pattern - re-raise to let LangGraph handle checkpoint
@@ -297,7 +317,8 @@ class BaseAgent:
                 f"\n*** AGENT {self.name} RUN FAILED [{execution_id}] in {duration:.4f}s ***"
             )
 
-            return state
+            # Return error updates as partial state update
+            return error_updates
 
     def _pre_process(
         self, state: Any, inputs: Dict[str, Any]

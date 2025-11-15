@@ -55,15 +55,12 @@ class TestSuspendAgent(unittest.TestCase):
 
         result_state = self.agent.run(initial_state)
 
-        # New implementation returns raw resume value
+        # NEW BEHAVIOR: Returns partial state update (only output field)
+        # set_value is not called - just returns {output_field: value}
         expected_output = resume_payload
-        self.mock_state_adapter_service.set_value.assert_called_with(
-            initial_state,
-            "external_result",
-            expected_output,
-        )
         self.assertIn("external_result", result_state)
         self.assertEqual(result_state["external_result"], expected_output)
+        self.assertEqual(len(result_state), 1)  # Only output field
 
 
 if __name__ == "__main__":

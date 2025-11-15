@@ -439,14 +439,7 @@ class TestSummaryAgent(unittest.TestCase):
         # Configure state adapter behavior
         def mock_get_inputs(state, input_fields):
             return {field: state.get(field) for field in input_fields if field in state}
-        
-        def mock_set_value(state, field, value):
-            updated_state = state.copy()
-            updated_state[field] = value
-            return updated_state
-        
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
         
         # Note: BaseAgent calls the service methods, not the tracker methods directly
         
@@ -466,8 +459,9 @@ class TestSummaryAgent(unittest.TestCase):
         self.assertIn("First piece", summary)
         self.assertIn("Second piece", summary)
         
-        # Verify original fields are preserved
-        self.assertEqual(result_state["other_field"], "preserved")
+        # Original fields are NOT in result - only output field
+        self.assertNotIn("other_field", result_state)
+        self.assertEqual(len(result_state), 1)  # Only output field
         
         # Verify tracking service methods were called
         self.mock_execution_tracking_service.record_node_start.assert_called_once()
@@ -481,14 +475,7 @@ class TestSummaryAgent(unittest.TestCase):
         # Configure state adapter and tracker (same setup as above)
         def mock_get_inputs(state, input_fields):
             return {field: state.get(field) for field in input_fields if field in state}
-        
-        def mock_set_value(state, field, value):
-            updated_state = state.copy()
-            updated_state[field] = value
-            return updated_state
-        
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
         # Note: BaseAgent calls the service methods, not the tracker methods directly
         
         test_state = {

@@ -1,0 +1,6 @@
+workflow,graph,name,agent_type,prompt,context,input_fields,output_field,routing,edges
+suspend_messaging_basic,main,start,InputAgent,Start workflow,{},,"request_data",,
+suspend_messaging_basic,main,validate,LLMAgent,Validate the request,"{llm_provider: ""anthropic""}","request_data","validation_result",,start
+suspend_messaging_basic,main,wait_approval,SuspendAgent,Wait for external approval,"{send_suspend_message: true, send_resume_message: true, suspend_message_template: ""default_suspend"", resume_message_template: ""default_resume""}","validation_result","approval_result",,validate
+suspend_messaging_basic,main,process,LLMAgent,Process approved request,"{llm_provider: ""anthropic""}","approval_result,request_data","final_result",,wait_approval
+suspend_messaging_basic,main,end,OutputAgent,Complete workflow,{},"final_result",,,process

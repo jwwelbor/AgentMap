@@ -8,7 +8,7 @@ CSVValidationService.
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import pandas as pd
 
@@ -269,6 +269,57 @@ class CSVGraphParserService:
 
         return graph_spec
 
+    def _parse_edge_targets(self, edge_value: str) -> Optional[Union[str, List[str]]]:
+        """
+        Parse edge target(s) from CSV field value.
+
+        Detects pipe-separated targets for parallel execution and returns
+        appropriate type (str for single, list for multiple).
+
+        Args:
+            edge_value: Raw edge value from CSV field
+
+        Returns:
+            - None if empty/whitespace
+            - str if single target
+            - list[str] if multiple pipe-separated targets
+
+        Examples:
+            _parse_edge_targets("")                -> None
+            _parse_edge_targets("NextNode")        -> "NextNode"
+            _parse_edge_targets("A|B|C")           -> ["A", "B", "C"]
+            _parse_edge_targets("Node | Other")    -> ["Node", "Other"]
+        """
+        if not edge_value or not edge_value.strip():
+            return None
+
+        # Check for pipe delimiter indicating parallel targets
+        if "|" in edge_value:
+            # Split on pipe and clean each target
+            targets = [
+                target.strip()
+                for target in edge_value.split("|")
+                if target.strip()  # Filter out empty strings
+            ]
+
+            # Validate targets
+            if not targets:
+                self.logger.warning(
+                    f"Edge value '{edge_value}' contains pipes but no valid targets"
+                )
+                return None
+
+            # Return list for multiple targets (parallel execution)
+            if len(targets) > 1:
+                self.logger.debug(f"Parsed parallel edge targets: {targets}")
+                return targets
+
+            # Single target after splitting (edge case: "NodeA|")
+            return targets[0]
+
+        # No pipe delimiter - single target (existing behavior)
+        return edge_value.strip()
+
     def _parse_row_to_node_spec(
         self, row: pd.Series, line_number: int
     ) -> Optional[NodeSpec]:
@@ -314,10 +365,10 @@ class CSVGraphParserService:
             else []
         )
 
-        # Parse edge information
-        edge = self._safe_get_field(row, "Edge").strip() or None
-        success_next = self._safe_get_field(row, "Success_Next").strip() or None
-        failure_next = self._safe_get_field(row, "Failure_Next").strip() or None
+        # Parse edge information - NOW supports parallel targets
+        edge = self._parse_edge_targets(self._safe_get_field(row, "Edge"))
+        success_next = self._parse_edge_targets(self._safe_get_field(row, "Success_Next"))
+        failure_next = self._parse_edge_targets(self._safe_get_field(row, "Failure_Next"))
 
         # Parse tool information
         tool_source = self._safe_get_field(row, "Tool_Source").strip() or None

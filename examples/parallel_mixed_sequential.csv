@@ -1,0 +1,8 @@
+GraphName,Node,AgentType,Edge,Success_Next,Failure_Next,Output_Field,Input_Fields,Description
+MixedWorkflow,NodeA,input,NodeB,,,data_a,,Sequential start
+MixedWorkflow,NodeB,echo,NodeC|NodeD|NodeE,,,data_b,data_a,Sequential to parallel transition
+MixedWorkflow,NodeC,echo,NodeF,,,data_c,data_b,Parallel branch C
+MixedWorkflow,NodeD,echo,NodeF,,,data_d,data_b,Parallel branch D
+MixedWorkflow,NodeE,echo,NodeF,,,data_e,data_b,Parallel branch E
+MixedWorkflow,NodeF,aggregator,NodeG,,,aggregated_data,data_c|data_d|data_e,Consolidate parallel results
+MixedWorkflow,NodeG,output,,,,final_output,aggregated_data,Sequential end

@@ -789,8 +789,7 @@ class IndentedTemplateComposer:
         """
         Prepare comprehensive template variables for function template substitution.
 
-        This method consolidates function template variable preparation logic
-        that was previously scattered across GraphScaffoldService.
+        Now includes parallel routing metadata for generating list-returning functions.
 
         Args:
             func_name: Name of function to scaffold
@@ -804,13 +803,45 @@ class IndentedTemplateComposer:
             info.get("input_fields", []), info.get("output_field", "")
         )
 
+        # Extract parallel routing flags
+        success_parallel = info.get("success_parallel", False)
+        failure_parallel = info.get("failure_parallel", False)
+        has_parallel = info.get("has_parallel", False)
+
+        # Format targets for display and code generation
+        success_next = info.get("success_next", "") or ""
+        failure_next = info.get("failure_next", "") or ""
+
+        # Format success target(s)
+        if success_parallel:
+            success_display = f"{success_next} (parallel)"
+            success_code = repr(success_next)  # Generates ["A", "B", "C"]
+        else:
+            # Provide string default values for template substitution
+            success_display = success_next if success_next else "None"
+            success_code = f'"{success_next}"' if success_next else '""'
+
+        # Format failure target(s)
+        if failure_parallel:
+            failure_display = f"{failure_next} (parallel)"
+            failure_code = repr(failure_next)  # Generates ["A", "B", "C"]
+        else:
+            # Provide string default values for template substitution
+            failure_display = failure_next if failure_next else "None"
+            failure_code = f'"{failure_next}"' if failure_next else '""'
+
         # Prepare all template variables expected by function_template.txt
         template_vars = {
             "func_name": func_name,
             "context": info.get("context", "") or "No context provided",
             "context_fields": context_fields,
-            "success_node": info.get("success_next", "") or "None",
-            "failure_node": info.get("failure_next", "") or "None",
+            "success_node": success_display,           # For documentation
+            "failure_node": failure_display,           # For documentation
+            "success_code": success_code,              # For code generation
+            "failure_code": failure_code,              # For code generation
+            "success_parallel": str(success_parallel), # Template flag
+            "failure_parallel": str(failure_parallel), # Template flag
+            "has_parallel": str(has_parallel),         # Template flag
             "node_name": info.get("node_name", "") or "Unknown",
             "description": info.get("description", "") or "No description provided",
             "output_field": info.get("output_field", "") or "None",
@@ -818,7 +849,8 @@ class IndentedTemplateComposer:
 
         self.logger.debug(
             f"[IndentedTemplateComposer] Prepared template variables for {func_name}: "
-            f"success={template_vars['success_node']}, failure={template_vars['failure_node']}"
+            f"success={success_display}, failure={failure_display}, "
+            f"parallel={has_parallel}"
         )
 
         return template_vars

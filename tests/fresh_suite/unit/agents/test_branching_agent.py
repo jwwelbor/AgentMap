@@ -406,28 +406,36 @@ class TestBranchingAgent(unittest.TestCase):
     def test_post_process_sets_success_flag_correctly(self):
         """Test _post_process hook sets last_action_success correctly."""
         agent = self.create_branching_agent()
-        
+
         # Test success case
         inputs = {"success": True}
         initial_state = {"existing": "data"}
         output = "test output"
-        
-        with unittest.mock.patch.object(StateAdapterService, 'set_value', return_value={"last_action_success": True}) as mock_set:
-            final_state, final_output = agent._post_process(initial_state, inputs, output)
-            
-            # Verify set_value was called with success=True
-            mock_set.assert_called_with(initial_state, "last_action_success", True)
-            self.assertIn("Will trigger SUCCESS branch", final_output)
-        
+
+        final_state, final_output = agent._post_process(initial_state, inputs, output)
+
+        # Verify output is a dict with state_updates
+        self.assertIsInstance(final_output, dict)
+        self.assertIn('state_updates', final_output)
+
+        # Verify state updates contain both result and last_action_success
+        state_updates = final_output['state_updates']
+        self.assertEqual(state_updates['last_action_success'], True)
+        self.assertIn("Will trigger SUCCESS branch", state_updates['result'])
+
         # Test failure case
         inputs = {"success": False}
-        
-        with unittest.mock.patch.object(StateAdapterService, 'set_value', return_value={"last_action_success": False}) as mock_set:
-            final_state, final_output = agent._post_process(initial_state, inputs, output)
-            
-            # Verify set_value was called with success=False
-            mock_set.assert_called_with(initial_state, "last_action_success", False)
-            self.assertIn("Will trigger FAILURE branch", final_output)
+
+        final_state, final_output = agent._post_process(initial_state, inputs, output)
+
+        # Verify output is a dict with state_updates
+        self.assertIsInstance(final_output, dict)
+        self.assertIn('state_updates', final_output)
+
+        # Verify state updates contain both result and last_action_success
+        state_updates = final_output['state_updates']
+        self.assertEqual(state_updates['last_action_success'], False)
+        self.assertIn("Will trigger FAILURE branch", state_updates['result'])
     
     # =============================================================================
     # 7. Integration Tests
@@ -440,14 +448,7 @@ class TestBranchingAgent(unittest.TestCase):
         # Configure state adapter behavior
         def mock_get_inputs(state, input_fields):
             return {field: state.get(field) for field in input_fields if field in state}
-        
-        def mock_set_value(state, field, value):
-            updated_state = state.copy()
-            updated_state[field] = value
-            return updated_state
-        
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
         
         # Configure execution tracker methods
         self.mock_tracker.record_node_start = Mock(return_value=None)
@@ -469,12 +470,14 @@ class TestBranchingAgent(unittest.TestCase):
         self.assertIn("result", result_state)
         result = result_state["result"]
         self.assertIn("SUCCEED", result)
-        
+
         # Verify last_action_success was set to True
         self.assertTrue(result_state.get("last_action_success"))
-        
-        # Verify original fields are preserved
-        self.assertEqual(result_state["other_field"], "preserved")
+
+        # Original fields are NOT in result - BranchingAgent returns TWO fields
+        # (result and last_action_success)
+        self.assertNotIn("other_field", result_state)
+        self.assertEqual(len(result_state), 2)  # result + last_action_success
     
     def test_run_method_integration_with_custom_configuration(self):
         """Test run method with custom configuration."""
@@ -486,14 +489,7 @@ class TestBranchingAgent(unittest.TestCase):
         # Configure state adapter and tracker
         def mock_get_inputs(state, input_fields):
             return {field: state.get(field) for field in input_fields if field in state}
-        
-        def mock_set_value(state, field, value):
-            updated_state = state.copy()
-            updated_state[field] = value
-            return updated_state
-        
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
         self.mock_tracker.record_node_start = Mock(return_value=None)
         self.mock_tracker.record_node_result = Mock(return_value=None)
         

@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypedDict, Union
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import StateGraph
@@ -92,9 +92,97 @@ class GraphAssemblyService:
             )
             return dict
 
-    def _initialize_builder(self) -> None:
-        """Initialize a fresh StateGraph builder and reset orchestrator tracking."""
-        state_schema = self._get_state_schema_from_config()
+    def _create_dynamic_state_schema(self, graph: Graph) -> type:
+        """
+        Create a TypedDict state schema dynamically from graph structure.
+
+        This enables parallel node execution by allowing LangGraph to track
+        individual state fields independently. Without this, concurrent updates
+        to a plain dict state schema cause InvalidUpdateError.
+
+        Args:
+            graph: Graph domain model with nodes
+
+        Returns:
+            TypedDict class with fields for all node outputs
+        """
+        # Collect all input and output fields from nodes
+        field_names = set()
+        for node in graph.nodes.values():
+            # Add output field
+            if node.output:
+                field_names.add(node.output)
+            # Add input fields (nodes may read from initial state)
+            if node.inputs:
+                if isinstance(node.inputs, list):
+                    field_names.update(node.inputs)
+                elif isinstance(node.inputs, str):
+                    field_names.add(node.inputs)
+
+        # Add system fields that are always needed
+        # These are used by the execution service and orchestrator
+        system_fields = {
+            "__execution_summary",  # Execution tracking metadata
+            "__policy_success",     # Policy evaluation result
+            "__next_node",         # Orchestrator dynamic routing
+            "last_action_success", # Standard success tracking
+            "graph_success",       # Overall graph success
+            "errors",             # Error collection
+        }
+        field_names.update(system_fields)
+
+        if not field_names:
+            # No output fields defined, fall back to dict
+            self.logger.debug("No output fields found, using plain dict schema")
+            return dict
+
+        # Create TypedDict with all fields as optional Any
+        # Using total=False makes all fields optional (not required at initialization)
+        state_fields = {name: Any for name in field_names}
+
+        # Create dynamic TypedDict class
+        StateSchema = TypedDict(
+            f"{graph.name}State",
+            state_fields,
+            total=False
+        )
+
+        self.logger.debug(
+            f"Created dynamic state schema for '{graph.name}' with {len(field_names)} fields: {sorted(field_names)}"
+        )
+
+        return StateSchema
+
+    def _initialize_builder(self, graph: Optional[Graph] = None) -> None:
+        """
+        Initialize a fresh StateGraph builder and reset orchestrator tracking.
+
+        Args:
+            graph: Optional graph to use for dynamic state schema creation.
+                   If provided and config allows, creates TypedDict from graph structure.
+        """
+        # Try to create dynamic schema if graph provided
+        if graph is not None:
+            try:
+                execution_config = self.config.get_execution_config()
+                state_schema_config = execution_config.get("graph", {}).get(
+                    "state_schema", "dynamic"
+                )
+
+                # Support both 'dynamic' (new default) and 'dict' (legacy)
+                if state_schema_config in ("dynamic", "auto"):
+                    state_schema = self._create_dynamic_state_schema(graph)
+                else:
+                    state_schema = self._get_state_schema_from_config()
+            except Exception as e:
+                self.logger.debug(
+                    f"Could not create dynamic state schema: {e}, using config schema"
+                )
+                state_schema = self._get_state_schema_from_config()
+        else:
+            # No graph provided, use config-based schema
+            state_schema = self._get_state_schema_from_config()
+
         self.builder = StateGraph(state_schema=state_schema)
         self.orchestrator_nodes = []
         self.injection_stats = {
@@ -223,7 +311,7 @@ class GraphAssemblyService:
     ) -> Any:
         """Common assembly logic for both standard and checkpoint-enabled graphs."""
         self._validate_graph(graph)
-        self._initialize_builder()
+        self._initialize_builder(graph)  # Pass graph for dynamic state schema
 
         self.orchestrator_node_registry = orchestrator_node_registry
 
@@ -282,13 +370,15 @@ class GraphAssemblyService:
 
         self.logger.debug(f"🔹 Added node: '{name}' ({class_name})")
 
-    def process_node_edges(self, node_name: str, edges: Dict[str, str]) -> None:
+    def process_node_edges(
+        self, node_name: str, edges: Dict[str, Union[str, List[str]]]
+    ) -> None:
         """
         Process edges for a node and add them to the graph.
 
         Args:
             node_name: Source node name
-            edges: Dictionary of edge conditions to target nodes
+            edges: Dictionary of edge conditions to target nodes (str or list[str] for parallel)
         """
         # Orchestrator nodes use dynamic routing - only log failure edges
         if node_name in self.orchestrator_nodes:
@@ -312,7 +402,9 @@ class GraphAssemblyService:
         # Handle standard edge types
         self._add_standard_edges(node_name, edges)
 
-    def _try_add_function_edge(self, node_name: str, edges: Dict[str, str]) -> bool:
+    def _try_add_function_edge(
+        self, node_name: str, edges: Dict[str, Union[str, List[str]]]
+    ) -> bool:
         """
         Try to add function-based routing edge.
 
@@ -328,34 +420,152 @@ class GraphAssemblyService:
                 return True
         return False
 
-    def _add_standard_edges(self, node_name: str, edges: Dict[str, str]) -> None:
-        """Add standard edge types (success/failure/default)."""
+    def _is_parallel_edge(self, edge_value: Union[str, List[str], None]) -> bool:
+        """Check if edge value represents parallel targets.
+
+        Args:
+            edge_value: Edge value from node.edges (str, list[str], or None)
+
+        Returns:
+            True if edge has multiple targets for parallel execution
+        """
+        return isinstance(edge_value, list) and len(edge_value) > 1
+
+    def _normalize_edge_value(
+        self, edge_value: Union[str, List[str], None]
+    ) -> Tuple[bool, Union[str, List[str], None]]:
+        """Normalize edge value and determine if parallel.
+
+        Args:
+            edge_value: Edge value from node.edges
+
+        Returns:
+            Tuple of (is_parallel, normalized_value)
+            - is_parallel: True if multiple targets
+            - normalized_value: The edge value (str or list)
+        """
+        if edge_value is None:
+            return False, None
+        elif isinstance(edge_value, str):
+            return False, edge_value
+        elif isinstance(edge_value, list):
+            if len(edge_value) == 0:
+                return False, None
+            elif len(edge_value) == 1:
+                return False, edge_value[0]  # Single item list -> string
+            else:
+                return True, edge_value  # Multiple items -> parallel
+        else:
+            # Unexpected type, treat as single
+            self.logger.warning(
+                f"Unexpected edge value type: {type(edge_value)}. Treating as single target."
+            )
+            return False, str(edge_value)
+
+    def _add_standard_edges(
+        self, node_name: str, edges: Dict[str, Union[str, List[str]]]
+    ) -> None:
+        """Add standard edge types with parallel support.
+
+        Handles success/failure/default edges and detects parallel targets.
+
+        Args:
+            node_name: Source node name
+            edges: Dictionary of edge conditions to targets (str or list[str])
+        """
         has_success = "success" in edges
         has_failure = "failure" in edges
+        has_default = "default" in edges
 
+        # Analyze edge types for parallel routing
+        success_parallel = False
+        failure_parallel = False
+        success_targets = None
+        failure_targets = None
+
+        if has_success:
+            success_parallel, success_targets = self._normalize_edge_value(
+                edges["success"]
+            )
+        if has_failure:
+            failure_parallel, failure_targets = self._normalize_edge_value(
+                edges["failure"]
+            )
+
+        # Route to appropriate handler based on parallel detection
         if has_success and has_failure:
-            self._add_success_failure_edge(
-                node_name, edges["success"], edges["failure"]
-            )
+            # Both success and failure paths
+            if success_parallel or failure_parallel:
+                self._add_parallel_success_failure_edge(
+                    node_name,
+                    success_targets,
+                    success_parallel,
+                    failure_targets,
+                    failure_parallel,
+                )
+            else:
+                # Both single targets (existing behavior)
+                self._add_success_failure_edge(
+                    node_name, success_targets, failure_targets
+                )
         elif has_success:
-            self._add_conditional_edge(
-                node_name,
-                lambda state: (
-                    edges["success"] if state.get("last_action_success", True) else None
-                ),
-            )
+            # Only success path
+            if success_parallel:
+                self._add_conditional_edge(
+                    node_name,
+                    lambda state, targets=success_targets: (
+                        targets if state.get("last_action_success", True) else None
+                    ),
+                )
+                self.logger.debug(
+                    f"[{node_name}] → parallel success → {success_targets}"
+                )
+            else:
+                # Single success target (existing behavior)
+                self._add_conditional_edge(
+                    node_name,
+                    lambda state, target=success_targets: (
+                        target if state.get("last_action_success", True) else None
+                    ),
+                )
         elif has_failure:
-            self._add_conditional_edge(
-                node_name,
-                lambda state: (
-                    edges["failure"]
-                    if not state.get("last_action_success", True)
-                    else None
-                ),
+            # Only failure path
+            if failure_parallel:
+                self._add_conditional_edge(
+                    node_name,
+                    lambda state, targets=failure_targets: (
+                        targets if not state.get("last_action_success", True) else None
+                    ),
+                )
+                self.logger.debug(
+                    f"[{node_name}] → parallel failure → {failure_targets}"
+                )
+            else:
+                # Single failure target (existing behavior)
+                self._add_conditional_edge(
+                    node_name,
+                    lambda state, target=failure_targets: (
+                        target if not state.get("last_action_success", True) else None
+                    ),
+                )
+        elif has_default:
+            # Unconditional edge (default)
+            default_parallel, default_targets = self._normalize_edge_value(
+                edges["default"]
             )
-        elif "default" in edges:
-            self.builder.add_edge(node_name, edges["default"])
-            self.logger.debug(f"[{node_name}] → default → {edges['default']}")
+            if default_parallel:
+                # Parallel default edge - return list directly
+                self.logger.debug(
+                    f"[{node_name}] → parallel default → {default_targets}"
+                )
+                # For default parallel, we need a routing function that always returns the list
+                self._add_conditional_edge(
+                    node_name, lambda state, targets=default_targets: targets
+                )
+            else:
+                # Single default edge (existing behavior)
+                self.builder.add_edge(node_name, default_targets)
+                self.logger.debug(f"[{node_name}] → default → {default_targets}")
 
     def _add_conditional_edge(self, source: str, func: Callable) -> None:
         """Add a conditional edge to the graph."""
@@ -365,7 +575,16 @@ class GraphAssemblyService:
     def _add_success_failure_edge(
         self, source: str, success: str, failure: str
     ) -> None:
-        """Add success/failure conditional edges."""
+        """Add single-target success/failure conditional edges.
+
+        This is the existing behavior for single-target routing.
+        For parallel routing, use _add_parallel_success_failure_edge().
+
+        Args:
+            source: Source node name
+            success: Single success target
+            failure: Single failure target
+        """
 
         def branch(state):
             return success if state.get("last_action_success", True) else failure
@@ -373,21 +592,102 @@ class GraphAssemblyService:
         self.builder.add_conditional_edges(source, branch)
         self.logger.debug(f"[{source}] → success → {success} / failure → {failure}")
 
+    def _add_parallel_success_failure_edge(
+        self,
+        source: str,
+        success_targets: Union[str, List[str]],
+        success_parallel: bool,
+        failure_targets: Union[str, List[str]],
+        failure_parallel: bool,
+    ) -> None:
+        """Add success/failure edges with parallel support.
+
+        Generates routing function that returns either:
+        - Single target (str) for sequential routing
+        - Multiple targets (list[str]) for parallel routing
+
+        LangGraph's superstep architecture handles parallel execution automatically
+        when the routing function returns a list.
+
+        Args:
+            source: Source node name
+            success_targets: Target(s) for success path (str or list[str])
+            success_parallel: True if success has multiple targets
+            failure_targets: Target(s) for failure path (str or list[str])
+            failure_parallel: True if failure has multiple targets
+        """
+
+        def branch(state):
+            """Routing function that may return str or list[str]."""
+            last_action_success = state.get("last_action_success", True)
+
+            if last_action_success:
+                # Success path
+                result = success_targets  # May be str or list[str]
+                if success_parallel:
+                    self.logger.debug(
+                        f"[{source}] Routing to parallel success targets: {result}"
+                    )
+                return result
+            else:
+                # Failure path
+                result = failure_targets  # May be str or list[str]
+                if failure_parallel:
+                    self.logger.debug(
+                        f"[{source}] Routing to parallel failure targets: {result}"
+                    )
+                return result
+
+        self.builder.add_conditional_edges(source, branch)
+
+        # Enhanced logging for parallel edges
+        success_display = (
+            f"{success_targets} (parallel)" if success_parallel else success_targets
+        )
+        failure_display = (
+            f"{failure_targets} (parallel)" if failure_parallel else failure_targets
+        )
+        self.logger.debug(
+            f"[{source}] → success → {success_display} / failure → {failure_display}"
+        )
+
     def _add_function_edge(
         self,
         source: str,
         func_name: str,
-        success: Optional[str],
-        failure: Optional[str],
+        success: Optional[Union[str, List[str]]],
+        failure: Optional[Union[str, List[str]]],
     ) -> None:
-        """Add function-based routing edge."""
+        """Add function-based routing edge with parallel support.
+
+        The routing function may return str or list[str], enabling parallel
+        routing when the function logic determines multiple targets.
+
+        Args:
+            source: Source node name
+            func_name: Name of routing function to load
+            success: Success target(s) - may be str or list[str]
+            failure: Failure target(s) - may be str or list[str]
+        """
         func = self.function_resolution.load_function(func_name)
 
         def wrapped(state):
-            return func(state, success, failure)
+            # Function may return str or list[str]
+            result = func(state, success, failure)
+
+            # Log parallel routing if function returns list
+            if isinstance(result, list) and len(result) > 1:
+                self.logger.debug(
+                    f"[{source}] Function '{func_name}' returned parallel targets: {result}"
+                )
+
+            return result
 
         self.builder.add_conditional_edges(source, wrapped)
-        self.logger.debug(f"[{source}] → routed by function '{func_name}'")
+        self.logger.debug(
+            f"[{source}] → routed by function '{func_name}' "
+            f"(success={success}, failure={failure})"
+        )
 
     def _add_dynamic_router(
         self, node_name: str, failure_target: Optional[str] = None

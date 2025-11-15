@@ -1,0 +1,6 @@
+GraphName,Node,AgentType,Success_Next,Context
+ParallelTest,Start,input,ProcessA|ProcessB|ProcessC,Start node for parallel test
+ParallelTest,ProcessA,echo,Consolidate,Process A - parallel branch
+ParallelTest,ProcessB,echo,Consolidate,Process B - parallel branch
+ParallelTest,ProcessC,echo,Consolidate,Process C - parallel branch
+ParallelTest,Consolidate,echo,,Consolidation node

@@ -66,11 +66,11 @@ class TestHumanAgent(unittest.TestCase):
 
         result_state = self.agent.run(initial_state)
 
-        self.mock_state_adapter_service.set_value.assert_called_with(
-            initial_state, "human_response", "approved"
-        )
+        # NEW BEHAVIOR: Returns partial state update (only output field)
+        # set_value is not called - just returns {output_field: value}
         self.assertIn("human_response", result_state)
         self.assertEqual(result_state["human_response"], "approved")
+        self.assertEqual(len(result_state), 1)  # Only output field
 
     @patch("agentmap.agents.builtins.human_agent.interrupt")
     def test_human_agent_interrupts_execution(self, mock_interrupt):

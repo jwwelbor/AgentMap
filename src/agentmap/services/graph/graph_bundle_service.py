@@ -261,11 +261,13 @@ class GraphBundleService:
     def _analyze_graph_structure(self, nodes: Dict[str, Node]) -> Dict[str, Any]:
         """Analyze graph structure for optimization hints.
 
+        Now includes parallel routing analysis for better metadata.
+
         Args:
             nodes: Dictionary of node name to Node objects
 
         Returns:
-            Dictionary containing graph structure analysis
+            Dictionary containing graph structure analysis including parallel patterns
         """
         try:
             edge_count = sum(len(node.edges) for node in nodes.values())
@@ -274,18 +276,26 @@ class GraphBundleService:
                 for node in nodes.values()
             )
 
+            # Analyze parallel patterns
+            parallel_analysis = self._analyze_parallel_patterns(nodes)
+
             structure = {
                 "node_count": len(nodes),
                 "edge_count": edge_count,
                 "has_conditional_routing": has_conditional,
                 "max_depth": self._calculate_max_depth(nodes),
                 "is_dag": self._check_dag(nodes),
-                "parallel_opportunities": self._identify_parallel_nodes(nodes),
+                "parallel_opportunities": parallel_analysis["parallel_groups"],
+                "has_parallel_routing": parallel_analysis["has_parallel"],
+                "max_parallelism": parallel_analysis["max_parallelism"],
+                "fan_out_count": len(parallel_analysis["fan_out_nodes"]),
+                "fan_in_count": len(parallel_analysis["fan_in_nodes"]),
             }
 
             self.logger.debug(
                 f"Analyzed graph structure: {structure['node_count']} nodes, "
-                f"DAG: {structure['is_dag']}, conditional: {structure['has_conditional_routing']}"
+                f"DAG: {structure['is_dag']}, conditional: {structure['has_conditional_routing']}, "
+                f"parallel: {structure['has_parallel_routing']} (max={structure['max_parallelism']})"
             )
             return structure
 
@@ -300,6 +310,10 @@ class GraphBundleService:
                 "max_depth": 1,
                 "is_dag": True,
                 "parallel_opportunities": [],
+                "has_parallel_routing": False,
+                "max_parallelism": 1,
+                "fan_out_count": 0,
+                "fan_in_count": 0,
             }
 
     def _calculate_max_depth(self, nodes: Dict[str, Node]) -> int:
@@ -318,6 +332,59 @@ class GraphBundleService:
         # Simple implementation - nodes without dependencies can run in parallel
         # This could be enhanced with actual dependency analysis
         return []  # Return empty for now
+
+    def _analyze_parallel_patterns(self, nodes: Dict[str, Node]) -> Dict[str, Any]:
+        """Analyze parallel routing patterns in the graph.
+
+        Identifies fan-out, fan-in, and parallel opportunities for optimization.
+
+        Args:
+            nodes: Dictionary of node name to Node objects
+
+        Returns:
+            Dictionary with parallel pattern analysis:
+            - fan_out_nodes: Nodes that route to multiple targets
+            - fan_in_nodes: Nodes that receive from multiple sources
+            - parallel_groups: Groups of nodes that execute in parallel
+            - max_parallelism: Maximum number of parallel branches
+            - has_parallel: Whether graph contains any parallel routing
+        """
+        fan_out_nodes = []
+        fan_in_count = {}
+        parallel_groups = []
+        max_parallelism = 1
+
+        # Find fan-out nodes (nodes with parallel edges)
+        for node_name, node in nodes.items():
+            for condition, targets in node.edges.items():
+                if isinstance(targets, list) and len(targets) > 1:
+                    fan_out_nodes.append({
+                        "node": node_name,
+                        "condition": condition,
+                        "targets": targets,
+                        "parallelism": len(targets)
+                    })
+                    parallel_groups.append(targets)
+                    max_parallelism = max(max_parallelism, len(targets))
+
+                    # Track fan-in (nodes receiving from parallel source)
+                    for target in targets:
+                        fan_in_count[target] = fan_in_count.get(target, 0) + 1
+
+        # Identify actual fan-in nodes (nodes with multiple incoming edges)
+        fan_in_nodes = [
+            {"node": node, "incoming_count": count}
+            for node, count in fan_in_count.items()
+            if count > 1
+        ]
+
+        return {
+            "fan_out_nodes": fan_out_nodes,
+            "fan_in_nodes": fan_in_nodes,
+            "parallel_groups": parallel_groups,
+            "max_parallelism": max_parallelism,
+            "has_parallel": len(fan_out_nodes) > 0
+        }
 
     def _extract_protocol_mappings(self) -> Dict[str, str]:
         """Extract protocol to implementation mappings from DI container.
@@ -458,12 +525,15 @@ class GraphBundleService:
 
         Args:
             bundle: GraphBundle to save
-            path: Path to save the bundle to
+            path: Path to save the bundle to (can be Path or str)
 
         Raises:
             ValueError: If required storage service is not available
             IOError: If save operation fails
         """
+
+        # Ensure path is a Path object
+        path = Path(path)
 
         # Use system storage for cache_folder/bundles
         self.logger.debug(f"Using SystemStorageManager for system bundle: {path}")
@@ -508,10 +578,17 @@ class GraphBundleService:
             return False
 
     def _serialize_metadata_bundle(self, bundle: GraphBundle) -> Dict[str, Any]:
-        """Serialize enhanced metadata bundle to dictionary format."""
+        """Serialize enhanced metadata bundle to dictionary format.
+
+        Handles both single-target (str) and multi-target (list[str]) edges
+        for parallel execution support. JSON naturally preserves both types.
+        """
         # Serialize nodes to dictionaries
         nodes_data = {}
         for name, node in bundle.nodes.items():
+            # Serialize edges with proper type handling
+            # Edge values may be str (single target) or list[str] (parallel)
+            # JSON serialization preserves both types naturally
             nodes_data[name] = {
                 "name": node.name,
                 "agent_type": node.agent_type,
@@ -520,7 +597,7 @@ class GraphBundleService:
                 "output": node.output,
                 "prompt": node.prompt,
                 "description": node.description,
-                "edges": node.edges,
+                "edges": node.edges,  # Preserves Union[str, List[str]] for each edge
                 "tool_source": node.tool_source,
                 "available_tools": node.available_tools,
             }
@@ -565,7 +642,7 @@ class GraphBundleService:
         in cache_folder/bundles and JSONStorageService for user storage.
 
         Args:
-            path: Path to load the bundle from
+            path: Path to load the bundle from (can be Path or str)
 
         Returns:
             GraphBundle or None if loading fails
@@ -574,6 +651,9 @@ class GraphBundleService:
             ValueError: If required storage service is not available
         """
         try:
+            # Ensure path is a Path object
+            path = Path(path)
+
             # Use system storage for cache_folder/bundles
             self.logger.debug(f"Using SystemStorageManager for system bundle: {path}")
 
@@ -596,13 +676,18 @@ class GraphBundleService:
     def _deserialize_metadata_bundle(
         self, data: Dict[str, Any]
     ) -> Optional[GraphBundle]:
-        """Deserialize enhanced metadata bundle from dictionary format with backwards compatibility."""
+        """Deserialize enhanced metadata bundle from dictionary format.
+
+        Handles both legacy bundles (single-target edges) and new bundles
+        (parallel-target edges) with backward compatibility. JSON deserialization
+        preserves types (str or list[str]) automatically.
+        """
         try:
             # Validate format
             if data.get("format") != "metadata":
                 raise ValueError("Not a metadata bundle format")
 
-            # Reconstruct nodes
+            # Reconstruct nodes with parallel edge support
             nodes = {}
             for name, node_data in data["nodes"].items():
                 node = Node(
@@ -616,7 +701,14 @@ class GraphBundleService:
                     tool_source=node_data.get("tool_source"),
                     available_tools=node_data.get("available_tools"),
                 )
-                node.edges = node_data.get("edges", {})
+
+                # Restore edges - now supports Union[str, List[str]]
+                # JSON deserialization preserves types (str or list)
+                edges_data = node_data.get("edges", {})
+                for condition, targets in edges_data.items():
+                    # Targets may be str or list[str] - both supported by Node.add_edge()
+                    node.add_edge(condition, targets)
+
                 nodes[name] = node
 
             # Helper function to convert lists to sets, handling None values

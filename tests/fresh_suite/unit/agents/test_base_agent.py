@@ -204,7 +204,7 @@ class TestBaseAgent(unittest.TestCase):
         self.assertEqual(agent_with_output.output_field, "result")
     
     def test_run_method_with_no_output_field(self):
-        """Test that agents with output_field=None don't modify state."""
+        """Test that agents with output_field=None return empty dict."""
         agent = ConcreteAgent(
             name="no_output_test",
             prompt="No output test",
@@ -213,29 +213,22 @@ class TestBaseAgent(unittest.TestCase):
             execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
-        
+
         # Configure state adapter
         self.mock_state_adapter_service.get_inputs.return_value = {"input": "test"}
-        self.mock_state_adapter_service.set_value.side_effect = lambda s, k, v: {**s, k: v}
-        
+
         # CRITICAL: Set execution tracker on agent (required by new architecture)
         agent.set_execution_tracker(self.mock_tracker)
-        
+
         # Test state
         test_state = {"input": "test_value", "existing": "preserved"}
-        
+
         # Execute run method
         result_state = agent.run(test_state)
-        
-        # State should be unchanged (no output field set)
-        self.assertEqual(result_state["input"], "test_value")
-        self.assertEqual(result_state["existing"], "preserved")
-        
-        # set_value should NOT have been called for output (since output_field is None)
-        # The state adapter's set_value might be called for other purposes, but not for output
-        # We can't easily verify this without more complex mocking, but the key point is
-        # that no new output field should appear in the result state
-        self.assertNotIn("output", result_state)  # No default "output" field added
+
+        # NEW BEHAVIOR: When output_field is None, return empty dict (no updates)
+        self.assertEqual(result_state, {})
+        self.assertEqual(len(result_state), 0)
     
     # =============================================================================
     # 2. Service Configuration Tests (New Protocol Pattern)
@@ -511,44 +504,41 @@ class TestBaseAgent(unittest.TestCase):
             execution_tracking_service=self.mock_execution_tracking_service,  # Pass the SERVICE, not the tracker
             state_adapter_service=self.mock_state_adapter_service
         )
-        
+
         # Configure state adapter behavior
         def mock_get_inputs(state, input_fields):
             return {field: state.get(field) for field in input_fields if field in state}
-        
-        def mock_set_value(state, field, value):
-            updated_state = state.copy()
-            updated_state[field] = value
-            return updated_state
-        
+
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
-        
+
         # CRITICAL: Set execution tracker on agent (required by new architecture)
         agent.set_execution_tracker(self.mock_tracker)
-        
+
         # Test state
         test_state = {"input": "test_value", "other": "preserved"}
-        
+
         # Execute run method
         result_state = agent.run(test_state)
-        
-        # Verify state was updated
+
+        # NEW BEHAVIOR: run() returns partial state update (only output field)
+        # LangGraph merges this with existing state, not the agent
         self.assertIn("output", result_state)
         self.assertEqual(result_state["output"], "processed: {'input': 'test_value'}")
-        self.assertEqual(result_state["other"], "preserved")
-        
+        # Other fields are NOT in the result - only the output field is returned
+        self.assertNotIn("other", result_state)
+        self.assertEqual(len(result_state), 1)  # Only one field: output
+
         # Verify tracking service methods were called with correct parameters
         self.mock_execution_tracking_service.record_node_start.assert_called_once()
         self.mock_execution_tracking_service.record_node_result.assert_called_once()
-        
+
         # Verify the record_node_start call
         start_call_args = self.mock_execution_tracking_service.record_node_start.call_args
         start_args, start_kwargs = start_call_args
         # Should be: record_node_start(tracker, node_name, inputs)
         self.assertEqual(start_args[1], "run_test")  # node_name is second argument (after tracker)
-        
-        # Verify the record_node_result call 
+
+        # Verify the record_node_result call
         result_call_args = self.mock_execution_tracking_service.record_node_result.call_args
         result_args, result_kwargs = result_call_args
         # Should be: record_node_result(tracker, node_name, success, result=output)
@@ -562,7 +552,7 @@ class TestBaseAgent(unittest.TestCase):
         class ErrorAgent(BaseAgent):
             def process(self, inputs):
                 raise ValueError("Test process error")
-        
+
         agent = ErrorAgent(
             name="error_test",
             prompt="Error test",
@@ -571,36 +561,41 @@ class TestBaseAgent(unittest.TestCase):
             execution_tracking_service=self.mock_execution_tracking_service,  # Pass the SERVICE, not the tracker
             state_adapter_service=self.mock_state_adapter_service
         )
-        
+
         # Configure state adapter
         self.mock_state_adapter_service.get_inputs.return_value = {"input": "test"}
-        self.mock_state_adapter_service.set_value.side_effect = lambda s, k, v: s
-        
+
         # Configure execution tracking service methods
         self.mock_execution_tracking_service.update_graph_success.return_value = False
-        
+
         # CRITICAL: Set execution tracker on agent (required by new architecture)
         agent.set_execution_tracker(self.mock_tracker)
-        
+
         # Test state
         test_state = {"input": "test_value"}
-        
+
         # Execute run method (should not raise)
         result_state = agent.run(test_state)
-        
-        # Verify error was handled
-        self.assertEqual(result_state, test_state)  # Original state returned
-        
+
+        # NEW BEHAVIOR: Errors return partial state with error information
+        self.assertIn("graph_success", result_state)
+        self.assertIn("last_action_success", result_state)
+        self.assertIn("errors", result_state)
+        self.assertFalse(result_state["graph_success"])
+        self.assertFalse(result_state["last_action_success"])
+        self.assertEqual(len(result_state["errors"]), 1)
+        self.assertIn("Test process error", result_state["errors"][0])
+
         # Verify error tracking service methods were called
         self.mock_execution_tracking_service.record_node_result.assert_called_once()
         call_args = self.mock_execution_tracking_service.record_node_result.call_args
         args, kwargs = call_args
-        
+
         # Error case uses consistent pattern: record_node_result(tracker, node_name, False, error=error_msg)
         self.assertEqual(args[1], "error_test")  # node_name is second argument (after tracker)
         self.assertFalse(args[2])  # success=False is third argument
         self.assertIn('error', kwargs)  # error is keyword
-        
+
         # Verify error logging
         logger_calls = self.mock_logger.calls
         error_calls = [call for call in logger_calls if call[0] == "error"]
@@ -685,44 +680,40 @@ class TestBaseAgent(unittest.TestCase):
                 modified_inputs = inputs.copy()
                 modified_inputs["preprocessed"] = True
                 return state, modified_inputs
-            
+
             def process(self, inputs):
                 return inputs
-        
+
         agent = PreProcessAgent(
-            name="pre_test", 
+            name="pre_test",
             prompt="Test",
             context={"input_fields": ["input"], "output_field": "output"},
             logger=self.mock_logger,
             execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
-        
+
         # Configure mocks for run() method
         def mock_get_inputs(state, input_fields):
             return {field: state.get(field) for field in input_fields if field in state}
-        
-        def mock_set_value(state, field, value):
-            updated_state = state.copy()
-            updated_state[field] = value
-            return updated_state
-        
+
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
-        
+
         # CRITICAL: Set execution tracker on agent (required by new architecture)
         agent.set_execution_tracker(self.mock_tracker)
-        
+
         # Test state with original input
         test_state = {"input": "value"}
-        
+
         # Call run() method which triggers _pre_process
         result_state = agent.run(test_state)
-        
+
         # Verify that preprocessing was applied (result should include preprocessed flag)
+        # NEW BEHAVIOR: Only the output field is in result
         self.assertIn("output", result_state)
+        self.assertEqual(len(result_state), 1)  # Only output field
         output = result_state["output"]
-        
+
         # The output should be the processed inputs with the preprocessed flag
         self.assertIsInstance(output, dict)
         self.assertIn("input", output)
@@ -736,44 +727,40 @@ class TestBaseAgent(unittest.TestCase):
                 # Modify output in post-processing
                 modified_output = f"post_processed: {output}"
                 return state, modified_output
-            
+
             def process(self, inputs):
                 return "original_output"
-        
+
         agent = PostProcessAgent(
-            name="post_test", 
+            name="post_test",
             prompt="Test",
             context={"input_fields": ["input"], "output_field": "output"},
             logger=self.mock_logger,
             execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
-        
+
         # Configure mocks for run() method
         def mock_get_inputs(state, input_fields):
             return {field: state.get(field) for field in input_fields if field in state}
-        
-        def mock_set_value(state, field, value):
-            updated_state = state.copy()
-            updated_state[field] = value
-            return updated_state
-        
+
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
-        
+
         # CRITICAL: Set execution tracker on agent (required by new architecture)
         agent.set_execution_tracker(self.mock_tracker)
-        
+
         # Test state
         test_state = {"input": "value"}
-        
+
         # Call run() method which triggers _post_process
         result_state = agent.run(test_state)
-        
+
         # Verify that post-processing was applied
+        # NEW BEHAVIOR: Only the output field is in result
         self.assertIn("output", result_state)
+        self.assertEqual(len(result_state), 1)  # Only output field
         output = result_state["output"]
-        
+
         # Should be post-processed
         self.assertEqual(output, "post_processed: original_output")
     
@@ -791,22 +778,21 @@ class TestBaseAgent(unittest.TestCase):
             execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
-        
+
         # Configure mocks
         self.mock_state_adapter_service.get_inputs.return_value = {"input": "test"}
-        self.mock_state_adapter_service.set_value.side_effect = lambda s, k, v: {**s, k: v}
-        
+
         # CRITICAL: Set execution tracker on agent (required by new architecture)
         agent.set_execution_tracker(self.mock_tracker)
-        
+
         test_state = {"input": "test_value"}
-        
+
         # invoke should work the same as run
         result_from_invoke = agent.invoke(test_state)
-        result_from_run = agent.run(test_state)
-        
-        # Results should be identical
-        self.assertEqual(result_from_invoke, result_from_run)
+
+        # Both should return partial state (only output field)
+        self.assertIn("output", result_from_invoke)
+        self.assertEqual(len(result_from_invoke), 1)
 
 
 if __name__ == '__main__':

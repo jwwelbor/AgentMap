@@ -480,33 +480,28 @@ class TestDefaultAgent(unittest.TestCase):
             "input": "test message",
             "other_field": "should be preserved"
         }
-        
+
         # Configure state adapter to return proper inputs
         def mock_get_inputs(state, input_fields):
             return {field: state.get(field) for field in input_fields if field in state}
-        
-        def mock_set_value(state, field, value):
-            updated_state = state.copy()
-            updated_state[field] = value
-            return updated_state
-        
+
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
-        
+
         # IMPORTANT: Set execution tracker before calling run() - required by BaseAgent
         self.agent.set_execution_tracker(self.mock_tracker)
-        
+
         # Execute run method
         result_state = self.agent.run(test_state)
-        
-        # Verify state was updated with output
+
+        # NEW BEHAVIOR: Returns partial state update (only output field)
         self.assertIn("output", result_state)
         expected_output = "[test_default] DefaultAgent executed with prompt: 'Default processing with test prompt'"
         self.assertEqual(result_state["output"], expected_output)
-        
-        # Verify original fields are preserved
-        self.assertEqual(result_state["other_field"], "should be preserved")
-        
+
+        # Original fields are NOT in result - only output field
+        self.assertNotIn("other_field", result_state)
+        self.assertEqual(len(result_state), 1)  # Only output field
+
         # Verify tracking methods were called on the execution tracking service
         self.mock_execution_tracking_service.record_node_start.assert_called()
         self.mock_execution_tracking_service.record_node_result.assert_called()
@@ -522,30 +517,25 @@ class TestDefaultAgent(unittest.TestCase):
             execution_tracker_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service
         )
-        
+
         test_state = {"input": "test"}
-        
+
         # Configure state adapter
         def mock_get_inputs(state, input_fields):
             return {field: state.get(field) for field in input_fields if field in state}
-        
-        def mock_set_value(state, field, value):
-            updated_state = state.copy()
-            updated_state[field] = value
-            return updated_state
-        
+
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
-        
+
         # IMPORTANT: Set execution tracker before calling run() - required by BaseAgent
         agent_no_output.set_execution_tracker(self.mock_tracker)
-        
+
         # Execute run method
         result_state = agent_no_output.run(test_state)
-        
-        # State should be unchanged since no output_field is set
-        self.assertEqual(result_state, test_state)
-        
+
+        # NEW BEHAVIOR: When output_field is None, return empty dict
+        self.assertEqual(result_state, {})
+        self.assertEqual(len(result_state), 0)
+
         # Tracking should still occur
         self.mock_execution_tracking_service.record_node_start.assert_called()
         self.mock_execution_tracking_service.record_node_result.assert_called()
