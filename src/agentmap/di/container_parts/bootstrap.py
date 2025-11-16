@@ -57,7 +57,6 @@ class BootstrapContainer(containers.DeclarativeContainer):
         registry.add_source(
             CustomAgentYAMLSource(app_config_service, parser, logging_service)
         )
-        registry.load_all()
         logging_service.get_class_logger(registry).info(
             "Initialized declaration registry"
         )

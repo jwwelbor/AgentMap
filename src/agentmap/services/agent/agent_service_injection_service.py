@@ -475,7 +475,7 @@ class AgentServiceInjectionService:
                     f"[AgentServiceInjectionService] ✅ Configured {configured_count} host services for {agent_name}"
                 )
             else:
-                self.logger.debug(
+                self.logger.trace(
                     f"[AgentServiceInjectionService] Agent {agent_name} does not implement host protocols"
                 )
 

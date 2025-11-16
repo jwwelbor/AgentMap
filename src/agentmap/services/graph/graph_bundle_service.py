@@ -911,8 +911,7 @@ class GraphBundleService:
         bundle = self.lookup_bundle(csv_hash, graph_name)
 
         if bundle and not force_create:
-            # only load necessary classes
-            self.declaration_registry.load_for_bundle(bundle)
+            # Bundle contains everything needed - no declaration loading required
             return (bundle, True)
 
         # load all classes for bundle creation

@@ -15,7 +15,7 @@ from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
 
 
-class AgentFactoryService:
+class   AgentFactoryService:
     """
     Factory service for creating and managing agent instances.
 
@@ -82,7 +82,7 @@ class AgentFactoryService:
         # Import the class
         try:
             agent_class = self._import_class_from_path(class_path)
-            self.logger.debug(
+            self.logger.trace(
                 f"[AgentFactoryService] Successfully resolved '{agent_type}' to {agent_class.__name__}"
             )
             return agent_class

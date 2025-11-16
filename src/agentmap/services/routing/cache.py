@@ -191,7 +191,7 @@ class RoutingCache:
         decision = entry.decision
         decision.cache_hit = True
 
-        self._logger.debug(f"Cache hit for key: {cache_key[:8]}...")
+        self._logger.trace(f"Cache hit for key: {cache_key[:8]}...")
         return decision
 
     def put(

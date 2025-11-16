@@ -95,7 +95,7 @@ class IndentedTemplateComposer:
         # Check cache first
         if normalized_path in self._template_cache:
             self._cache_stats["hits"] += 1
-            self.logger.debug(
+            self.logger.trace(
                 f"[IndentedTemplateComposer] Cache hit for template: {normalized_path}"
             )
             return self._template_cache[normalized_path]

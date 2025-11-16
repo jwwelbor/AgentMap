@@ -110,7 +110,7 @@ class BaseStorageService(StorageService, ABC):
                     )
                     raise ValueError(f"Unsafe storage path: {e}")
 
-            self._logger.debug(
+            self._logger.trace(
                 f"[{self.provider_name}] Resolved system storage path: {full_path}"
             )
             return full_path
@@ -140,7 +140,7 @@ class BaseStorageService(StorageService, ABC):
                         )
                         raise ValueError(f"Unsafe storage path: {e}")
 
-                self._logger.debug(
+                self._logger.trace(
                     f"[{self.provider_name}] Resolved user storage path: {full_path}"
                 )
                 return full_path
@@ -246,7 +246,7 @@ class BaseStorageService(StorageService, ABC):
         """
         if self._client is None:
             try:
-                self._logger.debug(f"[{self.provider_name}] Initializing client")
+                self._logger.trace(f"[{self.provider_name}] Initializing client")
                 self._client = self._initialize_client()
                 self._is_initialized = True
                 self._logger.info(

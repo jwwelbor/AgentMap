@@ -177,7 +177,7 @@ class FeaturesRegistryService:
         cache_key = f"{category}.{provider}"
         cached = self.availability_cache_service.get_availability("provider", cache_key)
         if cached is not None:
-            self.logger.debug(
+            self.logger.trace(
                 f"[FeaturesRegistryService] Cache hit for provider.{cache_key}"
             )
             return cached.get("available", False)
@@ -235,7 +235,7 @@ class FeaturesRegistryService:
         cache_key = f"{category}.{provider}.validated"
         cached = self.availability_cache_service.get_availability("provider", cache_key)
         if cached is not None:
-            self.logger.debug(
+            self.logger.trace(
                 f"[FeaturesRegistryService] Cache hit for provider.{cache_key}"
             )
             return cached.get("validated", False)

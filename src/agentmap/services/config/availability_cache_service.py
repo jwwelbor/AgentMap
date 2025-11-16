@@ -287,7 +287,7 @@ class AvailabilityCacheService:
                 if result is not None:
                     self._stats["cache_hits"] += 1
                     if self._logger:
-                        self._logger.debug(f"Cache hit for {cache_key}")
+                        self._logger.trace(f"Cache hit for {cache_key}")
                 else:
                     self._stats["cache_misses"] += 1
                     if self._logger:
