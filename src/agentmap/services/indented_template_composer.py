@@ -835,13 +835,13 @@ class IndentedTemplateComposer:
             "func_name": func_name,
             "context": info.get("context", "") or "No context provided",
             "context_fields": context_fields,
-            "success_node": success_display,           # For documentation
-            "failure_node": failure_display,           # For documentation
-            "success_code": success_code,              # For code generation
-            "failure_code": failure_code,              # For code generation
-            "success_parallel": str(success_parallel), # Template flag
-            "failure_parallel": str(failure_parallel), # Template flag
-            "has_parallel": str(has_parallel),         # Template flag
+            "success_node": success_display,  # For documentation
+            "failure_node": failure_display,  # For documentation
+            "success_code": success_code,  # For code generation
+            "failure_code": failure_code,  # For code generation
+            "success_parallel": str(success_parallel),  # Template flag
+            "failure_parallel": str(failure_parallel),  # Template flag
+            "has_parallel": str(has_parallel),  # Template flag
             "node_name": info.get("node_name", "") or "Unknown",
             "description": info.get("description", "") or "No description provided",
             "output_field": info.get("output_field", "") or "None",

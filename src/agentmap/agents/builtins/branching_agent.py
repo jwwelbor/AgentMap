@@ -280,9 +280,9 @@ class BranchingAgent(BaseAgent):
         # Return a dict with state updates for parallel execution
         # BaseAgent will recognize the 'state_updates' key and merge all fields
         return state, {
-            'state_updates': {
+            "state_updates": {
                 self.output_field: result_message,
-                'last_action_success': success
+                "last_action_success": success,
             }
         }
 

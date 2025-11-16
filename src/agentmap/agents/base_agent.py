@@ -250,9 +250,11 @@ class BaseAgent:
 
             # SPECIAL CASE: If output is a dict with 'state_updates' key,
             # the agent wants to update multiple state fields (e.g., BranchingAgent)
-            if isinstance(output, dict) and 'state_updates' in output:
-                state_updates = output['state_updates']
-                self.log_debug(f"Returning multiple state updates: {list(state_updates.keys())}")
+            if isinstance(output, dict) and "state_updates" in output:
+                state_updates = output["state_updates"]
+                self.log_debug(
+                    f"Returning multiple state updates: {list(state_updates.keys())}"
+                )
                 end_time = time.time()
                 duration = end_time - start_time
                 self.log_trace(

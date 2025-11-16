@@ -123,11 +123,11 @@ class GraphAssemblyService:
         # These are used by the execution service and orchestrator
         system_fields = {
             "__execution_summary",  # Execution tracking metadata
-            "__policy_success",     # Policy evaluation result
-            "__next_node",         # Orchestrator dynamic routing
-            "last_action_success", # Standard success tracking
-            "graph_success",       # Overall graph success
-            "errors",             # Error collection
+            "__policy_success",  # Policy evaluation result
+            "__next_node",  # Orchestrator dynamic routing
+            "last_action_success",  # Standard success tracking
+            "graph_success",  # Overall graph success
+            "errors",  # Error collection
         }
         field_names.update(system_fields)
 
@@ -141,11 +141,7 @@ class GraphAssemblyService:
         state_fields = {name: Any for name in field_names}
 
         # Create dynamic TypedDict class
-        StateSchema = TypedDict(
-            f"{graph.name}State",
-            state_fields,
-            total=False
-        )
+        StateSchema = TypedDict(f"{graph.name}State", state_fields, total=False)
 
         self.logger.debug(
             f"Created dynamic state schema for '{graph.name}' with {len(field_names)} fields: {sorted(field_names)}"

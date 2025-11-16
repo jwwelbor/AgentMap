@@ -15,7 +15,7 @@ from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
 
 
-class   AgentFactoryService:
+class AgentFactoryService:
     """
     Factory service for creating and managing agent instances.
 
