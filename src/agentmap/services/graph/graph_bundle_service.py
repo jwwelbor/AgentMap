@@ -358,12 +358,14 @@ class GraphBundleService:
         for node_name, node in nodes.items():
             for condition, targets in node.edges.items():
                 if isinstance(targets, list) and len(targets) > 1:
-                    fan_out_nodes.append({
-                        "node": node_name,
-                        "condition": condition,
-                        "targets": targets,
-                        "parallelism": len(targets)
-                    })
+                    fan_out_nodes.append(
+                        {
+                            "node": node_name,
+                            "condition": condition,
+                            "targets": targets,
+                            "parallelism": len(targets),
+                        }
+                    )
                     parallel_groups.append(targets)
                     max_parallelism = max(max_parallelism, len(targets))
 
@@ -383,7 +385,7 @@ class GraphBundleService:
             "fan_in_nodes": fan_in_nodes,
             "parallel_groups": parallel_groups,
             "max_parallelism": max_parallelism,
-            "has_parallel": len(fan_out_nodes) > 0
+            "has_parallel": len(fan_out_nodes) > 0,
         }
 
     def _extract_protocol_mappings(self) -> Dict[str, str]:

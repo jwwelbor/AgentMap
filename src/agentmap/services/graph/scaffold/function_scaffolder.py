@@ -23,12 +23,14 @@ class FunctionScaffolder:
         failure_next = info.get("failure_next")
 
         return {
-            "success_parallel": isinstance(success_next, list) and len(success_next) > 1,
-            "failure_parallel": isinstance(failure_next, list) and len(failure_next) > 1,
+            "success_parallel": isinstance(success_next, list)
+            and len(success_next) > 1,
+            "failure_parallel": isinstance(failure_next, list)
+            and len(failure_next) > 1,
             "has_parallel": (
-                (isinstance(success_next, list) and len(success_next) > 1) or
-                (isinstance(failure_next, list) and len(failure_next) > 1)
-            )
+                (isinstance(success_next, list) and len(success_next) > 1)
+                or (isinstance(failure_next, list) and len(failure_next) > 1)
+            ),
         }
 
     def scaffold(

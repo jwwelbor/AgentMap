@@ -367,8 +367,12 @@ class CSVGraphParserService:
 
         # Parse edge information - NOW supports parallel targets
         edge = self._parse_edge_targets(self._safe_get_field(row, "Edge"))
-        success_next = self._parse_edge_targets(self._safe_get_field(row, "Success_Next"))
-        failure_next = self._parse_edge_targets(self._safe_get_field(row, "Failure_Next"))
+        success_next = self._parse_edge_targets(
+            self._safe_get_field(row, "Success_Next")
+        )
+        failure_next = self._parse_edge_targets(
+            self._safe_get_field(row, "Failure_Next")
+        )
 
         # Parse tool information
         tool_source = self._safe_get_field(row, "Tool_Source").strip() or None
