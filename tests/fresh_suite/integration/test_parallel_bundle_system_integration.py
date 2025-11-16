@@ -34,9 +34,12 @@ class TestParallelBundleSystemIntegration(BaseIntegrationTest):
         # Initialize runtime API with test configuration
         runtime_api.ensure_initialized(config_file=str(self.test_config_path))
 
-        # Only get bundle service for serialization/deserialization tests
-        # All other operations should go through runtime API
-        self.graph_bundle_service = self.container.graph_bundle_service()
+        # CRITICAL: Use the SAME container that runtime_api uses to avoid cache misses
+        # The runtime_api.inspect_graph() uses RuntimeManager.get_container()
+        # We must use the same container to access the same GraphRegistryService cache
+        from agentmap.runtime.init_ops import get_container
+        runtime_container = get_container()
+        self.graph_bundle_service = runtime_container.graph_bundle_service()
 
         self.assert_service_created(self.graph_bundle_service, "GraphBundleService")
 
