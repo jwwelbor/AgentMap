@@ -4,6 +4,13 @@ File Storage Service implementation for AgentMap.
 This module provides a concrete implementation of the storage service
 for file operations, refactored from FileReaderAgent and FileWriterAgent functionality.
 Supports text files, binary files, and document formats via LangChain loaders.
+
+Refactored Architecture:
+- FilePathValidator: Path validation and security
+- FileTypeDetector: File type detection
+- DocumentLoaderHandler: LangChain document loading
+- FileIOHandler: Low-level file I/O operations
+- ContentProcessor: Content preparation and conversion
 """
 
 import mimetypes
@@ -16,6 +23,11 @@ from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.file_path_service import FilePathService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.base import BaseStorageService
+from agentmap.services.storage.content_processor import ContentProcessor
+from agentmap.services.storage.document_loader_handler import DocumentLoaderHandler
+from agentmap.services.storage.file_io_handler import FileIOHandler
+from agentmap.services.storage.file_path_validator import FilePathValidator
+from agentmap.services.storage.file_type_detector import FileTypeDetector
 from agentmap.services.storage.types import StorageResult, WriteMode
 
 
@@ -27,18 +39,25 @@ class FileStorageService(BaseStorageService):
     - Text files (.txt, .md, .html, .csv, .log, .py, .js, .json, .yaml)
     - Document files (.pdf, .docx, .doc) via LangChain loaders
     - Binary files (.png, .jpg, .zip, etc.) for basic read/write
+
+    The service is now composed of specialized handlers:
+    - Path validation and security
+    - File type detection
+    - Document loading (LangChain integration)
+    - Low-level file I/O operations
+    - Content processing
     """
 
     def __init__(
         self,
         provider_name: str,
-        configuration: StorageConfigService,  # StorageConfigService (avoid circular import)
-        logging_service: LoggingService,  # LoggingService (avoid circular import)
+        configuration: StorageConfigService,
+        logging_service: LoggingService,
         file_path_service: FilePathService,
         base_directory: Optional[str] = None,
     ):
         """
-        Initialize JSONStorageService.
+        Initialize FileStorageService.
 
         Args:
             provider_name: Name of the storage provider
@@ -55,6 +74,26 @@ class FileStorageService(BaseStorageService):
             file_path_service,
             base_directory,
         )
+
+        # Initialize specialized handlers (lazy initialization after client setup)
+        self._path_validator: Optional[FilePathValidator] = None
+        self._type_detector: Optional[FileTypeDetector] = None
+        self._document_loader: Optional[DocumentLoaderHandler] = None
+        self._io_handler: Optional[FileIOHandler] = None
+        self._content_processor = ContentProcessor()
+
+    def _initialize_handlers(self) -> None:
+        """Initialize specialized handlers after client is configured."""
+        if self._path_validator is None:
+            base_dir = self.client["base_directory"]
+            allow_binary = self.client["allow_binary"]
+            encoding = self.client["encoding"]
+            newline = self.client["newline"]
+
+            self._path_validator = FilePathValidator(base_dir, self._logger)
+            self._type_detector = FileTypeDetector(allow_binary)
+            self._document_loader = DocumentLoaderHandler(self._logger)
+            self._io_handler = FileIOHandler(encoding, newline, self._logger)
 
     def _initialize_client(self) -> Dict[str, Any]:
         """
@@ -97,7 +136,7 @@ class FileStorageService(BaseStorageService):
         except (OSError, PermissionError) as e:
             raise OSError(f"Cannot create base directory '{base_dir}': {e}")
 
-        # Extract configuration options (based on FileReaderAgent/FileWriterAgent context)
+        # Extract configuration options
         config = {
             "base_directory": base_dir,
             "encoding": encoding,
@@ -156,437 +195,75 @@ class FileStorageService(BaseStorageService):
             self._logger.debug(f"File health check failed: {e}")
             return False
 
+    # Delegated methods for backwards compatibility
     def _validate_file_path(self, file_path: str) -> str:
-        """
-        Validate file path is within base directory bounds (security).
-
-        Enhanced validation that checks for path traversal attacks,
-        absolute paths, and dangerous characters across all platforms.
-
-        Args:
-            file_path: Path to validate
-
-        Returns:
-            Validated and normalized path
-
-        Raises:
-            ValueError: If path tries to escape base directory
-        """
-
-        # Check for null bytes and other dangerous characters
-        if "\0" in file_path:
-            raise ValueError(
-                f"Path {file_path} is outside base directory (contains null bytes)"
-            )
-
-        # Check for obvious directory traversal patterns
-        # Normalize separators for cross-platform compatibility
-        normalized_path = file_path.replace("\\", "/").replace("//", "/")
-
-        # Check for parent directory references
-        if "../" in normalized_path or normalized_path.startswith("../"):
-            raise ValueError(
-                f"Path {file_path} is outside base directory (contains directory traversal)"
-            )
-
-        # Check if it's an absolute path that's clearly outside our base
-        if Path(file_path).is_absolute():
-            # On Windows, check for different drive letters or system paths
-            if os.name == "nt":
-                # Block access to Windows system directories
-                lower_path = file_path.lower()
-                dangerous_windows_paths = [
-                    "c:\\windows",
-                    "c:\\program files",
-                    "c:\\system32",
-                    "/windows",
-                    "/program files",
-                    "/system32",
-                ]
-                for dangerous in dangerous_windows_paths:
-                    if dangerous in lower_path:
-                        raise ValueError(
-                            f"Path {file_path} is outside base directory (system path)"
-                        )
-            else:
-                # On Unix-like systems, block access to system directories
-                dangerous_unix_paths = [
-                    "/etc",
-                    "/usr",
-                    "/var",
-                    "/bin",
-                    "/sbin",
-                    "/root",
-                    "/sys",
-                    "/proc",
-                ]
-                for dangerous in dangerous_unix_paths:
-                    if (
-                        normalized_path.startswith(dangerous + "/")
-                        or normalized_path == dangerous
-                    ):
-                        raise ValueError(
-                            f"Path {file_path} is outside base directory (system path)"
-                        )
-
-        # Get base directory and resolve it
-        base_dir_path = Path(self.client["base_directory"])
-        base_dir = base_dir_path.resolve()
-
-        raw_path = Path(file_path)
-        if raw_path.is_absolute():
-            full_path = raw_path.resolve()
-        else:
-            try:
-                relative_suffix = raw_path.relative_to(base_dir_path)
-            except ValueError:
-                relative_suffix = raw_path
-            full_path = (base_dir / relative_suffix).resolve()
-
-        try:
-            # Check if the resolved path is within base directory
-            full_path.relative_to(base_dir)
-            return str(full_path)
-        except ValueError:
-            raise ValueError(f"Path {file_path} is outside base directory {base_dir}")
+        """Validate file path (delegates to FilePathValidator)."""
+        self._initialize_handlers()
+        return self._path_validator.validate_file_path(file_path)
 
     def _resolve_file_path(
         self, collection: str, document_id: Optional[str] = None
     ) -> Path:
-        """
-        Resolve full file path from collection and document_id.
-
-        Args:
-            collection: Directory path (collection)
-            document_id: Filename (document_id)
-
-        Returns:
-            Full file path
-        """
-        base_dir = Path(self.client["base_directory"])
-
-        if document_id is None:
-            # Collection only - treat as directory
-            return base_dir / collection
-        else:
-            # Collection + document_id - treat as directory + filename
-            return base_dir / collection / document_id
+        """Resolve file path (delegates to FilePathValidator)."""
+        self._initialize_handlers()
+        return self._path_validator.resolve_file_path(collection, document_id)
 
     def _ensure_directory(self, directory_path: Path) -> None:
-        """
-        Create directory if it doesn't exist.
-
-        Args:
-            directory_path: Path to directory
-        """
-        directory_path.mkdir(parents=True, exist_ok=True)
+        """Ensure directory exists (delegates to FilePathValidator)."""
+        self._initialize_handlers()
+        self._path_validator.ensure_directory(directory_path)
 
     def _is_text_file(self, file_path: str) -> bool:
-        """
-        Check if file is a supported text file (from FileWriterAgent).
-
-        Args:
-            file_path: Path to file
-
-        Returns:
-            True if supported text file, False otherwise
-        """
-        ext = Path(file_path).suffix.lower()
-        text_extensions = [
-            ".txt",
-            ".md",
-            ".html",
-            ".htm",
-            ".csv",
-            ".log",
-            ".py",
-            ".js",
-            ".json",
-            ".yaml",
-            ".yml",
-            ".xml",
-            ".rst",
-        ]
-        return ext in text_extensions
+        """Check if text file (delegates to FileTypeDetector)."""
+        self._initialize_handlers()
+        return self._type_detector.is_text_file(file_path)
 
     def _is_binary_file(self, file_path: str) -> bool:
-        """
-        Check if file should be handled as binary.
-
-        Args:
-            file_path: Path to file
-
-        Returns:
-            True if binary file, False otherwise
-        """
-        if not self.client["allow_binary"]:
-            return False
-
-        ext = Path(file_path).suffix.lower()
-        binary_extensions = [
-            ".pdf",
-            ".docx",
-            ".doc",
-            ".png",
-            ".jpg",
-            ".jpeg",
-            ".gif",
-            ".zip",
-            ".tar",
-            ".gz",
-            ".exe",
-            ".dll",
-        ]
-        return ext in binary_extensions
+        """Check if binary file (delegates to FileTypeDetector)."""
+        self._initialize_handlers()
+        return self._type_detector.is_binary_file(file_path)
 
     def _get_file_loader(self, file_path: str) -> Any:
-        """
-        Get appropriate LangChain document loader (refactored from FileReaderAgent).
-
-        Args:
-            file_path: Path to the document file
-
-        Returns:
-            LangChain document loader instance
-
-        Raises:
-            ValueError: For unsupported file types
-            ImportError: When dependencies for a file type aren't installed
-        """
-        file_ext = Path(file_path).suffix.lower()
-
-        try:
-            if file_ext == ".txt":
-                from langchain_community.document_loaders import TextLoader
-
-                return TextLoader(file_path)
-            elif file_ext == ".pdf":
-                from langchain_community.document_loaders import PyPDFLoader
-
-                return PyPDFLoader(file_path)
-            elif file_ext == ".md":
-                from langchain_community.document_loaders import (
-                    UnstructuredMarkdownLoader,
-                )
-
-                return UnstructuredMarkdownLoader(file_path)
-            elif file_ext in [".html", ".htm"]:
-                from langchain_community.document_loaders import UnstructuredHTMLLoader
-
-                return UnstructuredHTMLLoader(file_path)
-            elif file_ext in [".docx", ".doc"]:
-                from langchain_community.document_loaders import (
-                    UnstructuredWordDocumentLoader,
-                )
-
-                return UnstructuredWordDocumentLoader(file_path)
-            elif file_ext == ".csv":
-                from langchain_community.document_loaders import CSVLoader
-
-                return CSVLoader(file_path)
-            else:
-                # Default to text loader for unknown types
-                from langchain_community.document_loaders import TextLoader
-
-                return TextLoader(file_path)
-        except ImportError as e:
-            self._logger.warning(f"LangChain document loaders not available ({e})")
-            return self._create_fallback_loader(file_path)
-        except Exception as e:
-            raise ValueError(f"Error creating loader for {file_path}: {e}")
+        """Get document loader (delegates to DocumentLoaderHandler)."""
+        self._initialize_handlers()
+        return self._document_loader.get_file_loader(file_path)
 
     def _create_fallback_loader(self, file_path: str) -> Any:
-        """
-        Create fallback loader when LangChain unavailable (from FileReaderAgent).
-
-        Args:
-            file_path: Path to the document file
-
-        Returns:
-            Simple loader object with a load method
-        """
-
-        # Define a simple Document class for fallback
-        class SimpleDocument:
-            def __init__(self, content: str, metadata: Optional[Dict] = None):
-                self.page_content = content
-                self.metadata = metadata or {"source": file_path}
-
-        # Create a simple loader
-        class FallbackLoader:
-            def __init__(self, file_path: str):
-                self.file_path = file_path
-
-            def load(self) -> List[SimpleDocument]:
-                with open(self.file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                return [SimpleDocument(content)]
-
-        return FallbackLoader(file_path)
+        """Create fallback loader (delegates to DocumentLoaderHandler)."""
+        self._initialize_handlers()
+        return self._document_loader.create_fallback_loader(file_path)
 
     def _filter_by_id(self, documents: List[Any], document_id: str) -> List[Any]:
-        """
-        Filter documents by ID or index (from FileReaderAgent).
-
-        Args:
-            documents: List of documents
-            document_id: Document ID or index
-
-        Returns:
-            Filtered document list
-        """
-        # Try to filter by metadata ID
-        filtered = [
-            doc
-            for doc in documents
-            if hasattr(doc, "metadata") and doc.metadata.get("id") == document_id
-        ]
-
-        # If no matches by ID, try as index if it's numeric
-        if not filtered and document_id.isdigit():
-            idx = int(document_id)
-            if 0 <= idx < len(documents):
-                return [documents[idx]]
-
-        return filtered
+        """Filter documents by ID (delegates to DocumentLoaderHandler)."""
+        self._initialize_handlers()
+        return self._document_loader.filter_by_id(documents, document_id)
 
     def _apply_document_path(self, documents: Union[List[Any], Any], path: str) -> Any:
-        """
-        Extract content from document(s) at specified path (from FileReaderAgent).
-
-        Args:
-            documents: Document or list of documents
-            path: Path expression (e.g., "metadata.source" or "0.content")
-
-        Returns:
-            Content at specified path
-        """
-        if not path:
-            return documents
-
-        result = []
-
-        # Handle single document case
-        if not isinstance(documents, list):
-            documents = [documents]
-
-        for doc in documents:
-            # Check for metadata paths
-            if path.startswith("metadata.") and hasattr(doc, "metadata"):
-                meta_key = path.split(".", 1)[1]
-                if meta_key in doc.metadata:
-                    result.append(doc.metadata[meta_key])
-            # Default to page content
-            elif hasattr(doc, "page_content"):
-                result.append(doc.page_content)
-            else:
-                result.append(doc)
-
-        return result
+        """Apply document path (delegates to DocumentLoaderHandler)."""
+        self._initialize_handlers()
+        return self._document_loader.apply_document_path(documents, path)
 
     def _apply_query_filter(
         self, documents: List[Any], query: Union[Dict[str, Any], str]
     ) -> List[Any]:
-        """
-        Filter documents based on query parameters (from FileReaderAgent).
-
-        Args:
-            documents: List of documents
-            query: Query string or dictionary
-
-        Returns:
-            Filtered document list
-        """
-        if not documents:
-            return []
-
-        filtered_docs = []
-
-        if isinstance(query, dict):
-            # Filter by metadata
-            for doc in documents:
-                if not hasattr(doc, "metadata"):
-                    continue
-
-                matches = True
-                for k, v in query.items():
-                    if doc.metadata.get(k) != v:
-                        matches = False
-                        break
-
-                if matches:
-                    filtered_docs.append(doc)
-
-        elif isinstance(query, str):
-            # Simple text search in content
-            for doc in documents:
-                if not hasattr(doc, "page_content"):
-                    continue
-
-                if query.lower() in doc.page_content.lower():
-                    filtered_docs.append(doc)
-
-        return filtered_docs
+        """Apply query filter (delegates to DocumentLoaderHandler)."""
+        self._initialize_handlers()
+        return self._document_loader.apply_query_filter(documents, query)
 
     def _prepare_content(self, data: Any) -> Union[str, bytes]:
-        """
-        Convert data to writable content (from FileWriterAgent, minus state lookup).
-
-        Args:
-            data: Input data in various formats
-
-        Returns:
-            String or bytes content for writing
-        """
-        if hasattr(data, "page_content"):
-            # Single LangChain document
-            return data.page_content
-        elif isinstance(data, list) and data and hasattr(data[0], "page_content"):
-            # List of LangChain documents
-            return "\n\n".join(doc.page_content for doc in data)
-        elif isinstance(data, dict):
-            # Try to extract content from dictionary
-            if "content" in data:
-                return str(data["content"])
-            else:
-                # Convert whole dict to string
-                return str(data)
-        elif isinstance(data, bytes):
-            # Binary data
-            return data
-        else:
-            # Convert to string directly
-            return str(data)
+        """Prepare content for writing (delegates to ContentProcessor)."""
+        return self._content_processor.prepare_content(data)
 
     def _read_text_file(self, file_path: Path, **kwargs) -> str:
-        """
-        Read text file content.
-
-        Args:
-            file_path: Path to text file
-            **kwargs: Additional parameters
-
-        Returns:
-            File content as string
-        """
+        """Read text file (delegates to FileIOHandler)."""
+        self._initialize_handlers()
         encoding = kwargs.get("encoding", self.client["encoding"])
-
-        with open(file_path, "r", encoding=encoding) as f:
-            return f.read()
+        return self._io_handler.read_text_file(file_path, encoding)
 
     def _read_binary_file(self, file_path: Path, **kwargs) -> bytes:
-        """
-        Read binary file content.
-
-        Args:
-            file_path: Path to binary file
-            **kwargs: Additional parameters
-
-        Returns:
-            File content as bytes
-        """
-        with open(file_path, "rb") as f:
-            return f.read()
+        """Read binary file (delegates to FileIOHandler)."""
+        self._initialize_handlers()
+        return self._io_handler.read_binary_file(file_path)
 
     def _write_text_file(
         self,
@@ -597,81 +274,22 @@ class FileStorageService(BaseStorageService):
         collection: str,
         **kwargs,
     ) -> StorageResult:
-        """
-        Write content to text file (refactored from FileWriterAgent).
-
-        Args:
-            file_path: Path to file
-            content: Content to write
-            mode: Write mode
-            file_exists: Whether file existed before operation
-            collection: Collection name for error reporting
-            **kwargs: Additional parameters
-
-        Returns:
-            StorageResult with operation details
-        """
+        """Write text file (delegates to FileIOHandler)."""
+        self._initialize_handlers()
         encoding = kwargs.get("encoding", self.client["encoding"])
         newline = kwargs.get("newline", self.client["newline"])
 
-        try:
-            # Handle different write modes
-            if mode == WriteMode.WRITE:
-                # Create or overwrite file
-                with open(file_path, "w", encoding=encoding, newline=newline) as f:
-                    f.write(content)
-
-                return self._create_success_result(
-                    "write",
-                    collection=collection,
-                    file_path=str(file_path),
-                    created_new=not file_exists,
-                )
-
-            elif mode == WriteMode.APPEND:
-                # Append to existing file or create new
-                with open(file_path, "a", encoding=encoding, newline=newline) as f:
-                    if file_exists:
-                        # Add a newline before appending if needed
-                        f.write("\n\n")
-                    f.write(content)
-
-                return self._create_success_result(
-                    "append",
-                    collection=collection,
-                    file_path=str(file_path),
-                    created_new=not file_exists,
-                )
-
-            elif mode == WriteMode.UPDATE:
-                # For text files, update is the same as write for simplicity
-                with open(file_path, "w", encoding=encoding, newline=newline) as f:
-                    f.write(content)
-
-                return self._create_success_result(
-                    "update",
-                    collection=collection,
-                    file_path=str(file_path),
-                    created_new=not file_exists,
-                )
-
-            # Other modes not supported for simple text files
-            return self._create_error_result(
-                "write",
-                f"Unsupported write mode for text files: {mode}",
-                collection=collection,
-                file_path=str(file_path),
-            )
-
-        except (PermissionError, OSError) as e:
-            # Handle permission and OS errors gracefully
-            error_msg = f"Permission denied: {str(e)}"
-            self._logger.error(
-                f"[{self.provider_name}] {error_msg} (collection={collection}, file_path={file_path})"
-            )
-            return self._create_error_result(
-                "write", error_msg, collection=collection, file_path=str(file_path)
-            )
+        return self._io_handler.write_text_file(
+            file_path,
+            content,
+            mode,
+            file_exists,
+            collection,
+            encoding,
+            newline,
+            self._create_error_result,
+            self._create_success_result,
+        )
 
     def _write_binary_file(
         self,
@@ -682,75 +300,18 @@ class FileStorageService(BaseStorageService):
         collection: str,
         **kwargs,
     ) -> StorageResult:
-        """
-        Write content to binary file.
+        """Write binary file (delegates to FileIOHandler)."""
+        self._initialize_handlers()
 
-        Args:
-            file_path: Path to file
-            content: Binary content to write
-            mode: Write mode
-            file_exists: Whether file existed before operation
-            collection: Collection name for error reporting
-            **kwargs: Additional parameters
-
-        Returns:
-            StorageResult with operation details
-        """
-        try:
-            # Handle different write modes
-            if mode == WriteMode.WRITE:
-                # Create or overwrite file
-                with open(file_path, "wb") as f:
-                    f.write(content)
-
-                return self._create_success_result(
-                    "write",
-                    collection=collection,
-                    file_path=str(file_path),
-                    created_new=not file_exists,
-                )
-
-            elif mode == WriteMode.APPEND:
-                # Append to existing file or create new
-                with open(file_path, "ab") as f:
-                    f.write(content)
-
-                return self._create_success_result(
-                    "append",
-                    collection=collection,
-                    file_path=str(file_path),
-                    created_new=not file_exists,
-                )
-
-            elif mode == WriteMode.UPDATE:
-                # For binary files, update is the same as write
-                with open(file_path, "wb") as f:
-                    f.write(content)
-
-                return self._create_success_result(
-                    "update",
-                    collection=collection,
-                    file_path=str(file_path),
-                    created_new=not file_exists,
-                )
-
-            # Other modes not supported for binary files
-            return self._create_error_result(
-                "write",
-                f"Unsupported write mode for binary files: {mode}",
-                collection=collection,
-                file_path=str(file_path),
-            )
-
-        except (PermissionError, OSError) as e:
-            # Handle permission and OS errors gracefully
-            error_msg = f"Permission denied: {str(e)}"
-            self._logger.error(
-                f"[{self.provider_name}] {error_msg} (collection={collection}, file_path={file_path})"
-            )
-            return self._create_error_result(
-                "write", error_msg, collection=collection, file_path=str(file_path)
-            )
+        return self._io_handler.write_binary_file(
+            file_path,
+            content,
+            mode,
+            file_exists,
+            collection,
+            self._create_error_result,
+            self._create_success_result,
+        )
 
     def read(
         self,
@@ -814,10 +375,8 @@ class FileStorageService(BaseStorageService):
                 content = self._read_binary_file(file_path, **kwargs)
 
                 if output_format == "default" or output_format == "raw":
-                    # Return raw content by default (consistent with other storage services)
                     return content
                 elif output_format == "structured":
-                    # Structured format returns data with metadata when explicitly requested
                     return {
                         "content": content,
                         "metadata": {
@@ -827,10 +386,9 @@ class FileStorageService(BaseStorageService):
                         },
                     }
                 else:
-                    # Unknown format - default to raw content
                     return content
 
-            # Handle text file reading - prioritize simple text reading over document loaders
+            # Handle text file reading - prioritize simple text reading
             if self._is_text_file(str(file_path)):
                 try:
                     content = self._read_text_file(file_path, **kwargs)
@@ -840,10 +398,8 @@ class FileStorageService(BaseStorageService):
                         or output_format == "text"
                         or output_format == "raw"
                     ):
-                        # Return raw content by default (consistent with other storage services)
                         return content
                     elif output_format == "structured":
-                        # Structured format returns data with metadata when explicitly requested
                         return {
                             "content": content,
                             "metadata": {
@@ -853,22 +409,18 @@ class FileStorageService(BaseStorageService):
                             },
                         }
                     else:
-                        # Unknown format - default to raw content
                         return content
                 except Exception as e:
-                    # If simple text reading fails, fallback to document loaders
                     self._logger.debug(
                         f"Simple text reading failed for {file_path}, trying document loaders: {e}"
                     )
 
-            # If we reach here, it's not a simple text file or text reading failed, try document loaders
-
-            # Handle document files via LangChain loaders
+            # Try document loaders
             try:
                 loader = self._get_file_loader(str(file_path))
                 documents = loader.load()
 
-                # Apply document ID filter if provided (for chunked documents)
+                # Apply document ID filter if provided
                 if query and query.get("document_index") is not None:
                     doc_idx = query["document_index"]
                     if isinstance(doc_idx, int) and 0 <= doc_idx < len(documents):
@@ -878,7 +430,6 @@ class FileStorageService(BaseStorageService):
 
                 # Apply query filter if provided
                 if query:
-                    # Remove special parameters before filtering
                     filter_query = {
                         k: v
                         for k, v in query.items()
@@ -895,7 +446,6 @@ class FileStorageService(BaseStorageService):
                 if output_format == "raw":
                     return documents
                 elif output_format == "default" or output_format == "text":
-                    # Return raw content by default (consistent with other storage services)
                     if isinstance(documents, list):
                         return "\n\n".join(
                             doc.page_content
@@ -907,11 +457,8 @@ class FileStorageService(BaseStorageService):
                     else:
                         return str(documents)
                 elif output_format == "structured":
-                    # Structured format - return metadata when explicitly requested
-                    # For specific document reads, return single document, not list
                     if isinstance(documents, list):
                         if len(documents) == 1:
-                            # Single document case - return the document directly
                             doc = documents[0]
                             if hasattr(doc, "page_content"):
                                 result = {"content": doc.page_content}
@@ -923,7 +470,6 @@ class FileStorageService(BaseStorageService):
                             else:
                                 return str(doc)
                         else:
-                            # Multiple documents - return list
                             formatted_docs = []
                             for i, doc in enumerate(documents):
                                 if hasattr(doc, "page_content"):
@@ -937,7 +483,6 @@ class FileStorageService(BaseStorageService):
                                     formatted_docs.append(str(doc))
                             return formatted_docs
                     elif hasattr(documents, "page_content"):
-                        # Single document case
                         result = {"content": documents.page_content}
                         if self.client["include_metadata"] and hasattr(
                             documents, "metadata"
@@ -947,7 +492,6 @@ class FileStorageService(BaseStorageService):
                     else:
                         return documents
                 else:
-                    # Unknown format - default to raw content
                     if isinstance(documents, list):
                         return "\n\n".join(
                             doc.page_content
@@ -971,10 +515,8 @@ class FileStorageService(BaseStorageService):
                     or output_format == "text"
                     or output_format == "raw"
                 ):
-                    # Return raw content by default (consistent with other storage services)
                     return content
                 elif output_format == "structured":
-                    # Structured format returns data with metadata when explicitly requested
                     return {
                         "content": content,
                         "metadata": {
@@ -984,7 +526,6 @@ class FileStorageService(BaseStorageService):
                         },
                     }
                 else:
-                    # Unknown format - default to raw content
                     return content
 
         except Exception as e:
@@ -1050,7 +591,7 @@ class FileStorageService(BaseStorageService):
             # Ensure directory exists
             self._ensure_directory(file_path.parent)
 
-            # Check if file exists (for reporting if we created a new file)
+            # Check if file exists
             file_exists = file_path.exists()
 
             # Prepare content
@@ -1146,11 +687,11 @@ class FileStorageService(BaseStorageService):
                     file_deleted=True,
                 )
             elif file_path.is_dir():
-                # Delete directory (only if empty or kwargs allow recursive)
+                # Delete directory
                 if kwargs.get("recursive", False):
                     shutil.rmtree(file_path)
                 else:
-                    file_path.rmdir()  # Only works if empty
+                    file_path.rmdir()
 
                 return self._create_success_result(
                     "delete",
