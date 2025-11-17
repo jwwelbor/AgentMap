@@ -18,6 +18,13 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from agentmap.services.storage.base import BaseStorageService
+
+from agentmap.services.storage.csv import (
+    CSVFileOperations,
+    CSVIdDetection,
+    CSVQueryFiltering,
+    CSVDocumentOperations,
+)
 from agentmap.services.storage.types import (
     StorageProviderError,
     StorageResult,
@@ -226,18 +233,13 @@ class CSVStorageService(BaseStorageService):
             DataFrame with CSV data
         """
         try:
-            # Merge default options with provided kwargs
-            read_options = self.client["default_options"].copy()
-            read_options["encoding"] = self.client["encoding"]
-            read_options.update(kwargs)
-
-            df = pd.read_csv(file_path, **read_options)
-            self._logger.debug(f"Read {len(df)} rows from {file_path}")
-            return df
-
-        except FileNotFoundError:
-            self._logger.debug(f"CSV file not found: {file_path}")
-            raise
+            return CSVFileOperations.read_csv_file(
+                file_path,
+                self.client["encoding"],
+                self.client["default_options"],
+                self._logger,
+                **kwargs
+            )
         except Exception as e:
             self._handle_error("read_csv", e, file_path=file_path)
 
@@ -258,26 +260,15 @@ class CSVStorageService(BaseStorageService):
             OSError: If other OS-level errors occur
         """
         try:
-            # Ensure base directory exists when using injection (deferred from _initialize_client)
-            if self.base_directory:
-                os.makedirs(self.base_directory, exist_ok=True)
-
-            self._ensure_directory_exists(file_path)
-
-            # Set default write options
-            write_options = {"index": False, "encoding": self.client["encoding"]}
-            write_options.update(kwargs)
-
-            # Handle header for append mode
-            if mode == "a" and os.path.exists(file_path):
-                write_options["header"] = False
-
-            df.to_csv(file_path, mode=mode, **write_options)
-            self._logger.debug(f"Wrote {len(df)} rows to {file_path} (mode: {mode})")
-
-        except (PermissionError, OSError):
-            # Let permission and OS errors propagate to be handled by write method
-            raise
+            CSVFileOperations.write_csv_file(
+                df,
+                file_path,
+                self.client["encoding"],
+                mode,
+                self.base_directory,
+                self._logger,
+                **kwargs
+            )
         except Exception as e:
             self._handle_error("write_csv", e, file_path=file_path)
 
@@ -381,6 +372,54 @@ class CSVStorageService(BaseStorageService):
             filtered_df = filtered_df.head(limit)
 
         return filtered_df
+
+
+    # Backward compatibility methods for tests
+    def _ensure_directory_exists(self, file_path: str) -> None:
+        """
+        Ensure the directory for a file path exists.
+
+        Backward compatibility wrapper for CSVFileOperations.ensure_directory_exists.
+
+        Args:
+            file_path: Path to file
+
+        Raises:
+            PermissionError: If directory cannot be created due to permissions
+            OSError: If other OS-level errors occur
+        """
+        CSVFileOperations.ensure_directory_exists(file_path)
+
+    def _apply_query_filter(
+        self, df: pd.DataFrame, query: Dict[str, Any]
+    ) -> pd.DataFrame:
+        """
+        Apply query filters to DataFrame.
+
+        Backward compatibility wrapper for CSVQueryFiltering.apply_query_filter.
+
+        Args:
+            df: DataFrame to filter
+            query: Query parameters
+
+        Returns:
+            Filtered DataFrame
+        """
+        return CSVQueryFiltering.apply_query_filter(df, query)
+
+    def _detect_id_column(self, df: pd.DataFrame) -> Optional[str]:
+        """
+        Detect the ID column using smart detection logic.
+
+        Backward compatibility wrapper for CSVIdDetection.detect_id_column.
+
+        Args:
+            df: DataFrame to analyze
+
+        Returns:
+            Column name to use as ID, or None if no suitable column found
+        """
+        return CSVIdDetection.detect_id_column(df)
 
     def read(
         self,
