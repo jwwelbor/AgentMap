@@ -13,6 +13,13 @@ from typing import Any, Dict, List, Optional, TypeVar, Union
 
 from agentmap.exceptions.base_exceptions import ConfigurationException
 from agentmap.services.config.config_service import ConfigService
+from agentmap.services.config.config_managers import (
+    AuthConfigManager,
+    DeclarationConfigManager,
+    HostConfigManager,
+    PathConfigManager,
+    RoutingConfigManager,
+)
 
 T = TypeVar("T")
 
@@ -52,6 +59,23 @@ class AppConfigService:
 
         # Load configuration
         self._load_config(config_path)
+
+        # Initialize specialized configuration managers
+        self._path_manager = PathConfigManager(
+            self._config_service, self._config_data, self._logger
+        )
+        self._auth_manager = AuthConfigManager(
+            self._config_service, self._config_data, self._logger
+        )
+        self._host_manager = HostConfigManager(
+            self._config_service, self._config_data, self._logger
+        )
+        self._declaration_manager = DeclarationConfigManager(
+            self._config_service, self._config_data, self._logger
+        )
+        self._routing_manager = RoutingConfigManager(
+            self._config_service, self._config_data, self._logger
+        )
 
     def _setup_bootstrap_logging(self):
         """Set up bootstrap logger for config loading before real logging is available."""
@@ -95,6 +119,13 @@ class AppConfigService:
             self._logger.debug(
                 "[AppConfigService] Replaced bootstrap logger with real logger"
             )
+
+            # Update logger in all managers
+            self._path_manager._logger = logger
+            self._auth_manager._logger = logger
+            self._host_manager._logger = logger
+            self._declaration_manager._logger = logger
+            self._routing_manager._logger = logger
 
     # Core access methods
     def get_section(self, section: str, default: T = None) -> Dict[str, Any]:
