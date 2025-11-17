@@ -3,15 +3,22 @@ Memory Storage Service implementation for AgentMap.
 
 This module provides a concrete implementation of the storage service
 for in-memory data operations. Ideal for testing, caching, and temporary data storage.
+
+Note: This module has been refactored into smaller components:
+- memory_helpers.py: Path operations and query filtering
+- memory_metadata.py: Metadata tracking and statistics
+- memory_persistence.py: Save/load operations
 """
 
-import json
 import time
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.types import StorageResult, WriteMode
+from agentmap.services.storage.memory_helpers import MemoryStorageHelpers
+from agentmap.services.storage.memory_metadata import MemoryMetadataManager
+from agentmap.services.storage.memory_persistence import MemoryPersistenceManager
 
 
 class MemoryStorageService(BaseStorageService):
@@ -44,17 +51,11 @@ class MemoryStorageService(BaseStorageService):
         )
         # In-memory storage structure: {collection_name: {document_id: data}}
         self._storage: Dict[str, Dict[str, Any]] = {}
-        # Metadata tracking
-        self._metadata: Dict[str, Dict[str, Dict[str, Any]]] = {}
-        # Operation counters for statistics
-        self._stats = {
-            "reads": 0,
-            "writes": 0,
-            "deletes": 0,
-            "collections_created": 0,
-            "documents_created": 0,
-        }
-        self._created_at = time.time()
+
+        # Initialize helper components
+        self._helpers = MemoryStorageHelpers()
+        self._metadata_manager = MemoryMetadataManager()
+        self._persistence_manager = MemoryPersistenceManager(self._logger)
 
     def _initialize_client(self) -> Dict[str, Any]:
         """
@@ -79,14 +80,18 @@ class MemoryStorageService(BaseStorageService):
             "case_sensitive_collections": self._config.get_option(
                 "case_sensitive_collections", True
             ),
-            "persistence_file": self._config.get_option(
-                "persistence_file"
-            ),  # Optional file for persistence
+            "persistence_file": self._config.get_option("persistence_file"),
         }
 
         # Load from persistence file if specified
         if config.get("persistence_file"):
-            self._load_from_persistence(config["persistence_file"])
+            storage, metadata, stats = self._persistence_manager.load_from_file(
+                config["persistence_file"]
+            )
+            self._storage = storage
+            self._metadata_manager.set_metadata(metadata)
+            if stats:
+                self._metadata_manager.set_stats(stats)
 
         return config
 
@@ -143,291 +148,6 @@ class MemoryStorageService(BaseStorageService):
             self._logger.debug(f"Memory health check failed: {e}")
             return False
 
-    def _normalize_collection_name(self, collection: str) -> str:
-        """
-        Normalize collection name based on case sensitivity setting.
-
-        Args:
-            collection: Collection name
-
-        Returns:
-            Normalized collection name
-        """
-        if self.client.get("case_sensitive_collections", True):
-            return collection
-        else:
-            return collection.lower()
-
-    def _generate_document_id(self, collection: str) -> str:
-        """
-        Generate a unique document ID for a collection.
-
-        Args:
-            collection: Collection name
-
-        Returns:
-            Generated document ID
-        """
-        collection_data = self._storage.get(collection, {})
-
-        # Simple incremental ID generation
-        max_id = 0
-        for doc_id in collection_data.keys():
-            if doc_id.isdigit():
-                max_id = max(max_id, int(doc_id))
-
-        return str(max_id + 1)
-
-    def _apply_path(self, data: Any, path: str) -> Any:
-        """
-        Extract data from nested structure using dot notation.
-
-        Args:
-            data: Data structure to traverse
-            path: Dot-notation path (e.g., "user.address.city")
-
-        Returns:
-            Value at the specified path or None if not found
-        """
-        if not path:
-            return data
-
-        components = path.split(".")
-        current = data
-
-        for component in components:
-            if current is None:
-                return None
-
-            # Handle arrays with numeric indices
-            if component.isdigit() and isinstance(current, list):
-                index = int(component)
-                if 0 <= index < len(current):
-                    current = current[index]
-                else:
-                    return None
-            # Handle dictionaries
-            elif isinstance(current, dict):
-                current = current.get(component)
-            else:
-                return None
-
-        return current
-
-    def _update_path(self, data: Any, path: str, value: Any) -> Any:
-        """
-        Update data at a specified path.
-
-        Args:
-            data: Data structure to modify
-            path: Dot-notation path
-            value: New value to set
-
-        Returns:
-            Updated data structure
-        """
-        if not path:
-            return value
-
-        # Make a copy to avoid modifying original
-        if isinstance(data, dict):
-            result = data.copy()
-        elif isinstance(data, list):
-            result = data.copy()
-        else:
-            # If data is not a container, start with empty dict
-            result = {}
-
-        components = path.split(".")
-        current = result
-
-        # Navigate to the parent of the target
-        for i, component in enumerate(components[:-1]):
-            # Handle array indices
-            if component.isdigit() and isinstance(current, list):
-                index = int(component)
-                # Extend the list if needed
-                while len(current) <= index:
-                    current.append({})
-
-                if current[index] is None:
-                    if i < len(components) - 2 and components[i + 1].isdigit():
-                        current[index] = []
-                    else:
-                        current[index] = {}
-
-                current = current[index]
-
-            # Handle dictionary keys
-            else:
-                if not isinstance(current, dict):
-                    current = {}
-
-                if component not in current:
-                    if i < len(components) - 2 and components[i + 1].isdigit():
-                        current[component] = []
-                    else:
-                        current[component] = {}
-
-                current = current[component]
-
-        # Set the value at the final path component
-        last_component = components[-1]
-
-        if last_component.isdigit() and isinstance(current, list):
-            index = int(last_component)
-            while len(current) <= index:
-                current.append(None)
-            current[index] = value
-        elif isinstance(current, dict):
-            current[last_component] = value
-
-        return result
-
-    def _apply_query_filter(
-        self, data: Dict[str, Any], query: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Apply query filtering to collection data.
-
-        Args:
-            data: Collection data (document_id -> document)
-            query: Query parameters
-
-        Returns:
-            Filtered data matching query criteria
-        """
-        if not query:
-            return data
-
-        # Extract special query parameters
-        limit = query.pop("limit", None)
-        offset = query.pop("offset", 0)
-        sort_field = query.pop("sort", None)
-        sort_order = query.pop("order", "asc").lower()
-
-        # Apply field filtering
-        filtered_data = {}
-        for doc_id, doc_data in data.items():
-            if not isinstance(doc_data, dict):
-                continue
-
-            matches = True
-            for field, value in query.items():
-                if doc_data.get(field) != value:
-                    matches = False
-                    break
-
-            if matches:
-                filtered_data[doc_id] = doc_data
-
-        # Convert to list for sorting and pagination
-        items = list(filtered_data.items())
-
-        # Apply sorting
-        if sort_field:
-            reverse = sort_order == "desc"
-            items.sort(
-                key=lambda x: x[1].get(sort_field) if isinstance(x[1], dict) else None,
-                reverse=reverse,
-            )
-
-        # Apply pagination
-        if offset and isinstance(offset, int) and offset > 0:
-            items = items[offset:]
-
-        if limit and isinstance(limit, int) and limit > 0:
-            items = items[:limit]
-
-        # Convert back to dict
-        return dict(items)
-
-    def _update_metadata(
-        self, collection: str, document_id: str, operation: str
-    ) -> None:
-        """
-        Update metadata for a document.
-
-        Args:
-            collection: Collection name
-            document_id: Document ID
-            operation: Operation type (create, update, delete)
-        """
-        if not self.client.get("track_metadata", True):
-            return
-
-        collection = self._normalize_collection_name(collection)
-
-        # Initialize metadata structure
-        if collection not in self._metadata:
-            self._metadata[collection] = {}
-
-        if document_id not in self._metadata[collection]:
-            self._metadata[collection][document_id] = {
-                "created_at": time.time(),
-                "updated_at": time.time(),
-                "access_count": 0,
-                "version": 1,
-            }
-        else:
-            self._metadata[collection][document_id]["updated_at"] = time.time()
-            if operation == "read":
-                self._metadata[collection][document_id]["access_count"] += 1
-            elif operation in ["write", "update"]:
-                self._metadata[collection][document_id]["version"] += 1
-
-    def _save_to_persistence(self, file_path: str) -> None:
-        """
-        Save current storage state to persistence file.
-
-        Args:
-            file_path: Path to persistence file
-        """
-        try:
-            import os
-
-            persistence_data = {
-                "storage": self._storage,
-                "metadata": self._metadata,
-                "stats": self._stats,
-                "saved_at": time.time(),
-            }
-
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
-
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(persistence_data, f, indent=2, default=str)
-
-            self._logger.debug(f"Saved memory storage to {file_path}")
-        except Exception as e:
-            self._logger.warning(f"Failed to save persistence data: {e}")
-
-    def _load_from_persistence(self, file_path: str) -> None:
-        """
-        Load storage state from persistence file.
-
-        Args:
-            file_path: Path to persistence file
-        """
-        try:
-            import os
-
-            if not os.path.exists(file_path):
-                self._logger.debug(f"Persistence file not found: {file_path}")
-                return
-
-            with open(file_path, "r", encoding="utf-8") as f:
-                persistence_data = json.load(f)
-
-            self._storage = persistence_data.get("storage", {})
-            self._metadata = persistence_data.get("metadata", {})
-            self._stats = persistence_data.get("stats", self._stats)
-
-            self._logger.debug(f"Loaded memory storage from {file_path}")
-        except Exception as e:
-            self._logger.warning(f"Failed to load persistence data: {e}")
-
     def read(
         self,
         collection: str,
@@ -450,8 +170,10 @@ class MemoryStorageService(BaseStorageService):
             Document data based on query and path
         """
         try:
-            self._stats["reads"] += 1
-            collection = self._normalize_collection_name(collection)
+            self._metadata_manager.increment_stat("reads")
+            collection = self._helpers.normalize_collection_name(
+                collection, self.client.get("case_sensitive_collections", True)
+            )
 
             # Get collection data
             collection_data = self._storage.get(collection, {})
@@ -464,11 +186,11 @@ class MemoryStorageService(BaseStorageService):
                 document = collection_data[document_id]
 
                 # Update metadata
-                self._update_metadata(collection, document_id, "read")
+                self._metadata_manager.update_metadata(collection, document_id, "read")
 
                 # Apply path extraction if needed
                 if path:
-                    result = self._apply_path(document, path)
+                    result = self._helpers.apply_path(document, path)
                 else:
                     result = document
 
@@ -485,13 +207,13 @@ class MemoryStorageService(BaseStorageService):
             if query:
                 # Make a copy before modifying for filtering
                 query_copy = query.copy()
-                data = self._apply_query_filter(data, query_copy)
+                data = self._helpers.apply_query_filter(data, query_copy)
 
             # Apply path extraction at collection level
             if path:
                 result = {}
                 for doc_id, doc_data in data.items():
-                    path_result = self._apply_path(doc_data, path)
+                    path_result = self._helpers.apply_path(doc_data, path)
                     if path_result is not None:
                         result[doc_id] = path_result
                 data = result
@@ -531,8 +253,10 @@ class MemoryStorageService(BaseStorageService):
             StorageResult with operation details
         """
         try:
-            self._stats["writes"] += 1
-            collection = self._normalize_collection_name(collection)
+            self._metadata_manager.increment_stat("writes")
+            collection = self._helpers.normalize_collection_name(
+                collection, self.client.get("case_sensitive_collections", True)
+            )
 
             # Check collection limit
             max_collections = self.client.get("max_collections", 1000)
@@ -549,13 +273,13 @@ class MemoryStorageService(BaseStorageService):
             # Initialize collection if it doesn't exist
             if collection not in self._storage:
                 self._storage[collection] = {}
-                self._stats["collections_created"] += 1
+                self._metadata_manager.increment_stat("collections_created")
 
             collection_data = self._storage[collection]
 
             # Generate document ID if not provided and auto-generation is enabled
             if document_id is None and self.client.get("auto_generate_ids", True):
-                document_id = self._generate_document_id(collection)
+                document_id = self._helpers.generate_document_id(collection_data)
             elif document_id is None:
                 return self._create_error_result(
                     "write",
@@ -592,112 +316,19 @@ class MemoryStorageService(BaseStorageService):
             else:
                 data_to_store = data
 
+            # Delegate to appropriate write handler
             if mode == WriteMode.WRITE:
-                # Simple write operation (create or overwrite)
-                if path:
-                    # Path-based write
-                    if document_id in collection_data:
-                        # Update existing document at path
-                        collection_data[document_id] = self._update_path(
-                            collection_data[document_id], path, data_to_store
-                        )
-                    else:
-                        # Create new document with path
-                        new_doc = {}
-                        collection_data[document_id] = self._update_path(
-                            new_doc, path, data_to_store
-                        )
-                        created_new = True
-                else:
-                    # Direct write
-                    collection_data[document_id] = data_to_store
-                    if created_new:
-                        self._stats["documents_created"] += 1
-
-                # Update metadata
-                self._update_metadata(
-                    collection, document_id, "create" if created_new else "update"
+                return self._handle_write_mode(
+                    collection, collection_data, document_id, data_to_store, path, created_new
                 )
-
-                return self._create_success_result(
-                    "write",
-                    collection=collection,
-                    document_id=document_id,
-                    created_new=created_new,
-                )
-
             elif mode == WriteMode.UPDATE:
-                # Update operation
-                if document_id not in collection_data:
-                    return self._create_error_result(
-                        "update",
-                        f"Document '{document_id}' not found for update",
-                        collection=collection,
-                        document_id=document_id,
-                    )
-
-                current_doc = collection_data[document_id]
-
-                if path:
-                    # Path-based update
-                    collection_data[document_id] = self._update_path(
-                        current_doc, path, data_to_store
-                    )
-                else:
-                    # Document-level update (merge if both are dicts)
-                    if isinstance(current_doc, dict) and isinstance(
-                        data_to_store, dict
-                    ):
-                        current_doc.update(data_to_store)
-                    else:
-                        collection_data[document_id] = data_to_store
-
-                # Update metadata
-                self._update_metadata(collection, document_id, "update")
-
-                return self._create_success_result(
-                    "update", collection=collection, document_id=document_id
+                return self._handle_update_mode(
+                    collection, collection_data, document_id, data_to_store, path
                 )
-
             elif mode == WriteMode.APPEND:
-                # Append operation
-                if document_id not in collection_data:
-                    # Create new document with data as initial content
-                    collection_data[document_id] = data_to_store
-                    created_new = True
-                    self._stats["documents_created"] += 1
-                else:
-                    current_doc = collection_data[document_id]
-
-                    if isinstance(current_doc, list) and isinstance(
-                        data_to_store, list
-                    ):
-                        # Append lists
-                        current_doc.extend(data_to_store)
-                    elif isinstance(current_doc, list):
-                        # Append single item to list
-                        current_doc.append(data_to_store)
-                    elif isinstance(current_doc, dict) and isinstance(
-                        data_to_store, dict
-                    ):
-                        # Merge dictionaries
-                        current_doc.update(data_to_store)
-                    else:
-                        # Convert to list and append
-                        collection_data[document_id] = [current_doc, data_to_store]
-
-                # Update metadata
-                self._update_metadata(
-                    collection, document_id, "create" if created_new else "update"
+                return self._handle_append_mode(
+                    collection, collection_data, document_id, data_to_store, created_new
                 )
-
-                return self._create_success_result(
-                    "append",
-                    collection=collection,
-                    document_id=document_id,
-                    created_new=created_new,
-                )
-
             else:
                 return self._create_error_result(
                     "write",
@@ -714,6 +345,113 @@ class MemoryStorageService(BaseStorageService):
                 document_id=document_id,
                 mode=mode.value,
             )
+
+    def _handle_write_mode(
+        self, collection: str, collection_data: Dict, document_id: str,
+        data: Any, path: Optional[str], created_new: bool
+    ) -> StorageResult:
+        """Handle WRITE mode operation."""
+        if path:
+            # Path-based write
+            if document_id in collection_data:
+                collection_data[document_id] = self._helpers.update_path(
+                    collection_data[document_id], path, data
+                )
+            else:
+                new_doc = {}
+                collection_data[document_id] = self._helpers.update_path(
+                    new_doc, path, data
+                )
+                created_new = True
+        else:
+            # Direct write
+            collection_data[document_id] = data
+            if created_new:
+                self._metadata_manager.increment_stat("documents_created")
+
+        # Update metadata
+        self._metadata_manager.update_metadata(
+            collection, document_id, "create" if created_new else "update"
+        )
+
+        return self._create_success_result(
+            "write",
+            collection=collection,
+            document_id=document_id,
+            created_new=created_new,
+        )
+
+    def _handle_update_mode(
+        self, collection: str, collection_data: Dict, document_id: str,
+        data: Any, path: Optional[str]
+    ) -> StorageResult:
+        """Handle UPDATE mode operation."""
+        if document_id not in collection_data:
+            return self._create_error_result(
+                "update",
+                f"Document '{document_id}' not found for update",
+                collection=collection,
+                document_id=document_id,
+            )
+
+        current_doc = collection_data[document_id]
+
+        if path:
+            # Path-based update
+            collection_data[document_id] = self._helpers.update_path(
+                current_doc, path, data
+            )
+        else:
+            # Document-level update (merge if both are dicts)
+            if isinstance(current_doc, dict) and isinstance(data, dict):
+                current_doc.update(data)
+            else:
+                collection_data[document_id] = data
+
+        # Update metadata
+        self._metadata_manager.update_metadata(collection, document_id, "update")
+
+        return self._create_success_result(
+            "update", collection=collection, document_id=document_id
+        )
+
+    def _handle_append_mode(
+        self, collection: str, collection_data: Dict, document_id: str,
+        data: Any, created_new: bool
+    ) -> StorageResult:
+        """Handle APPEND mode operation."""
+        if document_id not in collection_data:
+            # Create new document with data as initial content
+            collection_data[document_id] = data
+            created_new = True
+            self._metadata_manager.increment_stat("documents_created")
+        else:
+            current_doc = collection_data[document_id]
+
+            if isinstance(current_doc, list) and isinstance(data, list):
+                # Append lists
+                current_doc.extend(data)
+            elif isinstance(current_doc, list):
+                # Append single item to list
+                current_doc.append(data)
+            elif isinstance(current_doc, dict) and isinstance(data, dict):
+                # Merge dictionaries
+                current_doc.update(data)
+            else:
+                # Convert to list and append
+                collection_data[document_id] = [current_doc, data]
+
+        # Update metadata
+        self._metadata_manager.update_metadata(
+            collection, document_id, "create" if created_new else "update"
+        )
+
+        return self._create_success_result(
+            "append",
+            collection=collection,
+            document_id=document_id,
+            created_new=created_new,
+        )
 
     def delete(
         self,
@@ -737,8 +475,10 @@ class MemoryStorageService(BaseStorageService):
             StorageResult with operation details
         """
         try:
-            self._stats["deletes"] += 1
-            collection = self._normalize_collection_name(collection)
+            self._metadata_manager.increment_stat("deletes")
+            collection = self._helpers.normalize_collection_name(
+                collection, self.client.get("case_sensitive_collections", True)
+            )
 
             if collection not in self._storage:
                 return self._create_error_result(
@@ -752,8 +492,7 @@ class MemoryStorageService(BaseStorageService):
             # Handle deleting entire collection
             if document_id is None and path is None and not query:
                 del self._storage[collection]
-                if collection in self._metadata:
-                    del self._metadata[collection]
+                self._metadata_manager.delete_collection_metadata(collection)
 
                 return self._create_success_result(
                     "delete",
@@ -776,8 +515,7 @@ class MemoryStorageService(BaseStorageService):
                     # Delete path within document
                     current_doc = collection_data[document_id]
 
-                    # For simple path deletion, we'll recreate the document without the path
-                    # This is a simplified implementation
+                    # For simple path deletion
                     if "." not in path:
                         # Simple key deletion
                         if isinstance(current_doc, dict) and path in current_doc:
@@ -788,17 +526,11 @@ class MemoryStorageService(BaseStorageService):
                                 current_doc.pop(index)
 
                     # Update metadata
-                    self._update_metadata(collection, document_id, "update")
+                    self._metadata_manager.update_metadata(collection, document_id, "update")
                 else:
                     # Delete entire document
                     del collection_data[document_id]
-
-                    # Clean up metadata
-                    if (
-                        collection in self._metadata
-                        and document_id in self._metadata[collection]
-                    ):
-                        del self._metadata[collection][document_id]
+                    self._metadata_manager.delete_document_metadata(collection, document_id)
 
                 return self._create_success_result(
                     "delete", collection=collection, document_id=document_id, path=path
@@ -807,17 +539,15 @@ class MemoryStorageService(BaseStorageService):
             # Handle batch delete with query
             if query:
                 # Apply query filter to find documents to delete
-                filtered_data = self._apply_query_filter(collection_data, query.copy())
+                filtered_data = self._helpers.apply_query_filter(
+                    collection_data, query.copy()
+                )
                 deleted_ids = list(filtered_data.keys())
 
                 # Delete the documents
                 for doc_id in deleted_ids:
                     del collection_data[doc_id]
-                    if (
-                        collection in self._metadata
-                        and doc_id in self._metadata[collection]
-                    ):
-                        del self._metadata[collection][doc_id]
+                    self._metadata_manager.delete_document_metadata(collection, doc_id)
 
                 return self._create_success_result(
                     "delete",
@@ -850,7 +580,9 @@ class MemoryStorageService(BaseStorageService):
             True if exists, False otherwise
         """
         try:
-            collection = self._normalize_collection_name(collection)
+            collection = self._helpers.normalize_collection_name(
+                collection, self.client.get("case_sensitive_collections", True)
+            )
 
             if collection not in self._storage:
                 return False
@@ -879,7 +611,9 @@ class MemoryStorageService(BaseStorageService):
             Count of documents
         """
         try:
-            collection = self._normalize_collection_name(collection)
+            collection = self._helpers.normalize_collection_name(
+                collection, self.client.get("case_sensitive_collections", True)
+            )
 
             if collection not in self._storage:
                 return 0
@@ -887,7 +621,9 @@ class MemoryStorageService(BaseStorageService):
             collection_data = self._storage[collection]
 
             if query:
-                filtered_data = self._apply_query_filter(collection_data, query.copy())
+                filtered_data = self._helpers.apply_query_filter(
+                    collection_data, query.copy()
+                )
                 return len(filtered_data)
 
             return len(collection_data)
@@ -919,23 +655,7 @@ class MemoryStorageService(BaseStorageService):
         Returns:
             Dictionary with storage statistics
         """
-        total_documents = sum(len(collection) for collection in self._storage.values())
-        total_collections = len(self._storage)
-
-        return {
-            **self._stats,
-            "total_collections": total_collections,
-            "total_documents": total_documents,
-            "uptime_seconds": time.time() - self._created_at,
-            "memory_usage": {
-                "collections": total_collections,
-                "documents": total_documents,
-                "largest_collection": max(
-                    (len(collection) for collection in self._storage.values()),
-                    default=0,
-                ),
-            },
-        }
+        return self._metadata_manager.get_stats(self._storage)
 
     def clear_all(self) -> StorageResult:
         """
@@ -951,11 +671,8 @@ class MemoryStorageService(BaseStorageService):
             )
 
             self._storage.clear()
-            self._metadata.clear()
-
-            # Reset stats but keep operation history
-            self._stats["collections_created"] = 0
-            self._stats["documents_created"] = 0
+            self._metadata_manager.clear_metadata()
+            self._metadata_manager.reset_stats()
 
             return self._create_success_result(
                 "clear_all",
@@ -980,7 +697,12 @@ class MemoryStorageService(BaseStorageService):
                     "save_persistence", "No persistence file configured"
                 )
 
-            self._save_to_persistence(persistence_file)
+            self._persistence_manager.save_to_file(
+                persistence_file,
+                self._storage,
+                self._metadata_manager.get_metadata(),
+                self._metadata_manager.get_raw_stats(),
+            )
 
             return self._create_success_result(
                 "save_persistence", file_path=persistence_file
