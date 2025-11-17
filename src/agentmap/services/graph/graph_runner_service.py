@@ -8,6 +8,8 @@ Orchestrates graph execution by coordinating:
 4. Execution - run the graph
 
 Approach is configurable via execution.use_direct_import_agents setting.
+
+Refactored: Large methods extracted to dedicated modules in runner/ package.
 """
 
 from pathlib import Path
@@ -28,6 +30,12 @@ from agentmap.services.graph.graph_bootstrap_service import GraphBootstrapServic
 from agentmap.services.graph.graph_bundle_service import GraphBundleService
 from agentmap.services.graph.graph_checkpoint_service import GraphCheckpointService
 from agentmap.services.graph.graph_execution_service import GraphExecutionService
+from agentmap.services.graph.runner import (
+    CheckpointManager,
+    GraphInterruptHandler,
+    create_bundle_context,
+    create_node_registry_from_bundle,
+)
 from agentmap.services.interaction_handler_service import InteractionHandlerService
 from agentmap.services.logging_service import LoggingService
 
@@ -74,6 +82,20 @@ class GraphRunnerService:
         self.interaction_handler = interaction_handler_service
         self.graph_checkpoint = graph_checkpoint_service
         self.graph_bundle_service = graph_bundle_service
+
+        # Initialize helper components (refactored from original methods)
+        self.interrupt_handler = GraphInterruptHandler(
+            logging_service=logging_service,
+            interaction_handler_service=interaction_handler_service,
+        )
+        self.checkpoint_manager = CheckpointManager(
+            logging_service=logging_service,
+            graph_agent_instantiation_service=graph_agent_instantiation_service,
+            graph_assembly_service=graph_assembly_service,
+            graph_checkpoint_service=graph_checkpoint_service,
+            execution_tracking_service=execution_tracking_service,
+            interaction_handler_service=interaction_handler_service,
+        )
 
         # Check configuration for execution approach
         self.logger.info("GraphRunnerService initialized")
@@ -180,8 +202,8 @@ class GraphRunnerService:
 
             # Create node definitions registry for orchestrators
             # TODO: Only create and pass node_definitions if needed for orchestrator
-            node_definitions = self._create_node_registry_from_bundle(
-                bundle_with_instances
+            node_definitions = create_node_registry_from_bundle(
+                bundle_with_instances, self.logger
             )
 
             requires_checkpoint = self.graph_bundle_service.requires_checkpoint_support(
@@ -250,7 +272,7 @@ class GraphRunnerService:
                     state = executable_graph.get_state(execution_config)
 
                     if state.tasks:
-                        interrupt_details = self._handle_langgraph_interrupt(
+                        interrupt_details = self.interrupt_handler.handle_langgraph_interrupt(
                             state=state,
                             bundle=bundle,
                             thread_id=thread_id,
@@ -260,20 +282,20 @@ class GraphRunnerService:
                         interrupt_type = (
                             interrupt_details.get("type", "unknown")
                             if interrupt_details
-                            else self._extract_interrupt_type_from_state(state)
+                            else self.interrupt_handler.extract_interrupt_type_from_state(state)
                         )
 
-                        self._display_resume_instructions(
+                        self.interrupt_handler.display_resume_instructions(
                             thread_id=thread_id,
                             bundle=bundle,
                             interrupt_type=interrupt_type,
                         )
 
-                        self._log_interrupt_status(
+                        self.interrupt_handler.log_interrupt_status(
                             graph_name, thread_id, interrupt_type
                         )
 
-                        return self._create_interrupt_result(
+                        return self.interrupt_handler.create_interrupt_result(
                             graph_name=graph_name,
                             thread_id=thread_id,
                             state=state,
@@ -335,7 +357,7 @@ class GraphRunnerService:
             # Process the interrupt if we have task information
             interrupt_details = None
             if state.tasks:
-                interrupt_details = self._handle_langgraph_interrupt(
+                interrupt_details = self.interrupt_handler.handle_langgraph_interrupt(
                     state=state,
                     bundle=bundle,
                     thread_id=thread_id,
@@ -345,10 +367,10 @@ class GraphRunnerService:
                 interrupt_type = (
                     interrupt_details.get("type", "unknown")
                     if interrupt_details
-                    else self._extract_interrupt_type_from_state(state)
+                    else self.interrupt_handler.extract_interrupt_type_from_state(state)
                 )
 
-                self._display_resume_instructions(
+                self.interrupt_handler.display_resume_instructions(
                     thread_id=thread_id,
                     bundle=bundle,
                     interrupt_type=interrupt_type,
@@ -357,10 +379,10 @@ class GraphRunnerService:
                 interrupt_details = None
                 interrupt_type = "unknown"
 
-            self._log_interrupt_status(graph_name, thread_id, interrupt_type)
+            self.interrupt_handler.log_interrupt_status(graph_name, thread_id, interrupt_type)
 
             # Return partial execution result indicating interruption
-            return self._create_interrupt_result(
+            return self.interrupt_handler.create_interrupt_result(
                 graph_name=graph_name,
                 thread_id=thread_id,
                 state=state,
@@ -381,7 +403,7 @@ class GraphRunnerService:
                     self.interaction_handler.handle_execution_interruption(
                         exception=e,
                         bundle=bundle,
-                        bundle_context=self._create_bundle_context(bundle),
+                        bundle_context=create_bundle_context(bundle),
                     )
 
                     self.logger.info(
@@ -429,45 +451,6 @@ class GraphRunnerService:
                 error=str(e),
             )
 
-    def _create_node_registry_from_bundle(self, bundle: GraphBundle) -> dict:
-        """
-        Create node registry from bundle for orchestrator agents.
-
-        Transforms Node objects into the metadata format expected by OrchestratorService
-        for node selection and routing decisions.
-
-        Args:
-            bundle: GraphBundle with nodes
-
-        Returns:
-            Dictionary mapping node names to metadata dicts with:
-            - description: Node description for keyword matching
-            - prompt: Node prompt for additional context
-            - type: Agent type for filtering
-            - context: Optional context dict for keyword extraction
-        """
-        if not bundle.nodes:
-            return {}
-
-        # Transform Node objects to metadata format expected by orchestrators
-        registry = {}
-        for node_name, node in bundle.nodes.items():
-            # Extract metadata fields that OrchestratorService actually uses
-            registry[node_name] = {
-                "description": node.description or "",
-                "prompt": node.prompt or "",
-                "type": node.agent_type or "",
-                # Include context if it's a dict (for keyword parsing)
-                "context": node.context if isinstance(node.context, dict) else {},
-            }
-
-        self.logger.debug(
-            f"[GraphRunnerService] Created node registry with {len(registry)} nodes "
-            f"for orchestrator routing"
-        )
-
-        return registry
-
     def resume_from_checkpoint(
         self,
         bundle: GraphBundle,
@@ -475,540 +458,23 @@ class GraphRunnerService:
         checkpoint_state: Dict[str, Any],
         resume_node: Optional[str] = None,
     ) -> ExecutionResult:
-        """Resume graph execution from a checkpoint with injected state."""
-        import time
-
-        from agentmap.models.execution.summary import ExecutionSummary
-
-        graph_name = bundle.graph_name or "unknown"
-        self.logger.info(
-            f"⭐ Resuming graph execution from checkpoint: {graph_name} "
-            f"(thread: {thread_id}, node: {resume_node})"
-        )
-
-        start_time = time.time()
-
-        try:
-            # Create execution tracker
-            execution_tracker = self.execution_tracking.create_tracker(thread_id)
-
-            # Instantiate agents
-            self.logger.debug(f"Re-instantiating agents for checkpoint resume")
-            bundle_with_instances = self.graph_instantiation.instantiate_agents(
-                bundle, execution_tracker
-            )
-
-            # Validate instantiation
-            validation = self.graph_instantiation.validate_instantiation(
-                bundle_with_instances
-            )
-            if not validation["valid"]:
-                raise RuntimeError(
-                    f"Agent instantiation validation failed: {validation}"
-                )
-
-            # Assemble graph with checkpoint support
-            self.logger.debug(
-                f"Reassembling graph for checkpoint resume WITH checkpointer"
-            )
-
-            from agentmap.models.graph import Graph
-
-            graph = Graph(
-                name=bundle_with_instances.graph_name,
-                nodes=bundle_with_instances.nodes,
-                entry_point=bundle_with_instances.entry_point,
-            )
-
-            executable_graph = self.graph_assembly.assemble_with_checkpoint(
-                graph=graph,
-                agent_instances=bundle_with_instances.node_instances,
-                node_definitions=self._create_node_registry_from_bundle(
-                    bundle_with_instances
-                ),
-                checkpointer=self.graph_checkpoint,
-            )
-
-            # Resume execution
-            self.logger.debug(
-                f"Resuming execution from checkpoint for thread: {thread_id}"
-            )
-            self.interaction_handler.mark_thread_resuming(thread_id)
-
-            langgraph_config = {"configurable": {"thread_id": thread_id}}
-
-            # Resume with Command pattern (None for suspend, value for human_interaction)
-            from langgraph.types import Command
-
-            # Check for both human interaction response and suspend resume value
-            resume_value = checkpoint_state.get(
-                "__human_response"
-            ) or checkpoint_state.get("__resume_value")
-            self.logger.debug(
-                f"Resuming with value: {resume_value} (type: {type(resume_value).__name__})"
-            )
-
-            if resume_value is None:
-                self.logger.debug(
-                    "No explicit resume payload provided; injecting default resume marker"
-                )
-                resume_payload = {"__resume_marker": True}
-            else:
-                resume_payload = resume_value
-
-            command_input = Command(resume=resume_payload)
-
-            final_state = executable_graph.invoke(
-                command_input, config=langgraph_config
-            )
-
-            # Build execution result
-            summary_final_output = (
-                final_state.copy() if isinstance(final_state, dict) else final_state
-            )
-
-            self.execution_tracking.complete_execution(execution_tracker)
-            execution_summary = self.execution_tracking.to_summary(
-                execution_tracker, graph_name, summary_final_output
-            )
-
-            execution_time = time.time() - start_time
-            self.interaction_handler.mark_thread_completed(thread_id)
-
-            graph_success = not final_state.get("__error", False)
-
-            # Update state with metadata
-            final_state.update(
-                {
-                    "__execution_summary": execution_summary,
-                    "__graph_success": graph_success,
-                    "__thread_id": thread_id,
-                    "__resumed_from_node": resume_node,
-                }
-            )
-
-            self.logger.info(
-                f"✅ Graph resumed successfully: '{graph_name}' "
-                f"(thread: {thread_id}, duration: {execution_time:.2f}s)"
-            )
-
-            return ExecutionResult(
-                graph_name=graph_name,
-                success=graph_success,
-                final_state=final_state,
-                execution_summary=execution_summary,
-                total_duration=execution_time,
-                error=None,
-            )
-
-        except Exception as e:
-            execution_time = time.time() - start_time
-
-            self.logger.error(
-                f"❌ Resume from checkpoint failed for '{graph_name}' "
-                f"(thread: {thread_id}): {str(e)}"
-            )
-
-            execution_summary = ExecutionSummary(
-                graph_name=graph_name, status="failed", graph_success=False
-            )
-
-            return ExecutionResult(
-                graph_name=graph_name,
-                success=False,
-                final_state=checkpoint_state,
-                execution_summary=execution_summary,
-                total_duration=execution_time,
-                error=str(e),
-            )
-
-    def _log_interrupt_status(
-        self, graph_name: str, thread_id: str, interrupt_type: str
-    ) -> None:
-        """Log interrupt/suspend status with appropriate emoji and message."""
-        if interrupt_type in {"suspend", "human_interaction"}:
-            self.logger.info(
-                f"⏸️  Graph execution suspended for '{graph_name}' "
-                f"(thread: {thread_id}, type: {interrupt_type})"
-            )
-        else:
-            self.logger.info(
-                f"⏸️  Graph execution interrupted for '{graph_name}' "
-                f"(thread: {thread_id}, type: {interrupt_type})"
-            )
-
-    def _extract_interrupt_type_from_state(self, state: Any) -> str:
-        """Extract interrupt type from state tasks, returning 'unknown' if not found."""
-        if not state or not getattr(state, "tasks", None):
-            return "unknown"
-
-        first_task = state.tasks[0]
-        interrupts = getattr(first_task, "interrupts", None)
-        if not interrupts:
-            return "unknown"
-
-        interrupt_value = getattr(interrupts[0], "value", {}) or {}
-        if isinstance(interrupt_value, dict):
-            return interrupt_value.get("type", "unknown")
-
-        return "unknown"
-
-    def _create_bundle_context(self, bundle: GraphBundle) -> Dict[str, Any]:
-        """Create bundle context dict for interrupt handling."""
-        return {
-            "csv_hash": getattr(bundle, "csv_hash", None),
-            "bundle_path": (
-                str(bundle.bundle_path)
-                if hasattr(bundle, "bundle_path") and bundle.bundle_path
-                else None
-            ),
-            "csv_path": (
-                str(bundle.csv_path)
-                if hasattr(bundle, "csv_path") and bundle.csv_path
-                else None
-            ),
-            "graph_name": bundle.graph_name,
-        }
-
-    def _extract_interrupt_metadata(
-        self,
-        state: Any,
-        execution_tracker: Any,
-        bundle: GraphBundle,
-    ) -> Optional[Dict[str, Any]]:
-        """Extract interrupt metadata from LangGraph state or execution tracker."""
-        if state and getattr(state, "tasks", None):
-            first_task = state.tasks[0]
-            interrupts = getattr(first_task, "interrupts", None)
-            if interrupts:
-                interrupt = interrupts[0]
-                interrupt_value = getattr(interrupt, "value", None)
-                if isinstance(interrupt_value, dict):
-                    return {
-                        "type": interrupt_value.get("type", "unknown"),
-                        "node_name": interrupt_value.get("node_name", "unknown"),
-                        "raw": interrupt_value,
-                    }
-
-        if execution_tracker and getattr(execution_tracker, "node_executions", None):
-            pending_node = None
-            for node in reversed(execution_tracker.node_executions):
-                if getattr(node, "success", None) is None:
-                    pending_node = node
-                    break
-            if not pending_node and execution_tracker.node_executions:
-                pending_node = execution_tracker.node_executions[-1]
-
-            if pending_node:
-                node_name = getattr(pending_node, "node_name", "unknown")
-                node_config = None
-                if bundle and getattr(bundle, "nodes", None):
-                    node_config = bundle.nodes.get(node_name)
-
-                agent_type = (getattr(node_config, "agent_type", "") or "").lower()
-                if "suspend" in agent_type:
-                    interrupt_type = "suspend"
-                elif "human" in agent_type:
-                    interrupt_type = "human_interaction"
-                else:
-                    interrupt_type = "unknown"
-
-                inputs = getattr(pending_node, "inputs", None) or {}
-                context = getattr(node_config, "context", {}) if node_config else {}
-                if not isinstance(context, dict):
-                    context = {}
-
-                return {
-                    "type": interrupt_type,
-                    "node_name": node_name,
-                    "inputs": inputs,
-                    "agent_context": context,
-                    "fallback": True,
-                }
-
-        return None
-
-    def _handle_langgraph_interrupt(
-        self,
-        state: Any,
-        bundle: GraphBundle,
-        thread_id: str,
-        execution_tracker: Any,
-    ) -> Optional[Dict[str, Any]]:
         """
-        Handle LangGraph GraphInterrupt by extracting and storing metadata.
+        Resume graph execution from a checkpoint with injected state.
 
-        Returns
-            Minimal interrupt info dict for downstream handling when available.
+        Delegates to CheckpointManager for implementation.
+
+        Args:
+            bundle: Graph bundle
+            thread_id: Thread identifier
+            checkpoint_state: State to resume with
+            resume_node: Optional node to resume from
+
+        Returns:
+            ExecutionResult from resumed execution
         """
-        interrupt_metadata = self._extract_interrupt_metadata(
-            state=state, execution_tracker=execution_tracker, bundle=bundle
+        return self.checkpoint_manager.resume_from_checkpoint(
+            bundle=bundle,
+            thread_id=thread_id,
+            checkpoint_state=checkpoint_state,
+            resume_node=resume_node,
         )
-
-        if not interrupt_metadata:
-            self.logger.warning(
-                "No interrupt metadata found during interrupt handling for thread: %s",
-                thread_id,
-            )
-            return None
-
-        interrupt_type = interrupt_metadata.get("type", "unknown")
-        node_name = interrupt_metadata.get("node_name", "unknown")
-        interrupt_value = interrupt_metadata.get("raw") or {}
-
-        self.logger.debug(
-            f"Processing interrupt via metadata: type={interrupt_type}, node={node_name}"
-        )
-
-        bundle_context = self._create_bundle_context(bundle)
-        summary_info = {
-            "type": interrupt_type,
-            "node_name": node_name,
-            "thread_id": thread_id,
-        }
-
-        if interrupt_type == "human_interaction":
-            if not interrupt_value:
-                self.logger.warning(
-                    "Missing human interaction metadata for node '%s'; skipping interaction storage",
-                    node_name,
-                )
-                return summary_info
-
-            from agentmap.models.human_interaction import (
-                HumanInteractionRequest,
-                InteractionType,
-            )
-
-            interaction_request = HumanInteractionRequest(
-                thread_id=thread_id,
-                node_name=node_name,
-                interaction_type=InteractionType(
-                    interrupt_value.get("interaction_type", "text_input")
-                ),
-                prompt=interrupt_value.get("prompt", ""),
-                context=interrupt_value.get("context", {}),
-                options=interrupt_value.get("options", []),
-                timeout_seconds=interrupt_value.get("timeout_seconds"),
-            )
-
-            self.interaction_handler._store_interaction_request(interaction_request)
-            self.interaction_handler._store_thread_metadata(
-                thread_id=thread_id,
-                interaction_request=interaction_request,
-                checkpoint_data={
-                    "node_name": node_name,
-                    "inputs": interrupt_value.get("context", {}),
-                    "agent_context": {},
-                    "execution_tracker": execution_tracker,
-                },
-                bundle=bundle,
-                bundle_context=bundle_context,
-            )
-
-            from agentmap.deployment.cli.display_utils import (
-                display_interaction_request,
-            )
-
-            display_interaction_request(interaction_request)
-            summary_info["interaction_id"] = str(interaction_request.id)
-
-            self.logger.info(
-                "✅ Human interaction stored and displayed for thread: %s", thread_id
-            )
-
-        elif interrupt_type == "suspend":
-            checkpoint_inputs = (
-                interrupt_value.get("inputs", {})
-                if isinstance(interrupt_value, dict)
-                else {}
-            )
-            if not checkpoint_inputs:
-                checkpoint_inputs = interrupt_metadata.get("inputs", {})
-
-            agent_context = (
-                interrupt_value.get("agent_context", {})
-                if isinstance(interrupt_value, dict)
-                else {}
-            )
-            if not agent_context:
-                agent_context = interrupt_metadata.get("agent_context", {})
-
-            checkpoint_payload = {
-                "node_name": node_name,
-                "inputs": checkpoint_inputs,
-                "agent_context": agent_context,
-                "execution_tracker": execution_tracker,
-            }
-            if isinstance(interrupt_value, dict):
-                if "reason" in interrupt_value:
-                    checkpoint_payload["reason"] = interrupt_value.get("reason")
-                if "external_ref" in interrupt_value:
-                    checkpoint_payload["external_ref"] = interrupt_value.get(
-                        "external_ref"
-                    )
-
-            self.interaction_handler._store_thread_metadata_suspend_only(
-                thread_id=thread_id,
-                checkpoint_data=checkpoint_payload,
-                bundle=bundle,
-                bundle_context=bundle_context,
-            )
-
-            self.logger.info("✅ Suspend checkpoint stored for thread: %s", thread_id)
-
-        else:
-            self.logger.warning(
-                "⚠️ Unknown interrupt type '%s' for thread: %s",
-                interrupt_type,
-                thread_id,
-            )
-
-        return summary_info
-
-    def _create_interrupt_result(
-        self,
-        graph_name: str,
-        thread_id: str,
-        state: Any,
-        interrupt_type: str = "unknown",
-        interrupt_info: Optional[Dict[str, Any]] = None,
-    ) -> ExecutionResult:
-        """Create an ExecutionResult for an interrupted execution."""
-        from agentmap.models.execution.summary import ExecutionSummary
-
-        # Build interrupt info from provided data or extract from state
-        info = dict(interrupt_info) if interrupt_info else {}
-        if not info and state and getattr(state, "tasks", None):
-            first_task = state.tasks[0]
-            interrupts = getattr(first_task, "interrupts", None)
-            if interrupts:
-                interrupt_value = getattr(interrupts[0], "value", {})
-                if isinstance(interrupt_value, dict):
-                    info = {
-                        "type": interrupt_value.get("type", "unknown"),
-                        "node_name": interrupt_value.get("node_name", "unknown"),
-                    }
-
-        # Fill in defaults
-        info.setdefault("type", interrupt_type)
-        info.setdefault("node_name", "unknown")
-        info.setdefault("thread_id", thread_id)
-
-        status = (
-            "suspended"
-            if interrupt_type in {"suspend", "human_interaction"}
-            else "interrupted"
-        )
-
-        execution_summary = ExecutionSummary(
-            graph_name=graph_name,
-            status=status,
-            graph_success=False,
-        )
-
-        final_state = {
-            "__interrupted": True,
-            "__thread_id": thread_id,
-            "__interrupt_info": info,
-            "__execution_summary": execution_summary,
-            "__interrupt_type": info["type"],
-        }
-
-        self.logger.info(
-            f"🔄 Returning {status} execution result for thread: {thread_id}"
-        )
-
-        return ExecutionResult(
-            graph_name=graph_name,
-            success=False,
-            final_state=final_state,
-            execution_summary=execution_summary,
-            total_duration=0.0,
-            error=None,
-        )
-
-    def _display_resume_instructions(
-        self,
-        thread_id: str,
-        bundle: GraphBundle,
-        interrupt_type: str,
-    ) -> None:
-        """Emit resume instructions via logger and CLI helpers."""
-
-        graph_name = getattr(bundle, "graph_name", "unknown")
-        config_file = getattr(bundle, "config_path", None)
-        if config_file is not None:
-            config_file = str(config_file)
-        header = "=" * 60
-        config_arg = f" --config {config_file}" if config_file else ""
-        base_command = f'agentmap resume {thread_id} "<response>"{config_arg}'
-
-        lines = [
-            "",
-            header,
-            (
-                "⏸️  EXECUTION PAUSED - HUMAN INTERACTION REQUIRED"
-                if interrupt_type == "human_interaction"
-                else "⏸️  EXECUTION SUSPENDED"
-            ),
-            header,
-            f"Thread ID: {thread_id}",
-            f"Graph: {graph_name}",
-            "",
-        ]
-
-        if interrupt_type == "human_interaction":
-            lines.extend(
-                [
-                    "To resume execution, respond with:",
-                    f"  {base_command}",
-                    "",
-                    "Examples:",
-                    (
-                        f"  • Approve: agentmap resume {thread_id} "
-                        f'"approve"{config_arg}'
-                    ),
-                    (
-                        f"  • Reject: agentmap resume {thread_id} "
-                        f'"reject"{config_arg}'
-                    ),
-                    (
-                        f"  • Text: agentmap resume {thread_id} "
-                        f'"your response"{config_arg}'
-                    ),
-                ]
-            )
-        else:
-            lines.extend(
-                [
-                    "To resume execution, provide the external result and run:",
-                    f"  {base_command}",
-                ]
-            )
-
-        lines.append(header)
-
-        self.logger.info("\n".join(lines))
-
-        try:
-            from agentmap.deployment.cli.display_utils import (
-                display_resume_instructions as cli_display_resume,
-            )
-
-            cli_display_resume(
-                thread_id=thread_id,
-                graph_name=graph_name,
-                interrupt_type=interrupt_type,
-                config_file=config_file,
-            )
-        except ImportError:
-            self.logger.debug(
-                "[GraphRunnerService] CLI display utilities unavailable; "
-                "logger output provided"
-            )
-        except Exception as display_error:
-            self.logger.debug(
-                "[GraphRunnerService] Failed to display CLI resume instructions:"
-                f" {display_error}"
-            )
