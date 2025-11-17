@@ -288,8 +288,9 @@ class GraphScaffoldService:
     def _collect_agent_info(
         self, csv_path: Path, graph_name: Optional[str] = None
     ) -> Dict[str, Dict]:
-        """
-        Collect information about agents from the CSV file.
+        """Collect information about agents from the CSV file.
+
+        Delegates to CSVCollectors helper module.
 
         Args:
             csv_path: Path to the CSV file
@@ -298,58 +299,15 @@ class GraphScaffoldService:
         Returns:
             Dictionary mapping agent types to their information
         """
-        agent_info: Dict[str, Dict] = {}
+        return self.csv_collectors.collect_agent_info(csv_path, graph_name)
 
-        with open(csv_path) as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                # Skip rows that don't match our graph filter
-                if graph_name and row.get("GraphName", "").strip() != graph_name:
-                    continue
-
-                # Collect agent information
-                agent_type = row.get("AgentType", "").strip()
-
-                # FIXED: Check agent registry to see if agent is already registered
-                # If agent is already in registry (builtin or custom), don't scaffold it
-                if agent_type and not self.agent_registry.has_agent(agent_type):
-                    self.logger.debug(
-                        f"[GraphScaffoldService] Found unregistered agent type '{agent_type}' - will scaffold"
-                    )
-                    node_name = row.get("Node", "").strip()
-                    context = row.get("Context", "").strip()
-                    prompt = row.get("Prompt", "").strip()
-                    input_fields = [
-                        x.strip()
-                        for x in row.get("Input_Fields", "").split("|")
-                        if x.strip()
-                    ]
-                    output_field = row.get("Output_Field", "").strip()
-                    description = row.get("Description", "").strip()
-
-                    if agent_type not in agent_info:
-                        agent_info[agent_type] = {
-                            "agent_type": agent_type,
-                            "node_name": node_name,
-                            "context": context,
-                            "prompt": prompt,
-                            "input_fields": input_fields,
-                            "output_field": output_field,
-                            "description": description,
-                        }
-                elif agent_type:
-                    # Agent is already registered, skip scaffolding
-                    self.logger.debug(
-                        f"[GraphScaffoldService] Skipping registered agent type '{agent_type}' - already available"
-                    )
-
-        return agent_info
 
     def _collect_function_info(
         self, csv_path: Path, graph_name: Optional[str] = None
     ) -> Dict[str, Dict]:
-        """
-        Collect information about functions from the CSV file.
+        """Collect information about functions from the CSV file.
+
+        Delegates to CSVCollectors helper module.
 
         Args:
             csv_path: Path to the CSV file
@@ -358,50 +316,15 @@ class GraphScaffoldService:
         Returns:
             Dictionary mapping function names to their information
         """
+        return self.csv_collectors.collect_function_info(csv_path, graph_name)
 
-        func_info: Dict[str, Dict] = {}
-
-        with open(csv_path) as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                # Skip rows that don't match our graph filter
-                if graph_name and row.get("GraphName", "").strip() != graph_name:
-                    continue
-
-                # Collect function information
-                for col in ["Edge", "Success_Next", "Failure_Next"]:
-                    func = self.function_service.extract_func_ref(row.get(col, ""))
-                    if func:
-                        node_name = row.get("Node", "").strip()
-                        context = row.get("Context", "").strip()
-                        input_fields = [
-                            x.strip()
-                            for x in row.get("Input_Fields", "").split("|")
-                            if x.strip()
-                        ]
-                        output_field = row.get("Output_Field", "").strip()
-                        success_next = row.get("Success_Next", "").strip()
-                        failure_next = row.get("Failure_Next", "").strip()
-                        description = row.get("Description", "").strip()
-
-                        if func not in func_info:
-                            func_info[func] = {
-                                "node_name": node_name,
-                                "context": context,
-                                "input_fields": input_fields,
-                                "output_field": output_field,
-                                "success_next": success_next,
-                                "failure_next": failure_next,
-                                "description": description,
-                            }
-
-        return func_info
 
     def _scaffold_agent(
         self, agent_type: str, info: Dict, output_path: Path, overwrite: bool = False
     ) -> Optional[Path]:
-        """
-        Scaffold agent class file with service awareness.
+        """Scaffold agent class file with service awareness.
+
+        Delegates to ScaffoldingHelpers module.
 
         Args:
             agent_type: Type of agent to scaffold
@@ -412,75 +335,17 @@ class GraphScaffoldService:
         Returns:
             Path to created file, or None if file already exists and overwrite=False
         """
-        agent_type + "Agent"
-        file_name = f"{agent_type.lower()}_agent.py"
-        file_path = output_path / file_name
+        return self.scaffolding_helpers.scaffold_agent(
+            agent_type, info, output_path, overwrite
+        )
 
-        if file_path.exists() and not overwrite:
-            return None
-
-        try:
-            # Parse service requirements from context
-            service_reqs = self.service_parser.parse_services(info.get("context"))
-
-            if service_reqs.services:
-                self.logger.debug(
-                    f"[GraphScaffoldService] Scaffolding {agent_type} with services: "
-                    f"{', '.join(service_reqs.services)}"
-                )
-
-            # Use IndentedTemplateComposer for clean template generation
-            formatted_template = self.template_composer.compose_template(
-                agent_type, info, service_reqs
-            )
-
-            # Write enhanced template
-            with file_path.open("w") as out:
-                out.write(formatted_template)
-
-            # Generate class path for declaration
-            # Use simple module path since custom agents are external to the package
-            class_name = self._generate_agent_class_name(agent_type)
-            class_path = f"{agent_type.lower()}_agent.{class_name}"
-
-            # Add/update agent declaration
-            try:
-                self.custom_agent_declaration_manager.add_or_update_agent(
-                    agent_type=agent_type,
-                    class_path=class_path,
-                    services=service_reqs.services,
-                    protocols=service_reqs.protocols,
-                )
-                self.logger.debug(
-                    f"[GraphScaffoldService] ✅ Generated declaration for {agent_type}"
-                )
-            except Exception as e:
-                self.logger.warning(
-                    f"[GraphScaffoldService] Failed to generate declaration for {agent_type}: {e}"
-                )
-
-            services_info = (
-                f" with services: {', '.join(service_reqs.services)}"
-                if service_reqs.services
-                else ""
-            )
-            self.logger.debug(
-                f"[GraphScaffoldService] ✅ Scaffolded agent: {file_path}{services_info}"
-            )
-
-            return file_path
-
-        except Exception as e:
-            self.logger.error(
-                f"[GraphScaffoldService] Failed to scaffold agent {agent_type}: {e}"
-            )
-            raise
 
     def _scaffold_function(
         self, func_name: str, info: Dict, func_path: Path, overwrite: bool = False
     ) -> Optional[Path]:
-        """
-        Create a scaffold file for a function.
+        """Create a scaffold file for a function.
+
+        Delegates to ScaffoldingHelpers module.
 
         Args:
             func_name: Name of function to scaffold
@@ -491,23 +356,10 @@ class GraphScaffoldService:
         Returns:
             Path to created file, or None if file already exists and overwrite=False
         """
-        file_name = f"{func_name}.py"
-        file_path = func_path / file_name
-
-        if file_path.exists() and not overwrite:
-            return None
-
-        # Use IndentedTemplateComposer for unified template composition
-        formatted_template = self.template_composer.compose_function_template(
-            func_name, info
+        return self.scaffolding_helpers.scaffold_function(
+            func_name, info, func_path, overwrite
         )
 
-        # Create function file
-        with file_path.open("w") as out:
-            out.write(formatted_template)
-
-        self.logger.debug(f"[GraphScaffoldService] ✅ Scaffolded function: {file_path}")
-        return file_path
 
     def _generate_agent_class_name(self, agent_type: str) -> str:
         """
