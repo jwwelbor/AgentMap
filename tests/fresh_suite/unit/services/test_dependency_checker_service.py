@@ -52,7 +52,7 @@ class TestDependencyCheckerService(unittest.TestCase):
     # 2. Single Dependency Check Tests
     # =============================================================================
     
-    @patch('agentmap.services.dependency_checker_service.importlib')
+    @patch('agentmap.services.dependency_validators.importlib')
     def test_check_dependency_success(self, mock_importlib):
         """Test check_dependency() returns True for available packages."""
         # Configure successful import
@@ -65,7 +65,7 @@ class TestDependencyCheckerService(unittest.TestCase):
         self.assertTrue(result)
         mock_importlib.import_module.assert_called_once_with("test_package")
     
-    @patch('agentmap.services.dependency_checker_service.importlib')
+    @patch('agentmap.services.dependency_validators.importlib')
     def test_check_dependency_not_found(self, mock_importlib):
         """Test check_dependency() returns False for missing packages."""
         # Configure import failure
@@ -78,7 +78,7 @@ class TestDependencyCheckerService(unittest.TestCase):
         self.assertFalse(result)
         mock_importlib.import_module.assert_called_once_with("missing_package")
     
-    @patch('agentmap.services.dependency_checker_service.importlib')
+    @patch('agentmap.services.dependency_validators.importlib')
     def test_check_dependency_with_version(self, mock_importlib):
         """Test check_dependency() handles version requirements."""
         # Mock package with version
@@ -101,7 +101,7 @@ class TestDependencyCheckerService(unittest.TestCase):
             self.assertTrue(result)
             mock_importlib.import_module.assert_called_with("test_package")
     
-    @patch('agentmap.services.dependency_checker_service.importlib')
+    @patch('agentmap.services.dependency_validators.importlib')
     def test_check_dependency_dotted_package(self, mock_importlib):
         """Test check_dependency() handles dotted package names correctly."""
         # Configure successful imports for dotted package
@@ -122,7 +122,7 @@ class TestDependencyCheckerService(unittest.TestCase):
     
     def test_validate_imports_all_valid(self):
         """Test validate_imports() with all valid modules."""
-        with patch.object(self.service, 'check_dependency', return_value=True):
+        with patch.object(self.service._dependency_validator, 'check_dependency', return_value=True):
             # Execute test
             success, invalid = self.service.validate_imports(["module1", "module2", "module3"])
             
@@ -135,7 +135,7 @@ class TestDependencyCheckerService(unittest.TestCase):
         def mock_check_dependency(module_name):
             return module_name != "missing_module"
         
-        with patch.object(self.service, 'check_dependency', side_effect=mock_check_dependency):
+        with patch.object(self.service._dependency_validator, 'check_dependency', side_effect=mock_check_dependency):
             # Execute test
             success, invalid = self.service.validate_imports(["valid_module", "missing_module", "another_valid"])
             
@@ -147,7 +147,7 @@ class TestDependencyCheckerService(unittest.TestCase):
         """Test validate_imports() handles version requirements."""
         modules = ["package>=1.0.0", "another_package>=2.0.0"]
         
-        with patch.object(self.service, 'check_dependency', return_value=True):
+        with patch.object(self.service._dependency_validator, 'check_dependency', return_value=True):
             # Execute test
             success, invalid = self.service.validate_imports(modules)
             
@@ -160,7 +160,7 @@ class TestDependencyCheckerService(unittest.TestCase):
         # Mock sys.modules
         with patch.dict(sys.modules, {"already_imported": MagicMock()}):
             # Mock check_dependency to return True for new modules
-            with patch.object(self.service, 'check_dependency', return_value=True):
+            with patch.object(self.service._dependency_validator, 'check_dependency', return_value=True):
                 # Execute test
                 success, invalid = self.service.validate_imports(["already_imported", "new_module"])
                 
@@ -398,7 +398,7 @@ class TestDependencyCheckerService(unittest.TestCase):
     
     def test_validate_llm_provider_known_provider(self):
         """Test _validate_llm_provider() with known provider."""
-        with patch.object(self.service, 'validate_imports', return_value=(True, [])):
+        with patch.object(self.service._dependency_validator, 'validate_imports', return_value=(True, [])):
             # Execute test
             result, missing = self.service._validate_llm_provider("openai")
             
@@ -417,7 +417,7 @@ class TestDependencyCheckerService(unittest.TestCase):
     
     def test_validate_storage_type_known_type(self):
         """Test _validate_storage_type() with known storage type."""
-        with patch.object(self.service, 'validate_imports', return_value=(True, [])):
+        with patch.object(self.service._dependency_validator, 'validate_imports', return_value=(True, [])):
             # Execute test
             result, missing = self.service._validate_storage_type("csv")
             
@@ -560,7 +560,7 @@ class TestDependencyCheckerService(unittest.TestCase):
     
     def test_check_dependency_exception_handling(self):
         """Test check_dependency() handles import-related exceptions gracefully."""
-        with patch('agentmap.services.dependency_checker_service.importlib') as mock_importlib:
+        with patch('agentmap.services.dependency_validators.importlib') as mock_importlib:
             # Configure import-related exception (which should be caught)
             mock_importlib.import_module.side_effect = ImportError("Import failed")
             
@@ -577,7 +577,7 @@ class TestDependencyCheckerService(unittest.TestCase):
                 raise Exception("Check failed")
             return True
         
-        with patch.object(self.service, 'check_dependency', side_effect=problematic_check_dependency):
+        with patch.object(self.service._dependency_validator, 'check_dependency', side_effect=problematic_check_dependency):
             # Execute test
             success, invalid = self.service.validate_imports(["good_module", "problem_module"])
             
@@ -606,7 +606,7 @@ class TestDependencyCheckerService(unittest.TestCase):
         # This tests the service's ability to handle complex dependency scenarios
         # without getting into infinite loops or other problematic states
         
-        with patch.object(self.service, 'validate_imports') as mock_validate:
+        with patch.object(self.service._dependency_validator, 'validate_imports') as mock_validate:
             # Configure complex dependency scenario
             mock_validate.return_value = (True, [])
             
