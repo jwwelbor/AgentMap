@@ -156,7 +156,7 @@ Workflows are defined in CSV files with these columns:
 
 ```csv
 graph_name,node_name,agent_type,next_node,on_failure,prompt,input_fields,output_field
-HelloWorld,Start,input,PrintResult,HandleError,"Hello world! What is your name? ",,name
+HelloWorld,Start,input,PrintResult,HandleError,"Hello world! What is your name?",,name
 HelloWorld,PrintResult,echo,,,"Hello {name}. Welcome to AgentMap!",name,result
 HelloWorld,HandleError,echo,,,Error occurred
 ```
@@ -167,8 +167,8 @@ HelloWorld,HandleError,echo,,,Error occurred
 
 ```bash
 # Run a workflow
-agentmap run <workflow.csv>
-agentmap run workflow.csv --state '{"input": "value"}' --pretty --verbose
+agentmap run my_workflow.csv
+agentmap run my_workflow.csv --state '{"input": "value"}' --pretty --verbose
 
 # Resume a suspended workflow
 agentmap resume <thread_id> <action> --data '{"key": "value"}'
@@ -180,6 +180,9 @@ agentmap resume <thread_id> <action> --data '{"key": "value"}'
 # Initialize configuration files
 agentmap init-config
 agentmap init-config --force  # Overwrite existing
+
+# Initialize API keys
+agentmap auth init --config agentmap_config.yaml
 
 # Check system dependencies
 agentmap diagnose
@@ -270,7 +273,7 @@ agentmap serve --host 0.0.0.0 --port 8000
 
 ```bash
 # Execute a workflow
-curl -X POST http://localhost:8000/execute/my_workflow/MyGraph \
+curl -X POST "http://localhost:8000/execution/my_workflow.csv%3A%3AMyGraph" \
   -H "Content-Type: application/json" \
   -d '{"inputs": {"message": "Hello"}}'
 
@@ -345,12 +348,6 @@ agentmap --version
 # Get help
 agentmap --help
 agentmap run --help
-
-# Diagnose system
-agentmap diagnose
-
-# Initialize API keys
-agentmap auth init --config agentmap_config.yaml
 ```
 
 ## Project Links
