@@ -141,6 +141,24 @@ opentelemetry-exporter-prometheus = "^0.48b0"
 opentelemetry-semantic-conventions = "^0.48b0"
 ```
 
+### Beta Package Risk Management
+
+**Risk:** Several instrumentation packages (e.g., `^0.48b0`) are in beta and may introduce breaking changes in future updates.
+
+**Mitigation Strategy:**
+
+1. **Pin exact versions in production** - Use exact versions (e.g., `==0.48b0`) in production deployments to ensure stability
+2. **Separate dependency group** - Consider placing beta packages in an optional group:
+   ```toml
+   [tool.poetry.group.otel.dependencies]
+   ```
+3. **Version monitoring** - Track OpenTelemetry release notes for graduation to stable
+4. **Upgrade cadence** - Plan quarterly reviews of OTEL dependencies
+5. **Migration budget** - Allocate 1-2 days per quarter for dependency updates and API changes
+6. **Test coverage** - Ensure comprehensive tests for all OTEL integrations to catch breaking changes early
+
+**Timeline:** Beta packages typically graduate to stable within 6-12 months. Plan for migration work when stable versions are released.
+
 ### Optional AI/LLM Instrumentation
 
 ```toml
@@ -408,10 +426,15 @@ class TelemetryConfigModel(BaseModel):
    - agentmap.workflow.active (currently running workflows)
    ```
 
-2. **Implement MetricsService**
-   - Create meters for each metric type
-   - Record metrics at appropriate points
+2. **Implement metrics recording in services**
+   - Components acquire `Meter` instances via `TelemetryService.get_meter()`
+   - Record metrics directly at instrumentation points (no separate MetricsService needed)
+   - Define metric instruments (counters, histograms) as module-level singletons
    - Add Prometheus endpoint (optional)
+
+   > **Note:** A separate MetricsService is not required. The `TelemetryService.get_meter()`
+   > method follows the standard OpenTelemetry pattern where components directly acquire meters
+   > and record metrics. This keeps telemetry centralized while avoiding unnecessary abstraction.
 
 3. **Dashboard templates**
    - Grafana dashboard JSON
@@ -546,22 +569,34 @@ Follow OpenTelemetry semantic conventions:
 ```python
 from opentelemetry.semconv.trace import SpanAttributes
 
-# General
-SpanAttributes.SERVICE_NAME = "agentmap"
+# General service attributes
+service_attributes = {
+    SpanAttributes.SERVICE_NAME: "agentmap",
+}
 
 # LLM (proposed conventions)
-"gen_ai.system" = "openai"  # or "anthropic", "google"
-"gen_ai.request.model" = "gpt-4"
-"gen_ai.request.temperature" = 0.7
-"gen_ai.usage.input_tokens" = 150
-"gen_ai.usage.output_tokens" = 500
-"gen_ai.usage.total_tokens" = 650
+# Example attributes for an LLM span
+llm_attributes = {
+    "gen_ai.system": "openai",  # or "anthropic", "google"
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.request.temperature": 0.7,
+    "gen_ai.usage.input_tokens": 150,
+    "gen_ai.usage.output_tokens": 500,
+    "gen_ai.usage.total_tokens": 650,
+}
 
 # Custom AgentMap conventions
-"agentmap.graph.name" = "my_workflow"
-"agentmap.node.name" = "process_data"
-"agentmap.agent.type" = "OpenAIAgent"
-"agentmap.execution.success" = true
+agentmap_attributes = {
+    "agentmap.graph.name": "my_workflow",
+    "agentmap.node.name": "process_data",
+    "agentmap.agent.type": "OpenAIAgent",
+    "agentmap.execution.success": True,
+}
+
+# Usage in span creation
+with tracer.start_as_current_span("llm.openai.call") as span:
+    span.set_attributes(llm_attributes)
+    span.set_attributes(agentmap_attributes)
 ```
 
 ---
@@ -676,20 +711,39 @@ class TelemetryContainer(containers.DeclarativeContainer):
 
 ### Instrumentation Decorator
 
+The `traced` decorator relies on `self._telemetry_service` being available on the decorated class. There are two approaches for dependency injection:
+
+**Approach 1: Protocol-based injection (Recommended)**
+
+Classes that use the decorator must implement a protocol or inherit from a mixin that provides `_telemetry_service`. This follows AgentMap's existing pattern with `BaseAgent`:
+
 ```python
 # src/agentmap/services/telemetry_service.py
 
 from functools import wraps
+from typing import Protocol
 from opentelemetry.trace import Status, StatusCode
+
+class TelemetryAware(Protocol):
+    """Protocol for classes that can be instrumented with telemetry."""
+    _telemetry_service: 'TelemetryService'
 
 def traced(span_name: str = None, attributes: dict = None):
     """
     Decorator to automatically trace function execution.
 
+    Requirements:
+        The decorated method's class must have a `_telemetry_service` attribute.
+        This is typically injected via DI in the constructor.
+
     Usage:
-        @traced("my_operation", {"key": "value"})
-        def my_function():
-            pass
+        class MyService:
+            def __init__(self, telemetry_service: TelemetryService):
+                self._telemetry_service = telemetry_service
+
+            @traced("my_operation", {"key": "value"})
+            def my_function(self):
+                pass
     """
     def decorator(func):
         @wraps(func)
@@ -714,6 +768,18 @@ def traced(span_name: str = None, attributes: dict = None):
         return wrapper
     return decorator
 ```
+
+**Approach 2: BaseAgent integration**
+
+For agents, the `TelemetryService` will be injected via the existing `BaseAgent` constructor pattern:
+
+```python
+# In BaseAgent.__init__
+def __init__(self, ..., telemetry_service: TelemetryService = None):
+    self._telemetry_service = telemetry_service or NoOpTelemetryService()
+```
+
+This ensures all agents automatically have access to telemetry without requiring code changes to individual agent implementations.
 
 ---
 
@@ -1017,3 +1083,4 @@ src/agentmap/
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 0.1 | 2025-11-19 | DevOps Agent | Initial draft |
+| 0.2 | 2025-11-20 | DevOps Agent | Address review feedback: beta package risk management, clarify metrics pattern, fix semantic conventions syntax, document decorator DI requirements |
