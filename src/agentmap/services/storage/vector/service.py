@@ -232,12 +232,30 @@ class VectorStorageService(BaseStorageService):
             return False
 
     def count(self, collection: str, query: Optional[Dict[str, Any]] = None) -> int:
+        """Count documents in vector collection."""
         try:
             vector_store = self._get_vector_store(collection)
             if vector_store is None:
                 return 0
+
+            # Use efficient count methods if available for the provider
+            if hasattr(vector_store, "_collection") and hasattr(
+                vector_store._collection, "count"
+            ):  # Chroma
+                return vector_store._collection.count()
+            if hasattr(vector_store, "index") and hasattr(
+                vector_store.index, "ntotal"
+            ):  # FAISS
+                return vector_store.index.ntotal
+
+            # Fallback to less efficient method
+            self._logger.warning(
+                "Using inefficient similarity_search to count documents. "
+                "Consider implementing a provider-specific count method."
+            )
             results = vector_store.similarity_search("", k=10000)
             return len(results)
+
         except Exception as e:
             self._logger.debug(f"Error counting documents: {e}")
             return 0

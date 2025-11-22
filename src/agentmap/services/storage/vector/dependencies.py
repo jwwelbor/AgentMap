@@ -26,9 +26,6 @@ except ImportError:
 try:
     from langchain_community.vectorstores import FAISS
 except ImportError:
-    try:
-        from langchain_community.vectorstores import FAISS
-    except ImportError:
-        FAISS = None
+    FAISS = None
 
 __all__ = ["langchain", "OpenAIEmbeddings", "Chroma", "FAISS"]
