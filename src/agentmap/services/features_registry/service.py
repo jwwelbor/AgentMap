@@ -263,7 +263,32 @@ class FeaturesRegistryService:
         Returns:
             Dictionary with NLP library availability and capabilities
         """
-        return self._nlp_checker.get_nlp_capabilities()
+        # Use the service's own methods to allow patching in tests
+        capabilities = {
+            "fuzzywuzzy_available": self.has_fuzzywuzzy(),
+            "spacy_available": self.has_spacy(),
+            "enhanced_matching": False,
+            "fuzzy_threshold_default": 80,
+            "supported_features": [],
+        }
+
+        # Add supported features based on available libraries
+        if capabilities["fuzzywuzzy_available"]:
+            capabilities["supported_features"].append("fuzzy_string_matching")
+            capabilities["supported_features"].append("typo_tolerance")
+
+        if capabilities["spacy_available"]:
+            capabilities["supported_features"].append("advanced_tokenization")
+            capabilities["supported_features"].append("keyword_extraction")
+            capabilities["supported_features"].append("lemmatization")
+
+        # Enhanced matching available if either library is present
+        capabilities["enhanced_matching"] = (
+            capabilities["fuzzywuzzy_available"] or capabilities["spacy_available"]
+        )
+
+        self.logger.debug(f"[FeaturesRegistryService] NLP capabilities: {capabilities}")
+        return capabilities
 
     def invalidate_capability_cache(self) -> None:
         """
