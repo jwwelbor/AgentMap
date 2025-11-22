@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.logging_service import LoggingService
+from agentmap.services.routing.activity_routing import ActivityRoutingTable
 from agentmap.services.routing.cache import RoutingCache
 from agentmap.services.routing.complexity_analyzer import PromptComplexityAnalyzer
 from agentmap.services.routing.types import (
@@ -18,8 +19,8 @@ from agentmap.services.routing.types import (
     TaskComplexity,
 )
 
-# if TYPE_CHECKING:
-#     from agentmap.config.sections.routing import RoutingConfigSection
+# Re-export for backwards compatibility
+__all__ = ["LLMRoutingService", "ActivityRoutingTable"]
 
 
 class LLMRoutingService:
@@ -41,8 +42,10 @@ class LLMRoutingService:
         Initialize the LLM routing service.
 
         Args:
-            routing_config: Routing configuration section
+            llm_routing_config_service: LLM routing configuration service
             logging_service: Logging service for structured logging
+            routing_cache: Routing cache service
+            prompt_complexity_analyzer: Prompt complexity analyzer
         """
         self.routing_config = llm_routing_config_service
         self._logger = logging_service.get_class_logger(self)
@@ -247,7 +250,7 @@ class LLMRoutingService:
             return decision
 
         # 6. Fallback to any available provider
-        self._logger.warning(f"No preferred providers available, using fallback")
+        self._logger.warning("No preferred providers available, using fallback")
         return self._apply_fallback_strategy(
             available_providers, task_type, complexity, routing_context
         )
@@ -264,8 +267,15 @@ class LLMRoutingService:
 
         Activity plans are evaluated first, followed by routing-matrix backstops
         and provider preferences.
-        """
 
+        Args:
+            routing_context: Routing context or dict
+            available_providers: List of available providers
+            complexity: Task complexity level
+
+        Returns:
+            Ordered list of candidate provider/model pairs
+        """
         ctx = (
             routing_context
             if isinstance(routing_context, RoutingContext)
@@ -663,75 +673,3 @@ class LLMRoutingService:
             expired_count = self.cache.cleanup_expired()
             if expired_count > 0:
                 self._logger.info(f"Cleaned up {expired_count} expired cache entries")
-
-
-class ActivityRoutingTable:
-    """Resolve ordered provider/model candidates for a given activity."""
-
-    def __init__(
-        self,
-        routing_config: LLMRoutingConfigService,
-        logger: LoggingService,
-    ) -> None:
-        self._config_service = routing_config
-        self._logger = logger
-
-    def _get_config_dict(self) -> Dict[str, Any]:
-        if hasattr(self._config_service, "get_config"):
-            return self._config_service.get_config()  # type: ignore[return-value]
-        if hasattr(self._config_service, "config_dict"):
-            return getattr(self._config_service, "config_dict")
-        return {}
-
-    def _get_activities(self) -> Dict[str, Any]:
-        config = self._get_config_dict() or {}
-        if "routing" in config and isinstance(config["routing"], dict):
-            return config["routing"].get("activities", {})
-        return config.get("activities", {})
-
-    def plan(
-        self, activity: Optional[str], complexity_key: str
-    ) -> List[Dict[str, str]]:
-        """
-        Return ordered candidates for a given activity/complexity tier.
-
-        Falls back to an empty list when the activity is undefined or
-        no configuration exists, allowing matrix-based routing to continue.
-        """
-        if not activity:
-            return []
-
-        activities = self._get_activities()
-        if not activities:
-            return []
-
-        tier_map = activities.get(activity)
-        if tier_map is None:
-            normalized = str(activity).strip().lower()
-            tier_map = activities.get(normalized)
-
-        if not isinstance(tier_map, dict):
-            return []
-
-        plan = tier_map.get(complexity_key) or tier_map.get("any")
-        if not isinstance(plan, dict):
-            return []
-
-        ordered: List[Dict[str, str]] = []
-
-        primary = plan.get("primary")
-        if isinstance(primary, dict):
-            provider = primary.get("provider")
-            model = primary.get("model")
-            if provider and model:
-                ordered.append({"provider": provider, "model": model})
-
-        for fallback in plan.get("fallbacks", []):
-            if not isinstance(fallback, dict):
-                continue
-            provider = fallback.get("provider")
-            model = fallback.get("model")
-            if provider and model:
-                ordered.append({"provider": provider, "model": model})
-
-        return ordered
