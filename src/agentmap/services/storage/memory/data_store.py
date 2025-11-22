@@ -27,6 +27,8 @@ class MemoryDataStore:
         self._config = config
         # In-memory storage structure: {collection_name: {document_id: data}}
         self._storage: Dict[str, Dict[str, Any]] = {}
+        # Track maximum numeric ID per collection for O(1) ID generation
+        self._max_ids: Dict[str, int] = {}
         # Operation counters for statistics
         self._stats = {
             "reads": 0,
@@ -34,6 +36,7 @@ class MemoryDataStore:
             "deletes": 0,
             "collections_created": 0,
             "documents_created": 0,
+            "total_documents": 0,
         }
         self._created_at = time.time()
 
@@ -72,15 +75,12 @@ class MemoryDataStore:
         Returns:
             Generated document ID
         """
-        collection_data = self._storage.get(collection, {})
+        # O(1) ID generation using tracked maximum
+        if collection not in self._max_ids:
+            self._max_ids[collection] = 0
 
-        # Simple incremental ID generation
-        max_id = 0
-        for doc_id in collection_data.keys():
-            if doc_id.isdigit():
-                max_id = max(max_id, int(doc_id))
-
-        return str(max_id + 1)
+        self._max_ids[collection] += 1
+        return str(self._max_ids[collection])
 
     def get_collection(self, collection: str) -> Dict[str, Any]:
         """
@@ -148,11 +148,25 @@ class MemoryDataStore:
             document_id: Document ID
             data: Document data
         """
-        if collection not in self._storage:
+        is_new_collection = collection not in self._storage
+        is_new_document = not is_new_collection and document_id not in self._storage[collection]
+
+        if is_new_collection:
             self._storage[collection] = {}
             self._stats["collections_created"] += 1
 
+        if is_new_document or is_new_collection:
+            self._stats["total_documents"] += 1
+
         self._storage[collection][document_id] = data
+
+        # Update max ID if this is a numeric ID
+        if document_id.isdigit():
+            numeric_id = int(document_id)
+            if collection not in self._max_ids:
+                self._max_ids[collection] = numeric_id
+            else:
+                self._max_ids[collection] = max(self._max_ids[collection], numeric_id)
 
     def delete_document(self, collection: str, document_id: str) -> bool:
         """
@@ -169,6 +183,7 @@ class MemoryDataStore:
             return False
 
         del self._storage[collection][document_id]
+        self._stats["total_documents"] -= 1
         return True
 
     def delete_collection(self, collection: str) -> int:
@@ -186,6 +201,12 @@ class MemoryDataStore:
 
         document_count = len(self._storage[collection])
         del self._storage[collection]
+        self._stats["total_documents"] -= document_count
+
+        # Clean up max ID tracking
+        if collection in self._max_ids:
+            del self._max_ids[collection]
+
         return document_count
 
     def count_documents(self, collection: str) -> int:
@@ -219,13 +240,15 @@ class MemoryDataStore:
             Tuple of (collections_cleared, documents_cleared)
         """
         collections_cleared = len(self._storage)
-        documents_cleared = sum(len(collection) for collection in self._storage.values())
+        documents_cleared = self._stats["total_documents"]
 
         self._storage.clear()
+        self._max_ids.clear()
 
         # Reset stats but keep operation history
         self._stats["collections_created"] = 0
         self._stats["documents_created"] = 0
+        self._stats["total_documents"] = 0
 
         return (collections_cleared, documents_cleared)
 
@@ -235,18 +258,20 @@ class MemoryDataStore:
 
         Returns:
             Dictionary with storage statistics
+
+        Note:
+            largest_collection is calculated on-demand and may be expensive
+            with many collections.
         """
-        total_documents = sum(len(collection) for collection in self._storage.values())
         total_collections = len(self._storage)
 
         return {
             **self._stats,
             "total_collections": total_collections,
-            "total_documents": total_documents,
             "uptime_seconds": time.time() - self._created_at,
             "memory_usage": {
                 "collections": total_collections,
-                "documents": total_documents,
+                "documents": self._stats["total_documents"],
                 "largest_collection": max(
                     (len(collection) for collection in self._storage.values()),
                     default=0,

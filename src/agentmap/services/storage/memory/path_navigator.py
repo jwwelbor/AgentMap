@@ -100,7 +100,10 @@ class PathNavigator:
             # Handle dictionary keys
             else:
                 if not isinstance(current, dict):
-                    current = {}
+                    raise TypeError(
+                        f"Cannot traverse path: expected dict at '{component}', "
+                        f"but found {type(current).__name__}"
+                    )
 
                 if component not in current:
                     if i < len(components) - 2 and components[i + 1].isdigit():
@@ -148,5 +151,41 @@ class PathNavigator:
                 if 0 <= index < len(data):
                     data.pop(index)
                     return True
+            return False
+
+        # Handle nested paths
+        components = path.split(".")
+        current = data
+
+        # Navigate to the parent of the target
+        for component in components[:-1]:
+            if current is None:
+                return False
+
+            # Handle arrays with numeric indices
+            if component.isdigit() and isinstance(current, list):
+                index = int(component)
+                if 0 <= index < len(current):
+                    current = current[index]
+                else:
+                    return False
+            # Handle dictionaries
+            elif isinstance(current, dict):
+                if component not in current:
+                    return False
+                current = current[component]
+            else:
+                return False
+
+        # Delete the final component
+        last_component = components[-1]
+        if isinstance(current, dict) and last_component in current:
+            del current[last_component]
+            return True
+        elif isinstance(current, list) and last_component.isdigit():
+            index = int(last_component)
+            if 0 <= index < len(current):
+                current.pop(index)
+                return True
 
         return False
