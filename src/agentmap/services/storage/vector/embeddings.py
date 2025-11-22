@@ -5,9 +5,9 @@ This module handles the creation and caching of embedding models
 used for vector operations.
 """
 
+import logging
 import sys
 from typing import Any, Dict, Optional
-import logging
 
 from agentmap.services.storage.vector import dependencies as vector_deps
 

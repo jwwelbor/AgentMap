@@ -96,9 +96,7 @@ class NLPCapabilityChecker:
                 "fuzzywuzzy",
                 {"available": False, "type": "nlp_library", "reason": str(e)},
             )
-            self.logger.debug(
-                f"[NLPCapabilityChecker] fuzzywuzzy error: {e} (cached)"
-            )
+            self.logger.debug(f"[NLPCapabilityChecker] fuzzywuzzy error: {e} (cached)")
             return False
 
     def has_spacy(self) -> bool:

@@ -180,9 +180,7 @@ class GraphOutputService:
         with open(path, "w") as f:
             f.write("\n".join(lines))
 
-        self.logger.info(
-            f"[GraphOutputService] Exported {graph_name} source to {path}"
-        )
+        self.logger.info(f"[GraphOutputService] Exported {graph_name} source to {path}")
         return path
 
     def export_as_debug(

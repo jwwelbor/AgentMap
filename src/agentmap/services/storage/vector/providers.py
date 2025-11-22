@@ -5,10 +5,10 @@ This module provides factory functions for creating and managing
 different vector store backends (Chroma, FAISS, etc.).
 """
 
+import logging
 import os
 import sys
 from typing import Any, Dict, Optional
-import logging
 
 from agentmap.services.storage.vector import dependencies as vector_deps
 from agentmap.services.storage.vector.embeddings import EmbeddingsManager

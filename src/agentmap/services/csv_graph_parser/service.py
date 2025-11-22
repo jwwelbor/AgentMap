@@ -178,11 +178,15 @@ class CSVGraphParserService:
         """Delegate to parser component."""
         return self.parser._safe_get_field(row, field_name, default)
 
-    def _validate_dataframe_structure(self, df: pd.DataFrame, result: ValidationResult) -> None:
+    def _validate_dataframe_structure(
+        self, df: pd.DataFrame, result: ValidationResult
+    ) -> None:
         """Delegate to validator component."""
         self.validator.validate_dataframe_structure(df, result)
 
-    def _validate_dataframe_rows(self, df: pd.DataFrame, result: ValidationResult) -> None:
+    def _validate_dataframe_rows(
+        self, df: pd.DataFrame, result: ValidationResult
+    ) -> None:
         """Delegate to validator component."""
         self.validator.validate_dataframe_rows(df, result)
 
@@ -190,6 +194,8 @@ class CSVGraphParserService:
         """Delegate to parser component."""
         return self.parser.normalize_columns(df)
 
-    def _convert_node_specs_to_nodes(self, node_specs: List[NodeSpec]) -> Dict[str, Node]:
+    def _convert_node_specs_to_nodes(
+        self, node_specs: List[NodeSpec]
+    ) -> Dict[str, Node]:
         """Delegate to converter component."""
         return self.converter.convert_node_specs_to_nodes(node_specs)

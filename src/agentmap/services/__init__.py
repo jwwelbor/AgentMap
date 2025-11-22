@@ -30,13 +30,8 @@ from .agent.agent_registry_service import AgentRegistryService
 # Configuration Services
 from .config import AppConfigService, ConfigService, StorageConfigService
 from .config.llm_routing_config_service import LLMRoutingConfigService
-
 from .execution_policy_service import ExecutionPolicyService
-from .execution_tracking_service import (
-    ExecutionTracker,
-    ExecutionTrackingService
-)
-
+from .execution_tracking_service import ExecutionTracker, ExecutionTrackingService
 
 # Agent and Registry Services
 from .features_registry_service import FeaturesRegistryService
@@ -73,7 +68,6 @@ from .validation.validation_cache_service import ValidationCacheService
 
 # Validation Services
 from .validation.validation_service import ValidationService
-
 
 __all__ = [
     # Core Graph Services

@@ -72,25 +72,35 @@ class BlobStorageService(BlobStorageServiceProtocol):
     def _initialize_provider_registry(self) -> None:
         """Initialize the provider registry with available connectors."""
         self._register_cloud_provider(
-            "azure", "azure_blob",
+            "azure",
+            "azure_blob",
             "agentmap.services.storage.azure_blob_connector",
-            "AzureBlobConnector", self._check_azure_availability
+            "AzureBlobConnector",
+            self._check_azure_availability,
         )
         self._register_cloud_provider(
-            "s3", "aws_s3",
+            "s3",
+            "aws_s3",
             "agentmap.services.storage.aws_s3_connector",
-            "AWSS3Connector", self._check_s3_availability
+            "AWSS3Connector",
+            self._check_s3_availability,
         )
         self._register_cloud_provider(
-            "gs", "gcp_storage",
+            "gs",
+            "gcp_storage",
             "agentmap.services.storage.gcp_storage_connector",
-            "GCPStorageConnector", self._check_gcs_availability
+            "GCPStorageConnector",
+            self._check_gcs_availability,
         )
         self._register_local_provider()
 
     def _register_cloud_provider(
-        self, provider_key: str, cache_key: str, module_path: str,
-        class_name: str, check_func: Callable[[], bool]
+        self,
+        provider_key: str,
+        cache_key: str,
+        module_path: str,
+        class_name: str,
+        check_func: Callable[[], bool],
     ) -> None:
         """Register a cloud storage provider if available."""
         available = self._check_and_cache_availability(cache_key, check_func)
@@ -111,7 +121,10 @@ class BlobStorageService(BlobStorageServiceProtocol):
     def _register_local_provider(self) -> None:
         """Register local file storage provider."""
         try:
-            from agentmap.services.storage.local_file_connector import LocalFileConnector
+            from agentmap.services.storage.local_file_connector import (
+                LocalFileConnector,
+            )
+
             self._provider_factories["file"] = LocalFileConnector
             self._provider_factories["local"] = LocalFileConnector
             self._available_providers["file"] = True
@@ -126,21 +139,25 @@ class BlobStorageService(BlobStorageServiceProtocol):
         self, provider: str, check_func: Callable[[], bool]
     ) -> bool:
         """Check and cache provider availability."""
-        cached = self.availability_cache.get_availability("dependency.storage", provider)
+        cached = self.availability_cache.get_availability(
+            "dependency.storage", provider
+        )
         if cached is not None:
             return cached.get("available", False)
         try:
             available = check_func()
             self.availability_cache.set_availability(
-                "dependency.storage", provider,
-                {"available": available, "provider": provider}
+                "dependency.storage",
+                provider,
+                {"available": available, "provider": provider},
             )
             return available
         except Exception as e:
             self._logger.debug(f"Error checking {provider} availability: {e}")
             self.availability_cache.set_availability(
-                "dependency.storage", provider,
-                {"available": False, "provider": provider, "error": str(e)}
+                "dependency.storage",
+                provider,
+                {"available": False, "provider": provider, "error": str(e)},
             )
             return False
 
@@ -149,6 +166,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
         """Check if Azure Blob Storage SDK is available."""
         try:
             import azure.storage.blob  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -158,6 +176,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
         """Check if AWS S3 SDK is available."""
         try:
             import boto3  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -167,6 +186,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
         """Check if Google Cloud Storage SDK is available."""
         try:
             import google.cloud.storage  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -223,8 +243,10 @@ class BlobStorageService(BlobStorageServiceProtocol):
             connector = self._get_connector(uri)
             connector.write_blob(uri, data)
             result = {
-                "success": True, "uri": uri,
-                "size": len(data), "provider": self._get_provider_from_uri(uri)
+                "success": True,
+                "uri": uri,
+                "size": len(data),
+                "provider": self._get_provider_from_uri(uri),
             }
             self._logger.debug(f"Successfully wrote blob: {uri}")
             return result
@@ -270,8 +292,9 @@ class BlobStorageService(BlobStorageServiceProtocol):
             else:
                 raise StorageOperationError(f"Delete operation not supported for {uri}")
             result = {
-                "success": True, "uri": uri,
-                "provider": self._get_provider_from_uri(uri)
+                "success": True,
+                "uri": uri,
+                "provider": self._get_provider_from_uri(uri),
             }
             self._logger.debug(f"Successfully deleted blob: {uri}")
             return result
@@ -311,7 +334,11 @@ class BlobStorageService(BlobStorageServiceProtocol):
                     health["configured"] = True
                 if health["configured"]:
                     try:
-                        uri = "/tmp/health" if provider in ["file", "local"] else f"{provider}://test/health"
+                        uri = (
+                            "/tmp/health"
+                            if provider in ["file", "local"]
+                            else f"{provider}://test/health"
+                        )
                         self._get_connector(uri)
                         health["healthy"] = True
                     except Exception as e:
@@ -336,15 +363,17 @@ class BlobStorageService(BlobStorageServiceProtocol):
             return {
                 provider: {
                     "available": self._available_providers.get(provider, False),
-                    "configured": bool(self.configuration.get_blob_provider_config(provider)),
-                    "cached": provider in self._connectors
+                    "configured": bool(
+                        self.configuration.get_blob_provider_config(provider)
+                    ),
+                    "cached": provider in self._connectors,
                 }
             }
         return {
             p: {
                 "available": self._available_providers.get(p, False),
                 "configured": bool(self.configuration.get_blob_provider_config(p)),
-                "cached": p in self._connectors
+                "cached": p in self._connectors,
             }
             for p in self._available_providers
         }
