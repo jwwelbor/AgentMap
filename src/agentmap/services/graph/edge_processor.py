@@ -1,5 +1,6 @@
 """Edge processing for graph assembly."""
 
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from langgraph.graph import StateGraph
@@ -7,6 +8,34 @@ from langgraph.graph import StateGraph
 from agentmap.services.function_resolution_service import FunctionResolutionService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.state_adapter_service import StateAdapterService
+
+
+@dataclass
+class EdgeConfig:
+    """Configuration for edge routing."""
+
+    has_success: bool
+    has_failure: bool
+    has_default: bool
+    success_parallel: bool
+    success_targets: Union[str, List[str], None]
+    failure_parallel: bool
+    failure_targets: Union[str, List[str], None]
+
+    @property
+    def has_success_and_failure(self) -> bool:
+        """Check if both success and failure edges exist."""
+        return self.has_success and self.has_failure
+
+    @property
+    def has_success_only(self) -> bool:
+        """Check if only success edge exists."""
+        return self.has_success and not self.has_failure
+
+    @property
+    def has_failure_only(self) -> bool:
+        """Check if only failure edge exists."""
+        return self.has_failure and not self.has_success
 
 
 class EdgeProcessor:
@@ -75,13 +104,10 @@ class EdgeProcessor:
             return True, edge_value
         return False, str(edge_value)
 
-    def _add_standard_edges(
-        self,
-        builder: StateGraph,
-        node_name: str,
-        edges: Dict[str, Union[str, List[str]]],
-    ) -> None:
-        """Add standard edge types with parallel support."""
+    def _prepare_edge_config(
+        self, edges: Dict[str, Union[str, List[str]]]
+    ) -> EdgeConfig:
+        """Prepare normalized edge configuration."""
         has_success = "success" in edges
         has_failure = "failure" in edges
         has_default = "default" in edges
@@ -98,64 +124,103 @@ class EdgeProcessor:
                 edges["failure"]
             )
 
-        if has_success and has_failure:
+        return EdgeConfig(
+            has_success=has_success,
+            has_failure=has_failure,
+            has_default=has_default,
+            success_parallel=success_parallel,
+            success_targets=success_targets,
+            failure_parallel=failure_parallel,
+            failure_targets=failure_targets,
+        )
 
-            def branch(state, s=success_targets, f=failure_targets):
-                return s if state.get("last_action_success", True) else f
+    def _log_routing(
+        self, node_name: str, edge_type: str, targets: Union[str, List[str]], is_parallel: bool
+    ) -> None:
+        """Log routing information for edges."""
+        prefix = "parallel " if is_parallel else ""
+        self.logger.debug(f"[{node_name}] → {prefix}{edge_type} → {targets}")
+
+    def _add_success_failure_routing(
+        self, builder: StateGraph, node_name: str, config: EdgeConfig
+    ) -> None:
+        """Add routing when both success and failure edges exist."""
+
+        def branch(state, s=config.success_targets, f=config.failure_targets):
+            return s if state.get("last_action_success", True) else f
+
+        builder.add_conditional_edges(node_name, branch)
+
+        # Log both paths
+        success_label = (
+            f"parallel success → {config.success_targets}"
+            if config.success_parallel
+            else f"success → {config.success_targets}"
+        )
+        failure_label = (
+            f"parallel failure → {config.failure_targets}"
+            if config.failure_parallel
+            else f"failure → {config.failure_targets}"
+        )
+        self.logger.debug(f"[{node_name}] → {success_label} / {failure_label}")
+
+    def _add_success_routing(
+        self, builder: StateGraph, node_name: str, config: EdgeConfig
+    ) -> None:
+        """Add routing when only success edge exists."""
+
+        def branch(state, t=config.success_targets):
+            return t if state.get("last_action_success", True) else None
+
+        builder.add_conditional_edges(node_name, branch)
+        self._log_routing(node_name, "success", config.success_targets, config.success_parallel)
+
+    def _add_failure_routing(
+        self, builder: StateGraph, node_name: str, config: EdgeConfig
+    ) -> None:
+        """Add routing when only failure edge exists."""
+
+        def branch(state, t=config.failure_targets):
+            return t if not state.get("last_action_success", True) else None
+
+        builder.add_conditional_edges(node_name, branch)
+        self._log_routing(node_name, "failure", config.failure_targets, config.failure_parallel)
+
+    def _add_default_routing(
+        self, builder: StateGraph, node_name: str, edges: Dict[str, Union[str, List[str]]]
+    ) -> None:
+        """Add routing when only default edge exists."""
+        default_parallel, default_targets = self._normalize_edge_value(
+            edges["default"]
+        )
+        if default_parallel:
+
+            def branch(state, targets=default_targets):
+                return targets
 
             builder.add_conditional_edges(node_name, branch)
-            # Log parallel routing if applicable
-            success_label = (
-                f"parallel success → {success_targets}"
-                if success_parallel
-                else f"success → {success_targets}"
-            )
-            failure_label = (
-                f"parallel failure → {failure_targets}"
-                if failure_parallel
-                else f"failure → {failure_targets}"
-            )
-            self.logger.debug(f"[{node_name}] → {success_label} / {failure_label}")
-        elif has_success:
+            self._log_routing(node_name, "default", default_targets, True)
+        else:
+            builder.add_edge(node_name, default_targets)
+            self._log_routing(node_name, "default", default_targets, False)
 
-            def branch(state, t=success_targets):
-                return t if state.get("last_action_success", True) else None
+    def _add_standard_edges(
+        self,
+        builder: StateGraph,
+        node_name: str,
+        edges: Dict[str, Union[str, List[str]]],
+    ) -> None:
+        """Add standard edge types with parallel support."""
+        edge_config = self._prepare_edge_config(edges)
 
-            builder.add_conditional_edges(node_name, branch)
-            if success_parallel:
-                self.logger.debug(
-                    f"[{node_name}] → parallel success → {success_targets}"
-                )
-            else:
-                self.logger.debug(f"[{node_name}] → success → {success_targets}")
-        elif has_failure:
-
-            def branch(state, t=failure_targets):
-                return t if not state.get("last_action_success", True) else None
-
-            builder.add_conditional_edges(node_name, branch)
-            if failure_parallel:
-                self.logger.debug(
-                    f"[{node_name}] → parallel failure → {failure_targets}"
-                )
-            else:
-                self.logger.debug(f"[{node_name}] → failure → {failure_targets}")
-        elif has_default:
-            default_parallel, default_targets = self._normalize_edge_value(
-                edges["default"]
-            )
-            if default_parallel:
-                # For parallel default edges, use conditional edge that returns the list
-                def branch(state, targets=default_targets):
-                    return targets
-
-                builder.add_conditional_edges(node_name, branch)
-                self.logger.debug(
-                    f"[{node_name}] → parallel default → {default_targets}"
-                )
-            else:
-                builder.add_edge(node_name, default_targets)
-                self.logger.debug(f"[{node_name}] → default → {default_targets}")
+        if edge_config.has_success_and_failure:
+            self._add_success_failure_routing(builder, node_name, edge_config)
+        elif edge_config.has_success_only:
+            self._add_success_routing(builder, node_name, edge_config)
+        elif edge_config.has_failure_only:
+            self._add_failure_routing(builder, node_name, edge_config)
+        elif edge_config.has_default:
+            self._add_default_routing(builder, node_name, edges)
 
     def add_dynamic_router(
         self, builder: StateGraph, node_name: str, failure_target: Optional[str] = None
