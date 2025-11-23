@@ -127,8 +127,9 @@ class GraphBundleService:
     def _filter_actual_services(self, services: Set[str]) -> Set[str]:
         """Filter out non-service entries from service requirements.
 
-        Some entries in dependency trees are configuration values or cache objects,
-        not actual services that need to be loaded.
+        Uses DeclarationRegistryService as the single source of truth for
+        identifying registered services. Any entry with a corresponding
+        ServiceDeclaration is considered a valid service.
 
         Args:
             services: Set of all items from dependency analysis
@@ -136,35 +137,16 @@ class GraphBundleService:
         Returns:
             Set of actual service names only
         """
-        # Known non-service entries that appear in dependency trees
-        non_services = {
-            "config_path",  # Configuration value, not a service
-            "routing_cache",  # Cache object, not a service
-        }
-
         actual_services = set()
 
         for service_name in services:
-            # Skip known non-services
-            if service_name in non_services:
-                self.logger.debug(f"Filtering out non-service entry: {service_name}")
-                continue
-
-            # Services typically follow naming patterns
-            if (
-                service_name.endswith("_service")
-                or service_name.endswith("_manager")
-                or service_name.endswith("_analyzer")
-                or service_name.endswith("_factory")
-            ):
+            # Check if this is a registered service
+            if self.declaration_registry.get_service_declaration(service_name):
                 actual_services.add(service_name)
             else:
-                # Include uncertain entries to be safe - they might be valid services
-                # Log for future investigation
                 self.logger.debug(
-                    f"Including uncertain entry (may not be a service): {service_name}"
+                    f"Filtering out non-service entry: {service_name}"
                 )
-                actual_services.add(service_name)
 
         self.logger.debug(
             f"Filtered {len(services)} entries to {len(actual_services)} actual services"
