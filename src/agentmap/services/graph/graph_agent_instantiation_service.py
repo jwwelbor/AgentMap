@@ -221,9 +221,6 @@ class GraphAgentInstantiationService:
         Returns:
             Tuple of (instantiated_count, failed_nodes)
         """
-        agent_mappings = bundle.agent_mappings or {}
-        custom_agents = bundle.custom_agents or set()
-
         instantiated_count = 0
         failed_nodes = []
 
@@ -234,8 +231,6 @@ class GraphAgentInstantiationService:
                     node_name=node_name,
                     node=node,
                     graph_name=graph_name,
-                    agent_mappings=agent_mappings,
-                    custom_agents=custom_agents,
                     node_definitions_registry=node_definitions_registry,
                     execution_tracker=execution_tracker,
                 )
@@ -259,8 +254,6 @@ class GraphAgentInstantiationService:
         node_name: str,
         node: Any,
         graph_name: str,
-        agent_mappings: Dict[str, str],
-        custom_agents: set,
         node_definitions_registry: Dict[str, Any],
         execution_tracker: Optional[Any],
     ) -> None:
@@ -272,14 +265,16 @@ class GraphAgentInstantiationService:
             node_name: Name of the node
             node: Node object
             graph_name: Name of the graph
-            agent_mappings: Agent class mappings
-            custom_agents: Set of custom agent names
             node_definitions_registry: Registry for orchestrators
             execution_tracker: Optional execution tracker
         """
         self.logger.debug(
             f"[GraphAgentInstantiationService] Instantiating agent for node: {node_name}"
         )
+
+        # Extract from bundle
+        agent_mappings = bundle.agent_mappings or {}
+        custom_agents = bundle.custom_agents or set()
 
         # Step 1: Create agent instance using factory
         agent_instance = self.agent_factory.create_agent_instance(

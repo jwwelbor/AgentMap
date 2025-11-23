@@ -103,22 +103,24 @@ class GraphAgentValidationService:
 
         agent_instance = node_instances[node_name]
 
-        # Validate instance has required methods
+        # Validate instance has required methods - collect all errors
+        is_node_valid = True
         if not hasattr(agent_instance, "run"):
             validation_results["invalid_instances"].append(
                 (node_name, "Missing 'run' method")
             )
-            validation_results["valid"] = False
-            return False
+            is_node_valid = False
 
         if not hasattr(agent_instance, "name"):
             validation_results["invalid_instances"].append(
                 (node_name, "Missing 'name' attribute")
             )
-            validation_results["valid"] = False
-            return False
+            is_node_valid = False
 
-        return True
+        if not is_node_valid:
+            validation_results["valid"] = False
+
+        return is_node_valid
 
     def _log_validation_results(self, validation_results: Dict[str, Any]) -> None:
         """Log validation results with appropriate level and formatting."""
