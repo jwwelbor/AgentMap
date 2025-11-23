@@ -12,12 +12,12 @@ from typing import Any, Dict, List, Optional, Tuple
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.llm_service import LLMService
 from agentmap.services.logging_service import LoggingService
-from agentmap.services.prompt_manager_service import PromptManagerService
 
 # Import from extracted modules
 from agentmap.services.orchestrator_algorithm_matching import AlgorithmMatcher
 from agentmap.services.orchestrator_llm_matching import LLMMatcher
 from agentmap.services.orchestrator_node_filtering import NodeFilter
+from agentmap.services.prompt_manager_service import PromptManagerService
 
 
 class OrchestratorService:
@@ -55,15 +55,14 @@ class OrchestratorService:
 
         # Initialize matchers with extracted modules
         self._algorithm_matcher = AlgorithmMatcher(
-            logger=self.logger,
-            nlp_capabilities=self._nlp_capabilities
+            logger=self.logger, nlp_capabilities=self._nlp_capabilities
         )
 
         self._llm_matcher = LLMMatcher(
             logger=self.logger,
             prompt_manager=self.prompt_manager,
             llm_service=self.llm_service,
-            keyword_parser=self._algorithm_matcher.parse_node_keywords
+            keyword_parser=self._algorithm_matcher.parse_node_keywords,
         )
 
         self.logger.info("[OrchestratorService] Initialized")
@@ -162,7 +161,9 @@ class OrchestratorService:
         Returns:
             Tuple of (match_score, matched_keywords)
         """
-        return self._algorithm_matcher.fuzzy_keyword_match(input_text, keywords, threshold)
+        return self._algorithm_matcher.fuzzy_keyword_match(
+            input_text, keywords, threshold
+        )
 
     def _spacy_enhanced_keywords(self, node_info: Dict[str, Any]) -> List[str]:
         """
@@ -235,13 +236,17 @@ class OrchestratorService:
         self, input_text: str, available_nodes: Dict[str, Dict[str, Any]]
     ) -> Tuple[str, float]:
         """Fuzzy keyword matching using fuzzywuzzy (Level 3)."""
-        return self._algorithm_matcher.fuzzy_algorithm_match(input_text, available_nodes)
+        return self._algorithm_matcher.fuzzy_algorithm_match(
+            input_text, available_nodes
+        )
 
     def _spacy_algorithm_match(
         self, input_text: str, available_nodes: Dict[str, Dict[str, Any]]
     ) -> Tuple[str, float]:
         """spaCy enhanced keyword matching (Level 4)."""
-        return self._algorithm_matcher.spacy_algorithm_match(input_text, available_nodes)
+        return self._algorithm_matcher.spacy_algorithm_match(
+            input_text, available_nodes
+        )
 
     def _llm_match(
         self,
@@ -251,7 +256,9 @@ class OrchestratorService:
         context: Optional[Dict[str, Any]],
     ) -> str:
         """Use LLM Service to match input to the best node."""
-        return self._llm_matcher.llm_match(input_text, available_nodes, llm_config, context)
+        return self._llm_matcher.llm_match(
+            input_text, available_nodes, llm_config, context
+        )
 
     def _format_node_descriptions(self, nodes: Dict[str, Dict[str, Any]]) -> str:
         """Format node descriptions for template substitution."""
@@ -261,7 +268,9 @@ class OrchestratorService:
         self, llm_response: str, available_nodes: Dict[str, Dict[str, Any]]
     ) -> str:
         """Extract the selected node from LLM response."""
-        return self._llm_matcher._extract_node_from_response(llm_response, available_nodes)
+        return self._llm_matcher._extract_node_from_response(
+            llm_response, available_nodes
+        )
 
     def _apply_node_filter(
         self, nodes: Dict[str, Dict[str, Any]], node_filter: str
