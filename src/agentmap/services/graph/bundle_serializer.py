@@ -8,17 +8,21 @@ from agentmap.services.logging_service import LoggingService
 
 
 class BundleSerializer:
-    """Handles serialization and deserialization of graph bundles.
+    """
+    Handles serialization and deserialization of GraphBundle objects.
 
-    This class is responsible for converting GraphBundle objects to/from
-    dictionary format for storage and retrieval.
+    This service handles:
+    - Serializing metadata bundles to dictionary format
+    - Deserializing metadata bundles from dictionary format
+    - Preserving parallel edge support (Union[str, List[str]])
+    - Backwards compatibility with legacy bundles
     """
 
     def __init__(self, logging_service: LoggingService):
-        """Initialize the bundle serializer.
+        """Initialize BundleSerializer.
 
         Args:
-            logging_service: Service for logging operations
+            logging_service: LoggingService for logging
         """
         self.logger = logging_service.get_class_logger(self)
 
@@ -170,6 +174,6 @@ class BundleSerializer:
             )
             return bundle
 
-        except Exception as e:
+        except (KeyError, TypeError, ValueError) as e:
             self.logger.error(f"Failed to deserialize metadata bundle: {e}")
             return None
