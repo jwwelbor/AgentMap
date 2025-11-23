@@ -16,7 +16,7 @@ from agentmap.agents.builtins.storage.base_storage_agent import (
 from agentmap.models.storage import DocumentResult
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.state_adapter_service import StateAdapterService
-from agentmap.services.storage.protocols import JSONCapableAgent
+from agentmap.services.protocols import JSONCapableAgent
 
 
 class JSONDocumentAgent(BaseStorageAgent, JSONCapableAgent):

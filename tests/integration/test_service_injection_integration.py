@@ -12,13 +12,11 @@ from unittest.mock import Mock, MagicMock, patch
 try:
     from agentmap.services.agent.agent_service_injection_service import AgentServiceInjectionService
     from agentmap.services.protocols import (
-        LLMCapableAgent,
-        StorageCapableAgent,
-        PromptCapableAgent,
-    )
-    from agentmap.services.storage.protocols import (
         CSVCapableAgent,
         JSONCapableAgent,
+        LLMCapableAgent,
+        PromptCapableAgent,
+        StorageCapableAgent,
     )
 except ImportError:
     # Mock imports if AgentMap is not available in test environment

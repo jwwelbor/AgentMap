@@ -7,19 +7,17 @@ from agentmap.services.llm_service import LLMService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.protocols import (
     BlobStorageCapableAgent,
-    LLMCapableAgent,
-    OrchestrationCapableAgent,
-    PromptCapableAgent,
-    StorageCapableAgent,
-)
-from agentmap.services.storage.manager import StorageServiceManager
-from agentmap.services.storage.protocols import (
     CSVCapableAgent,
     FileCapableAgent,
     JSONCapableAgent,
+    LLMCapableAgent,
     MemoryCapableAgent,
+    OrchestrationCapableAgent,
+    PromptCapableAgent,
+    StorageCapableAgent,
     VectorCapableAgent,
 )
+from agentmap.services.storage.manager import StorageServiceManager
 
 
 class AgentServiceInjectionService:
