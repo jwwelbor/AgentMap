@@ -57,6 +57,16 @@ class MemoryStorageService(BaseStorageService):
         self._metadata_manager = MemoryMetadataManager()
         self._persistence_manager = MemoryPersistenceManager(self._logger)
 
+    @property
+    def _metadata(self):
+        """Backwards compatibility accessor for internal metadata."""
+        return self._metadata_manager._metadata
+
+    @property
+    def _stats(self):
+        """Backwards compatibility accessor for internal stats."""
+        return self._metadata_manager._stats
+
     def _initialize_client(self) -> Dict[str, Any]:
         """
         Initialize memory storage client configuration.

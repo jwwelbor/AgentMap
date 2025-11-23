@@ -259,6 +259,12 @@ class CSVStorageService(BaseStorageService):
             OSError: If other OS-level errors occur
         """
         try:
+            # Filter out parameters already in method signature to avoid duplicates
+            write_kwargs = {
+                k: v
+                for k, v in kwargs.items()
+                if k not in ["encoding", "mode", "base_directory", "logger"]
+            }
             CSVFileOperations.write_csv_file(
                 df,
                 file_path,
@@ -266,7 +272,7 @@ class CSVStorageService(BaseStorageService):
                 mode,
                 self.base_directory,
                 self._logger,
-                **kwargs,
+                **write_kwargs,
             )
         except Exception as e:
             self._handle_error("write_csv", e, file_path=file_path)

@@ -4,24 +4,24 @@ Vector Storage Service implementation for AgentMap.
 
 import os
 import shutil
-import sys
 from typing import Any, Dict, List, Optional
 
 from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.types import StorageResult, WriteMode
-from agentmap.services.storage.vector import dependencies as vector_deps
-
-
-def _get_parent_module_attr(attr_name: str) -> Any:
-    parent_module = sys.modules.get("agentmap.services.storage.vector_service")
-    if parent_module:
-        return getattr(parent_module, attr_name, None)
-    return getattr(vector_deps, attr_name, None)
+from agentmap.services.storage.vector.embeddings import EmbeddingsManager
+from agentmap.services.storage.vector.providers import VectorStoreFactory
 
 
 class VectorStorageService(BaseStorageService):
+    """
+    Vector storage service using composition with EmbeddingsManager and VectorStoreFactory.
+
+    This service orchestrates vector storage operations by delegating to specialized
+    components rather than implementing the logic directly.
+    """
+
     def __init__(
         self,
         provider_name: str,
@@ -38,7 +38,12 @@ class VectorStorageService(BaseStorageService):
             base_directory,
         )
 
+        # Initialize composed services after client is initialized
+        self._embeddings_manager: Optional[EmbeddingsManager] = None
+        self._vector_store_factory: Optional[VectorStoreFactory] = None
+
     def _initialize_client(self) -> Dict[str, Any]:
+        """Initialize vector storage client configuration and composed services."""
         vector_config = self.configuration.get_vector_config()
         store_key = vector_config.get("store_key", "_vector_store")
         persist_directory = str(self.configuration.get_vector_data_path())
@@ -57,119 +62,39 @@ class VectorStorageService(BaseStorageService):
             "_embeddings": None,
         }
         os.makedirs(config["persist_directory"], exist_ok=True)
+
+        # Initialize composed services
+        self._embeddings_manager = EmbeddingsManager(config, self._logger)
+        self._vector_store_factory = VectorStoreFactory(
+            config, self._embeddings_manager, self._logger
+        )
+
         return config
 
+    def _get_vector_store(self, collection: str = "default") -> Any:
+        """
+        Get vector store for collection (delegates to factory).
+
+        This method provides backward compatibility for tests and legacy code.
+        New code should use self._vector_store_factory.get_vector_store directly.
+        """
+        return self._vector_store_factory.get_vector_store(collection)
+
     def _perform_health_check(self) -> bool:
+        """Check if vector storage dependencies are available."""
         try:
-            if not self._check_langchain():
+            if not self._vector_store_factory.check_langchain():
                 return False
             persist_dir = self.client["persist_directory"]
             if not os.path.exists(persist_dir):
                 os.makedirs(persist_dir, exist_ok=True)
             if not os.access(persist_dir, os.W_OK | os.R_OK):
                 return False
-            embeddings = self._get_embeddings()
+            embeddings = self._embeddings_manager.get_embeddings()
             return embeddings is not None
         except Exception as e:
             self._logger.debug(f"Vector health check failed: {e}")
             return False
-
-    def _check_langchain(self) -> bool:
-        langchain = _get_parent_module_attr("langchain")
-        if langchain is None:
-            self._logger.error(
-                "LangChain not installed. Use 'pip install langchain langchain-openai'"
-            )
-            return False
-        return True
-
-    def _get_embeddings(self) -> Any:
-        if self.client["_embeddings"] is not None:
-            return self.client["_embeddings"]
-        embedding_type = self.client["embedding_model"].lower()
-        try:
-            OpenAIEmbeddings = _get_parent_module_attr("OpenAIEmbeddings")
-            if OpenAIEmbeddings is None:
-                self._logger.error(
-                    "OpenAI embeddings not available. Install with 'pip install langchain-openai'"
-                )
-                return None
-            if embedding_type == "openai":
-                embeddings = OpenAIEmbeddings()
-                self.client["_embeddings"] = embeddings
-                return embeddings
-            else:
-                self._logger.error(f"Unsupported embedding model: {embedding_type}")
-                return None
-        except Exception as e:
-            self._logger.error(f"Failed to initialize embeddings: {e}")
-            return None
-
-    def _get_vector_store(self, collection: str = "default") -> Any:
-        if collection in self.client["_vector_stores"]:
-            return self.client["_vector_stores"][collection]
-        if not self._check_langchain():
-            return None
-        embeddings = self._get_embeddings()
-        if embeddings is None:
-            return None
-        provider = self.client["provider"].lower()
-        try:
-            if provider == "chroma":
-                vector_store = self._create_chroma_store(embeddings, collection)
-            elif provider == "faiss":
-                vector_store = self._create_faiss_store(embeddings, collection)
-            else:
-                self._logger.error(f"Unsupported vector store provider: {provider}")
-                return None
-            if vector_store is not None:
-                self.client["_vector_stores"][collection] = vector_store
-            return vector_store
-        except Exception as e:
-            self._logger.error(f"Failed to create vector store: {e}")
-            return None
-
-    def _create_chroma_store(self, embeddings: Any, collection: str) -> Any:
-        try:
-            Chroma = _get_parent_module_attr("Chroma")
-            if Chroma is None:
-                self._logger.error(
-                    "Chroma not installed. Install with 'pip install chromadb'"
-                )
-                return None
-            persist_dir = os.path.join(self.client["persist_directory"], collection)
-            os.makedirs(persist_dir, exist_ok=True)
-            return Chroma(
-                persist_directory=persist_dir,
-                embedding_function=embeddings,
-                collection_name=collection,
-            )
-        except Exception as e:
-            self._logger.error(f"Failed to create Chroma store: {e}")
-            return None
-
-    def _create_faiss_store(self, embeddings: Any, collection: str) -> Any:
-        try:
-            FAISS = _get_parent_module_attr("FAISS")
-            if FAISS is None:
-                self._logger.error(
-                    "FAISS not installed. Install with 'pip install faiss-cpu'"
-                )
-                return None
-            persist_dir = os.path.join(self.client["persist_directory"], collection)
-            os.makedirs(persist_dir, exist_ok=True)
-            index_file = os.path.join(persist_dir, "index.faiss")
-            if os.path.exists(index_file):
-                return FAISS.load_local(persist_dir, embeddings)
-            else:
-                vector_store = FAISS.from_texts(
-                    ["Placeholder document for initialization"], embeddings
-                )
-                vector_store.save_local(persist_dir)
-                return vector_store
-        except Exception as e:
-            self._logger.error(f"Failed to create FAISS store: {e}")
-            return None
 
     def read(
         self,
@@ -179,6 +104,7 @@ class VectorStorageService(BaseStorageService):
         path: Optional[str] = None,
         **kwargs,
     ) -> Any:
+        """Perform similarity search on vector store."""
         try:
             vector_store = self._get_vector_store(collection)
             if vector_store is None:
@@ -223,6 +149,7 @@ class VectorStorageService(BaseStorageService):
         path: Optional[str] = None,
         **kwargs,
     ) -> StorageResult:
+        """Store documents in vector database."""
         try:
             vector_store = self._get_vector_store(collection)
             if vector_store is None:
@@ -273,10 +200,11 @@ class VectorStorageService(BaseStorageService):
         path: Optional[str] = None,
         **kwargs,
     ) -> StorageResult:
+        """Delete from vector database."""
         try:
             if document_id is None:
-                if collection in self.client["_vector_stores"]:
-                    del self.client["_vector_stores"][collection]
+                # Delete entire collection
+                self._vector_store_factory.remove_from_cache(collection)
                 persist_dir = os.path.join(self.client["persist_directory"], collection)
                 if os.path.exists(persist_dir):
                     shutil.rmtree(persist_dir)
@@ -284,6 +212,7 @@ class VectorStorageService(BaseStorageService):
                     "delete", collection=collection, is_collection=True
                 )
             else:
+                # Individual document deletion
                 vector_store = self._get_vector_store(collection)
                 if vector_store is None:
                     return self._create_error_result(

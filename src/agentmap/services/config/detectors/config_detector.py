@@ -38,7 +38,7 @@ class ConfigChangeDetector:
                         :16
                     ]
                     self._config_hashes[path_str] = content_hash
-            except:
+            except Exception:
                 raise
 
     def has_config_changed(self) -> bool:
@@ -66,8 +66,9 @@ class ConfigChangeDetector:
                             return True
 
                 except Exception:
-                    # If we can't check, assume no change to avoid false positives
-                    raise
+                    # If we can't check, assume change to safely invalidate cache
+                    # This prevents using stale data when file access fails
+                    return True
 
             return False
 
@@ -88,4 +89,5 @@ class ConfigChangeDetector:
                             ).hexdigest()[:16]
                             self._config_hashes[path_str] = content_hash
                 except Exception:
-                    raise
+                    # Skip files that can't be read, keep tracking existing ones
+                    pass

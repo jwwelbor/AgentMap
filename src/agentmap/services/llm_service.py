@@ -74,6 +74,41 @@ class LLMService:
         # Track whether routing is enabled
         self._routing_enabled = routing_service is not None
 
+    @property
+    def _clients(self):
+        """Backwards compatibility accessor for client cache."""
+        return self._client_factory._clients
+
+    def _normalize_provider(self, provider: str) -> str:
+        """Backwards compatibility wrapper for normalize_provider."""
+        return self._provider_utils.normalize_provider(provider)
+
+    def _get_provider_config(self, provider: str) -> Dict[str, Any]:
+        """Backwards compatibility wrapper for get_provider_config."""
+        return self._provider_utils.get_provider_config(provider)
+
+    def _get_available_providers(self) -> List[str]:
+        """Backwards compatibility wrapper for get_available_providers."""
+        return self._provider_utils.get_available_providers()
+
+    def _create_langchain_client(self, provider: str, config: Dict[str, Any]) -> Any:
+        """Backwards compatibility wrapper for create_langchain_client."""
+        return self._client_factory._create_langchain_client(provider, config)
+
+    def _get_or_create_client(self, provider: str, config: Dict[str, Any]) -> Any:
+        """Backwards compatibility wrapper for get_or_create_client."""
+        return self._client_factory.get_or_create_client(provider, config)
+
+    def _convert_messages_to_langchain(
+        self, messages: List[Dict[str, str]]
+    ) -> List[Any]:
+        """Backwards compatibility wrapper for convert_messages_to_langchain."""
+        return self._message_utils.convert_messages_to_langchain(messages)
+
+    def _extract_prompt_from_messages(self, messages: List[Dict[str, str]]) -> str:
+        """Backwards compatibility wrapper for extract_prompt_from_messages."""
+        return self._message_utils.extract_prompt_from_messages(messages)
+
     def call_llm(
         self,
         provider: str,

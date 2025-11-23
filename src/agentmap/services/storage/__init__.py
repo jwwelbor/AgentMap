@@ -46,7 +46,7 @@ from .types import (  # Core types; Exceptions; Service-specific exceptions; Typ
     StorageValidationError,
     WriteMode,
 )
-from .vector_service import VectorStorageService
+from .vector.service import VectorStorageService
 
 if TYPE_CHECKING:
     from agentmap.services.storage.manager import StorageServiceManager
