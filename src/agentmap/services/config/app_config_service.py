@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, TypeVar, Union
 
 from agentmap.exceptions.base_exceptions import ConfigurationException
-from agentmap.services.config.config_service import ConfigService
 from agentmap.services.config.config_managers import (
     AuthConfigManager,
     DeclarationConfigManager,
@@ -20,6 +19,7 @@ from agentmap.services.config.config_managers import (
     PathConfigManager,
     RoutingConfigManager,
 )
+from agentmap.services.config.config_service import ConfigService
 
 T = TypeVar("T")
 

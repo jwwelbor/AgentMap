@@ -135,7 +135,11 @@ class EdgeProcessor:
         )
 
     def _log_routing(
-        self, node_name: str, edge_type: str, targets: Union[str, List[str]], is_parallel: bool
+        self,
+        node_name: str,
+        edge_type: str,
+        targets: Union[str, List[str]],
+        is_parallel: bool,
     ) -> None:
         """Log routing information for edges."""
         prefix = "parallel " if is_parallel else ""
@@ -173,7 +177,9 @@ class EdgeProcessor:
             return t if state.get("last_action_success", True) else None
 
         builder.add_conditional_edges(node_name, branch)
-        self._log_routing(node_name, "success", config.success_targets, config.success_parallel)
+        self._log_routing(
+            node_name, "success", config.success_targets, config.success_parallel
+        )
 
     def _add_failure_routing(
         self, builder: StateGraph, node_name: str, config: EdgeConfig
@@ -184,15 +190,18 @@ class EdgeProcessor:
             return t if not state.get("last_action_success", True) else None
 
         builder.add_conditional_edges(node_name, branch)
-        self._log_routing(node_name, "failure", config.failure_targets, config.failure_parallel)
+        self._log_routing(
+            node_name, "failure", config.failure_targets, config.failure_parallel
+        )
 
     def _add_default_routing(
-        self, builder: StateGraph, node_name: str, edges: Dict[str, Union[str, List[str]]]
+        self,
+        builder: StateGraph,
+        node_name: str,
+        edges: Dict[str, Union[str, List[str]]],
     ) -> None:
         """Add routing when only default edge exists."""
-        default_parallel, default_targets = self._normalize_edge_value(
-            edges["default"]
-        )
+        default_parallel, default_targets = self._normalize_edge_value(edges["default"])
         if default_parallel:
 
             def branch(state, targets=default_targets):

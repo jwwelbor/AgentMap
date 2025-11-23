@@ -82,7 +82,10 @@ class GraphAgentValidationService:
         return validation_results
 
     def _validate_single_node(
-        self, node_name: str, node_instances: Dict[str, Any], validation_results: Dict[str, Any]
+        self,
+        node_name: str,
+        node_instances: Dict[str, Any],
+        validation_results: Dict[str, Any],
     ) -> bool:
         """
         Validate a single node's agent instance.
@@ -161,9 +164,7 @@ class GraphAgentValidationService:
         node_registry = bundle.node_instances or {}
 
         for node_name, node in bundle.nodes.items():
-            self._update_summary_for_node(
-                node_name, node, node_registry, summary
-            )
+            self._update_summary_for_node(node_name, node, node_registry, summary)
 
         return summary
 

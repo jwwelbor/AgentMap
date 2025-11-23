@@ -57,9 +57,7 @@ class GraphMetadataAnalyzer:
             if self.declaration_registry.get_service_declaration(service_name):
                 actual_services.add(service_name)
             else:
-                self.logger.debug(
-                    f"Filtering out non-service entry: {service_name}"
-                )
+                self.logger.debug(f"Filtering out non-service entry: {service_name}")
 
         self.logger.debug(
             f"Filtered {len(services)} entries to {len(actual_services)} actual services"

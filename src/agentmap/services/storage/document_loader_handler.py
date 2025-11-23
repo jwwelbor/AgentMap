@@ -6,7 +6,7 @@ supporting various document formats and providing fallback mechanisms.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 if TYPE_CHECKING:
     from logging import Logger

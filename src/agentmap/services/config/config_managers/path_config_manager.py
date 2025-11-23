@@ -39,9 +39,7 @@ class PathConfigManager(BaseConfigManager):
 
     def get_csv_repository_path(self) -> Path:
         """Get the path for the CSV repository directory where workflows are stored (does not create directory)."""
-        return Path(
-            self.get_value("paths.csv_repository", "agentmap_data/workflows")
-        )
+        return Path(self.get_value("paths.csv_repository", "agentmap_data/workflows"))
 
     def get_prompts_directory(self) -> Path:
         """Get the path for the prompts directory."""
