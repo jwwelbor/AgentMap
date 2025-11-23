@@ -43,6 +43,13 @@ class GraphMetadataAnalyzer:
         Some entries in dependency trees are configuration values or cache objects,
         not actual services that need to be loaded.
 
+        TODO: This implementation uses naming conventions and a hardcoded exclusion list.
+        For a more robust solution in the future, consider:
+        1. Using a marker base class or Protocol for all services
+        2. Applying a @service decorator to service classes
+        3. Querying the DI container's registration list directly
+        4. Using class inspection to verify service implementations
+
         Args:
             services: Set of all items from dependency analysis
 

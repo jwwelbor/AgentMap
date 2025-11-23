@@ -174,6 +174,6 @@ class BundleSerializer:
             )
             return bundle
 
-        except Exception as e:
+        except (KeyError, TypeError, ValueError) as e:
             self.logger.error(f"Failed to deserialize metadata bundle: {e}")
             return None

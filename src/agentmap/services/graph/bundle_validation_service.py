@@ -58,7 +58,7 @@ class BundleValidationService:
             )
             return validation_data
 
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
             self.logger.warning(
                 f"Failed to generate validation metadata: {e}. Using minimal validation."
             )
@@ -76,7 +76,11 @@ class BundleValidationService:
             Framework version string
         """
         try:
-            # This would typically read from package metadata
-            return "2.0.0"  # Placeholder version
+            # Try to read version from package metadata
+            from importlib.metadata import version
+
+            return version("agentmap")
         except Exception:
-            return "unknown"
+            # Fallback to placeholder version if package metadata unavailable
+            # (e.g., during development or editable install)
+            return "2.0.0"

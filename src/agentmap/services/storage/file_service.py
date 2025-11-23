@@ -24,6 +24,7 @@ from agentmap.services.file_path_service import FilePathService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.content_processor import ContentProcessor
+from agentmap.services.storage.decorators import ensure_handlers_initialized
 from agentmap.services.storage.document_loader_handler import DocumentLoaderHandler
 from agentmap.services.storage.file_io_handler import FileIOHandler
 from agentmap.services.storage.file_path_validator import FilePathValidator
@@ -196,75 +197,76 @@ class FileStorageService(BaseStorageService):
             return False
 
     # Delegated methods for backwards compatibility
+    @ensure_handlers_initialized
     def _validate_file_path(self, file_path: str) -> str:
         """Validate file path (delegates to FilePathValidator)."""
-        self._initialize_handlers()
         return self._path_validator.validate_file_path(file_path)
 
+    @ensure_handlers_initialized
     def _resolve_file_path(
         self, collection: str, document_id: Optional[str] = None
     ) -> Path:
         """Resolve file path (delegates to FilePathValidator)."""
-        self._initialize_handlers()
         return self._path_validator.resolve_file_path(collection, document_id)
 
+    @ensure_handlers_initialized
     def _ensure_directory(self, directory_path: Path) -> None:
         """Ensure directory exists (delegates to FilePathValidator)."""
-        self._initialize_handlers()
         self._path_validator.ensure_directory(directory_path)
 
+    @ensure_handlers_initialized
     def _is_text_file(self, file_path: str) -> bool:
         """Check if text file (delegates to FileTypeDetector)."""
-        self._initialize_handlers()
         return self._type_detector.is_text_file(file_path)
 
+    @ensure_handlers_initialized
     def _is_binary_file(self, file_path: str) -> bool:
         """Check if binary file (delegates to FileTypeDetector)."""
-        self._initialize_handlers()
         return self._type_detector.is_binary_file(file_path)
 
+    @ensure_handlers_initialized
     def _get_file_loader(self, file_path: str) -> Any:
         """Get document loader (delegates to DocumentLoaderHandler)."""
-        self._initialize_handlers()
         return self._document_loader.get_file_loader(file_path)
 
+    @ensure_handlers_initialized
     def _create_fallback_loader(self, file_path: str) -> Any:
         """Create fallback loader (delegates to DocumentLoaderHandler)."""
-        self._initialize_handlers()
         return self._document_loader.create_fallback_loader(file_path)
 
+    @ensure_handlers_initialized
     def _filter_by_id(self, documents: List[Any], document_id: str) -> List[Any]:
         """Filter documents by ID (delegates to DocumentLoaderHandler)."""
-        self._initialize_handlers()
         return self._document_loader.filter_by_id(documents, document_id)
 
+    @ensure_handlers_initialized
     def _apply_document_path(self, documents: Union[List[Any], Any], path: str) -> Any:
         """Apply document path (delegates to DocumentLoaderHandler)."""
-        self._initialize_handlers()
         return self._document_loader.apply_document_path(documents, path)
 
+    @ensure_handlers_initialized
     def _apply_query_filter(
         self, documents: List[Any], query: Union[Dict[str, Any], str]
     ) -> List[Any]:
         """Apply query filter (delegates to DocumentLoaderHandler)."""
-        self._initialize_handlers()
         return self._document_loader.apply_query_filter(documents, query)
 
     def _prepare_content(self, data: Any) -> Union[str, bytes]:
         """Prepare content for writing (delegates to ContentProcessor)."""
         return self._content_processor.prepare_content(data)
 
+    @ensure_handlers_initialized
     def _read_text_file(self, file_path: Path, **kwargs) -> str:
         """Read text file (delegates to FileIOHandler)."""
-        self._initialize_handlers()
         encoding = kwargs.get("encoding", self.client["encoding"])
         return self._io_handler.read_text_file(file_path, encoding)
 
+    @ensure_handlers_initialized
     def _read_binary_file(self, file_path: Path, **kwargs) -> bytes:
         """Read binary file (delegates to FileIOHandler)."""
-        self._initialize_handlers()
         return self._io_handler.read_binary_file(file_path)
 
+    @ensure_handlers_initialized
     def _write_text_file(
         self,
         file_path: Path,
@@ -275,7 +277,6 @@ class FileStorageService(BaseStorageService):
         **kwargs,
     ) -> StorageResult:
         """Write text file (delegates to FileIOHandler)."""
-        self._initialize_handlers()
         encoding = kwargs.get("encoding", self.client["encoding"])
         newline = kwargs.get("newline", self.client["newline"])
 
@@ -291,6 +292,7 @@ class FileStorageService(BaseStorageService):
             self._create_success_result,
         )
 
+    @ensure_handlers_initialized
     def _write_binary_file(
         self,
         file_path: Path,
@@ -301,8 +303,6 @@ class FileStorageService(BaseStorageService):
         **kwargs,
     ) -> StorageResult:
         """Write binary file (delegates to FileIOHandler)."""
-        self._initialize_handlers()
-
         return self._io_handler.write_binary_file(
             file_path,
             content,
