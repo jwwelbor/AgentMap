@@ -21,6 +21,18 @@ from langchain_core.tools import Tool
 # Declaration system imports
 from agentmap.models.declaration_models import AgentDeclaration, ServiceDeclaration
 
+# Re-export storage protocols for backward compatibility
+from agentmap.services.storage.protocols import (
+    BlobStorageCapableAgent,
+    BlobStorageServiceProtocol,
+    CSVCapableAgent,
+    FileCapableAgent,
+    JSONCapableAgent,
+    MemoryCapableAgent,
+    StorageCapableAgent,
+    VectorCapableAgent,
+)
+
 if TYPE_CHECKING:
     from agentmap.services.declaration_sources import DeclarationSource
 
@@ -162,36 +174,6 @@ class ExecutionTrackingServiceProtocol(Protocol):
 
 
 @runtime_checkable
-class PromptManagerServiceProtocol(Protocol):
-    """Protocol for prompt manager service interface used by agents."""
-
-    def resolve_prompt(self, prompt_ref: str) -> str:
-        """
-        Resolve prompt reference to actual prompt text.
-
-        Args:
-            prompt_ref: Prompt reference (prompt:name, file:path, yaml:path#key, or plain text)
-
-        Returns:
-            Resolved prompt text
-        """
-        ...
-
-    def format_prompt(self, prompt_ref_or_text: str, values: Dict[str, Any]) -> str:
-        """
-        Format prompt with variable substitution.
-
-        Args:
-            prompt_ref_or_text: Prompt reference or text to format
-            values: Dictionary of values for variable substitution
-
-        Returns:
-            Formatted prompt text
-        """
-        ...
-
-
-@runtime_checkable
 class GraphBundleServiceProtocol(Protocol):
     """Protocol for graph bundle service interface used by agents."""
 
@@ -219,83 +201,10 @@ class GraphBundleServiceProtocol(Protocol):
         ...
 
 
-@runtime_checkable
-class MessagingServiceProtocol(Protocol):
-    """Protocol for messaging service interface used by agents."""
-
-    async def publish_message(
-        self,
-        topic: str,
-        message_type: str,
-        payload: Dict[str, Any],
-        metadata: Optional[Dict[str, Any]] = None,
-        provider: Optional[Any] = None,  # CloudProvider
-        priority: Any = None,  # MessagePriority
-        thread_id: Optional[str] = None,
-    ) -> Any:  # StorageResult
-        """
-        Publish a message to a cloud topic.
-
-        Args:
-            topic: Topic/queue name to publish to
-            message_type: Type of message (e.g., "task_request", "graph_trigger")
-            payload: Message payload data
-            metadata: Optional metadata for the message
-            provider: Specific provider to use (or use default)
-            priority: Message priority
-            thread_id: Thread ID for correlation
-
-        Returns:
-            StorageResult indicating success/failure
-        """
-        ...
-
-    def apply_template(
-        self, template_name: str, variables: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Apply a message template with variables.
-
-        Args:
-            template_name: Name of the template to apply
-            variables: Variables to substitute in the template
-
-        Returns:
-            Processed template with variables applied
-        """
-        ...
-
-    def get_service_info(self) -> Dict[str, Any]:
-        """
-        Get service information for debugging.
-
-        Returns:
-            Service information including available providers and configuration
-        """
-        ...
-
-    def get_available_providers(self) -> List[str]:
-        """
-        Get list of available messaging providers.
-
-        Returns:
-            List of provider names that are available
-        """
-        ...
+# ===== AGENT CAPABILITY PROTOCOLS =====
+# These protocols define how agents receive service dependencies
 
 
-@runtime_checkable
-class GraphBundleCapableAgent(Protocol):
-    """Protocol for agents that can use graph bundle services."""
-
-    def configure_graph_bundle_service(
-        self, graph_bundle_service: GraphBundleServiceProtocol
-    ) -> None:
-        """Configure graph bundle service for this agent."""
-        ...
-
-
-# Agent capability protocols for service configuration
 @runtime_checkable
 class LLMCapableAgent(Protocol):
     """Protocol for agents that can use LLM services."""
@@ -310,165 +219,9 @@ class MessagingCapableAgent(Protocol):
     """Protocol for agents that can use messaging services."""
 
     def configure_messaging_service(
-        self, messaging_service: MessagingServiceProtocol
+        self, messaging_service: Any  # MessagingServiceProtocol
     ) -> None:
         """Configure messaging service for this agent."""
-        ...
-
-
-@runtime_checkable
-class StorageCapableAgent(Protocol):
-    """Protocol for agents that can use unified storage services."""
-
-    def configure_storage_service(
-        self, storage_service: StorageServiceProtocol
-    ) -> None:
-        """Configure storage service for this agent."""
-        ...
-
-
-# Separate storage service protocols for fine-grained dependency injection
-@runtime_checkable
-class CSVCapableAgent(Protocol):
-    """Protocol for agents that can use CSV storage services."""
-
-    def configure_csv_service(self, csv_service: Any) -> None:
-        """Configure CSV storage service for this agent."""
-        ...
-
-
-@runtime_checkable
-class JSONCapableAgent(Protocol):
-    """Protocol for agents that can use JSON storage services."""
-
-    def configure_json_service(self, json_service: Any) -> None:
-        """Configure JSON storage service for this agent."""
-        ...
-
-
-@runtime_checkable
-class FileCapableAgent(Protocol):
-    """Protocol for agents that can use file storage services."""
-
-    def configure_file_service(self, file_service: Any) -> None:
-        """Configure file storage service for this agent."""
-        ...
-
-
-@runtime_checkable
-class VectorCapableAgent(Protocol):
-    """Protocol for agents that can use vector services."""
-
-    def configure_vector_service(self, vector_service: Any) -> None:
-        """Configure vector service for this agent."""
-        ...
-
-
-@runtime_checkable
-class MemoryCapableAgent(Protocol):
-    """Protocol for agents that can use memory storage services."""
-
-    def configure_memory_service(self, memory_service: Any) -> None:
-        """Configure memory storage service for this agent."""
-        ...
-
-
-@runtime_checkable
-class BlobStorageServiceProtocol(Protocol):
-    """Protocol for blob storage service interface used by agents."""
-
-    def read_blob(self, uri: str, **kwargs) -> bytes:
-        """
-        Read blob from storage.
-
-        Args:
-            uri: URI of the blob to read (azure://, s3://, gs://, or local path)
-            **kwargs: Provider-specific parameters
-
-        Returns:
-            Blob content as bytes
-        """
-        ...
-
-    def write_blob(self, uri: str, data: bytes, **kwargs) -> Dict[str, Any]:
-        """
-        Write blob to storage.
-
-        Args:
-            uri: URI where the blob should be written
-            data: Blob content as bytes
-            **kwargs: Provider-specific parameters
-
-        Returns:
-            Write result with operation details
-        """
-        ...
-
-    def blob_exists(self, uri: str) -> bool:
-        """
-        Check if a blob exists.
-
-        Args:
-            uri: URI to check
-
-        Returns:
-            True if the blob exists, False otherwise
-        """
-        ...
-
-    def list_blobs(self, prefix: str, **kwargs) -> List[str]:
-        """
-        List blobs with given prefix.
-
-        Args:
-            prefix: URI prefix to search (e.g., "azure://container/path/")
-            **kwargs: Provider-specific parameters
-
-        Returns:
-            List of blob URIs
-        """
-        ...
-
-    def delete_blob(self, uri: str, **kwargs) -> Dict[str, Any]:
-        """
-        Delete a blob.
-
-        Args:
-            uri: URI of the blob to delete
-            **kwargs: Provider-specific parameters
-
-        Returns:
-            Delete result with operation details
-        """
-        ...
-
-    def get_available_providers(self) -> List[str]:
-        """
-        Get list of available storage providers.
-
-        Returns:
-            List of provider names that are available
-        """
-        ...
-
-    def health_check(self) -> Dict[str, Any]:
-        """
-        Perform health check on blob storage service.
-
-        Returns:
-            Health check results for all providers
-        """
-        ...
-
-
-@runtime_checkable
-class BlobStorageCapableAgent(Protocol):
-    """Protocol for agents that can use blob storage services."""
-
-    def configure_blob_storage_service(
-        self, blob_service: BlobStorageServiceProtocol
-    ) -> None:
-        """Configure blob storage service for this agent."""
         ...
 
 
@@ -477,7 +230,7 @@ class PromptCapableAgent(Protocol):
     """Protocol for agents that can use prompt manager services."""
 
     def configure_prompt_service(
-        self, prompt_service: PromptManagerServiceProtocol
+        self, prompt_service: Any  # PromptManagerServiceProtocol
     ) -> None:
         """Configure prompt manager service for this agent."""
         ...
@@ -485,7 +238,8 @@ class PromptCapableAgent(Protocol):
 
 @runtime_checkable
 class OrchestrationCapableAgent(Protocol):
-    """Protocol for agents that can use orchestration services for dynamic routing.
+    """
+    Protocol for agents that can use orchestration services for dynamic routing.
 
     Distinguishing feature: Orchestration agents have a node_registry attribute
     that stores available routing targets, while ToolSelectionCapableAgent
@@ -497,98 +251,7 @@ class OrchestrationCapableAgent(Protocol):
     def configure_orchestrator_service(
         self, orchestrator_service: Any  # OrchestratorService
     ) -> None:
-        """Configure orchestrator service for this agent."""
-        ...
-
-
-@runtime_checkable
-class EmbeddingServiceProtocol(Protocol):
-    """Protocol for embedding service interface used by agents."""
-
-    def embed_batch(
-        self,
-        items: Any,  # Iterable[EmbeddingInput]
-        model: str,
-        metric: str = "cosine",
-        normalize: bool = True,
-    ) -> List[Any]:  # List[EmbeddingOutput]
-        """
-        Embed a batch of texts.
-
-        Args:
-            items: Iterable of EmbeddingInput objects
-            model: Model name to use for embeddings
-            metric: Distance metric ("cosine", "ip", "l2")
-            normalize: Whether to normalize vectors
-
-        Returns:
-            List of EmbeddingOutput objects
-        """
-        ...
-
-
-@runtime_checkable
-class VectorStorageServiceProtocol(Protocol):
-    """Protocol for vector storage service interface used by agents."""
-
-    def write_embedded(
-        self,
-        collection: str,
-        vectors: Any,  # Iterable[EmbeddingOutput]
-        metadatas: Optional[Any] = None,  # Iterable[dict[str, Any]]
-    ) -> Any:  # UpsertResult
-        """
-        Write pre-embedded vectors to storage.
-
-        Args:
-            collection: Collection name
-            vectors: Iterable of EmbeddingOutput objects
-            metadatas: Optional metadata for each vector
-
-        Returns:
-            UpsertResult with operation details
-        """
-        ...
-
-    def query(
-        self,
-        query_vector: List[float],
-        k: int = 8,
-        filters: Optional[Dict[str, Any]] = None,
-    ) -> List[Any]:  # List[tuple[str, float, dict[str, Any]]]
-        """
-        Query vectors by similarity.
-
-        Args:
-            query_vector: Query vector
-            k: Number of results to return
-            filters: Optional metadata filters
-
-        Returns:
-            List of (id, score, metadata) tuples
-        """
-        ...
-
-
-@runtime_checkable
-class EmbeddingCapableAgent(Protocol):
-    """Protocol for agents that can use embedding services."""
-
-    def configure_embedding_service(
-        self, embedding_service: EmbeddingServiceProtocol
-    ) -> None:
-        """Configure embedding service for this agent."""
-        ...
-
-
-@runtime_checkable
-class VectorStorageCapableAgent(Protocol):
-    """Protocol for agents that can use vector storage services."""
-
-    def configure_vector_storage_service(
-        self, vector_service: VectorStorageServiceProtocol
-    ) -> None:
-        """Configure vector storage service for this agent."""
+        """Configure orchestrator service for dynamic node routing."""
         ...
 
 
@@ -606,7 +269,7 @@ class ToolCapableAgent(Protocol):
         Configure tools for this agent.
 
         Args:
-            tools: List of LangChain Tool instances to make available to the agent
+            tools: List of LangChain Tool instances
         """
         ...
 
@@ -623,10 +286,38 @@ class ToolSelectionCapableAgent(Protocol):
     def configure_orchestrator_service(
         self, orchestrator_service: Any  # OrchestratorService
     ) -> None:
-        """
-        Configure orchestrator service for this agent.
+        """Configure orchestrator service for tool selection."""
+        ...
 
-        Args:
-            orchestrator_service: OrchestratorService instance for tool selection and routing
-        """
+
+@runtime_checkable
+class GraphBundleCapableAgent(Protocol):
+    """Protocol for agents that can use graph bundle services."""
+
+    def configure_graph_bundle_service(
+        self, graph_bundle_service: Any  # GraphBundleServiceProtocol
+    ) -> None:
+        """Configure graph bundle service for this agent."""
+        ...
+
+
+@runtime_checkable
+class EmbeddingCapableAgent(Protocol):
+    """Protocol for agents that can use embedding services."""
+
+    def configure_embedding_service(
+        self, embedding_service: Any  # EmbeddingServiceProtocol
+    ) -> None:
+        """Configure embedding service for this agent."""
+        ...
+
+
+@runtime_checkable
+class VectorStorageCapableAgent(Protocol):
+    """Protocol for agents that can use vector storage services."""
+
+    def configure_vector_storage_service(
+        self, vector_service: Any  # VectorStorageServiceProtocol
+    ) -> None:
+        """Configure vector storage service for this agent."""
         ...

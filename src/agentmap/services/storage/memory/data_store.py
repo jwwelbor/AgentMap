@@ -117,10 +117,7 @@ class MemoryDataStore:
         Returns:
             True if document exists, False otherwise
         """
-        return (
-            collection in self._storage
-            and document_id in self._storage[collection]
-        )
+        return collection in self._storage and document_id in self._storage[collection]
 
     def get_document(self, collection: str, document_id: str) -> Any:
         """
@@ -137,9 +134,7 @@ class MemoryDataStore:
             return None
         return self._storage[collection].get(document_id)
 
-    def set_document(
-        self, collection: str, document_id: str, data: Any
-    ) -> None:
+    def set_document(self, collection: str, document_id: str, data: Any) -> None:
         """
         Set a document in a collection.
 
@@ -149,7 +144,9 @@ class MemoryDataStore:
             data: Document data
         """
         is_new_collection = collection not in self._storage
-        is_new_document = not is_new_collection and document_id not in self._storage[collection]
+        is_new_document = (
+            not is_new_collection and document_id not in self._storage[collection]
+        )
 
         if is_new_collection:
             self._storage[collection] = {}

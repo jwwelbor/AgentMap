@@ -18,6 +18,7 @@ from typing import (
 from agentmap.services.storage.types import StorageResult, WriteMode
 
 if TYPE_CHECKING:
+    from agentmap.services.storage.blob_storage_service import BlobStorageService
     from agentmap.services.storage.csv_service import CSVStorageService
     from agentmap.services.storage.file_service import FileStorageService
     from agentmap.services.storage.json_service import JSONStorageService
@@ -305,4 +306,156 @@ class StorageServiceFactory(Protocol):
         Returns:
             True if supported, False otherwise
         """
+        ...
+
+
+@runtime_checkable
+class BlobStorageServiceProtocol(Protocol):
+    """
+    Protocol for blob storage service interface.
+
+    Defines the interface for blob storage operations across multiple cloud
+    providers (Azure, AWS S3, GCS) and local file storage.
+    """
+
+    def read_blob(self, uri: str, **kwargs) -> bytes:
+        """
+        Read blob from storage.
+
+        Args:
+            uri: Blob URI (e.g., "s3://bucket/key", "azure://container/blob")
+            **kwargs: Provider-specific parameters
+
+        Returns:
+            Raw bytes from blob
+        """
+        ...
+
+    def write_blob(self, uri: str, data: bytes, **kwargs) -> Dict[str, Any]:
+        """
+        Write blob to storage.
+
+        Args:
+            uri: Blob URI
+            data: Raw bytes to write
+            **kwargs: Provider-specific parameters
+
+        Returns:
+            Write result with operation details
+        """
+        ...
+
+    def blob_exists(self, uri: str) -> bool:
+        """
+        Check if a blob exists.
+
+        Args:
+            uri: Blob URI
+
+        Returns:
+            True if blob exists, False otherwise
+        """
+        ...
+
+    def list_blobs(self, prefix: str, **kwargs) -> List[str]:
+        """
+        List blobs with given prefix.
+
+        Args:
+            prefix: Prefix to filter blobs
+            **kwargs: Provider-specific parameters
+
+        Returns:
+            List of blob URIs matching prefix
+        """
+        ...
+
+    def delete_blob(self, uri: str, **kwargs) -> Dict[str, Any]:
+        """
+        Delete a blob.
+
+        Args:
+            uri: Blob URI
+            **kwargs: Provider-specific parameters
+
+        Returns:
+            Delete result with operation details
+        """
+        ...
+
+    def read_json(self, uri: str, **kwargs) -> Any:
+        """
+        Read JSON data from blob storage.
+
+        Args:
+            uri: Blob URI
+            **kwargs: Provider-specific parameters
+
+        Returns:
+            Parsed JSON data
+        """
+        ...
+
+    def write_json(self, uri: str, data: Any, **kwargs) -> Dict[str, Any]:
+        """
+        Write JSON data to blob storage.
+
+        Args:
+            uri: Blob URI
+            data: Data to serialize as JSON
+            **kwargs: Provider-specific parameters
+
+        Returns:
+            Write result with operation details
+        """
+        ...
+
+    def health_check(self) -> Dict[str, Any]:
+        """
+        Perform health check on blob storage service.
+
+        Returns:
+            Health check results for all providers
+        """
+        ...
+
+    def get_available_providers(self) -> List[str]:
+        """
+        Get list of available storage providers.
+
+        Returns:
+            List of provider names
+        """
+        ...
+
+    def get_provider_info(self, provider: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get information about storage providers.
+
+        Args:
+            provider: Optional specific provider to query
+
+        Returns:
+            Provider information dictionary
+        """
+        ...
+
+    def clear_cache(self, provider: Optional[str] = None) -> None:
+        """
+        Clear cached connectors.
+
+        Args:
+            provider: Optional specific provider to clear
+        """
+        ...
+
+
+@runtime_checkable
+class BlobStorageCapableAgent(Protocol):
+    """Protocol for agents that can use blob storage services."""
+
+    def configure_blob_storage_service(
+        self, blob_service: "BlobStorageService"
+    ) -> None:
+        """Configure blob storage service for this agent."""
         ...

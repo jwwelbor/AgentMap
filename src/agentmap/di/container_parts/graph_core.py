@@ -116,14 +116,6 @@ class GraphCoreContainer(containers.DeclarativeContainer):
         logging_service,
     )
 
-    graph_output_service = providers.Singleton(
-        "agentmap.services.graph.graph_output_service.GraphOutputService",
-        app_config_service,
-        logging_service,
-        function_resolution_service,
-        agent_registry_service,
-    )
-
     graph_checkpoint_service = providers.Singleton(
         "agentmap.services.graph.graph_checkpoint_service.GraphCheckpointService",
         system_storage_manager,
