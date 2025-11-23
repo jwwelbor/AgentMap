@@ -124,24 +124,7 @@ class ModelSelector:
         Returns:
             Filtered list of providers based on cost constraints
         """
-        if not max_cost_tier:
-            max_cost_tier = self.routing_config.get_max_cost_tier()
-
-        # Define cost tiers (low to high cost)
-        cost_hierarchy = {
-            TaskComplexity.LOW: ["low"],
-            TaskComplexity.MEDIUM: ["low", "medium"],
-            TaskComplexity.HIGH: ["low", "medium", "high"],
-            TaskComplexity.CRITICAL: ["low", "medium", "high", "critical"],
-        }
-
-        allowed_tiers = cost_hierarchy.get(complexity, ["medium"])
-
-        # Filter to only include allowed cost tiers
-        if max_cost_tier in ["low", "medium", "high", "critical"]:
-            tier_index = ["low", "medium", "high", "critical"].index(max_cost_tier)
-            allowed_tiers = allowed_tiers[: tier_index + 1]
-
+        # TODO: Implement cost optimization logic.
         # For now, return all providers (cost optimization logic can be enhanced)
         return providers
 

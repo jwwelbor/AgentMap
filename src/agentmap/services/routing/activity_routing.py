@@ -36,11 +36,7 @@ class ActivityRoutingTable:
         Returns:
             Configuration dictionary
         """
-        if hasattr(self._config_service, "get_config"):
-            return self._config_service.get_config()  # type: ignore[return-value]
-        if hasattr(self._config_service, "config_dict"):
-            return getattr(self._config_service, "config_dict")
-        return {}
+        return self._config_service.get_config()
 
     def _get_activities(self) -> Dict[str, Any]:
         """
@@ -91,18 +87,18 @@ class ActivityRoutingTable:
 
         ordered: List[Dict[str, str]] = []
 
-        primary = plan.get("primary")
-        if isinstance(primary, dict):
-            provider = primary.get("provider")
-            model = primary.get("model")
-            if provider and model:
-                ordered.append({"provider": provider, "model": model})
+        # Combine primary and fallbacks into a single list for processing
+        all_candidates = []
+        if plan.get("primary"):
+            all_candidates.append(plan.get("primary"))
+        all_candidates.extend(plan.get("fallbacks", []))
 
-        for fallback in plan.get("fallbacks", []):
-            if not isinstance(fallback, dict):
+        # Process all candidates with the same logic
+        for candidate in all_candidates:
+            if not isinstance(candidate, dict):
                 continue
-            provider = fallback.get("provider")
-            model = fallback.get("model")
+            provider = candidate.get("provider")
+            model = candidate.get("model")
             if provider and model:
                 ordered.append({"provider": provider, "model": model})
 

@@ -12,7 +12,13 @@ from agentmap.services.routing.types import (
     RoutingContext,
     RoutingDecision,
     TaskComplexity,
+    get_complexity_order,
+    get_valid_complexity_levels,
 )
+
+# Module-level constants
+COMPLEXITY_ORDER = get_complexity_order()
+VALID_COMPLEXITY_LEVELS = get_valid_complexity_levels()
 
 
 class FallbackHandler:
@@ -64,6 +70,10 @@ class FallbackHandler:
             f"Applying fallback strategy for {task_type}({complexity})"
         )
 
+        # Compute lowercase available providers once for efficiency
+        available_providers_lower = [p.lower() for p in available_providers]
+        available_providers_set = set(available_providers_lower)
+
         # Strategy 1: Try lower complexity if enabled
         if (
             routing_context.retry_with_lower_complexity
@@ -71,7 +81,7 @@ class FallbackHandler:
         ):
             lower_complexity = self.get_lower_complexity(complexity)
             decision = select_from_preferred_providers(
-                [p.lower() for p in available_providers], task_type, lower_complexity
+                available_providers_lower, task_type, lower_complexity
             )
             if decision:
                 decision.fallback_used = True
@@ -88,7 +98,7 @@ class FallbackHandler:
             routing_context.fallback_model or self.routing_config.get_fallback_model()
         )
 
-        if fallback_provider.lower() in [p.lower() for p in available_providers]:
+        if fallback_provider.lower() in available_providers_set:
             return RoutingDecision(
                 provider=fallback_provider,
                 model=fallback_model,
@@ -113,15 +123,9 @@ class FallbackHandler:
         Returns:
             Next lower complexity level
         """
-        complexity_order = [
-            TaskComplexity.LOW,
-            TaskComplexity.MEDIUM,
-            TaskComplexity.HIGH,
-            TaskComplexity.CRITICAL,
-        ]
-        current_index = complexity_order.index(complexity)
+        current_index = COMPLEXITY_ORDER.index(complexity)
         if current_index > 0:
-            return complexity_order[current_index - 1]
+            return COMPLEXITY_ORDER[current_index - 1]
         return complexity
 
     def create_emergency_fallback(
@@ -147,8 +151,8 @@ class FallbackHandler:
         provider = available_providers[0]
         provider_matrix = self.routing_config.routing_matrix.get(provider.lower(), {})
 
-        # Try to get the lowest complexity model
-        for complexity_level in ["low", "medium", "high", "critical"]:
+        # Try to get the lowest complexity model using the enum-based list
+        for complexity_level in VALID_COMPLEXITY_LEVELS:
             if complexity_level in provider_matrix:
                 model = provider_matrix[complexity_level]
                 return RoutingDecision(
