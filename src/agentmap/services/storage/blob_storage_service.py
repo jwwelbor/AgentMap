@@ -20,12 +20,12 @@ from agentmap.services.config.availability_cache_service import (
 )
 from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.logging_service import LoggingService
+from agentmap.services.protocols import BlobStorageServiceProtocol
 from agentmap.services.storage.base_connector import (
     BlobStorageConnector,
     get_connector_for_uri,
     normalize_json_uri,
 )
-from agentmap.services.storage.protocols import BlobStorageServiceProtocol
 
 
 class BlobStorageService(BlobStorageServiceProtocol):

@@ -2,12 +2,12 @@
 
 from typing import Any
 
-from agentmap.services.protocols import StorageCapableAgent
-from agentmap.services.storage.protocols import (
+from agentmap.services.protocols import (
     CSVCapableAgent,
     FileCapableAgent,
     JSONCapableAgent,
     MemoryCapableAgent,
+    StorageCapableAgent,
     VectorCapableAgent,
 )
 

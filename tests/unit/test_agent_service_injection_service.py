@@ -14,16 +14,14 @@ from unittest.mock import MagicMock, Mock, patch
 from agentmap.services.agent.agent_service_injection_service import AgentServiceInjectionService
 from agentmap.services.protocols import (
     BlobStorageCapableAgent,
-    LLMCapableAgent,
-    OrchestrationCapableAgent,
-    PromptCapableAgent,
-    StorageCapableAgent,
-)
-from agentmap.services.storage.protocols import (
     CSVCapableAgent,
     FileCapableAgent,
     JSONCapableAgent,
+    LLMCapableAgent,
     MemoryCapableAgent,
+    OrchestrationCapableAgent,
+    PromptCapableAgent,
+    StorageCapableAgent,
     VectorCapableAgent,
 )
 

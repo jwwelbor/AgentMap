@@ -14,11 +14,11 @@ from typing import Any, Dict, Optional
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
-from agentmap.services.state_adapter_service import StateAdapterService
-from agentmap.services.storage.protocols import (
+from agentmap.services.protocols import (
     BlobStorageCapableAgent,
     BlobStorageServiceProtocol,
 )
+from agentmap.services.state_adapter_service import StateAdapterService
 
 
 class BlobWriterAgent(BaseAgent, BlobStorageCapableAgent):

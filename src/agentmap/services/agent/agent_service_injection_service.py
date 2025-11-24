@@ -19,6 +19,18 @@ from agentmap.services.host_protocol_configuration_service import (
 )
 from agentmap.services.llm_service import LLMService
 from agentmap.services.logging_service import LoggingService
+from agentmap.services.protocols import (
+    BlobStorageCapableAgent,
+    CSVCapableAgent,
+    FileCapableAgent,
+    JSONCapableAgent,
+    LLMCapableAgent,
+    MemoryCapableAgent,
+    OrchestrationCapableAgent,
+    PromptCapableAgent,
+    StorageCapableAgent,
+    VectorCapableAgent,
+)
 from agentmap.services.storage.manager import StorageServiceManager
 
 
