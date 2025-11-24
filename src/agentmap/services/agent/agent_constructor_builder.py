@@ -44,23 +44,33 @@ class AgentConstructorBuilder:
 
         if "execution_tracker_service" in agent_params and execution_tracking_service:
             constructor_args["execution_tracker_service"] = execution_tracking_service
-            self.logger.trace(f"[AgentConstructorBuilder] Adding execution_tracker_service to {node.name}")
+            self.logger.trace(
+                f"[AgentConstructorBuilder] Adding execution_tracker_service to {node.name}"
+            )
 
         if "execution_tracking_service" in agent_params and execution_tracking_service:
             constructor_args["execution_tracking_service"] = execution_tracking_service
-            self.logger.trace(f"[AgentConstructorBuilder] Adding execution_tracking_service to {node.name}")
+            self.logger.trace(
+                f"[AgentConstructorBuilder] Adding execution_tracking_service to {node.name}"
+            )
 
         if "state_adapter_service" in agent_params and state_adapter_service:
             constructor_args["state_adapter_service"] = state_adapter_service
-            self.logger.debug(f"[AgentConstructorBuilder] Adding state_adapter_service to {node.name}")
+            self.logger.debug(
+                f"[AgentConstructorBuilder] Adding state_adapter_service to {node.name}"
+            )
 
         if "prompt_manager_service" in agent_params and prompt_manager_service:
             constructor_args["prompt_manager_service"] = prompt_manager_service
-            self.logger.debug(f"[AgentConstructorBuilder] Adding prompt_manager_service to {node.name}")
+            self.logger.debug(
+                f"[AgentConstructorBuilder] Adding prompt_manager_service to {node.name}"
+            )
 
         if "tools" in agent_params:
             constructor_args["tools"] = tools if tools is not None else []
             tool_count = len(tools) if tools else 0
-            self.logger.debug(f"[AgentConstructorBuilder] Adding {tool_count} tools to {node.name}")
+            self.logger.debug(
+                f"[AgentConstructorBuilder] Adding {tool_count} tools to {node.name}"
+            )
 
         return constructor_args

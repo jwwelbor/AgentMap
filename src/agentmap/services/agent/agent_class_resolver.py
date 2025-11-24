@@ -70,7 +70,9 @@ class AgentClassResolver:
     def _import_class_from_path(self, class_path: str) -> Type:
         """Import a class from its fully qualified path."""
         if class_path in self._class_cache:
-            self.logger.debug(f"[AgentClassResolver] Using cached class for: {class_path}")
+            self.logger.debug(
+                f"[AgentClassResolver] Using cached class for: {class_path}"
+            )
             return self._class_cache[class_path]
 
         if not class_path.startswith("agentmap."):
@@ -83,7 +85,9 @@ class AgentClassResolver:
                     )
                     return agent_class
             except Exception as e:
-                self.logger.debug(f"[AgentClassResolver] Custom loader failed for '{class_path}': {e}")
+                self.logger.debug(
+                    f"[AgentClassResolver] Custom loader failed for '{class_path}': {e}"
+                )
 
         try:
             if "." not in class_path:
@@ -98,7 +102,9 @@ class AgentClassResolver:
             )
             return agent_class
         except (ImportError, AttributeError) as e:
-            self.logger.debug(f"[AgentClassResolver] Failed to import class from path '{class_path}': {e}")
+            self.logger.debug(
+                f"[AgentClassResolver] Failed to import class from path '{class_path}': {e}"
+            )
             raise
 
     def get_agent_resolution_context(
@@ -109,7 +115,9 @@ class AgentClassResolver:
     ) -> Dict[str, Any]:
         """Get comprehensive context for agent class resolution."""
         try:
-            agent_class = self.resolve_agent_class(agent_type, agent_mappings, custom_agents)
+            agent_class = self.resolve_agent_class(
+                agent_type, agent_mappings, custom_agents
+            )
             return {
                 "agent_type": agent_type,
                 "agent_class": agent_class,
@@ -138,48 +146,65 @@ class AgentClassResolver:
         agent_type_lower = agent_type.lower() if agent_type else ""
 
         if not agent_type or agent_type_lower == "none":
-            self.logger.debug("[AgentClassResolver] Empty or None agent type, defaulting to DefaultAgent")
+            self.logger.debug(
+                "[AgentClassResolver] Empty or None agent type, defaulting to DefaultAgent"
+            )
             return self._get_default_agent_class()
 
         try:
             custom_agent_class = self._try_load_custom_agent(agent_type)
             if custom_agent_class:
-                self.logger.debug(f"[AgentClassResolver] Resolved to custom agent: {custom_agent_class.__name__}")
+                self.logger.debug(
+                    f"[AgentClassResolver] Resolved to custom agent: {custom_agent_class.__name__}"
+                )
                 return custom_agent_class
             else:
                 raise ValueError(f"Cannot resolve agent type: {agent_type}")
-        except ValueError as e:
-            self.logger.debug(f"[AgentClassResolver] Failed to resolve agent '{agent_type}': {e}")
-        except Exception as e:
-            self.logger.debug(f"[AgentClassResolver] Failed to resolve agent '{agent_type}': {e}")
-            self.logger.warning(f"[AgentClassResolver] Using default agent for unresolvable type: {agent_type}")
+        except (ValueError, Exception) as e:
+            self.logger.debug(
+                f"[AgentClassResolver] Failed to resolve agent '{agent_type}': {e}"
+            )
+            self.logger.warning(
+                f"[AgentClassResolver] Using default agent for unresolvable type: {agent_type}"
+            )
             return self._get_default_agent_class()
 
     def _try_load_custom_agent(self, agent_type: str) -> Optional[Type]:
         """Try to load a custom agent as fallback."""
         try:
-            self.logger.debug(f"[AgentClassResolver] Attempting to load custom agent: {agent_type}")
+            self.logger.debug(
+                f"[AgentClassResolver] Attempting to load custom agent: {agent_type}"
+            )
             modname = f"{agent_type.lower()}_agent"
             classname = f"{agent_type}Agent"
             try:
                 module = __import__(modname, fromlist=[classname])
                 agent_class = getattr(module, classname)
-                self.logger.debug(f"[AgentClassResolver] Successfully loaded custom agent: {agent_class.__name__}")
+                self.logger.debug(
+                    f"[AgentClassResolver] Successfully loaded custom agent: {agent_class.__name__}"
+                )
                 return agent_class
             except (ImportError, AttributeError) as e:
-                self.logger.debug(f"[AgentClassResolver] Failed to import custom agent {modname}.{classname}: {e}")
+                self.logger.debug(
+                    f"[AgentClassResolver] Failed to import custom agent {modname}.{classname}: {e}"
+                )
                 return None
         except Exception as e:
-            self.logger.debug(f"[AgentClassResolver] Custom agent loading failed for {agent_type}: {e}")
+            self.logger.debug(
+                f"[AgentClassResolver] Custom agent loading failed for {agent_type}: {e}"
+            )
             return None
 
     def _get_default_agent_class(self) -> Type:
         """Get default agent class as fallback."""
         try:
             from agentmap.agents.builtins.default_agent import DefaultAgent
+
             return DefaultAgent
         except ImportError:
-            self.logger.warning("[AgentClassResolver] DefaultAgent not available, creating minimal fallback")
+            self.logger.warning(
+                "[AgentClassResolver] DefaultAgent not available, creating minimal fallback"
+            )
 
             class BasicAgent:
                 def __init__(self, **kwargs):

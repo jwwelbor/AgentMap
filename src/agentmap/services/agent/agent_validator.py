@@ -19,7 +19,9 @@ class AgentValidator:
 
     def validate_agent_instance(self, agent_instance: Any, node: Any) -> None:
         """Validate that an agent instance is properly configured."""
-        self.logger.debug(f"[AgentValidator] Validating agent configuration for: {node.name}")
+        self.logger.debug(
+            f"[AgentValidator] Validating agent configuration for: {node.name}"
+        )
 
         if not hasattr(agent_instance, "name") or not agent_instance.name:
             raise ValueError(f"Agent {node.name} missing required 'name' attribute")
@@ -37,14 +39,20 @@ class AgentValidator:
                 _ = agent_instance.llm_service
                 self.logger.debug(f"[AgentValidator] LLM service OK for {node.name}")
             except (ValueError, AttributeError):
-                raise ValueError(f"LLM agent {node.name} missing required LLM service configuration")
+                raise ValueError(
+                    f"LLM agent {node.name} missing required LLM service configuration"
+                )
 
         if isinstance(agent_instance, StorageCapableAgent):
             try:
                 _ = agent_instance.storage_service
-                self.logger.debug(f"[AgentValidator] Storage service OK for {node.name}")
+                self.logger.debug(
+                    f"[AgentValidator] Storage service OK for {node.name}"
+                )
             except (ValueError, AttributeError):
-                raise ValueError(f"Storage agent {node.name} missing required storage service configuration")
+                raise ValueError(
+                    f"Storage agent {node.name} missing required storage service configuration"
+                )
 
         if isinstance(agent_instance, PromptCapableAgent):
             has_prompt_service = (
@@ -54,6 +62,8 @@ class AgentValidator:
             if has_prompt_service:
                 self.logger.debug(f"[AgentValidator] Prompt service OK for {node.name}")
             else:
-                self.logger.debug(f"[AgentValidator] Using fallback prompts for {node.name}")
+                self.logger.debug(
+                    f"[AgentValidator] Using fallback prompts for {node.name}"
+                )
 
         self.logger.debug(f"[AgentValidator] Validation successful for: {node.name}")
