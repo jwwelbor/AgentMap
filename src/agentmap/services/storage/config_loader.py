@@ -49,7 +49,15 @@ class ConfigLoaderMixin:
 
     def _apply_fallback_config(self, config_data: dict) -> dict:
         """Apply fallback configuration if provider config is empty."""
-        storage_type_providers = ["csv", "vector", "memory", "file", "kv", "blob", "json"]
+        storage_type_providers = [
+            "csv",
+            "vector",
+            "memory",
+            "file",
+            "kv",
+            "blob",
+            "json",
+        ]
 
         if not config_data and self.provider_name in storage_type_providers:
             storage_type_method = f"get_{self.provider_name}_config"

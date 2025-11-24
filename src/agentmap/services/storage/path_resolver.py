@@ -61,9 +61,7 @@ class PathResolverMixin:
         try:
             config_base_dir = self.configuration.get_base_directory()
             if not config_base_dir:
-                raise ValueError(
-                    "No base directory configured in StorageConfigService"
-                )
+                raise ValueError("No base directory configured in StorageConfigService")
 
             full_path = str(Path(config_base_dir) / key)
 
