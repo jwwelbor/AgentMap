@@ -114,14 +114,34 @@ class BaseStorageService(
         return self._client
 
     def list_collections(self) -> List[str]:
-        """List all available collections."""
+        """
+        List all available collections.
+
+        Default implementation returns an empty list. Subclasses should override
+        this method if they support collection listing.
+
+        Returns:
+            List of collection names or identifiers.
+        """
         self._logger.debug(f"[{self.provider_name}] list_collections not implemented")
         return []
 
     def create_collection(
         self, collection: str, schema: Optional[Dict[str, Any]] = None
     ) -> StorageResult:
-        """Create a new collection (if supported by provider)."""
+        """
+        Create a new collection.
+
+        Default implementation returns an error result. Subclasses should override
+        this method if they support collection creation.
+
+        Args:
+            collection: Name of the collection to create
+            schema: Optional schema definition for the collection
+
+        Returns:
+            StorageResult indicating success or failure
+        """
         self._logger.debug(f"[{self.provider_name}] create_collection not supported")
         return self._create_error_result(
             "create_collection",
@@ -130,22 +150,65 @@ class BaseStorageService(
         )
 
     def count(self, collection: str, query: Optional[Dict[str, Any]] = None) -> int:
-        """Count documents/records in collection."""
+        """
+        Count documents or records in a collection.
+
+        Default implementation returns 0. Subclasses should override this method
+        if they support counting operations.
+
+        Args:
+            collection: Name of the collection
+            query: Optional filter query to count matching documents
+
+        Returns:
+            Number of documents/records (0 if not implemented)
+        """
         self._logger.debug(f"[{self.provider_name}] count not implemented")
         return 0
 
     def exists(self, collection: str, document_id: Optional[str] = None) -> bool:
-        """Check if collection or document exists in storage."""
+        """
+        Check if a collection or document exists in storage.
+
+        Default implementation returns False. Subclasses should override this method
+        if they support existence checks.
+
+        Args:
+            collection: Name of the collection
+            document_id: Optional document identifier to check
+
+        Returns:
+            True if exists, False otherwise (default: False if not implemented)
+        """
         self._logger.debug(f"[{self.provider_name}] exists not implemented")
         return False
 
     @abstractmethod
     def _initialize_client(self) -> Any:
-        """Initialize the storage client."""
+        """
+        Initialize the provider-specific storage client.
+
+        Subclasses must implement this method to create and configure
+        their storage client instance.
+
+        Returns:
+            Initialized storage client instance
+
+        Raises:
+            StorageServiceConfigurationError: If client initialization fails
+        """
 
     @abstractmethod
     def _perform_health_check(self) -> bool:
-        """Perform provider-specific health check."""
+        """
+        Perform provider-specific health check.
+
+        Subclasses must implement this method to verify that their
+        storage backend is accessible and functioning correctly.
+
+        Returns:
+            True if storage is healthy, False otherwise
+        """
 
     @abstractmethod
     def read(
@@ -156,7 +219,25 @@ class BaseStorageService(
         path: Optional[str] = None,
         **kwargs,
     ) -> Any:
-        """Read data from storage."""
+        """
+        Read data from storage.
+
+        Subclasses must implement this method to retrieve data from their
+        storage backend.
+
+        Args:
+            collection: Name of the collection to read from
+            document_id: Optional specific document identifier
+            query: Optional query filter for selecting documents
+            path: Optional file path (for file-based storage)
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            Retrieved data (format depends on provider)
+
+        Raises:
+            Exception: Provider-specific exceptions for read failures
+        """
 
     @abstractmethod
     def write(
@@ -168,7 +249,26 @@ class BaseStorageService(
         path: Optional[str] = None,
         **kwargs,
     ) -> StorageResult:
-        """Write data to storage."""
+        """
+        Write data to storage.
+
+        Subclasses must implement this method to persist data to their
+        storage backend.
+
+        Args:
+            collection: Name of the collection to write to
+            data: Data to write
+            document_id: Optional document identifier
+            mode: Write mode (WRITE, APPEND, etc.)
+            path: Optional file path (for file-based storage)
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            StorageResult indicating success or failure
+
+        Raises:
+            Exception: Provider-specific exceptions for write failures
+        """
 
     @abstractmethod
     def delete(
@@ -178,7 +278,24 @@ class BaseStorageService(
         path: Optional[str] = None,
         **kwargs,
     ) -> StorageResult:
-        """Delete from storage."""
+        """
+        Delete data from storage.
+
+        Subclasses must implement this method to remove data from their
+        storage backend.
+
+        Args:
+            collection: Name of the collection to delete from
+            document_id: Optional specific document to delete
+            path: Optional file path (for file-based storage)
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            StorageResult indicating success or failure
+
+        Raises:
+            Exception: Provider-specific exceptions for deletion failures
+        """
 
     def batch_write(
         self,
