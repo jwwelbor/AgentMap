@@ -5,12 +5,12 @@ Service containing business logic for agent creation and instantiation.
 This extracts and wraps the core functionality from the original AgentLoader class.
 """
 
-import importlib
-import inspect
-from typing import Any, Dict, List, Optional, Set, Tuple, Type
+from typing import Any, Dict, Optional, Set, Type
 
+from agentmap.services.agent.agent_class_resolver import AgentClassResolver
+from agentmap.services.agent.agent_constructor_builder import AgentConstructorBuilder
+from agentmap.services.agent.agent_validator import AgentValidator
 from agentmap.services.custom_agent_loader import CustomAgentLoader
-from agentmap.services.declaration_registry_service import DeclarationRegistryService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
 
@@ -33,9 +33,26 @@ class AgentFactoryService:
         """Initialize service with dependency injection."""
         self.features = features_registry_service
         self.logger = logging_service.get_class_logger(self)
-        self._custom_agent_loader = custom_agent_loader
-        # Cache for imported agent classes for performance
-        self._class_cache: Dict[str, Type] = {}
+        self._custom_agent_loader = (
+            custom_agent_loader  # Keep for backward compatibility with tests
+        )
+        self._resolver = AgentClassResolver(logging_service, custom_agent_loader)
+        self._builder = AgentConstructorBuilder(logging_service)
+        self._validator = AgentValidator(logging_service)
+
+    @property
+    def _class_cache(self) -> Dict[str, Type]:
+        """Property that exposes the resolver's class cache for testing."""
+        return self._resolver.get_class_cache()
+
+    def get_class_cache(self) -> Dict[str, Type]:
+        """
+        Get the class cache for testing purposes.
+
+        Returns:
+            Dictionary mapping class paths to cached classes
+        """
+        return self._resolver.get_class_cache()
 
     def resolve_agent_class(
         self,
@@ -58,102 +75,9 @@ class AgentFactoryService:
             ValueError: If agent type is not found in mappings
             ImportError: If class cannot be imported
         """
-        self.logger.debug(
-            f"[AgentFactoryService] Resolving agent class: type='{agent_type}'"
+        return self._resolver.resolve_agent_class(
+            agent_type, agent_mappings, custom_agents
         )
-
-        # Get class path from provided mappings
-        class_path = agent_mappings.get(agent_type)
-
-        if not class_path:
-            # Provide helpful error message
-            is_custom = custom_agents and agent_type in custom_agents
-            if is_custom:
-                error_msg = (
-                    f"Custom agent '{agent_type}' declared but no class path mapping provided. "
-                    f"Ensure custom agent is properly registered in agent_mappings."
-                )
-            else:
-                error_msg = f"Agent type '{agent_type}' not found in agent_mappings."
-
-            self.logger.error(f"[AgentFactoryService] {error_msg}")
-            raise ValueError(error_msg)
-
-        # Import the class
-        try:
-            agent_class = self._import_class_from_path(class_path)
-            self.logger.trace(
-                f"[AgentFactoryService] Successfully resolved '{agent_type}' to {agent_class.__name__}"
-            )
-            return agent_class
-        except (ImportError, AttributeError) as e:
-            error_msg = f"Failed to import agent class '{class_path}' for type '{agent_type}': {e}"
-            self.logger.error(f"[AgentFactoryService] {error_msg}")
-            raise ImportError(error_msg) from e
-
-    def _import_class_from_path(self, class_path: str) -> Type:
-        """
-        Import a class from its fully qualified path.
-
-        Args:
-            class_path: Fully qualified class path (e.g., "module.submodule.ClassName")
-
-        Returns:
-            The imported class
-
-        Raises:
-            ImportError: If the class cannot be imported
-            AttributeError: If the class doesn't exist in the module
-        """
-        # Check cache first
-        if class_path in self._class_cache:
-            self.logger.debug(
-                f"[AgentFactoryService] Using cached class for: {class_path}"
-            )
-            return self._class_cache[class_path]
-
-        # Try custom agent loader for non-package paths
-        if not class_path.startswith("agentmap."):
-            try:
-                agent_class = self._custom_agent_loader.load_agent_class(class_path)
-                if agent_class:
-                    self._class_cache[class_path] = agent_class
-                    self.logger.debug(
-                        f"[AgentFactoryService] Loaded custom agent: {class_path} -> {agent_class.__name__}"
-                    )
-                    return agent_class
-            except Exception as e:
-                self.logger.debug(
-                    f"[AgentFactoryService] Custom loader failed for '{class_path}': {e}"
-                )
-
-        try:
-            # Split module path and class name
-            if "." not in class_path:
-                raise ValueError(f"Invalid class path format: {class_path}")
-
-            module_path, class_name = class_path.rsplit(".", 1)
-
-            # Import the module
-            module = importlib.import_module(module_path)
-
-            # Get the class from the module
-            agent_class = getattr(module, class_name)
-
-            # Cache the class for performance
-            self._class_cache[class_path] = agent_class
-
-            self.logger.debug(
-                f"[AgentFactoryService] Successfully imported class: {class_path} -> {agent_class.__name__}"
-            )
-
-            return agent_class
-
-        except (ImportError, AttributeError) as e:
-            self.logger.debug(
-                f"[AgentFactoryService] Failed to import class from path '{class_path}': {e}"
-            )
-            raise
 
     def get_agent_resolution_context(
         self,
@@ -320,8 +244,6 @@ class AgentFactoryService:
         """
         Validate that an agent instance is properly configured.
 
-        Extracted from GraphRunnerService validation logic.
-
         Args:
             agent_instance: Agent instance to validate
             node: Node definition for validation context
@@ -329,118 +251,7 @@ class AgentFactoryService:
         Raises:
             ValueError: If agent configuration is invalid
         """
-        self.logger.debug(
-            f"[AgentFactoryService] Validating agent configuration for: {node.name}"
-        )
-
-        # Basic validation - required attributes
-        if not hasattr(agent_instance, "name") or not agent_instance.name:
-            raise ValueError(f"Agent {node.name} missing required 'name' attribute")
-        if not hasattr(agent_instance, "run"):
-            raise ValueError(f"Agent {node.name} missing required 'run' method")
-
-        # Protocol-based service validation (extracted from GraphRunnerService)
-        from agentmap.services.protocols import (
-            LLMCapableAgent,
-            PromptCapableAgent,
-            StorageCapableAgent,
-        )
-
-        # Validate LLM service configuration
-        if isinstance(agent_instance, LLMCapableAgent):
-            try:
-                _ = agent_instance.llm_service  # Will raise if not configured
-                self.logger.debug(
-                    f"[AgentFactoryService] LLM service OK for {node.name}"
-                )
-            except (ValueError, AttributeError):
-                raise ValueError(
-                    f"LLM agent {node.name} missing required LLM service configuration"
-                )
-
-        # Validate storage service configuration
-        if isinstance(agent_instance, StorageCapableAgent):
-            try:
-                _ = agent_instance.storage_service  # Will raise if not configured
-                self.logger.debug(
-                    f"[AgentFactoryService] Storage service OK for {node.name}"
-                )
-            except (ValueError, AttributeError):
-                raise ValueError(
-                    f"Storage agent {node.name} missing required storage service configuration"
-                )
-
-        # Validate prompt service if available (extracted from GraphRunnerService)
-        if isinstance(agent_instance, PromptCapableAgent):
-            has_prompt_service = (
-                hasattr(agent_instance, "prompt_manager_service")
-                and agent_instance.prompt_manager_service is not None
-            )
-            if has_prompt_service:
-                self.logger.debug(
-                    f"[AgentFactoryService] Prompt service OK for {node.name}"
-                )
-            else:
-                self.logger.debug(
-                    f"[AgentFactoryService] Using fallback prompts for {node.name}"
-                )
-
-        self.logger.debug(
-            f"[AgentFactoryService] ✅ Validation successful for: {node.name}"
-        )
-
-    def _resolve_agent_class_with_fallback(self, agent_type: str) -> Type:
-        """
-        Resolve agent class with comprehensive fallback logic.
-
-        Extracted from GraphRunnerService for complete factory pattern.
-
-        Args:
-            agent_type: Type of agent to resolve
-
-        Returns:
-            Agent class ready for instantiation
-
-        Raises:
-            AgentInitializationError: If no suitable agent class can be found
-        """
-        from agentmap.exceptions import AgentInitializationError
-
-        agent_type_lower = agent_type.lower() if agent_type else ""
-
-        # Handle empty or None agent_type - default to DefaultAgent
-        if not agent_type or agent_type_lower == "none":
-            self.logger.debug(
-                "[AgentFactoryService] Empty or None agent type, defaulting to DefaultAgent"
-            )
-            return self._get_default_agent_class()
-
-        try:
-            # Note: This method is part of fallback logic and may need proper agent_mappings
-            # For now, we'll try the custom agent loader approach first
-            custom_agent_class = self._try_load_custom_agent(agent_type)
-            if custom_agent_class:
-                self.logger.debug(
-                    f"[AgentFactoryService] Resolved to custom agent: {custom_agent_class.__name__}"
-                )
-                return custom_agent_class
-            else:
-                raise ValueError(f"Cannot resolve agent type: {agent_type}")
-
-        except ValueError as e:
-            self.logger.debug(
-                f"[AgentFactoryService] Failed to resolve agent '{agent_type}': {e}"
-            )
-
-        except Exception as e:
-            self.logger.debug(
-                f"[AgentFactoryService] Failed to resolve agent '{agent_type}': {e}"
-            )
-            # Final fallback - use default agent
-            self.logger.warning(
-                f"[AgentFactoryService] Using default agent for unresolvable type: {agent_type}"
-            )
-            return self._get_default_agent_class()
+        self._validator.validate_agent_instance(agent_instance, node)
 
     def _build_constructor_args(
         self,
@@ -455,8 +266,6 @@ class AgentFactoryService:
         """
         Build constructor arguments based on agent signature inspection.
 
-        Extracted from GraphRunnerService for factory pattern.
-
         Args:
             agent_class: Agent class to inspect
             node: Node definition
@@ -469,60 +278,36 @@ class AgentFactoryService:
         Returns:
             Dictionary of constructor arguments
         """
-        # Get the agent class constructor signature
-        agent_signature = inspect.signature(agent_class.__init__)
-        agent_params = list(agent_signature.parameters.keys())
+        return self._builder.build_constructor_args(
+            agent_class,
+            node,
+            context,
+            execution_tracking_service,
+            state_adapter_service,
+            prompt_manager_service,
+            tools,
+            logger=self.logger,
+        )
 
-        # Build base constructor arguments
-        constructor_args = {
-            "name": node.name,
-            "prompt": getattr(node, "prompt", ""),
-            "context": context,
-            "logger": self.logger,
-        }
+    def _import_class_from_path(self, class_path: str) -> Type:
+        """
+        Import a class from its fully qualified path.
 
-        # Add services based on what the agent constructor supports
-        # this should _always_ be there
-        if "execution_tracker_service" in agent_params and execution_tracking_service:
-            constructor_args["execution_tracker_service"] = execution_tracking_service
-            self.logger.trace(
-                f"[AgentFactoryService] Adding execution_tracker_service to {node.name}"
-            )
+        Delegates to AgentClassResolver for implementation.
 
-        # this should _always_ be there
-        if "execution_tracking_service" in agent_params and execution_tracking_service:
-            constructor_args["execution_tracking_service"] = execution_tracking_service
-            self.logger.trace(
-                f"[AgentFactoryService] Adding execution_tracking_service to {node.name}"
-            )
+        Args:
+            class_path: Fully qualified class path
 
-        if "state_adapter_service" in agent_params and state_adapter_service:
-            constructor_args["state_adapter_service"] = state_adapter_service
-            self.logger.debug(
-                f"[AgentFactoryService] Adding state_adapter_service to {node.name}"
-            )
-
-        if "prompt_manager_service" in agent_params and prompt_manager_service:
-            constructor_args["prompt_manager_service"] = prompt_manager_service
-            self.logger.debug(
-                f"[AgentFactoryService] Adding prompt_manager_service to {node.name}"
-            )
-
-        # AGM-TOOLS-001: Add tools for ToolAgent
-        if "tools" in agent_params:
-            constructor_args["tools"] = tools if tools is not None else []
-            tool_count = len(tools) if tools else 0
-            self.logger.debug(
-                f"[AgentFactoryService] Adding {tool_count} tools to {node.name}"
-            )
-
-        return constructor_args
+        Returns:
+            The imported class
+        """
+        return self._resolver._import_class_from_path(class_path)
 
     def _try_load_custom_agent(self, agent_type: str) -> Optional[Type]:
         """
         Try to load a custom agent as fallback.
 
-        Extracted from GraphRunnerService custom agent loading logic.
+        Delegates to AgentClassResolver for implementation.
 
         Args:
             agent_type: Type of agent to load
@@ -530,68 +315,29 @@ class AgentFactoryService:
         Returns:
             Agent class or None if not found
         """
-        try:
-            # Import here to avoid circular imports
-            import sys
-
-            from agentmap.services.config.app_config_service import AppConfigService
-
-            # For now, this is a simplified version - would need proper config service injection
-            # This preserves the pattern from GraphRunnerService but as a start
-            self.logger.debug(
-                f"[AgentFactoryService] Attempting to load custom agent: {agent_type}"
-            )
-
-            # Try basic custom agent import pattern
-            modname = f"{agent_type.lower()}_agent"
-            classname = f"{agent_type}Agent"
-
-            try:
-                module = __import__(modname, fromlist=[classname])
-                agent_class = getattr(module, classname)
-                self.logger.debug(
-                    f"[AgentFactoryService] Successfully loaded custom agent: {agent_class.__name__}"
-                )
-                return agent_class
-            except (ImportError, AttributeError) as e:
-                self.logger.debug(
-                    f"[AgentFactoryService] Failed to import custom agent {modname}.{classname}: {e}"
-                )
-                return None
-
-        except Exception as e:
-            self.logger.debug(
-                f"[AgentFactoryService] Custom agent loading failed for {agent_type}: {e}"
-            )
-            return None
+        return self._resolver._try_load_custom_agent(agent_type)
 
     def _get_default_agent_class(self) -> Type:
         """
         Get default agent class as fallback.
 
+        Delegates to AgentClassResolver for implementation.
+
         Returns:
             Default agent class
         """
-        try:
-            # Use the real DefaultAgent class
-            from agentmap.agents.builtins.default_agent import DefaultAgent
+        return self._resolver._get_default_agent_class()
 
-            return DefaultAgent
-        except ImportError:
-            self.logger.warning(
-                "[AgentFactoryService] DefaultAgent not available, creating minimal fallback"
-            )
+    def _resolve_agent_class_with_fallback(self, agent_type: str) -> Type:
+        """
+        Resolve agent class with comprehensive fallback logic.
 
-            # Fallback class that implements the basic agent interface
-            class BasicAgent:
-                def __init__(self, **kwargs):
-                    self.name = kwargs.get("name", "default")
-                    self.prompt = kwargs.get("prompt", "")
-                    self.context = kwargs.get("context", {})
-                    self.logger = kwargs.get("logger")
+        Delegates to AgentClassResolver for implementation.
 
-                def run(self, state):
-                    """Basic run method that passes through state unchanged."""
-                    return state
+        Args:
+            agent_type: Type of agent to resolve
 
-            return BasicAgent
+        Returns:
+            Agent class ready for instantiation
+        """
+        return self._resolver.resolve_agent_class_with_fallback(agent_type)
