@@ -2,11 +2,15 @@
 AgentFactoryService for AgentMap.
 
 Service containing business logic for agent creation and instantiation.
-This extracts and wraps the core functionality from the original AgentLoader class.
+Refactored to use composition with extracted modules for better maintainability.
 """
 
 from typing import Any, Dict, Optional, Set, Type
+from typing import Any, Dict, Optional, Set, Type
 
+from agentmap.services.agent.agent_class_resolver import AgentClassResolver
+from agentmap.services.agent.agent_constructor_builder import AgentConstructorBuilder
+from agentmap.services.agent.agent_validator import AgentValidator
 from agentmap.services.agent.agent_class_resolver import AgentClassResolver
 from agentmap.services.agent.agent_constructor_builder import AgentConstructorBuilder
 from agentmap.services.agent.agent_validator import AgentValidator
@@ -16,13 +20,7 @@ from agentmap.services.logging_service import LoggingService
 
 
 class AgentFactoryService:
-    """
-    Factory service for creating and managing agent instances.
-
-    Contains all agent creation business logic extracted from the original AgentLoader class.
-    Uses dependency injection and coordinates between registry and features services.
-    Follows Factory pattern naming to match existing test fixtures.
-    """
+    """Factory service for creating and managing agent instances."""
 
     def __init__(
         self,
@@ -85,44 +83,10 @@ class AgentFactoryService:
         agent_mappings: Dict[str, str],
         custom_agents: Optional[Set[str]] = None,
     ) -> Dict[str, Any]:
-        """
-        Get comprehensive context for agent class resolution.
-
-        Args:
-            agent_type: Agent type to get context for
-            agent_mappings: Dictionary mapping agent_type to class_path
-            custom_agents: Optional set of custom agent types
-
-        Returns:
-            Dictionary with resolution context and metadata
-        """
-        try:
-            agent_class = self.resolve_agent_class(
-                agent_type, agent_mappings, custom_agents
-            )
-
-            return {
-                "agent_type": agent_type,
-                "agent_class": agent_class,
-                "class_name": agent_class.__name__,
-                "resolvable": True,
-                "dependencies_valid": True,  # Simplified - dependencies are handled by resolve_agent_class
-                "missing_dependencies": [],
-                "_factory_version": "2.0",
-                "_resolution_method": "AgentFactoryService.resolve_agent_class",
-            }
-        except (ValueError, ImportError) as e:
-            return {
-                "agent_type": agent_type,
-                "agent_class": None,
-                "class_name": None,
-                "resolvable": False,
-                "dependencies_valid": False,
-                "missing_dependencies": ["resolution_failed"],
-                "resolution_error": str(e),
-                "_factory_version": "2.0",
-                "_resolution_method": "AgentFactoryService.resolve_agent_class",
-            }
+        """Get comprehensive context for agent class resolution."""
+        return self._resolver.get_agent_resolution_context(
+            agent_type, agent_mappings, custom_agents
+        )
 
     def create_agent_instance(
         self,
@@ -136,31 +100,9 @@ class AgentFactoryService:
         node_registry: Optional[Dict[str, Any]] = None,
         bundle_tools: Optional[Dict[str, Any]] = None,
     ) -> Any:
-        """
-        Create agent instance with full instantiation and context.
-
-        Extracted from GraphRunnerService to follow factory pattern completely.
-
-        Args:
-            node: Node definition containing agent information
-            graph_name: Name of the graph for context
-            agent_mappings: Dictionary mapping agent_type to class_path
-            custom_agents: Optional set of custom agent types
-            execution_tracking_service: Service for execution tracking
-            state_adapter_service: Service for state management
-            prompt_manager_service: Service for prompt management (optional)
-            node_registry: Node registry for OrchestratorAgent (optional)
-            bundle_tools: Optional dictionary of tools from bundle, keyed by node name (AGM-TOOLS-001)
-
-        Returns:
-            Configured agent instance
-
-        Raises:
-            ValueError: If agent creation fails or node.agent_type is missing
-        """
+        """Create agent instance with full instantiation and context."""
         from agentmap.exceptions import AgentInitializationError
 
-        # Validate that node has agent_type
         if not hasattr(node, "agent_type") or not node.agent_type:
             raise ValueError(
                 f"Node '{node.name}' is missing required 'agent_type' attribute"
@@ -171,12 +113,10 @@ class AgentFactoryService:
             f"[AgentFactoryService] Creating agent instance for node: {node.name} (type: {agent_type})"
         )
 
-        # Step 1: Resolve agent class using provided mappings
         agent_class = self.resolve_agent_class(
             agent_type, agent_mappings, custom_agents
         )
 
-        # Step 2: Create comprehensive context with input/output field information
         context = {
             "input_fields": getattr(node, "inputs", []),
             "output_field": getattr(node, "output", None),
@@ -184,7 +124,6 @@ class AgentFactoryService:
             "is_custom": custom_agents and agent_type in custom_agents,
         }
 
-        # Add CSV context data if available (extracted from GraphRunnerService logic)
         if hasattr(node, "context") and node.context:
             context.update(node.context)
 
@@ -192,7 +131,6 @@ class AgentFactoryService:
             f"[AgentFactoryService] Instantiating {agent_class.__name__} as node '{node.name}'"
         )
 
-        # AGM-TOOLS-001: Retrieve tools for this node if bundle_tools provided
         node_tools = None
         if bundle_tools and node.name in bundle_tools:
             node_tools = bundle_tools[node.name]
@@ -200,13 +138,11 @@ class AgentFactoryService:
                 f"[AgentFactoryService] Found {len(node_tools)} tools for node: {node.name}"
             )
         elif agent_type == "tool_agent":
-            # tool_agent expects tools but none found - log warning
             self.logger.warning(
                 f"[AgentFactoryService] ToolAgent node '{node.name}' has no tools in bundle"
             )
 
-        # Step 3: Build constructor arguments based on agent signature inspection
-        constructor_args = self._build_constructor_args(
+        constructor_args = self._builder.build_constructor_args(
             agent_class,
             node,
             context,
@@ -214,9 +150,9 @@ class AgentFactoryService:
             state_adapter_service,
             prompt_manager_service,
             tools=node_tools,
+            logger=self.logger,
         )
 
-        # Step 4: Create agent instance
         try:
             agent_instance = agent_class(**constructor_args)
         except Exception as e:
@@ -224,20 +160,18 @@ class AgentFactoryService:
                 f"Failed to create agent instance for node '{node.name}': {str(e)}"
             )
 
-        # Step 5: Special handling for OrchestratorAgent - inject node registry
         if agent_class.__name__ == "OrchestratorAgent" and node_registry:
             self.logger.debug(
                 f"[AgentFactoryService] Injecting node registry for OrchestratorAgent: {node.name}"
             )
             agent_instance.node_registry = node_registry
             self.logger.debug(
-                f"[AgentFactoryService] ✅ Node registry injected with {len(node_registry)} nodes"
+                f"[AgentFactoryService] Node registry injected with {len(node_registry)} nodes"
             )
 
         self.logger.debug(
-            f"[AgentFactoryService] ✅ Successfully created agent instance: {node.name}"
+            f"[AgentFactoryService] Successfully created agent instance: {node.name}"
         )
-
         return agent_instance
 
     def validate_agent_instance(self, agent_instance: Any, node: Any) -> None:

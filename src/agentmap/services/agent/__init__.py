@@ -1,4 +1,14 @@
-"""Agent services package."""
+"""
+Agent services package for AgentMap.
+
+This package contains services related to agent management:
+- AgentFactoryService: Main facade for agent creation
+- AgentClassResolver: Class resolution and importing
+- AgentConstructorBuilder: Constructor argument building
+- AgentValidator: Agent instance validation
+- AgentRegistryService: Agent registration
+- AgentServiceInjectionService: Service injection for agents
+"""
 
 from agentmap.services.agent.agent_class_resolver import AgentClassResolver
 from agentmap.services.agent.agent_constructor_builder import AgentConstructorBuilder
