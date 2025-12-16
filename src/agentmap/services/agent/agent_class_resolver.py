@@ -6,7 +6,7 @@ Handles custom agents, built-in agents, and fallback logic.
 """
 
 import importlib
-from typing import Dict, Optional, Set, Type
+from typing import Any, Dict, Optional, Set, Type
 
 from agentmap.services.custom_agent_loader import CustomAgentLoader
 from agentmap.services.logging_service import LoggingService
@@ -134,6 +134,40 @@ class AgentClassResolver:
             Dictionary mapping class paths to cached classes
         """
         return self._class_cache
+
+    def get_agent_resolution_context(
+        self,
+        agent_type: str,
+        agent_mappings: Dict[str, str],
+        custom_agents: Optional[Set[str]] = None,
+    ) -> Dict[str, Any]:
+        """Get comprehensive context for agent class resolution."""
+        try:
+            agent_class = self.resolve_agent_class(
+                agent_type, agent_mappings, custom_agents
+            )
+            return {
+                "agent_type": agent_type,
+                "agent_class": agent_class,
+                "class_name": agent_class.__name__,
+                "resolvable": True,
+                "dependencies_valid": True,
+                "missing_dependencies": [],
+                "_factory_version": "2.0",
+                "_resolution_method": "AgentClassResolver.resolve_agent_class",
+            }
+        except (ValueError, ImportError) as e:
+            return {
+                "agent_type": agent_type,
+                "agent_class": None,
+                "class_name": None,
+                "resolvable": False,
+                "dependencies_valid": False,
+                "missing_dependencies": ["resolution_failed"],
+                "resolution_error": str(e),
+                "_factory_version": "2.0",
+                "_resolution_method": "AgentClassResolver.resolve_agent_class",
+            }
 
     def _import_class_from_path(self, class_path: str) -> Type:
         """
