@@ -35,6 +35,27 @@ class NLPCapabilityChecker:
         self.availability_cache_service = availability_cache_service
         self.logger = logger
 
+    def _cache_failure(self, key: str, reason: str) -> bool:
+        """
+        Cache a failed availability check.
+
+        Args:
+            key: The library key (e.g., 'fuzzywuzzy', 'spacy')
+            reason: The reason for failure
+
+        Returns:
+            False (always returns False for failed checks)
+        """
+        self.availability_cache_service.set_availability(
+            "capability.nlp",
+            key,
+            {"available": False, "type": "nlp_library", "reason": reason},
+        )
+        self.logger.debug(
+            f"[NLPCapabilityChecker] {key} not available: {reason} (cached)"
+        )
+        return False
+
     def has_fuzzywuzzy(self) -> bool:
         """
         Check if fuzzywuzzy is available for fuzzy string matching.
@@ -79,27 +100,9 @@ class NLPCapabilityChecker:
             return available
 
         except ImportError:
-            # Cache negative result
-            self.availability_cache_service.set_availability(
-                "capability.nlp",
-                "fuzzywuzzy",
-                {"available": False, "type": "nlp_library", "reason": "ImportError"},
-            )
-            self.logger.debug(
-                "[NLPCapabilityChecker] fuzzywuzzy not available (cached)"
-            )
-            return False
+            return self._cache_failure("fuzzywuzzy", "ImportError")
         except Exception as e:
-            # Cache negative result
-            self.availability_cache_service.set_availability(
-                "capability.nlp",
-                "fuzzywuzzy",
-                {"available": False, "type": "nlp_library", "reason": str(e)},
-            )
-            self.logger.debug(
-                f"[NLPCapabilityChecker] fuzzywuzzy error: {e} (cached)"
-            )
-            return False
+            return self._cache_failure("fuzzywuzzy", str(e))
 
     def has_spacy(self) -> bool:
         """
@@ -151,40 +154,11 @@ class NLPCapabilityChecker:
             return available
 
         except ImportError:
-            # Cache negative result
-            self.availability_cache_service.set_availability(
-                "capability.nlp",
-                "spacy",
-                {"available": False, "type": "nlp_library", "reason": "ImportError"},
-            )
-            self.logger.debug(
-                "[NLPCapabilityChecker] spaCy or en_core_web_sm not available (cached)"
-            )
-            return False
+            return self._cache_failure("spacy", "ImportError")
         except OSError:
-            # Cache negative result
-            self.availability_cache_service.set_availability(
-                "capability.nlp",
-                "spacy",
-                {
-                    "available": False,
-                    "type": "nlp_library",
-                    "reason": "OSError - model not installed",
-                },
-            )
-            self.logger.debug(
-                "[NLPCapabilityChecker] spaCy en_core_web_sm model not installed (cached)"
-            )
-            return False
+            return self._cache_failure("spacy", "OSError - model not installed")
         except Exception as e:
-            # Cache negative result
-            self.availability_cache_service.set_availability(
-                "capability.nlp",
-                "spacy",
-                {"available": False, "type": "nlp_library", "reason": str(e)},
-            )
-            self.logger.debug(f"[NLPCapabilityChecker] spaCy error: {e} (cached)")
-            return False
+            return self._cache_failure("spacy", str(e))
 
     def get_nlp_capabilities(self) -> Dict[str, Any]:
         """

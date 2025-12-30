@@ -145,9 +145,9 @@ class TestFeaturesRegistryService(unittest.TestCase):
     def test_get_nlp_capabilities_both_available(self):
         """Test NLP capabilities when both libraries are available."""
         # Mock both libraries as available
-        with patch.object(self.service, 'has_fuzzywuzzy', return_value=True), \
-             patch.object(self.service, 'has_spacy', return_value=True):
-            
+        with patch.object(self.service._nlp_checker, 'has_fuzzywuzzy', return_value=True), \
+             patch.object(self.service._nlp_checker, 'has_spacy', return_value=True):
+
             capabilities = self.service.get_nlp_capabilities()
             
             # Verify structure
@@ -172,9 +172,9 @@ class TestFeaturesRegistryService(unittest.TestCase):
     
     def test_get_nlp_capabilities_only_fuzzywuzzy(self):
         """Test NLP capabilities when only fuzzywuzzy is available."""
-        with patch.object(self.service, 'has_fuzzywuzzy', return_value=True), \
-             patch.object(self.service, 'has_spacy', return_value=False):
-            
+        with patch.object(self.service._nlp_checker, 'has_fuzzywuzzy', return_value=True), \
+             patch.object(self.service._nlp_checker, 'has_spacy', return_value=False):
+
             capabilities = self.service.get_nlp_capabilities()
             
             self.assertTrue(capabilities['fuzzywuzzy_available'])
@@ -189,9 +189,9 @@ class TestFeaturesRegistryService(unittest.TestCase):
     
     def test_get_nlp_capabilities_only_spacy(self):
         """Test NLP capabilities when only spaCy is available."""
-        with patch.object(self.service, 'has_fuzzywuzzy', return_value=False), \
-             patch.object(self.service, 'has_spacy', return_value=True):
-            
+        with patch.object(self.service._nlp_checker, 'has_fuzzywuzzy', return_value=False), \
+             patch.object(self.service._nlp_checker, 'has_spacy', return_value=True):
+
             capabilities = self.service.get_nlp_capabilities()
             
             self.assertFalse(capabilities['fuzzywuzzy_available'])
@@ -207,9 +207,9 @@ class TestFeaturesRegistryService(unittest.TestCase):
     
     def test_get_nlp_capabilities_none_available(self):
         """Test NLP capabilities when no libraries are available."""
-        with patch.object(self.service, 'has_fuzzywuzzy', return_value=False), \
-             patch.object(self.service, 'has_spacy', return_value=False):
-            
+        with patch.object(self.service._nlp_checker, 'has_fuzzywuzzy', return_value=False), \
+             patch.object(self.service._nlp_checker, 'has_spacy', return_value=False):
+
             capabilities = self.service.get_nlp_capabilities()
             
             self.assertFalse(capabilities['fuzzywuzzy_available'])
