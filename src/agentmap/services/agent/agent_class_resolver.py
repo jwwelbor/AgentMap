@@ -115,16 +115,16 @@ class AgentClassResolver:
                     f"[AgentClassResolver] Resolved to custom agent: {custom_agent_class.__name__}"
                 )
                 return custom_agent_class
-            else:
-                raise ValueError(f"Cannot resolve agent type: {agent_type}")
-        except (ValueError, Exception) as e:
+        except Exception as e:
             self.logger.debug(
                 f"[AgentClassResolver] Failed to resolve agent '{agent_type}': {e}"
             )
-            self.logger.warning(
-                f"[AgentClassResolver] Using default agent for unresolvable type: {agent_type}"
-            )
-            return self._get_default_agent_class()
+
+        # Fallback to default agent if custom loading fails or doesn't find the agent.
+        self.logger.warning(
+            f"[AgentClassResolver] Using default agent for unresolvable type: {agent_type}"
+        )
+        return self._get_default_agent_class()
 
     def get_class_cache(self) -> Dict[str, Type]:
         """
@@ -201,7 +201,7 @@ class AgentClassResolver:
                     )
                     return agent_class
             except Exception as e:
-                self.logger.debug(
+                self.logger.warning(
                     f"[AgentClassResolver] Custom loader failed for '{class_path}': {e}"
                 )
 
