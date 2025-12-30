@@ -6,11 +6,7 @@ Refactored to use composition with extracted modules for better maintainability.
 """
 
 from typing import Any, Dict, Optional, Set, Type
-from typing import Any, Dict, Optional, Set, Type
 
-from agentmap.services.agent.agent_class_resolver import AgentClassResolver
-from agentmap.services.agent.agent_constructor_builder import AgentConstructorBuilder
-from agentmap.services.agent.agent_validator import AgentValidator
 from agentmap.services.agent.agent_class_resolver import AgentClassResolver
 from agentmap.services.agent.agent_constructor_builder import AgentConstructorBuilder
 from agentmap.services.agent.agent_validator import AgentValidator

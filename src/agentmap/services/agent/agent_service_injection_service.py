@@ -33,14 +33,19 @@ from agentmap.services.protocols import (
 )
 from agentmap.services.storage.manager import StorageServiceManager
 
+from .core_service_configurator import CoreServiceConfigurator
+from .service_injection_status import ServiceInjectionStatusProvider
+from .storage_service_configurator import StorageServiceConfigurator
+
 
 class AgentServiceInjectionService:
     """
     Service responsible for injecting core services into agent instances.
 
-    This is the main orchestration service that delegates to specialized
-    configurator modules for different service types. It maintains the
-    same public API as before refactoring to ensure backward compatibility.
+    Delegates to specialized configurator classes for different service categories:
+    - CoreServiceConfigurator: LLM, Storage, Prompt, Orchestration, BlobStorage services
+    - StorageServiceConfigurator: CSV, JSON, File, Vector, Memory services
+    - ServiceInjectionStatusProvider: Status and debugging methods
     """
 
     def __init__(
@@ -51,12 +56,10 @@ class AgentServiceInjectionService:
         host_protocol_configuration_service: Optional[
             HostProtocolConfigurationService
         ] = None,
-        prompt_manager_service: Optional[Any] = None,  # PromptManagerService - optional
-        orchestrator_service: Optional[Any] = None,  # OrchestratorService - optional
-        graph_checkpoint_service: Optional[
-            Any
-        ] = None,  # GraphCheckpointService - optional
-        blob_storage_service: Optional[Any] = None,  # BlobStorageService - optional
+        prompt_manager_service: Optional[Any] = None,
+        orchestrator_service: Optional[Any] = None,
+        graph_checkpoint_service: Optional[Any] = None,
+        blob_storage_service: Optional[Any] = None,
     ):
         """
         Initialize agent service injection service.
@@ -128,31 +131,18 @@ class AgentServiceInjectionService:
 
     @logger.setter
     def logger(self, value):
-        """
-        Set the logger instance and propagate to all sub-configurators.
-
-        This ensures that when tests mock the logger, the mock is used
-        by all the specialized configurator modules.
-        """
+        """Set the logger and propagate to configurators."""
         self._logger = value
-        # Propagate to all sub-configurators
         if hasattr(self, "_core_configurator"):
             self._core_configurator.logger = value
         if hasattr(self, "_storage_configurator"):
             self._storage_configurator.logger = value
-        if hasattr(self, "_host_configurator"):
-            self._host_configurator.logger = value
-        if hasattr(self, "_status_analyzer"):
-            self._status_analyzer.logger = value
+        if hasattr(self, "_status_provider"):
+            self._status_provider.logger = value
 
     def configure_core_services(self, agent: Any) -> int:
         """
         Configure core AgentMap services on an agent using protocol-based injection.
-
-        Performs isinstance() checks against agent capability protocols and calls
-        the appropriate configuration methods for each supported service type.
-        Uses strict exception handling - if agent implements protocol but service
-        is unavailable, an exception is raised.
 
         Args:
             agent: Agent instance to configure services for
@@ -168,11 +158,6 @@ class AgentServiceInjectionService:
     def configure_storage_services(self, agent: Any) -> int:
         """
         Configure storage services on an agent using protocol-based injection.
-
-        Performs isinstance() checks against storage capability protocols and calls
-        the appropriate configuration methods for each supported service type.
-        Uses strict exception handling - if agent implements protocol but service
-        is unavailable, an exception is raised.
 
         Args:
             agent: Agent instance to configure storage services for
@@ -213,10 +198,6 @@ class AgentServiceInjectionService:
         """
         Configure host-defined services using HostProtocolConfigurationService.
 
-        Delegates to the host protocol configuration service to handle host-specific
-        service injection patterns. This maintains separation of concerns between
-        core AgentMap services and host application services.
-
         Args:
             agent: Agent instance to configure host services for
 
@@ -231,10 +212,6 @@ class AgentServiceInjectionService:
         """
         Configure execution tracker on an agent if the agent supports it.
 
-        Checks if the agent has a set_execution_tracker method and calls it
-        with the provided tracker. This enables execution tracking for agents
-        that support it without requiring all agents to implement this capability.
-
         Args:
             agent: Agent instance to configure execution tracker for
             tracker: ExecutionTracker instance or None
@@ -248,12 +225,6 @@ class AgentServiceInjectionService:
         """
         Configure core services, storage services, host services, and execution tracker for an agent.
 
-        Unified entry point that calls all configuration methods in the proper order:
-        1. Core services (required for basic agent functionality)
-        2. Storage services (storage-specific service injection)
-        3. Host services (host application specific services)
-        4. Execution tracker (for execution monitoring)
-
         Args:
             agent: Agent instance to configure all services for
             tracker: Optional ExecutionTracker instance for execution monitoring
@@ -266,16 +237,10 @@ class AgentServiceInjectionService:
             f"[AgentServiceInjectionService] Configuring all services for agent: {agent_name}"
         )
 
-        # Configure core services first
+        # Configure all service categories
         core_configured = self.configure_core_services(agent)
-
-        # Configure storage services after core services
         storage_configured = self.configure_storage_services(agent)
-
-        # Configure host services after storage services
         host_configured = self.configure_host_services(agent)
-
-        # Configure execution tracker if provided
         tracker_configured = self.configure_execution_tracker(agent, tracker)
 
         total_configured = (
@@ -309,7 +274,8 @@ class AgentServiceInjectionService:
 
         self._logger.debug(
             f"[AgentServiceInjectionService] Configuration summary for {agent_name}: "
-            f"core={core_configured}, storage={storage_configured}, host={host_configured}, tracker={tracker_configured}, total={total_configured}"
+            f"core={core_configured}, storage={storage_configured}, host={host_configured}, "
+            f"tracker={tracker_configured}, total={total_configured}"
         )
 
         return summary
@@ -317,10 +283,6 @@ class AgentServiceInjectionService:
     def get_service_injection_status(self, agent: Any) -> dict:
         """
         Get detailed service injection status for a specific agent for debugging.
-
-        Provides comprehensive information about which services can be injected
-        into the agent, which protocols the agent implements, and the current
-        service availability status. Similar to HostProtocolConfigurationService.
 
         Args:
             agent: Agent instance to analyze
