@@ -61,6 +61,15 @@ class LLMRoutingConfigService:
                 f"Routing configuration validation errors: {validation_errors}"
             )
 
+    def get_config(self) -> Dict[str, Any]:
+        """
+        Get the configuration dictionary.
+
+        Returns:
+            Configuration dictionary
+        """
+        return self.config_dict
+
     def _load_routing_matrix(self, config: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
         """
         Load the provider × complexity matrix.
