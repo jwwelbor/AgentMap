@@ -90,7 +90,7 @@ class ServiceInjectionStatusProvider:
                 try:
                     host_service_status = self.host_protocol_configuration.get_configuration_status(agent)
                 except Exception as e:
-                    self.logger.debug(f"[AgentServiceInjectionService] Could not get host service status: {e}")
+                    self.logger.debug(f"Could not get host service status: {e}")
             ready_injections = sum(1 for p in status["service_injection_potential"] if p["injection_ready"])
             available_services = sum(1 for p in status["service_injection_potential"] if p["service_available"])
             status["summary"] = {
@@ -106,7 +106,7 @@ class ServiceInjectionStatusProvider:
                     status["summary"]["host_injection_ready_count"] = host_service_status["summary"].get("configuration_ready", 0)
         except Exception as e:
             status["error"] = str(e)
-            self.logger.error(f"[AgentServiceInjectionService] Error analyzing agent {agent_name}: {e}")
+            self.logger.error(f"Error analyzing agent {agent_name}: {e}")
         return status
 
     def get_service_availability_status(self) -> dict:
