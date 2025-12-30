@@ -1,12 +1,36 @@
-"""Agent Service Injection Service for AgentMap."""
+"""
+Agent service injection service - main orchestration service.
+
+Coordinates service injection across all agent service types using
+specialized configurator modules. This service maintains backward
+compatibility while delegating to focused, single-responsibility modules.
+"""
 
 from typing import Any, Optional
 
+from agentmap.services.agent.core_service_configurator import CoreServiceConfigurator
+from agentmap.services.agent.host_service_configurator import HostServiceConfigurator
+from agentmap.services.agent.service_status_analyzer import ServiceStatusAnalyzer
+from agentmap.services.agent.storage_service_configurator import (
+    StorageServiceConfigurator,
+)
 from agentmap.services.host_protocol_configuration_service import (
     HostProtocolConfigurationService,
 )
 from agentmap.services.llm_service import LLMService
 from agentmap.services.logging_service import LoggingService
+from agentmap.services.protocols import (
+    BlobStorageCapableAgent,
+    CSVCapableAgent,
+    FileCapableAgent,
+    JSONCapableAgent,
+    LLMCapableAgent,
+    MemoryCapableAgent,
+    OrchestrationCapableAgent,
+    PromptCapableAgent,
+    StorageCapableAgent,
+    VectorCapableAgent,
+)
 from agentmap.services.storage.manager import StorageServiceManager
 
 from .core_service_configurator import CoreServiceConfigurator
@@ -65,11 +89,11 @@ class AgentServiceInjectionService:
         self.host_protocol_configuration = host_protocol_configuration_service
         self._host_services_available = host_protocol_configuration_service is not None
 
-        # Initialize configurators
+        # Initialize specialized configurator modules
         self._core_configurator = CoreServiceConfigurator(
             llm_service=llm_service,
             storage_service_manager=storage_service_manager,
-            logger=self._logger,
+            logging_service=logging_service,
             prompt_manager_service=prompt_manager_service,
             orchestrator_service=orchestrator_service,
             blob_storage_service=blob_storage_service,
@@ -77,18 +101,23 @@ class AgentServiceInjectionService:
 
         self._storage_configurator = StorageServiceConfigurator(
             storage_service_manager=storage_service_manager,
-            logger=self._logger,
+            logging_service=logging_service,
         )
 
-        self._status_provider = ServiceInjectionStatusProvider(
+        self._host_configurator = HostServiceConfigurator(
+            logging_service=logging_service,
+            host_protocol_configuration_service=host_protocol_configuration_service,
+        )
+
+        self._status_analyzer = ServiceStatusAnalyzer(
             llm_service=llm_service,
             storage_service_manager=storage_service_manager,
-            logger=self._logger,
+            logging_service=logging_service,
             prompt_manager_service=prompt_manager_service,
             orchestrator_service=orchestrator_service,
             graph_checkpoint_service=graph_checkpoint_service,
             blob_storage_service=blob_storage_service,
-            host_protocol_configuration=host_protocol_configuration_service,
+            host_protocol_configuration_service=host_protocol_configuration_service,
         )
 
         self._logger.debug(
@@ -124,7 +153,7 @@ class AgentServiceInjectionService:
         Raises:
             Exception: If service is unavailable or configuration fails
         """
-        return self._core_configurator.configure(agent)
+        return self._core_configurator.configure_core_services(agent)
 
     def configure_storage_services(self, agent: Any) -> int:
         """
@@ -139,7 +168,7 @@ class AgentServiceInjectionService:
         Raises:
             Exception: If storage service is unavailable or configuration fails
         """
-        return self._storage_configurator.configure(agent)
+        return self._storage_configurator.configure_storage_services(agent)
 
     def requires_storage_services(self, agent: Any) -> bool:
         """
@@ -175,35 +204,7 @@ class AgentServiceInjectionService:
         Returns:
             Number of host services successfully configured
         """
-        agent_name = getattr(agent, "name", "unknown")
-
-        if not self._host_services_available:
-            self._logger.debug(
-                f"[AgentServiceInjectionService] Host services not available for {agent_name}"
-            )
-            return 0
-
-        try:
-            configured_count = (
-                self.host_protocol_configuration.configure_host_protocols(agent)
-            )
-
-            if configured_count > 0:
-                self._logger.debug(
-                    f"[AgentServiceInjectionService] Configured {configured_count} host services for {agent_name}"
-                )
-            else:
-                self._logger.trace(
-                    f"[AgentServiceInjectionService] Agent {agent_name} does not implement host protocols"
-                )
-
-            return configured_count
-
-        except Exception as e:
-            self._logger.error(
-                f"[AgentServiceInjectionService] Failed to configure host services for {agent_name}: {e}"
-            )
-            return 0
+        return self._host_configurator.configure_host_services(agent)
 
     def configure_execution_tracker(
         self, agent: Any, tracker: Optional[Any] = None
@@ -218,28 +219,7 @@ class AgentServiceInjectionService:
         Returns:
             True if tracker was configured successfully, False otherwise
         """
-        if tracker is None:
-            return False
-
-        agent_name = getattr(agent, "name", "unknown")
-
-        if hasattr(agent, "set_execution_tracker"):
-            try:
-                agent.set_execution_tracker(tracker)
-                self._logger.debug(
-                    f"[AgentServiceInjectionService] Configured execution tracker for {agent_name}"
-                )
-                return True
-            except Exception as e:
-                self._logger.error(
-                    f"[AgentServiceInjectionService] Failed to configure execution tracker for {agent_name}: {e}"
-                )
-                return False
-        else:
-            self._logger.debug(
-                f"[AgentServiceInjectionService] Agent {agent_name} does not support execution tracking"
-            )
-            return False
+        return self._host_configurator.configure_execution_tracker(agent, tracker)
 
     def configure_all_services(self, agent: Any, tracker: Optional[Any] = None) -> dict:
         """
@@ -310,7 +290,7 @@ class AgentServiceInjectionService:
         Returns:
             Dictionary with detailed service injection status and capabilities
         """
-        return self._status_provider.get_service_injection_status(agent)
+        return self._status_analyzer.get_service_injection_status(agent)
 
     def get_service_availability_status(self) -> dict:
         """
@@ -319,4 +299,4 @@ class AgentServiceInjectionService:
         Returns:
             Dictionary with service availability information
         """
-        return self._status_provider.get_service_availability_status()
+        return self._status_analyzer.get_service_availability_status()

@@ -65,7 +65,6 @@ SERVICE_NAMES = [
     "bundle_update_service",
     "graph_scaffold_service",
     "graph_execution_service",
-    "graph_output_service",
     "graph_checkpoint_service",
     "interaction_handler_service",
     "graph_bootstrap_service",

@@ -45,7 +45,9 @@ class GraphAssemblyService:
         self.orchestrator_service = orchestrator_service
 
         # Initialize helper services
-        self.state_schema_builder = StateSchemaBuilder(app_config_service, logging_service)
+        self.state_schema_builder = StateSchemaBuilder(
+            app_config_service, logging_service
+        )
         self.edge_processor = EdgeProcessor(
             logging_service, function_resolution_service, state_adapter_service
         )
@@ -82,7 +84,9 @@ class GraphAssemblyService:
             graph.entry_point = self.graph_factory_service.detect_entry_point(graph)
             self.logger.debug(f"Factory detected entry point: '{graph.entry_point}'")
         else:
-            self.logger.debug(f"Using pre-existing graph entry point: '{graph.entry_point}'")
+            self.logger.debug(
+                f"Using pre-existing graph entry point: '{graph.entry_point}'"
+            )
 
     def _process_all_nodes(self, graph: Graph, agent_instances: Dict[str, Any]) -> None:
         """Process all nodes and their edges."""
@@ -109,7 +113,9 @@ class GraphAssemblyService:
         for orch_node_name in self.orchestrator_nodes:
             node = graph.nodes.get(orch_node_name)
             failure_target = node.edges.get("failure") if node else None
-            self.edge_processor.add_dynamic_router(self.builder, orch_node_name, failure_target)
+            self.edge_processor.add_dynamic_router(
+                self.builder, orch_node_name, failure_target
+            )
 
     def _compile_graph(
         self, graph: Graph, checkpointer: Optional[BaseCheckpointSaver] = None
@@ -144,7 +150,9 @@ class GraphAssemblyService:
     ) -> Any:
         """Assemble an executable LangGraph with checkpoint support."""
         self.logger.info(f"Starting checkpoint-enabled graph assembly: '{graph.name}'")
-        return self._assemble_graph_common(graph, agent_instances, node_definitions, checkpointer)
+        return self._assemble_graph_common(
+            graph, agent_instances, node_definitions, checkpointer
+        )
 
     def _assemble_graph_common(
         self,

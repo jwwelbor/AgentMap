@@ -14,16 +14,11 @@ from .file_service import FileStorageService
 from .json_service import JSONStorageService
 from .manager import StorageServiceManager
 from .memory_service import MemoryStorageService
-from .protocols import (  # StorageServiceUser,; New capability protocols; Legacy service user protocols (for backward compatibility); CSVServiceUser,; JSONServiceUser,; FileServiceUser,; VectorServiceUser,; MemoryServiceUser,
-    CSVCapableAgent,
-    FileCapableAgent,
-    JSONCapableAgent,
-    MemoryCapableAgent,
+from .protocols import (
     StorageReader,
     StorageService,
     StorageServiceFactory,
     StorageWriter,
-    VectorCapableAgent,
 )
 from .types import (  # Core types; Exceptions; Service-specific exceptions; Type aliases; Backward compatibility
     CollectionPath,
@@ -46,7 +41,7 @@ from .types import (  # Core types; Exceptions; Service-specific exceptions; Typ
     StorageValidationError,
     WriteMode,
 )
-from .vector_service import VectorStorageService
+from .vector.service import VectorStorageService
 
 if TYPE_CHECKING:
     from agentmap.services.storage.manager import StorageServiceManager
@@ -74,20 +69,7 @@ __all__ = [
     "StorageReader",
     "StorageWriter",
     "StorageService",
-    # 'StorageServiceUser',
     "StorageServiceFactory",
-    # New capability protocols
-    "CSVCapableAgent",
-    "JSONCapableAgent",
-    "FileCapableAgent",
-    "VectorCapableAgent",
-    "MemoryCapableAgent",
-    # Legacy service user protocols (for backward compatibility)
-    # 'CSVServiceUser',
-    # 'JSONServiceUser',
-    # 'FileServiceUser',
-    # 'VectorServiceUser',
-    # 'MemoryServiceUser',
     # Classes
     "BaseStorageService",
     "StorageServiceManager",

@@ -13,7 +13,7 @@ import os
 from agentmap.agents.builtins.storage.csv.reader import CSVReaderAgent
 from agentmap.agents.builtins.storage.csv.base_agent import CSVAgent
 from agentmap.agents.builtins.storage.base_storage_agent import BaseStorageAgent
-from agentmap.services.storage.protocols import CSVCapableAgent
+from agentmap.services.protocols import CSVCapableAgent
 from agentmap.models.storage import DocumentResult
 from tests.utils.mock_service_factory import MockServiceFactory
 

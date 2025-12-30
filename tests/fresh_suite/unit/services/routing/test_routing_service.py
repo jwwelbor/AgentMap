@@ -687,32 +687,32 @@ class TestLLMRoutingService(unittest.TestCase):
         preferred_providers = ["openai", "anthropic", "google"]
         available_providers = ["openai", "anthropic", "cohere"]
         excluded_providers = ["openai"]
-        
-        # Execute test
-        result = self.service._filter_available_providers(
+
+        # Execute test - now using model_selector
+        result = self.service.model_selector.filter_available_providers(
             preferred_providers, available_providers, excluded_providers
         )
-        
+
         # Should only include anthropic (available and not excluded)
         self.assertEqual(result, ["anthropic"])
     
     def test_get_lower_complexity(self):
         """Test getting lower complexity levels."""
-        # Test all complexity levels
+        # Test all complexity levels - now using fallback_handler
         self.assertEqual(
-            self.service._get_lower_complexity(TaskComplexity.CRITICAL),
+            self.service.fallback_handler.get_lower_complexity(TaskComplexity.CRITICAL),
             TaskComplexity.HIGH
         )
         self.assertEqual(
-            self.service._get_lower_complexity(TaskComplexity.HIGH),
+            self.service.fallback_handler.get_lower_complexity(TaskComplexity.HIGH),
             TaskComplexity.MEDIUM
         )
         self.assertEqual(
-            self.service._get_lower_complexity(TaskComplexity.MEDIUM),
+            self.service.fallback_handler.get_lower_complexity(TaskComplexity.MEDIUM),
             TaskComplexity.LOW
         )
         self.assertEqual(
-            self.service._get_lower_complexity(TaskComplexity.LOW),
+            self.service.fallback_handler.get_lower_complexity(TaskComplexity.LOW),
             TaskComplexity.LOW  # Can't go lower
         )
     
