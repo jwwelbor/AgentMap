@@ -63,7 +63,7 @@ class CoreServiceConfigurator:
     def configure_core_services(self, agent: Any) -> int:
         agent_name = getattr(agent, "name", "unknown")
         self.logger.trace(
-            f"[AgentServiceInjectionService] Configuring core services for agent: {agent_name}"
+            f"Configuring core services for agent: {agent_name}"
         )
         services_configured = 0
         try:
@@ -81,15 +81,15 @@ class CoreServiceConfigurator:
                     services_configured += 1
             if services_configured > 0:
                 self.logger.debug(
-                    f"[AgentServiceInjectionService] Configured {services_configured} core services for {agent_name}"
+                    f"Configured {services_configured} core services for {agent_name}"
                 )
             else:
                 self.logger.trace(
-                    f"[AgentServiceInjectionService] No core services configured for {agent_name}"
+                    f"No core services configured for {agent_name}"
                 )
             return services_configured
         except Exception as e:
             self.logger.error(
-                f"[AgentServiceInjectionService] Critical failure during core service configuration for {agent_name}: {e}"
+                f"Critical failure during core service configuration for {agent_name}: {e}"
             )
             raise

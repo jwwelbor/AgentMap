@@ -1,4 +1,9 @@
-"""Bundle utility functions for extracting bundle information."""
+"""
+Bundle utility functions for extracting bundle information.
+
+This module contains shared utility functions for extracting bundle context
+information from GraphBundle objects or bundle context dictionaries.
+"""
 
 from typing import Any, Dict, Optional
 
@@ -9,6 +14,19 @@ def extract_bundle_info(
     bundle: Optional[GraphBundle] = None,
     bundle_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    """
+    Extract bundle information for rehydration.
+
+    This function extracts bundle context information from either a GraphBundle
+    object or a bundle context dictionary.
+
+    Args:
+        bundle: Optional GraphBundle for context extraction
+        bundle_context: Optional bundle context metadata
+
+    Returns:
+        Dictionary containing bundle information
+    """
     if bundle_context:
         return bundle_context.copy()
     elif bundle:
@@ -34,6 +52,21 @@ def extract_graph_name(
     checkpoint_data: Optional[Dict[str, Any]] = None,
     fallback: str = "unknown",
 ) -> str:
+    """
+    Extract graph name from various sources.
+
+    Tries to get graph name from bundle, bundle_context, checkpoint_data,
+    or falls back to the provided default.
+
+    Args:
+        bundle: Optional GraphBundle for context extraction
+        bundle_context: Optional bundle context metadata
+        checkpoint_data: Optional checkpoint data
+        fallback: Fallback value if no graph name found
+
+    Returns:
+        Graph name string
+    """
     if bundle and hasattr(bundle, "graph_name"):
         return bundle.graph_name
     elif bundle_context and "graph_name" in bundle_context:
