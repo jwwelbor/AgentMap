@@ -69,13 +69,6 @@ class AgentConstructorBuilder:
                 f"[AgentConstructorBuilder] Adding execution_tracker_service to {node.name}"
             )
 
-        # this should _always_ be there
-        if "execution_tracking_service" in agent_params and execution_tracking_service:
-            constructor_args["execution_tracking_service"] = execution_tracking_service
-            self.logger.trace(
-                f"[AgentConstructorBuilder] Adding execution_tracking_service to {node.name}"
-            )
-
         if "state_adapter_service" in agent_params and state_adapter_service:
             constructor_args["state_adapter_service"] = state_adapter_service
             self.logger.debug(

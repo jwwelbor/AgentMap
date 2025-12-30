@@ -10,6 +10,15 @@ from agentmap.services.logging_service import LoggingService
 class StateSchemaBuilder:
     """Builds state schemas for LangGraph StateGraph instances."""
 
+    _SYSTEM_FIELDS = {
+        "__execution_summary",
+        "__policy_success",
+        "__next_node",
+        "last_action_success",
+        "graph_success",
+        "errors",
+    }
+
     def __init__(
         self, app_config_service: AppConfigService, logging_service: LoggingService
     ):
@@ -57,15 +66,7 @@ class StateSchemaBuilder:
                 elif isinstance(node.inputs, str):
                     field_names.add(node.inputs)
 
-        system_fields = {
-            "__execution_summary",
-            "__policy_success",
-            "__next_node",
-            "last_action_success",
-            "graph_success",
-            "errors",
-        }
-        field_names.update(system_fields)
+        field_names.update(self._SYSTEM_FIELDS)
 
         if not field_names:
             return dict
@@ -85,8 +86,8 @@ class StateSchemaBuilder:
                     return self.create_dynamic_state_schema(graph)
                 return self.get_state_schema_from_config()
             except Exception as e:
-                self.logger.debug(
-                    f"Could not create dynamic state schema: {e}, using config schema"
+                self.logger.warning(
+                    f"Failed to get state schema from config, falling back to dict: {e}"
                 )
-                return self.get_state_schema_from_config()
+                return dict
         return self.get_state_schema_from_config()

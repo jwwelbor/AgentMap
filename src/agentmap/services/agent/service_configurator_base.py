@@ -17,17 +17,17 @@ def configure_service_strict(
         return False
     if service is None:
         error_msg = f"{service_name} not available for agent {agent_name}"
-        logger.error(f"[AgentServiceInjectionService] ❌ {error_msg}")
+        logger.error(error_msg)
         raise Exception(error_msg)
     try:
         getattr(agent, configure_method)(service)
         logger.debug(
-            f"[AgentServiceInjectionService] ✅ Configured {service_name} for {agent_name}"
+            f"Configured {service_name} for {agent_name}"
         )
         return True
     except Exception as e:
         logger.error(
-            f"[AgentServiceInjectionService] ❌ Failed to configure {service_name} for {agent_name}: {e}"
+            f"Failed to configure {service_name} for {agent_name}: {e}"
         )
         raise
 
@@ -49,16 +49,16 @@ def configure_storage_service_strict(
         service = storage_manager.get_service(service_type)
         if service is None:
             error_msg = f"{service_name} not available for agent {agent_name}"
-            logger.error(f"[AgentServiceInjectionService] ❌ {error_msg}")
+            logger.error(error_msg)
             raise Exception(error_msg)
         getattr(agent, configure_method)(service)
         logger.debug(
-            f"[AgentServiceInjectionService] ✅ Configured {service_name} for {agent_name}"
+            f"Configured {service_name} for {agent_name}"
         )
         return True
     except Exception as e:
         logger.error(
-            f"[AgentServiceInjectionService] ❌ Failed to configure {service_name} for {agent_name}: {e}"
+            f"Failed to configure {service_name} for {agent_name}: {e}"
         )
         raise
 

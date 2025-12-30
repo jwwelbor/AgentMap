@@ -2,10 +2,16 @@
 
 from typing import Any, Optional
 from agentmap.services.protocols import (
-    BlobStorageCapableAgent, LLMCapableAgent, OrchestrationCapableAgent, PromptCapableAgent, StorageCapableAgent,
-)
-from agentmap.services.storage.protocols import (
-    CSVCapableAgent, FileCapableAgent, JSONCapableAgent, MemoryCapableAgent, VectorCapableAgent,
+    BlobStorageCapableAgent,
+    CSVCapableAgent,
+    FileCapableAgent,
+    JSONCapableAgent,
+    LLMCapableAgent,
+    MemoryCapableAgent,
+    OrchestrationCapableAgent,
+    PromptCapableAgent,
+    StorageCapableAgent,
+    VectorCapableAgent,
 )
 
 
