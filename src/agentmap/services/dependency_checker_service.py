@@ -308,16 +308,6 @@ class DependencyCheckerService:
         """
         return self._installation_guide_helper.get_installation_guide(provider, category)
 
-    def _get_llm_installation_guide(self, provider: Optional[str] = None) -> str:
-        """Get a friendly installation guide for LLM dependencies."""
-        return self._installation_guide_helper.get_llm_installation_guide(provider)
-
-    def _get_storage_installation_guide(
-        self, storage_type: Optional[str] = None
-    ) -> str:
-        """Get a friendly installation guide for storage dependencies."""
-        return self._installation_guide_helper.get_storage_installation_guide(storage_type)
-
     def get_available_llm_providers(self) -> List[str]:
         """
         Get list of available LLM providers based on validation and feature enablement.

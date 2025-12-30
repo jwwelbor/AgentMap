@@ -49,24 +49,22 @@ class CacheHelper:
             dependency_group: Optional specific dependency group to clear
         """
         if self.availability_cache:
-            if dependency_group:
-                # Parse the dependency group to extract category and key
-                if "." in dependency_group:
-                    parts = dependency_group.split(".", 2)
-                    if len(parts) >= 3 and parts[0] == "dependency":
-                        category = f"{parts[0]}.{parts[1]}"
-                        key = parts[2]
-                        self.availability_cache.invalidate_cache(category, key)
-                    elif len(parts) >= 2 and parts[0] == "dependency":
-                        category = f"{parts[0]}.{parts[1]}"
-                        self.availability_cache.invalidate_cache(category)
-                    else:
-                        self.availability_cache.invalidate_cache(dependency_group)
-                else:
-                    self.availability_cache.invalidate_cache(dependency_group)
-            else:
+            if dependency_group is None:
                 # Clear all dependency-related cache
                 self.availability_cache.invalidate_cache("dependency")
+            elif dependency_group.startswith("dependency."):
+                parts = dependency_group.split(".", 2)
+                if len(parts) == 3:
+                    # Full key like 'dependency.llm.openai'
+                    category = f"{parts[0]}.{parts[1]}"
+                    key = parts[2]
+                    self.availability_cache.invalidate_cache(category, key)
+                else:
+                    # Category-level like 'dependency.llm'
+                    self.availability_cache.invalidate_cache(dependency_group)
+            else:
+                # Not a dependency group with sub-parts, or just 'dependency'
+                self.availability_cache.invalidate_cache(dependency_group)
 
             self.logger.info(
                 f"[CacheHelper] Cleared dependency cache: {dependency_group or 'all'}"

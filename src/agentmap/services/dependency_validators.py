@@ -133,49 +133,57 @@ class ProviderValidator:
         self._dependency_validator = dependency_validator
         self._cache_helper = cache_helper
 
-    def validate_llm_provider(
-        self, provider: str, force: bool = False
+    def _validate_provider(
+        self, provider_type: str, provider_name: str, force: bool = False
     ) -> Tuple[bool, List[str]]:
         """
-        Validate dependencies for a specific LLM provider with cache integration.
+        Common validation logic for both LLM and storage providers.
 
         Args:
-            provider: Provider name (openai, anthropic, google)
+            provider_type: Type of provider ("llm" or "storage")
+            provider_name: Name of the provider
             force: Skip cache and force validation
 
         Returns:
             Tuple of (is_valid, missing_dependencies)
         """
-        provider_lower = provider.lower()
-        dependencies = BuiltinDefinitionConstants.get_provider_dependencies(provider)
+        provider_lower = provider_name.lower()
+
+        # Get dependencies based on provider type
+        if provider_type == "llm":
+            dependencies = BuiltinDefinitionConstants.get_provider_dependencies(provider_name)
+            unknown_error = f"unknown-provider:{provider_name}"
+        else:  # storage
+            dependencies = BuiltinDefinitionConstants.get_storage_dependencies(provider_name)
+            unknown_error = f"unknown-storage:{provider_name}"
 
         if not dependencies:
             self.logger.warning(
-                f"[ProviderValidator] Unknown LLM provider: {provider}"
+                f"[ProviderValidator] Unknown {provider_type} provider: {provider_name}"
             )
-            return False, [f"unknown-provider:{provider}"]
+            return False, [unknown_error]
 
         # Try cache first
         if not force:
             self.logger.debug(
-                f"[ProviderValidator] Checking cache for LLM provider: {provider}"
+                f"[ProviderValidator] Checking cache for {provider_type} provider: {provider_name}"
             )
             cached_result = self._cache_helper.get_cached_availability(
-                "dependency.llm", provider_lower
+                f"dependency.{provider_type}", provider_lower
             )
             if cached_result and cached_result.get("validation_passed"):
                 self.logger.debug(
-                    f"[ProviderValidator] Using cached result for LLM provider: {provider}"
+                    f"[ProviderValidator] Using cached result for {provider_type} provider: {provider_name}"
                 )
                 return True, []
             elif cached_result and not cached_result.get("validation_passed"):
                 # Cache indicates failure - use cached error info if available
-                error = cached_result.get("last_error", f"cached-failure:{provider}")
+                error = cached_result.get("last_error", f"cached-failure:{provider_name}")
                 return False, [error]
 
             # Cache miss or invalid - perform validation and cache result
             self.logger.debug(
-                f"[ProviderValidator] Cache miss for LLM provider: {provider}, performing validation"
+                f"[ProviderValidator] Cache miss for {provider_type} provider: {provider_name}, performing validation"
             )
 
         is_valid, missing = self._dependency_validator.validate_imports(dependencies)
@@ -189,9 +197,26 @@ class ProviderValidator:
             "dependencies_checked": dependencies,
             "missing_dependencies": missing,
         }
-        self._cache_helper.set_cached_availability("dependency.llm", provider_lower, cache_result)
+        self._cache_helper.set_cached_availability(
+            f"dependency.{provider_type}", provider_lower, cache_result
+        )
 
         return is_valid, missing
+
+    def validate_llm_provider(
+        self, provider: str, force: bool = False
+    ) -> Tuple[bool, List[str]]:
+        """
+        Validate dependencies for a specific LLM provider with cache integration.
+
+        Args:
+            provider: Provider name (openai, anthropic, google)
+            force: Skip cache and force validation
+
+        Returns:
+            Tuple of (is_valid, missing_dependencies)
+        """
+        return self._validate_provider("llm", provider, force)
 
     def validate_storage_type(
         self, storage_type: str, force: bool = False
@@ -206,51 +231,4 @@ class ProviderValidator:
         Returns:
             Tuple of (is_valid, missing_dependencies)
         """
-        storage_lower = storage_type.lower()
-        dependencies = BuiltinDefinitionConstants.get_storage_dependencies(storage_type)
-
-        if not dependencies:
-            self.logger.warning(
-                f"[ProviderValidator] Unknown storage type: {storage_type}"
-            )
-            return False, [f"unknown-storage:{storage_type}"]
-
-        if not force:
-            self.logger.debug(
-                f"[ProviderValidator] Checking cache for storage type: {storage_type}"
-            )
-            # Try cache first
-            cached_result = self._cache_helper.get_cached_availability(
-                "dependency.storage", storage_lower
-            )
-            if cached_result and cached_result.get("validation_passed"):
-                self.logger.debug(
-                    f"[ProviderValidator] Using cached result for storage type: {storage_type}"
-                )
-                return True, []
-            elif cached_result and not cached_result.get("validation_passed"):
-                # Cache indicates failure - use cached error info if available
-                error = cached_result.get(
-                    "last_error", f"cached-failure:{storage_type}"
-                )
-                return False, [error]
-
-            # Cache miss or invalid - perform validation and cache result
-            self.logger.debug(
-                f"[ProviderValidator] Cache miss for storage type: {storage_type}, performing validation"
-            )
-
-        is_valid, missing = self._dependency_validator.validate_imports(dependencies)
-
-        # Cache the result
-        cache_result = {
-            "validation_passed": is_valid,
-            "enabled": is_valid,
-            "last_error": missing[0] if missing else None,
-            "checked_at": datetime.now(timezone.utc).isoformat(),
-            "dependencies_checked": dependencies,
-            "missing_dependencies": missing,
-        }
-        self._cache_helper.set_cached_availability("dependency.storage", storage_lower, cache_result)
-
-        return is_valid, missing
+        return self._validate_provider("storage", storage_type, force)
