@@ -10,16 +10,19 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.logging_service import LoggingService
+from agentmap.services.routing.activity_routing import ActivityRoutingTable
 from agentmap.services.routing.cache import RoutingCache
 from agentmap.services.routing.complexity_analyzer import PromptComplexityAnalyzer
+from agentmap.services.routing.fallback_handler import FallbackHandler
+from agentmap.services.routing.model_selector import ModelSelector
 from agentmap.services.routing.types import (
     RoutingContext,
     RoutingDecision,
     TaskComplexity,
 )
 
-# if TYPE_CHECKING:
-#     from agentmap.config.sections.routing import RoutingConfigSection
+# Re-export for backwards compatibility
+__all__ = ["LLMRoutingService", "ActivityRoutingTable"]
 
 
 class LLMRoutingService:
@@ -41,8 +44,10 @@ class LLMRoutingService:
         Initialize the LLM routing service.
 
         Args:
-            routing_config: Routing configuration section
+            llm_routing_config_service: LLM routing configuration service
             logging_service: Logging service for structured logging
+            routing_cache: Routing cache service
+            prompt_complexity_analyzer: Prompt complexity analyzer
         """
         self.routing_config = llm_routing_config_service
         self._logger = logging_service.get_class_logger(self)
@@ -50,6 +55,10 @@ class LLMRoutingService:
 
         # Initialize components
         self.complexity_analyzer = prompt_complexity_analyzer
+        self.model_selector = ModelSelector(llm_routing_config_service, self._logger)
+        self.fallback_handler = FallbackHandler(
+            llm_routing_config_service, self._logger
+        )
 
         # Initialize cache if enabled
         if self.routing_config.is_routing_cache_enabled():
@@ -208,8 +217,11 @@ class LLMRoutingService:
 
         # 1. Check for model override first
         if routing_context.model_override:
-            return self._handle_model_override(
-                routing_context.model_override, complexity, available_providers
+            return self.model_selector.handle_model_override(
+                routing_context.model_override,
+                complexity,
+                available_providers,
+                self._create_emergency_fallback,
             )
 
         # 2. Get provider preferences for this task type
@@ -223,7 +235,7 @@ class LLMRoutingService:
             preferred_providers = task_preferences
 
         # 3. Filter by available providers and exclusions
-        available_preferred = self._filter_available_providers(
+        available_preferred = self.model_selector.filter_available_providers(
             preferred_providers, available_providers, routing_context.excluded_providers
         )
 
@@ -232,12 +244,12 @@ class LLMRoutingService:
             routing_context.cost_optimization
             and self.routing_config.is_cost_optimization_enabled()
         ):
-            available_preferred = self._apply_cost_optimization(
+            available_preferred = self.model_selector.apply_cost_optimization(
                 available_preferred, complexity, routing_context.max_cost_tier
             )
 
         # 5. Try to select from preferred providers
-        decision = self._select_from_preferred_providers(
+        decision = self.model_selector.select_from_preferred_providers(
             available_preferred, task_type, complexity
         )
 
@@ -247,9 +259,13 @@ class LLMRoutingService:
             return decision
 
         # 6. Fallback to any available provider
-        self._logger.warning(f"No preferred providers available, using fallback")
-        return self._apply_fallback_strategy(
-            available_providers, task_type, complexity, routing_context
+        self._logger.warning("No preferred providers available, using fallback")
+        return self.fallback_handler.apply_fallback_strategy(
+            available_providers,
+            task_type,
+            complexity,
+            routing_context,
+            self.model_selector.select_from_preferred_providers,
         )
 
     def select_candidates(
@@ -264,8 +280,15 @@ class LLMRoutingService:
 
         Activity plans are evaluated first, followed by routing-matrix backstops
         and provider preferences.
-        """
 
+        Args:
+            routing_context: Routing context or dict
+            available_providers: List of available providers
+            complexity: Task complexity level
+
+        Returns:
+            Ordered list of candidate provider/model pairs
+        """
         ctx = (
             routing_context
             if isinstance(routing_context, RoutingContext)
@@ -426,201 +449,12 @@ class LLMRoutingService:
             cost_optimization=routing_context.cost_optimization,
         )
 
-    def _handle_model_override(
-        self,
-        model_override: str,
-        complexity: TaskComplexity,
-        available_providers: List[str],
-    ) -> RoutingDecision:
-        """Handle explicit model override."""
-        # Try to find the provider for this model
-        for provider in available_providers:
-            provider_matrix = self.routing_config.routing_matrix.get(
-                provider.lower(), {}
-            )
-            if model_override in provider_matrix.values():
-                return RoutingDecision(
-                    provider=provider,
-                    model=model_override,
-                    complexity=complexity,
-                    confidence=1.0,
-                    reasoning=f"Model override: {model_override}",
-                    fallback_used=False,
-                )
-
-        # Model not found in available providers
-        self._logger.warning(
-            f"Model override '{model_override}' not available in providers {available_providers}"
-        )
-        return self._create_emergency_fallback(
-            available_providers, f"Model override '{model_override}' not available"
-        )
-
-    def _filter_available_providers(
-        self,
-        preferred_providers: List[str],
-        available_providers: List[str],
-        excluded_providers: List[str],
-    ) -> List[str]:
-        """Filter providers by availability and exclusions."""
-        available_set = set(p.lower() for p in available_providers)
-        excluded_set = set(p.lower() for p in excluded_providers)
-
-        filtered = []
-        for provider in preferred_providers:
-            provider_lower = provider.lower()
-            if provider_lower in available_set and provider_lower not in excluded_set:
-                filtered.append(provider_lower)
-
-        return filtered
-
-    def _apply_cost_optimization(
-        self,
-        providers: List[str],
-        complexity: TaskComplexity,
-        max_cost_tier: Optional[str],
-    ) -> List[str]:
-        """Apply cost optimization constraints."""
-        if not max_cost_tier:
-            max_cost_tier = self.routing_config.get_max_cost_tier()
-
-        # Define cost tiers (low to high cost)
-        cost_hierarchy = {
-            TaskComplexity.LOW: ["low"],
-            TaskComplexity.MEDIUM: ["low", "medium"],
-            TaskComplexity.HIGH: ["low", "medium", "high"],
-            TaskComplexity.CRITICAL: ["low", "medium", "high", "critical"],
-        }
-
-        allowed_tiers = cost_hierarchy.get(complexity, ["medium"])
-
-        # Filter to only include allowed cost tiers
-        if max_cost_tier in ["low", "medium", "high", "critical"]:
-            tier_index = ["low", "medium", "high", "critical"].index(max_cost_tier)
-            allowed_tiers = allowed_tiers[: tier_index + 1]
-
-        # For now, return all providers (cost optimization logic can be enhanced)
-        return providers
-
-    def _select_from_preferred_providers(
-        self, preferred_providers: List[str], task_type: str, complexity: TaskComplexity
-    ) -> Optional[RoutingDecision]:
-        """Select a model from preferred providers."""
-        complexity_str = str(complexity).lower()
-
-        for provider in preferred_providers:
-            model = self.routing_config.get_model_for_complexity(
-                provider, complexity_str
-            )
-            if model:
-                return RoutingDecision(
-                    provider=provider,
-                    model=model,
-                    complexity=complexity,
-                    confidence=0.9,
-                    reasoning=f"Selected from routing matrix: {provider}({complexity_str})",
-                    fallback_used=False,
-                )
-
-        return None
-
-    def _apply_fallback_strategy(
-        self,
-        available_providers: List[str],
-        task_type: str,
-        complexity: TaskComplexity,
-        routing_context: RoutingContext,
-    ) -> RoutingDecision:
-        """Apply fallback strategy when preferred providers unavailable."""
-        self._logger.warning(
-            f"Applying fallback strategy for {task_type}({complexity})"
-        )
-
-        # Strategy 1: Try lower complexity if enabled
-        if (
-            routing_context.retry_with_lower_complexity
-            and complexity != TaskComplexity.LOW
-        ):
-            lower_complexity = self._get_lower_complexity(complexity)
-            decision = self._select_from_preferred_providers(
-                [p.lower() for p in available_providers], task_type, lower_complexity
-            )
-            if decision:
-                decision.fallback_used = True
-                decision.reasoning = f"Fallback: lowered complexity from {complexity} to {lower_complexity}"
-                decision.confidence = 0.6
-                return decision
-
-        # Strategy 2: Use configured fallback provider/model
-        fallback_provider = (
-            routing_context.fallback_provider
-            or self.routing_config.get_fallback_provider()
-        )
-        fallback_model = (
-            routing_context.fallback_model or self.routing_config.get_fallback_model()
-        )
-
-        if fallback_provider.lower() in [p.lower() for p in available_providers]:
-            return RoutingDecision(
-                provider=fallback_provider,
-                model=fallback_model,
-                complexity=complexity,
-                confidence=0.5,
-                reasoning=f"Configured fallback: {fallback_provider}:{fallback_model}",
-                fallback_used=True,
-            )
-
-        # Strategy 3: Emergency fallback to first available provider
-        return self._create_emergency_fallback(
-            available_providers, "All fallback strategies exhausted"
-        )
-
-    def _get_lower_complexity(self, complexity: TaskComplexity) -> TaskComplexity:
-        """Get the next lower complexity level."""
-        complexity_order = [
-            TaskComplexity.LOW,
-            TaskComplexity.MEDIUM,
-            TaskComplexity.HIGH,
-            TaskComplexity.CRITICAL,
-        ]
-        current_index = complexity_order.index(complexity)
-        if current_index > 0:
-            return complexity_order[current_index - 1]
-        return complexity
-
     def _create_emergency_fallback(
         self, available_providers: List[str], reason: str
     ) -> RoutingDecision:
         """Create an emergency fallback decision."""
-        if not available_providers:
-            raise ValueError("No providers available for emergency fallback")
-
-        # Use first available provider with its lowest complexity model
-        provider = available_providers[0]
-        provider_matrix = self.routing_config.routing_matrix.get(provider.lower(), {})
-
-        # Try to get the lowest complexity model
-        for complexity_level in ["low", "medium", "high", "critical"]:
-            if complexity_level in provider_matrix:
-                model = provider_matrix[complexity_level]
-                return RoutingDecision(
-                    provider=provider,
-                    model=model,
-                    complexity=TaskComplexity.LOW,
-                    confidence=0.3,
-                    reasoning=f"Emergency fallback: {reason}",
-                    fallback_used=True,
-                )
-
-        # Last resort: use system fallback model
-        fallback_model = self.routing_config.get_fallback_model()
-        return RoutingDecision(
-            provider=provider,
-            model=fallback_model,
-            complexity=TaskComplexity.LOW,
-            confidence=0.1,
-            reasoning=f"Last resort fallback: {reason}",
-            fallback_used=True,
+        return self.fallback_handler.create_emergency_fallback(
+            available_providers, reason
         )
 
     def get_routing_stats(self) -> Dict[str, Any]:
@@ -663,75 +497,3 @@ class LLMRoutingService:
             expired_count = self.cache.cleanup_expired()
             if expired_count > 0:
                 self._logger.info(f"Cleaned up {expired_count} expired cache entries")
-
-
-class ActivityRoutingTable:
-    """Resolve ordered provider/model candidates for a given activity."""
-
-    def __init__(
-        self,
-        routing_config: LLMRoutingConfigService,
-        logger: LoggingService,
-    ) -> None:
-        self._config_service = routing_config
-        self._logger = logger
-
-    def _get_config_dict(self) -> Dict[str, Any]:
-        if hasattr(self._config_service, "get_config"):
-            return self._config_service.get_config()  # type: ignore[return-value]
-        if hasattr(self._config_service, "config_dict"):
-            return getattr(self._config_service, "config_dict")
-        return {}
-
-    def _get_activities(self) -> Dict[str, Any]:
-        config = self._get_config_dict() or {}
-        if "routing" in config and isinstance(config["routing"], dict):
-            return config["routing"].get("activities", {})
-        return config.get("activities", {})
-
-    def plan(
-        self, activity: Optional[str], complexity_key: str
-    ) -> List[Dict[str, str]]:
-        """
-        Return ordered candidates for a given activity/complexity tier.
-
-        Falls back to an empty list when the activity is undefined or
-        no configuration exists, allowing matrix-based routing to continue.
-        """
-        if not activity:
-            return []
-
-        activities = self._get_activities()
-        if not activities:
-            return []
-
-        tier_map = activities.get(activity)
-        if tier_map is None:
-            normalized = str(activity).strip().lower()
-            tier_map = activities.get(normalized)
-
-        if not isinstance(tier_map, dict):
-            return []
-
-        plan = tier_map.get(complexity_key) or tier_map.get("any")
-        if not isinstance(plan, dict):
-            return []
-
-        ordered: List[Dict[str, str]] = []
-
-        primary = plan.get("primary")
-        if isinstance(primary, dict):
-            provider = primary.get("provider")
-            model = primary.get("model")
-            if provider and model:
-                ordered.append({"provider": provider, "model": model})
-
-        for fallback in plan.get("fallbacks", []):
-            if not isinstance(fallback, dict):
-                continue
-            provider = fallback.get("provider")
-            model = fallback.get("model")
-            if provider and model:
-                ordered.append({"provider": provider, "model": model})
-
-        return ordered

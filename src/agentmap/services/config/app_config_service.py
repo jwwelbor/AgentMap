@@ -12,6 +12,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, TypeVar, Union
 
 from agentmap.exceptions.base_exceptions import ConfigurationException
+from agentmap.services.config.config_managers import (
+    AuthConfigManager,
+    DeclarationConfigManager,
+    HostConfigManager,
+    PathConfigManager,
+    RoutingConfigManager,
+)
 from agentmap.services.config.config_service import ConfigService
 
 T = TypeVar("T")
@@ -52,6 +59,32 @@ class AppConfigService:
 
         # Load configuration
         self._load_config(config_path)
+
+        # Initialize specialized configuration managers
+        self._path_manager = PathConfigManager(
+            self._config_service, self._config_data, self._logger
+        )
+        self._auth_manager = AuthConfigManager(
+            self._config_service, self._config_data, self._logger
+        )
+        self._host_manager = HostConfigManager(
+            self._config_service, self._config_data, self._logger
+        )
+        self._declaration_manager = DeclarationConfigManager(
+            self._config_service, self._config_data, self._logger
+        )
+        self._routing_manager = RoutingConfigManager(
+            self._config_service, self._config_data, self._logger
+        )
+
+        # Group managers for easier iteration
+        self._managers = [
+            self._path_manager,
+            self._auth_manager,
+            self._host_manager,
+            self._declaration_manager,
+            self._routing_manager,
+        ]
 
     def _setup_bootstrap_logging(self):
         """Set up bootstrap logger for config loading before real logging is available."""
@@ -96,6 +129,10 @@ class AppConfigService:
                 "[AppConfigService] Replaced bootstrap logger with real logger"
             )
 
+            # Update logger in all managers
+            for manager in self._managers:
+                manager._logger = logger
+
     # Core access methods
     def get_section(self, section: str, default: T = None) -> Dict[str, Any]:
         """Get a configuration section."""
@@ -127,42 +164,12 @@ class AppConfigService:
         return Path(self.get_value("paths.functions", "agentmap_data/custom_functions"))
 
     def get_metadata_bundles_path(self) -> Path:
-        """Get the path for metadata bundles."""
-        metadata_bundles_path = Path(
-            self.get_value("paths.metadata_bundles", "agentmap_data/metadata_bundles")
-        )
-
-        # Ensure the directory exists
-        try:
-            metadata_bundles_path.mkdir(parents=True, exist_ok=True)
-            self._logger.debug(
-                f"[AppConfigService] Metadata bundles path ensured: {metadata_bundles_path}"
-            )
-        except Exception as e:
-            error_msg = f"Could not create metadata bundles directory {metadata_bundles_path}: {e}"
-            self._logger.error(f"[AppConfigService] {error_msg}")
-            raise ConfigurationException(error_msg) from e
-
-        return metadata_bundles_path
+        """Get the path for metadata bundles (does not create directory)."""
+        return self._path_manager.get_metadata_bundles_path()
 
     def get_csv_repository_path(self) -> Path:
-        """Get the path for the CSV repository directory where workflows are stored."""
-        csv_repo_path = Path(
-            self.get_value("paths.csv_repository", "agentmap_data/workflows")
-        )
-
-        # Ensure the directory exists
-        try:
-            csv_repo_path.mkdir(parents=True, exist_ok=True)
-            self._logger.debug(
-                f"[AppConfigService] CSV repository path ensured: {csv_repo_path}"
-            )
-        except Exception as e:
-            self._logger.warning(
-                f"[AppConfigService] Could not create CSV repository directory {csv_repo_path}: {e}"
-            )
-
-        return csv_repo_path
+        """Get the path for the CSV repository directory where workflows are stored (does not create directory)."""
+        return self._path_manager.get_csv_repository_path()
 
     # Logging accessors
     def get_logging_config(self) -> Dict[str, Any]:
@@ -464,8 +471,7 @@ class AppConfigService:
     # Storage config path accessor (storage loading moved to StorageConfigService)
     def get_storage_config_path(self) -> Optional[Path]:
         """Get the path for the storage configuration file."""
-        storage_path = self.get_value("storage_config_path")
-        return Path(storage_path) if storage_path else None
+        return self._path_manager.get_storage_config_path()
 
     # Host application configuration accessors
     def get_host_application_config(self) -> Dict[str, Any]:
