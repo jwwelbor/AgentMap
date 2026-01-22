@@ -6,30 +6,39 @@ following the Template Method pattern and established service patterns.
 """
 
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.file_path_service import FilePathService
 from agentmap.services.logging_service import LoggingService
+from agentmap.services.storage.config_loader import ConfigLoaderMixin
+from agentmap.services.storage.error_handling import ErrorHandlerMixin
+from agentmap.services.storage.path_resolver import PathResolverMixin
 from agentmap.services.storage.protocols import StorageService
 from agentmap.services.storage.types import (
     StorageConfig,
-    StorageProviderError,
     StorageResult,
     StorageServiceConfigurationError,
-    StorageServiceError,
     WriteMode,
 )
 
 
-class BaseStorageService(StorageService, ABC):
+class BaseStorageService(
+    PathResolverMixin, ConfigLoaderMixin, ErrorHandlerMixin, StorageService, ABC
+):
     """
     Base implementation for storage services.
 
     Provides common functionality for all storage services following
     the Template Method pattern. Concrete implementations need to
     implement provider-specific methods.
+
+    Inherits from:
+    - PathResolverMixin: Path resolution and validation
+    - ConfigLoaderMixin: Provider configuration loading
+    - ErrorHandlerMixin: Error handling and result creation
+    - StorageService: Protocol interface
+    - ABC: Abstract base class
     """
 
     def __init__(
@@ -63,94 +72,6 @@ class BaseStorageService(StorageService, ABC):
         """Get the storage provider name."""
         return self.provider_name
 
-    @property
-    def base_directory(self) -> Optional[str]:
-        """
-        Get the base directory for storage operations.
-
-        Returns:
-            Base directory path or None if not configured
-        """
-        return self._base_directory
-
-    def get_full_path(self, key: str) -> str:
-        """
-        Get the full path for a storage key.
-
-        Handles different path resolution strategies based on storage configuration:
-        - For system storage (dict config): uses base_directory/key directly
-        - For user storage (StorageConfigService): uses base_directory/storage_config_default_directory/key
-
-        Args:
-            key: Storage key/collection name
-
-        Returns:
-            Full resolved path for storage operations
-
-        Raises:
-            ValueError: If path cannot be resolved or is unsafe
-        """
-        if not key:
-            raise ValueError("Storage key cannot be empty")
-
-        # For system storage with base_directory injection (dict config)
-        if self._base_directory:
-            # Use base_directory directly with key
-            full_path = str(Path(self._base_directory) / key)
-
-            # Validate path if file_path_service is available
-            if self._file_path_service:
-                try:
-                    self._file_path_service.validate_safe_path(
-                        full_path, self._base_directory
-                    )
-                except Exception as e:
-                    self._logger.error(
-                        f"[{self.provider_name}] Path validation failed for {full_path}: {e}"
-                    )
-                    raise ValueError(f"Unsafe storage path: {e}")
-
-            self._logger.trace(
-                f"[{self.provider_name}] Resolved system storage path: {full_path}"
-            )
-            return full_path
-
-        # For user storage (StorageConfigService) - use configuration's default directory
-        else:
-            try:
-                # Get base directory from configuration
-                config_base_dir = self.configuration.get_base_directory()
-                if not config_base_dir:
-                    raise ValueError(
-                        "No base directory configured in StorageConfigService"
-                    )
-
-                # Combine with key
-                full_path = str(Path(config_base_dir) / key)
-
-                # Validate path if file_path_service is available
-                if self._file_path_service:
-                    try:
-                        self._file_path_service.validate_safe_path(
-                            full_path, config_base_dir
-                        )
-                    except Exception as e:
-                        self._logger.error(
-                            f"[{self.provider_name}] Path validation failed for {full_path}: {e}"
-                        )
-                        raise ValueError(f"Unsafe storage path: {e}")
-
-                self._logger.trace(
-                    f"[{self.provider_name}] Resolved user storage path: {full_path}"
-                )
-                return full_path
-
-            except Exception as e:
-                self._logger.error(
-                    f"[{self.provider_name}] Failed to resolve storage path for key '{key}': {e}"
-                )
-                raise ValueError(f"Cannot resolve storage path: {e}")
-
     def health_check(self) -> bool:
         """
         Check if storage service is healthy and accessible.
@@ -167,75 +88,6 @@ class BaseStorageService(StorageService, ABC):
             self._logger.error(f"[{self.provider_name}] Health check failed: {e}")
             return False
 
-    # Template method pattern for configuration loading
-    def _load_provider_config(self) -> StorageConfig:
-        """
-        Load provider-specific configuration using StorageConfigService methods.
-
-        Returns:
-            StorageConfig for this provider
-        """
-        if self.provider_name.startswith("system_"):
-            return (
-                self.configuration
-            )  # System storage is static dict src\agentmap\services\storage\system_manager.py
-
-        try:
-
-            # Use storage-specific configuration methods instead of generic access
-            if self.provider_name in ["firebase", "mongodb", "supabase", "local"]:
-                # Use named provider methods for known providers
-                method_name = f"get_{self.provider_name}_config"
-                if hasattr(self.configuration, method_name):
-                    config_data = getattr(self.configuration, method_name)()
-                else:
-                    config_data = self.configuration.get_provider_config(
-                        self.provider_name
-                    )
-            else:
-                # Use generic provider method for other providers
-                config_data = self.configuration.get_provider_config(self.provider_name)
-
-            # Fallback to storage type configs if provider config is empty
-            if not config_data and self.provider_name in [
-                "csv",
-                "vector",
-                "memory",
-                "file",
-                "kv",
-                "blob",
-                "json",
-            ]:
-                storage_type_method = f"get_{self.provider_name}_config"
-                if hasattr(self.configuration, storage_type_method):
-                    config_data = getattr(self.configuration, storage_type_method)()
-                    self._logger.debug(
-                        f"[{self.provider_name}] Using storage type config as fallback"
-                    )
-
-            # Add provider name if not present
-            if "provider" not in config_data:
-                config_data["provider"] = self.provider_name
-
-            # Check if provider is configured and enabled
-            if not self.configuration.is_provider_configured(self.provider_name):
-                self._logger.warning(
-                    f"[{self.provider_name}] Provider is not properly configured or disabled"
-                )
-
-            config = StorageConfig.from_dict(config_data)
-            self._logger.debug(
-                f"[{self.provider_name}] Loaded configuration using StorageConfigService"
-            )
-            return config
-        except Exception as e:
-            self._logger.error(
-                f"[{self.provider_name}] Failed to load configuration: {e}"
-            )
-            # Return minimal config to prevent startup failures
-            return StorageConfig(provider=self.provider_name)
-
-    # Template method pattern for client initialization
     @property
     def client(self) -> Any:
         """
@@ -261,69 +113,15 @@ class BaseStorageService(StorageService, ABC):
                 )
         return self._client
 
-    # Error handling helper
-    def _handle_error(self, operation: str, error: Exception, **context) -> None:
-        """
-        Handle storage operation errors consistently.
-
-        Args:
-            operation: The operation that failed
-            error: The exception that occurred
-            **context: Additional context for error reporting
-        """
-        error_msg = f"Storage {operation} failed for {self.provider_name}: {str(error)}"
-        self._logger.error(f"[{self.provider_name}] {error_msg}")
-
-        # Add context to error if available
-        if context:
-            context_str = ", ".join(f"{k}={v}" for k, v in context.items())
-            error_msg += f" (Context: {context_str})"
-
-        # Raise appropriate exception type
-        if isinstance(error, StorageServiceError):
-            raise error
-        else:
-            raise StorageProviderError(error_msg) from error
-
-    def _create_error_result(
-        self, operation: str, error: str, **context
-    ) -> StorageResult:
-        """
-        Create a standardized error result.
-
-        Args:
-            operation: The operation that failed
-            error: Error message
-            **context: Additional context
-
-        Returns:
-            StorageResult with error information
-        """
-        return StorageResult(success=False, operation=operation, error=error, **context)
-
-    def _create_success_result(self, operation: str, **context) -> StorageResult:
-        """
-        Create a standardized success result.
-
-        Args:
-            operation: The operation that succeeded
-            **context: Additional context
-
-        Returns:
-            StorageResult with success information
-        """
-        return StorageResult(success=True, operation=operation, **context)
-
-    # Default implementations for optional methods
     def list_collections(self) -> List[str]:
         """
         List all available collections.
 
-        Default implementation returns empty list.
-        Subclasses should override if they support collection listing.
+        Default implementation returns an empty list. Subclasses should override
+        this method if they support collection listing.
 
         Returns:
-            List of collection names/identifiers
+            List of collection names or identifiers.
         """
         self._logger.debug(f"[{self.provider_name}] list_collections not implemented")
         return []
@@ -332,17 +130,17 @@ class BaseStorageService(StorageService, ABC):
         self, collection: str, schema: Optional[Dict[str, Any]] = None
     ) -> StorageResult:
         """
-        Create a new collection (if supported by provider).
+        Create a new collection.
 
-        Default implementation returns not-supported error.
-        Subclasses should override if they support collection creation.
+        Default implementation returns an error result. Subclasses should override
+        this method if they support collection creation.
 
         Args:
-            collection: Collection name/identifier
-            schema: Optional schema definition
+            collection: Name of the collection to create
+            schema: Optional schema definition for the collection
 
         Returns:
-            StorageResult with creation details
+            StorageResult indicating success or failure
         """
         self._logger.debug(f"[{self.provider_name}] create_collection not supported")
         return self._create_error_result(
@@ -353,49 +151,51 @@ class BaseStorageService(StorageService, ABC):
 
     def count(self, collection: str, query: Optional[Dict[str, Any]] = None) -> int:
         """
-        Count documents/records in collection.
+        Count documents or records in a collection.
 
-        Default implementation returns 0.
-        Subclasses should override with actual counting logic.
+        Default implementation returns 0. Subclasses should override this method
+        if they support counting operations.
 
         Args:
-            collection: Collection/table/file identifier
-            query: Optional query parameters for filtering
+            collection: Name of the collection
+            query: Optional filter query to count matching documents
 
         Returns:
-            Number of matching documents/records
+            Number of documents/records (0 if not implemented)
         """
         self._logger.debug(f"[{self.provider_name}] count not implemented")
         return 0
 
     def exists(self, collection: str, document_id: Optional[str] = None) -> bool:
         """
-        Check if collection or document exists in storage.
+        Check if a collection or document exists in storage.
 
-        Default implementation returns False.
-        Subclasses should override with actual existence checking.
+        Default implementation returns False. Subclasses should override this method
+        if they support existence checks.
 
         Args:
-            collection: Collection/table/file identifier
-            document_id: Optional specific document/record ID
+            collection: Name of the collection
+            document_id: Optional document identifier to check
 
         Returns:
-            True if exists, False otherwise
+            True if exists, False otherwise (default: False if not implemented)
         """
         self._logger.debug(f"[{self.provider_name}] exists not implemented")
         return False
 
-    # Abstract methods that must be implemented by subclasses
     @abstractmethod
     def _initialize_client(self) -> Any:
         """
-        Initialize the storage client.
+        Initialize the provider-specific storage client.
 
-        This method must be implemented by subclasses to set up
-        their specific client connection.
+        Subclasses must implement this method to create and configure
+        their storage client instance.
 
         Returns:
-            Storage client instance
+            Initialized storage client instance
+
+        Raises:
+            StorageServiceConfigurationError: If client initialization fails
         """
 
     @abstractmethod
@@ -403,11 +203,11 @@ class BaseStorageService(StorageService, ABC):
         """
         Perform provider-specific health check.
 
-        This method must be implemented by subclasses to check
-        if their storage backend is accessible and healthy.
+        Subclasses must implement this method to verify that their
+        storage backend is accessible and functioning correctly.
 
         Returns:
-            True if healthy, False otherwise
+            True if storage is healthy, False otherwise
         """
 
     @abstractmethod
@@ -422,18 +222,21 @@ class BaseStorageService(StorageService, ABC):
         """
         Read data from storage.
 
-        This method must be implemented by subclasses with
-        provider-specific read logic.
+        Subclasses must implement this method to retrieve data from their
+        storage backend.
 
         Args:
-            collection: Collection/table/file identifier
-            document_id: Optional specific document/record ID
-            query: Optional query parameters for filtering
-            path: Optional path within document (for nested data)
-            **kwargs: Provider-specific parameters
+            collection: Name of the collection to read from
+            document_id: Optional specific document identifier
+            query: Optional query filter for selecting documents
+            path: Optional file path (for file-based storage)
+            **kwargs: Additional provider-specific parameters
 
         Returns:
-            Data from storage
+            Retrieved data (format depends on provider)
+
+        Raises:
+            Exception: Provider-specific exceptions for read failures
         """
 
     @abstractmethod
@@ -449,19 +252,22 @@ class BaseStorageService(StorageService, ABC):
         """
         Write data to storage.
 
-        This method must be implemented by subclasses with
-        provider-specific write logic.
+        Subclasses must implement this method to persist data to their
+        storage backend.
 
         Args:
-            collection: Collection/table/file identifier
+            collection: Name of the collection to write to
             data: Data to write
-            document_id: Optional specific document/record ID
-            mode: Write mode (write, append, update, etc.)
-            path: Optional path within document (for nested updates)
-            **kwargs: Provider-specific parameters
+            document_id: Optional document identifier
+            mode: Write mode (WRITE, APPEND, etc.)
+            path: Optional file path (for file-based storage)
+            **kwargs: Additional provider-specific parameters
 
         Returns:
-            StorageResult with operation details
+            StorageResult indicating success or failure
+
+        Raises:
+            Exception: Provider-specific exceptions for write failures
         """
 
     @abstractmethod
@@ -473,19 +279,22 @@ class BaseStorageService(StorageService, ABC):
         **kwargs,
     ) -> StorageResult:
         """
-        Delete from storage.
+        Delete data from storage.
 
-        This method must be implemented by subclasses with
-        provider-specific delete logic.
+        Subclasses must implement this method to remove data from their
+        storage backend.
 
         Args:
-            collection: Collection/table/file identifier
-            document_id: Optional specific document/record ID
-            path: Optional path within document (for partial deletion)
-            **kwargs: Provider-specific parameters
+            collection: Name of the collection to delete from
+            document_id: Optional specific document to delete
+            path: Optional file path (for file-based storage)
+            **kwargs: Additional provider-specific parameters
 
         Returns:
-            StorageResult with operation details
+            StorageResult indicating success or failure
+
+        Raises:
+            Exception: Provider-specific exceptions for deletion failures
         """
 
     def batch_write(
@@ -495,21 +304,7 @@ class BaseStorageService(StorageService, ABC):
         mode: WriteMode = WriteMode.WRITE,
         **kwargs,
     ) -> StorageResult:
-        """
-        Write multiple documents/records in a batch operation.
-
-        Default implementation uses individual write calls.
-        Subclasses can override for optimized batch operations.
-
-        Args:
-            collection: Collection/table/file identifier
-            data: List of data items to write
-            mode: Write mode for all items
-            **kwargs: Provider-specific parameters
-
-        Returns:
-            StorageResult with batch operation details
-        """
+        """Write multiple documents/records in a batch operation."""
         self._logger.debug(
             f"[{self.provider_name}] Performing batch write of {len(data)} items"
         )
@@ -528,7 +323,7 @@ class BaseStorageService(StorageService, ABC):
                 errors.append(f"Item {i}: {str(e)}")
 
         if errors:
-            error_msg = "; ".join(errors[:5])  # Limit to first 5 errors
+            error_msg = "; ".join(errors[:5])
             if len(errors) > 5:
                 error_msg += f" (and {len(errors) - 5} more errors)"
 

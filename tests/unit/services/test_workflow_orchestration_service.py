@@ -53,7 +53,12 @@ class TestWorkflowOrchestrationServiceResume(unittest.TestCase):
         mock_container.graph_bundle_service.return_value = mock_graph_bundle_service
         mock_container.graph_runner_service.return_value = mock_graph_runner
 
-        return mock_container, mock_interaction_handler, mock_graph_bundle_service, mock_graph_runner
+        return (
+            mock_container,
+            mock_interaction_handler,
+            mock_graph_bundle_service,
+            mock_graph_runner,
+        )
 
     @patch("agentmap.services.workflow_orchestration_service.initialize_di")
     def test_resume_workflow_success(self, mock_initialize_di):
@@ -86,7 +91,10 @@ class TestWorkflowOrchestrationServiceResume(unittest.TestCase):
         mock_bundle.graph_name = "test_graph"
         mock_graph_bundle_service.load_bundle.return_value = mock_bundle
         mock_graph_bundle_service.lookup_bundle.return_value = mock_bundle
-        mock_graph_bundle_service.get_or_create_bundle.return_value = (mock_bundle, False)
+        mock_graph_bundle_service.get_or_create_bundle.return_value = (
+            mock_bundle,
+            False,
+        )
 
         expected_result = ExecutionResult(
             success=True,
@@ -127,8 +135,12 @@ class TestWorkflowOrchestrationServiceResume(unittest.TestCase):
         mock_graph_runner.resume_from_checkpoint.assert_called_once()
         call_kwargs = mock_graph_runner.resume_from_checkpoint.call_args.kwargs
         checkpoint_state = call_kwargs["checkpoint_state"]
-        self.assertEqual(checkpoint_state["__human_response"]["action"], self.response_action)
-        self.assertEqual(checkpoint_state["__human_response"]["data"], self.response_data)
+        self.assertEqual(
+            checkpoint_state["__human_response"]["action"], self.response_action
+        )
+        self.assertEqual(
+            checkpoint_state["__human_response"]["data"], self.response_data
+        )
         self.assertEqual(
             checkpoint_state["__human_response"]["request_id"], self.request_id
         )
@@ -153,9 +165,7 @@ class TestWorkflowOrchestrationServiceResume(unittest.TestCase):
                 response_data=self.response_data,
             )
 
-        self.assertIn(
-            f"Thread '{self.thread_id}' not found", str(context.exception)
-        )
+        self.assertIn(f"Thread '{self.thread_id}' not found", str(context.exception))
 
     @patch("agentmap.services.workflow_orchestration_service.initialize_di")
     def test_resume_workflow_no_pending_interaction(self, mock_initialize_di):
@@ -205,7 +215,9 @@ class TestWorkflowOrchestrationServiceResume(unittest.TestCase):
         )
 
     @patch("agentmap.services.workflow_orchestration_service.initialize_di")
-    @patch("agentmap.services.workflow_orchestration_service._rehydrate_bundle_from_metadata")
+    @patch(
+        "agentmap.services.workflow_orchestration_service._rehydrate_bundle_from_metadata"
+    )
     def test_resume_workflow_bundle_rehydration_failure(
         self, mock_rehydrate, mock_initialize_di
     ):
@@ -233,9 +245,7 @@ class TestWorkflowOrchestrationServiceResume(unittest.TestCase):
                 response_action=self.response_action,
             )
 
-        self.assertIn(
-            "Failed to rehydrate GraphBundle", str(context.exception)
-        )
+        self.assertIn("Failed to rehydrate GraphBundle", str(context.exception))
 
     @patch("agentmap.services.workflow_orchestration_service.initialize_di")
     def test_resume_workflow_response_save_failure(self, mock_initialize_di):

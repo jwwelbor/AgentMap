@@ -29,17 +29,18 @@ class TestFilePathService(unittest.TestCase):
         self.mock_factory = MockServiceFactory()
         self.mock_logging = self.mock_factory.create_mock_logging_service()
         self.mock_app_config = self.mock_factory.create_mock_app_config_service()
-        
+
         # Create service under test
         self.service = FilePathService(self.mock_app_config, self.mock_logging)
-        
+
         # Create temporary directory for testing
         self.temp_dir = tempfile.mkdtemp()
-        
+
     def tearDown(self):
         """Clean up test fixtures."""
         # Clean up temporary directory
         import shutil
+
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
@@ -52,9 +53,9 @@ class TestFilePathService(unittest.TestCase):
     def test_validate_safe_path_valid(self):
         """Test validation of safe path."""
         safe_path = os.path.join(self.temp_dir, "safe", "path.txt")
-        
+
         result = self.service.validate_safe_path(safe_path, self.temp_dir)
-        
+
         self.assertTrue(result)
 
     def test_validate_safe_path_empty(self):
@@ -65,24 +66,24 @@ class TestFilePathService(unittest.TestCase):
     def test_validate_safe_path_traversal(self):
         """Test path traversal detection."""
         traversal_path = os.path.join(self.temp_dir, "..", "dangerous", "path.txt")
-        
+
         with self.assertRaises(PathTraversalError):
             self.service.validate_safe_path(traversal_path, self.temp_dir)
 
     def test_validate_safe_path_outside_base(self):
         """Test path outside base directory detection."""
         outside_path = "/completely/different/path.txt"
-        
+
         with self.assertRaises(InvalidPathError):
             self.service.validate_safe_path(outside_path, self.temp_dir)
 
     def test_get_dangerous_system_paths(self):
         """Test dangerous system paths retrieval."""
         dangerous_paths = self.service.get_dangerous_system_paths()
-        
+
         self.assertIsInstance(dangerous_paths, list)
         self.assertTrue(len(dangerous_paths) > 0)
-        
+
         # Check platform-specific paths
         system = platform.system().lower()
         if system == "windows":
@@ -90,34 +91,34 @@ class TestFilePathService(unittest.TestCase):
         else:
             self.assertIn("/bin", dangerous_paths)
 
-    @patch('platform.system')
+    @patch("platform.system")
     def test_dangerous_paths_windows(self, mock_system):
         """Test Windows-specific dangerous paths."""
         mock_system.return_value = "Windows"
-        
+
         service = FilePathService(self.mock_app_config, self.mock_logging)
         dangerous_paths = service.get_dangerous_system_paths()
-        
+
         self.assertIn("C:\\Windows", dangerous_paths)
         self.assertIn("C:\\Program Files", dangerous_paths)
 
-    @patch('platform.system')
+    @patch("platform.system")
     def test_dangerous_paths_unix(self, mock_system):
         """Test Unix-specific dangerous paths."""
         mock_system.return_value = "Linux"
-        
+
         service = FilePathService(self.mock_app_config, self.mock_logging)
         dangerous_paths = service.get_dangerous_system_paths()
-        
+
         self.assertIn("/bin", dangerous_paths)
         self.assertIn("/etc", dangerous_paths)
 
     def test_ensure_directory_creates(self):
         """Test directory creation."""
         new_dir = os.path.join(self.temp_dir, "new", "directory")
-        
+
         result_path = self.service.ensure_directory(new_dir)
-        
+
         self.assertTrue(os.path.exists(new_dir))
         self.assertTrue(os.path.isdir(new_dir))
         self.assertEqual(str(result_path), new_dir)
@@ -126,9 +127,9 @@ class TestFilePathService(unittest.TestCase):
         """Test directory already exists."""
         existing_dir = os.path.join(self.temp_dir, "existing")
         os.makedirs(existing_dir, exist_ok=True)
-        
+
         result_path = self.service.ensure_directory(existing_dir)
-        
+
         self.assertTrue(os.path.exists(existing_dir))
         self.assertEqual(str(result_path), existing_dir)
 
@@ -140,9 +141,9 @@ class TestFilePathService(unittest.TestCase):
     def test_ensure_directory_file_exists(self):
         """Test ensure directory where file exists."""
         file_path = os.path.join(self.temp_dir, "test_file.txt")
-        with open(file_path, 'w') as f:
+        with open(file_path, "w") as f:
             f.write("test")
-        
+
         with self.assertRaises(InvalidPathError):
             self.service.ensure_directory(file_path)
 
@@ -151,7 +152,7 @@ class TestFilePathService(unittest.TestCase):
         result = self.service.resolve_storage_path(
             self.temp_dir, "json", "test_collection", "test.json"
         )
-        
+
         expected_path = Path(self.temp_dir) / "json" / "test_collection" / "test.json"
         self.assertEqual(result, expected_path)
 
@@ -160,16 +161,14 @@ class TestFilePathService(unittest.TestCase):
         result = self.service.resolve_storage_path(
             self.temp_dir, "csv", filename="data.csv"
         )
-        
+
         expected_path = Path(self.temp_dir) / "csv" / "data.csv"
         self.assertEqual(result, expected_path)
 
     def test_resolve_storage_path_no_filename(self):
         """Test storage path resolution without filename."""
-        result = self.service.resolve_storage_path(
-            self.temp_dir, "files", "documents"
-        )
-        
+        result = self.service.resolve_storage_path(self.temp_dir, "files", "documents")
+
         expected_path = Path(self.temp_dir) / "files" / "documents"
         self.assertEqual(result, expected_path)
 
@@ -186,17 +185,17 @@ class TestFilePathService(unittest.TestCase):
     def test_sanitize_filename_valid(self):
         """Test filename sanitization with valid filename."""
         valid_filename = "test_file.txt"
-        
+
         result = self.service.sanitize_filename(valid_filename)
-        
+
         self.assertEqual(result, valid_filename)
 
     def test_sanitize_filename_dangerous(self):
         """Test filename sanitization with dangerous characters."""
         dangerous_filename = "file<>:|*?.txt"
-        
+
         result = self.service.sanitize_filename(dangerous_filename)
-        
+
         # Should be sanitized to remove dangerous characters
         self.assertNotEqual(result, dangerous_filename)
         self.assertNotIn("<", result)
@@ -215,9 +214,9 @@ class TestFilePathService(unittest.TestCase):
     def test_sanitize_filename_whitespace(self):
         """Test filename sanitization with whitespace."""
         filename_with_spaces = "  test file.txt  "
-        
+
         result = self.service.sanitize_filename(filename_with_spaces)
-        
+
         # Should trim whitespace
         self.assertEqual(result, "test file.txt")
 
@@ -225,12 +224,12 @@ class TestFilePathService(unittest.TestCase):
         """Test dangerous path checking with system path."""
         # This test may vary by platform
         system = platform.system().lower()
-        
+
         if system == "windows":
             dangerous_path = "C:\\Windows\\System32\\test.txt"
         else:
             dangerous_path = "/bin/test"
-        
+
         with self.assertRaises(SystemPathError):
             # Use private method directly for testing
             path_obj = Path(dangerous_path).resolve()
@@ -242,18 +241,18 @@ class TestFilePathService(unittest.TestCase):
         base_dir = self.service.ensure_directory(
             os.path.join(self.temp_dir, "safe_workflow")
         )
-        
+
         # Resolve storage path
         storage_path = self.service.resolve_storage_path(
             str(base_dir), "json", "test_collection", "data.json"
         )
-        
+
         # Validate the path
         is_valid = self.service.validate_safe_path(str(storage_path), str(base_dir))
-        
+
         # Sanitize filename component
         sanitized_filename = self.service.sanitize_filename("data.json")
-        
+
         self.assertTrue(is_valid)
         self.assertEqual(sanitized_filename, "data.json")
         self.assertTrue(str(storage_path).startswith(str(base_dir)))

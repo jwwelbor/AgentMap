@@ -1,12 +1,12 @@
 """
 Storage service protocols for AgentMap.
 
-This module defines the protocols (interfaces) that storage services must implement,
-following the Interface Segregation Principle and existing service patterns.
+This module defines the protocols (interfaces) that storage services must
+implement, following the Interface Segregation Principle and existing service
+patterns.
 """
 
 from typing import (
-    TYPE_CHECKING,
     Any,
     Dict,
     List,
@@ -16,13 +16,6 @@ from typing import (
 )
 
 from agentmap.services.storage.types import StorageResult, WriteMode
-
-if TYPE_CHECKING:
-    from agentmap.services.storage.csv_service import CSVStorageService
-    from agentmap.services.storage.file_service import FileStorageService
-    from agentmap.services.storage.json_service import JSONStorageService
-    from agentmap.services.storage.memory_service import MemoryStorageService
-    from agentmap.services.storage.vector_service import VectorStorageService
 
 
 @runtime_checkable
@@ -211,63 +204,6 @@ class StorageService(StorageReader, StorageWriter, Protocol):
         Returns:
             StorageResult with creation details
         """
-        ...
-
-
-# ===== AGENT CAPABILITY PROTOCOLS =====
-
-
-@runtime_checkable
-class CSVCapableAgent(Protocol):
-    """Protocol for agents that can use CSV storage services."""
-
-    def configure_csv_service(self, csv_service: "CSVStorageService") -> None:
-        """Configure CSV storage service for this agent."""
-        ...
-
-
-@runtime_checkable
-class JSONCapableAgent(Protocol):
-    """Protocol for agents that can use JSON storage services."""
-
-    def configure_json_service(self, json_service: "JSONStorageService") -> None:
-        """Configure JSON storage service for this agent."""
-        ...
-
-
-@runtime_checkable
-class FileCapableAgent(Protocol):
-    """Protocol for agents that can use file storage services."""
-
-    def configure_file_service(self, file_service: "FileStorageService") -> None:
-        """Configure file storage service for this agent."""
-        ...
-
-
-@runtime_checkable
-class VectorCapableAgent(Protocol):
-    """Protocol for agents that can use vector storage services."""
-
-    def configure_vector_service(self, vector_service: "VectorStorageService") -> None:
-        """Configure vector storage service for this agent."""
-        ...
-
-
-@runtime_checkable
-class MemoryCapableAgent(Protocol):
-    """Protocol for agents that can use memory storage services."""
-
-    def configure_memory_service(self, memory_service: "MemoryStorageService") -> None:
-        """Configure memory storage service for this agent."""
-        ...
-
-
-@runtime_checkable
-class StorageCapableAgent(Protocol):
-    """Protocol for agents that can use memory storage services."""
-
-    def configure_storage_service(self, storage_service: "StorageService") -> None:
-        """Configure storage service for this agent."""
         ...
 
 
