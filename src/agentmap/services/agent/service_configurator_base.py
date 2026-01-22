@@ -32,7 +32,7 @@ def configure_storage_service_strict(
     agent: Any,
     protocol_class: Type,
     storage_manager: Any,
-    service_type: str,
+    storage_type: str,
     service_name: str,
     configure_method: str,
     logger: Any,
@@ -42,7 +42,7 @@ def configure_storage_service_strict(
     if not isinstance(agent, protocol_class):
         return False
     try:
-        service = storage_manager.get_service(service_type)
+        service = storage_manager.get_service(storage_type)
         if service is None:
             error_msg = f"{service_name} not available for agent {agent_name}"
             logger.error(error_msg)

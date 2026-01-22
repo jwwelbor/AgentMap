@@ -33,19 +33,15 @@ from agentmap.services.protocols import (
 )
 from agentmap.services.storage.manager import StorageServiceManager
 
-from .core_service_configurator import CoreServiceConfigurator
-from .service_injection_status import ServiceInjectionStatusProvider
-from .storage_service_configurator import StorageServiceConfigurator
 
 
 class AgentServiceInjectionService:
     """
-    Service responsible for injecting core services into agent instances.
 
     Delegates to specialized configurator classes for different service categories:
     - CoreServiceConfigurator: LLM, Storage, Prompt, Orchestration, BlobStorage services
     - StorageServiceConfigurator: CSV, JSON, File, Vector, Memory services
-    - ServiceInjectionStatusProvider: Status and debugging methods
+    - ServiceStatusAnalyzer: Status and debugging methods
     """
 
     def __init__(
@@ -131,14 +127,12 @@ class AgentServiceInjectionService:
 
     @logger.setter
     def logger(self, value):
-        """Set the logger and propagate to configurators."""
+    """Set the logger and propagate to configurators."""
         self._logger = value
         if hasattr(self, "_core_configurator"):
             self._core_configurator.logger = value
         if hasattr(self, "_storage_configurator"):
             self._storage_configurator.logger = value
-        if hasattr(self, "_status_provider"):
-            self._status_provider.logger = value
 
     def configure_core_services(self, agent: Any) -> int:
         """
@@ -153,7 +147,7 @@ class AgentServiceInjectionService:
         Raises:
             Exception: If service is unavailable or configuration fails
         """
-        return self._core_configurator.configure_core_services(agent)
+    return self._core_configurator.configure_core_services(agent)
 
     def configure_storage_services(self, agent: Any) -> int:
         """
@@ -168,7 +162,7 @@ class AgentServiceInjectionService:
         Raises:
             Exception: If storage service is unavailable or configuration fails
         """
-        return self._storage_configurator.configure_storage_services(agent)
+    return self._storage_configurator.configure_storage_services(agent)
 
     def requires_storage_services(self, agent: Any) -> bool:
         """
@@ -290,7 +284,7 @@ class AgentServiceInjectionService:
         Returns:
             Dictionary with detailed service injection status and capabilities
         """
-        return self._status_analyzer.get_service_injection_status(agent)
+    return self._status_analyzer.get_service_injection_status(agent)
 
     def get_service_availability_status(self) -> dict:
         """
@@ -299,4 +293,4 @@ class AgentServiceInjectionService:
         Returns:
             Dictionary with service availability information
         """
-        return self._status_analyzer.get_service_availability_status()
+    return self._status_analyzer.get_service_availability_status()
