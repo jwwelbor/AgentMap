@@ -1,5 +1,7 @@
 import types
+
 from agentmap.agents.builtins.llm.llm_agent import LLMAgent
+
 
 def test_llm_agent_includes_activity_and_profile(monkeypatch):
     agent = LLMAgent(

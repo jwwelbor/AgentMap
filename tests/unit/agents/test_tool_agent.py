@@ -7,8 +7,9 @@ via LangGraph ToolNode.
 """
 
 import unittest
-from unittest.mock import Mock, MagicMock, patch
-from typing import Dict, Any
+from typing import Any, Dict
+from unittest.mock import MagicMock, Mock, patch
+
 from langchain_core.tools import tool
 
 from agentmap.agents.builtins.tool_agent import ToolAgent
@@ -25,7 +26,9 @@ class TestToolAgent(unittest.TestCase):
 
         # Create mock services
         self.mock_logging = self.mock_factory.create_mock_logging_service()
-        self.mock_execution_tracking = self.mock_factory.create_mock_execution_tracking_service()
+        self.mock_execution_tracking = (
+            self.mock_factory.create_mock_execution_tracking_service()
+        )
         self.mock_state_adapter = self.mock_factory.create_mock_state_adapter_service()
 
         # Create real LangChain tools for testing (ToolNode requires real tools)
@@ -52,7 +55,7 @@ class TestToolAgent(unittest.TestCase):
             tools=[self.mock_tool_1],
             logger=self.mock_logging.get_class_logger("test"),
             execution_tracking_service=self.mock_execution_tracking,
-            state_adapter_service=self.mock_state_adapter
+            state_adapter_service=self.mock_state_adapter,
         )
 
         # Assert
@@ -72,7 +75,7 @@ class TestToolAgent(unittest.TestCase):
             "confidence_threshold": 0.9,
             "llm_type": "anthropic",
             "temperature": 0.5,
-            "available_tools": "tool1|tool2"
+            "available_tools": "tool1|tool2",
         }
 
         # Act
@@ -83,7 +86,7 @@ class TestToolAgent(unittest.TestCase):
             tools=[self.mock_tool_1, self.mock_tool_2],
             logger=self.mock_logging.get_class_logger("test"),
             execution_tracking_service=self.mock_execution_tracking,
-            state_adapter_service=self.mock_state_adapter
+            state_adapter_service=self.mock_state_adapter,
         )
 
         # Assert
@@ -95,29 +98,22 @@ class TestToolAgent(unittest.TestCase):
     def test_protocol_implementation_tool_capable(self):
         """Test that ToolAgent can work with tools (protocol compatibility)."""
         # Arrange & Act
-        agent = ToolAgent(
-            name="test_agent",
-            prompt="Test",
-            tools=[self.mock_tool_1]
-        )
+        agent = ToolAgent(name="test_agent", prompt="Test", tools=[self.mock_tool_1])
 
         # Assert - Verify agent can work with tools
         # ToolAgent stores tools internally and uses them via ToolNode
-        self.assertTrue(hasattr(agent, 'tools'))
+        self.assertTrue(hasattr(agent, "tools"))
         self.assertEqual(len(agent.tools), 1)
-        self.assertTrue(hasattr(agent, 'tool_node'))
+        self.assertTrue(hasattr(agent, "tool_node"))
         # Verify it inherits from BaseAgent
         from agentmap.agents.base_agent import BaseAgent
+
         self.assertIsInstance(agent, BaseAgent)
 
     def test_protocol_implementation_tool_selection_capable(self):
         """Test that ToolAgent implements ToolSelectionCapableAgent protocol."""
         # Arrange & Act
-        agent = ToolAgent(
-            name="test_agent",
-            prompt="Test",
-            tools=[self.mock_tool_1]
-        )
+        agent = ToolAgent(name="test_agent", prompt="Test", tools=[self.mock_tool_1])
 
         # Assert
         self.assertIsInstance(agent, ToolSelectionCapableAgent)
@@ -129,7 +125,7 @@ class TestToolAgent(unittest.TestCase):
             name="test_agent",
             prompt="Test",
             tools=[self.mock_tool_1],
-            logger=self.mock_logging.get_class_logger("test")
+            logger=self.mock_logging.get_class_logger("test"),
         )
         mock_orchestrator = Mock()
 
@@ -141,6 +137,7 @@ class TestToolAgent(unittest.TestCase):
 
     def test_tool_description_resolution_auto_extraction(self):
         """Test automatic extraction of tool descriptions from tool definitions."""
+
         # Arrange - Create a real tool with description
         @tool
         def calculate(a: int, b: int) -> int:
@@ -149,21 +146,19 @@ class TestToolAgent(unittest.TestCase):
 
         # Act
         agent = ToolAgent(
-            name="calc_agent",
-            prompt="Calculator",
-            context={},
-            tools=[calculate]
+            name="calc_agent", prompt="Calculator", context={}, tools=[calculate]
         )
 
         # Assert
         self.assertIn("calculate", agent.tool_descriptions)
         self.assertIn(
             "mathematical calculations",
-            agent.tool_descriptions["calculate"]["description"].lower()
+            agent.tool_descriptions["calculate"]["description"].lower(),
         )
 
     def test_tool_description_resolution_csv_override(self):
         """Test CSV inline descriptions override tool definitions."""
+
         # Arrange - Create a real tool
         @tool
         def search(query: str) -> str:
@@ -178,20 +173,18 @@ class TestToolAgent(unittest.TestCase):
 
         # Act
         agent = ToolAgent(
-            name="search_agent",
-            prompt="Search",
-            context=context,
-            tools=[search]
+            name="search_agent", prompt="Search", context=context, tools=[search]
         )
 
         # Assert
         self.assertEqual(
             agent.tool_descriptions["search"]["description"],
-            "Custom search description from CSV"
+            "Custom search description from CSV",
         )
 
     def test_tool_description_resolution_multiple_tools_csv(self):
         """Test parsing multiple tool descriptions from CSV format."""
+
         # Arrange - Create real tools
         @tool
         def tool1() -> str:
@@ -203,35 +196,22 @@ class TestToolAgent(unittest.TestCase):
             """Original 2"""
             return "result2"
 
-        context = {
-            "available_tools": 'tool1("First tool") | tool2("Second tool")'
-        }
+        context = {"available_tools": 'tool1("First tool") | tool2("Second tool")'}
 
         # Act
         agent = ToolAgent(
-            name="multi_agent",
-            prompt="Multi",
-            context=context,
-            tools=[tool1, tool2]
+            name="multi_agent", prompt="Multi", context=context, tools=[tool1, tool2]
         )
 
         # Assert
-        self.assertEqual(
-            agent.tool_descriptions["tool1"]["description"],
-            "First tool"
-        )
-        self.assertEqual(
-            agent.tool_descriptions["tool2"]["description"],
-            "Second tool"
-        )
+        self.assertEqual(agent.tool_descriptions["tool1"]["description"], "First tool")
+        self.assertEqual(agent.tool_descriptions["tool2"]["description"], "Second tool")
 
     def test_tools_to_node_format_transformation(self):
         """Test transformation of tools to node format for OrchestratorService."""
         # Arrange
         agent = ToolAgent(
-            name="test_agent",
-            prompt="Test",
-            tools=[self.mock_tool_1, self.mock_tool_2]
+            name="test_agent", prompt="Test", tools=[self.mock_tool_1, self.mock_tool_2]
         )
 
         # Act
@@ -244,13 +224,9 @@ class TestToolAgent(unittest.TestCase):
         weather_node = node_format["get_weather"]
         self.assertEqual(weather_node["type"], "tool")
         self.assertEqual(
-            weather_node["description"],
-            "Get current weather for a location"
+            weather_node["description"], "Get current weather for a location"
         )
-        self.assertEqual(
-            weather_node["prompt"],
-            "Get current weather for a location"
-        )
+        self.assertEqual(weather_node["prompt"], "Get current weather for a location")
 
     def test_single_tool_optimization(self):
         """Test that single tool bypasses selection and executes directly."""
@@ -259,12 +235,14 @@ class TestToolAgent(unittest.TestCase):
             name="single_tool_agent",
             prompt="Single tool",
             tools=[self.mock_tool_1],
-            logger=self.mock_logging.get_class_logger("test")
+            logger=self.mock_logging.get_class_logger("test"),
         )
 
         inputs = {"query": "What's the weather?"}
 
-        with patch.object(agent, '_execute_tool', return_value="Weather result") as mock_execute:
+        with patch.object(
+            agent, "_execute_tool", return_value="Weather result"
+        ) as mock_execute:
             # Act
             result = agent.process(inputs)
 
@@ -280,7 +258,7 @@ class TestToolAgent(unittest.TestCase):
             prompt="Multi tool",
             context={"matching_strategy": "tiered", "confidence_threshold": 0.8},
             tools=[self.mock_tool_1, self.mock_tool_2],
-            logger=self.mock_logging.get_class_logger("test")
+            logger=self.mock_logging.get_class_logger("test"),
         )
 
         mock_orchestrator = Mock()
@@ -289,7 +267,9 @@ class TestToolAgent(unittest.TestCase):
 
         inputs = {"query": "What's the weather?"}
 
-        with patch.object(agent, '_execute_tool', return_value="Weather: Sunny") as mock_execute:
+        with patch.object(
+            agent, "_execute_tool", return_value="Weather: Sunny"
+        ) as mock_execute:
             # Act
             result = agent.process(inputs)
 
@@ -311,7 +291,7 @@ class TestToolAgent(unittest.TestCase):
             name="multi_tool_agent",
             prompt="Multi tool",
             tools=[self.mock_tool_1, self.mock_tool_2],
-            logger=self.mock_logging.get_class_logger("test")
+            logger=self.mock_logging.get_class_logger("test"),
         )
 
         inputs = {"query": "test"}
@@ -322,7 +302,7 @@ class TestToolAgent(unittest.TestCase):
 
         self.assertIn("OrchestratorService not configured", str(context.exception))
 
-    @patch('agentmap.agents.builtins.tool_agent.ToolNode')
+    @patch("agentmap.agents.builtins.tool_agent.ToolNode")
     def test_execute_tool_with_toolnode(self, mock_toolnode_class):
         """Test _execute_tool method uses LangGraph ToolNode."""
         # Arrange
@@ -338,7 +318,7 @@ class TestToolAgent(unittest.TestCase):
             name="test_agent",
             prompt="Test",
             tools=[self.mock_tool_1],
-            logger=self.mock_logging.get_class_logger("test")
+            logger=self.mock_logging.get_class_logger("test"),
         )
 
         inputs = {"location": "Seattle"}
@@ -365,14 +345,11 @@ class TestToolAgent(unittest.TestCase):
             name="test_agent",
             prompt="Test",
             context={"input_fields": "user_query|request"},
-            tools=[self.mock_tool_1]
+            tools=[self.mock_tool_1],
         )
         agent.input_fields = ["user_query", "request"]
 
-        inputs = {
-            "user_query": "What's the weather?",
-            "other_field": "ignored"
-        }
+        inputs = {"user_query": "What's the weather?", "other_field": "ignored"}
 
         # Act
         result = agent._get_input_text(inputs)
@@ -387,13 +364,10 @@ class TestToolAgent(unittest.TestCase):
             name="test_agent",
             prompt="Test",
             tools=[self.mock_tool_1],
-            logger=self.mock_logging.get_class_logger("test")
+            logger=self.mock_logging.get_class_logger("test"),
         )
 
-        inputs = {
-            "query": "Search query text",
-            "other": "data"
-        }
+        inputs = {"query": "Search query text", "other": "data"}
 
         # Act
         result = agent._get_input_text(inputs)
@@ -408,12 +382,12 @@ class TestToolAgent(unittest.TestCase):
             name="test_agent",
             prompt="Test",
             tools=[self.mock_tool_1],
-            logger=self.mock_logging.get_class_logger("test")
+            logger=self.mock_logging.get_class_logger("test"),
         )
 
         inputs = {
             "available_tools": "ignored",  # Explicitly ignored
-            "custom_field": "Custom text value"
+            "custom_field": "Custom text value",
         }
 
         # Act
@@ -426,9 +400,7 @@ class TestToolAgent(unittest.TestCase):
         """Test _get_tool_by_name retrieves tool successfully."""
         # Arrange
         agent = ToolAgent(
-            name="test_agent",
-            prompt="Test",
-            tools=[self.mock_tool_1, self.mock_tool_2]
+            name="test_agent", prompt="Test", tools=[self.mock_tool_1, self.mock_tool_2]
         )
 
         # Act
@@ -440,11 +412,7 @@ class TestToolAgent(unittest.TestCase):
     def test_get_tool_by_name_not_found(self):
         """Test _get_tool_by_name raises ValueError for missing tool."""
         # Arrange
-        agent = ToolAgent(
-            name="test_agent",
-            prompt="Test",
-            tools=[self.mock_tool_1]
-        )
+        agent = ToolAgent(name="test_agent", prompt="Test", tools=[self.mock_tool_1])
 
         # Act & Assert
         with self.assertRaises(ValueError) as context:

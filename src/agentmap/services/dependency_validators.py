@@ -151,10 +151,14 @@ class ProviderValidator:
 
         # Get dependencies based on provider type
         if provider_type == "llm":
-            dependencies = BuiltinDefinitionConstants.get_provider_dependencies(provider_name)
+            dependencies = BuiltinDefinitionConstants.get_provider_dependencies(
+                provider_name
+            )
             unknown_error = f"unknown-provider:{provider_name}"
         else:  # storage
-            dependencies = BuiltinDefinitionConstants.get_storage_dependencies(provider_name)
+            dependencies = BuiltinDefinitionConstants.get_storage_dependencies(
+                provider_name
+            )
             unknown_error = f"unknown-storage:{provider_name}"
 
         if not dependencies:
@@ -178,7 +182,9 @@ class ProviderValidator:
                 return True, []
             elif cached_result and not cached_result.get("validation_passed"):
                 # Cache indicates failure - use cached error info if available
-                error = cached_result.get("last_error", f"cached-failure:{provider_name}")
+                error = cached_result.get(
+                    "last_error", f"cached-failure:{provider_name}"
+                )
                 return False, [error]
 
             # Cache miss or invalid - perform validation and cache result

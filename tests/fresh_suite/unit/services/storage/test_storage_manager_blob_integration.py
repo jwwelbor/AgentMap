@@ -5,47 +5,48 @@ These tests verify that the StorageServiceManager properly integrates with
 the BlobStorageService following the established DI patterns and graceful
 degradation principles.
 """
-import unittest
-import tempfile
+
 import shutil
+import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from agentmap.di import initialize_di
-from agentmap.services.storage.manager import StorageServiceManager
 from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.file_path_service import FilePathService
 from agentmap.services.logging_service import LoggingService
+from agentmap.services.storage.manager import StorageServiceManager
 
 
 class TestStorageManagerBlobIntegration(unittest.TestCase):
     """
     Test blob storage integration with StorageServiceManager.
-    
+
     These tests use real DI in container tests
     MockServiceFactory for service tests to verify actual
     integration behavior between storage manager and blob storage.
     """
-    
+
     def setUp(self):
         """Set up test fixtures with temporary config."""
         # Create temporary directory for test configs
         self.temp_dir = tempfile.mkdtemp()
         self.test_config_path = self._create_test_config()
-    
+
     def tearDown(self):
         """Clean up test fixtures."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
-    
+
     def _create_test_config(self) -> Path:
         """Create a test configuration file."""
         config_path = Path(self.temp_dir) / "test_config.yaml"
         storage_config_path = Path(self.temp_dir) / "storage_config.yaml"
-        
+
         # Use forward slashes for YAML to avoid Windows backslash escaping issues
-        storage_config_path_str = str(storage_config_path).replace('\\', '/')
-        csv_data_path_str = f"{self.temp_dir}/csv_data".replace('\\', '/')
-        
+        storage_config_path_str = str(storage_config_path).replace("\\", "/")
+        csv_data_path_str = f"{self.temp_dir}/csv_data".replace("\\", "/")
+
         config_content = f"""logging:
   version: 1
   level: DEBUG
@@ -59,7 +60,7 @@ llm:
 
 storage_config_path: "{storage_config_path_str}"
 """
-        
+
         storage_config_content = f"""csv:
   default_directory: "{csv_data_path_str}"
   collections: {{}}
@@ -72,48 +73,48 @@ kv:
   default_provider: "local"
   collections: {{}}
 """
-        
-        with open(config_path, 'w') as f:
+
+        with open(config_path, "w") as f:
             f.write(config_content)
-            
-        with open(storage_config_path, 'w') as f:
+
+        with open(storage_config_path, "w") as f:
             f.write(storage_config_content)
-        
+
         return config_path
 
     # =============================================================================
     # Blob Storage Integration Tests
     # =============================================================================
-    
+
     def test_storage_manager_integrates_blob_storage_when_available(self):
         """Test that storage manager integrates blob storage when available."""
         # Arrange
         container = initialize_di(str(self.test_config_path))
-        
+
         # Act
         storage_manager = container.storage_service_manager()
-        
+
         # Assert
         self.assertIsNotNone(storage_manager)
-        
+
         # If storage manager was created successfully, check blob integration
         if storage_manager is not None:
             # Check if blob storage is available
             has_blob = storage_manager.is_blob_storage_enabled()
-            
+
             # If blob storage is available, verify integration
             if has_blob:
                 # Should be able to get blob storage service
                 blob_service = storage_manager.get_blob_storage_service()
                 self.assertIsNotNone(blob_service)
-                
+
                 # Blob should be in available providers
                 providers = storage_manager.list_available_providers()
                 self.assertIn("blob", providers)
-                
+
                 # Should be able to check if blob provider is available
                 self.assertTrue(storage_manager.is_provider_available("blob"))
-                
+
                 # Should be able to get service info for blob
                 blob_info = storage_manager.get_service_info("blob")
                 self.assertIn("blob", blob_info)
@@ -124,7 +125,7 @@ kv:
                 self.assertIsNone(storage_manager.get_blob_storage_service())
                 providers = storage_manager.list_available_providers()
                 self.assertNotIn("blob", providers)
-    
+
     def test_storage_manager_graceful_degradation_without_blob_storage(self):
         """Test that storage manager handles graceful degradation without blob storage."""
         # Arrange - Create mock services without blob storage
@@ -133,27 +134,27 @@ kv:
         mock_file_path_service = Mock(spec=FilePathService)
         mock_logger = Mock()
         mock_logging.get_class_logger.return_value = mock_logger
-        
+
         # Act - Create storage manager without blob storage
         storage_manager = StorageServiceManager(
             configuration=mock_storage_config,
             logging_service=mock_logging,
             file_path_service=mock_file_path_service,
-            blob_storage_service=None
+            blob_storage_service=None,
         )
-        
+
         # Assert
         self.assertIsNotNone(storage_manager)
         self.assertFalse(storage_manager.is_blob_storage_enabled())
         self.assertIsNone(storage_manager.get_blob_storage_service())
-        
+
         # Blob should not be in available providers
         providers = storage_manager.list_available_providers()
         self.assertNotIn("blob", providers)
-        
+
         # Should return False for blob provider availability
         self.assertFalse(storage_manager.is_provider_available("blob"))
-    
+
     def test_storage_manager_blob_integration_with_mock_blob_service(self):
         """Test storage manager integration with a mock blob service."""
         # Arrange - Create mock services with blob storage
@@ -162,31 +163,31 @@ kv:
         mock_file_path_service = Mock(spec=FilePathService)
         mock_logger = Mock()
         mock_logging.get_class_logger.return_value = mock_logger
-        
+
         # Create mock blob storage service
         mock_blob_service = Mock()
         mock_blob_service.health_check.return_value = True
-        
+
         # Act - Create storage manager with blob storage
         storage_manager = StorageServiceManager(
             configuration=mock_storage_config,
             logging_service=mock_logging,
             file_path_service=mock_file_path_service,
-            blob_storage_service=mock_blob_service
+            blob_storage_service=mock_blob_service,
         )
-        
+
         # Assert
         self.assertIsNotNone(storage_manager)
         self.assertTrue(storage_manager.is_blob_storage_enabled())
         self.assertEqual(storage_manager.get_blob_storage_service(), mock_blob_service)
-        
+
         # Blob should be in available providers
         providers = storage_manager.list_available_providers()
         self.assertIn("blob", providers)
-        
+
         # Should return True for blob provider availability
         self.assertTrue(storage_manager.is_provider_available("blob"))
-        
+
         # Should be able to get service info for blob
         blob_info = storage_manager.get_service_info("blob")
         self.assertIn("blob", blob_info)
@@ -194,7 +195,7 @@ kv:
         self.assertTrue(blob_info["blob"]["cached"])
         self.assertEqual(blob_info["blob"]["type"], "blob_service")
         self.assertTrue(blob_info["blob"]["healthy"])
-    
+
     def test_storage_manager_blob_service_health_check_failure(self):
         """Test storage manager handles blob service health check failures."""
         # Arrange - Create mock services with failing blob service
@@ -203,29 +204,29 @@ kv:
         mock_file_path_service = Mock(spec=FilePathService)
         mock_logger = Mock()
         mock_logging.get_class_logger.return_value = mock_logger
-        
+
         # Create mock blob storage service that fails health check
         mock_blob_service = Mock()
         mock_blob_service.health_check.side_effect = Exception("Health check failed")
-        
+
         # Act - Create storage manager with failing blob storage
         storage_manager = StorageServiceManager(
             configuration=mock_storage_config,
             logging_service=mock_logging,
             file_path_service=mock_file_path_service,
-            blob_storage_service=mock_blob_service
+            blob_storage_service=mock_blob_service,
         )
-        
+
         # Assert
         self.assertIsNotNone(storage_manager)
         self.assertTrue(storage_manager.is_blob_storage_enabled())
-        
+
         # Should handle health check failure gracefully
         blob_info = storage_manager.get_service_info("blob")
         self.assertIn("blob", blob_info)
         self.assertTrue(blob_info["blob"]["available"])
         self.assertFalse(blob_info["blob"]["healthy"])
-    
+
     def test_storage_manager_get_service_includes_blob_storage(self):
         """Test that get_service method works with blob storage."""
         # Arrange - Create mock services with blob storage
@@ -234,22 +235,22 @@ kv:
         mock_file_path_service = Mock(spec=FilePathService)
         mock_logger = Mock()
         mock_logging.get_class_logger.return_value = mock_logger
-        
+
         # Create mock blob storage service
         mock_blob_service = Mock()
-        
+
         # Act - Create storage manager with blob storage
         storage_manager = StorageServiceManager(
             configuration=mock_storage_config,
             logging_service=mock_logging,
             file_path_service=mock_file_path_service,
-            blob_storage_service=mock_blob_service
+            blob_storage_service=mock_blob_service,
         )
-        
+
         # Assert - Should be able to get blob service through get_service
         blob_service = storage_manager.get_service("blob")
         self.assertEqual(blob_service, mock_blob_service)
-    
+
     def test_storage_manager_get_service_raises_error_when_blob_not_available(self):
         """Test that get_service('blob') raises error when blob storage is not available."""
         # Arrange - Create mock services without blob storage
@@ -258,20 +259,21 @@ kv:
         mock_file_path_service = Mock(spec=FilePathService)
         mock_logger = Mock()
         mock_logging.get_class_logger.return_value = mock_logger
-        
+
         # Act - Create storage manager without blob storage
         storage_manager = StorageServiceManager(
             configuration=mock_storage_config,
             logging_service=mock_logging,
             file_path_service=mock_file_path_service,
-            blob_storage_service=None
+            blob_storage_service=None,
         )
-        
+
         # Assert - Should raise error when trying to get blob service
         from agentmap.services.storage.types import StorageServiceNotAvailableError
+
         with self.assertRaises(StorageServiceNotAvailableError) as context:
             storage_manager.get_service("blob")
-        
+
         # Verify error message mentions blob is not available
         self.assertIn("blob", str(context.exception).lower())
         self.assertIn("not registered", str(context.exception).lower())
@@ -280,11 +282,11 @@ kv:
         """Test that the DI container creates storage manager with blob integration."""
         # Arrange
         container = initialize_di(str(self.test_config_path))
-        
+
         # Act
         storage_manager = container.storage_service_manager()
         blob_storage_service = container.blob_storage_service()
-        
+
         # Assert
         # If services were created successfully, they should be properly integrated
         if storage_manager is not None and blob_storage_service is not None:
@@ -300,5 +302,5 @@ kv:
         # If both are None, that's also valid (complete graceful degradation)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

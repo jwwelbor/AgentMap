@@ -7,6 +7,7 @@ including format validation, cross-field validation, and backward compatibility.
 
 import unittest
 import warnings
+
 from pydantic import ValidationError
 
 from agentmap.models.validation.csv_row_model import CSVRowModel
@@ -23,7 +24,7 @@ class TestCSVToolValidation(unittest.TestCase):
             Node="weather_node",
             AgentType="tool",
             Available_Tools="get_weather|get_forecast",
-            Tool_Source="tools/weather_tools.py"
+            Tool_Source="tools/weather_tools.py",
         )
 
         # Assert
@@ -36,9 +37,7 @@ class TestCSVToolValidation(unittest.TestCase):
         """Test Available_Tools validator with single tool name."""
         # Arrange & Act
         row = CSVRowModel(
-            GraphName="test_graph",
-            Node="test_node",
-            Available_Tools="search_tool"
+            GraphName="test_graph", Node="test_node", Available_Tools="search_tool"
         )
 
         # Assert
@@ -50,7 +49,7 @@ class TestCSVToolValidation(unittest.TestCase):
         row = CSVRowModel(
             GraphName="test_graph",
             Node="test_node",
-            Available_Tools="tool1|tool2|tool3"
+            Available_Tools="tool1|tool2|tool3",
         )
 
         # Assert
@@ -62,7 +61,7 @@ class TestCSVToolValidation(unittest.TestCase):
         row = CSVRowModel(
             GraphName="test_graph",
             Node="test_node",
-            Available_Tools="  tool1  |  tool2  |  tool3  "
+            Available_Tools="  tool1  |  tool2  |  tool3  ",
         )
 
         # Assert
@@ -74,7 +73,7 @@ class TestCSVToolValidation(unittest.TestCase):
         row = CSVRowModel(
             GraphName="test_graph",
             Node="test_node",
-            Available_Tools="get_weather_v2|calculate_sum_123"
+            Available_Tools="get_weather_v2|calculate_sum_123",
         )
 
         # Assert
@@ -87,7 +86,7 @@ class TestCSVToolValidation(unittest.TestCase):
             CSVRowModel(
                 GraphName="test_graph",
                 Node="test_node",
-                Available_Tools="invalid-tool-name"
+                Available_Tools="invalid-tool-name",
             )
 
         self.assertIn("Invalid tool name", str(context.exception))
@@ -100,7 +99,7 @@ class TestCSVToolValidation(unittest.TestCase):
             CSVRowModel(
                 GraphName="test_graph",
                 Node="test_node",
-                Available_Tools="tool@name|tool#2"
+                Available_Tools="tool@name|tool#2",
             )
 
         self.assertIn("Invalid tool name", str(context.exception))
@@ -109,11 +108,7 @@ class TestCSVToolValidation(unittest.TestCase):
         """Test Available_Tools rejects empty string when specified."""
         # Arrange & Act & Assert
         with self.assertRaises(ValidationError) as context:
-            CSVRowModel(
-                GraphName="test_graph",
-                Node="test_node",
-                Available_Tools=""
-            )
+            CSVRowModel(GraphName="test_graph", Node="test_node", Available_Tools="")
 
         self.assertIn("cannot be empty when specified", str(context.exception))
 
@@ -121,9 +116,7 @@ class TestCSVToolValidation(unittest.TestCase):
         """Test Available_Tools accepts None (optional field)."""
         # Arrange & Act
         row = CSVRowModel(
-            GraphName="test_graph",
-            Node="test_node",
-            Available_Tools=None
+            GraphName="test_graph", Node="test_node", Available_Tools=None
         )
 
         # Assert
@@ -133,9 +126,7 @@ class TestCSVToolValidation(unittest.TestCase):
         """Test Tool_Source validator accepts .py file paths."""
         # Arrange & Act
         row = CSVRowModel(
-            GraphName="test_graph",
-            Node="test_node",
-            Tool_Source="tools/my_tools.py"
+            GraphName="test_graph", Node="test_node", Tool_Source="tools/my_tools.py"
         )
 
         # Assert
@@ -145,9 +136,7 @@ class TestCSVToolValidation(unittest.TestCase):
         """Test Tool_Source validator accepts 'toolnode' keyword."""
         # Arrange & Act
         row = CSVRowModel(
-            GraphName="test_graph",
-            Node="test_node",
-            Tool_Source="toolnode"
+            GraphName="test_graph", Node="test_node", Tool_Source="toolnode"
         )
 
         # Assert
@@ -157,9 +146,7 @@ class TestCSVToolValidation(unittest.TestCase):
         """Test Tool_Source validator accepts 'toolnode' case-insensitively."""
         # Arrange & Act
         row = CSVRowModel(
-            GraphName="test_graph",
-            Node="test_node",
-            Tool_Source="TOOLNODE"
+            GraphName="test_graph", Node="test_node", Tool_Source="TOOLNODE"
         )
 
         # Assert
@@ -172,19 +159,19 @@ class TestCSVToolValidation(unittest.TestCase):
             CSVRowModel(
                 GraphName="test_graph",
                 Node="test_node",
-                Tool_Source="tools/my_tools.txt"
+                Tool_Source="tools/my_tools.txt",
             )
 
-        self.assertIn("must be either 'toolnode' or a .py file path", str(context.exception))
+        self.assertIn(
+            "must be either 'toolnode' or a .py file path", str(context.exception)
+        )
 
     def test_tool_source_validator_no_extension(self):
         """Test Tool_Source validator rejects paths without .py extension."""
         # Arrange & Act & Assert
         with self.assertRaises(ValidationError) as context:
             CSVRowModel(
-                GraphName="test_graph",
-                Node="test_node",
-                Tool_Source="tools/my_tools"
+                GraphName="test_graph", Node="test_node", Tool_Source="tools/my_tools"
             )
 
         self.assertIn(".py file path", str(context.exception))
@@ -192,11 +179,7 @@ class TestCSVToolValidation(unittest.TestCase):
     def test_tool_source_validator_none_is_valid(self):
         """Test Tool_Source accepts None (optional field)."""
         # Arrange & Act
-        row = CSVRowModel(
-            GraphName="test_graph",
-            Node="test_node",
-            Tool_Source=None
-        )
+        row = CSVRowModel(GraphName="test_graph", Node="test_node", Tool_Source=None)
 
         # Assert
         self.assertIsNone(row.Tool_Source)
@@ -211,7 +194,7 @@ class TestCSVToolValidation(unittest.TestCase):
                 GraphName="test_graph",
                 Node="test_node",
                 Available_Tools="tool1|tool2",
-                Tool_Source=None
+                Tool_Source=None,
             )
 
             # Assert
@@ -229,7 +212,7 @@ class TestCSVToolValidation(unittest.TestCase):
                 GraphName="test_graph",
                 Node="test_node",
                 Available_Tools="tool1",
-                Tool_Source="tools.py"
+                Tool_Source="tools.py",
             )
 
             # Assert
@@ -245,7 +228,7 @@ class TestCSVToolValidation(unittest.TestCase):
                 GraphName="test_graph",
                 Node="test_node",
                 Available_Tools=None,
-                Tool_Source="tools.py"
+                Tool_Source="tools.py",
             )
 
             # Assert
@@ -258,7 +241,7 @@ class TestCSVToolValidation(unittest.TestCase):
             GraphName="test_graph",
             Node="test_node",
             AgentType="default",
-            Prompt="Test prompt"
+            Prompt="Test prompt",
         )
 
         # Assert
@@ -278,7 +261,7 @@ class TestCSVToolValidation(unittest.TestCase):
             Available_Tools="search_api|weather_api|geocode_api",
             Tool_Source="integrations/api_tools.py",
             Input_Fields="query|location",
-            Output_Field="api_result"
+            Output_Field="api_result",
         )
 
         # Assert
@@ -298,7 +281,7 @@ class TestCSVToolValidation(unittest.TestCase):
             Available_Tools="process_data",
             Tool_Source="utils/processors.py",
             Success_Next="next_node",
-            Failure_Next="error_handler"
+            Failure_Next="error_handler",
         )
 
         # Assert
@@ -313,7 +296,7 @@ class TestCSVToolValidation(unittest.TestCase):
         row = CSVRowModel(
             GraphName="test_graph",
             Node="test_node",
-            Tool_Source="/absolute/path/to/tools.py"
+            Tool_Source="/absolute/path/to/tools.py",
         )
 
         # Assert
@@ -323,9 +306,7 @@ class TestCSVToolValidation(unittest.TestCase):
         """Test Tool_Source with relative path."""
         # Arrange & Act
         row = CSVRowModel(
-            GraphName="test_graph",
-            Node="test_node",
-            Tool_Source="../parent/tools.py"
+            GraphName="test_graph", Node="test_node", Tool_Source="../parent/tools.py"
         )
 
         # Assert

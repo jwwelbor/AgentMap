@@ -41,6 +41,7 @@ class TestGraphBundleServiceFilterServices(unittest.TestCase):
 
     def test_filter_registered_services_included(self):
         """Registered services should be included in filtered results."""
+
         # Arrange: Set up mock to return ServiceDeclaration for valid services
         def mock_get_declaration(service_name):
             valid_services = {"logging_service", "config_service", "storage_service"}
@@ -64,6 +65,7 @@ class TestGraphBundleServiceFilterServices(unittest.TestCase):
 
     def test_filter_non_service_entries_excluded(self):
         """Non-service entries like config_path should be filtered out."""
+
         # Arrange: Set up mock to only recognize actual services
         def mock_get_declaration(service_name):
             non_services = {"config_path", "routing_cache", "metadata"}
@@ -123,6 +125,7 @@ class TestGraphBundleServiceFilterServices(unittest.TestCase):
 
     def test_filter_mixed_services_and_non_services(self):
         """Mixed input should filter correctly, keeping only registered services."""
+
         # Arrange: Set up realistic mix of services and non-services
         def mock_get_declaration(service_name):
             registered_services = {
@@ -191,6 +194,7 @@ class TestGraphBundleServiceFilterServices(unittest.TestCase):
 
     def test_filter_preserves_service_names(self):
         """Filtered services should maintain exact original names."""
+
         # Arrange: Services with specific naming conventions
         def mock_get_declaration(service_name):
             return Mock()  # All are valid services
@@ -218,6 +222,7 @@ class TestGraphBundleServiceFilterServices(unittest.TestCase):
 
     def test_filter_handles_declaration_registry_exception(self):
         """Method should handle exceptions from declaration registry gracefully."""
+
         # Arrange: Mock raises exception for certain services
         def mock_get_declaration(service_name):
             if service_name == "problematic_service":
@@ -236,6 +241,7 @@ class TestGraphBundleServiceFilterServices(unittest.TestCase):
 
     def test_filter_realistic_dependency_analysis_output(self):
         """Test with realistic dependency analysis output from graph bundle creation."""
+
         # Arrange: Simulate typical dependency analysis results
         def mock_get_declaration(service_name):
             # Services that would be registered in DI container
@@ -291,6 +297,7 @@ class TestGraphBundleServiceFilterServices(unittest.TestCase):
 
     def test_filter_verifies_debug_logging(self):
         """Method should log debug information for filtered entries."""
+
         # Arrange: Set up mock to filter out some entries
         def mock_get_declaration(service_name):
             return None if service_name in {"config_path", "routing_cache"} else Mock()
@@ -312,6 +319,7 @@ class TestGraphBundleServiceFilterServices(unittest.TestCase):
 
     def test_filter_input_output_counts_logged(self):
         """Method should log input count and output count for debugging."""
+
         # Arrange: Set up mixed input
         def mock_get_declaration(service_name):
             return Mock() if service_name.endswith("_service") else None

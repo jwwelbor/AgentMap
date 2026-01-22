@@ -4,10 +4,10 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from agentmap.models.graph_bundle import GraphBundle
-from agentmap.models.node import Node
 from agentmap.models.execution.result import ExecutionResult
 from agentmap.models.execution.tracker import ExecutionTracker, NodeExecution
+from agentmap.models.graph_bundle import GraphBundle
+from agentmap.models.node import Node
 from agentmap.services.graph.graph_runner_service import GraphRunnerService
 from tests.utils.mock_service_factory import MockServiceFactory
 
@@ -130,7 +130,9 @@ class TestGraphRunnerServiceCheckpoint(unittest.TestCase):
             {"configurable": {"thread_id": "thread-123"}}
         )
         _, kwargs = self.graph_execution.execute_compiled_graph.call_args
-        self.assertEqual(kwargs.get("config"), {"configurable": {"thread_id": "thread-123"}})
+        self.assertEqual(
+            kwargs.get("config"), {"configurable": {"thread_id": "thread-123"}}
+        )
 
     @unittest.skip("MANUAL: Checkpoint detection logic changed - needs investigation")
     def test_detects_suspend_interrupt_after_execution(self):
@@ -151,6 +153,7 @@ class TestGraphRunnerServiceCheckpoint(unittest.TestCase):
         self.assertEqual(result.execution_summary.status, "suspended")
         self.interaction_handler._store_thread_metadata_suspend_only.assert_called_once()
         self.service._display_resume_instructions.assert_called_once()
+
     def test_suspend_metadata_fallback_without_interrupts(self):
         """Fallback should persist suspend metadata when LangGraph interrupts are empty."""
         self.graph_bundle_service.requires_checkpoint_support.return_value = True
@@ -158,7 +161,9 @@ class TestGraphRunnerServiceCheckpoint(unittest.TestCase):
         state = SimpleNamespace(tasks=[SimpleNamespace(interrupts=tuple())])
         self.compiled_with_checkpoint.get_state.return_value = state
 
-        pending_node = NodeExecution(node_name="SuspendForResponse", success=None, inputs={"foo": "bar"})
+        pending_node = NodeExecution(
+            node_name="SuspendForResponse", success=None, inputs={"foo": "bar"}
+        )
         self.execution_tracker.node_executions.append(pending_node)
 
         self.bundle.nodes["SuspendForResponse"] = Node(
@@ -199,7 +204,9 @@ class TestGraphRunnerServiceCheckpoint(unittest.TestCase):
             kwargs.get("config"), {"configurable": {"thread_id": thread_id}}
         )
         self.interaction_handler.mark_thread_resuming.assert_called_once_with(thread_id)
-        self.interaction_handler.mark_thread_completed.assert_called_once_with(thread_id)
+        self.interaction_handler.mark_thread_completed.assert_called_once_with(
+            thread_id
+        )
         self.assertTrue(result.success)
         self.assertEqual(result.final_state.get("__thread_id"), thread_id)
         self.assertIsNot(result.execution_summary.final_output, result.final_state)
@@ -229,9 +236,10 @@ class TestGraphRunnerServiceCheckpoint(unittest.TestCase):
         )
         self.assertTrue(result.success)
         self.interaction_handler.mark_thread_resuming.assert_called_once_with(thread_id)
-        self.interaction_handler.mark_thread_completed.assert_called_once_with(thread_id)
+        self.interaction_handler.mark_thread_completed.assert_called_once_with(
+            thread_id
+        )
         self.assertIsNot(result.execution_summary.final_output, result.final_state)
-
 
 
 if __name__ == "__main__":

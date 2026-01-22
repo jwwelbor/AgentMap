@@ -8,13 +8,13 @@ This package provides modular components for vector database operations:
 - service: Main VectorStorageService implementation
 """
 
-from agentmap.services.storage.vector.service import VectorStorageService
 from agentmap.services.storage.vector.dependencies import (
-    langchain,
-    OpenAIEmbeddings,
-    Chroma,
     FAISS,
+    Chroma,
+    OpenAIEmbeddings,
+    langchain,
 )
+from agentmap.services.storage.vector.service import VectorStorageService
 
 __all__ = [
     "VectorStorageService",

@@ -1,14 +1,23 @@
 """Unified Availability Cache Service for AgentMap."""
+
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
+
 from agentmap.services.config.availability_cache import ThreadSafeFileCache
 from agentmap.services.config.cache_invalidation_mixin import CacheInvalidationMixin
 from agentmap.services.config.cache_statistics_mixin import CacheStatisticsMixin
-from agentmap.services.config.change_detectors import ConfigChangeDetector, EnvironmentChangeDetector
+from agentmap.services.config.change_detectors import (
+    ConfigChangeDetector,
+    EnvironmentChangeDetector,
+)
 
-__all__ = ["AvailabilityCacheService", "EnvironmentChangeDetector", "ConfigChangeDetector"]
+__all__ = [
+    "AvailabilityCacheService",
+    "EnvironmentChangeDetector",
+    "ConfigChangeDetector",
+]
 
 
 class EnvironmentChangeDetector:
@@ -205,8 +214,13 @@ class AvailabilityCacheService:
         try:
             with self._cache_lock:
                 if not self._cache_file_path.exists():
-                    from agentmap.exceptions.service_exceptions import CacheNotFoundError
-                    raise CacheNotFoundError(f"Availability cache not found at {self._cache_file_path}.")
+                    from agentmap.exceptions.service_exceptions import (
+                        CacheNotFoundError,
+                    )
+
+                    raise CacheNotFoundError(
+                        f"Availability cache not found at {self._cache_file_path}."
+                    )
                 cache_data = self._file_cache.load_cache()
                 if not cache_data:
                     self._stats["cache_misses"] += 1
@@ -222,11 +236,19 @@ class AvailabilityCacheService:
         cache_key = f"{category}.{key}"
         try:
             with self._cache_lock:
-                cache_data = self._file_cache.load_cache() or self._create_new_cache_structure()
+                cache_data = (
+                    self._file_cache.load_cache() or self._create_new_cache_structure()
+                )
                 if "availability" not in cache_data:
                     cache_data["availability"] = {}
                 enhanced_result = result.copy()
-                enhanced_result.update({"cached_at": datetime.now(timezone.utc).isoformat(), "cache_key": cache_key, "environment_hash": self._env_detector.get_environment_hash()})
+                enhanced_result.update(
+                    {
+                        "cached_at": datetime.now(timezone.utc).isoformat(),
+                        "cache_key": cache_key,
+                        "environment_hash": self._env_detector.get_environment_hash(),
+                    }
+                )
                 cache_data["availability"][cache_key] = enhanced_result
                 cache_data["last_updated"] = datetime.now(timezone.utc).isoformat()
                 if self._file_cache.save_cache(cache_data):
@@ -295,4 +317,10 @@ class AvailabilityCacheService:
                 self._logger.error(f"Error during automatic invalidation: {e}")
 
     def _create_new_cache_structure(self) -> Dict[str, Any]:
-        return {"cache_version": "2.0", "created_at": datetime.now(timezone.utc).isoformat(), "last_updated": datetime.now(timezone.utc).isoformat(), "environment_hash": self._env_detector.get_environment_hash(), "availability": {}}
+        return {
+            "cache_version": "2.0",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "environment_hash": self._env_detector.get_environment_hash(),
+            "availability": {},
+        }

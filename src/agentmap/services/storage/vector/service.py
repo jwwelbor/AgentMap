@@ -14,7 +14,6 @@ from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.types import StorageResult, WriteMode
-
 from agentmap.services.storage.vector import dependencies as vector_deps
 
 
