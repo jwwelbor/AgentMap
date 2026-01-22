@@ -39,9 +39,7 @@ class InstallationGuideHelper:
         default_guide = f"pip install 'agentmap[llm]' or install the specific package for {provider}"
         return guides.get(provider_lower, default_guide)
 
-    def get_storage_installation_guide(
-        self, storage_type: Optional[str] = None
-    ) -> str:
+    def get_storage_installation_guide(self, storage_type: Optional[str] = None) -> str:
         """Get a friendly installation guide for storage dependencies."""
         if not storage_type:
             return "pip install 'agentmap[storage]' for all storage support"

@@ -71,7 +71,6 @@ class MockAppConfigService:
     def __init__(self, config_overrides: Optional[Dict[str, Any]] = None):
         self.config_overrides = config_overrides or {}
 
-
     def get_logging_config(self) -> Dict[str, Any]:
         """Get logging configuration."""
         return self.config_overrides.get(

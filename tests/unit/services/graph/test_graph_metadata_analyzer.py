@@ -255,7 +255,8 @@ class TestGraphMetadataAnalyzerFilterServices(unittest.TestCase):
 
         # Verify the summary log message contains the counts
         summary_messages = [
-            str(call[0][0]) for call in debug_calls
+            str(call[0][0])
+            for call in debug_calls
             if "Filtered" in str(call[0][0]) and "entries to" in str(call[0][0])
         ]
         self.assertEqual(len(summary_messages), 1)
@@ -297,7 +298,8 @@ class TestGraphMetadataAnalyzerFilterServices(unittest.TestCase):
         logger = self.analyzer.logger
         debug_calls = logger.debug.call_args_list
         summary_messages = [
-            str(call[0][0]) for call in debug_calls
+            str(call[0][0])
+            for call in debug_calls
             if "Filtered" in str(call[0][0]) and "entries to" in str(call[0][0])
         ]
 

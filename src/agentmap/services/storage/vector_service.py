@@ -9,16 +9,16 @@ Note: This module re-exports from the refactored vector package
 for backwards compatibility.
 """
 
-# Re-export the main service class for backwards compatibility
-from agentmap.services.storage.vector.service import VectorStorageService
-
 # Re-export dependencies for backwards compatibility with tests
 from agentmap.services.storage.vector.dependencies import (
-    langchain,
-    OpenAIEmbeddings,
-    Chroma,
     FAISS,
+    Chroma,
+    OpenAIEmbeddings,
+    langchain,
 )
+
+# Re-export the main service class for backwards compatibility
+from agentmap.services.storage.vector.service import VectorStorageService
 
 __all__ = [
     "VectorStorageService",

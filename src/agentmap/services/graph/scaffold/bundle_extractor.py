@@ -41,7 +41,9 @@ class BundleExtractor:
                         "context": node.context or "",
                         "input_fields": node.inputs or [],
                         "output_field": node.output or "",
-                        "success_next": target if condition == f"func:{func_name}" else "",
+                        "success_next": (
+                            target if condition == f"func:{func_name}" else ""
+                        ),
                         "failure_next": "",
                         "description": f"Edge function for {node_name} -> {target}",
                     }

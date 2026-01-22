@@ -135,9 +135,7 @@ class ProviderManager:
         cache_key = f"{category}.{provider}"
         cached = self.availability_cache_service.get_availability("provider", cache_key)
         if cached is not None:
-            self.logger.trace(
-                f"[ProviderManager] Cache hit for provider.{cache_key}"
-            )
+            self.logger.trace(f"[ProviderManager] Cache hit for provider.{cache_key}")
             return cached.get("available", False)
 
         # Get from registry
@@ -193,9 +191,7 @@ class ProviderManager:
         cache_key = f"{category}.{provider}.validated"
         cached = self.availability_cache_service.get_availability("provider", cache_key)
         if cached is not None:
-            self.logger.trace(
-                f"[ProviderManager] Cache hit for provider.{cache_key}"
-            )
+            self.logger.trace(f"[ProviderManager] Cache hit for provider.{cache_key}")
             return cached.get("validated", False)
 
         # Get from registry
@@ -268,9 +264,7 @@ class ProviderManager:
         """
         return self.KNOWN_PROVIDERS.get(category, [])
 
-    def invalidate_cache(
-        self, category: str = None, provider: str = None
-    ) -> None:
+    def invalidate_cache(self, category: str = None, provider: str = None) -> None:
         """
         Invalidate cached provider availability data.
 
@@ -295,9 +289,7 @@ class ProviderManager:
         else:
             # Invalidate all provider cache
             self.availability_cache_service.invalidate_cache("provider")
-            self.logger.debug(
-                "[ProviderManager] Invalidated all provider cache"
-            )
+            self.logger.debug("[ProviderManager] Invalidated all provider cache")
 
     def _invalidate_provider_cache_entries(self, category: str, provider: str) -> None:
         """

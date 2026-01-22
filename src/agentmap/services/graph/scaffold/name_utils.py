@@ -8,7 +8,11 @@ def to_pascal_case(text: str) -> str:
     if "_" not in text and "-" not in text and text[0].isupper():
         return text
     parts = text.replace("-", "_").split("_")
-    return "".join(part[0].upper() + part[1:] if len(part) > 1 else part.upper() for part in parts if part)
+    return "".join(
+        part[0].upper() + part[1:] if len(part) > 1 else part.upper()
+        for part in parts
+        if part
+    )
 
 
 def generate_agent_class_name(agent_type: str) -> str:

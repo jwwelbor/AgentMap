@@ -4,23 +4,24 @@ Unit tests for ProtocolBasedRequirementsAnalyzer service.
 Tests the service that analyzes graph requirements from agent protocols,
 determining which services are needed without instantiating agents.
 """
-import unittest
 
+import unittest
 from unittest.mock import Mock
 
-from agentmap.services.protocol_requirements_analyzer import ProtocolBasedRequirementsAnalyzer
-
+from agentmap.services.protocol_requirements_analyzer import (
+    ProtocolBasedRequirementsAnalyzer,
+)
 from agentmap.services.protocols import (
-    LLMCapableAgent,
-    StorageCapableAgent,
-    PromptCapableAgent,
-    CSVCapableAgent,
-    JSONCapableAgent,
-    FileCapableAgent,
-    VectorCapableAgent,
-    MemoryCapableAgent,
     BlobStorageCapableAgent,
+    CSVCapableAgent,
+    FileCapableAgent,
+    JSONCapableAgent,
+    LLMCapableAgent,
+    MemoryCapableAgent,
     OrchestrationCapableAgent,
+    PromptCapableAgent,
+    StorageCapableAgent,
+    VectorCapableAgent,
 )
 
 
@@ -98,9 +99,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
             self.service._implements_protocol(MockStorageAgent, "StorageCapableAgent")
         )
         self.assertTrue(
-            self.service._implements_protocol(
-                MockMultiProtocolAgent, "LLMCapableAgent"
-            )
+            self.service._implements_protocol(MockMultiProtocolAgent, "LLMCapableAgent")
         )
         self.assertTrue(
             self.service._implements_protocol(
@@ -129,15 +128,13 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
 
     def test_implements_protocol_with_none_agent_class(self):
         """Test _implements_protocol gracefully handles None agent class."""
-        self.assertFalse(
-            self.service._implements_protocol(None, "LLMCapableAgent")
-        )
+        self.assertFalse(self.service._implements_protocol(None, "LLMCapableAgent"))
 
     def test_analyze_graph_requirements_basic_case(self):
         """Test analyze_graph_requirements with basic agents."""
         # Create mock nodes directly (no CSV parsing in analyzer anymore)
         from agentmap.models.node import Node
-        
+
         mock_nodes = {
             "node1": Node(name="node1", agent_type="llm_agent"),
             "node2": Node(name="node2", agent_type="storage_agent"),
@@ -162,7 +159,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
             elif agent_type == "storage_agent":
                 return MockStorageAgent
             return None
-        
+
         self.mock_agent_factory.get_agent_class.side_effect = mock_get_agent_class
 
         # Execute with nodes directly
@@ -177,7 +174,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
                 "storage_service_manager",
                 "state_adapter_service",  # Default services always included
                 "execution_tracking_service",
-            }
+            },
         }
         self.assertEqual(result, expected_result)
 
@@ -188,7 +185,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
         """Test analyze_graph_requirements gracefully handles unknown agent types."""
         # Create mock nodes directly
         from agentmap.models.node import Node
-        
+
         mock_nodes = {
             "node1": Node(name="node1", agent_type="unknown_agent"),
             "node2": Node(name="node2", agent_type="llm_agent"),
@@ -206,7 +203,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
             elif agent_type == "unknown_agent":
                 return None  # Simulate unknown agent
             return None
-        
+
         self.mock_agent_factory.get_agent_class.side_effect = mock_get_agent_class
 
         # Execute with nodes directly
@@ -219,7 +216,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
                 "llm_service",
                 "state_adapter_service",  # Basic fallback services
                 "execution_tracking_service",
-            }
+            },
         }
         self.assertEqual(result, expected_result)
 
@@ -237,7 +234,10 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
         # Verify - should return basic services for empty graph
         expected_result = {
             "required_agents": set(),
-            "required_services": {"state_adapter_service", "execution_tracking_service"}
+            "required_services": {
+                "state_adapter_service",
+                "execution_tracking_service",
+            },
         }
         self.assertEqual(result, expected_result)
 
@@ -245,7 +245,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
         """Test analyze_graph_requirements with complex agents implementing multiple protocols."""
         # Create mock node directly
         from agentmap.models.node import Node
-        
+
         mock_nodes = {
             "complex_node": Node(name="complex_node", agent_type="complex_agent"),
         }
@@ -278,7 +278,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
             if agent_type == "complex_agent":
                 return MockComplexAgent
             return None
-        
+
         self.mock_agent_factory.get_agent_class.side_effect = mock_get_agent_class
 
         # Execute with nodes directly
@@ -295,7 +295,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
                 "vector_service",
                 "state_adapter_service",  # Default services always included
                 "execution_tracking_service",
-            }
+            },
         }
         self.assertEqual(result, expected_result)
 
@@ -310,7 +310,10 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
         # Verify basic services are still returned
         expected_result = {
             "required_agents": set(),
-            "required_services": {"state_adapter_service", "execution_tracking_service"}
+            "required_services": {
+                "state_adapter_service",
+                "execution_tracking_service",
+            },
         }
         self.assertEqual(result, expected_result)
 
@@ -324,7 +327,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
         """Test analyze_graph_requirements handles nodes with missing agent_type."""
         # Create nodes with missing agent type
         from agentmap.models.node import Node
-        
+
         mock_nodes = {
             "node1": Node(name="node1", agent_type=None),  # No agent type
             "node2": Node(name="node2", agent_type="valid_agent"),
@@ -342,7 +345,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
             elif agent_type is None:
                 return None  # Handle None agent type
             return None
-        
+
         self.mock_agent_factory.get_agent_class.side_effect = mock_get_agent_class
 
         # Execute - should handle missing agent type gracefully
@@ -351,12 +354,14 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
         # Verify - should include services from valid agent and default services
         # Note: agent with agent_type=None should be skipped
         expected_result = {
-            "required_agents": {"valid_agent"},  # Only agents with non-None types are included
+            "required_agents": {
+                "valid_agent"
+            },  # Only agents with non-None types are included
             "required_services": {
                 "llm_service",
                 "state_adapter_service",
                 "execution_tracking_service",
-            }
+            },
         }
         self.assertEqual(result, expected_result)
 

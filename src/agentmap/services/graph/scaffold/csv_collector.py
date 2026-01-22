@@ -43,7 +43,11 @@ class CSVCollector:
                             "node_name": row.get("Node", "").strip(),
                             "context": row.get("Context", "").strip(),
                             "prompt": row.get("Prompt", "").strip(),
-                            "input_fields": [x.strip() for x in row.get("Input_Fields", "").split("|") if x.strip()],
+                            "input_fields": [
+                                x.strip()
+                                for x in row.get("Input_Fields", "").split("|")
+                                if x.strip()
+                            ],
                             "output_field": row.get("Output_Field", "").strip(),
                             "description": row.get("Description", "").strip(),
                         }
@@ -68,7 +72,11 @@ class CSVCollector:
                         func_info[func] = {
                             "node_name": row.get("Node", "").strip(),
                             "context": row.get("Context", "").strip(),
-                            "input_fields": [x.strip() for x in row.get("Input_Fields", "").split("|") if x.strip()],
+                            "input_fields": [
+                                x.strip()
+                                for x in row.get("Input_Fields", "").split("|")
+                                if x.strip()
+                            ],
                             "output_field": row.get("Output_Field", "").strip(),
                             "success_next": row.get("Success_Next", "").strip(),
                             "failure_next": row.get("Failure_Next", "").strip(),

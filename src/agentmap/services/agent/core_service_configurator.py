@@ -62,9 +62,7 @@ class CoreServiceConfigurator:
 
     def configure_core_services(self, agent: Any) -> int:
         agent_name = getattr(agent, "name", "unknown")
-        self.logger.trace(
-            f"Configuring core services for agent: {agent_name}"
-        )
+        self.logger.trace(f"Configuring core services for agent: {agent_name}")
         services_configured = 0
         try:
             for spec in self.CORE_SERVICE_SPECS:
@@ -84,9 +82,7 @@ class CoreServiceConfigurator:
                     f"Configured {services_configured} core services for {agent_name}"
                 )
             else:
-                self.logger.trace(
-                    f"No core services configured for {agent_name}"
-                )
+                self.logger.trace(f"No core services configured for {agent_name}")
             return services_configured
         except Exception as e:
             self.logger.error(

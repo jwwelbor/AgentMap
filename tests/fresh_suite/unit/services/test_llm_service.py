@@ -5,10 +5,10 @@ These tests validate the LLMService using actual interface methods
 and follow the established MockServiceFactory patterns for consistent testing.
 """
 
-import unittest
-from unittest.mock import Mock, patch
-from typing import Dict, Any, List, Optional
 import os
+import unittest
+from typing import Any, Dict, List, Optional
+from unittest.mock import Mock, patch
 
 from agentmap.services.llm_service import LLMService
 from tests.utils.mock_service_factory import MockServiceFactory
@@ -21,8 +21,12 @@ class TestLLMService(unittest.TestCase):
         """Set up test fixtures with mocked dependencies."""
         # Create mock services using MockServiceFactory
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
-        self.mock_app_config_service = MockServiceFactory.create_mock_app_config_service()
-        self.mock_llm_models_config_service = MockServiceFactory.create_mock_llm_models_config_service()
+        self.mock_app_config_service = (
+            MockServiceFactory.create_mock_app_config_service()
+        )
+        self.mock_llm_models_config_service = (
+            MockServiceFactory.create_mock_llm_models_config_service()
+        )
 
         # Create mock LLMRoutingService
         self.mock_routing_service = Mock()
@@ -32,7 +36,7 @@ class TestLLMService(unittest.TestCase):
             configuration=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
             routing_service=self.mock_routing_service,
-            llm_models_config_service=self.mock_llm_models_config_service
+            llm_models_config_service=self.mock_llm_models_config_service,
         )
 
         # Get the mock logger for verification
@@ -61,7 +65,7 @@ class TestLLMService(unittest.TestCase):
             configuration=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
             routing_service=None,
-            llm_models_config_service=self.mock_llm_models_config_service
+            llm_models_config_service=self.mock_llm_models_config_service,
         )
 
         # Verify routing is disabled
@@ -91,12 +95,18 @@ class TestLLMService(unittest.TestCase):
         self.mock_app_config_service.get_llm_config.return_value = {
             "model": "gpt-3.5-turbo",
             "temperature": 0.7,
-            "api_key": "test_key"
+            "api_key": "test_key",
         }
 
         # Mock LangChain client and response
-        with patch('agentmap.services.llm_service.LLMService._create_langchain_client') as mock_create_client, \
-             patch('agentmap.services.llm_service.LLMService._convert_messages_to_langchain') as mock_convert:
+        with (
+            patch(
+                "agentmap.services.llm_service.LLMService._create_langchain_client"
+            ) as mock_create_client,
+            patch(
+                "agentmap.services.llm_service.LLMService._convert_messages_to_langchain"
+            ) as mock_convert,
+        ):
 
             # Configure mock client
             mock_client = Mock()
@@ -112,17 +122,16 @@ class TestLLMService(unittest.TestCase):
             # Execute test
             messages = [{"role": "user", "content": "Hello, world!"}]
             result = self.service.call_llm(
-                provider="openai",
-                messages=messages,
-                model="gpt-4",
-                temperature=0.5
+                provider="openai", messages=messages, model="gpt-4", temperature=0.5
             )
 
             # Verify result
             self.assertEqual(result, "Test LLM response")
 
             # Verify provider config was requested
-            self.mock_app_config_service.get_llm_config.assert_called_once_with("openai")
+            self.mock_app_config_service.get_llm_config.assert_called_once_with(
+                "openai"
+            )
 
             # Verify client creation with overrides
             mock_create_client.assert_called_once()
@@ -139,7 +148,7 @@ class TestLLMService(unittest.TestCase):
         routing_context = {
             "routing_enabled": True,
             "task_type": "general",
-            "complexity_override": "medium"
+            "complexity_override": "medium",
         }
 
         # Mock routing decision
@@ -152,8 +161,14 @@ class TestLLMService(unittest.TestCase):
         self.mock_routing_service.route_request.return_value = mock_decision
 
         # Mock available providers
-        with patch.object(self.service, '_get_available_providers', return_value=["openai", "anthropic"]), \
-             patch.object(self.service, '_call_llm_direct') as mock_direct_call:
+        with (
+            patch.object(
+                self.service,
+                "_get_available_providers",
+                return_value=["openai", "anthropic"],
+            ),
+            patch.object(self.service, "_call_llm_direct") as mock_direct_call,
+        ):
 
             mock_direct_call.return_value = "Routed response"
 
@@ -162,7 +177,7 @@ class TestLLMService(unittest.TestCase):
             result = self.service.call_llm(
                 provider="openai",  # This should be overridden by routing
                 messages=messages,
-                routing_context=routing_context
+                routing_context=routing_context,
             )
 
             # Verify routing was used
@@ -173,7 +188,7 @@ class TestLLMService(unittest.TestCase):
                 provider="anthropic",
                 messages=messages,
                 model="claude-3-7-sonnet-20250219",
-                temperature=None
+                temperature=None,
             )
 
             self.assertEqual(result, "Routed response")
@@ -181,23 +196,20 @@ class TestLLMService(unittest.TestCase):
     def test_call_llm_routing_fallback(self):
         """Test call_llm() falls back to direct call when routing fails."""
         # Configure routing context but make routing fail
-        routing_context = {
-            "routing_enabled": True,
-            "fallback_provider": "openai"
-        }
+        routing_context = {"routing_enabled": True, "fallback_provider": "openai"}
 
         # Make routing service raise exception
-        self.mock_routing_service.route_request.side_effect = Exception("Routing failed")
+        self.mock_routing_service.route_request.side_effect = Exception(
+            "Routing failed"
+        )
 
-        with patch.object(self.service, '_call_llm_direct') as mock_direct_call:
+        with patch.object(self.service, "_call_llm_direct") as mock_direct_call:
             mock_direct_call.return_value = "Fallback response"
 
             # Execute test
             messages = [{"role": "user", "content": "Test"}]
             result = self.service.call_llm(
-                provider="anthropic",
-                messages=messages,
-                routing_context=routing_context
+                provider="anthropic", messages=messages, routing_context=routing_context
             )
 
             # Verify fallback to direct call
@@ -205,32 +217,32 @@ class TestLLMService(unittest.TestCase):
                 provider="openai",  # fallback_provider
                 messages=messages,
                 model=None,
-                temperature=None
+                temperature=None,
             )
 
             self.assertEqual(result, "Fallback response")
 
     def test_generate_method_simple_interface(self):
         """Test generate() method as simplified LLM interface."""
-        with patch.object(self.service, 'call_llm') as mock_call_llm:
+        with patch.object(self.service, "call_llm") as mock_call_llm:
             mock_call_llm.return_value = "Generated text"
 
             # Execute test
-            result = self.service.generate("What is AI?", provider="anthropic", temperature=0.8)
+            result = self.service.generate(
+                "What is AI?", provider="anthropic", temperature=0.8
+            )
 
             # Verify delegation to call_llm
             expected_messages = [{"role": "user", "content": "What is AI?"}]
             mock_call_llm.assert_called_once_with(
-                provider="anthropic",
-                messages=expected_messages,
-                temperature=0.8
+                provider="anthropic", messages=expected_messages, temperature=0.8
             )
 
             self.assertEqual(result, "Generated text")
 
     def test_generate_method_default_provider(self):
         """Test generate() method with default provider."""
-        with patch.object(self.service, 'call_llm') as mock_call_llm:
+        with patch.object(self.service, "call_llm") as mock_call_llm:
             mock_call_llm.return_value = "Default response"
 
             # Execute test without specifying provider
@@ -239,8 +251,7 @@ class TestLLMService(unittest.TestCase):
             # Verify default provider is used
             expected_messages = [{"role": "user", "content": "Hello"}]
             mock_call_llm.assert_called_once_with(
-                provider="anthropic",  # default
-                messages=expected_messages
+                provider="anthropic", messages=expected_messages  # default
             )
 
             self.assertEqual(result, "Default response")
@@ -261,11 +272,7 @@ class TestLLMService(unittest.TestCase):
     def test_get_provider_config_success(self):
         """Test _get_provider_config() returns proper configuration."""
         # Configure mock to return config
-        mock_config = {
-            "model": "gpt-4",
-            "temperature": 0.5,
-            "api_key": "test_key_123"
-        }
+        mock_config = {"model": "gpt-4", "temperature": 0.5, "api_key": "test_key_123"}
         self.mock_app_config_service.get_llm_config.return_value = mock_config
 
         # Execute test
@@ -285,13 +292,17 @@ class TestLLMService(unittest.TestCase):
 
         # Clear side_effect and set return_value to test merging logic
         self.mock_llm_models_config_service.get_default_model.side_effect = None
-        self.mock_llm_models_config_service.get_default_model.return_value = "test-model"
+        self.mock_llm_models_config_service.get_default_model.return_value = (
+            "test-model"
+        )
 
         # Execute test
         result = self.service._get_provider_config("openai")
 
         # Verify defaults are applied from llm_models_config_service
-        self.mock_llm_models_config_service.get_default_model.assert_called_with("openai")
+        self.mock_llm_models_config_service.get_default_model.assert_called_with(
+            "openai"
+        )
         self.assertEqual(result["model"], "test-model")  # from llm_models_config
         self.assertEqual(result["temperature"], 0.7)  # hardcoded default
         self.assertEqual(result["api_key"], "test_key")  # from config
@@ -311,19 +322,22 @@ class TestLLMService(unittest.TestCase):
 
     def test_get_available_providers_with_api_keys(self):
         """Test _get_available_providers() returns providers with valid API keys."""
+
         # Mock configuration for different providers
         def mock_get_llm_config(provider):
             configs = {
                 "openai": {"api_key": "openai_key"},
                 "anthropic": {"api_key": "anthropic_key"},
-                "google": None  # No config
+                "google": None,  # No config
             }
             return configs.get(provider)
 
         self.mock_app_config_service.get_llm_config.side_effect = mock_get_llm_config
 
         # Mock environment variables
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "env_key", "ANTHROPIC_API_KEY": "env_key2"}):
+        with patch.dict(
+            os.environ, {"OPENAI_API_KEY": "env_key", "ANTHROPIC_API_KEY": "env_key2"}
+        ):
             # Execute test
             providers = self.service._get_available_providers()
 
@@ -336,13 +350,9 @@ class TestLLMService(unittest.TestCase):
     def test_client_caching(self):
         """Test that LangChain clients are properly cached."""
         # Configure mock config
-        config = {
-            "model": "gpt-3.5-turbo",
-            "api_key": "test_key",
-            "temperature": 0.7
-        }
+        config = {"model": "gpt-3.5-turbo", "api_key": "test_key", "temperature": 0.7}
 
-        with patch.object(self.service, '_create_langchain_client') as mock_create:
+        with patch.object(self.service, "_create_langchain_client") as mock_create:
             mock_client = Mock()
             mock_create.return_value = mock_client
 
@@ -379,7 +389,7 @@ class TestLLMService(unittest.TestCase):
             "task_type": "coding",
             "complexity_override": "high",
             "provider_preference": ["anthropic", "openai"],
-            "max_cost_tier": 3
+            "max_cost_tier": 3,
         }
         messages = [{"role": "user", "content": "Write code"}]
 
@@ -399,7 +409,7 @@ class TestLLMService(unittest.TestCase):
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Hello"},
             {"role": "assistant", "content": "Hi there!"},  # Should be ignored
-            {"role": "user", "content": "How are you?"}
+            {"role": "user", "content": "How are you?"},
         ]
 
         # Execute test
@@ -419,7 +429,7 @@ class TestLLMService(unittest.TestCase):
             configuration=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
             routing_service=None,
-            llm_models_config_service=self.mock_llm_models_config_service
+            llm_models_config_service=self.mock_llm_models_config_service,
         )
         self.assertFalse(service_no_routing.is_routing_enabled())
 
@@ -442,7 +452,7 @@ class TestLLMService(unittest.TestCase):
             configuration=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
             routing_service=None,
-            llm_models_config_service=self.mock_llm_models_config_service
+            llm_models_config_service=self.mock_llm_models_config_service,
         )
 
         # Execute test
@@ -462,7 +472,7 @@ class TestLLMService(unittest.TestCase):
         # Configure config without API key
         config_no_key = {
             "model": "gpt-3.5-turbo",
-            "temperature": 0.7
+            "temperature": 0.7,
             # Missing api_key
         }
         self.mock_app_config_service.get_llm_config.return_value = config_no_key
@@ -485,7 +495,9 @@ class TestLLMService(unittest.TestCase):
         self.mock_app_config_service.get_llm_config.return_value = config
 
         # Mock import failure
-        with patch('agentmap.services.llm_service.LLMService._create_langchain_client') as mock_create:
+        with patch(
+            "agentmap.services.llm_service.LLMService._create_langchain_client"
+        ) as mock_create:
             mock_create.side_effect = ImportError("No module named 'langchain_openai'")
 
             # Execute and verify error
@@ -502,8 +514,10 @@ class TestLLMService(unittest.TestCase):
         config = {"api_key": "test_key", "model": "some-model", "temperature": 0.7}
         self.mock_app_config_service.get_llm_config.return_value = config
 
-        with patch.object(self.service, '_create_langchain_client') as mock_create:
-            mock_create.side_effect = LLMConfigurationError("Unsupported provider: unknown")
+        with patch.object(self.service, "_create_langchain_client") as mock_create:
+            mock_create.side_effect = LLMConfigurationError(
+                "Unsupported provider: unknown"
+            )
 
             # Execute and verify error
             with self.assertRaises(LLMConfigurationError) as context:
@@ -517,11 +531,19 @@ class TestLLMService(unittest.TestCase):
         from agentmap.exceptions import LLMConfigurationError
 
         # Configure valid config
-        config = {"api_key": "invalid_key", "model": "gpt-3.5-turbo", "temperature": 0.7}
+        config = {
+            "api_key": "invalid_key",
+            "model": "gpt-3.5-turbo",
+            "temperature": 0.7,
+        }
         self.mock_app_config_service.get_llm_config.return_value = config
 
-        with patch.object(self.service, '_get_or_create_client') as mock_get_client, \
-             patch.object(self.service, '_convert_messages_to_langchain') as mock_convert:
+        with (
+            patch.object(self.service, "_get_or_create_client") as mock_get_client,
+            patch.object(
+                self.service, "_convert_messages_to_langchain"
+            ) as mock_convert,
+        ):
 
             # Mock client that raises authentication error
             mock_client = Mock()
@@ -540,7 +562,9 @@ class TestLLMService(unittest.TestCase):
         messages = [{"role": "user", "content": "test"}]
 
         # Mock import failures for both new and old LangChain
-        with patch('agentmap.services.llm_service.LLMService._convert_messages_to_langchain') as mock_convert:
+        with patch(
+            "agentmap.services.llm_service.LLMService._convert_messages_to_langchain"
+        ) as mock_convert:
             # Configure to fall back to returning messages as-is
             mock_convert.return_value = messages
 
@@ -552,7 +576,7 @@ class TestLLMService(unittest.TestCase):
     @unittest.skip("MANUAL: Test calls real OpenAI API - needs proper mocking")
     def test_get_available_providers_public_method(self):
         """Test public get_available_providers() method."""
-        with patch.object(self.service, '_get_available_providers') as mock_private:
+        with patch.object(self.service, "_get_available_providers") as mock_private:
             mock_private.return_value = ["openai", "anthropic"]
 
             # Execute test
@@ -563,5 +587,5 @@ class TestLLMService(unittest.TestCase):
             self.assertEqual(providers, ["openai", "anthropic"])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

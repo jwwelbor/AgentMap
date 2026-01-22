@@ -17,9 +17,9 @@ import unittest
 from pathlib import Path
 from typing import List
 
+from agentmap.models.graph_spec import GraphSpec, NodeSpec
 from tests.fresh_suite.integration.base_integration_test import BaseIntegrationTest
 from tests.fresh_suite.integration.test_data_factories import IntegrationTestDataManager
-from agentmap.models.graph_spec import GraphSpec, NodeSpec
 
 
 class TestParallelCSVParsingIntegration(BaseIntegrationTest):
@@ -65,7 +65,9 @@ ParallelTest,End,output,,"""
         self.assertEqual(set(start_node.edge), {"ProcessA", "ProcessB", "ProcessC"})
 
         # Verify helper methods
-        self.assertTrue(start_node.is_parallel_edge("edge"), "Should detect parallel edge")
+        self.assertTrue(
+            start_node.is_parallel_edge("edge"), "Should detect parallel edge"
+        )
         targets = start_node.get_edge_targets("edge")
         self.assertEqual(len(targets), 3, "Should return 3 targets")
 
@@ -88,7 +90,9 @@ SingleTest,End,output,"""
         # Single target should be string, not list
         self.assertIsInstance(start_node.edge, str, "Single target should be string")
         self.assertEqual(start_node.edge, "End")
-        self.assertFalse(start_node.is_parallel_edge("edge"), "Should not detect parallel")
+        self.assertFalse(
+            start_node.is_parallel_edge("edge"), "Should not detect parallel"
+        )
 
         print("✅ Single target backward compatibility verified")
 
@@ -115,7 +119,9 @@ WhitespaceTest,End,output,"""
 
         # Ensure no leading/trailing spaces in targets
         for target in start_node.edge:
-            self.assertEqual(target, target.strip(), f"Target '{target}' should be trimmed")
+            self.assertEqual(
+                target, target.strip(), f"Target '{target}' should be trimmed"
+            )
 
         print("✅ Whitespace handling verified")
 
@@ -192,7 +198,9 @@ SuccessParallel,End,output,,"""
         # Verify Success_Next is parallel
         self.assertIsInstance(start_node.success_next, list)
         self.assertEqual(len(start_node.success_next), 3)
-        self.assertEqual(set(start_node.success_next), {"ProcessA", "ProcessB", "ProcessC"})
+        self.assertEqual(
+            set(start_node.success_next), {"ProcessA", "ProcessB", "ProcessC"}
+        )
 
         # Verify Failure_Next is single target
         self.assertIsInstance(start_node.failure_next, str)
@@ -341,9 +349,9 @@ MultiParallel,End,output,"""
         """Create a test CSV file with given content."""
         csv_path = Path(self.temp_dir) / "csv_data" / filename
         csv_path.parent.mkdir(parents=True, exist_ok=True)
-        csv_path.write_text(content, encoding='utf-8')
+        csv_path.write_text(content, encoding="utf-8")
         return csv_path
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
