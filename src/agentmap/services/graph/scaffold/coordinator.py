@@ -12,6 +12,7 @@ from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.scaffold_types import (
     ScaffoldOptions,
     ScaffoldResult,
+    ServiceRequirements,
 )
 from agentmap.services.agent.agent_registry_service import AgentRegistryService
 from agentmap.services.config.app_config_service import AppConfigService
@@ -466,7 +467,18 @@ class GraphScaffoldService:
     def _scaffold_function(
         self, func_name: str, info: Dict, func_path: Path, overwrite: bool = False
     ) -> Optional[Path]:
-        """Create a scaffold file for a function."""
+        """
+        Create a scaffold file for a function.
+
+        Args:
+            func_name: Name of function to scaffold
+            info: Information about the function
+            func_path: Directory to create function module in
+            overwrite: Whether to overwrite existing files
+
+        Returns:
+            Path to created file, or None if file already exists and overwrite=False
+        """
         file_name = f"{func_name}.py"
         file_path = func_path / file_name
 
