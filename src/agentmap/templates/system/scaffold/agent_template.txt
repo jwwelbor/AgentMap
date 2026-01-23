@@ -50,9 +50,9 @@ from agentmap.agents.base_agent import BaseAgent
     See documentation for full API details.
     """
     
-    def __init__(self, name, prompt, context=None, logger=None, execution_tracker_service=None, state_adapter_service=None):
+    def __init__(self, name, prompt, context=None, logger=None, execution_tracking_service=None, state_adapter_service=None):
         """Initialize {class_name}."""
-        super().__init__(name, prompt, context, logger, execution_tracker_service, state_adapter_service){service_attributes}
+        super().__init__(name, prompt, context, logger, execution_tracking_service, state_adapter_service){service_attributes}
     
     def process(self, inputs: Dict[str, Any]) -> Any:
         """

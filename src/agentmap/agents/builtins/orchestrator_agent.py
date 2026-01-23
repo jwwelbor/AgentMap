@@ -224,10 +224,17 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
         else:
             selected_node = output
 
-        state = StateAdapterService.set_value(state, "__next_node", selected_node)
         self.log_info(f"Setting __next_node to '{selected_node}'")
 
-        return state, output
+        # Use state_updates pattern to return multiple state fields
+        # This is required for LangGraph 1.x compatibility where only the
+        # returned dict is merged into state (state modifications are ignored)
+        state_updates = {
+            self.output_field: output,  # Original output field
+            "__next_node": selected_node,  # Routing directive for dynamic_router
+        }
+
+        return state, {"state_updates": state_updates}
 
     # Simple data extraction helpers (no business logic)
     def _get_input_text(self, inputs: Dict[str, Any]) -> str:
