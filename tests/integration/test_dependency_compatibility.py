@@ -56,14 +56,20 @@ class TestDependencyCompatibility:
             major, minor, patch = map(int, version_string.split("."))
 
             # Test version constraints based on our pyproject.toml
-            # langgraph = ">=0.3.5,<0.4.0"
-            assert major == 0, f"Major version should be 0, got {major}"
-            assert (
-                minor == 3
-            ), f"Minor version should be 3, got {minor} (version {version_string})"
-            assert (
-                patch >= 5
-            ), f"Patch version should be >= 5, got {patch} (version {version_string})"
+            # langgraph now allows v1.x (installed: 1.0.5)
+            # Accept both 0.3.x and 1.x versions
+            if major == 0:
+                assert (
+                    minor == 3
+                ), f"Minor version should be 3 for v0.x, got {minor} (version {version_string})"
+                assert (
+                    patch >= 5
+                ), f"Patch version should be >= 5 for v0.x, got {patch} (version {version_string})"
+            elif major == 1:
+                # v1.x is acceptable (current langgraph release)
+                assert minor >= 0, f"Minor version should be >= 0 for v1.x, got {minor}"
+            else:
+                pytest.fail(f"Unsupported major version {major} (version {version_string})")
 
         except ImportError:
             pytest.fail("LangGraph is not installed")

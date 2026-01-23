@@ -302,18 +302,9 @@ class TestToolAgent(unittest.TestCase):
 
         self.assertIn("OrchestratorService not configured", str(context.exception))
 
-    @patch("agentmap.agents.builtins.tool_agent.ToolNode")
-    def test_execute_tool_with_toolnode(self, mock_toolnode_class):
-        """Test _execute_tool method uses LangGraph ToolNode."""
+    def test_execute_tool_invokes_tool_directly(self):
+        """Test _execute_tool method invokes tool directly (LangGraph 1.x compatibility)."""
         # Arrange
-        mock_toolnode_instance = Mock()
-        mock_toolnode_class.return_value = mock_toolnode_instance
-
-        # Mock ToolNode.invoke to return proper message structure
-        mock_message = Mock()
-        mock_message.content = "Tool execution result"
-        mock_toolnode_instance.invoke.return_value = {"messages": [mock_message]}
-
         agent = ToolAgent(
             name="test_agent",
             prompt="Test",
@@ -326,17 +317,8 @@ class TestToolAgent(unittest.TestCase):
         # Act
         result = agent._execute_tool(self.mock_tool_1, inputs)
 
-        # Assert
-        self.assertEqual(result, "Tool execution result")
-        mock_toolnode_instance.invoke.assert_called_once()
-
-        # Verify AIMessage structure passed to ToolNode
-        invoke_args = mock_toolnode_instance.invoke.call_args[0][0]
-        self.assertIn("messages", invoke_args)
-        ai_message = invoke_args["messages"][0]
-        self.assertEqual(len(ai_message.tool_calls), 1)
-        self.assertEqual(ai_message.tool_calls[0]["name"], "get_weather")
-        self.assertEqual(ai_message.tool_calls[0]["args"], inputs)
+        # Assert - Tool invoked directly, no ToolNode wrapper in LangGraph 1.x
+        self.assertEqual(result, "Weather for Seattle")
 
     def test_get_input_text_with_configured_fields(self):
         """Test _get_input_text extracts text from configured input fields."""

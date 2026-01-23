@@ -66,7 +66,8 @@ def get_forecast(location: str, days: int) -> str:
         for tool in tools:
             self.assertTrue(hasattr(tool, "name"))
             self.assertTrue(hasattr(tool, "description"))
-            self.assertTrue(callable(tool))
+            # LangChain tools have invoke/run methods (callable() returns False for StructuredTool)
+            self.assertTrue(hasattr(tool, "invoke") or hasattr(tool, "run"))
 
     def test_load_tools_import_error_missing_file(self):
         """Test ImportError when module file does not exist."""
@@ -174,7 +175,8 @@ def calculate(a: int, b: int) -> int:
 
         self.assertTrue(hasattr(tool, "name"))
         self.assertTrue(hasattr(tool, "description"))
-        self.assertTrue(callable(tool))
+        # LangChain tools have invoke/run methods (callable() returns False for StructuredTool)
+        self.assertTrue(hasattr(tool, "invoke") or hasattr(tool, "run"))
 
         # Verify attributes have correct types
         self.assertIsInstance(tool.name, str)

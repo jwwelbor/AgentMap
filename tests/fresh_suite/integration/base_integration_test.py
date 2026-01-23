@@ -15,7 +15,13 @@ from typing import Any, Dict, Optional
 import yaml
 
 from agentmap.di import initialize_di
-from tests.utils.enhanced_service_auditor import EnhancedServiceInterfaceAuditor
+import sys
+from pathlib import Path
+tests_dir = Path(__file__).parent.parent.parent
+if str(tests_dir) not in sys.path:
+    sys.path.insert(0, str(tests_dir))
+
+from utils.enhanced_service_auditor import EnhancedServiceInterfaceAuditor
 
 
 class BaseIntegrationTest(unittest.TestCase):

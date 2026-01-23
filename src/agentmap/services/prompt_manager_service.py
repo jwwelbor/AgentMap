@@ -286,7 +286,7 @@ class PromptManagerService:
         )
 
         try:
-            from langchain.prompts import PromptTemplate
+            from langchain_core.prompts import PromptTemplate
 
             prompt_template = PromptTemplate(
                 template=prompt_text, input_variables=list(values.keys())

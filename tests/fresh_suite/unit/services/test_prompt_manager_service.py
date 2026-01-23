@@ -447,7 +447,7 @@ class TestPromptManagerService(unittest.TestCase):
         template = "Hello {name}, you have {count} messages."
         values = {"name": "Alice", "count": 5}
 
-        with patch("langchain.prompts.PromptTemplate") as mock_template_class:
+        with patch("langchain_core.prompts.PromptTemplate") as mock_template_class:
             mock_template = Mock()
             mock_template.format.return_value = "Hello Alice, you have 5 messages."
             mock_template_class.return_value = mock_template
@@ -466,7 +466,7 @@ class TestPromptManagerService(unittest.TestCase):
         template = "Hello {name}, you have {count} messages."
         values = {"name": "Bob", "count": 3}
 
-        with patch("langchain.prompts.PromptTemplate") as mock_template_class:
+        with patch("langchain_core.prompts.PromptTemplate") as mock_template_class:
             # Configure LangChain to fail
             mock_template_class.side_effect = ImportError("LangChain not available")
 
@@ -478,7 +478,7 @@ class TestPromptManagerService(unittest.TestCase):
         template = "Process {item_count} items with {mode} mode and {missing_var} extra"  # Well-formed but missing variable
         values = {"item_count": 10, "mode": "fast"}  # Missing 'missing_var'
 
-        with patch("langchain.prompts.PromptTemplate") as mock_template_class:
+        with patch("langchain_core.prompts.PromptTemplate") as mock_template_class:
             mock_template_class.side_effect = ImportError("LangChain not available")
 
             # Standard format will fail due to missing variable, fall back to manual
@@ -515,7 +515,7 @@ class TestPromptManagerService(unittest.TestCase):
         template = "Hello {name}, your score is {score}"
         values = {"name": "Charlie"}  # Missing 'score'
 
-        with patch("langchain.prompts.PromptTemplate") as mock_template_class:
+        with patch("langchain_core.prompts.PromptTemplate") as mock_template_class:
             mock_template_class.side_effect = ImportError("LangChain not available")
 
             # Standard formatting should fail, fall back to manual
@@ -753,7 +753,7 @@ class TestPromptManagerService(unittest.TestCase):
         problematic_template = "Template with {unclosed formatting"
         values = {"var": "value"}
 
-        with patch("langchain.prompts.PromptTemplate", side_effect=ImportError):
+        with patch("langchain_core.prompts.PromptTemplate", side_effect=ImportError):
             # This should still try manual replacement
             result = self.service.format_prompt(problematic_template, values)
 

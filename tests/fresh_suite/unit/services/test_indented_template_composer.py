@@ -597,17 +597,16 @@ class TestIndentedTemplateComposer(unittest.TestCase):
     # =============================================================================
 
     def test_variable_substitution_with_missing_variables(self):
-        """Test _apply_variable_substitution() leaves template unchanged when variables are missing."""
+        """Test _apply_variable_substitution() raises ValueError for missing variables."""
         content = "Class: {class_name} Missing: {missing_variable}"
         variables = {"class_name": "TestAgent"}
 
-        result = self.composer._apply_variable_substitution(content, variables)
+        # Should raise ValueError for missing template variables
+        with self.assertRaises(ValueError) as context:
+            self.composer._apply_variable_substitution(content, variables)
 
-        # Should leave template unchanged when variables are missing
-        self.assertEqual(result, content)
-        # Original placeholders should remain
-        self.assertIn("{class_name}", result)
-        self.assertIn("{missing_variable}", result)
+        # Verify error message contains the missing variable name
+        self.assertIn("missing_variable", str(context.exception))
 
     def test_service_attributes_generation(self):
         """Test _generate_service_attributes() creates proper attribute declarations."""
