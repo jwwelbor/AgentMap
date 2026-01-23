@@ -34,7 +34,7 @@ def test_protocol_injection():
         prompt="Test orchestrator",
         context={"matching_strategy": "algorithm"},
         logger=mock_logger,
-        execution_tracker_service=None,
+        execution_tracking_service=None,
         state_adapter_service=None,
     )
 

@@ -4,14 +4,14 @@ These tests use the BaseAPIIntegrationTest pattern with a properly configured
 container to exercise suspend → resume lifecycle reliably without file I/O race conditions.
 """
 
+import sys
 import unittest
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from agentmap.deployment.http.api.server import create_fastapi_app
-import sys
-from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fresh_suite.integration.base_integration_test import BaseIntegrationTest
@@ -148,7 +148,9 @@ SuspendResume,Finalize,default,,final_message,,,"Workflow resumed successfully",
         self.assertIsNotNone(body["thread_id"])
         self.assertIn("execution_summary", body)
         # LangGraph 1.x uses "interrupted" in the execution summary
-        self.assertIn(body["execution_summary"].get("status"), ["suspended", "interrupted"])
+        self.assertIn(
+            body["execution_summary"].get("status"), ["suspended", "interrupted"]
+        )
 
         thread_id = body["thread_id"]
 

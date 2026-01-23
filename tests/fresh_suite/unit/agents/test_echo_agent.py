@@ -44,7 +44,7 @@ class TestEchoAgent(unittest.TestCase):
             prompt="Echo the input unchanged",
             context=self.test_context,
             logger=self.mock_logging_service.get_class_logger(EchoAgent),
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 
@@ -270,7 +270,7 @@ class TestEchoAgent(unittest.TestCase):
         agent_without_logger = EchoAgent(
             name="no_logger",
             prompt="Test prompt",
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 

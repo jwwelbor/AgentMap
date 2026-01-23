@@ -37,7 +37,7 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
         context: Optional[Dict[str, Any]] = None,
         # Infrastructure services only
         logger: Optional[logging.Logger] = None,
-        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        execution_tracking_service: Optional[ExecutionTrackingService] = None,
         state_adapter_service: Optional[StateAdapterService] = None,
     ):
         """
@@ -48,7 +48,7 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
             prompt: Prompt or instruction
             context: Additional context including orchestration configuration
             logger: Logger instance for logging operations
-            execution_tracker_service: ExecutionTrackingService instance for tracking
+            execution_tracking_service: ExecutionTrackingService instance for tracking
             state_adapter_service: StateAdapterService instance for state operations
         """
         # Call BaseAgent constructor (infrastructure services only)
@@ -57,7 +57,7 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
             prompt=prompt,
             context=context,
             logger=logger,
-            execution_tracking_service=execution_tracker_service,
+            execution_tracking_service=execution_tracking_service,
             state_adapter_service=state_adapter_service,
         )
 

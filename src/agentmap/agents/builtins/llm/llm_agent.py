@@ -48,7 +48,7 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
         context: Optional[Dict[str, Any]] = None,
         # Infrastructure services only - core services ALL agents need
         logger: Optional[logging.Logger] = None,
-        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        execution_tracking_service: Optional[ExecutionTrackingService] = None,
         state_adapter_service: Optional[StateAdapterService] = None,
         # LLMAgent-specific infrastructure services
         prompt_manager_service: Optional[Any] = None,  # PromptManagerService
@@ -70,7 +70,7 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
             prompt=prompt,
             context=context,
             logger=logger,
-            execution_tracking_service=execution_tracker_service,
+            execution_tracking_service=execution_tracking_service,
             state_adapter_service=state_adapter_service,
         )
 

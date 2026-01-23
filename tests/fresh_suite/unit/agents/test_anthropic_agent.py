@@ -65,7 +65,7 @@ class TestAnthropicAgent(unittest.TestCase):
             prompt="You are Claude, an AI assistant created by Anthropic.",
             context=context,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
             **kwargs,
         )

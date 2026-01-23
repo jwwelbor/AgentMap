@@ -44,7 +44,7 @@ class TestSuccessAgent(unittest.TestCase):
             prompt="Execute successful operation",
             context=self.test_context,
             logger=self.mock_logging_service.get_class_logger(SuccessAgent),
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 
@@ -201,7 +201,7 @@ class TestSuccessAgent(unittest.TestCase):
             name="no_prompt_success",
             prompt=None,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 
@@ -219,7 +219,7 @@ class TestSuccessAgent(unittest.TestCase):
             name="empty_prompt_success",
             prompt="",
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 
@@ -276,7 +276,7 @@ class TestSuccessAgent(unittest.TestCase):
                     name="test_agent",
                     prompt=case["prompt"],
                     logger=self.mock_logger,
-                    execution_tracker_service=self.mock_execution_tracking_service,
+                    execution_tracking_service=self.mock_execution_tracking_service,
                     state_adapter_service=self.mock_state_adapter_service,
                 )
 
@@ -409,7 +409,7 @@ class TestSuccessAgent(unittest.TestCase):
         agent_without_logger = SuccessAgent(
             name="no_logger",
             prompt="Test prompt",
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 

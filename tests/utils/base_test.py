@@ -197,7 +197,7 @@ class AgentTestMixin:
             name=name,
             prompt=prompt,
             logger=logger,
-            execution_tracker_service=execution_tracker_service,
+            execution_tracking_service=execution_tracking_service,
             context=context,
             **kwargs,
         )

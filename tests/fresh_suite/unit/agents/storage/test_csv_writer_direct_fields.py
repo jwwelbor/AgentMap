@@ -57,7 +57,7 @@ class TestCSVWriterDirectFieldMapping(unittest.TestCase):
             prompt="test.csv",
             context=context,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 

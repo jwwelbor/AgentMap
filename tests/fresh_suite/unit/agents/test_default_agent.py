@@ -45,7 +45,7 @@ class TestDefaultAgent(unittest.TestCase):
             prompt="Default processing with test prompt",
             context=self.test_context,
             logger=self.mock_logging_service.get_class_logger(DefaultAgent),
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 
@@ -157,7 +157,7 @@ class TestDefaultAgent(unittest.TestCase):
             name="no_prompt_agent",
             prompt="",
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 
@@ -175,7 +175,7 @@ class TestDefaultAgent(unittest.TestCase):
             name="none_prompt_agent",
             prompt=None,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 
@@ -382,7 +382,7 @@ class TestDefaultAgent(unittest.TestCase):
         agent_without_logger = DefaultAgent(
             name="no_logger",
             prompt="Test prompt",
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 
@@ -429,7 +429,7 @@ class TestDefaultAgent(unittest.TestCase):
                     name=agent_name,
                     prompt=prompt,
                     logger=self.mock_logger,
-                    execution_tracker_service=self.mock_execution_tracking_service,
+                    execution_tracking_service=self.mock_execution_tracking_service,
                     state_adapter_service=self.mock_state_adapter_service,
                 )
 
@@ -462,7 +462,7 @@ class TestDefaultAgent(unittest.TestCase):
                     name="test_agent",
                     prompt=prompt,
                     logger=self.mock_logger,
-                    execution_tracker_service=self.mock_execution_tracking_service,
+                    execution_tracking_service=self.mock_execution_tracking_service,
                     state_adapter_service=self.mock_state_adapter_service,
                 )
 
@@ -528,7 +528,7 @@ class TestDefaultAgent(unittest.TestCase):
             prompt="Test prompt",
             context={"input_fields": ["input"]},  # No output_field
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 

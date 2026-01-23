@@ -50,7 +50,7 @@ class TestOrchestratorServiceInjection(unittest.TestCase):
                 "nodes": "NodeA|NodeB|NodeC",
             },
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracker,
+            execution_tracking_service=self.mock_execution_tracker,
             state_adapter_service=self.mock_state_adapter,
         )
 
@@ -76,7 +76,7 @@ class TestOrchestratorServiceInjection(unittest.TestCase):
             prompt="Route requests",
             context={"matching_strategy": "algorithm", "nodes": "NodeA|NodeB|NodeC"},
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracker,
+            execution_tracking_service=self.mock_execution_tracker,
             state_adapter_service=self.mock_state_adapter,
         )
 
@@ -115,7 +115,7 @@ class TestOrchestratorServiceInjection(unittest.TestCase):
                 "default_target": "ErrorHandler",
             },
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracker,
+            execution_tracking_service=self.mock_execution_tracker,
             state_adapter_service=self.mock_state_adapter,
         )
 
@@ -155,7 +155,7 @@ class TestOrchestratorServiceInjection(unittest.TestCase):
             prompt="Route requests",
             context={},
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracker,
+            execution_tracking_service=self.mock_execution_tracker,
             state_adapter_service=self.mock_state_adapter,
         )
 

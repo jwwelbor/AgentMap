@@ -7,6 +7,7 @@ from test_core_container.py while focusing on service workflow testing.
 """
 
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,8 +16,7 @@ from typing import Any, Dict, Optional
 import yaml
 
 from agentmap.di import initialize_di
-import sys
-from pathlib import Path
+
 tests_dir = Path(__file__).parent.parent.parent
 if str(tests_dir) not in sys.path:
     sys.path.insert(0, str(tests_dir))

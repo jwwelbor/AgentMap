@@ -69,7 +69,9 @@ class TestDependencyCompatibility:
                 # v1.x is acceptable (current langgraph release)
                 assert minor >= 0, f"Minor version should be >= 0 for v1.x, got {minor}"
             else:
-                pytest.fail(f"Unsupported major version {major} (version {version_string})")
+                pytest.fail(
+                    f"Unsupported major version {major} (version {version_string})"
+                )
 
         except ImportError:
             pytest.fail("LangGraph is not installed")

@@ -45,7 +45,7 @@ class TestFailureAgent(unittest.TestCase):
             prompt="Execute operation that will fail",
             context=self.test_context,
             logger=self.mock_logging_service.get_class_logger(FailureAgent),
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 
@@ -153,7 +153,7 @@ class TestFailureAgent(unittest.TestCase):
             name="no_prompt_failure",
             prompt=None,
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 
@@ -171,7 +171,7 @@ class TestFailureAgent(unittest.TestCase):
             name="empty_prompt_failure",
             prompt="",
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 
@@ -230,7 +230,7 @@ class TestFailureAgent(unittest.TestCase):
                     name="test_agent",
                     prompt=case["prompt"],
                     logger=self.mock_logger,
-                    execution_tracker_service=self.mock_execution_tracking_service,
+                    execution_tracking_service=self.mock_execution_tracking_service,
                     state_adapter_service=self.mock_state_adapter_service,
                 )
 
@@ -440,7 +440,7 @@ class TestFailureAgent(unittest.TestCase):
         agent_without_logger = FailureAgent(
             name="no_logger",
             prompt="Test prompt",
-            execution_tracker_service=self.mock_execution_tracking_service,
+            execution_tracking_service=self.mock_execution_tracking_service,
             state_adapter_service=self.mock_state_adapter_service,
         )
 
