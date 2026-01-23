@@ -184,7 +184,7 @@ class IndentedTemplateComposer:
         Load template content internally with caching support.
 
         Legacy method maintained for backwards compatibility.
-        Uses the same implementation as the original for test compatibility.
+        Delegates to TemplateLoader.
 
         Args:
             template_path: Template path
@@ -192,39 +192,7 @@ class IndentedTemplateComposer:
         Returns:
             Template content as string
         """
-        # Normalize template path (remove "file:" prefix if present)
-        normalized_path = template_path.replace("file:", "").strip()
-
-        # Check cache first
-        if normalized_path in self._template_cache:
-            self._cache_stats["hits"] += 1
-            self.logger.trace(
-                f"[IndentedTemplateComposer] Cache hit for template: {normalized_path}"
-            )
-            return self._template_cache[normalized_path]
-
-        # Cache miss - load template
-        self._cache_stats["misses"] += 1
-        self.logger.debug(
-            f"[IndentedTemplateComposer] Loading template: {normalized_path}"
-        )
-
-        try:
-            content = self._discover_and_load_template(normalized_path)
-
-            # Cache the loaded content
-            self._template_cache[normalized_path] = content
-
-            self.logger.debug(
-                f"[IndentedTemplateComposer] Successfully loaded and cached template: {normalized_path}"
-            )
-            return content
-
-        except Exception as e:
-            self.logger.error(
-                f"[IndentedTemplateComposer] Failed to load template {normalized_path}: {e}"
-            )
-            raise
+        return self._template_loader.load_template(template_path)
 
     def _discover_and_load_template(self, template_path: str) -> str:
         """

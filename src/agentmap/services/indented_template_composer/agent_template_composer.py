@@ -310,24 +310,27 @@ class AgentTemplateComposer:
             variables: Dictionary of variables for substitution
 
         Returns:
-            Content with variables substituted, or unchanged if variables are missing
+            Content with variables substituted
+
+        Raises:
+            ValueError: If required template variable is missing
         """
         try:
             return content.format(**variables)
         except KeyError as e:
-            # Log missing variables but leave template unchanged
+            # Log missing variables and raise an exception for visibility
             missing_var = str(e).strip("'\"")
-            self.logger.warning(
-                f"[AgentTemplateComposer] Missing template variable: {missing_var}"
+            self.logger.error(
+                f"[AgentTemplateComposer] Missing required template variable: {missing_var}"
             )
             self.logger.debug(
                 f"[AgentTemplateComposer] Available variables: {list(variables.keys())}"
             )
-            # Return content unchanged when variables are missing
-            return content
+            # Re-raise or raise a custom exception to prevent silent failure
+            raise ValueError(f"Missing template variable: {missing_var}") from e
         except Exception as e:
             self.logger.error(
                 f"[AgentTemplateComposer] Variable substitution error: {e}"
             )
-            # Return content unchanged on other errors
-            return content
+            # Re-raise to ensure failure is not silent
+            raise

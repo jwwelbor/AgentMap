@@ -109,9 +109,8 @@ class CodeGenerator:
             "\n        # Service attributes (automatically injected during graph building)"
         ]
         for attr in attributes:
-            # Use clean type hints without complex escaping
-            type_hint = attr.type_hint.replace("Any  # ", "Any  # ")
-            service_attrs.append(f"        self.{attr.name}: {type_hint} = None")
+            # Use clean type hints
+            service_attrs.append(f"        self.{attr.name}: {attr.type_hint} = None")
 
         return "\n".join(service_attrs)
 

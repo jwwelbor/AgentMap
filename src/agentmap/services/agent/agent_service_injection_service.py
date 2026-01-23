@@ -127,7 +127,7 @@ class AgentServiceInjectionService:
 
     @logger.setter
     def logger(self, value):
-    """Set the logger and propagate to configurators."""
+        """Set the logger and propagate to configurators."""
         self._logger = value
         if hasattr(self, "_core_configurator"):
             self._core_configurator.logger = value
@@ -147,7 +147,7 @@ class AgentServiceInjectionService:
         Raises:
             Exception: If service is unavailable or configuration fails
         """
-    return self._core_configurator.configure_core_services(agent)
+        return self._core_configurator.configure_core_services(agent)
 
     def configure_storage_services(self, agent: Any) -> int:
         """
@@ -162,7 +162,7 @@ class AgentServiceInjectionService:
         Raises:
             Exception: If storage service is unavailable or configuration fails
         """
-    return self._storage_configurator.configure_storage_services(agent)
+        return self._storage_configurator.configure_storage_services(agent)
 
     def requires_storage_services(self, agent: Any) -> bool:
         """
@@ -284,7 +284,7 @@ class AgentServiceInjectionService:
         Returns:
             Dictionary with detailed service injection status and capabilities
         """
-    return self._status_analyzer.get_service_injection_status(agent)
+        return self._status_analyzer.get_service_injection_status(agent)
 
     def get_service_availability_status(self) -> dict:
         """
@@ -293,4 +293,4 @@ class AgentServiceInjectionService:
         Returns:
             Dictionary with service availability information
         """
-    return self._status_analyzer.get_service_availability_status()
+        return self._status_analyzer.get_service_availability_status()
