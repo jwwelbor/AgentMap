@@ -94,13 +94,19 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         checkpoint = {"state": {"value": 1}, "versions_seen": {"node": {"a", "b"}}}
         metadata = {"source": "unit"}
 
-        result = self.service.put(config=config, checkpoint=checkpoint, metadata=metadata)
+        result = self.service.put(
+            config=config, checkpoint=checkpoint, metadata=metadata
+        )
 
         self.assertTrue(result["success"])
         stored = self.file_storage.read(collection="")
         self.assertEqual(len(stored), 1)
         document_id = stored[0]
-        payload = pickle.loads(self.file_storage.read(collection="", document_id=document_id, binary_mode=True))
+        payload = pickle.loads(
+            self.file_storage.read(
+                collection="", document_id=document_id, binary_mode=True
+            )
+        )
 
         self.assertIn("checkpoint", payload)
         self.assertIn("metadata", payload)
@@ -116,7 +122,9 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         checkpoint = {"state": {}}
         metadata = {}
 
-        result = self.service.put(config=config, checkpoint=checkpoint, metadata=metadata)
+        result = self.service.put(
+            config=config, checkpoint=checkpoint, metadata=metadata
+        )
 
         self.assertFalse(result["success"])
         self.assertIn("error", result)
@@ -147,7 +155,9 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         checkpoint2 = {"state": {"value": "second"}}
 
         # Mock datetime to return the same timestamp for both checkpoints
-        with mock.patch("agentmap.services.graph.graph_checkpoint_service.datetime") as mock_dt:
+        with mock.patch(
+            "agentmap.services.graph.graph_checkpoint_service.datetime"
+        ) as mock_dt:
             fixed_time = "2025-10-15T12:00:00.000000"
             mock_dt.utcnow.return_value.isoformat.return_value = fixed_time
 
@@ -200,7 +210,10 @@ class TestInterruptResumeWorkflowCore(unittest.TestCase):
         from uuid import uuid4
 
         from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
-        from agentmap.models.human_interaction import HumanInteractionRequest, InteractionType
+        from agentmap.models.human_interaction import (
+            HumanInteractionRequest,
+            InteractionType,
+        )
 
         thread_id = "workflow_test_thread"
         interaction_request = HumanInteractionRequest(
@@ -226,7 +239,10 @@ class TestInterruptResumeWorkflowCore(unittest.TestCase):
     def test_human_interaction_request_structure(self):
         from uuid import uuid4
 
-        from agentmap.models.human_interaction import HumanInteractionRequest, InteractionType
+        from agentmap.models.human_interaction import (
+            HumanInteractionRequest,
+            InteractionType,
+        )
 
         request_id = uuid4()
         request = HumanInteractionRequest(
@@ -251,11 +267,22 @@ class TestInterruptResumeWorkflowCore(unittest.TestCase):
 
     def test_required_components_are_importable(self):
         try:
-            from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
-            from agentmap.models.human_interaction import HumanInteractionRequest, InteractionType
-            from agentmap.services.graph.graph_checkpoint_service import GraphCheckpointService
-            from agentmap.services.interaction_handler_service import InteractionHandlerService
-        except ImportError as exc:  # pragma: no cover - explicit failure for missing deps
+            from agentmap.exceptions.agent_exceptions import (
+                ExecutionInterruptedException,
+            )
+            from agentmap.models.human_interaction import (
+                HumanInteractionRequest,
+                InteractionType,
+            )
+            from agentmap.services.graph.graph_checkpoint_service import (
+                GraphCheckpointService,
+            )
+            from agentmap.services.interaction_handler_service import (
+                InteractionHandlerService,
+            )
+        except (
+            ImportError
+        ) as exc:  # pragma: no cover - explicit failure for missing deps
             self.fail(f"Required component could not be imported: {exc}")
 
 

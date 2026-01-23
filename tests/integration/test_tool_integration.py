@@ -19,8 +19,8 @@ from typing import Any, Dict
 import pytest
 from langchain_core.tools import tool
 
-from agentmap.runtime_api import ensure_initialized, run_workflow
 from agentmap.models.validation.csv_row_model import CSVRowModel
+from agentmap.runtime_api import ensure_initialized, run_workflow
 from agentmap.services.tool_loader import load_tools_from_module
 
 
@@ -174,7 +174,9 @@ def regular_function():
         assert len(agent.tools) == 3
         assert agent.matching_strategy == "algorithm"
 
-    def test_tool_agent_orchestrator_injection(self, initialized_agentmap, temp_tool_module):
+    def test_tool_agent_orchestrator_injection(
+        self, initialized_agentmap, temp_tool_module
+    ):
         """Test OrchestratorService injection into ToolAgent."""
         from agentmap.agents.builtins.tool_agent import ToolAgent
         from agentmap.di.containers import ApplicationContainer
@@ -199,8 +201,9 @@ def regular_function():
 
     def test_tool_agent_single_tool_optimization(self, temp_tool_module):
         """Test ToolAgent optimization when only one tool is available."""
-        from agentmap.agents.builtins.tool_agent import ToolAgent
         from unittest.mock import Mock
+
+        from agentmap.agents.builtins.tool_agent import ToolAgent
 
         # Load tools and take only one
         all_tools = load_tools_from_module(temp_tool_module)
@@ -226,9 +229,10 @@ def regular_function():
         self, initialized_agentmap, temp_tool_module
     ):
         """Test end-to-end tool selection and execution."""
+        from unittest.mock import Mock
+
         from agentmap.agents.builtins.tool_agent import ToolAgent
         from agentmap.di.containers import ApplicationContainer
-        from unittest.mock import Mock
 
         # Get services
         container = ApplicationContainer()
@@ -280,14 +284,8 @@ def regular_function():
         )
 
         # CSV descriptions should override tool descriptions
-        assert (
-            agent.tool_descriptions["add"]["description"]
-            == "custom add description"
-        )
-        assert (
-            agent.tool_descriptions["subtract"]["description"]
-            == "custom subtract"
-        )
+        assert agent.tool_descriptions["add"]["description"] == "custom add description"
+        assert agent.tool_descriptions["subtract"]["description"] == "custom subtract"
 
         # Tool without CSV override keeps original description
         assert "multiply" in agent.tool_descriptions["multiply"]["description"].lower()
@@ -320,9 +318,10 @@ def regular_function():
                 Tool_Source="invalid_format",
                 Available_Tools="tool1",
             )
-        assert "must be either 'toolnode' or a .py file path" in str(
-            exc_info.value
-        ).lower()
+        assert (
+            "must be either 'toolnode' or a .py file path"
+            in str(exc_info.value).lower()
+        )
 
     def test_csv_validation_available_tools_format(self):
         """Test CSV validation for Available_Tools format."""
