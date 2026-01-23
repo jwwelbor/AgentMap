@@ -13,6 +13,9 @@ class DiagnosticsMixin:
     Mixin providing diagnostics and validation operations.
 
     Requires RegistryStorageMixin to be present in the class hierarchy.
+    Requires the consuming class to have:
+    - A `self.logger` attribute for logging.
+    - A `self._is_valid_protocol(protocol)` method for protocol validation.
     """
 
     def get_registry_summary(self) -> Dict[str, Any]:

@@ -14,6 +14,8 @@ class RegistryStorageMixin:
 
     This mixin manages the core data structures used by the registry
     and provides methods for cleaning up partial registrations.
+
+    Requires the consuming class to have a `self.logger` attribute.
     """
 
     def _init_storage(self) -> None:

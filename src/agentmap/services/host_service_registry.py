@@ -6,6 +6,8 @@ This class provides the core functionality for storing service providers,
 protocol implementations, and metadata without affecting AgentMap's core DI container.
 """
 
+from typing import Type
+
 from agentmap.services.logging_service import LoggingService
 
 # Import all mixins and utilities
@@ -44,7 +46,7 @@ class HostServiceRegistry(
 
         self.logger.debug("[HostServiceRegistry] Initialized")
 
-    def _is_valid_protocol(self, protocol):
+    def _is_valid_protocol(self, protocol: Type) -> bool:
         """
         Validate that an object is a proper protocol type.
 

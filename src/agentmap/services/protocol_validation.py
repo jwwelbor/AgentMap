@@ -6,10 +6,11 @@ used by the registry and other components that need protocol validation.
 """
 
 import inspect
-from typing import Type, Any
+import logging
+from typing import Type, Optional
 
 
-def is_valid_protocol(protocol: Type, logger: Any = None) -> bool:
+def is_valid_protocol(protocol: Type, logger: Optional[logging.Logger] = None) -> bool:
     """
     Validate that an object is a proper protocol type.
 
@@ -55,7 +56,5 @@ def is_valid_protocol(protocol: Type, logger: Any = None) -> bool:
 
     except Exception as e:
         if logger:
-            logger.debug(
-                f"[HostServiceRegistry] Error validating protocol {protocol}: {e}"
-            )
+            logger.debug(f"Error validating protocol {protocol}: {e}")
         return False

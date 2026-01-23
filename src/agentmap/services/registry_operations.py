@@ -12,7 +12,10 @@ class RegistrationMixin:
     """
     Mixin providing service registration and unregistration operations.
 
-    Requires RegistryStorageMixin to be present in the class hierarchy.
+    Requires the following to be present in the class hierarchy:
+    - `RegistryStorageMixin` for storage attributes and cleanup.
+    - A `self.logger` attribute for logging.
+    - A `self._is_valid_protocol(protocol)` method for protocol validation.
     """
 
     def register_service_provider(

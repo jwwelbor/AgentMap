@@ -12,6 +12,7 @@ class QueryMixin:
     Mixin providing service and protocol query operations.
 
     Requires RegistryStorageMixin to be present in the class hierarchy.
+    Requires the consuming class to have a `self.logger` attribute.
     """
 
     def get_service_provider(self, service_name: str) -> Optional[Any]:
