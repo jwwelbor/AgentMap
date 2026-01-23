@@ -20,13 +20,6 @@ from agentmap.services.config.config_managers import (
     RoutingConfigManager,
 )
 from agentmap.services.config.config_service import ConfigService
-from agentmap.services.config.config_managers import (
-    AuthConfigManager,
-    DeclarationConfigManager,
-    HostConfigManager,
-    PathConfigManager,
-    RoutingConfigManager,
-)
 
 T = TypeVar("T")
 
