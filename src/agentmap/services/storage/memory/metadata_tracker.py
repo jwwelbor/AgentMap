@@ -6,7 +6,7 @@ update time, access count, and version tracking.
 """
 
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 class MetadataTracker:
@@ -51,7 +51,7 @@ class MetadataTracker:
         Args:
             collection: Collection name
             document_id: Document ID
-            operation: Operation type (create, update, delete, read)
+            operation: Operation type (create, update, read)
         """
         if not self.is_tracking_enabled():
             return
@@ -76,7 +76,7 @@ class MetadataTracker:
 
     def get_document_metadata(
         self, collection: str, document_id: str
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Get metadata for a specific document.
 
@@ -91,9 +91,7 @@ class MetadataTracker:
             return None
         return self._metadata[collection].get(document_id)
 
-    def delete_document_metadata(
-        self, collection: str, document_id: str
-    ) -> None:
+    def delete_document_metadata(self, collection: str, document_id: str) -> None:
         """
         Delete metadata for a document.
 
@@ -101,10 +99,7 @@ class MetadataTracker:
             collection: Collection name
             document_id: Document ID
         """
-        if (
-            collection in self._metadata
-            and document_id in self._metadata[collection]
-        ):
+        if collection in self._metadata and document_id in self._metadata[collection]:
             del self._metadata[collection][document_id]
 
     def delete_collection_metadata(self, collection: str) -> None:

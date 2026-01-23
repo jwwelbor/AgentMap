@@ -21,16 +21,18 @@ class TestHumanAgent(unittest.TestCase):
         """Set up test fixtures with pure Mock dependencies."""
         # Create mock services using MockServiceFactory
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
-        self.mock_execution_tracking_service = MockServiceFactory.create_mock_execution_tracking_service()
-        self.mock_state_adapter_service = MockServiceFactory.create_mock_state_adapter_service()
+        self.mock_execution_tracking_service = (
+            MockServiceFactory.create_mock_execution_tracking_service()
+        )
+        self.mock_state_adapter_service = (
+            MockServiceFactory.create_mock_state_adapter_service()
+        )
         self.mock_state_adapter_service.get_inputs = Mock()
-        self.mock_state_adapter_service.get_inputs.return_value = {
-            "user_data": None
-        }
+        self.mock_state_adapter_service.get_inputs.return_value = {"user_data": None}
 
         # Get the mock logger for verification
         self.mock_logger = self.mock_logging_service.get_class_logger(HumanAgent)
-        
+
         # Create HumanAgent instance with basic configuration
         self.agent = HumanAgent(
             execution_tracking_service=self.mock_execution_tracking_service,
@@ -38,11 +40,11 @@ class TestHumanAgent(unittest.TestCase):
             name="test_human_agent",
             prompt="Please provide your input: {user_data}",
             context={
-                "input_fields": ["user_data"], 
-                "output_field": "human_response", 
-                "interaction_type": "text_input", 
-                "timeout_seconds": 300, 
-                "default_option": "continue"
+                "input_fields": ["user_data"],
+                "output_field": "human_response",
+                "interaction_type": "text_input",
+                "timeout_seconds": 300,
+                "default_option": "continue",
             },
             logger=self.mock_logger,
         )
@@ -169,7 +171,7 @@ class TestHumanAgent(unittest.TestCase):
         # Configure interrupt to raise GraphInterrupt
         mock_interrupt.side_effect = GraphInterrupt([{}])
 
-        with patch('uuid.uuid4') as mock_uuid:
+        with patch("uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = Mock()
             mock_uuid.return_value.__str__ = Mock(return_value="generated-uuid-456")
 
@@ -189,7 +191,7 @@ class TestHumanAgent(unittest.TestCase):
         mock_tracker_no_id = Mock(spec=[])  # No thread_id attribute
         self.agent.set_execution_tracker(mock_tracker_no_id)
 
-        with patch('uuid.uuid4') as mock_uuid:
+        with patch("uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = Mock()
             mock_uuid.return_value.__str__ = Mock(return_value="generated-uuid-789")
 
@@ -211,10 +213,7 @@ class TestHumanAgent(unittest.TestCase):
             state_adapter_service=self.mock_state_adapter_service,
             name="approval_agent",
             prompt="Do you approve this action?",
-            context={
-                "interaction_type": "approval",
-                "options": ["yes", "no"]
-            },
+            context={"interaction_type": "approval", "options": ["yes", "no"]},
             logger=self.mock_logger,
         )
         approval_agent.set_execution_tracker(self.mock_execution_tracker)
@@ -238,7 +237,7 @@ class TestHumanAgent(unittest.TestCase):
             prompt="Select an option:",
             context={
                 "interaction_type": "choice",
-                "options": ["option1", "option2", "option3"]
+                "options": ["option1", "option2", "option3"],
             },
             logger=self.mock_logger,
             execution_tracking_service=self.mock_execution_tracking_service,
@@ -262,14 +261,16 @@ class TestHumanAgent(unittest.TestCase):
             context={"interaction_type": "invalid_type"},
             logger=self.mock_logger,
         )
-        
+
         # Should log warning and default to text_input
         self.assertEqual(invalid_agent.interaction_type, InteractionType.TEXT_INPUT)
-        
+
         # Verify warning was logged
         logger_calls = self.mock_logger.calls
         warning_calls = [call for call in logger_calls if call[0] == "warning"]
-        self.assertTrue(any("Invalid interaction type" in call[1] for call in warning_calls))
+        self.assertTrue(
+            any("Invalid interaction type" in call[1] for call in warning_calls)
+        )
 
     @patch("agentmap.agents.builtins.human_agent.interrupt")
     def test_prompt_formatting_with_inputs(self, mock_interrupt):
@@ -324,7 +325,9 @@ class TestHumanAgent(unittest.TestCase):
 
         call_args = mock_interrupt.call_args[0][0]
         # Should fallback to original prompt
-        self.assertEqual(call_args["prompt"], "Hello {missing_key}, please {another_missing}")
+        self.assertEqual(
+            call_args["prompt"], "Hello {missing_key}, please {another_missing}"
+        )
 
     # Checkpoint tests removed - HumanAgent now uses LangGraph's interrupt() directly
     # Checkpoint management is handled by LangGraph framework, not by the agent
@@ -341,9 +344,13 @@ class TestHumanAgent(unittest.TestCase):
 
         # Verify services are configured
         self.assertEqual(self.agent.logger, self.mock_logger)
-        self.assertEqual(self.agent.execution_tracking_service, self.mock_execution_tracking_service)
-        self.assertEqual(self.agent.state_adapter_service, self.mock_state_adapter_service)
+        self.assertEqual(
+            self.agent.execution_tracking_service, self.mock_execution_tracking_service
+        )
+        self.assertEqual(
+            self.agent.state_adapter_service, self.mock_state_adapter_service
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

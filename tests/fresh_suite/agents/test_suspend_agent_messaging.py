@@ -93,9 +93,7 @@ class TestSuspendAgentMessaging(unittest.TestCase):
 
         # Assert - verify apply_template called with correct payload
         self.mock_messaging_service.apply_template.assert_called_once()
-        template_name, payload = (
-            self.mock_messaging_service.apply_template.call_args[0]
-        )
+        template_name, payload = self.mock_messaging_service.apply_template.call_args[0]
 
         self.assertEqual(template_name, "default_suspend")
         self.assertEqual(payload["event_type"], "workflow_suspended")
@@ -141,9 +139,7 @@ class TestSuspendAgentMessaging(unittest.TestCase):
         self.mock_messaging_service.publish_message.assert_not_called()
 
     @patch("agentmap.agents.builtins.suspend_agent.interrupt")
-    def test_suspend_message_raises_when_service_not_configured(
-        self, mock_interrupt
-    ):
+    def test_suspend_message_raises_when_service_not_configured(self, mock_interrupt):
         """Verify ValueError when messaging_service is None but message requested."""
         # Arrange
         context = {
@@ -164,7 +160,9 @@ class TestSuspendAgentMessaging(unittest.TestCase):
         with self.assertRaises(ValueError) as cm:
             agent.process(inputs)
 
-        self.assertIn("Messaging service required but not configured", str(cm.exception))
+        self.assertIn(
+            "Messaging service required but not configured", str(cm.exception)
+        )
         self.assertIn("test_suspend", str(cm.exception))
 
     # --- Resume Message Tests ---
@@ -188,7 +186,12 @@ class TestSuspendAgentMessaging(unittest.TestCase):
         # Mock time progression - need multiple calls for BaseAgent.run() timing
         # BaseAgent.run() calls time.time() at: start (line 204), end success (line 254), end error (line 294)
         # SuspendAgent.process() calls time.time() for suspend_timestamp and resume_timestamp
-        mock_time.side_effect = [1000.0, 1000.0, 1005.5, 1005.6]  # start, suspend, resume, end
+        mock_time.side_effect = [
+            1000.0,
+            1000.0,
+            1005.5,
+            1005.6,
+        ]  # start, suspend, resume, end
 
         # Configure template response
         self.mock_messaging_service.apply_template.return_value = {
@@ -293,7 +296,9 @@ class TestSuspendAgentMessaging(unittest.TestCase):
         with self.assertRaises(ValueError) as cm:
             agent.process(inputs)
 
-        self.assertIn("Messaging service required but not configured", str(cm.exception))
+        self.assertIn(
+            "Messaging service required but not configured", str(cm.exception)
+        )
 
     # --- Graph Message Tests ---
 
@@ -330,7 +335,8 @@ class TestSuspendAgentMessaging(unittest.TestCase):
         graph_calls = [
             call
             for call in self.mock_messaging_service.apply_template.call_args_list
-            if len(call[0]) > 1 and call[0][1].get("event_type") == "workflow_graph_trigger"
+            if len(call[0]) > 1
+            and call[0][1].get("event_type") == "workflow_graph_trigger"
         ]
         self.assertEqual(len(graph_calls), 1)
 
@@ -373,7 +379,8 @@ class TestSuspendAgentMessaging(unittest.TestCase):
         graph_calls = [
             call
             for call in self.mock_messaging_service.apply_template.call_args_list
-            if len(call[0]) > 1 and call[0][1].get("event_type") == "workflow_graph_trigger"
+            if len(call[0]) > 1
+            and call[0][1].get("event_type") == "workflow_graph_trigger"
         ]
         self.assertEqual(len(graph_calls), 0)
 
@@ -399,7 +406,9 @@ class TestSuspendAgentMessaging(unittest.TestCase):
         with self.assertRaises(ValueError) as cm:
             agent.process(inputs)
 
-        self.assertIn("Messaging service required but not configured", str(cm.exception))
+        self.assertIn(
+            "Messaging service required but not configured", str(cm.exception)
+        )
 
     # --- Return Value Tests ---
 

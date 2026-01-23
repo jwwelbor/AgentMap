@@ -18,9 +18,7 @@ class TestSuspendAgent(unittest.TestCase):
             MockServiceFactory.create_mock_state_adapter_service()
         )
         self.mock_state_adapter_service.get_inputs = Mock()
-        self.mock_state_adapter_service.get_inputs.return_value = {
-            "raw_input": None
-        }
+        self.mock_state_adapter_service.get_inputs.return_value = {"raw_input": None}
 
         logging_service = MockServiceFactory.create_mock_logging_service()
         self.mock_logger = logging_service.get_class_logger(SuspendAgent)

@@ -6,6 +6,7 @@ allowing data to be saved and loaded from disk.
 """
 
 import json
+import logging
 import os
 import time
 from typing import Any, Dict, Optional
@@ -18,7 +19,7 @@ class PersistenceManager:
     Handles saving and loading storage state to/from JSON files.
     """
 
-    def __init__(self, logger: Any):
+    def __init__(self, logger: logging.Logger):
         """
         Initialize persistence manager.
 
@@ -61,9 +62,7 @@ class PersistenceManager:
         except Exception as e:
             self._logger.warning(f"Failed to save persistence data: {e}")
 
-    def load_from_file(
-        self, file_path: str
-    ) -> Optional[Dict[str, Any]]:
+    def load_from_file(self, file_path: str) -> Optional[Dict[str, Any]]:
         """
         Load storage state from persistence file.
 
