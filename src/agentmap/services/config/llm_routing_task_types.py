@@ -10,7 +10,6 @@ from typing import Any, Dict, List
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.routing.types import get_valid_complexity_levels
 
-
 # Default task types configuration
 DEFAULT_TASK_TYPES = {
     "general": {
@@ -28,9 +27,7 @@ DEFAULT_TASK_TYPES = {
 
 
 def validate_task_type_config(
-    task_name: str,
-    task_config: Dict[str, Any],
-    logger: LoggingService
+    task_name: str, task_config: Dict[str, Any], logger: LoggingService
 ) -> bool:
     """
     Validate a single task type configuration.
@@ -47,9 +44,7 @@ def validate_task_type_config(
 
     for field in required_fields:
         if field not in task_config:
-            logger.error(
-                f"Task type '{task_name}' missing required field '{field}'"
-            )
+            logger.error(f"Task type '{task_name}' missing required field '{field}'")
             return False
 
     # Validate default complexity
@@ -63,17 +58,14 @@ def validate_task_type_config(
     # Validate provider preference is a list
     provider_preference = task_config.get("provider_preference", [])
     if not isinstance(provider_preference, list):
-        logger.error(
-            f"Task type '{task_name}' provider_preference must be a list"
-        )
+        logger.error(f"Task type '{task_name}' provider_preference must be a list")
         return False
 
     return True
 
 
 def load_task_types(
-    config: Dict[str, Any],
-    logger: LoggingService
+    config: Dict[str, Any], logger: LoggingService
 ) -> Dict[str, Dict[str, Any]]:
     """
     Load task type definitions with application-configurable types.
@@ -104,8 +96,7 @@ def load_task_types(
 
 
 def get_task_type_config(
-    task_types: Dict[str, Dict[str, Any]],
-    task_type: str
+    task_types: Dict[str, Dict[str, Any]], task_type: str
 ) -> Dict[str, Any]:
     """
     Get configuration for a specific task type.
@@ -121,8 +112,7 @@ def get_task_type_config(
 
 
 def get_provider_preference(
-    task_types: Dict[str, Dict[str, Any]],
-    task_type: str
+    task_types: Dict[str, Dict[str, Any]], task_type: str
 ) -> List[str]:
     """
     Get provider preference list for a task type.
@@ -139,8 +129,7 @@ def get_provider_preference(
 
 
 def get_default_complexity(
-    task_types: Dict[str, Dict[str, Any]],
-    task_type: str
+    task_types: Dict[str, Dict[str, Any]], task_type: str
 ) -> str:
     """
     Get default complexity for a task type.
@@ -157,8 +146,7 @@ def get_default_complexity(
 
 
 def get_complexity_keywords(
-    task_types: Dict[str, Dict[str, Any]],
-    task_type: str
+    task_types: Dict[str, Dict[str, Any]], task_type: str
 ) -> Dict[str, List[str]]:
     """
     Get complexity keywords for a task type.

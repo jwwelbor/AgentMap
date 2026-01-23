@@ -85,6 +85,7 @@ class AppConfigService:
             self._declaration_manager,
             self._routing_manager,
         ]
+
     def _setup_bootstrap_logging(self):
         """Set up bootstrap logger for config loading before real logging is available."""
         # Only set up basic config if no handlers exist to avoid conflicts

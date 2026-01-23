@@ -71,13 +71,13 @@ class IndentedTemplateComposer:
             self._template_loader,
             self._code_generator,
             logging_service,
-            load_template_fn=lambda path: self._load_template_internal(path)
+            load_template_fn=lambda path: self._load_template_internal(path),
         )
         self._function_composer = FunctionTemplateComposer(
             self._template_loader,
             self._code_generator,
             logging_service,
-            load_template_fn=lambda path: self._load_template_internal(path)
+            load_template_fn=lambda path: self._load_template_internal(path),
         )
 
         # Maintain backwards compatibility - expose template loader's internal state
@@ -410,7 +410,9 @@ class IndentedTemplateComposer:
         """
         return self._code_generator.generate_input_field_access(input_fields)
 
-    def _generate_service_usage_examples(self, service_reqs: ServiceRequirements) -> str:
+    def _generate_service_usage_examples(
+        self, service_reqs: ServiceRequirements
+    ) -> str:
         """
         Generate service usage examples for method body comments.
 

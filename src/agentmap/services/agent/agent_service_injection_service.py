@@ -34,7 +34,6 @@ from agentmap.services.protocols import (
 from agentmap.services.storage.manager import StorageServiceManager
 
 
-
 class AgentServiceInjectionService:
     """
 

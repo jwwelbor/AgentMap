@@ -20,8 +20,8 @@ CSV storage solution while maintaining backwards compatibility.
 
 from agentmap.services.storage.csv.csv_file_handler import CSVFileHandler
 from agentmap.services.storage.csv.csv_id_detector import CSVIdDetector
-from agentmap.services.storage.csv.csv_query_processor import CSVQueryProcessor
 from agentmap.services.storage.csv.csv_path_resolver import CSVPathResolver
+from agentmap.services.storage.csv.csv_query_processor import CSVQueryProcessor
 from agentmap.services.storage.csv.document_operations import CSVDocumentOperations
 from agentmap.services.storage.csv.file_operations import CSVFileOperations
 from agentmap.services.storage.csv.id_detection import CSVIdDetection

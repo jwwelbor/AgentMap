@@ -22,7 +22,12 @@ class CSVFileHandler:
     - Error handling for file operations
     """
 
-    def __init__(self, encoding: str = "utf-8", default_options: Dict[str, Any] = None, logger: Optional[Any] = None):
+    def __init__(
+        self,
+        encoding: str = "utf-8",
+        default_options: Dict[str, Any] = None,
+        logger: Optional[Any] = None,
+    ):
         """
         Initialize CSVFileHandler.
 
@@ -103,7 +108,9 @@ class CSVFileHandler:
 
             df.to_csv(file_path, mode=mode, **write_options)
             if self._logger:
-                self._logger.debug(f"Wrote {len(df)} rows to {file_path} (mode: {mode})")
+                self._logger.debug(
+                    f"Wrote {len(df)} rows to {file_path} (mode: {mode})"
+                )
 
         except (PermissionError, OSError):
             # Let permission and OS errors propagate

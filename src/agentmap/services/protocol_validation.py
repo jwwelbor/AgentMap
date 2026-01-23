@@ -7,7 +7,7 @@ used by the registry and other components that need protocol validation.
 
 import inspect
 import logging
-from typing import Type, Optional
+from typing import Optional, Type
 
 
 def is_valid_protocol(protocol: Type, logger: Optional[logging.Logger] = None) -> bool:

@@ -13,7 +13,7 @@ from agentmap.services.routing.types import get_valid_complexity_levels
 def validate_routing_config(
     routing_matrix: Dict[str, Dict[str, str]],
     task_types: Dict[str, Dict[str, Any]],
-    complexity_analysis: Dict[str, Any]
+    complexity_analysis: Dict[str, Any],
 ) -> List[str]:
     """
     Validate the complete routing configuration.
@@ -72,17 +72,13 @@ def validate_routing_config(
             required_thresholds = ["low", "medium", "high"]
             for threshold in required_thresholds:
                 if threshold not in thresholds:
-                    errors.append(
-                        f"Missing prompt length threshold for '{threshold}'"
-                    )
+                    errors.append(f"Missing prompt length threshold for '{threshold}'")
 
     return errors
 
 
 def validate_provider_routing(
-    routing_matrix: Dict[str, Dict[str, str]],
-    app_config_service,
-    logger
+    routing_matrix: Dict[str, Dict[str, str]], app_config_service, logger
 ) -> List[str]:
     """
     Validate provider routing matrix configuration.

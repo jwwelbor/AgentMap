@@ -10,9 +10,7 @@ from typing import Any, Dict, Optional
 
 
 def get_cached_availability(
-    availability_cache_service,
-    provider: str,
-    logger
+    availability_cache_service, provider: str, logger
 ) -> Optional[Dict[str, Any]]:
     """
     Get cached availability using unified cache service.
@@ -38,10 +36,7 @@ def get_cached_availability(
 
 
 def set_cached_availability(
-    availability_cache_service,
-    provider: str,
-    result: Dict[str, Any],
-    logger
+    availability_cache_service, provider: str, result: Dict[str, Any], logger
 ) -> bool:
     """
     Set cached availability using unified cache service.
@@ -71,7 +66,7 @@ async def get_provider_availability(
     provider: str,
     routing_matrix: Dict[str, Dict[str, str]],
     availability_cache_service,
-    logger
+    logger,
 ) -> Dict[str, Any]:
     """
     Get availability status for a specific provider.
@@ -86,7 +81,9 @@ async def get_provider_availability(
         Dictionary with availability status and metadata
     """
     # Try cache first
-    cached_result = get_cached_availability(availability_cache_service, provider, logger)
+    cached_result = get_cached_availability(
+        availability_cache_service, provider, logger
+    )
     if cached_result:
         logger.debug(f"Using cached availability for provider: {provider}")
         return cached_result
@@ -115,9 +112,7 @@ async def get_provider_availability(
 
 
 async def validate_all_providers(
-    routing_matrix: Dict[str, Dict[str, str]],
-    availability_cache_service,
-    logger
+    routing_matrix: Dict[str, Dict[str, str]], availability_cache_service, logger
 ) -> Dict[str, Dict[str, Any]]:
     """
     Validate availability of all configured providers.
@@ -137,9 +132,7 @@ async def validate_all_providers(
                 provider, routing_matrix, availability_cache_service, logger
             )
         except Exception as e:
-            logger.error(
-                f"Failed to get availability for provider {provider}: {e}"
-            )
+            logger.error(f"Failed to get availability for provider {provider}: {e}")
             results[provider] = {
                 "enabled": False,
                 "validation_passed": False,
@@ -156,7 +149,7 @@ async def is_provider_available_async(
     provider: str,
     routing_matrix: Dict[str, Dict[str, str]],
     availability_cache_service,
-    logger
+    logger,
 ) -> bool:
     """
     Async version of provider availability check with caching.
@@ -182,11 +175,7 @@ async def is_provider_available_async(
         return False
 
 
-def clear_provider_cache(
-    availability_cache_service,
-    provider: Optional[str],
-    logger
-):
+def clear_provider_cache(availability_cache_service, provider: Optional[str], logger):
     """
     Clear availability cache for specific provider or all providers.
 
@@ -200,9 +189,7 @@ def clear_provider_cache(
             availability_cache_service.invalidate_cache(
                 "llm_provider", provider.lower()
             )
-            logger.info(
-                f"Cleared availability cache for provider: {provider}"
-            )
+            logger.info(f"Cleared availability cache for provider: {provider}")
         else:
             availability_cache_service.invalidate_cache("llm_provider")
             logger.info("Cleared availability cache for all providers")
@@ -213,9 +200,7 @@ def clear_provider_cache(
 
 
 def get_cache_stats(
-    availability_cache_service,
-    routing_matrix: Dict[str, Dict[str, str]],
-    logger
+    availability_cache_service, routing_matrix: Dict[str, Dict[str, str]], logger
 ) -> Dict[str, Any]:
     """
     Get availability cache statistics and health information.

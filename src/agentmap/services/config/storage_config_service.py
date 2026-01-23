@@ -14,10 +14,12 @@ from typing import Any, Dict, Optional, Union
 from agentmap.exceptions.service_exceptions import (
     StorageConfigurationNotAvailableException,
 )
-from agentmap.services.config.config_service import ConfigService
-from agentmap.services.config._availability_cache_manager import AvailabilityCacheManager
+from agentmap.services.config._availability_cache_manager import (
+    AvailabilityCacheManager,
+)
 from agentmap.services.config._path_resolver import PathResolver
 from agentmap.services.config._storage_type_handlers import StorageTypeHandlers
+from agentmap.services.config.config_service import ConfigService
 
 
 class StorageConfigService:
@@ -66,10 +68,18 @@ class StorageConfigService:
         self._validate_and_load_config(storage_config_path)
 
         # Initialize helper classes after config is loaded
-        self._cache_manager = AvailabilityCacheManager(availability_cache_service, self._logger)
-        self._path_resolver = PathResolver(self._config_data, self._config_service, self._logger)
+        self._cache_manager = AvailabilityCacheManager(
+            availability_cache_service, self._logger
+        )
+        self._path_resolver = PathResolver(
+            self._config_data, self._config_service, self._logger
+        )
         self._storage_handlers = StorageTypeHandlers(
-            self._config_data, self._config_service, self._cache_manager, self._path_resolver, self._logger
+            self._config_data,
+            self._config_service,
+            self._cache_manager,
+            self._path_resolver,
+            self._logger,
         )
 
     def _setup_bootstrap_logging(self):
@@ -464,7 +474,6 @@ class StorageConfigService:
         """
         return self._storage_handlers.is_csv_storage_enabled()
 
-
     def is_csv_auto_create_enabled(self) -> bool:
         """
         Check if CSV auto-creation is enabled for write operations.
@@ -473,7 +482,6 @@ class StorageConfigService:
             True if CSV auto-creation is enabled, False otherwise
         """
         return self._storage_handlers.is_csv_auto_create_enabled()
-
 
     def is_vector_storage_enabled(self) -> bool:
         """
@@ -484,7 +492,6 @@ class StorageConfigService:
         """
         return self._storage_handlers.is_vector_storage_enabled()
 
-
     def is_kv_storage_enabled(self) -> bool:
         """
         Check if key-value storage is available and enabled.
@@ -493,7 +500,6 @@ class StorageConfigService:
             True if key-value storage is configured and enabled.
         """
         return self._storage_handlers.is_kv_storage_enabled()
-
 
     def is_json_storage_enabled(self) -> bool:
         """
@@ -507,7 +513,6 @@ class StorageConfigService:
         """
         return self._storage_handlers.is_json_storage_enabled()
 
-
     def is_blob_storage_enabled(self) -> bool:
         """
         Check if blob storage is available and enabled.
@@ -516,7 +521,6 @@ class StorageConfigService:
             True if blob storage is configured and enabled.
         """
         return self._storage_handlers.is_blob_storage_enabled()
-
 
     def is_provider_configured(self, provider: str) -> bool:
         """
@@ -529,7 +533,6 @@ class StorageConfigService:
             True if provider is configured with valid settings
         """
         return self._storage_handlers.is_provider_configured(provider)
-
 
     def is_storage_type_enabled(self, storage_type: str) -> bool:
         """
@@ -551,7 +554,9 @@ class StorageConfigService:
         Returns:
             Path to CSV data directory
         """
-        return self._path_resolver.get_data_path("csv", ensure_exists=self.is_csv_storage_enabled())
+        return self._path_resolver.get_data_path(
+            "csv", ensure_exists=self.is_csv_storage_enabled()
+        )
 
     def get_collection_file_path(self, collection_name: str) -> Path:
         """
@@ -563,7 +568,9 @@ class StorageConfigService:
         Returns:
             Path to the collection file
         """
-        return self._path_resolver.get_collection_file_path("csv", collection_name, "csv")
+        return self._path_resolver.get_collection_file_path(
+            "csv", collection_name, "csv"
+        )
 
     def get_vector_data_path(self) -> Path:
         """
@@ -572,7 +579,9 @@ class StorageConfigService:
         Returns:
             Path to Vector data directory
         """
-        return self._path_resolver.get_data_path("vector", ensure_exists=self.is_vector_storage_enabled())
+        return self._path_resolver.get_data_path(
+            "vector", ensure_exists=self.is_vector_storage_enabled()
+        )
 
     def get_kv_data_path(self) -> Path:
         """
@@ -581,7 +590,9 @@ class StorageConfigService:
         Returns:
             Path to KV data directory
         """
-        return self._path_resolver.get_data_path("kv", ensure_exists=self.is_kv_storage_enabled())
+        return self._path_resolver.get_data_path(
+            "kv", ensure_exists=self.is_kv_storage_enabled()
+        )
 
     def get_json_data_path(self) -> Path:
         """
@@ -590,7 +601,9 @@ class StorageConfigService:
         Returns:
             Path to JSON data directory
         """
-        return self._path_resolver.get_data_path("json", ensure_exists=self.is_json_storage_enabled())
+        return self._path_resolver.get_data_path(
+            "json", ensure_exists=self.is_json_storage_enabled()
+        )
 
     def get_json_collection_file_path(self, collection_name: str) -> Path:
         """
@@ -602,7 +615,9 @@ class StorageConfigService:
         Returns:
             Path to the collection file
         """
-        return self._path_resolver.get_collection_file_path("json", collection_name, "json")
+        return self._path_resolver.get_collection_file_path(
+            "json", collection_name, "json"
+        )
 
     def get_blob_data_path(self) -> Path:
         """
@@ -611,7 +626,9 @@ class StorageConfigService:
         Returns:
             Path to Blob data directory
         """
-        return self._path_resolver.get_data_path("blob", ensure_exists=self.is_blob_storage_enabled())
+        return self._path_resolver.get_data_path(
+            "blob", ensure_exists=self.is_blob_storage_enabled()
+        )
 
     # Enhanced validation methods following configuration patterns
     def validate_csv_config(self) -> Dict[str, Any]:

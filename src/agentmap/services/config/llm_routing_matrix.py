@@ -11,8 +11,7 @@ from agentmap.services.logging_service import LoggingService
 
 
 def load_routing_matrix(
-    config: Dict[str, Any],
-    logger: LoggingService
+    config: Dict[str, Any], logger: LoggingService
 ) -> Dict[str, Dict[str, str]]:
     """
     Load the provider x complexity matrix.
@@ -35,17 +34,13 @@ def load_routing_matrix(
                 normalized_complexity_map[complexity.lower()] = model
             normalized_matrix[provider.lower()] = normalized_complexity_map
         else:
-            logger.warning(
-                f"Invalid routing matrix entry for provider {provider}"
-            )
+            logger.warning(f"Invalid routing matrix entry for provider {provider}")
 
     return normalized_matrix
 
 
 def get_model_for_complexity(
-    routing_matrix: Dict[str, Dict[str, str]],
-    provider: str,
-    complexity: str
+    routing_matrix: Dict[str, Dict[str, str]], provider: str, complexity: str
 ) -> Optional[str]:
     """
     Get the model for a given provider and complexity.
@@ -75,7 +70,9 @@ def get_available_providers(routing_matrix: Dict[str, Dict[str, str]]) -> list:
     return list(routing_matrix.keys())
 
 
-def is_provider_available(routing_matrix: Dict[str, Dict[str, str]], provider: str) -> bool:
+def is_provider_available(
+    routing_matrix: Dict[str, Dict[str, str]], provider: str
+) -> bool:
     """
     Check if a provider is configured in the routing matrix.
 

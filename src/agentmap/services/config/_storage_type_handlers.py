@@ -174,9 +174,7 @@ class StorageTypeHandlers:
             # Cache the result
             result = self._cache_manager.create_cache_result(
                 enabled=enabled,
-                last_error=(
-                    None if enabled else "KV storage not properly configured"
-                ),
+                last_error=(None if enabled else "KV storage not properly configured"),
                 config_present=isinstance(kv_config, dict),
             )
             self._cache_manager.set_cached_availability("kv", result)

@@ -44,9 +44,7 @@ class TemplateLoader:
         self._cache_stats = {"hits": 0, "misses": 0}
         self._template_base_package = "agentmap.templates.system.scaffold"
 
-        self.logger.debug(
-            "[TemplateLoader] Initialized with caching enabled"
-        )
+        self.logger.debug("[TemplateLoader] Initialized with caching enabled")
 
     def load_template(self, template_path: str) -> str:
         """
@@ -74,9 +72,7 @@ class TemplateLoader:
 
         # Cache miss - load template
         self._cache_stats["misses"] += 1
-        self.logger.debug(
-            f"[TemplateLoader] Loading template: {normalized_path}"
-        )
+        self.logger.debug(f"[TemplateLoader] Loading template: {normalized_path}")
 
         try:
             content = self._discover_and_load(normalized_path)
@@ -215,9 +211,7 @@ class TemplateLoader:
             )
 
         except Exception as e:
-            self.logger.debug(
-                f"[TemplateLoader] Embedded resource loading error: {e}"
-            )
+            self.logger.debug(f"[TemplateLoader] Embedded resource loading error: {e}")
             raise
 
     def get_cache_stats(self) -> Dict[str, Any]:

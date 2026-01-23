@@ -33,8 +33,8 @@ from agentmap.services.storage.csv import (
 )
 from agentmap.services.storage.csv.csv_file_handler import CSVFileHandler
 from agentmap.services.storage.csv.csv_id_detector import CSVIdDetector
-from agentmap.services.storage.csv.csv_query_processor import CSVQueryProcessor
 from agentmap.services.storage.csv.csv_path_resolver import CSVPathResolver
+from agentmap.services.storage.csv.csv_query_processor import CSVQueryProcessor
 from agentmap.services.storage.types import (
     StorageProviderError,
     StorageResult,

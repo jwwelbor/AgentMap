@@ -80,7 +80,9 @@ class CSVPathResolver:
         # Validate path using file_path_service if available
         if self._file_path_service:
             try:
-                self._file_path_service.validate_safe_path(file_path, self.base_directory)
+                self._file_path_service.validate_safe_path(
+                    file_path, self.base_directory
+                )
             except Exception as e:
                 if self._logger:
                     self._logger.error(f"Path validation failed for {file_path}: {e}")

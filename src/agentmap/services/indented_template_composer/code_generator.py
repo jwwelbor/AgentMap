@@ -114,7 +114,9 @@ class CodeGenerator:
 
         return "\n".join(service_attrs)
 
-    def generate_services_documentation(self, attributes: List[ServiceAttribute]) -> str:
+    def generate_services_documentation(
+        self, attributes: List[ServiceAttribute]
+    ) -> str:
         """
         Generate services documentation for class docstring.
 
@@ -179,7 +181,9 @@ class CodeGenerator:
 
         return "\n".join(usage_lines)
 
-    def generate_context_fields(self, input_fields: List[str], output_field: str) -> str:
+    def generate_context_fields(
+        self, input_fields: List[str], output_field: str
+    ) -> str:
         """
         Generate documentation about available fields in the state for function templates.
 

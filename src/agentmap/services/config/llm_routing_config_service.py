@@ -8,36 +8,64 @@ system, including provider x complexity matrix, task types, and routing policies
 from typing import Any, Dict, List, Optional
 
 from agentmap.services.config.app_config_service import AppConfigService
-from agentmap.services.logging_service import LoggingService
-
-# Import helper modules for delegated functionality
-from agentmap.services.config.llm_routing_matrix import (
-    load_routing_matrix,
-    get_model_for_complexity as _get_model_for_complexity,
-    get_available_providers as _get_available_providers,
-    is_provider_available as _is_provider_available,
+from agentmap.services.config.llm_routing_availability import (
+    clear_provider_cache as _clear_provider_cache,
 )
-from agentmap.services.config.llm_routing_task_types import (
-    load_task_types,
-    get_task_type_config as _get_task_type_config,
-    get_provider_preference as _get_provider_preference,
-    get_default_complexity as _get_default_complexity,
-    get_complexity_keywords as _get_complexity_keywords,
-    get_available_task_types as _get_available_task_types,
-)
-from agentmap.services.config.llm_routing_validators import (
-    validate_routing_config,
-    validate_provider_routing,
+from agentmap.services.config.llm_routing_availability import (
+    get_cache_stats as _get_cache_stats,
 )
 from agentmap.services.config.llm_routing_availability import (
     get_cached_availability,
-    set_cached_availability,
-    get_provider_availability as _get_provider_availability,
-    validate_all_providers as _validate_all_providers,
-    is_provider_available_async as _is_provider_available_async,
-    clear_provider_cache as _clear_provider_cache,
-    get_cache_stats as _get_cache_stats,
 )
+from agentmap.services.config.llm_routing_availability import (
+    get_provider_availability as _get_provider_availability,
+)
+from agentmap.services.config.llm_routing_availability import (
+    is_provider_available_async as _is_provider_available_async,
+)
+from agentmap.services.config.llm_routing_availability import (
+    set_cached_availability,
+)
+from agentmap.services.config.llm_routing_availability import (
+    validate_all_providers as _validate_all_providers,
+)
+
+# Import helper modules for delegated functionality
+from agentmap.services.config.llm_routing_matrix import (
+    get_available_providers as _get_available_providers,
+)
+from agentmap.services.config.llm_routing_matrix import (
+    get_model_for_complexity as _get_model_for_complexity,
+)
+from agentmap.services.config.llm_routing_matrix import (
+    is_provider_available as _is_provider_available,
+)
+from agentmap.services.config.llm_routing_matrix import (
+    load_routing_matrix,
+)
+from agentmap.services.config.llm_routing_task_types import (
+    get_available_task_types as _get_available_task_types,
+)
+from agentmap.services.config.llm_routing_task_types import (
+    get_complexity_keywords as _get_complexity_keywords,
+)
+from agentmap.services.config.llm_routing_task_types import (
+    get_default_complexity as _get_default_complexity,
+)
+from agentmap.services.config.llm_routing_task_types import (
+    get_provider_preference as _get_provider_preference,
+)
+from agentmap.services.config.llm_routing_task_types import (
+    get_task_type_config as _get_task_type_config,
+)
+from agentmap.services.config.llm_routing_task_types import (
+    load_task_types,
+)
+from agentmap.services.config.llm_routing_validators import (
+    validate_provider_routing,
+    validate_routing_config,
+)
+from agentmap.services.logging_service import LoggingService
 
 
 class LLMRoutingConfigService:
@@ -92,9 +120,7 @@ class LLMRoutingConfigService:
             List of validation error messages (empty if valid)
         """
         return validate_routing_config(
-            self.routing_matrix,
-            self.task_types,
-            self.complexity_analysis
+            self.routing_matrix, self.task_types, self.complexity_analysis
         )
 
     def get_model_for_complexity(self, provider: str, complexity: str) -> Optional[str]:
@@ -291,7 +317,7 @@ class LLMRoutingConfigService:
             provider,
             self.routing_matrix,
             self._availability_cache_service,
-            self._logger
+            self._logger,
         )
 
     async def validate_all_providers(self) -> Dict[str, Dict[str, Any]]:
@@ -302,9 +328,7 @@ class LLMRoutingConfigService:
             Dictionary mapping provider names to availability status
         """
         return await _validate_all_providers(
-            self.routing_matrix,
-            self._availability_cache_service,
-            self._logger
+            self.routing_matrix, self._availability_cache_service, self._logger
         )
 
     async def is_provider_available_async(self, provider: str) -> bool:
@@ -321,7 +345,7 @@ class LLMRoutingConfigService:
             provider,
             self.routing_matrix,
             self._availability_cache_service,
-            self._logger
+            self._logger,
         )
 
     def clear_provider_cache(self, provider: Optional[str] = None):
@@ -331,9 +355,7 @@ class LLMRoutingConfigService:
         Args:
             provider: Provider name to clear, or None for all providers
         """
-        _clear_provider_cache(
-            self._availability_cache_service, provider, self._logger
-        )
+        _clear_provider_cache(self._availability_cache_service, provider, self._logger)
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """
@@ -343,9 +365,7 @@ class LLMRoutingConfigService:
             Dictionary with cache statistics
         """
         return _get_cache_stats(
-            self._availability_cache_service,
-            self.routing_matrix,
-            self._logger
+            self._availability_cache_service, self.routing_matrix, self._logger
         )
 
     def get_provider_routing_validation(self) -> List[str]:
@@ -356,7 +376,5 @@ class LLMRoutingConfigService:
             List of validation error messages
         """
         return validate_provider_routing(
-            self.routing_matrix,
-            self._app_config_service,
-            self._logger
+            self.routing_matrix, self._app_config_service, self._logger
         )

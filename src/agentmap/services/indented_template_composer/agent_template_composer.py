@@ -66,9 +66,7 @@ class AgentTemplateComposer:
         """
         try:
             # Prepare comprehensive template variables
-            variables = self._prepare_template_variables(
-                agent_type, info, service_reqs
-            )
+            variables = self._prepare_template_variables(agent_type, info, service_reqs)
 
             # Use master template approach
             return self._compose_with_master_template(variables, service_reqs)

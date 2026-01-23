@@ -12,17 +12,14 @@ from agentmap.services.logging_service import LoggingService
 
 # Import all mixins and utilities
 from agentmap.services.protocol_validation import is_valid_protocol
-from agentmap.services.registry_storage import RegistryStorageMixin
+from agentmap.services.registry_diagnostics import DiagnosticsMixin
 from agentmap.services.registry_operations import RegistrationMixin
 from agentmap.services.registry_queries import QueryMixin
-from agentmap.services.registry_diagnostics import DiagnosticsMixin
+from agentmap.services.registry_storage import RegistryStorageMixin
 
 
 class HostServiceRegistry(
-    RegistryStorageMixin,
-    RegistrationMixin,
-    QueryMixin,
-    DiagnosticsMixin
+    RegistryStorageMixin, RegistrationMixin, QueryMixin, DiagnosticsMixin
 ):
     """
     Service for managing host service and protocol registration and lookup.

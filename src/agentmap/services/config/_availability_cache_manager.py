@@ -18,7 +18,9 @@ class AvailabilityCacheManager:
     cache service.
     """
 
-    def __init__(self, availability_cache_service=None, logger: Optional[logging.Logger] = None):
+    def __init__(
+        self, availability_cache_service=None, logger: Optional[logging.Logger] = None
+    ):
         """
         Initialize the cache manager.
 

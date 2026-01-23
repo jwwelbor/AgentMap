@@ -56,10 +56,14 @@ class CSVIdDetector:
         # If we have candidates, prioritize them
         if ends_with_id_candidates:
             # If multiple, prefer first column, then alphabetical
-            return min(ends_with_id_candidates, key=lambda x: (columns.index(x), x.lower()))
+            return min(
+                ends_with_id_candidates, key=lambda x: (columns.index(x), x.lower())
+            )
 
         if starts_with_id_candidates:
-            return min(starts_with_id_candidates, key=lambda x: (columns.index(x), x.lower()))
+            return min(
+                starts_with_id_candidates, key=lambda x: (columns.index(x), x.lower())
+            )
 
         # No ID column found
         return None

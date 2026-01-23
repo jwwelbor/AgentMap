@@ -149,7 +149,9 @@ class GraphScaffoldService:
             )
 
             # Process edge functions from bundle
-            self._scaffold_functions_from_bundle(bundle, functions_path, options, result)
+            self._scaffold_functions_from_bundle(
+                bundle, functions_path, options, result
+            )
 
             # Log service statistics
             self._log_service_stats(result)
@@ -264,6 +266,7 @@ class GraphScaffoldService:
         Delegates to name_utils module for implementation.
         """
         from agentmap.services.graph.scaffold.name_utils import to_pascal_case
+
         return to_pascal_case(text)
 
     # Private helper methods
@@ -370,10 +373,8 @@ class GraphScaffoldService:
     def _update_bundle_declarations(self, bundle: GraphBundle) -> GraphBundle:
         """Update bundle with current declarations after scaffolding."""
         try:
-            updated_bundle = (
-                self.bundle_update_service.update_bundle_from_declarations(
-                    bundle, persist=False
-                )
+            updated_bundle = self.bundle_update_service.update_bundle_from_declarations(
+                bundle, persist=False
             )
 
             current_mappings = (
