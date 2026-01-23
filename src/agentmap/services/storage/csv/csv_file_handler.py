@@ -6,7 +6,7 @@ and directory management operations.
 """
 
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import pandas as pd
 
@@ -22,7 +22,7 @@ class CSVFileHandler:
     - Error handling for file operations
     """
 
-    def __init__(self, encoding: str = "utf-8", default_options: Dict[str, Any] = None, logger=None):
+    def __init__(self, encoding: str = "utf-8", default_options: Dict[str, Any] = None, logger: Optional[Any] = None):
         """
         Initialize CSVFileHandler.
 

@@ -41,36 +41,25 @@ class CSVIdDetector:
             return None
 
         columns = df.columns.tolist()
-        candidates = []
+        ends_with_id_candidates = []
+        starts_with_id_candidates = []
 
-        # Check for exact "id" match (case insensitive)
         for col in columns:
-            if col.lower() == "id":
+            col_lower = col.lower()
+            if col_lower == "id":
                 return col  # Immediate return for exact match
-
-        # Check for columns ending with "_id"
-        for col in columns:
-            if col.lower().endswith("_id"):
-                candidates.append((col, "ends_with_id"))
-
-        # Check for columns starting with "id_"
-        for col in columns:
-            if col.lower().startswith("id_"):
-                candidates.append((col, "starts_with_id"))
+            if col_lower.endswith("_id"):
+                ends_with_id_candidates.append(col)
+            if col_lower.startswith("id_"):
+                starts_with_id_candidates.append(col)
 
         # If we have candidates, prioritize them
-        if candidates:
-            # Prefer ends_with_id over starts_with_id
-            ends_with_id = [col for col, type_ in candidates if type_ == "ends_with_id"]
-            if ends_with_id:
-                # If multiple, prefer first column, then alphabetical
-                return min(ends_with_id, key=lambda x: (columns.index(x), x.lower()))
+        if ends_with_id_candidates:
+            # If multiple, prefer first column, then alphabetical
+            return min(ends_with_id_candidates, key=lambda x: (columns.index(x), x.lower()))
 
-            starts_with_id = [
-                col for col, type_ in candidates if type_ == "starts_with_id"
-            ]
-            if starts_with_id:
-                return min(starts_with_id, key=lambda x: (columns.index(x), x.lower()))
+        if starts_with_id_candidates:
+            return min(starts_with_id_candidates, key=lambda x: (columns.index(x), x.lower()))
 
         # No ID column found
         return None

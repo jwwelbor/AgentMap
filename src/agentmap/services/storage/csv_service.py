@@ -31,15 +31,15 @@ from agentmap.services.storage.csv import (
     CSVIdDetection,
     CSVQueryFiltering,
 )
+from agentmap.services.storage.csv.csv_file_handler import CSVFileHandler
+from agentmap.services.storage.csv.csv_id_detector import CSVIdDetector
+from agentmap.services.storage.csv.csv_query_processor import CSVQueryProcessor
+from agentmap.services.storage.csv.csv_path_resolver import CSVPathResolver
 from agentmap.services.storage.types import (
     StorageProviderError,
     StorageResult,
     WriteMode,
 )
-from agentmap.services.storage.csv.csv_file_handler import CSVFileHandler
-from agentmap.services.storage.csv.csv_id_detector import CSVIdDetector
-from agentmap.services.storage.csv.csv_query_processor import CSVQueryProcessor
-from agentmap.services.storage.csv.csv_path_resolver import CSVPathResolver
 
 
 class CSVStorageService(BaseStorageService):
@@ -200,6 +200,10 @@ class CSVStorageService(BaseStorageService):
         Raises:
             ValueError: If path validation fails when file_path_service is available
         """
+        # Ensure path resolver (and related components) are initialized
+        if not hasattr(self, "_path_resolver") or self._path_resolver is None:
+            # Accessing self.client triggers lazy initialization via _initialize_client()
+            _ = self.client
         return self._path_resolver.get_file_path(collection)
 
     def _ensure_directory_exists(self, file_path: str) -> None:
@@ -215,6 +219,9 @@ class CSVStorageService(BaseStorageService):
             PermissionError: If directory cannot be created due to permissions
             OSError: If other OS-level errors occur
         """
+        # Ensure file handler is initialized
+        if not hasattr(self, "_file_handler") or self._file_handler is None:
+            _ = self.client
         self._file_handler.ensure_directory_exists(file_path)
 
     def _read_csv_file(self, file_path: str, **kwargs) -> pd.DataFrame:
@@ -230,6 +237,9 @@ class CSVStorageService(BaseStorageService):
         Returns:
             DataFrame with CSV data
         """
+        # Ensure file handler is initialized
+        if not hasattr(self, "_file_handler") or self._file_handler is None:
+            _ = self.client
         try:
             return self._file_handler.read_csv_file(file_path, **kwargs)
         except FileNotFoundError:
@@ -255,6 +265,9 @@ class CSVStorageService(BaseStorageService):
             PermissionError: If file cannot be written due to permissions
             OSError: If other OS-level errors occur
         """
+        # Ensure file handler is initialized
+        if not hasattr(self, "_file_handler") or self._file_handler is None:
+            _ = self.client
         try:
             # Ensure base directory exists when using injection (deferred from _initialize_client)
             if self.base_directory:
@@ -280,6 +293,9 @@ class CSVStorageService(BaseStorageService):
         Returns:
             Column name to use as ID, or None if no suitable column found
         """
+        # Ensure ID detector is initialized
+        if not hasattr(self, "_id_detector") or self._id_detector is None:
+            _ = self.client
         return self._id_detector.detect_id_column(df)
 
     def _apply_query_filter(
@@ -297,6 +313,10 @@ class CSVStorageService(BaseStorageService):
         Returns:
             Filtered DataFrame
         """
+        # Ensure lazy-initialized components (including _query_processor) are ready
+        if not hasattr(self, "_query_processor") or self._query_processor is None:
+            # Accessing self.client should trigger _initialize_client()
+            _ = self.client
         return self._query_processor.apply_query_filter(df, query)
 
     def read(

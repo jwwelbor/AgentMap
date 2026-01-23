@@ -6,6 +6,7 @@ handling both configured collections and dynamic paths.
 """
 
 import os
+from typing import Any, Optional
 
 
 class CSVPathResolver:
@@ -23,9 +24,9 @@ class CSVPathResolver:
     def __init__(
         self,
         base_directory: str,
-        configuration,  # StorageConfigService
-        file_path_service=None,  # FilePathService (optional)
-        logger=None,
+        configuration: Any,  # StorageConfigService
+        file_path_service: Optional[Any] = None,  # FilePathService (optional)
+        logger: Optional[Any] = None,
     ):
         """
         Initialize CSVPathResolver.
