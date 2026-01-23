@@ -14,11 +14,11 @@ Test Coverage:
 
 import unittest
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
-from tests.fresh_suite.integration.base_integration_test import BaseIntegrationTest
 from agentmap.models.graph import Graph
 from agentmap.models.node import Node
+from tests.fresh_suite.integration.base_integration_test import BaseIntegrationTest
 
 
 class TestParallelGraphAssemblyIntegration(BaseIntegrationTest):
@@ -56,8 +56,8 @@ class TestParallelGraphAssemblyIntegration(BaseIntegrationTest):
                 "ProcessA": Node(name="ProcessA", agent_type="echo"),
                 "ProcessB": Node(name="ProcessB", agent_type="echo"),
                 "ProcessC": Node(name="ProcessC", agent_type="echo"),
-                "End": Node(name="End", agent_type="output")
-            }
+                "End": Node(name="End", agent_type="output"),
+            },
         )
 
         # Create agent instances
@@ -90,8 +90,8 @@ class TestParallelGraphAssemblyIntegration(BaseIntegrationTest):
                 "ProcessB": Node(name="ProcessB", agent_type="echo"),
                 "ProcessC": Node(name="ProcessC", agent_type="echo"),
                 "ErrorHandler": Node(name="ErrorHandler", agent_type="echo"),
-                "End": Node(name="End", agent_type="output")
-            }
+                "End": Node(name="End", agent_type="output"),
+            },
         )
 
         agent_instances = self._create_agent_instances(graph)
@@ -120,8 +120,8 @@ class TestParallelGraphAssemblyIntegration(BaseIntegrationTest):
                 "ErrorA": Node(name="ErrorA", agent_type="echo"),
                 "ErrorB": Node(name="ErrorB", agent_type="echo"),
                 "ErrorC": Node(name="ErrorC", agent_type="echo"),
-                "End": Node(name="End", agent_type="output")
-            }
+                "End": Node(name="End", agent_type="output"),
+            },
         )
 
         agent_instances = self._create_agent_instances(graph)
@@ -150,8 +150,8 @@ class TestParallelGraphAssemblyIntegration(BaseIntegrationTest):
                 "SuccessB": Node(name="SuccessB", agent_type="echo"),
                 "ErrorA": Node(name="ErrorA", agent_type="echo"),
                 "ErrorB": Node(name="ErrorB", agent_type="echo"),
-                "End": Node(name="End", agent_type="output")
-            }
+                "End": Node(name="End", agent_type="output"),
+            },
         )
 
         agent_instances = self._create_agent_instances(graph)
@@ -183,8 +183,8 @@ class TestParallelGraphAssemblyIntegration(BaseIntegrationTest):
             nodes={
                 "Start": start_node,
                 "Process": process_node,
-                "End": Node(name="End", agent_type="output")
-            }
+                "End": Node(name="End", agent_type="output"),
+            },
         )
 
         agent_instances = self._create_agent_instances(graph)
@@ -218,8 +218,8 @@ class TestParallelGraphAssemblyIntegration(BaseIntegrationTest):
                 "ParallelA": parallel_a,
                 "ParallelB": Node(name="ParallelB", agent_type="echo"),
                 "ParallelC": Node(name="ParallelC", agent_type="echo"),
-                "End": Node(name="End", agent_type="output")
-            }
+                "End": Node(name="End", agent_type="output"),
+            },
         )
 
         agent_instances = self._create_agent_instances(graph)
@@ -256,8 +256,8 @@ class TestParallelGraphAssemblyIntegration(BaseIntegrationTest):
                 "Consolidate1": consolidate1,
                 "B1": Node(name="B1", agent_type="echo"),
                 "B2": Node(name="B2", agent_type="echo"),
-                "End": Node(name="End", agent_type="output")
-            }
+                "End": Node(name="End", agent_type="output"),
+            },
         )
 
         agent_instances = self._create_agent_instances(graph)
@@ -294,8 +294,8 @@ class TestParallelGraphAssemblyIntegration(BaseIntegrationTest):
                 "SuccessHandler": Node(name="SuccessHandler", agent_type="echo"),
                 "ErrorA": Node(name="ErrorA", agent_type="echo"),
                 "ErrorB": Node(name="ErrorB", agent_type="echo"),
-                "End": Node(name="End", agent_type="output")
-            }
+                "End": Node(name="End", agent_type="output"),
+            },
         )
 
         agent_instances = self._create_agent_instances(graph)
@@ -335,5 +335,5 @@ class TestParallelGraphAssemblyIntegration(BaseIntegrationTest):
         return agent_instances
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

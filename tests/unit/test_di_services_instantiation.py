@@ -1,4 +1,3 @@
-
 import pytest
 
 from agentmap.di.containers import ApplicationContainer
@@ -65,7 +64,6 @@ SERVICE_NAMES = [
     "bundle_update_service",
     "graph_scaffold_service",
     "graph_execution_service",
-    "graph_output_service",
     "graph_checkpoint_service",
     "interaction_handler_service",
     "graph_bootstrap_service",
@@ -84,11 +82,15 @@ def container():
 @pytest.mark.parametrize("service_name", SERVICE_NAMES)
 def test_service_provider_instantiates(container, service_name):
     # Ensure provider exists
-    assert hasattr(container, service_name), f"Provider '{service_name}' is missing on the container"
+    assert hasattr(
+        container, service_name
+    ), f"Provider '{service_name}' is missing on the container"
 
     provider = getattr(container, service_name)
     # Provider itself should be callable (providers.Singleton/Factory/etc.)
-    assert callable(provider), f"Provider '{service_name}' is not callable (got: {type(provider)})"
+    assert callable(
+        provider
+    ), f"Provider '{service_name}' is not callable (got: {type(provider)})"
 
     # Attempt to build the instance. Some optional services may return None by design.
     try:

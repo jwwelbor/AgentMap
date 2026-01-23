@@ -1,5 +1,8 @@
 from agentmap.models.embeddings import EmbeddingOutput
-from agentmap.services.vector.vector_storage_service import VectorStorageService, InMemoryVectorIndex
+from agentmap.services.vector.vector_storage_service import (
+    InMemoryVectorIndex,
+    VectorStorageService,
+)
 
 
 def test_roundtrip_inmemory_index():
@@ -7,8 +10,20 @@ def test_roundtrip_inmemory_index():
     vss = VectorStorageService(index=index)
 
     vecs = [
-        EmbeddingOutput(id="npc:ser-calen", vector=[1.0, 0.0, 0.0], dim=3, model="test", metric="cosine"),
-        EmbeddingOutput(id="loc:black-bridge", vector=[0.0, 1.0, 0.0], dim=3, model="test", metric="cosine"),
+        EmbeddingOutput(
+            id="npc:ser-calen",
+            vector=[1.0, 0.0, 0.0],
+            dim=3,
+            model="test",
+            metric="cosine",
+        ),
+        EmbeddingOutput(
+            id="loc:black-bridge",
+            vector=[0.0, 1.0, 0.0],
+            dim=3,
+            model="test",
+            metric="cosine",
+        ),
     ]
     metas = [
         {"type": "npc", "name": "Ser Calen"},

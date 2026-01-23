@@ -5,10 +5,13 @@ This test verifies the basic exception functionality works.
 """
 
 import unittest
-from typing import Dict, Any
+from typing import Any, Dict
 from uuid import uuid4
 
-from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException, AgentError
+from agentmap.exceptions.agent_exceptions import (
+    AgentError,
+    ExecutionInterruptedException,
+)
 from agentmap.models.human_interaction import HumanInteractionRequest, InteractionType
 
 
@@ -24,29 +27,31 @@ class TestExecutionInterruptedExceptionSimple(unittest.TestCase):
             thread_id=thread_id,
             node_name="test_node",
             interaction_type=InteractionType.TEXT_INPUT,
-            prompt="Please provide input"
+            prompt="Please provide input",
         )
         checkpoint_data = {
             "inputs": {"input_key": "input_value"},
             "agent_context": {"context_key": "context_value"},
             "execution_tracker": "tracker_data",
-            "node_name": "test_node"
+            "node_name": "test_node",
         }
-        
+
         # Act
         exception = ExecutionInterruptedException(
             thread_id=thread_id,
             interaction_request=interaction_request,
-            checkpoint_data=checkpoint_data
+            checkpoint_data=checkpoint_data,
         )
-        
+
         # Assert
         self.assertEqual(exception.thread_id, thread_id)
         self.assertEqual(exception.interaction_request, interaction_request)
         self.assertEqual(exception.checkpoint_data, checkpoint_data)
-        
+
         # Check message format
-        expected_message = f"Execution interrupted for human interaction in thread: {thread_id}"
+        expected_message = (
+            f"Execution interrupted for human interaction in thread: {thread_id}"
+        )
         self.assertEqual(str(exception), expected_message)
 
     def test_exception_inheritance(self):
@@ -57,17 +62,17 @@ class TestExecutionInterruptedExceptionSimple(unittest.TestCase):
             thread_id=thread_id,
             node_name="test_node",
             interaction_type=InteractionType.TEXT_INPUT,
-            prompt="Test prompt"
+            prompt="Test prompt",
         )
         checkpoint_data = {"test": "data"}
-        
+
         # Act
         exception = ExecutionInterruptedException(
             thread_id=thread_id,
             interaction_request=interaction_request,
-            checkpoint_data=checkpoint_data
+            checkpoint_data=checkpoint_data,
         )
-        
+
         # Assert
         self.assertIsInstance(exception, ExecutionInterruptedException)
         self.assertIsInstance(exception, AgentError)
