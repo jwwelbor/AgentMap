@@ -58,36 +58,21 @@ def init_command(
         folder_path.mkdir(parents=True, exist_ok=True)
 
     # Create README.md files in empty directories to guide users
-    readme_configs = [
-        {
-            "path": "agentmap_data/custom_agents/README.md",
-            "content": (
-                "# Custom Agents\n\n"
-                "AgentMap custom agents go in this folder. "
-                "See the documentation online for more information.\n"
-            ),
-        },
-        {
-            "path": "agentmap_data/custom_functions/README.md",
-            "content": (
-                "# Custom Functions\n\n"
-                "AgentMap custom functions go in this folder. "
-                "See the documentation online for more information.\n"
-            ),
-        },
-        {
-            "path": "agentmap_data/custom_tools/README.md",
-            "content": (
-                "# Custom Tools\n\n"
-                "AgentMap custom tools go in this folder. "
-                "See the documentation online for more information.\n"
-            ),
-        },
-    ]
+    # Using a mapping to avoid repetition (DRY principle)
+    readme_info = {
+        "custom_agents": "Custom Agents",
+        "custom_functions": "Custom Functions",
+        "custom_tools": "Custom Tools",
+    }
 
-    for readme_config in readme_configs:
-        readme_path = current_dir / readme_config["path"]
-        readme_path.write_text(readme_config["content"])
+    for folder_name, title in readme_info.items():
+        readme_path = current_dir / f"agentmap_data/{folder_name}/README.md"
+        content = (
+            f"# {title}\n\n"
+            f"AgentMap {folder_name.replace('_', ' ')} go in this folder. "
+            "See the documentation online for more information.\n"
+        )
+        readme_path.write_text(content)
 
     # Copy files
     copied_files = []
