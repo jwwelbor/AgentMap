@@ -14,10 +14,10 @@ Test Coverage:
 
 import unittest
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
-from tests.fresh_suite.integration.base_integration_test import BaseIntegrationTest
 from agentmap.models.execution.result import ExecutionResult
+from tests.fresh_suite.integration.base_integration_test import BaseIntegrationTest
 
 
 class TestParallelExecutionEndToEnd(BaseIntegrationTest):
@@ -54,7 +54,7 @@ SimpleFanOut,End,output,,"""
 
         initial_state = {
             "input": "test data for parallel processing",
-            "user_input": "fan-out test"
+            "user_input": "fan-out test",
         }
 
         result = self._execute_workflow(csv_path, "SimpleFanOut", initial_state)
@@ -66,7 +66,9 @@ SimpleFanOut,End,output,,"""
 
         # Verify all parallel branches executed (state should contain their outputs)
         final_state = result.final_state
-        print(f"Final state keys: {final_state.keys() if isinstance(final_state, dict) else 'N/A'}")
+        print(
+            f"Final state keys: {final_state.keys() if isinstance(final_state, dict) else 'N/A'}"
+        )
 
         print("✅ Simple fan-out execution completed")
 
@@ -86,7 +88,7 @@ FanOutConsolidate,End,output,,"""
 
         initial_state = {
             "input": "data requiring parallel analysis",
-            "user_input": "consolidation test"
+            "user_input": "consolidation test",
         }
 
         result = self._execute_workflow(csv_path, "FanOutConsolidate", initial_state)
@@ -97,7 +99,9 @@ FanOutConsolidate,End,output,,"""
 
         # Verify consolidation occurred (Summary node executed)
         final_state = result.final_state
-        print(f"Final state after consolidation: {final_state.keys() if isinstance(final_state, dict) else 'N/A'}")
+        print(
+            f"Final state after consolidation: {final_state.keys() if isinstance(final_state, dict) else 'N/A'}"
+        )
 
         print("✅ Fan-out with consolidation completed")
 
@@ -122,7 +126,7 @@ MixedPattern,NodeG,output,,"""
 
         initial_state = {
             "input": "sequential start data",
-            "user_input": "mixed pattern test"
+            "user_input": "mixed pattern test",
         }
 
         result = self._execute_workflow(csv_path, "MixedPattern", initial_state)
@@ -132,7 +136,9 @@ MixedPattern,NodeG,output,,"""
         self.assertEqual(result.graph_name, "MixedPattern")
 
         # Verify all stages executed
-        print(f"Mixed pattern execution completed with state: {result.final_state.keys() if isinstance(result.final_state, dict) else 'N/A'}")
+        print(
+            f"Mixed pattern execution completed with state: {result.final_state.keys() if isinstance(result.final_state, dict) else 'N/A'}"
+        )
 
         print("✅ Mixed sequential/parallel completed")
 
@@ -158,7 +164,7 @@ ParallelSuccess,End,output,,"""
         initial_state = {
             "input": "valid data",
             "user_input": "success path test",
-            "last_action_success": True
+            "last_action_success": True,
         }
 
         result = self._execute_workflow(csv_path, "ParallelSuccess", initial_state)
@@ -186,7 +192,7 @@ ParallelFailure,End,output,,"""
         initial_state = {
             "input": "test data",
             "user_input": "failure path test",
-            "last_action_success": False
+            "last_action_success": False,
         }
 
         result = self._execute_workflow(csv_path, "ParallelFailure", initial_state)
@@ -210,10 +216,7 @@ BothPathsParallel,End,output,,"""
 
         csv_path = self._create_csv(csv_content, "both_paths_parallel.csv")
 
-        initial_state = {
-            "input": "test data",
-            "user_input": "both paths test"
-        }
+        initial_state = {"input": "test data", "user_input": "both paths test"}
 
         result = self._execute_workflow(csv_path, "BothPathsParallel", initial_state)
 
@@ -243,7 +246,7 @@ StateSync,End,output,,"""
         initial_state = {
             "input": "shared data",
             "shared_input": "data for all branches",
-            "user_input": "synchronization test"
+            "user_input": "synchronization test",
         }
 
         result = self._execute_workflow(csv_path, "StateSync", initial_state)
@@ -285,7 +288,7 @@ MultiParallel,End,output,,"""
 
         initial_state = {
             "input": "multi-section test data",
-            "user_input": "multiple parallel sections test"
+            "user_input": "multiple parallel sections test",
         }
 
         result = self._execute_workflow(csv_path, "MultiParallel", initial_state)
@@ -316,7 +319,7 @@ ConvergeDiverge,End,output,,"""
 
         initial_state = {
             "input": "convergence test data",
-            "user_input": "complex pattern test"
+            "user_input": "complex pattern test",
         }
 
         result = self._execute_workflow(csv_path, "ConvergeDiverge", initial_state)
@@ -334,11 +337,12 @@ ConvergeDiverge,End,output,,"""
         """Create a test CSV file."""
         csv_path = Path(self.temp_dir) / "csv_data" / filename
         csv_path.parent.mkdir(parents=True, exist_ok=True)
-        csv_path.write_text(content, encoding='utf-8')
+        csv_path.write_text(content, encoding="utf-8")
         return csv_path
 
-    def _execute_workflow(self, csv_path: Path, graph_name: str,
-                         initial_state: Dict[str, Any]) -> ExecutionResult:
+    def _execute_workflow(
+        self, csv_path: Path, graph_name: str, initial_state: Dict[str, Any]
+    ) -> ExecutionResult:
         """Execute workflow end-to-end using csv_parser and simplified flow."""
         # For integration tests, we'll parse and validate the CSV structure
         # but skip actual execution (which requires more complex setup)
@@ -360,11 +364,11 @@ ConvergeDiverge,End,output,,"""
             final_state=initial_state,
             execution_summary=ExecutionSummary(graph_name=graph_name),
             success=True,
-            total_duration=0.0
+            total_duration=0.0,
         )
 
         return result
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

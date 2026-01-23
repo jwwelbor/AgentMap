@@ -16,15 +16,15 @@ All tests use real DI container instances and follow established testing pattern
 """
 
 # Import test classes for easy access
-from .base_api_integration_test import BaseAPIIntegrationTest, APITestCase
-from .test_workflow_endpoints import TestWorkflowEndpoints
-from .test_graph_endpoints import TestGraphEndpoints
+from .base_api_integration_test import APITestCase, BaseAPIIntegrationTest
 from .test_auth_endpoints import TestAuthenticationEndpoints
+from .test_graph_endpoints import TestGraphEndpoints
+from .test_workflow_endpoints import TestWorkflowEndpoints
 
 __all__ = [
-    'BaseAPIIntegrationTest',
-    'APITestCase',
-    'TestWorkflowEndpoints',
-    'TestGraphEndpoints',
-    'TestAuthenticationEndpoints',
+    "BaseAPIIntegrationTest",
+    "APITestCase",
+    "TestWorkflowEndpoints",
+    "TestGraphEndpoints",
+    "TestAuthenticationEndpoints",
 ]
