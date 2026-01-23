@@ -27,6 +27,7 @@ from agentmap.exceptions.runtime_exceptions import (
 
 # Runtime API exports
 from agentmap.runtime_api import (
+    agentmap_initialize,
     ensure_initialized,
     list_graphs,
     resume_workflow,
@@ -48,7 +49,8 @@ __all__ = [
     "gcp_http_handler",
     "azure_http_handler",
     # Runtime API
-    "ensure_initialized",
+    "agentmap_initialize",  # Recommended for external apps
+    "ensure_initialized",  # Internal/legacy name
     "run_workflow",
     "list_graphs",
     "resume_workflow",
