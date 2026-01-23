@@ -143,9 +143,9 @@ class StorageConfigService:
             )
 
             # Update logger in helper classes
-            self._cache_manager._logger = logger
-            self._path_resolver._logger = logger
-            self._storage_handlers._logger = logger
+            self._cache_manager.set_logger(logger)
+            self._path_resolver.set_logger(logger)
+            self._storage_handlers.set_logger(logger)
 
     # Storage-specific business logic methods
     def get_csv_config(self) -> Dict[str, Any]:
@@ -405,14 +405,6 @@ class StorageConfigService:
         """
         return self._cache_manager.get_cached_availability(storage_type)
 
-        try:
-            return self._availability_cache_service.get_availability(
-                "storage", storage_type.lower()
-            )
-        except Exception as e:
-            self._logger.debug(f"Cache lookup failed for storage.{storage_type}: {e}")
-            return None
-
     def _set_cached_availability(
         self, storage_type: str, result: Dict[str, Any]
     ) -> bool:
@@ -427,14 +419,6 @@ class StorageConfigService:
             True if successfully cached, False otherwise
         """
         return self._cache_manager.set_cached_availability(storage_type, result)
-
-        try:
-            return self._availability_cache_service.set_availability(
-                "storage", storage_type.lower(), result
-            )
-        except Exception as e:
-            self._logger.debug(f"Cache set failed for storage.{storage_type}: {e}")
-            return False
 
     # Configuration hierarchy helper methods
     def get_base_directory(self) -> str:

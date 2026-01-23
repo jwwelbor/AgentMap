@@ -44,6 +44,15 @@ class StorageTypeHandlers:
         self._path_resolver = path_resolver
         self._logger = logger or logging.getLogger(__name__)
 
+    def set_logger(self, logger: logging.Logger):
+        """
+        Set the logger instance.
+
+        Args:
+            logger: Logger instance to use
+        """
+        self._logger = logger
+
     def is_csv_storage_enabled(self) -> bool:
         """
         Check if CSV storage is configured and enabled.
@@ -83,7 +92,8 @@ class StorageTypeHandlers:
             self._cache_manager.set_cached_availability("csv", result)
 
             return enabled
-        except Exception:
+        except Exception as e:
+            self._logger.warning(f"Error checking CSV storage availability: {e}")
             return False
 
     def is_csv_auto_create_enabled(self) -> bool:
@@ -132,7 +142,8 @@ class StorageTypeHandlers:
             self._cache_manager.set_cached_availability("vector", result)
 
             return enabled
-        except Exception:
+        except Exception as e:
+            self._logger.warning(f"Error checking vector storage availability: {e}")
             return False
 
     def is_kv_storage_enabled(self) -> bool:
@@ -171,7 +182,8 @@ class StorageTypeHandlers:
             self._cache_manager.set_cached_availability("kv", result)
 
             return enabled
-        except Exception:
+        except Exception as e:
+            self._logger.warning(f"Error checking KV storage availability: {e}")
             return False
 
     def is_json_storage_enabled(self) -> bool:
@@ -254,7 +266,8 @@ class StorageTypeHandlers:
             self._cache_manager.set_cached_availability("blob", result)
 
             return enabled
-        except Exception:
+        except Exception as e:
+            self._logger.warning(f"Error checking blob storage availability: {e}")
             return False
 
     def is_provider_configured(self, provider: str) -> bool:
@@ -303,7 +316,8 @@ class StorageTypeHandlers:
                 if not config.get("default_directory"):
                     return False
                 return True
-            except Exception:
+            except Exception as e:
+                self._logger.warning(f"Error checking file storage availability: {e}")
                 return False
         else:
             # Generic storage types

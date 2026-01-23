@@ -29,6 +29,15 @@ class AvailabilityCacheManager:
         self._availability_cache_service = availability_cache_service
         self._logger = logger or logging.getLogger(__name__)
 
+    def set_logger(self, logger: logging.Logger):
+        """
+        Set the logger instance.
+
+        Args:
+            logger: Logger instance to use
+        """
+        self._logger = logger
+
     def get_cached_availability(self, storage_type: str) -> Optional[Dict[str, Any]]:
         """
         Get cached availability using unified cache service.

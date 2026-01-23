@@ -40,6 +40,15 @@ class PathResolver:
         self._config_service = config_service
         self._logger = logger or logging.getLogger(__name__)
 
+    def set_logger(self, logger: logging.Logger):
+        """
+        Set the logger instance.
+
+        Args:
+            logger: Logger instance to use
+        """
+        self._logger = logger
+
     def get_base_directory(self) -> str:
         """
         Get the base storage directory that all storage types use as their root.
