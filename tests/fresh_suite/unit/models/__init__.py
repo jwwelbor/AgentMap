@@ -7,7 +7,7 @@ models contain no business logic, only data storage and access functionality.
 
 These tests focus exclusively on:
 - Data initialization and storage
-- Property access and modification  
+- Property access and modification
 - Simple data query methods
 - Data container composition and relationships
 

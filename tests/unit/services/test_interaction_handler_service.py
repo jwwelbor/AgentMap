@@ -10,8 +10,8 @@ import time
 import unittest
 import unittest.mock
 from datetime import datetime
-from typing import Dict, Any, Optional
-from unittest.mock import Mock, MagicMock
+from typing import Any, Dict, Optional
+from unittest.mock import MagicMock, Mock
 from uuid import uuid4
 
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
@@ -36,23 +36,25 @@ class TestInteractionHandlerService(unittest.TestCase):
         self.mock_logging = create_fixed_mock_logging_service()
 
         # Configure SystemStorageManager to return file storage mock
-        self.mock_system_storage_manager.get_file_storage.return_value = self.mock_file_storage
+        self.mock_system_storage_manager.get_file_storage.return_value = (
+            self.mock_file_storage
+        )
 
         # Configure successful storage operations by default
-        self.mock_file_storage.write.return_value = StorageResult(success=True, error=None)
+        self.mock_file_storage.write.return_value = StorageResult(
+            success=True, error=None
+        )
         self.mock_file_storage.read.return_value = None
         self.mock_file_storage.is_healthy.return_value = True
 
         # Create service under test
         self.interaction_service = InteractionHandlerService(
             system_storage_manager=self.mock_system_storage_manager,
-            logging_service=self.mock_logging
+            logging_service=self.mock_logging,
         )
 
     def _create_test_interaction_request(
-        self,
-        thread_id: str = "test_thread",
-        node_name: str = "test_node"
+        self, thread_id: str = "test_thread", node_name: str = "test_node"
     ) -> HumanInteractionRequest:
         """Create a test interaction request."""
         return HumanInteractionRequest(
@@ -63,31 +65,31 @@ class TestInteractionHandlerService(unittest.TestCase):
             prompt="Please provide input",
             context={"test": "context"},
             options=["option1", "option2"],
-            timeout_seconds=300
+            timeout_seconds=300,
         )
 
     def _create_test_exception(
         self,
         thread_id: str = "test_thread",
         interaction_request: Optional[HumanInteractionRequest] = None,
-        checkpoint_data: Optional[Dict[str, Any]] = None
+        checkpoint_data: Optional[Dict[str, Any]] = None,
     ) -> ExecutionInterruptedException:
         """Create a test ExecutionInterruptedException."""
         if interaction_request is None:
             interaction_request = self._create_test_interaction_request(thread_id)
-        
+
         if checkpoint_data is None:
             checkpoint_data = {
                 "inputs": {"input_key": "input_value"},
                 "agent_context": {"context_key": "context_value"},
                 "execution_tracker": "tracker_data",
-                "node_name": "test_node"
+                "node_name": "test_node",
             }
-        
+
         return ExecutionInterruptedException(
             thread_id=thread_id,
             interaction_request=interaction_request,
-            checkpoint_data=checkpoint_data
+            checkpoint_data=checkpoint_data,
         )
 
     def _create_test_bundle(self) -> Mock:
@@ -105,18 +107,9 @@ class TestInteractionHandlerService(unittest.TestCase):
         self.assertIsNotNone(self.interaction_service.file_storage)
 
         # Check collection names (updated for refactored service)
-        self.assertEqual(
-            self.interaction_service.requests_collection,
-            "requests"
-        )
-        self.assertEqual(
-            self.interaction_service.threads_collection,
-            "threads"
-        )
-        self.assertEqual(
-            self.interaction_service.responses_collection,
-            "responses"
-        )
+        self.assertEqual(self.interaction_service.requests_collection, "requests")
+        self.assertEqual(self.interaction_service.threads_collection, "threads")
+        self.assertEqual(self.interaction_service.responses_collection, "responses")
 
     def test_handle_execution_interruption_success(self):
         """Test successful execution interruption handling."""
@@ -127,14 +120,13 @@ class TestInteractionHandlerService(unittest.TestCase):
 
         # Act
         self.interaction_service.handle_execution_interruption(
-            exception=exception,
-            bundle=bundle,
-            bundle_context=bundle_context
+            exception=exception, bundle=bundle, bundle_context=bundle_context
         )
 
         # Assert - Verify interaction request was stored with pickle and binary mode
         interaction_calls = [
-            call for call in self.mock_file_storage.write.call_args_list
+            call
+            for call in self.mock_file_storage.write.call_args_list
             if call.kwargs.get("collection") == "requests"
         ]
         self.assertEqual(len(interaction_calls), 1)
@@ -155,7 +147,8 @@ class TestInteractionHandlerService(unittest.TestCase):
 
         # Assert - Verify thread metadata was stored with pickle and binary mode
         thread_calls = [
-            call for call in self.mock_file_storage.write.call_args_list
+            call
+            for call in self.mock_file_storage.write.call_args_list
             if call.kwargs.get("collection") == "threads"
         ]
         self.assertEqual(len(thread_calls), 1)
@@ -186,13 +179,13 @@ class TestInteractionHandlerService(unittest.TestCase):
 
         # Act
         self.interaction_service.handle_execution_interruption(
-            exception=exception,
-            bundle=bundle
+            exception=exception, bundle=bundle
         )
 
         # Assert - Verify bundle info was extracted
         thread_calls = [
-            call for call in self.mock_file_storage.write.call_args_list
+            call
+            for call in self.mock_file_storage.write.call_args_list
             if call.kwargs.get("collection") == "threads"
         ]
 
@@ -215,7 +208,8 @@ class TestInteractionHandlerService(unittest.TestCase):
 
         # Assert - Verify empty bundle info
         thread_calls = [
-            call for call in self.mock_file_storage.write.call_args_list
+            call
+            for call in self.mock_file_storage.write.call_args_list
             if call.kwargs.get("collection") == "threads"
         ]
 
@@ -261,8 +255,7 @@ class TestInteractionHandlerService(unittest.TestCase):
         # Arrange
         request = self._create_test_interaction_request()
         self.mock_file_storage.write.return_value = StorageResult(
-            success=False,
-            error="Storage failed"
+            success=False, error="Storage failed"
         )
 
         # Act & Assert
@@ -280,7 +273,7 @@ class TestInteractionHandlerService(unittest.TestCase):
             "inputs": {"key": "value"},
             "agent_context": {"context": "data"},
             "execution_tracker": "tracker",
-            "node_name": "test_node"
+            "node_name": "test_node",
         }
         bundle = self._create_test_bundle()
         bundle_context = {"extra": "data"}
@@ -291,7 +284,7 @@ class TestInteractionHandlerService(unittest.TestCase):
             interaction_request=interaction_request,
             checkpoint_data=checkpoint_data,
             bundle=bundle,
-            bundle_context=bundle_context
+            bundle_context=bundle_context,
         )
 
         # Assert
@@ -324,8 +317,7 @@ class TestInteractionHandlerService(unittest.TestCase):
         """Test thread metadata storage failure."""
         # Arrange
         self.mock_file_storage.write.return_value = StorageResult(
-            success=False,
-            error="Thread storage failed"
+            success=False, error="Thread storage failed"
         )
 
         thread_id = "test_thread"
@@ -337,7 +329,7 @@ class TestInteractionHandlerService(unittest.TestCase):
             self.interaction_service._store_thread_metadata(
                 thread_id=thread_id,
                 interaction_request=interaction_request,
-                checkpoint_data=checkpoint_data
+                checkpoint_data=checkpoint_data,
             )
 
         self.assertIn("Failed to store thread metadata", str(context.exception))
@@ -350,7 +342,7 @@ class TestInteractionHandlerService(unittest.TestCase):
             "thread_id": thread_id,
             "status": "paused",
             "bundle_info": {"csv_hash": "test123"},
-            "node_name": "test_node"
+            "node_name": "test_node",
         }
 
         # Mock file storage to return pickled data
@@ -362,9 +354,7 @@ class TestInteractionHandlerService(unittest.TestCase):
         # Assert
         self.assertEqual(metadata, expected_metadata)
         self.mock_file_storage.read.assert_called_once_with(
-            collection="threads",
-            document_id=f"{thread_id}.pkl",
-            binary_mode=True
+            collection="threads", document_id=f"{thread_id}.pkl", binary_mode=True
         )
 
     def test_get_thread_metadata_not_found(self):
@@ -396,8 +386,11 @@ class TestInteractionHandlerService(unittest.TestCase):
         logger = self.mock_logging.get_class_logger(self.interaction_service)
         error_calls = logger.error.call_args_list
         self.assertTrue(
-            any("Failed to retrieve thread metadata" in str(call) for call in error_calls),
-            f"Expected error message not found in calls: {error_calls}"
+            any(
+                "Failed to retrieve thread metadata" in str(call)
+                for call in error_calls
+            ),
+            f"Expected error message not found in calls: {error_calls}",
         )
 
     def test_mark_thread_resuming_success(self):
@@ -408,7 +401,9 @@ class TestInteractionHandlerService(unittest.TestCase):
 
         # Mock read to return existing data, write to succeed
         self.mock_file_storage.read.return_value = pickle.dumps(existing_metadata)
-        self.mock_file_storage.write.return_value = StorageResult(success=True, error=None)
+        self.mock_file_storage.write.return_value = StorageResult(
+            success=True, error=None
+        )
 
         # Act
         result = self.interaction_service.mark_thread_resuming(thread_id)
@@ -438,8 +433,7 @@ class TestInteractionHandlerService(unittest.TestCase):
         # Mock read to succeed, write to fail
         self.mock_file_storage.read.return_value = pickle.dumps(existing_metadata)
         self.mock_file_storage.write.return_value = StorageResult(
-            success=False,
-            error="Update failed"
+            success=False, error="Update failed"
         )
 
         # Act
@@ -464,11 +458,17 @@ class TestInteractionHandlerService(unittest.TestCase):
         """Test successfully marking thread as completed."""
         # Arrange
         thread_id = "test_thread"
-        existing_metadata = {"thread_id": thread_id, "status": "resuming", "pending_interaction_id": "123"}
+        existing_metadata = {
+            "thread_id": thread_id,
+            "status": "resuming",
+            "pending_interaction_id": "123",
+        }
 
         # Mock read to return existing data, write to succeed
         self.mock_file_storage.read.return_value = pickle.dumps(existing_metadata)
-        self.mock_file_storage.write.return_value = StorageResult(success=True, error=None)
+        self.mock_file_storage.write.return_value = StorageResult(
+            success=True, error=None
+        )
 
         # Act
         result = self.interaction_service.mark_thread_completed(thread_id)
@@ -494,8 +494,7 @@ class TestInteractionHandlerService(unittest.TestCase):
         # Mock read to succeed, write to fail
         self.mock_file_storage.read.return_value = pickle.dumps(existing_metadata)
         self.mock_file_storage.write.return_value = StorageResult(
-            success=False,
-            error="Completion update failed"
+            success=False, error="Completion update failed"
         )
 
         # Act
@@ -508,7 +507,7 @@ class TestInteractionHandlerService(unittest.TestCase):
         """Test expired thread cleanup."""
         # Act
         cleaned = self.interaction_service.cleanup_expired_threads(24)
-        
+
         # Assert
         # Current implementation is simplified and returns 0
         self.assertEqual(cleaned, 0)
@@ -549,7 +548,7 @@ class TestInteractionHandlerService(unittest.TestCase):
 
         service = InteractionHandlerService(
             system_storage_manager=mock_system_storage,
-            logging_service=self.mock_logging
+            logging_service=self.mock_logging,
         )
 
         # Act
@@ -563,8 +562,7 @@ class TestInteractionHandlerService(unittest.TestCase):
         # Arrange
         exception = self._create_test_exception()
         self.mock_file_storage.write.return_value = StorageResult(
-            success=False,
-            error="Storage failure"
+            success=False, error="Storage failure"
         )
 
         # Act & Assert
@@ -577,16 +575,16 @@ class TestInteractionHandlerService(unittest.TestCase):
         """Test execution interruption handling with CLI display failure."""
         # Arrange
         exception = self._create_test_exception()
-        
+
         # Mock the display_interaction_request import to raise an exception
         with unittest.mock.patch(
-            'agentmap.deployment.cli.display_utils.display_interaction_request',
-            side_effect=Exception("CLI error")
+            "agentmap.deployment.cli.display_utils.display_interaction_request",
+            side_effect=Exception("CLI error"),
         ):
             # Act & Assert
             with self.assertRaises(RuntimeError) as context:
                 self.interaction_service.handle_execution_interruption(exception)
-            
+
             self.assertIn("Interaction handling failed", str(context.exception))
 
     def test_thread_metadata_with_checkpoint_data_extraction(self):
@@ -599,14 +597,14 @@ class TestInteractionHandlerService(unittest.TestCase):
             "agent_context": {"execution_id": "exec_123"},
             "execution_tracker": {"node_count": 3},
             "node_name": "current_node",
-            "graph_name": "test_graph"
+            "graph_name": "test_graph",
         }
 
         # Act
         self.interaction_service._store_thread_metadata(
             thread_id=thread_id,
             interaction_request=interaction_request,
-            checkpoint_data=checkpoint_data
+            checkpoint_data=checkpoint_data,
         )
 
         # Assert
@@ -615,14 +613,20 @@ class TestInteractionHandlerService(unittest.TestCase):
         data = pickle.loads(data_bytes)
 
         # Verify graph_name fallback logic
-        expected_graph_name = checkpoint_data.get("graph_name", interaction_request.node_name)
+        expected_graph_name = checkpoint_data.get(
+            "graph_name", interaction_request.node_name
+        )
         self.assertEqual(data["graph_name"], expected_graph_name)
 
         # Verify checkpoint data structure
         stored_checkpoint = data["checkpoint_data"]
         self.assertEqual(stored_checkpoint["inputs"], checkpoint_data["inputs"])
-        self.assertEqual(stored_checkpoint["agent_context"], checkpoint_data["agent_context"])
-        self.assertEqual(stored_checkpoint["execution_tracker"], checkpoint_data["execution_tracker"])
+        self.assertEqual(
+            stored_checkpoint["agent_context"], checkpoint_data["agent_context"]
+        )
+        self.assertEqual(
+            stored_checkpoint["execution_tracker"], checkpoint_data["execution_tracker"]
+        )
 
     def test_bundle_extraction_edge_cases(self):
         """Test bundle context extraction edge cases."""
@@ -638,13 +642,13 @@ class TestInteractionHandlerService(unittest.TestCase):
 
         # Should not raise exception
         self.interaction_service.handle_execution_interruption(
-            exception=exception,
-            bundle=minimal_bundle
+            exception=exception, bundle=minimal_bundle
         )
 
         # Verify it handled missing attributes gracefully
         thread_calls = [
-            call for call in self.mock_file_storage.write.call_args_list
+            call
+            for call in self.mock_file_storage.write.call_args_list
             if call.kwargs.get("collection") == "threads"
         ]
 

@@ -193,7 +193,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
     bundle_update_service = _expose(_graph_core, "bundle_update_service")
     graph_scaffold_service = _expose(_graph_core, "graph_scaffold_service")
     graph_execution_service = _expose(_graph_core, "graph_execution_service")
-    graph_output_service = _expose(_graph_core, "graph_output_service")
     graph_checkpoint_service = _expose(_graph_core, "graph_checkpoint_service")
     interaction_handler_service = _expose(_graph_core, "interaction_handler_service")
     graph_bootstrap_service = _expose(_graph_core, "graph_bootstrap_service")

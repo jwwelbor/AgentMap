@@ -2,7 +2,7 @@
 Integration tests for AgentMap services.
 
 This package contains integration tests that verify real service coordination
-using actual DI container instances. These tests complement the unit tests 
+using actual DI container instances. These tests complement the unit tests
 (which use MockServiceFactory) by testing cross-service workflows and
 end-to-end service interactions.
 
