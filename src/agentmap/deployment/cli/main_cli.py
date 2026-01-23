@@ -12,7 +12,7 @@ import typer
 from agentmap._version import __version__
 from agentmap.deployment.cli.auth_command import auth_cmd
 from agentmap.deployment.cli.diagnose_command import diagnose_cmd
-from agentmap.deployment.cli.init_config_command import init_config_command
+from agentmap.deployment.cli.init_command import init_command
 from agentmap.deployment.cli.refresh_command import refresh_cmd
 from agentmap.deployment.cli.resume_command import resume_command
 from agentmap.deployment.cli.run_command import run_command
@@ -78,7 +78,7 @@ app.command("serve")(serve_command)
 # ============================================================================
 
 # app.command("config")(config_cmd)
-app.command("init-config")(init_config_command)
+app.command("init")(init_command)
 app.add_typer(auth_cmd, name="auth")
 
 # ============================================================================
