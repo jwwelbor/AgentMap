@@ -15,7 +15,7 @@ from agentmap.deployment.cli.utils.cli_presenter import (
     print_err,
     print_json,
 )
-from agentmap.runtime_api import ensure_initialized, resume_workflow
+# Lazy import: moved to function to avoid DI container init at module load
 
 
 def resume_command(
@@ -34,6 +34,9 @@ def resume_command(
     ),
 ):
     """Resume an interrupted workflow by providing thread ID and response data."""
+    # Lazy import to avoid DI container initialization at module load
+    from agentmap.runtime_api import ensure_initialized, resume_workflow
+
     try:
         # Ensure runtime is initialized
         ensure_initialized(config_file=config_file)

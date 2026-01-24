@@ -12,13 +12,29 @@ class HostRegistryContainer(containers.DeclarativeContainer):
 
     logging_service = providers.Dependency()
 
+    @staticmethod
+    def _create_host_service_registry(logging_service):
+        from agentmap.services.host_service_registry import HostServiceRegistry
+
+        return HostServiceRegistry(logging_service)
+
     host_service_registry = providers.Singleton(
-        "agentmap.services.host_service_registry.HostServiceRegistry",
+        _create_host_service_registry,
         logging_service,
     )
 
+    @staticmethod
+    def _create_host_protocol_configuration_service(
+        host_service_registry, logging_service
+    ):
+        from agentmap.services.host_protocol_configuration_service import (
+            HostProtocolConfigurationService,
+        )
+
+        return HostProtocolConfigurationService(host_service_registry, logging_service)
+
     host_protocol_configuration_service = providers.Singleton(
-        "agentmap.services.host_protocol_configuration_service.HostProtocolConfigurationService",
+        _create_host_protocol_configuration_service,
         host_service_registry,
         logging_service,
     )

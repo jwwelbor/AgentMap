@@ -11,28 +11,50 @@ This package provides clean architecture with separated concerns:
 - DI: Dependency injection and service wiring
 """
 
-from agentmap.deployment.cli import main_cli
-from agentmap.deployment.serverless.aws_lambda import lambda_handler
-from agentmap.deployment.serverless.azure_functions import azure_http_handler
-from agentmap.deployment.serverless.gcp_functions import gcp_http_handler
+# Lazy imports using __getattr__ to avoid 12.85s DI container initialization
+# at module load time. Imports are deferred until actually accessed.
 
-# Core exports for new architecture
-from agentmap.deployment.service_adapter import ServiceAdapter, create_service_adapter
-from agentmap.exceptions.runtime_exceptions import (
-    AgentMapError,
-    AgentMapNotInitialized,
-    GraphNotFound,
-    InvalidInputs,
-)
+import importlib
 
-# Runtime API exports
-from agentmap.runtime_api import (
-    agentmap_initialize,
-    ensure_initialized,
-    list_graphs,
-    resume_workflow,
-    run_workflow,
-)
+# Map module paths to the names they export
+_LAZY_IMPORTS = {
+    # CLI and serverless handlers
+    "agentmap.deployment.cli": ["main_cli"],
+    "agentmap.deployment.serverless.aws_lambda": ["lambda_handler"],
+    "agentmap.deployment.serverless.azure_functions": ["azure_http_handler"],
+    "agentmap.deployment.serverless.gcp_functions": ["gcp_http_handler"],
+    # Core service adapter
+    "agentmap.deployment.service_adapter": ["ServiceAdapter", "create_service_adapter"],
+    # Runtime API exceptions
+    "agentmap.exceptions.runtime_exceptions": [
+        "AgentMapError",
+        "AgentMapNotInitialized",
+        "GraphNotFound",
+        "InvalidInputs",
+    ],
+    # Runtime API functions (triggers DI container init)
+    "agentmap.runtime_api": [
+        "agentmap_initialize",
+        "ensure_initialized",
+        "run_workflow",
+        "list_graphs",
+        "resume_workflow",
+    ],
+}
+
+# Invert mapping: name -> module path for O(1) lookup
+_NAME_TO_MODULE = {
+    name: module for module, names in _LAZY_IMPORTS.items() for name in names
+}
+
+
+def __getattr__(name: str):
+    """Lazy import handler for AgentMap exports."""
+    if module_path := _NAME_TO_MODULE.get(name):
+        module = importlib.import_module(module_path)
+        return getattr(module, name)
+
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 __author__ = "John Welborn"
 __license__ = "MIT"

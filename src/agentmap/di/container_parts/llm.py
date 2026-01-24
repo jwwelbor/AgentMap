@@ -40,27 +40,77 @@ class LLMContainer(containers.DeclarativeContainer):
         availability_cache_service,
     )
 
+    @staticmethod
+    def _create_prompt_complexity_analyzer(app_config_service, logging_service):
+        from agentmap.services.routing.complexity_analyzer import (
+            PromptComplexityAnalyzer,
+        )
+
+        return PromptComplexityAnalyzer(app_config_service, logging_service)
+
     prompt_complexity_analyzer = providers.Singleton(
-        "agentmap.services.routing.complexity_analyzer.PromptComplexityAnalyzer",
+        _create_prompt_complexity_analyzer,
         app_config_service,
         logging_service,
     )
 
+    @staticmethod
+    def _create_routing_cache(logging_service):
+        from agentmap.services.routing.cache import RoutingCache
+
+        return RoutingCache(logging_service)
+
     routing_cache = providers.Singleton(
-        "agentmap.services.routing.cache.RoutingCache",
+        _create_routing_cache,
         logging_service,
     )
 
+    @staticmethod
+    def _create_llm_routing_service(
+        llm_routing_config_service,
+        logging_service,
+        routing_cache,
+        prompt_complexity_analyzer,
+    ):
+        from agentmap.services.routing.routing_service import LLMRoutingService
+
+        return LLMRoutingService(
+            llm_routing_config_service,
+            logging_service,
+            routing_cache,
+            prompt_complexity_analyzer,
+        )
+
     llm_routing_service = providers.Singleton(
-        "agentmap.services.routing.routing_service.LLMRoutingService",
+        _create_llm_routing_service,
         llm_routing_config_service,
         logging_service,
         routing_cache,
         prompt_complexity_analyzer,
     )
 
+    @staticmethod
+    def _create_llm_service(
+        app_config_service,
+        logging_service,
+        llm_routing_service,
+        llm_models_config_service,
+        features_registry_service,
+        llm_routing_config_service,
+    ):
+        from agentmap.services.llm_service import LLMService
+
+        return LLMService(
+            app_config_service,
+            logging_service,
+            llm_routing_service,
+            llm_models_config_service,
+            features_registry_service,
+            llm_routing_config_service,
+        )
+
     llm_service = providers.Singleton(
-        "agentmap.services.llm_service.LLMService",
+        _create_llm_service,
         app_config_service,
         logging_service,
         llm_routing_service,
