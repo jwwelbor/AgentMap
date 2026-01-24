@@ -8,10 +8,9 @@ import copy
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
-if TYPE_CHECKING:
-    from langchain_core.tools import Tool
+from langchain_core.tools import Tool
 
 from .node import Node
 
@@ -59,7 +58,7 @@ class GraphBundle:
     )
 
     # AGM-TOOLS-001: Tool caching
-    tools: Optional[Dict[str, List["Tool"]]] = (
+    tools: Optional[Dict[str, List[Tool]]] = (
         None  # Cache for loaded tools, keyed by node name
     )
 
