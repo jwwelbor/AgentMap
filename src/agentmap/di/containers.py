@@ -67,8 +67,21 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # Create orchestrator_service early to avoid circular dependency
     # (GraphCoreContainer needs it, but GraphAgentContainer is defined later)
+    @staticmethod
+    def _create_orchestrator_service(
+        prompt_manager_service, logging_service, llm_service, features_registry_service
+    ):
+        from agentmap.services.orchestrator_service import OrchestratorService
+
+        return OrchestratorService(
+            prompt_manager_service,
+            logging_service,
+            llm_service,
+            features_registry_service,
+        )
+
     _orchestrator_service = providers.Singleton(
-        "agentmap.services.orchestrator_service.OrchestratorService",
+        _create_orchestrator_service,
         _expose(_core, "prompt_manager_service"),
         _expose(_core, "logging_service"),
         _expose(_llm, "llm_service"),
@@ -208,8 +221,36 @@ class ApplicationContainer(containers.DeclarativeContainer):
         _graph_agent, "graph_agent_instantiation_service"
     )
 
+    @staticmethod
+    def _create_graph_runner_service(
+        app_config_service,
+        graph_bootstrap_service,
+        graph_agent_instantiation_service,
+        graph_assembly_service,
+        graph_execution_service,
+        execution_tracking_service,
+        logging_service,
+        interaction_handler_service,
+        graph_checkpoint_service,
+        graph_bundle_service,
+    ):
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
+
+        return GraphRunnerService(
+            app_config_service,
+            graph_bootstrap_service,
+            graph_agent_instantiation_service,
+            graph_assembly_service,
+            graph_execution_service,
+            execution_tracking_service,
+            logging_service,
+            interaction_handler_service,
+            graph_checkpoint_service,
+            graph_bundle_service,
+        )
+
     graph_runner_service = providers.Singleton(
-        "agentmap.services.graph.graph_runner_service.GraphRunnerService",
+        _create_graph_runner_service,
         app_config_service,
         graph_bootstrap_service,
         graph_agent_instantiation_service,

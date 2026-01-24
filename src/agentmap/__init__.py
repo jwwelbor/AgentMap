@@ -56,6 +56,7 @@ def __getattr__(name: str):
 
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
+
 __author__ = "John Welborn"
 __license__ = "MIT"
 __copyright__ = "Copyright 2025 John Welborn"
