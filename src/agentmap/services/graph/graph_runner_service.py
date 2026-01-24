@@ -21,6 +21,7 @@ from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.models.execution.result import ExecutionResult
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.declaration_registry_service import DeclarationRegistryService
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.graph.graph_agent_instantiation_service import (
     GraphAgentInstantiationService,
@@ -67,6 +68,7 @@ class GraphRunnerService:
         interaction_handler_service: InteractionHandlerService,
         graph_checkpoint_service: GraphCheckpointService,
         graph_bundle_service: GraphBundleService,
+        declaration_registry_service: DeclarationRegistryService,
     ):
         """Initialize orchestration service with all pipeline services."""
         self.app_config = app_config_service
@@ -82,6 +84,7 @@ class GraphRunnerService:
         self.interaction_handler = interaction_handler_service
         self.graph_checkpoint = graph_checkpoint_service
         self.graph_bundle_service = graph_bundle_service
+        self.declaration_registry = declaration_registry_service
 
         # Initialize helper components (refactored from original methods)
         self.interrupt_handler = GraphInterruptHandler(
@@ -140,9 +143,15 @@ class GraphRunnerService:
             initial_state = {}
 
         try:
-            # Phase 2: Create execution tracker for this run
+            # Phase 2: Load only required declarations for selective service loading
             self.logger.debug(
-                f"[GraphRunnerService] Phase 2: Setting up execution tracking"
+                f"[GraphRunnerService] Phase 2: Loading bundle declarations for {graph_name}"
+            )
+            self.declaration_registry.load_for_bundle(bundle)
+
+            # Phase 3: Create execution tracker for this run
+            self.logger.debug(
+                f"[GraphRunnerService] Phase 3: Setting up execution tracking"
             )
 
             # Create execution tracker - always create a new tracker
@@ -159,9 +168,9 @@ class GraphRunnerService:
                     f"[GraphRunnerService] Created root tracker for graph: {graph_name}"
                 )
 
-            # Phase 3: Instantiate - create and configure agent instances
+            # Phase 4: Instantiate - create and configure agent instances
             self.logger.debug(
-                f"[GraphRunnerService] Phase 3: Instantiating agents for {graph_name}"
+                f"[GraphRunnerService] Phase 4: Instantiating agents for {graph_name}"
             )
             bundle_with_instances = self.graph_instantiation.instantiate_agents(
                 bundle, execution_tracker
@@ -182,9 +191,9 @@ class GraphRunnerService:
                     f"{validation['instantiated_nodes']} agents ready"
                 )
 
-            # Phase 4: Assembly - build the executable graph
+            # Phase 5: Assembly - build the executable graph
             self.logger.debug(
-                f"[GraphRunnerService] Phase 4: Assembling graph for {graph_name}"
+                f"[GraphRunnerService] Phase 5: Assembling graph for {graph_name}"
             )
 
             # Create Graph model from bundle for assembly
@@ -249,9 +258,9 @@ class GraphRunnerService:
 
             self.logger.debug(f"[GraphRunnerService] Graph assembly completed")
 
-            # Phase 5: Execution - run the graph
+            # Phase 6: Execution - run the graph
             self.logger.debug(
-                f"[GraphRunnerService] Phase 5: Executing graph {graph_name}"
+                f"[GraphRunnerService] Phase 6: Executing graph {graph_name}"
             )
             result = self.graph_execution.execute_compiled_graph(
                 executable_graph=executable_graph,

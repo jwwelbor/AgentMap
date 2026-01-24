@@ -233,6 +233,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         interaction_handler_service,
         graph_checkpoint_service,
         graph_bundle_service,
+        declaration_registry_service,
     ):
         from agentmap.services.graph.graph_runner_service import GraphRunnerService
 
@@ -247,6 +248,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
             interaction_handler_service,
             graph_checkpoint_service,
             graph_bundle_service,
+            declaration_registry_service,
         )
 
     graph_runner_service = providers.Singleton(
@@ -261,6 +263,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         interaction_handler_service,
         graph_checkpoint_service,
         graph_bundle_service,
+        declaration_registry_service,
     )
 
     # --- Delegated helper methods ----------------------------------------------
