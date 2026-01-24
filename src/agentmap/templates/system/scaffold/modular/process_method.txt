@@ -27,7 +27,7 @@
                 "processed": True,
                 "agent_type": "{agent_type}",
                 "node": "{node_name}",
-                "timestamp": "placeholder"
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }}
             
             # BaseAgent will automatically store this in state['{output_field}']
