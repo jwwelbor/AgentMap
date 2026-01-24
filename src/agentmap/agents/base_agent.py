@@ -41,6 +41,8 @@ class BaseAgent:
         logger: Optional[logging.Logger] = None,
         execution_tracking_service: Optional[ExecutionTrackingService] = None,
         state_adapter_service: Optional[StateAdapterService] = None,
+        # BACKWARD COMPATIBILITY: Support old parameter name from auto-generated agents
+        execution_tracker_service: Optional[ExecutionTrackingService] = None,
     ):
         """
         Initialize the agent with infrastructure dependency injection.
@@ -53,8 +55,10 @@ class BaseAgent:
             prompt: Prompt or instruction for the agent
             context: Additional context including input/output configuration
             logger: Logger instance (required for proper operation)
-            execution_tracker: ExecutionTrackingService instance (required for proper operation)
-            state_adapter: StateAdapterService instance
+            execution_tracking_service: ExecutionTrackingService instance (preferred)
+            state_adapter_service: StateAdapterService instance
+            execution_tracker_service: DEPRECATED - Use execution_tracking_service instead
+                (kept for backward compatibility with auto-generated agents)
         """
         # Core agent configuration
         self.name = name
@@ -76,7 +80,13 @@ class BaseAgent:
 
         # Infrastructure services (required) - only core services ALL agents need
         self._logger = logger
-        self._execution_tracking_service = execution_tracking_service
+
+        # BACKWARD COMPATIBILITY: Support both old and new parameter names
+        # Prefer new name, fall back to old name if provided
+        self._execution_tracking_service = (
+            execution_tracking_service or execution_tracker_service
+        )
+
         self._state_adapter_service = state_adapter_service
         self._log_prefix = f"[{self.__class__.__name__}:{self.name}]"
 
@@ -343,13 +353,45 @@ class BaseAgent:
         """
         Post-processing hook that can be overridden by subclasses.
 
+        CRITICAL - LangGraph 1.x State Update Pattern:
+        ==============================================
+        ⚠️  State modifications via state parameter are IGNORED!
+
+        To update state fields, use the 'state_updates' pattern by returning:
+            return state, {"state_updates": {
+                self.output_field: your_output,
+                "other_field": other_value,
+            }}
+
+        The BaseAgent.run() method recognizes 'state_updates' and returns
+        all fields to LangGraph for merging into state.
+
         Args:
-            state: Current state
+            state: Current state (READ-ONLY - modifications discarded in run())
             inputs: Input values used for processing
             output: Output value from the process method
 
         Returns:
-            Tuple of (state, modified_output)
+            Tuple of (state, modified_output) where:
+            - state: Passed through unchanged (modifications are ignored)
+            - modified_output: Either:
+              * A single value (only self.output_field will be updated)
+              * {"state_updates": {...}} dict (multiple fields updated)
+
+        Examples:
+            # Simple: Just return processed output
+            return state, processed_value
+
+            # Update multiple state fields (required for state changes!)
+            return state, {
+                "state_updates": {
+                    self.output_field: result,
+                    "last_action_success": True,
+                    "__next_node": "NextNode",
+                }
+            }
+
+        See: OrchestratorAgent, BranchingAgent, FailureAgent for examples.
         """
         return state, output
 

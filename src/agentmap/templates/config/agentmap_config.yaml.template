@@ -5,6 +5,7 @@ storage_config_path: "agentmap_config_storage.yaml"
 paths:
   custom_agents: "agentmap_data/custom_agents"
   functions: "agentmap_data/custom_functions"
+  custom_tools: "agentmap_data/custom_tools"  # Directory for custom tool implementations not required
   csv_repository: "agentmap_data/workflows"  # Directory for storing workflow CSV files
 
 # Memory configuration

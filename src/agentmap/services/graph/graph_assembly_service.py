@@ -110,11 +110,25 @@ class GraphAssemblyService:
         self.logger.debug(
             f"Adding dynamic routers for {len(self.orchestrator_nodes)} orchestrator nodes"
         )
+
+        # Use orchestrator_node_registry if available (contains all nodes already collected)
+        # Otherwise fall back to graph nodes
+        all_node_names = (
+            list(self.orchestrator_node_registry.keys())
+            if self.orchestrator_node_registry
+            else list(graph.nodes.keys())
+        )
+
+        self.logger.debug(
+            f"Node names for path_map: {all_node_names} "
+            f"(from {'registry' if self.orchestrator_node_registry else 'graph.nodes'})"
+        )
+
         for orch_node_name in self.orchestrator_nodes:
             node = graph.nodes.get(orch_node_name)
             failure_target = node.edges.get("failure") if node else None
             self.edge_processor.add_dynamic_router(
-                self.builder, orch_node_name, failure_target
+                self.builder, orch_node_name, failure_target, all_node_names
             )
 
     def _compile_graph(
@@ -213,4 +227,8 @@ class GraphAssemblyService:
         self, node_name: str, failure_target: Optional[str] = None
     ) -> None:
         """Add dynamic routing for orchestrator nodes (backwards compatibility)."""
-        self.edge_processor.add_dynamic_router(self.builder, node_name, failure_target)
+        # Note: This method doesn't have access to all_node_names
+        # Will work with path_map=None (less compatible with LangGraph 1.x)
+        self.edge_processor.add_dynamic_router(
+            self.builder, node_name, failure_target, all_node_names=None
+        )
