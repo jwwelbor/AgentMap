@@ -177,7 +177,7 @@ class StaticBundleAnalyzer:
         }
 
         # protocol map will contain all protocol mappings
-        protocol_mappings = self.declaration_registry.get_protcol_service_map()
+        protocol_mappings = self.declaration_registry.get_protocol_service_map()
 
         # Create GraphBundle using metadata-only format
         bundle = GraphBundle.create_metadata(

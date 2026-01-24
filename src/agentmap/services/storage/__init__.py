@@ -9,7 +9,8 @@ is organized here.
 from typing import TYPE_CHECKING
 
 from .base import BaseStorageService
-from .csv_service import CSVStorageService
+
+# CSVStorageService is lazy-loaded to defer pandas import
 from .file_service import FileStorageService
 from .json_service import JSONStorageService
 from .manager import StorageServiceManager
@@ -41,10 +42,22 @@ from .types import (  # Core types; Exceptions; Service-specific exceptions; Typ
     StorageValidationError,
     WriteMode,
 )
-from .vector.service import VectorStorageService
+
+# Lazy-loaded modules to avoid importing heavy dependencies at package import time
+# CSVStorageService imports pandas
+# VectorStorageService imports langchain vector dependencies
+# BlobStorageService imports protocols which imports langchain_core.tools
+_LAZY_IMPORTS = {
+    "CSVStorageService": ("csv_service", "CSVStorageService"),
+    "VectorStorageService": ("vector.service", "VectorStorageService"),
+    "BlobStorageService": ("blob_storage_service", "BlobStorageService"),
+}
 
 if TYPE_CHECKING:
+    from agentmap.services.storage.blob_storage_service import BlobStorageService
+    from agentmap.services.storage.csv_service import CSVStorageService
     from agentmap.services.storage.manager import StorageServiceManager
+    from agentmap.services.storage.vector.service import VectorStorageService
 
 
 __all__ = [
@@ -94,11 +107,20 @@ from . import (
     local_file_connector,
 )
 
-# Import blob storage service for completeness
-from .blob_storage_service import BlobStorageService
-
-# Add blob storage service to exports
+# BlobStorageService is lazy-loaded via __getattr__ to avoid importing langchain_core.tools
+# Add to exports list
 __all__.append("BlobStorageService")
+
+
+def __getattr__(name: str):
+    """Lazy import for heavy modules to improve startup performance."""
+    if name in _LAZY_IMPORTS:
+        module_name, attr_name = _LAZY_IMPORTS[name]
+        import importlib
+
+        module = importlib.import_module(f".{module_name}", __package__)
+        return getattr(module, attr_name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def register_all_providers(manager: "StorageServiceManager") -> None:
@@ -111,10 +133,14 @@ def register_all_providers(manager: "StorageServiceManager") -> None:
     Args:
         manager: StorageServiceManager instance to register providers with
     """
+    # Import heavy services lazily when actually registering
+    from .csv_service import CSVStorageService as _CSVStorageService
+    from .vector.service import VectorStorageService as _VectorStorageService
+
     # Register services
-    manager.register_provider("csv", CSVStorageService)
+    manager.register_provider("csv", _CSVStorageService)
     manager.register_provider("json", JSONStorageService)
     manager.register_provider("memory", MemoryStorageService)
     manager.register_provider("file", FileStorageService)
-    manager.register_provider("vector", VectorStorageService)
+    manager.register_provider("vector", _VectorStorageService)
     # manager.register_provider("firebase", FirebaseStorageService)

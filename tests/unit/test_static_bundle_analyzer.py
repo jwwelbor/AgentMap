@@ -222,8 +222,8 @@ class TestStaticBundleAnalyzer(unittest.TestCase):
             requirements
         )
 
-        # Also need to mock get_protcol_service_map to return proper dict
-        self.mock_declaration_registry.get_protcol_service_map.return_value = {
+        # Also need to mock get_protocol_service_map to return proper dict
+        self.mock_declaration_registry.get_protocol_service_map.return_value = {
             "LLMServiceProtocol": "llm_service"
         }
 
@@ -428,8 +428,8 @@ class TestStaticBundleAnalyzer(unittest.TestCase):
             "missing": set(),
         }
 
-        # Fix: Mock the get_protcol_service_map method (note typo in original method name)
-        self.mock_declaration_registry.get_protcol_service_map.return_value = {}
+        # Mock the get_protocol_service_map method
+        self.mock_declaration_registry.get_protocol_service_map.return_value = {}
 
         # Setup custom agent declaration manager - by default returns None (no custom agents)
         # Individual tests can override this if they need custom agent behavior

@@ -31,6 +31,18 @@ class TestGraphRunnerServiceCheckpoint(unittest.TestCase):
         self.interaction_handler.mark_thread_completed = Mock()
         self.graph_checkpoint = Mock()
         self.graph_bundle_service = Mock()
+        self.declaration_registry_service = Mock()
+
+        # Configure mock scoped registry for thread-safe concurrent execution
+        self.mock_scoped_registry = Mock()
+        self.mock_scoped_registry.get_all_agent_types.return_value = ["LLMAgent"]
+        self.mock_scoped_registry.get_all_service_names.return_value = [
+            "logging_service"
+        ]
+        self.mock_scoped_registry.get_agent_declaration.return_value = None
+        self.declaration_registry_service.create_scoped_registry_for_bundle.return_value = (
+            self.mock_scoped_registry
+        )
 
         self.service = GraphRunnerService(
             self.app_config,
@@ -43,6 +55,7 @@ class TestGraphRunnerServiceCheckpoint(unittest.TestCase):
             self.interaction_handler,
             self.graph_checkpoint,
             self.graph_bundle_service,
+            self.declaration_registry_service,
         )
 
         self.execution_tracker = ExecutionTracker()

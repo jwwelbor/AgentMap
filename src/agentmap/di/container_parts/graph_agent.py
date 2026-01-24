@@ -21,6 +21,7 @@ class GraphAgentContainer(containers.DeclarativeContainer):
     state_adapter_service = providers.Dependency()
     graph_bundle_service = providers.Dependency()
     orchestrator_service = providers.Dependency()
+    declaration_registry_service = providers.Dependency()
 
     @staticmethod
     def _create_agent_factory_service(
@@ -86,6 +87,7 @@ class GraphAgentContainer(containers.DeclarativeContainer):
         logging_service,
         prompt_manager_service,
         graph_bundle_service,
+        declaration_registry_service,
     ):
         from agentmap.services.graph.graph_agent_instantiation_service import (
             GraphAgentInstantiationService,
@@ -99,6 +101,7 @@ class GraphAgentContainer(containers.DeclarativeContainer):
             logging_service,
             prompt_manager_service,
             graph_bundle_service,
+            declaration_registry_service,
         )
 
     graph_agent_instantiation_service = providers.Singleton(
@@ -110,4 +113,5 @@ class GraphAgentContainer(containers.DeclarativeContainer):
         logging_service,
         prompt_manager_service,
         graph_bundle_service,
+        declaration_registry_service,
     )
