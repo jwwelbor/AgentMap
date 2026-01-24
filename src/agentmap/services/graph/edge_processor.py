@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from langgraph.graph import StateGraph
+from langgraph.graph import END, StateGraph
 
 from agentmap.services.function_resolution_service import FunctionResolutionService
 from agentmap.services.logging_service import LoggingService
@@ -232,18 +232,46 @@ class EdgeProcessor:
             self._add_default_routing(builder, node_name, edges)
 
     def add_dynamic_router(
-        self, builder: StateGraph, node_name: str, failure_target: Optional[str] = None
+        self,
+        builder: StateGraph,
+        node_name: str,
+        failure_target: Optional[str] = None,
+        all_node_names: Optional[List[str]] = None,
     ) -> None:
-        """Add dynamic routing for orchestrator nodes."""
+        """Add dynamic routing for orchestrator nodes.
+
+        Args:
+            builder: StateGraph builder instance
+            node_name: Name of the orchestrator node
+            failure_target: Optional node to route to on failure
+            all_node_names: List of all node names in the graph (for path_map)
+        """
 
         def dynamic_router(state):
+            # Check failure condition first
             if failure_target:
                 if not self.state_adapter.get_value(state, "last_action_success", True):
                     return failure_target
+
+            # Get the next node from state
             next_node = self.state_adapter.get_value(state, "__next_node")
-            if not next_node:
-                return None
-            self.state_adapter.set_value(state, "__next_node", None)
+
+            # Clear the routing directive after reading
+            if next_node:
+                self.state_adapter.set_value(state, "__next_node", None)
+
             return next_node
 
-        builder.add_conditional_edges(node_name, dynamic_router, path_map=None)
+        # Create path_map for LangGraph 1.x compatibility
+        # Map each node name to itself so LangGraph knows valid destinations
+        # Include None -> END mapping to handle cases where no next node is selected
+        path_map = None
+        if all_node_names:
+            path_map = {node: node for node in all_node_names}
+            # Add None mapping to END to prevent KeyError when no next node selected
+            path_map[None] = END
+            self.logger.debug(
+                f"Created path_map for '{node_name}' with {len(path_map) - 1} destinations + END"
+            )
+
+        builder.add_conditional_edges(node_name, dynamic_router, path_map=path_map)
