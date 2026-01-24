@@ -8,7 +8,7 @@ from typing import Optional
 
 import typer
 
-from agentmap.runtime_api import validate_cache
+# Lazy import: moved to function to avoid DI container init at module load
 
 
 def validate_cache_cmd(
@@ -22,6 +22,9 @@ def validate_cache_cmd(
     ),
 ):
     """Manage validation result cache."""
+    # Lazy import to avoid DI container initialization at module load
+    from agentmap.runtime_api import validate_cache
+
     try:
         # Manage cache using facade
         result = validate_cache(

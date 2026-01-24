@@ -15,12 +15,22 @@ class CoreContainer(containers.DeclarativeContainer):
 
     # --- Configuration services -------------------------------------------------
 
-    config_service = providers.Singleton(
-        "agentmap.services.config.config_service.ConfigService"
-    )
+    @staticmethod
+    def _create_config_service():
+        from agentmap.services.config.config_service import ConfigService
+
+        return ConfigService()
+
+    config_service = providers.Singleton(_create_config_service)
+
+    @staticmethod
+    def _create_app_config_service(config_service, config_path):
+        from agentmap.services.config.app_config_service import AppConfigService
+
+        return AppConfigService(config_service, config_path)
 
     app_config_service = providers.Singleton(
-        "agentmap.services.config.app_config_service.AppConfigService",
+        _create_app_config_service,
         config_service,
         config.path,
     )
@@ -100,25 +110,51 @@ class CoreContainer(containers.DeclarativeContainer):
 
     # --- Cross-cutting services --------------------------------------------------
 
+    @staticmethod
+    def _create_llm_models_config_service(app_config_service):
+        from agentmap.services.config.llm_models_config_service import (
+            LLMModelsConfigService,
+        )
+
+        return LLMModelsConfigService(app_config_service)
+
     llm_models_config_service = providers.Singleton(
-        "agentmap.services.config.llm_models_config_service.LLMModelsConfigService",
+        _create_llm_models_config_service,
         app_config_service,
     )
 
+    @staticmethod
+    def _create_auth_service(auth_config, logging_service):
+        from agentmap.services.auth_service import AuthService
+
+        return AuthService(auth_config, logging_service)
+
     auth_service = providers.Singleton(
-        "agentmap.services.auth_service.AuthService",
+        _create_auth_service,
         providers.Callable(lambda svc: svc.get_auth_config(), app_config_service),
         logging_service,
     )
 
+    @staticmethod
+    def _create_file_path_service(app_config_service, logging_service):
+        from agentmap.services.file_path_service import FilePathService
+
+        return FilePathService(app_config_service, logging_service)
+
     file_path_service = providers.Singleton(
-        "agentmap.services.file_path_service.FilePathService",
+        _create_file_path_service,
         app_config_service,
         logging_service,
     )
 
+    @staticmethod
+    def _create_prompt_manager_service(app_config_service, logging_service):
+        from agentmap.services.prompt_manager_service import PromptManagerService
+
+        return PromptManagerService(app_config_service, logging_service)
+
     prompt_manager_service = providers.Singleton(
-        "agentmap.services.prompt_manager_service.PromptManagerService",
+        _create_prompt_manager_service,
         app_config_service,
         logging_service,
     )

@@ -10,7 +10,7 @@ from typing import Optional
 
 import typer
 
-from agentmap.runtime_api import inspect_graph
+# Lazy import: moved to function to avoid DI container init at module load
 
 
 def inspect_graph_cmd(
@@ -38,6 +38,8 @@ def inspect_graph_cmd(
     ),
 ):
     """Inspect agent service configuration for a graph."""
+    # Lazy import to avoid DI container initialization at module load
+    from agentmap.runtime_api import inspect_graph
 
     typer.echo(f"🔍 Inspecting Graph: {graph_name}")
     typer.echo("=" * 50)

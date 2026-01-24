@@ -11,28 +11,65 @@ This package provides clean architecture with separated concerns:
 - DI: Dependency injection and service wiring
 """
 
-from agentmap.deployment.cli import main_cli
-from agentmap.deployment.serverless.aws_lambda import lambda_handler
-from agentmap.deployment.serverless.azure_functions import azure_http_handler
-from agentmap.deployment.serverless.gcp_functions import gcp_http_handler
+# Lazy imports using __getattr__ to avoid 12.85s DI container initialization
+# at module load time. Imports are deferred until actually accessed.
 
-# Core exports for new architecture
-from agentmap.deployment.service_adapter import ServiceAdapter, create_service_adapter
-from agentmap.exceptions.runtime_exceptions import (
-    AgentMapError,
-    AgentMapNotInitialized,
-    GraphNotFound,
-    InvalidInputs,
-)
+def __getattr__(name: str):
+    """Lazy import handler for AgentMap exports."""
+    # CLI and serverless handlers
+    if name == "main_cli":
+        from agentmap.deployment.cli import main_cli
+        return main_cli
+    elif name == "lambda_handler":
+        from agentmap.deployment.serverless.aws_lambda import lambda_handler
+        return lambda_handler
+    elif name == "azure_http_handler":
+        from agentmap.deployment.serverless.azure_functions import azure_http_handler
+        return azure_http_handler
+    elif name == "gcp_http_handler":
+        from agentmap.deployment.serverless.gcp_functions import gcp_http_handler
+        return gcp_http_handler
 
-# Runtime API exports
-from agentmap.runtime_api import (
-    agentmap_initialize,
-    ensure_initialized,
-    list_graphs,
-    resume_workflow,
-    run_workflow,
-)
+    # Core service adapter
+    elif name == "ServiceAdapter":
+        from agentmap.deployment.service_adapter import ServiceAdapter
+        return ServiceAdapter
+    elif name == "create_service_adapter":
+        from agentmap.deployment.service_adapter import create_service_adapter
+        return create_service_adapter
+
+    # Runtime API exceptions
+    elif name == "AgentMapError":
+        from agentmap.exceptions.runtime_exceptions import AgentMapError
+        return AgentMapError
+    elif name == "AgentMapNotInitialized":
+        from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
+        return AgentMapNotInitialized
+    elif name == "GraphNotFound":
+        from agentmap.exceptions.runtime_exceptions import GraphNotFound
+        return GraphNotFound
+    elif name == "InvalidInputs":
+        from agentmap.exceptions.runtime_exceptions import InvalidInputs
+        return InvalidInputs
+
+    # Runtime API functions (triggers DI container init)
+    elif name == "agentmap_initialize":
+        from agentmap.runtime_api import agentmap_initialize
+        return agentmap_initialize
+    elif name == "ensure_initialized":
+        from agentmap.runtime_api import ensure_initialized
+        return ensure_initialized
+    elif name == "run_workflow":
+        from agentmap.runtime_api import run_workflow
+        return run_workflow
+    elif name == "list_graphs":
+        from agentmap.runtime_api import list_graphs
+        return list_graphs
+    elif name == "resume_workflow":
+        from agentmap.runtime_api import resume_workflow
+        return resume_workflow
+
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 __author__ = "John Welborn"
 __license__ = "MIT"
