@@ -14,60 +14,45 @@ This package provides clean architecture with separated concerns:
 # Lazy imports using __getattr__ to avoid 12.85s DI container initialization
 # at module load time. Imports are deferred until actually accessed.
 
+import importlib
+
+# Map module paths to the names they export
+_LAZY_IMPORTS = {
+    # CLI and serverless handlers
+    "agentmap.deployment.cli": ["main_cli"],
+    "agentmap.deployment.serverless.aws_lambda": ["lambda_handler"],
+    "agentmap.deployment.serverless.azure_functions": ["azure_http_handler"],
+    "agentmap.deployment.serverless.gcp_functions": ["gcp_http_handler"],
+    # Core service adapter
+    "agentmap.deployment.service_adapter": ["ServiceAdapter", "create_service_adapter"],
+    # Runtime API exceptions
+    "agentmap.exceptions.runtime_exceptions": [
+        "AgentMapError",
+        "AgentMapNotInitialized",
+        "GraphNotFound",
+        "InvalidInputs",
+    ],
+    # Runtime API functions (triggers DI container init)
+    "agentmap.runtime_api": [
+        "agentmap_initialize",
+        "ensure_initialized",
+        "run_workflow",
+        "list_graphs",
+        "resume_workflow",
+    ],
+}
+
+# Invert mapping: name -> module path for O(1) lookup
+_NAME_TO_MODULE = {
+    name: module for module, names in _LAZY_IMPORTS.items() for name in names
+}
+
+
 def __getattr__(name: str):
     """Lazy import handler for AgentMap exports."""
-    # CLI and serverless handlers
-    if name == "main_cli":
-        from agentmap.deployment.cli import main_cli
-        return main_cli
-    elif name == "lambda_handler":
-        from agentmap.deployment.serverless.aws_lambda import lambda_handler
-        return lambda_handler
-    elif name == "azure_http_handler":
-        from agentmap.deployment.serverless.azure_functions import azure_http_handler
-        return azure_http_handler
-    elif name == "gcp_http_handler":
-        from agentmap.deployment.serverless.gcp_functions import gcp_http_handler
-        return gcp_http_handler
-
-    # Core service adapter
-    elif name == "ServiceAdapter":
-        from agentmap.deployment.service_adapter import ServiceAdapter
-        return ServiceAdapter
-    elif name == "create_service_adapter":
-        from agentmap.deployment.service_adapter import create_service_adapter
-        return create_service_adapter
-
-    # Runtime API exceptions
-    elif name == "AgentMapError":
-        from agentmap.exceptions.runtime_exceptions import AgentMapError
-        return AgentMapError
-    elif name == "AgentMapNotInitialized":
-        from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
-        return AgentMapNotInitialized
-    elif name == "GraphNotFound":
-        from agentmap.exceptions.runtime_exceptions import GraphNotFound
-        return GraphNotFound
-    elif name == "InvalidInputs":
-        from agentmap.exceptions.runtime_exceptions import InvalidInputs
-        return InvalidInputs
-
-    # Runtime API functions (triggers DI container init)
-    elif name == "agentmap_initialize":
-        from agentmap.runtime_api import agentmap_initialize
-        return agentmap_initialize
-    elif name == "ensure_initialized":
-        from agentmap.runtime_api import ensure_initialized
-        return ensure_initialized
-    elif name == "run_workflow":
-        from agentmap.runtime_api import run_workflow
-        return run_workflow
-    elif name == "list_graphs":
-        from agentmap.runtime_api import list_graphs
-        return list_graphs
-    elif name == "resume_workflow":
-        from agentmap.runtime_api import resume_workflow
-        return resume_workflow
+    if module_path := _NAME_TO_MODULE.get(name):
+        module = importlib.import_module(module_path)
+        return getattr(module, name)
 
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
