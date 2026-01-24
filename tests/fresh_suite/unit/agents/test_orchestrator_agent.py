@@ -8,7 +8,7 @@ configuration validation, and proper service delegation.
 
 import unittest
 from typing import Any, Dict, List
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from agentmap.agents.builtins.orchestrator_agent import OrchestratorAgent
 from agentmap.services.orchestrator_service import OrchestratorService
@@ -410,32 +410,28 @@ class TestOrchestratorAgent(unittest.TestCase):
     # 5. State Management Tests
     # =============================================================================
 
-    @patch("agentmap.agents.builtins.orchestrator_agent.StateAdapterService.set_value")
-    def test_post_process_sets_next_node(self, mock_set_value):
-        """Test post-process sets __next_node in state."""
+    def test_post_process_sets_next_node(self):
+        """Test post-process sets __next_node in state using state_updates pattern."""
         agent = self.create_orchestrator_agent()
 
         test_state = {"current_field": "value"}
         inputs = {"request": "test"}
         output = "selected_node"
 
-        # Configure mock to return updated state
-        updated_state = test_state.copy()
-        updated_state["__next_node"] = "selected_node"
-        mock_set_value.return_value = updated_state
-
         result_state, result_output = agent._post_process(test_state, inputs, output)
 
-        # Verify static method was called
-        mock_set_value.assert_called_once_with(
-            test_state, "__next_node", "selected_node"
-        )
+        # OrchestratorAgent now uses state_updates pattern for LangGraph 1.x compatibility
+        # Verify output uses state_updates pattern with output_field and __next_node
+        self.assertIn("state_updates", result_output)
+        state_updates = result_output["state_updates"]
 
-        # Verify output is returned unchanged
-        self.assertEqual(result_output, output)
+        # Verify __next_node is set correctly
+        self.assertEqual(state_updates["__next_node"], "selected_node")
 
-    @patch("agentmap.agents.builtins.orchestrator_agent.StateAdapterService.set_value")
-    def test_post_process_extracts_node_from_dict(self, mock_set_value):
+        # Verify output field is also included
+        self.assertEqual(state_updates["selected_node"], output)
+
+    def test_post_process_extracts_node_from_dict(self):
         """Test post-process extracts selectedNode from dictionary output."""
         agent = self.create_orchestrator_agent()
 
@@ -443,17 +439,15 @@ class TestOrchestratorAgent(unittest.TestCase):
         inputs = {"request": "test"}
         output = {"selectedNode": "extracted_node", "confidence": 0.9}
 
-        # Configure mock to return updated state
-        updated_state = test_state.copy()
-        updated_state["__next_node"] = "extracted_node"
-        mock_set_value.return_value = updated_state
-
         result_state, result_output = agent._post_process(test_state, inputs, output)
 
-        # Verify extracted node was used
-        mock_set_value.assert_called_once_with(
-            test_state, "__next_node", "extracted_node"
-        )
+        # OrchestratorAgent now uses state_updates pattern for LangGraph 1.x compatibility
+        # Verify output uses state_updates pattern with __next_node extracted from dict
+        self.assertIn("state_updates", result_output)
+        state_updates = result_output["state_updates"]
+
+        # Verify extracted node was used for __next_node
+        self.assertEqual(state_updates["__next_node"], "extracted_node")
 
     # =============================================================================
     # 6. Integration Tests
@@ -486,9 +480,11 @@ class TestOrchestratorAgent(unittest.TestCase):
         self.assertIn("selected_node", result_state)
         self.assertEqual(result_state["selected_node"], "selected_node")
 
-        # Original fields are NOT in result - only output field
+        # Original fields are NOT in result - only output field and __next_node
         self.assertNotIn("other_field", result_state)
-        self.assertEqual(len(result_state), 1)  # Only output field
+        # OrchestratorAgent returns both output field and __next_node via state_updates pattern
+        self.assertIn("__next_node", result_state)
+        self.assertEqual(len(result_state), 2)  # Output field + __next_node
 
         # Verify tracking service methods were called
         self.mock_execution_tracking_service.record_node_start.assert_called_once()

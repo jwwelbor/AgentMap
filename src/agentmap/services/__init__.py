@@ -120,10 +120,10 @@ _LAZY_IMPORTS = {
         "LLMRoutingService",
     ),
     "PromptComplexityAnalyzer": (
-        "agentmap.services.routing.prompt_complexity_analyzer",
+        "agentmap.services.routing.complexity_analyzer",
         "PromptComplexityAnalyzer",
     ),
-    "RoutingCache": ("agentmap.services.routing.routing_cache", "RoutingCache"),
+    "RoutingCache": ("agentmap.services.routing.cache", "RoutingCache"),
     # Storage Services
     "StorageServiceManager": (
         "agentmap.services.storage.manager",

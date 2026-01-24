@@ -423,15 +423,17 @@ class TestAnthropicAgent(unittest.TestCase):
         call_args = self.mock_llm_service.call_llm.call_args
         self.assertEqual(call_args.kwargs["provider"], "anthropic")
 
-        # NEW BEHAVIOR: Returns partial state update (only output field)
+        # NEW BEHAVIOR: Returns partial state update (output field + memory)
         self.assertIn("response", result_state)
         self.assertEqual(
             result_state["response"], "Mock Anthropic response for testing"
         )
 
-        # Original fields are NOT in result - only output field
+        # Original fields are NOT in result - only output field and memory
         self.assertNotIn("other_field", result_state)
-        self.assertEqual(len(result_state), 1)  # Only response field
+        # LLMAgent returns both output field and memory field via state_updates pattern
+        self.assertIn("memory", result_state)
+        self.assertEqual(len(result_state), 2)  # Output field + memory field
 
         # Verify tracking calls (inherited behavior via execution tracking service)
         self.mock_execution_tracking_service.record_node_start.assert_called_once()

@@ -652,9 +652,11 @@ class TestGraphAgent(unittest.TestCase):
         self.assertIn("result", result_state)
         self.assertEqual(result_state["result"]["output"], "Mock subgraph result")
 
-        # Original fields are NOT in result - only output field
+        # Original fields are NOT in result - only output field and last_action_success
         self.assertNotIn("other_field", result_state)
-        self.assertEqual(len(result_state), 1)  # Only output field
+        # GraphAgent returns both output field and last_action_success via state_updates pattern
+        self.assertIn("last_action_success", result_state)
+        self.assertEqual(len(result_state), 2)  # Output field + last_action_success
 
         # Verify tracking calls
         self.mock_execution_tracking_service.record_node_start.assert_called_once()
@@ -692,8 +694,12 @@ class TestGraphAgent(unittest.TestCase):
             {"graph_name": "test_subgraph", "success": True, "duration": 1.5},
         )
 
-        # Verify execution summary was removed from output
-        self.assertEqual(processed_output, {"result": "subgraph_output"})
+        # GraphAgent now uses state_updates pattern for LangGraph 1.x compatibility
+        # Verify output uses state_updates pattern with result and last_action_success
+        self.assertIn("state_updates", processed_output)
+        state_updates = processed_output["state_updates"]
+        self.assertEqual(state_updates["result"], {"result": "subgraph_output"})
+        self.assertTrue(state_updates["last_action_success"])
 
         # Verify logging
         logger_calls = self.mock_logger.calls
@@ -723,8 +729,12 @@ class TestGraphAgent(unittest.TestCase):
         # Should not raise error
         updated_state, processed_output = agent._post_process(test_state, {}, output)
 
-        # Should still remove execution summary from output
-        self.assertEqual(processed_output, {"result": "subgraph_output"})
+        # GraphAgent now uses state_updates pattern for LangGraph 1.x compatibility
+        # Verify output uses state_updates pattern with result and last_action_success
+        self.assertIn("state_updates", processed_output)
+        state_updates = processed_output["state_updates"]
+        self.assertEqual(state_updates["result"], {"result": "subgraph_output"})
+        self.assertTrue(state_updates["last_action_success"])
 
     def test_post_process_sets_success_state(self):
         """Test post-processing sets success state based on subgraph result."""
@@ -733,27 +743,21 @@ class TestGraphAgent(unittest.TestCase):
         # CRITICAL: Set execution tracker on agent before testing post-process
         agent.set_execution_tracker(self.mock_tracker)
 
-        # Configure state adapter to return updated state
-        def mock_set_value(state, field, value):
-            updated_state = state.copy()
-            updated_state[field] = value
-            return updated_state
-
-        self.mock_state_adapter_service.set_value.side_effect = mock_set_value
-
         output = {"graph_success": False, "error": "Some error"}
         test_state = {"existing": "value"}
 
         updated_state, processed_output = agent._post_process(test_state, {}, output)
 
-        # Verify success state was set via state adapter service
-        self.mock_state_adapter_service.set_value.assert_called_once_with(
-            test_state, "last_action_success", False
-        )
+        # GraphAgent now uses state_updates pattern for LangGraph 1.x compatibility
+        # Verify output uses state_updates pattern with result and last_action_success
+        self.assertIn("state_updates", processed_output)
+        state_updates = processed_output["state_updates"]
 
-        # Verify updated state contains the success flag
-        self.assertEqual(updated_state["last_action_success"], False)
-        self.assertEqual(updated_state["existing"], "value")
+        # Verify success state is set correctly based on graph_success
+        self.assertFalse(state_updates["last_action_success"])
+
+        # Verify result is included in state_updates
+        self.assertEqual(state_updates["result"], output)
 
     # =============================================================================
     # 7. Logging Integration Tests
