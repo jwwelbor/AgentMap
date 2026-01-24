@@ -295,8 +295,9 @@ class GraphAgentInstantiationService:
         )
 
         # Step 2: Inject services using injection service (with agent_type for optimization)
+        # Pass bundle to enable thread-safe scoped registry access
         self._inject_services(
-            agent_instance, node_name, execution_tracker, node.agent_type
+            agent_instance, node_name, execution_tracker, node.agent_type, bundle
         )
 
         # Step 2a: Inject GraphBundleService if agent supports it
@@ -313,21 +314,40 @@ class GraphAgentInstantiationService:
         )
 
     def _get_required_services_for_agent(
-        self, agent_type: Optional[str]
+        self, agent_type: Optional[str], bundle: Optional[GraphBundle] = None
     ) -> Optional[Set[str]]:
         """
         Look up required services for an agent type from the declaration registry.
 
+        Prefers the scoped registry from the bundle (if available) for thread-safety
+        in concurrent execution. Falls back to the singleton declaration_registry
+        for backwards compatibility.
+
         Args:
             agent_type: The agent type to look up
+            bundle: Optional bundle containing scoped_registry for thread-safe access
 
         Returns:
             Set of required service names, or None if not available
         """
-        if not agent_type or not self.declaration_registry:
+        if not agent_type:
             return None
 
-        agent_decl = self.declaration_registry.get_agent_declaration(agent_type)
+        # Prefer scoped registry from bundle for thread-safe concurrent execution
+        registry = None
+        if (
+            bundle is not None
+            and hasattr(bundle, "scoped_registry")
+            and bundle.scoped_registry
+        ):
+            registry = bundle.scoped_registry
+        elif self.declaration_registry:
+            registry = self.declaration_registry
+
+        if not registry:
+            return None
+
+        agent_decl = registry.get_agent_declaration(agent_type)
         if not agent_decl:
             return None
 
@@ -344,6 +364,7 @@ class GraphAgentInstantiationService:
         node_name: str,
         execution_tracker: Optional[Any],
         agent_type: Optional[str] = None,
+        bundle: Optional[GraphBundle] = None,
     ) -> None:
         """
         Inject services into an agent instance.
@@ -353,9 +374,11 @@ class GraphAgentInstantiationService:
             node_name: Name of the node for logging
             execution_tracker: Optional execution tracker
             agent_type: Optional agent type for looking up required services
+            bundle: Optional bundle for thread-safe scoped registry access
         """
         # Look up required services from declaration registry for optimization
-        required_services = self._get_required_services_for_agent(agent_type)
+        # Pass bundle to use scoped_registry for thread-safe concurrent execution
+        required_services = self._get_required_services_for_agent(agent_type, bundle)
 
         injection_summary = self.agent_injection.configure_all_services(
             agent=agent_instance,

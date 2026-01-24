@@ -4,15 +4,211 @@ Declaration registry service for AgentMap.
 Main service that combines multiple declaration sources and provides requirement
 resolution WITHOUT loading implementation classes. Eliminates circular dependencies
 by resolving requirements at the declaration level only.
+
+This module also provides RunScopedDeclarationRegistry for thread-safe, isolated
+per-graph-run declaration access that eliminates race conditions in concurrent execution.
 """
 
-from typing import Dict, List, Optional, Set
+from types import MappingProxyType
+from typing import Any, Dict, List, Optional, Set
 
 from agentmap.models.declaration_models import AgentDeclaration, ServiceDeclaration
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.declaration_sources import DeclarationSource
 from agentmap.services.logging_service import LoggingService
+
+
+class RunScopedDeclarationRegistry:
+    """
+    Immutable, thread-safe declaration registry for a single graph run.
+
+    This class provides isolated access to declarations for a specific graph execution,
+    eliminating race conditions that occur when multiple concurrent graph runs share
+    the singleton DeclarationRegistryService.
+
+    Key properties:
+    - Immutable: Cannot be modified after creation (uses MappingProxyType)
+    - Thread-safe: Safe for concurrent read access from multiple threads
+    - Isolated: Each graph run gets its own filtered copy of declarations
+    - Lightweight: Only contains declarations needed for the specific run
+
+    Usage:
+        # Created by DeclarationRegistryService.create_scoped_registry_for_bundle()
+        scoped_registry = registry_service.create_scoped_registry_for_bundle(bundle)
+
+        # Then used for read-only access during graph execution
+        agent_decl = scoped_registry.get_agent_declaration("MyAgent")
+        service_decl = scoped_registry.get_service_declaration("my_service")
+    """
+
+    def __init__(
+        self,
+        agents: Dict[str, AgentDeclaration],
+        services: Dict[str, ServiceDeclaration],
+    ):
+        """
+        Initialize with copies of agent and service declarations.
+
+        Args:
+            agents: Dictionary of agent type to AgentDeclaration (will be copied)
+            services: Dictionary of service name to ServiceDeclaration (will be copied)
+        """
+        # Create immutable copies using MappingProxyType
+        # This prevents any modifications after creation
+        self._agents: MappingProxyType = MappingProxyType(dict(agents))
+        self._services: MappingProxyType = MappingProxyType(dict(services))
+
+    def get_agent_declaration(self, agent_type: str) -> Optional[AgentDeclaration]:
+        """
+        Get agent declaration by type.
+
+        Args:
+            agent_type: Type of agent to find
+
+        Returns:
+            AgentDeclaration if found, None otherwise
+        """
+        return self._agents.get(agent_type)
+
+    def get_service_declaration(
+        self, service_name: str
+    ) -> Optional[ServiceDeclaration]:
+        """
+        Get service declaration by name.
+
+        Args:
+            service_name: Name of service to find
+
+        Returns:
+            ServiceDeclaration if found, None otherwise
+        """
+        return self._services.get(service_name)
+
+    def get_all_agent_types(self) -> List[str]:
+        """Get list of all available agent types."""
+        return list(self._agents.keys())
+
+    def get_all_service_names(self) -> List[str]:
+        """Get list of all available service names."""
+        return list(self._services.keys())
+
+    def get_services_by_protocols(self, protocols: Set[str]) -> Set[str]:
+        """
+        Returns a set of service names that implement any of the given protocols.
+
+        Args:
+            protocols: Set of protocol names to search for
+
+        Returns:
+            Set of service names that implement at least one of the protocols
+        """
+        services = set()
+        for service_name, service_decl in self._services.items():
+            service_protocols = set(service_decl.implements_protocols)
+            if protocols & service_protocols:  # Set intersection
+                services.add(service_name)
+        return services
+
+    def resolve_agent_requirements(self, agent_types: Set[str]) -> Dict[str, Any]:
+        """
+        Resolve all requirements for given agent types.
+
+        Args:
+            agent_types: Set of agent types to resolve requirements for
+
+        Returns:
+            Dictionary with 'services', 'protocols', and 'missing' keys
+        """
+        required_services: Set[str] = set()
+        required_protocols: Set[str] = set()
+        missing_agents: Set[str] = set()
+
+        # Collect requirements from all agents
+        for agent_type in agent_types:
+            agent_decl = self.get_agent_declaration(agent_type)
+            if not agent_decl:
+                missing_agents.add(agent_type)
+                continue
+
+            required_services.update(agent_decl.get_required_services())
+            required_protocols.update(agent_decl.get_required_protocols())
+
+        # Resolve service dependencies recursively
+        agent_services = self.resolve_service_dependencies(required_services)
+        protocol_services = self.get_services_by_protocols(required_protocols)
+        all_services = agent_services | protocol_services
+
+        return {
+            "services": all_services,
+            "protocols": required_protocols,
+            "missing": missing_agents,
+        }
+
+    def resolve_service_dependencies(self, service_names: Set[str]) -> Set[str]:
+        """
+        Resolve service dependencies recursively.
+
+        Args:
+            service_names: Set of service names to resolve dependencies for
+
+        Returns:
+            Set of all required service names including dependencies
+        """
+        return self._resolve_service_dependencies_internal(service_names, set())
+
+    def _resolve_service_dependencies_internal(
+        self, service_names: Set[str], visited: Set[str]
+    ) -> Set[str]:
+        """
+        Internal recursive method for resolving service dependencies.
+
+        Args:
+            service_names: Set of service names to resolve
+            visited: Set of already visited services (for cycle detection)
+
+        Returns:
+            Set of all required service names including dependencies
+        """
+        all_services = set(service_names)
+
+        for service_name in service_names:
+            if service_name in visited:
+                # Circular dependency detected - skip to avoid infinite loop
+                continue
+
+            service_decl = self.get_service_declaration(service_name)
+            if not service_decl:
+                # Service declaration not found - skip
+                continue
+
+            # Mark as visited for cycle detection
+            new_visited = visited | {service_name}
+
+            # Recursively resolve dependencies
+            dependencies = set(service_decl.required_dependencies)
+            if dependencies:
+                resolved_deps = self._resolve_service_dependencies_internal(
+                    dependencies, new_visited
+                )
+                all_services.update(resolved_deps)
+
+        return all_services
+
+    def get_protocol_service_map(self) -> Dict[str, str]:
+        """
+        Builds a mapping from protocol names to service names that implement them.
+
+        Returns:
+            Dict mapping protocol names to implementing service names
+        """
+        protocol_mapping: Dict[str, str] = {}
+
+        for service_name, service_decl in self._services.items():
+            for protocol in service_decl.implements_protocols:
+                protocol_mapping[protocol] = service_name
+
+        return protocol_mapping
 
 
 class DeclarationRegistryService:
@@ -397,3 +593,79 @@ class DeclarationRegistryService:
                 required_services = core_services
 
         self.load_selective(required_agents, required_services)
+
+    def create_scoped_registry_for_bundle(
+        self, bundle: GraphBundle
+    ) -> RunScopedDeclarationRegistry:
+        """
+        Create an isolated, immutable registry scoped to a specific graph bundle.
+
+        This method creates a new RunScopedDeclarationRegistry containing only the
+        declarations needed for the given bundle. The scoped registry is:
+        - Thread-safe: Safe for concurrent read access
+        - Immutable: Cannot be modified after creation
+        - Isolated: Does NOT affect the singleton's internal state
+
+        This eliminates race conditions in concurrent graph execution by giving each
+        run its own isolated copy of declarations.
+
+        Args:
+            bundle: GraphBundle containing required_agents and required_services
+
+        Returns:
+            RunScopedDeclarationRegistry with filtered declarations for the bundle
+        """
+        self.logger.debug(f"Creating scoped registry for bundle: {bundle.graph_name}")
+
+        # Extract requirements from bundle
+        required_agents = getattr(bundle, "required_agents", None)
+        required_services = getattr(bundle, "required_services", None)
+
+        # Convert to sets if needed
+        if required_agents and not isinstance(required_agents, set):
+            required_agents = set(required_agents)
+        if required_services and not isinstance(required_services, set):
+            required_services = set(required_services)
+
+        # Always include core infrastructure services
+        core_services = {
+            "logging_service",
+            "execution_tracking_service",
+            "state_adapter_service",
+            "prompt_manager_service",
+        }
+
+        if required_services:
+            required_services = required_services | core_services
+        else:
+            if required_agents:
+                required_services = core_services
+            else:
+                required_services = set()
+
+        if required_agents is None:
+            required_agents = set()
+
+        # Filter agents from current singleton state (without modifying it)
+        filtered_agents: Dict[str, AgentDeclaration] = {}
+        for agent_type in required_agents:
+            agent_decl = self._agents.get(agent_type)
+            if agent_decl:
+                filtered_agents[agent_type] = agent_decl
+
+        # Filter services from current singleton state (without modifying it)
+        filtered_services: Dict[str, ServiceDeclaration] = {}
+        for service_name in required_services:
+            service_decl = self._services.get(service_name)
+            if service_decl:
+                filtered_services[service_name] = service_decl
+
+        self.logger.debug(
+            f"Scoped registry created with {len(filtered_agents)} agents "
+            f"and {len(filtered_services)} services for {bundle.graph_name}"
+        )
+
+        return RunScopedDeclarationRegistry(
+            agents=filtered_agents,
+            services=filtered_services,
+        )

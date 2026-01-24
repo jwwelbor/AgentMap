@@ -14,7 +14,7 @@ from agentmap.deployment.http.api.middleware.auth import FastAPIAuthAdapter
 from agentmap.services.auth_service import AuthContext, AuthService
 
 
-class TestFastAPIAuthAdapter(unittest.TestCase):
+class TestFastAPIAuthAdapter(unittest.IsolatedAsyncioTestCase):
     """Test FastAPI authentication adapter."""
 
     def setUp(self):

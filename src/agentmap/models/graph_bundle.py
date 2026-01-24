@@ -12,6 +12,9 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 if TYPE_CHECKING:
     from langchain_core.tools import Tool
+    from agentmap.services.declaration_registry_service import (
+        RunScopedDeclarationRegistry,
+    )
 
 from .node import Node
 
@@ -62,6 +65,9 @@ class GraphBundle:
     tools: Optional[Dict[str, List["Tool"]]] = (
         None  # Cache for loaded tools, keyed by node name
     )
+
+    # Thread-safe scoped registry for per-run isolation (not serialized)
+    scoped_registry: Optional["RunScopedDeclarationRegistry"] = None
 
     def __post_init__(self):
         """Initialize defaults and issue deprecation warnings as needed."""

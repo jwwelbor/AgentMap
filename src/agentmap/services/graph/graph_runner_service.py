@@ -143,11 +143,20 @@ class GraphRunnerService:
             initial_state = {}
 
         try:
-            # Phase 2: Load only required declarations for selective service loading
+            # Phase 2: Create isolated scoped registry for this run (thread-safe)
+            # This eliminates race conditions by giving each run its own immutable copy
             self.logger.debug(
-                f"[GraphRunnerService] Phase 2: Loading bundle declarations for {graph_name}"
+                f"[GraphRunnerService] Phase 2: Creating scoped registry for {graph_name}"
             )
-            self.declaration_registry.load_for_bundle(bundle)
+            scoped_registry = (
+                self.declaration_registry.create_scoped_registry_for_bundle(bundle)
+            )
+            bundle.scoped_registry = scoped_registry
+            self.logger.debug(
+                f"[GraphRunnerService] Scoped registry created with "
+                f"{len(scoped_registry.get_all_agent_types())} agents and "
+                f"{len(scoped_registry.get_all_service_names())} services"
+            )
 
             # Phase 3: Create execution tracker for this run
             self.logger.debug(
