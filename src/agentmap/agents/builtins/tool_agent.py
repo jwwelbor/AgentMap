@@ -135,18 +135,18 @@ class ToolAgent(BaseAgent, LLMCapableAgent, ToolSelectionCapableAgent):
         return self._execute_tool(tool, inputs)
 
     def _execute_tool(self, tool, inputs):
-        """Execute tool using LangGraph's ToolNode with parameter mapping."""
+        """Execute tool directly (LangGraph 1.x compatibility)."""
         # Map state field names to tool parameter names
         mapped_args = self._map_inputs_to_tool_params(tool, inputs)
 
-        tool_call = {
-            "name": tool.name,
-            "args": mapped_args,
-            "id": str(uuid.uuid4()),
-        }
-        ai_message = AIMessage(content="", tool_calls=[tool_call])
-        result = self.tool_node.invoke({"messages": [ai_message]})
-        return result["messages"][-1].content
+        # In LangGraph 1.x, ToolNode requires graph runtime context
+        # Invoke the tool directly instead of using ToolNode
+        try:
+            result = tool.invoke(mapped_args)
+            return str(result) if result is not None else ""
+        except Exception as e:
+            self.log_error(f"Tool execution failed: {e}")
+            raise
 
     def _map_inputs_to_tool_params(
         self, tool, inputs: Dict[str, Any]

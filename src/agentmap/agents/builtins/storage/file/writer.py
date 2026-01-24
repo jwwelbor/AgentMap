@@ -13,8 +13,8 @@ from typing import Any, Dict, Optional
 from agentmap.agents.builtins.storage.base_storage_agent import BaseStorageAgent
 from agentmap.models.storage import DocumentResult, WriteMode
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
+from agentmap.services.protocols import FileCapableAgent
 from agentmap.services.state_adapter_service import StateAdapterService
-from agentmap.services.storage.protocols import FileCapableAgent
 
 
 class FileWriterAgent(BaseStorageAgent, FileCapableAgent):
@@ -32,7 +32,7 @@ class FileWriterAgent(BaseStorageAgent, FileCapableAgent):
         context: Optional[Dict[str, Any]] = None,
         # Infrastructure services only
         logger: Optional[logging.Logger] = None,
-        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        execution_tracking_service: Optional[ExecutionTrackingService] = None,
         state_adapter_service: Optional[StateAdapterService] = None,
     ):
         """
@@ -43,7 +43,7 @@ class FileWriterAgent(BaseStorageAgent, FileCapableAgent):
             prompt: File path or prompt with path
             context: Additional configuration including encoding and newline settings
             logger: Logger instance for logging operations
-            execution_tracker_service: ExecutionTrackingService instance for tracking
+            execution_tracking_service: ExecutionTrackingService instance for tracking
             state_adapter_service: StateAdapterService instance for state operations
         """
         # Call new BaseAgent constructor (infrastructure services only)
@@ -52,7 +52,7 @@ class FileWriterAgent(BaseStorageAgent, FileCapableAgent):
             prompt=prompt,
             context=context,
             logger=logger,
-            execution_tracker_service=execution_tracker_service,
+            execution_tracking_service=execution_tracking_service,
             state_adapter_service=state_adapter_service,
         )
 

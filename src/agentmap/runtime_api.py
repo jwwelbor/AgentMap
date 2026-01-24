@@ -24,8 +24,12 @@ from .runtime.workflow_ops import (
     validate_workflow,
 )
 
+# Public alias for external applications (more descriptive than ensure_initialized)
+agentmap_initialize = ensure_initialized
+
 __all__ = [
-    "ensure_initialized",
+    "ensure_initialized",  # Internal/legacy name
+    "agentmap_initialize",  # Recommended external name
     "get_container",
     "run_workflow",
     "resume_workflow",

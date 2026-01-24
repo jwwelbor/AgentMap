@@ -48,7 +48,7 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
         context: Optional[Dict[str, Any]] = None,
         # Infrastructure services only - core services ALL agents need
         logger: Optional[logging.Logger] = None,
-        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        execution_tracking_service: Optional[ExecutionTrackingService] = None,
         state_adapter_service: Optional[StateAdapterService] = None,
         # LLMAgent-specific infrastructure services
         prompt_manager_service: Optional[Any] = None,  # PromptManagerService
@@ -70,7 +70,7 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
             prompt=prompt,
             context=context,
             logger=logger,
-            execution_tracking_service=execution_tracker_service,
+            execution_tracking_service=execution_tracking_service,
             state_adapter_service=state_adapter_service,
         )
 
@@ -419,17 +419,22 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
         if isinstance(output, dict) and self.memory_key in output:
             memory = output.pop(self.memory_key, None)
 
-            # Update memory in state
-            if memory is not None:
-                state = self.state_adapter_service.set_value(
-                    state, self.memory_key, memory
-                )
-
             # Extract output value if available
             if self.output_field and self.output_field in output:
-                output = output[self.output_field]
+                output_value = output[self.output_field]
             elif "output" in output:
-                output = output["output"]
+                output_value = output["output"]
+            else:
+                output_value = output
+
+            # Use state_updates pattern for LangGraph 1.x compatibility
+            # Return both the output field and memory in state updates
+            if memory is not None:
+                state_updates = {
+                    self.output_field: output_value,
+                    self.memory_key: memory,
+                }
+                return state, {"state_updates": state_updates}
 
         return state, output
 

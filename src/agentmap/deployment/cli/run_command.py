@@ -15,7 +15,8 @@ from agentmap.deployment.cli.utils.cli_presenter import (
     print_err,
     print_json,
 )
-from agentmap.runtime_api import ensure_initialized, run_workflow
+
+# Lazy import: moved to function to avoid DI container init at module load
 
 
 def run_command(
@@ -71,6 +72,9 @@ def run_command(
     defaults to the CSV filename (without .csv extension), but you can
     specify a different graph name after the :: delimiter.
     """
+    # Lazy import to avoid DI container initialization at module load
+    from agentmap.runtime_api import ensure_initialized, run_workflow
+
     try:
         # Ensure runtime is initialized
         ensure_initialized(config_file=config_file)

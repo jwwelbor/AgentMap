@@ -11,17 +11,16 @@ Test Coverage:
 - Legacy bundle loading (backward compatibility)
 """
 
-import unittest
 import json
+import unittest
 from pathlib import Path
-from typing import Dict, Any
-
-from tests.fresh_suite.integration.base_integration_test import BaseIntegrationTest
-from agentmap.models.graph import Graph
-from agentmap.models.node import Node
+from typing import Any, Dict
 
 # Import runtime API - this is what the CLI uses
 from agentmap import runtime_api
+from agentmap.models.graph import Graph
+from agentmap.models.node import Node
+from tests.fresh_suite.integration.base_integration_test import BaseIntegrationTest
 
 
 class TestParallelBundleSystemIntegration(BaseIntegrationTest):
@@ -38,6 +37,7 @@ class TestParallelBundleSystemIntegration(BaseIntegrationTest):
         # The runtime_api.inspect_graph() uses RuntimeManager.get_container()
         # We must use the same container to access the same GraphRegistryService cache
         from agentmap.runtime.init_ops import get_container
+
         runtime_container = get_container()
         self.graph_bundle_service = runtime_container.graph_bundle_service()
 
@@ -66,7 +66,7 @@ ParallelBundle,End,output,,"""
         inspect_result = runtime_api.inspect_graph(
             graph_name="ParallelBundle",
             csv_file=str(csv_path),
-            config_file=str(self.test_config_path)
+            config_file=str(self.test_config_path),
         )
 
         self.assertTrue(inspect_result["success"], "Inspection should succeed")
@@ -77,17 +77,22 @@ ParallelBundle,End,output,,"""
         bundle, _ = self.graph_bundle_service.get_or_create_bundle(
             csv_path=csv_path,
             graph_name="ParallelBundle",
-            config_path=str(self.test_config_path)
+            config_path=str(self.test_config_path),
         )
 
         # Verify bundle uses new metadata-only format
-        self.assertIsNotNone(bundle.nodes, "Bundle should have nodes in metadata format")
+        self.assertIsNotNone(
+            bundle.nodes, "Bundle should have nodes in metadata format"
+        )
         self.assertEqual(bundle.graph_name, "ParallelBundle")
 
         # Verify parallel edges in nodes
         start_node = bundle.nodes.get("Start")
         self.assertIsNotNone(start_node, "Start node should exist")
-        self.assertTrue(start_node.is_parallel_edge("default"), "Start node should have parallel edges")
+        self.assertTrue(
+            start_node.is_parallel_edge("default"),
+            "Start node should have parallel edges",
+        )
 
         print("✅ Bundle created with parallel edges via runtime API")
 
@@ -109,7 +114,7 @@ SerializationTest,End,output,,"""
         inspect_result = runtime_api.inspect_graph(
             graph_name="SerializationTest",
             csv_file=str(csv_path),
-            config_file=str(self.test_config_path)
+            config_file=str(self.test_config_path),
         )
         self.assertTrue(inspect_result["success"], "Inspection should succeed")
 
@@ -117,11 +122,13 @@ SerializationTest,End,output,,"""
         bundle, loaded_from_cache = self.graph_bundle_service.get_or_create_bundle(
             csv_path=csv_path,
             graph_name="SerializationTest",
-            config_path=str(self.test_config_path)
+            config_path=str(self.test_config_path),
         )
 
         # Verify bundle was loaded from cache (inspect_graph already created it)
-        self.assertTrue(loaded_from_cache, "Bundle should be loaded from cache after inspect_graph")
+        self.assertTrue(
+            loaded_from_cache, "Bundle should be loaded from cache after inspect_graph"
+        )
         self.assertIsNotNone(bundle.nodes, "Bundle should have nodes")
 
         # Verify parallel edge structure in Start node
@@ -129,30 +136,48 @@ SerializationTest,End,output,,"""
         self.assertIsNotNone(start_node, "Start node should exist")
 
         # Check success edges are parallel
-        self.assertTrue(start_node.is_parallel_edge("success"), "Success edges should be parallel")
+        self.assertTrue(
+            start_node.is_parallel_edge("success"), "Success edges should be parallel"
+        )
         success_targets = start_node.get_edge_targets("success")
-        self.assertEqual(set(success_targets), {"SuccessA", "SuccessB"}, "Success targets should match")
+        self.assertEqual(
+            set(success_targets),
+            {"SuccessA", "SuccessB"},
+            "Success targets should match",
+        )
 
         # Check failure edges are parallel
-        self.assertTrue(start_node.is_parallel_edge("failure"), "Failure edges should be parallel")
+        self.assertTrue(
+            start_node.is_parallel_edge("failure"), "Failure edges should be parallel"
+        )
         failure_targets = start_node.get_edge_targets("failure")
-        self.assertEqual(set(failure_targets), {"ErrorA", "ErrorB"}, "Failure targets should match")
+        self.assertEqual(
+            set(failure_targets), {"ErrorA", "ErrorB"}, "Failure targets should match"
+        )
 
         # Get bundle again - should be loaded from cache
         bundle2, created2 = self.graph_bundle_service.get_or_create_bundle(
             csv_path=csv_path,
             graph_name="SerializationTest",
-            config_path=str(self.test_config_path)
+            config_path=str(self.test_config_path),
         )
 
         # Verify bundle was loaded from cache
         self.assertTrue(created2, "Bundle should be loaded from cache on second call")
-        self.assertEqual(bundle2.graph_name, bundle.graph_name, "Cached bundle should match")
+        self.assertEqual(
+            bundle2.graph_name, bundle.graph_name, "Cached bundle should match"
+        )
 
         # Verify parallel edges preserved in cached bundle
         cached_start_node = bundle2.nodes.get("Start")
-        self.assertTrue(cached_start_node.is_parallel_edge("success"), "Cached success edges should be parallel")
-        self.assertTrue(cached_start_node.is_parallel_edge("failure"), "Cached failure edges should be parallel")
+        self.assertTrue(
+            cached_start_node.is_parallel_edge("success"),
+            "Cached success edges should be parallel",
+        )
+        self.assertTrue(
+            cached_start_node.is_parallel_edge("failure"),
+            "Cached failure edges should be parallel",
+        )
 
         print("✅ Bundle caching preserves parallel edges")
 
@@ -173,7 +198,7 @@ DeserializationTest,End,output,"""
         inspect_result = runtime_api.inspect_graph(
             graph_name="DeserializationTest",
             csv_file=str(csv_path),
-            config_file=str(self.test_config_path)
+            config_file=str(self.test_config_path),
         )
         self.assertTrue(inspect_result["success"], "Inspection should succeed")
 
@@ -181,7 +206,7 @@ DeserializationTest,End,output,"""
         original_bundle, _ = self.graph_bundle_service.get_or_create_bundle(
             csv_path=csv_path,
             graph_name="DeserializationTest",
-            config_path=str(self.test_config_path)
+            config_path=str(self.test_config_path),
         )
 
         # Serialize
@@ -200,7 +225,10 @@ DeserializationTest,End,output,"""
         self.assertIsNotNone(loaded_bundle.nodes, "Loaded bundle should have nodes")
         start_node = loaded_bundle.nodes.get("Start")
         self.assertIsNotNone(start_node, "Start node should exist")
-        self.assertTrue(start_node.is_parallel_edge("default"), "Start node should have parallel edges")
+        self.assertTrue(
+            start_node.is_parallel_edge("default"),
+            "Start node should have parallel edges",
+        )
 
         targets = start_node.get_edge_targets("default")
         self.assertEqual(set(targets), {"ProcessA", "ProcessB", "ProcessC"})
@@ -229,7 +257,7 @@ MetadataTest,End,output,"""
         inspect_result = runtime_api.inspect_graph(
             graph_name="MetadataTest",
             csv_file=str(csv_path),
-            config_file=str(self.test_config_path)
+            config_file=str(self.test_config_path),
         )
 
         self.assertTrue(inspect_result["success"], "Inspection should succeed")
@@ -239,7 +267,7 @@ MetadataTest,End,output,"""
         bundle, _ = self.graph_bundle_service.get_or_create_bundle(
             csv_path=csv_path,
             graph_name="MetadataTest",
-            config_path=str(self.test_config_path)
+            config_path=str(self.test_config_path),
         )
 
         # Verify bundle has parallel metadata using new format
@@ -247,9 +275,9 @@ MetadataTest,End,output,"""
 
         # Check if any node has parallel edges
         has_parallel = any(
-            node.is_parallel_edge("default") or
-            node.is_parallel_edge("success") or
-            node.is_parallel_edge("failure")
+            node.is_parallel_edge("default")
+            or node.is_parallel_edge("success")
+            or node.is_parallel_edge("failure")
             for node in bundle.nodes.values()
         )
 
@@ -280,7 +308,7 @@ MaxParallelism,End,output,"""
         inspect_result = runtime_api.inspect_graph(
             graph_name="MaxParallelism",
             csv_file=str(csv_path),
-            config_file=str(self.test_config_path)
+            config_file=str(self.test_config_path),
         )
         self.assertTrue(inspect_result["success"], "Inspection should succeed")
         self.assertEqual(inspect_result["outputs"]["total_nodes"], 10)
@@ -289,7 +317,7 @@ MaxParallelism,End,output,"""
         bundle, _ = self.graph_bundle_service.get_or_create_bundle(
             csv_path=csv_path,
             graph_name="MaxParallelism",
-            config_path=str(self.test_config_path)
+            config_path=str(self.test_config_path),
         )
 
         # Verify bundle uses new metadata format
@@ -328,7 +356,7 @@ LegacyBundle,End,output,"""
         inspect_result = runtime_api.inspect_graph(
             graph_name="LegacyBundle",
             csv_file=str(csv_path),
-            config_file=str(self.test_config_path)
+            config_file=str(self.test_config_path),
         )
         self.assertTrue(inspect_result["success"], "Inspection should succeed")
 
@@ -336,7 +364,7 @@ LegacyBundle,End,output,"""
         bundle, _ = self.graph_bundle_service.get_or_create_bundle(
             csv_path=csv_path,
             graph_name="LegacyBundle",
-            config_path=str(self.test_config_path)
+            config_path=str(self.test_config_path),
         )
 
         # Serialize and reload
@@ -356,8 +384,11 @@ LegacyBundle,End,output,"""
                     edge_value = node.edges[edge_type]
                     # Legacy bundles should have string edges or not be parallel
                     if isinstance(edge_value, list):
-                        self.assertEqual(len(edge_value), 1,
-                                       "Legacy bundles should not have multi-target lists")
+                        self.assertEqual(
+                            len(edge_value),
+                            1,
+                            "Legacy bundles should not have multi-target lists",
+                        )
 
         print("✅ Legacy bundle loaded correctly via runtime API")
 
@@ -382,7 +413,7 @@ MixedBundle,End,output,"""
         inspect_result = runtime_api.inspect_graph(
             graph_name="MixedBundle",
             csv_file=str(csv_path),
-            config_file=str(self.test_config_path)
+            config_file=str(self.test_config_path),
         )
         self.assertTrue(inspect_result["success"], "Inspection should succeed")
         self.assertEqual(inspect_result["outputs"]["total_nodes"], 8)
@@ -391,7 +422,7 @@ MixedBundle,End,output,"""
         bundle, _ = self.graph_bundle_service.get_or_create_bundle(
             csv_path=csv_path,
             graph_name="MixedBundle",
-            config_path=str(self.test_config_path)
+            config_path=str(self.test_config_path),
         )
 
         # Serialize and reload
@@ -407,12 +438,18 @@ MixedBundle,End,output,"""
         # Sequential1 should have single target
         sequential1 = loaded_bundle.nodes.get("Sequential1")
         self.assertIsNotNone(sequential1, "Sequential1 node should exist")
-        self.assertFalse(sequential1.is_parallel_edge("default"), "Sequential1 should not have parallel edges")
+        self.assertFalse(
+            sequential1.is_parallel_edge("default"),
+            "Sequential1 should not have parallel edges",
+        )
 
         # ParallelFanOut should have parallel targets
         parallel_fanout = loaded_bundle.nodes.get("ParallelFanOut")
         self.assertIsNotNone(parallel_fanout, "ParallelFanOut node should exist")
-        self.assertTrue(parallel_fanout.is_parallel_edge("default"), "ParallelFanOut should have parallel edges")
+        self.assertTrue(
+            parallel_fanout.is_parallel_edge("default"),
+            "ParallelFanOut should have parallel edges",
+        )
 
         print("✅ Mixed bundle compatibility verified via runtime API")
 
@@ -431,9 +468,9 @@ MixedBundle,End,output,"""
         csv_repo_path.mkdir(parents=True, exist_ok=True)
 
         csv_path = csv_repo_path / filename
-        csv_path.write_text(content, encoding='utf-8')
+        csv_path.write_text(content, encoding="utf-8")
         return csv_path
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

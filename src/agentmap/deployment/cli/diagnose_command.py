@@ -14,7 +14,8 @@ from agentmap.deployment.cli.utils.cli_presenter import (
     print_err,
     print_json,
 )
-from agentmap.runtime_api import diagnose_system, ensure_initialized
+
+# Lazy import: moved to function to avoid DI container init at module load
 
 
 def diagnose_cmd(
@@ -28,6 +29,9 @@ def diagnose_cmd(
     This command follows the facade pattern defined in SPEC-DEP-001 for
     consistent behavior across all deployment adapters.
     """
+    # Lazy import to avoid DI container initialization at module load
+    from agentmap.runtime_api import diagnose_system, ensure_initialized
+
     try:
         # Ensure runtime is initialized
         ensure_initialized(config_file=config_file)

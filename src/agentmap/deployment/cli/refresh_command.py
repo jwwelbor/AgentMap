@@ -8,7 +8,7 @@ from typing import Optional
 
 import typer
 
-from agentmap.runtime_api import refresh_cache
+# Lazy import: moved to function to avoid DI container init at module load
 
 
 def refresh_cmd(
@@ -31,6 +31,9 @@ def refresh_cmd(
     This command invalidates the cache and re-validates all LLM and storage
     providers, updating their availability status.
     """
+    # Lazy import to avoid DI container initialization at module load
+    from agentmap.runtime_api import refresh_cache
+
     try:
         typer.echo("🔄 Refreshing Provider Availability Cache")
         typer.echo("=" * 40)

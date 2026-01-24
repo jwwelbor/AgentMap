@@ -5,39 +5,39 @@ Tests the specific fix for OrchestratorService injection into OrchestratorAgent.
 """
 
 import unittest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import MagicMock, Mock
 
 from agentmap.agents.builtins.orchestrator_agent import OrchestratorAgent
+from agentmap.services.logging_service import LoggingService
 from agentmap.services.orchestrator_service import OrchestratorService
 from agentmap.services.prompt_manager_service import PromptManagerService
-from agentmap.services.logging_service import LoggingService
 
 
 class TestOrchestratorServiceInjection(unittest.TestCase):
     """Unit tests for OrchestratorAgent with OrchestratorService injection."""
-    
+
     def setUp(self):
         """Set up mocks for testing."""
         # Create mock services
         self.mock_logger = Mock()
         self.mock_execution_tracker = Mock()
         self.mock_state_adapter = Mock()
-        
+
         # Create real services for orchestrator
         self.mock_prompt_manager = Mock(spec=PromptManagerService)
         self.mock_logging_service = Mock(spec=LoggingService)
         self.mock_logging_service.get_class_logger.return_value = self.mock_logger
         self.mock_llm_service = Mock()
         self.mock_features_registry = Mock()
-        
+
         # Create real OrchestratorService
         self.orchestrator_service = OrchestratorService(
             prompt_manager_service=self.mock_prompt_manager,
             logging_service=self.mock_logging_service,
             llm_service=self.mock_llm_service,
-            features_registry_service=self.mock_features_registry
+            features_registry_service=self.mock_features_registry,
         )
-    
+
     def test_orchestrator_agent_accepts_orchestrator_service(self):
         """Test that OrchestratorAgent can be configured with OrchestratorService via protocol."""
         # Create agent without orchestrator service
@@ -47,66 +47,63 @@ class TestOrchestratorServiceInjection(unittest.TestCase):
             context={
                 "matching_strategy": "algorithm",
                 "confidence_threshold": 0.8,
-                "nodes": "NodeA|NodeB|NodeC"
+                "nodes": "NodeA|NodeB|NodeC",
             },
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracker,
+            execution_tracking_service=self.mock_execution_tracker,
             state_adapter_service=self.mock_state_adapter,
         )
-        
+
         # Initially, orchestrator_service should be None
         self.assertIsNone(agent.orchestrator_service)
-        
+
         # Configure the service via protocol method
         agent.configure_orchestrator_service(self.orchestrator_service)
-        
+
         # Verify service is properly stored
         self.assertIsNotNone(agent.orchestrator_service)
         self.assertIsInstance(agent.orchestrator_service, OrchestratorService)
         self.assertEqual(agent.orchestrator_service, self.orchestrator_service)
-    
+
     def test_orchestrator_agent_process_with_service(self):
         """Test that OrchestratorAgent can process with OrchestratorService."""
         # Mock the select_best_node method
         self.orchestrator_service.select_best_node = Mock(return_value="NodeB")
-        
+
         # Create agent
         agent = OrchestratorAgent(
             name="TestOrchestrator",
             prompt="Route requests",
-            context={
-                "matching_strategy": "algorithm",
-                "nodes": "NodeA|NodeB|NodeC"
-            },
+            context={"matching_strategy": "algorithm", "nodes": "NodeA|NodeB|NodeC"},
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracker,
+            execution_tracking_service=self.mock_execution_tracker,
             state_adapter_service=self.mock_state_adapter,
         )
-        
+
         # Configure orchestrator service via protocol
         agent.configure_orchestrator_service(self.orchestrator_service)
-        
+
         # Set up node registry
         agent.node_registry = {
             "NodeA": {"name": "NodeA", "description": "Process A"},
             "NodeB": {"name": "NodeB", "description": "Process B"},
-            "NodeC": {"name": "NodeC", "description": "Process C"}
+            "NodeC": {"name": "NodeC", "description": "Process C"},
         }
-        
+
         # Process input
         inputs = {"request": "process this data"}
         result = agent.process(inputs)
-        
+
         # Verify service was called correctly
         self.orchestrator_service.select_best_node.assert_called_once()
         call_args = self.orchestrator_service.select_best_node.call_args
-        
+
         # Check arguments
         self.assertEqual(call_args.kwargs["input_text"], "process this data")
         self.assertEqual(call_args.kwargs["strategy"], "algorithm")
         self.assertEqual(call_args.kwargs["confidence_threshold"], 0.8)
         self.assertEqual(result, "NodeB")
-    
+
     def test_orchestrator_agent_without_service_returns_error(self):
         """Test that OrchestratorAgent handles missing service gracefully."""
         # Create agent without orchestrator service
@@ -115,31 +112,31 @@ class TestOrchestratorServiceInjection(unittest.TestCase):
             prompt="Route requests",
             context={
                 "matching_strategy": "algorithm",
-                "default_target": "ErrorHandler"
+                "default_target": "ErrorHandler",
             },
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracker,
+            execution_tracking_service=self.mock_execution_tracker,
             state_adapter_service=self.mock_state_adapter,
         )
-        
+
         # Do NOT configure orchestrator service - leave it as None
-        
+
         # Process should return error or default
         inputs = {"request": "process this"}
         result = agent.process(inputs)
-        
+
         # Should return default target
         self.assertEqual(result, "ErrorHandler")
-        
+
         # Check error was logged (accounting for the agent name prefix)
         self.mock_logger.error.assert_called_with(
             "[OrchestratorAgent:TestOrchestrator] OrchestratorService not configured - cannot perform orchestration"
         )
-    
+
     def test_orchestrator_service_info(self):
         """Test OrchestratorService provides correct service info."""
         info = self.orchestrator_service.get_service_info()
-        
+
         self.assertEqual(info["service"], "OrchestratorService")
         self.assertTrue(info["prompt_manager_available"])
         self.assertTrue(info["llm_service_configured"])
@@ -147,25 +144,25 @@ class TestOrchestratorServiceInjection(unittest.TestCase):
         self.assertIn("algorithm", info["supported_strategies"])
         self.assertIn("llm", info["supported_strategies"])
         self.assertIn("tiered", info["supported_strategies"])
-    
+
     def test_orchestrator_agent_implements_protocol(self):
         """Test that OrchestratorAgent implements OrchestrationCapableAgent protocol."""
         from agentmap.services.protocols import OrchestrationCapableAgent
-        
+
         # Create agent
         agent = OrchestratorAgent(
             name="TestOrchestrator",
             prompt="Route requests",
             context={},
             logger=self.mock_logger,
-            execution_tracker_service=self.mock_execution_tracker,
+            execution_tracking_service=self.mock_execution_tracker,
             state_adapter_service=self.mock_state_adapter,
         )
-        
+
         # Verify it implements the protocol
         self.assertIsInstance(agent, OrchestrationCapableAgent)
-        self.assertTrue(hasattr(agent, 'configure_orchestrator_service'))
-        self.assertTrue(callable(getattr(agent, 'configure_orchestrator_service')))
+        self.assertTrue(hasattr(agent, "configure_orchestrator_service"))
+        self.assertTrue(callable(getattr(agent, "configure_orchestrator_service")))
 
 
 if __name__ == "__main__":

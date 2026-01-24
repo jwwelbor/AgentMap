@@ -15,8 +15,8 @@ from agentmap.agents.builtins.storage.base_storage_agent import (
 )
 from agentmap.models.storage import DocumentResult
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
+from agentmap.services.protocols import VectorCapableAgent
 from agentmap.services.state_adapter_service import StateAdapterService
-from agentmap.services.storage.protocols import VectorCapableAgent
 
 
 class VectorAgent(BaseStorageAgent, VectorCapableAgent):
@@ -39,7 +39,7 @@ class VectorAgent(BaseStorageAgent, VectorCapableAgent):
         context: Optional[Dict[str, Any]] = None,
         # Infrastructure services only
         logger: Optional[logging.Logger] = None,
-        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        execution_tracking_service: Optional[ExecutionTrackingService] = None,
         state_adapter_service: Optional[StateAdapterService] = None,
     ):
         """
@@ -59,7 +59,7 @@ class VectorAgent(BaseStorageAgent, VectorCapableAgent):
             prompt=prompt,
             context=context,
             logger=logger,
-            execution_tracker_service=execution_tracker_service,
+            execution_tracking_service=execution_tracking_service,
             state_adapter_service=state_adapter_service,
         )
 

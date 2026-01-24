@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import typer
 
-from agentmap.runtime_api import diagnose_system, validate_cache
+# Lazy import: moved to functions to avoid DI container init at module load
 
 
 def resolve_csv_path(
@@ -93,6 +93,9 @@ def diagnose_command(config_file: Optional[str] = None) -> dict:
     Programmatic version of diagnose_cmd that returns structured data.
     Used by API endpoints and testing.
     """
+    # Lazy import to avoid DI container initialization at module load
+    from agentmap.runtime_api import diagnose_system
+
     # Use facade function and extract outputs
     result = diagnose_system(config_file=config_file)
     outputs = result["outputs"]
@@ -147,6 +150,9 @@ def cache_info_command() -> dict:
     Programmatic version of cache info that returns structured data.
     Used by API endpoints and testing.
     """
+    # Lazy import to avoid DI container initialization at module load
+    from agentmap.runtime_api import validate_cache
+
     # Use facade function for stats
     result = validate_cache(stats=True)
     outputs = result["outputs"]
@@ -173,6 +179,9 @@ def clear_cache_command(
     Programmatic version of cache clearing that returns structured data.
     Used by API endpoints and testing.
     """
+    # Lazy import to avoid DI container initialization at module load
+    from agentmap.runtime_api import validate_cache
+
     # Use facade function for cache operations
     if file_path:
         result = validate_cache(clear=True, file_path=file_path)

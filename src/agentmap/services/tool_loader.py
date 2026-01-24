@@ -72,8 +72,13 @@ def load_tools_from_module(module_path: str) -> List[Any]:
     tools = []
     for name, obj in inspect.getmembers(module):
         # LangChain tools have 'name' and 'description' attributes
-        # Check for callable objects with tool signature (name and description)
-        if callable(obj) and hasattr(obj, "name") and hasattr(obj, "description"):
+        # In langchain_core, @tool creates StructuredTool objects which have invoke/run methods
+        # but callable() returns False, so we check for the tool signature instead
+        if (
+            hasattr(obj, "name")
+            and hasattr(obj, "description")
+            and (hasattr(obj, "invoke") or hasattr(obj, "run"))
+        ):
             # Tool objects from @tool decorator
             tools.append(obj)
 

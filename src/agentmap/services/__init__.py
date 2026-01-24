@@ -6,84 +6,170 @@ This module contains services that implement business use cases:
 - GraphBuilderService: CSV parsing to domain models
 - GraphRunnerService: Graph execution orchestration
 - GraphAssemblyService: StateGraph assembly from domain models
-- GraphOutputService: Graph export in various formats
 - FunctionResolutionService: Dynamic function loading and reference extraction
 - ValidationService: Comprehensive validation orchestration
 - Configuration services: Existing config management
 - Routing services: LLM routing and optimization
 - Storage services: Data persistence and retrieval
 - Application services: Bootstrap and lifecycle management
+
+Services are loaded lazily via __getattr__ to improve startup performance.
+Direct imports from submodules bypass this lazy loading.
 """
 
-from agentmap.models.scaffold_types import (
-    ScaffoldOptions,
-    ScaffoldResult,
-    ServiceAttribute,
-    ServiceRequirements,
-)
+# Lazy loading mapping: name -> (module_path, attribute_name)
+# Module paths are relative to agentmap.services
+_LAZY_IMPORTS = {
+    # Models (from agentmap.models.scaffold_types)
+    "ScaffoldOptions": ("agentmap.models.scaffold_types", "ScaffoldOptions"),
+    "ScaffoldResult": ("agentmap.models.scaffold_types", "ScaffoldResult"),
+    "ServiceAttribute": ("agentmap.models.scaffold_types", "ServiceAttribute"),
+    "ServiceRequirements": ("agentmap.models.scaffold_types", "ServiceRequirements"),
+    # Core Graph Services
+    "GraphScaffoldService": (
+        "agentmap.services.graph.graph_scaffold_service",
+        "GraphScaffoldService",
+    ),
+    "GraphRunnerService": (
+        "agentmap.services.graph.graph_runner_service",
+        "GraphRunnerService",
+    ),
+    "GraphAssemblyService": (
+        "agentmap.services.graph.graph_assembly_service",
+        "GraphAssemblyService",
+    ),
+    "GraphBundleService": (
+        "agentmap.services.graph.graph_bundle_service",
+        "GraphBundleService",
+    ),
+    # Agent Services
+    "AgentFactoryService": (
+        "agentmap.services.agent.agent_factory_service",
+        "AgentFactoryService",
+    ),
+    "AgentRegistryService": (
+        "agentmap.services.agent.agent_registry_service",
+        "AgentRegistryService",
+    ),
+    # Configuration Services
+    "ConfigService": ("agentmap.services.config.config_service", "ConfigService"),
+    "AppConfigService": (
+        "agentmap.services.config.app_config_service",
+        "AppConfigService",
+    ),
+    "StorageConfigService": (
+        "agentmap.services.config.storage_config_service",
+        "StorageConfigService",
+    ),
+    "LLMRoutingConfigService": (
+        "agentmap.services.config.llm_routing_config_service",
+        "LLMRoutingConfigService",
+    ),
+    # Execution Services
+    "ExecutionPolicyService": (
+        "agentmap.services.execution_policy_service",
+        "ExecutionPolicyService",
+    ),
+    "ExecutionTrackingService": (
+        "agentmap.services.execution_tracking_service",
+        "ExecutionTrackingService",
+    ),
+    "ExecutionTracker": (
+        "agentmap.services.execution_tracking_service",
+        "ExecutionTracker",
+    ),
+    # Registry Services
+    "FeaturesRegistryService": (
+        "agentmap.services.features_registry_service",
+        "FeaturesRegistryService",
+    ),
+    # Utility Services
+    "FilePathService": ("agentmap.services.file_path_service", "FilePathService"),
+    "FunctionResolutionService": (
+        "agentmap.services.function_resolution_service",
+        "FunctionResolutionService",
+    ),
+    "PromptManagerService": (
+        "agentmap.services.prompt_manager_service",
+        "PromptManagerService",
+    ),
+    "StateAdapterService": (
+        "agentmap.services.state_adapter_service",
+        "StateAdapterService",
+    ),
+    # Validation Services
+    "ValidationService": (
+        "agentmap.services.validation.validation_service",
+        "ValidationService",
+    ),
+    "CSVValidationService": (
+        "agentmap.services.validation.csv_validation_service",
+        "CSVValidationService",
+    ),
+    "ConfigValidationService": (
+        "agentmap.services.validation.config_validation_service",
+        "ConfigValidationService",
+    ),
+    "ValidationCacheService": (
+        "agentmap.services.validation.validation_cache_service",
+        "ValidationCacheService",
+    ),
+    # Routing Services
+    "LLMRoutingService": (
+        "agentmap.services.routing.routing_service",
+        "LLMRoutingService",
+    ),
+    "PromptComplexityAnalyzer": (
+        "agentmap.services.routing.complexity_analyzer",
+        "PromptComplexityAnalyzer",
+    ),
+    "RoutingCache": ("agentmap.services.routing.cache", "RoutingCache"),
+    # Storage Services
+    "StorageServiceManager": (
+        "agentmap.services.storage.manager",
+        "StorageServiceManager",
+    ),
+    # Service Protocols
+    "LLMServiceProtocol": ("agentmap.services.protocols", "LLMServiceProtocol"),
+    "StorageServiceProtocol": ("agentmap.services.protocols", "StorageServiceProtocol"),
+    "StateAdapterServiceProtocol": (
+        "agentmap.services.protocols",
+        "StateAdapterServiceProtocol",
+    ),
+    "ExecutionTrackingServiceProtocol": (
+        "agentmap.services.protocols",
+        "ExecutionTrackingServiceProtocol",
+    ),
+    "LLMCapableAgent": ("agentmap.services.protocols", "LLMCapableAgent"),
+    "StorageCapableAgent": ("agentmap.services.protocols", "StorageCapableAgent"),
+}
 
-# Core Graph Services
-from agentmap.services.graph.graph_output_service import GraphOutputService
-from agentmap.services.graph.graph_scaffold_service import GraphScaffoldService
+# Cache for loaded items
+_loaded_items = {}
 
-# from agentmap.services.agent.agent_bootstrap_service import AgentBootstrapService
-from .agent.agent_factory_service import AgentFactoryService
-from .agent.agent_registry_service import AgentRegistryService
 
-# Configuration Services
-from .config import AppConfigService, ConfigService, StorageConfigService
-from .config.llm_routing_config_service import LLMRoutingConfigService
+def __getattr__(name: str):
+    """Lazy load services and protocols on demand."""
+    if name in _LAZY_IMPORTS:
+        if name not in _loaded_items:
+            module_path, attr_name = _LAZY_IMPORTS[name]
+            import importlib
 
-# from .dependency_checker_service import DependencyCheckerService
-from .execution_policy_service import ExecutionPolicyService
-from .execution_tracking_service import ExecutionTracker, ExecutionTrackingService
+            module = importlib.import_module(module_path)
+            _loaded_items[name] = getattr(module, attr_name)
+        return _loaded_items[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-# Agent and Registry Services
-from .features_registry_service import FeaturesRegistryService
 
-# Utility Services
-from .file_path_service import FilePathService
-from .function_resolution_service import FunctionResolutionService
-from .graph.graph_assembly_service import GraphAssemblyService
-from .graph.graph_bundle_service import GraphBundleService
-from .graph.graph_runner_service import GraphRunnerService
-from .prompt_manager_service import PromptManagerService
-
-# Service Protocols
-from .protocols import (
-    ExecutionTrackingServiceProtocol,
-    LLMCapableAgent,
-    LLMServiceProtocol,
-    StateAdapterServiceProtocol,
-    StorageCapableAgent,
-    StorageServiceProtocol,
-)
-from .routing import PromptComplexityAnalyzer, RoutingCache
-
-# Routing Services
-# Import LLMRoutingService directly to avoid circular import
-from .routing.routing_service import LLMRoutingService
-from .state_adapter_service import StateAdapterService
-
-# Storage Services
-from .storage import StorageServiceManager
-from .validation.config_validation_service import ConfigValidationService
-from .validation.csv_validation_service import CSVValidationService
-from .validation.validation_cache_service import ValidationCacheService
-
-# Validation Services
-from .validation.validation_service import ValidationService
-
-# Application Services
-# from .application_bootstrap_service import ApplicationBootstrapService
+def __dir__():
+    """Support dir() for discoverability."""
+    return list(_LAZY_IMPORTS.keys())
 
 
 __all__ = [
     # Core Graph Services
-    "GraphDefinitionService",
     "GraphRunnerService",
     "GraphAssemblyService",
-    "GraphOutputService",
     "GraphBundleService",
     "GraphScaffoldService",
     "ScaffoldOptions",
@@ -106,8 +192,6 @@ __all__ = [
     # Agent and Registry Services
     "FeaturesRegistryService",
     "AgentRegistryService",
-    "AgentBootstrapService",
-    "DependencyCheckerService",
     "AgentFactoryService",
     # Configuration Services
     "ConfigService",
@@ -120,8 +204,6 @@ __all__ = [
     "RoutingCache",
     # Storage Services
     "StorageServiceManager",
-    # Application Services
-    #     "ApplicationBootstrapService",
     # Service Protocols
     "LLMServiceProtocol",
     "StorageServiceProtocol",

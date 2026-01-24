@@ -14,7 +14,8 @@ from agentmap.deployment.cli.utils.cli_presenter import (
     print_err,
     print_json,
 )
-from agentmap.runtime_api import ensure_initialized, update_bundle
+
+# Lazy import: moved to function to avoid DI container init at module load
 
 
 def update_bundle_command(
@@ -60,6 +61,9 @@ def update_bundle_command(
 
     This command always forces recreation of the bundle to ensure it's up to date.
     """
+    # Lazy import to avoid DI container initialization at module load
+    from agentmap.runtime_api import ensure_initialized, update_bundle
+
     try:
         # Ensure runtime is initialized
         ensure_initialized(config_file=config_file)

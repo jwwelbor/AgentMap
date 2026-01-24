@@ -37,7 +37,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
         context: Optional[Dict[str, Any]] = None,
         # Infrastructure services only
         logger: Optional[logging.Logger] = None,
-        execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        execution_tracking_service: Optional[ExecutionTrackingService] = None,
         state_adapter_service: Optional[StateAdapterService] = None,
     ):
         """
@@ -59,7 +59,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
             prompt=prompt,
             context=context,
             logger=logger,
-            execution_tracking_service=execution_tracker_service,
+            execution_tracking_service=execution_tracking_service,
             state_adapter_service=state_adapter_service,
         )
 
@@ -226,14 +226,20 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
             if isinstance(output, dict) and "__execution_summary" in output:
                 output = {k: v for k, v in output.items() if k != "__execution_summary"}
 
-        # Set success based on subgraph result
+        # Set success based on subgraph result and use state_updates pattern
+        # for LangGraph 1.x compatibility
         if isinstance(output, dict):
             graph_success = output.get(
                 "graph_success", output.get("last_action_success", True)
             )
-            state = self.state_adapter_service.set_value(
-                state, "last_action_success", graph_success
-            )
+
+            # Use state_updates pattern to ensure state changes are returned
+            state_updates = {
+                self.output_field: output,
+                "last_action_success": graph_success,
+            }
+
+            return state, {"state_updates": state_updates}
 
         return state, output
 

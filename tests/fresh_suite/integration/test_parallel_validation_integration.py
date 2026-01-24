@@ -209,7 +209,9 @@ SpecialChars,End,output,"""
         print("\n=== Testing Very Long Parallel List ===")
 
         # Create CSV with 10 parallel targets
-        nodes_csv = ["LongList,Start,input," + "|".join([f"Process{i}" for i in range(10)])]
+        nodes_csv = [
+            "LongList,Start,input," + "|".join([f"Process{i}" for i in range(10)])
+        ]
         for i in range(10):
             nodes_csv.append(f"LongList,Process{i},echo,End")
         nodes_csv.append("LongList,End,output,")
@@ -312,9 +314,9 @@ EmptyEdge,End,output,"""
         """Create a test CSV file."""
         csv_path = Path(self.temp_dir) / "csv_data" / filename
         csv_path.parent.mkdir(parents=True, exist_ok=True)
-        csv_path.write_text(content, encoding='utf-8')
+        csv_path.write_text(content, encoding="utf-8")
         return csv_path
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

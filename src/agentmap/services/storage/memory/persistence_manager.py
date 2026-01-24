@@ -62,9 +62,7 @@ class PersistenceManager:
         except Exception as e:
             self._logger.warning(f"Failed to save persistence data: {e}")
 
-    def load_from_file(
-        self, file_path: str
-    ) -> Optional[Dict[str, Any]]:
+    def load_from_file(self, file_path: str) -> Optional[Dict[str, Any]]:
         """
         Load storage state from persistence file.
 

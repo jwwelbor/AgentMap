@@ -99,9 +99,7 @@ class QueryEngine:
         return dict(items)
 
     @staticmethod
-    def count_matching_documents(
-        data: Dict[str, Any], query: Dict[str, Any]
-    ) -> int:
+    def count_matching_documents(data: Dict[str, Any], query: Dict[str, Any]) -> int:
         """
         Count documents matching a query.
 

@@ -91,9 +91,7 @@ class MetadataTracker:
             return None
         return self._metadata[collection].get(document_id)
 
-    def delete_document_metadata(
-        self, collection: str, document_id: str
-    ) -> None:
+    def delete_document_metadata(self, collection: str, document_id: str) -> None:
         """
         Delete metadata for a document.
 
@@ -101,10 +99,7 @@ class MetadataTracker:
             collection: Collection name
             document_id: Document ID
         """
-        if (
-            collection in self._metadata
-            and document_id in self._metadata[collection]
-        ):
+        if collection in self._metadata and document_id in self._metadata[collection]:
             del self._metadata[collection][document_id]
 
     def delete_collection_metadata(self, collection: str) -> None:

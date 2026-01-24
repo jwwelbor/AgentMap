@@ -4,13 +4,17 @@ These tests use the BaseAPIIntegrationTest pattern with a properly configured
 container to exercise suspend → resume lifecycle reliably without file I/O race conditions.
 """
 
+import sys
 import unittest
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from agentmap.deployment.http.api.server import create_fastapi_app
-from tests.fresh_suite.integration.base_integration_test import BaseIntegrationTest
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from fresh_suite.integration.base_integration_test import BaseIntegrationTest
 
 
 class TestHTTPExecuteSuspendResume(BaseIntegrationTest):
@@ -23,10 +27,12 @@ class TestHTTPExecuteSuspendResume(BaseIntegrationTest):
 
         # Reset runtime manager to ensure clean state
         from agentmap.runtime.runtime_manager import RuntimeManager
+
         RuntimeManager.reset()
 
         # Create temp directory for test artifacts
         import tempfile
+
         self.temp_dir = tempfile.mkdtemp()
 
         # Create suspend/resume workflow CSV in test directory
@@ -38,6 +44,7 @@ class TestHTTPExecuteSuspendResume(BaseIntegrationTest):
         # Initialize runtime facade with test configuration
         # This MUST happen before creating FastAPI app so lifespan hook works correctly
         from agentmap.runtime_api import ensure_initialized
+
         ensure_initialized(config_file=str(test_config_path))
 
         # Now create the FastAPI app - it will use the configured runtime facade
@@ -45,6 +52,7 @@ class TestHTTPExecuteSuspendResume(BaseIntegrationTest):
 
         # Manually set the container in app state for TestClient (bypasses lifespan)
         from agentmap.runtime_api import get_container
+
         self.app.state.container = get_container()
 
         self.client = TestClient(self.app, raise_server_exceptions=False)
@@ -52,6 +60,7 @@ class TestHTTPExecuteSuspendResume(BaseIntegrationTest):
     def tearDown(self) -> None:
         """Clean up test fixtures."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def _create_test_config(self) -> Path:
@@ -75,7 +84,7 @@ class TestHTTPExecuteSuspendResume(BaseIntegrationTest):
                         "level": "DEBUG",
                     }
                 },
-                "root": {"level": "DEBUG", "handlers": ["console"]}
+                "root": {"level": "DEBUG", "handlers": ["console"]},
             },
             "llm": {
                 "anthropic": {
@@ -87,21 +96,18 @@ class TestHTTPExecuteSuspendResume(BaseIntegrationTest):
                 "csv_repository": str(Path(self.temp_dir) / "storage" / "csv"),
                 "csv_data": str(Path(self.temp_dir) / "storage" / "csv"),
             },
-            "storage_config_path": str(storage_config_path)
+            "storage_config_path": str(storage_config_path),
         }
 
         storage_config_data = {
             "base_directory": str(Path(self.temp_dir) / "storage"),
-            "csv": {
-                "default_directory": "csv",
-                "collections": {}
-            }
+            "csv": {"default_directory": "csv", "collections": {}},
         }
 
-        with open(config_path, 'w') as f:
+        with open(config_path, "w") as f:
             yaml.dump(config_data, f, default_flow_style=False, indent=2)
 
-        with open(storage_config_path, 'w') as f:
+        with open(storage_config_path, "w") as f:
             yaml.dump(storage_config_data, f, default_flow_style=False, indent=2)
 
         return config_path
@@ -129,17 +135,21 @@ SuspendResume,Finalize,default,,final_message,,,"Workflow resumed successfully",
             f"/execute/{graph_identifier}", json=execute_payload
         )
 
-        self.assertEqual(execute_response.status_code, 200,
-                        f"Execute failed: {execute_response.text}")
+        self.assertEqual(
+            execute_response.status_code,
+            200,
+            f"Execute failed: {execute_response.text}",
+        )
         body = execute_response.json()
 
-        # Verify workflow suspended
+        # Verify workflow suspended (status="suspended" but execution_summary status="interrupted" in LangGraph 1.x)
         self.assertFalse(body["success"], "Workflow should suspend, not complete")
         self.assertEqual(body["status"], "suspended")
         self.assertIsNotNone(body["thread_id"])
         self.assertIn("execution_summary", body)
-        self.assertEqual(
-            body["execution_summary"].get("status"), "suspended"
+        # LangGraph 1.x uses "interrupted" in the execution summary
+        self.assertIn(
+            body["execution_summary"].get("status"), ["suspended", "interrupted"]
         )
 
         thread_id = body["thread_id"]
@@ -147,17 +157,16 @@ SuspendResume,Finalize,default,,final_message,,,"Workflow resumed successfully",
         # Resume workflow with empty payload (suspend agent doesn't need input)
         resume_response = self.client.post(f"/resume/{thread_id}", json={})
 
-        self.assertEqual(resume_response.status_code, 200,
-                        f"Resume failed: {resume_response.text}")
+        self.assertEqual(
+            resume_response.status_code, 200, f"Resume failed: {resume_response.text}"
+        )
         resume_body = resume_response.json()
 
         # Verify workflow completed after resume
         self.assertTrue(resume_body["success"], "Workflow should complete after resume")
         self.assertEqual(resume_body["status"], "completed")
         self.assertIn("execution_summary", resume_body)
-        self.assertEqual(
-            resume_body["execution_summary"].get("status"), "completed"
-        )
+        self.assertEqual(resume_body["execution_summary"].get("status"), "completed")
         self.assertIn("outputs", resume_body)
 
         outputs = resume_body["outputs"] or {}

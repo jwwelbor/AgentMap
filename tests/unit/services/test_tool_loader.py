@@ -5,12 +5,12 @@ Tests the load_tools_from_module() function for discovering and loading
 LangChain @tool decorated functions from Python modules.
 """
 
+import os
+import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
-import tempfile
-import time
-import os
 
 
 class TestLoadToolsFromModule(unittest.TestCase):
@@ -24,6 +24,7 @@ class TestLoadToolsFromModule(unittest.TestCase):
     def tearDown(self):
         """Clean up test files."""
         import shutil
+
         if os.path.exists(self.test_dir):
             shutil.rmtree(self.test_dir)
 
@@ -65,7 +66,8 @@ def get_forecast(location: str, days: int) -> str:
         for tool in tools:
             self.assertTrue(hasattr(tool, "name"))
             self.assertTrue(hasattr(tool, "description"))
-            self.assertTrue(callable(tool))
+            # LangChain tools have invoke/run methods (callable() returns False for StructuredTool)
+            self.assertTrue(hasattr(tool, "invoke") or hasattr(tool, "run"))
 
     def test_load_tools_import_error_missing_file(self):
         """Test ImportError when module file does not exist."""
@@ -87,13 +89,13 @@ def get_forecast(location: str, days: int) -> str:
         from agentmap.services.tool_loader import load_tools_from_module
 
         # Arrange: Create module with syntax error
-        module_content = '''
+        module_content = """
 from langchain_core.tools import tool
 
 @tool
 def bad_syntax(  # Missing closing parenthesis
     return "broken"
-'''
+"""
         module_path = self._create_test_module(module_content)
 
         # Act & Assert
@@ -173,7 +175,8 @@ def calculate(a: int, b: int) -> int:
 
         self.assertTrue(hasattr(tool, "name"))
         self.assertTrue(hasattr(tool, "description"))
-        self.assertTrue(callable(tool))
+        # LangChain tools have invoke/run methods (callable() returns False for StructuredTool)
+        self.assertTrue(hasattr(tool, "invoke") or hasattr(tool, "run"))
 
         # Verify attributes have correct types
         self.assertIsInstance(tool.name, str)
@@ -204,8 +207,9 @@ def quick_tool() -> str:
         duration_ms = (end_time - start_time) * 1000
 
         # Assert
-        self.assertLess(duration_ms, 10,
-            f"Loading took {duration_ms:.2f}ms, expected <10ms")
+        self.assertLess(
+            duration_ms, 10, f"Loading took {duration_ms:.2f}ms, expected <10ms"
+        )
         self.assertEqual(len(tools), 1)
 
     def test_load_tools_multiple_tools_same_module(self):

@@ -15,7 +15,8 @@ from agentmap.deployment.cli.utils.cli_presenter import (
     print_err,
     print_json,
 )
-from agentmap.runtime_api import ensure_initialized, scaffold_agents
+
+# Lazy import: moved to function to avoid DI container init at module load
 
 
 def scaffold_command(
@@ -50,6 +51,9 @@ def scaffold_command(
     This command follows the facade pattern defined in SPEC-DEP-001 for
     consistent behavior across all deployment adapters.
     """
+    # Lazy import to avoid DI container initialization at module load
+    from agentmap.runtime_api import ensure_initialized, scaffold_agents
+
     try:
         # Ensure runtime is initialized
         ensure_initialized(config_file=config_file)

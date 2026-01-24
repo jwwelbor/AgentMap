@@ -10,6 +10,13 @@ Configuration Integration:
 - Supports collection-specific configuration via get_collection_config()
 - Implements fail-fast behavior when CSV storage is disabled
 - Follows established configuration architecture patterns
+
+Refactoring Note:
+- This service has been refactored to use smaller, focused components
+- CSVFileHandler: Low-level file I/O operations
+- CSVIdDetector: Smart ID column detection
+- CSVQueryProcessor: Query filtering and processing
+- CSVPathResolver: File path resolution logic
 """
 
 import os
@@ -18,6 +25,16 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from agentmap.services.storage.base import BaseStorageService
+from agentmap.services.storage.csv import (
+    CSVDocumentOperations,
+    CSVFileOperations,
+    CSVIdDetection,
+    CSVQueryFiltering,
+)
+from agentmap.services.storage.csv.csv_file_handler import CSVFileHandler
+from agentmap.services.storage.csv.csv_id_detector import CSVIdDetector
+from agentmap.services.storage.csv.csv_path_resolver import CSVPathResolver
+from agentmap.services.storage.csv.csv_query_processor import CSVQueryProcessor
 from agentmap.services.storage.types import (
     StorageProviderError,
     StorageResult,
@@ -66,9 +83,15 @@ class CSVStorageService(BaseStorageService):
             base_directory,
         )
 
+        # Initialize component instances (will be set up after client initialization)
+        self._file_handler = None
+        self._id_detector = None
+        self._query_processor = None
+        self._path_resolver = None
+
     def _initialize_client(self) -> Any:
         """
-        Initialize CSV client.
+        Initialize CSV client and components.
 
         For CSV operations, we don't need a complex client.
         Just ensure base directory exists and return a simple config.
@@ -97,14 +120,31 @@ class CSVStorageService(BaseStorageService):
         if not self.base_directory and not self.configuration.is_csv_storage_enabled():
             raise OSError("CSV storage is not enabled in configuration")
 
+        default_options = {
+            "skipinitialspace": True,
+            "skip_blank_lines": True,
+            "on_bad_lines": "warn",
+        }
+
+        # Initialize component instances
+        self._file_handler = CSVFileHandler(
+            encoding=encoding,
+            default_options=default_options,
+            logger=self._logger,
+        )
+        self._id_detector = CSVIdDetector()
+        self._query_processor = CSVQueryProcessor()
+        self._path_resolver = CSVPathResolver(
+            base_directory=base_dir,
+            configuration=self.configuration,
+            file_path_service=self._file_path_service,
+            logger=self._logger,
+        )
+
         return {
             "base_directory": base_dir,
             "encoding": encoding,
-            "default_options": {
-                "skipinitialspace": True,
-                "skip_blank_lines": True,
-                "on_bad_lines": "warn",
-            },
+            "default_options": default_options,
         }
 
     def _perform_health_check(self) -> bool:
@@ -149,9 +189,7 @@ class CSVStorageService(BaseStorageService):
         """
         Get full file path for a collection.
 
-        Uses StorageConfigService collection configuration when available,
-        falls back to default behavior for absolute paths or unconfigured collections.
-        Uses file_path_service for path validation when available.
+        Delegates to CSVPathResolver for path resolution logic.
 
         Args:
             collection: Collection name (can be relative or absolute path)
@@ -162,43 +200,17 @@ class CSVStorageService(BaseStorageService):
         Raises:
             ValueError: If path validation fails when file_path_service is available
         """
-        if os.path.isabs(collection):
-            file_path = collection
-        elif self.configuration.has_collection("csv", collection):
-            # Use the configured collection file path
-            file_path = str(self.configuration.get_collection_file_path(collection))
-        else:
-            # Fallback to default behavior for unconfigured collections
-            base_dir = self.client["base_directory"]
-
-            # Ensure .csv extension
-            if not collection.lower().endswith(".csv"):
-                collection = f"{collection}.csv"
-
-            if not collection.startswith(base_dir):
-                collection = os.path.join(base_dir, collection)
-
-            file_path = collection
-
-        # Validate path using file_path_service if available
-        if self._file_path_service:
-            try:
-                # Use base_directory if available for validation, otherwise use client base_directory
-                validation_base = (
-                    self.base_directory
-                    if self.base_directory
-                    else self.client["base_directory"]
-                )
-                self._file_path_service.validate_safe_path(file_path, validation_base)
-            except Exception as e:
-                self._logger.error(f"Path validation failed for {file_path}: {e}")
-                raise ValueError(f"Unsafe file path: {e}")
-
-        return file_path
+        # Ensure path resolver (and related components) are initialized
+        if not hasattr(self, "_path_resolver") or self._path_resolver is None:
+            # Accessing self.client triggers lazy initialization via _initialize_client()
+            _ = self.client
+        return self._path_resolver.get_file_path(collection)
 
     def _ensure_directory_exists(self, file_path: str) -> None:
         """
         Ensure the directory for a file path exists.
+
+        Delegates to CSVFileHandler for directory management.
 
         Args:
             file_path: Path to file
@@ -207,16 +219,16 @@ class CSVStorageService(BaseStorageService):
             PermissionError: If directory cannot be created due to permissions
             OSError: If other OS-level errors occur
         """
-        directory = os.path.dirname(os.path.abspath(file_path))
-        try:
-            os.makedirs(directory, exist_ok=True)
-        except (PermissionError, OSError):
-            # Let permission errors propagate to be handled by caller
-            raise
+        # Ensure file handler is initialized
+        if not hasattr(self, "_file_handler") or self._file_handler is None:
+            _ = self.client
+        self._file_handler.ensure_directory_exists(file_path)
 
     def _read_csv_file(self, file_path: str, **kwargs) -> pd.DataFrame:
         """
         Read CSV file with error handling.
+
+        Delegates to CSVFileHandler for file reading.
 
         Args:
             file_path: Path to CSV file
@@ -225,18 +237,12 @@ class CSVStorageService(BaseStorageService):
         Returns:
             DataFrame with CSV data
         """
+        # Ensure file handler is initialized
+        if not hasattr(self, "_file_handler") or self._file_handler is None:
+            _ = self.client
         try:
-            # Merge default options with provided kwargs
-            read_options = self.client["default_options"].copy()
-            read_options["encoding"] = self.client["encoding"]
-            read_options.update(kwargs)
-
-            df = pd.read_csv(file_path, **read_options)
-            self._logger.debug(f"Read {len(df)} rows from {file_path}")
-            return df
-
+            return self._file_handler.read_csv_file(file_path, **kwargs)
         except FileNotFoundError:
-            self._logger.debug(f"CSV file not found: {file_path}")
             raise
         except Exception as e:
             self._handle_error("read_csv", e, file_path=file_path)
@@ -246,6 +252,8 @@ class CSVStorageService(BaseStorageService):
     ) -> None:
         """
         Write DataFrame to CSV file.
+
+        Delegates to CSVFileHandler for file writing.
 
         Args:
             df: DataFrame to write
@@ -257,23 +265,15 @@ class CSVStorageService(BaseStorageService):
             PermissionError: If file cannot be written due to permissions
             OSError: If other OS-level errors occur
         """
+        # Ensure file handler is initialized
+        if not hasattr(self, "_file_handler") or self._file_handler is None:
+            _ = self.client
         try:
             # Ensure base directory exists when using injection (deferred from _initialize_client)
             if self.base_directory:
                 os.makedirs(self.base_directory, exist_ok=True)
 
-            self._ensure_directory_exists(file_path)
-
-            # Set default write options
-            write_options = {"index": False, "encoding": self.client["encoding"]}
-            write_options.update(kwargs)
-
-            # Handle header for append mode
-            if mode == "a" and os.path.exists(file_path):
-                write_options["header"] = False
-
-            df.to_csv(file_path, mode=mode, **write_options)
-            self._logger.debug(f"Wrote {len(df)} rows to {file_path} (mode: {mode})")
+            self._file_handler.write_csv_file(df, file_path, mode=mode, **kwargs)
 
         except (PermissionError, OSError):
             # Let permission and OS errors propagate to be handled by write method
@@ -285,11 +285,7 @@ class CSVStorageService(BaseStorageService):
         """
         Detect the ID column using smart detection logic.
 
-        Priority:
-        1. Exact match: "id" (case insensitive)
-        2. Ends with "_id": user_id, customer_id, etc.
-        3. Starts with "id_": id_user, etc.
-        4. If multiple candidates, prefer "id" > first column > alphabetical
+        Delegates to CSVIdDetector for ID column detection.
 
         Args:
             df: DataFrame to analyze
@@ -297,49 +293,18 @@ class CSVStorageService(BaseStorageService):
         Returns:
             Column name to use as ID, or None if no suitable column found
         """
-        if df.empty or len(df.columns) == 0:
-            return None
-
-        columns = df.columns.tolist()
-        candidates = []
-
-        # Check for exact "id" match (case insensitive)
-        for col in columns:
-            if col.lower() == "id":
-                return col  # Immediate return for exact match
-
-        # Check for columns ending with "_id"
-        for col in columns:
-            if col.lower().endswith("_id"):
-                candidates.append((col, "ends_with_id"))
-
-        # Check for columns starting with "id_"
-        for col in columns:
-            if col.lower().startswith("id_"):
-                candidates.append((col, "starts_with_id"))
-
-        # If we have candidates, prioritize them
-        if candidates:
-            # Prefer ends_with_id over starts_with_id
-            ends_with_id = [col for col, type_ in candidates if type_ == "ends_with_id"]
-            if ends_with_id:
-                # If multiple, prefer first column, then alphabetical
-                return min(ends_with_id, key=lambda x: (columns.index(x), x.lower()))
-
-            starts_with_id = [
-                col for col, type_ in candidates if type_ == "starts_with_id"
-            ]
-            if starts_with_id:
-                return min(starts_with_id, key=lambda x: (columns.index(x), x.lower()))
-
-        # No ID column found
-        return None
+        # Ensure ID detector is initialized
+        if not hasattr(self, "_id_detector") or self._id_detector is None:
+            _ = self.client
+        return self._id_detector.detect_id_column(df)
 
     def _apply_query_filter(
         self, df: pd.DataFrame, query: Dict[str, Any]
     ) -> pd.DataFrame:
         """
         Apply query filters to DataFrame.
+
+        Delegates to CSVQueryProcessor for query filtering.
 
         Args:
             df: DataFrame to filter
@@ -348,39 +313,11 @@ class CSVStorageService(BaseStorageService):
         Returns:
             Filtered DataFrame
         """
-        # Make a copy to avoid modifying original
-        filtered_df = df.copy()
-
-        # Apply field-based filters
-        for field, value in query.items():
-            if field in ["limit", "offset", "sort", "order"]:
-                continue  # Skip special parameters
-
-            if field in filtered_df.columns:
-                if isinstance(value, list):
-                    # Handle list values as "in" filter
-                    filtered_df = filtered_df[filtered_df[field].isin(value)]
-                else:
-                    # Exact match filter
-                    filtered_df = filtered_df[filtered_df[field] == value]
-
-        # Apply sorting
-        sort_field = query.get("sort")
-        if sort_field and sort_field in filtered_df.columns:
-            ascending = query.get("order", "asc").lower() != "desc"
-            filtered_df = filtered_df.sort_values(by=sort_field, ascending=ascending)
-
-        # Apply pagination
-        offset = query.get("offset", 0)
-        limit = query.get("limit")
-
-        if offset and isinstance(offset, int) and offset > 0:
-            filtered_df = filtered_df.iloc[offset:]
-
-        if limit and isinstance(limit, int) and limit > 0:
-            filtered_df = filtered_df.head(limit)
-
-        return filtered_df
+        # Ensure lazy-initialized components (including _query_processor) are ready
+        if not hasattr(self, "_query_processor") or self._query_processor is None:
+            # Accessing self.client should trigger _initialize_client()
+            _ = self.client
+        return self._query_processor.apply_query_filter(df, query)
 
     def read(
         self,

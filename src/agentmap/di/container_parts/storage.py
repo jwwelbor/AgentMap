@@ -146,8 +146,18 @@ class StorageContainer(containers.DeclarativeContainer):
         blob_storage_service,
     )
 
+    @staticmethod
+    def _create_system_storage_manager(
+        app_config_service, logging_service, file_path_service
+    ):
+        from agentmap.services.storage.system_manager import SystemStorageManager
+
+        return SystemStorageManager(
+            app_config_service, logging_service, file_path_service
+        )
+
     system_storage_manager = providers.Singleton(
-        "agentmap.services.storage.system_manager.SystemStorageManager",
+        _create_system_storage_manager,
         app_config_service,
         logging_service,
         file_path_service,

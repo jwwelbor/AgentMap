@@ -8,7 +8,7 @@ from typing import Optional
 
 import typer
 
-from agentmap.runtime_api import get_config
+# Lazy import: moved to function to avoid DI container init at module load
 
 
 def config_cmd(
@@ -17,6 +17,9 @@ def config_cmd(
     )
 ):
     """Print the current configuration values."""
+    # Lazy import to avoid DI container initialization at module load
+    from agentmap.runtime_api import get_config
+
     try:
         # Get configuration using facade
         result = get_config(config_file=config_file)

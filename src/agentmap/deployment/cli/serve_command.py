@@ -13,7 +13,8 @@ from agentmap.deployment.cli.utils.cli_presenter import (
     map_exception_to_exit_code,
     print_err,
 )
-from agentmap.deployment.http.api.server import run_server
+
+# Lazy import: moved to function to avoid loading uvicorn/FastAPI at module load
 
 
 def serve_command(
@@ -36,6 +37,9 @@ def serve_command(
         agentmap serve --config agentmap_local_config.yaml
         agentmap serve --host 0.0.0.0 --port 8080 --reload
     """
+    # Lazy import to avoid loading uvicorn/FastAPI at module load
+    from agentmap.deployment.http.api.server import run_server
+
     try:
         typer.echo("Starting AgentMap API server...")
         typer.echo(f"  Host: {host}")

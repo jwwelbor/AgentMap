@@ -13,7 +13,8 @@ from agentmap.deployment.cli.utils.cli_utils import (
     handle_command_error,
     resolve_csv_path,
 )
-from agentmap.runtime_api import validate_workflow
+
+# Lazy import: moved to function to avoid DI container init at module load
 
 
 def validate_command(
@@ -33,6 +34,9 @@ def validate_command(
 
     Checks CSV structure and identifies missing agent declarations.
     """
+    # Lazy import to avoid DI container initialization at module load
+    from agentmap.runtime_api import validate_workflow
+
     try:
         # Resolve CSV path using utility
         csv_path = resolve_csv_path(csv_file, csv)
