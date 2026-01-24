@@ -19,7 +19,6 @@ from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.declaration_sources import DeclarationSource
 from agentmap.services.logging_service import LoggingService
 
-
 # =============================================================================
 # Shared Utility Functions
 # =============================================================================
@@ -143,7 +142,9 @@ def resolve_agent_requirements_from_declarations(
     agent_services = resolve_service_dependencies_recursive(
         required_services, services, set(), get_service_decl, log_warning
     )
-    protocol_services = get_services_implementing_protocols(required_protocols, services)
+    protocol_services = get_services_implementing_protocols(
+        required_protocols, services
+    )
     all_services = agent_services | protocol_services
 
     return {
