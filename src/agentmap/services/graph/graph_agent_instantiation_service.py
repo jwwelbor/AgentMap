@@ -7,13 +7,14 @@ graph assembly (GraphAssemblyService) by creating actual agent instances with
 injected services.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.agent.agent_factory_service import AgentFactoryService
 from agentmap.services.agent.agent_service_injection_service import (
     AgentServiceInjectionService,
 )
+from agentmap.services.declaration_registry_service import DeclarationRegistryService
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.graph.graph_agent_validation_service import (
     GraphAgentValidationService,
@@ -48,6 +49,7 @@ class GraphAgentInstantiationService:
         logging_service: LoggingService,
         prompt_manager_service: PromptManagerService,
         graph_bundle_service: GraphBundleService,
+        declaration_registry_service: Optional[DeclarationRegistryService] = None,
     ):
         """
         Initialize with required services for agent instantiation.
@@ -60,6 +62,8 @@ class GraphAgentInstantiationService:
             logging_service: Service for logging
             prompt_manager_service: Optional service for prompt management
             graph_bundle_service: Service for managing graph bundles
+            declaration_registry_service: Optional service for looking up agent declarations
+                                         to enable bundle-aware service injection optimization
         """
         self.agent_factory = agent_factory_service
         self.agent_injection = agent_service_injection_service
@@ -67,6 +71,7 @@ class GraphAgentInstantiationService:
         self.state_adapter = state_adapter_service
         self.prompt_manager = prompt_manager_service
         self.graph_bundle_service = graph_bundle_service
+        self.declaration_registry = declaration_registry_service
         self.logger = logging_service.get_class_logger(self)
 
         # Initialize helper services
@@ -289,8 +294,10 @@ class GraphAgentInstantiationService:
             bundle_tools=bundle.tools if bundle.tools else None,
         )
 
-        # Step 2: Inject services using injection service
-        self._inject_services(agent_instance, node_name, execution_tracker)
+        # Step 2: Inject services using injection service (with agent_type for optimization)
+        self._inject_services(
+            agent_instance, node_name, execution_tracker, node.agent_type
+        )
 
         # Step 2a: Inject GraphBundleService if agent supports it
         self._inject_graph_bundle_service(agent_instance, node_name)
@@ -305,8 +312,38 @@ class GraphAgentInstantiationService:
             f"[GraphAgentInstantiationService] Successfully instantiated: {node_name}"
         )
 
+    def _get_required_services_for_agent(
+        self, agent_type: Optional[str]
+    ) -> Optional[Set[str]]:
+        """
+        Look up required services for an agent type from the declaration registry.
+
+        Args:
+            agent_type: The agent type to look up
+
+        Returns:
+            Set of required service names, or None if not available
+        """
+        if not agent_type or not self.declaration_registry:
+            return None
+
+        agent_decl = self.declaration_registry.get_agent_declaration(agent_type)
+        if not agent_decl:
+            return None
+
+        # Get all services (required + optional) to allow full injection
+        all_services = agent_decl.get_all_services()
+        if not all_services:
+            return None
+
+        return set(all_services)
+
     def _inject_services(
-        self, agent_instance: Any, node_name: str, execution_tracker: Optional[Any]
+        self,
+        agent_instance: Any,
+        node_name: str,
+        execution_tracker: Optional[Any],
+        agent_type: Optional[str] = None,
     ) -> None:
         """
         Inject services into an agent instance.
@@ -315,15 +352,26 @@ class GraphAgentInstantiationService:
             agent_instance: Agent to configure
             node_name: Name of the node for logging
             execution_tracker: Optional execution tracker
+            agent_type: Optional agent type for looking up required services
         """
+        # Look up required services from declaration registry for optimization
+        required_services = self._get_required_services_for_agent(agent_type)
+
         injection_summary = self.agent_injection.configure_all_services(
-            agent=agent_instance, tracker=execution_tracker
+            agent=agent_instance,
+            tracker=execution_tracker,
+            required_services=required_services,
         )
 
         total_configured = injection_summary["total_services_configured"]
         self.logger.debug(
             f"[GraphAgentInstantiationService] Configured {total_configured} services "
             f"for agent: {node_name}"
+            + (
+                f" (filtered to {len(required_services)} declared services)"
+                if required_services
+                else ""
+            )
         )
 
     def _inject_graph_bundle_service(self, agent_instance: Any, node_name: str) -> None:

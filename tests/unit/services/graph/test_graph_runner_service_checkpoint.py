@@ -31,6 +31,7 @@ class TestGraphRunnerServiceCheckpoint(unittest.TestCase):
         self.interaction_handler.mark_thread_completed = Mock()
         self.graph_checkpoint = Mock()
         self.graph_bundle_service = Mock()
+        self.declaration_registry_service = Mock()
 
         self.service = GraphRunnerService(
             self.app_config,
@@ -43,6 +44,7 @@ class TestGraphRunnerServiceCheckpoint(unittest.TestCase):
             self.interaction_handler,
             self.graph_checkpoint,
             self.graph_bundle_service,
+            self.declaration_registry_service,
         )
 
         self.execution_tracker = ExecutionTracker()

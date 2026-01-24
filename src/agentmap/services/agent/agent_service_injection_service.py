@@ -6,7 +6,7 @@ specialized configurator modules. This service maintains backward
 compatibility while delegating to focused, single-responsibility modules.
 """
 
-from typing import Any, Optional
+from typing import Any, Optional, Set
 
 from agentmap.services.agent.core_service_configurator import CoreServiceConfigurator
 from agentmap.services.agent.host_service_configurator import HostServiceConfigurator
@@ -133,12 +133,16 @@ class AgentServiceInjectionService:
         if hasattr(self, "_storage_configurator"):
             self._storage_configurator.logger = value
 
-    def configure_core_services(self, agent: Any) -> int:
+    def configure_core_services(
+        self, agent: Any, required_services: Optional[Set[str]] = None
+    ) -> int:
         """
         Configure core AgentMap services on an agent using protocol-based injection.
 
         Args:
             agent: Agent instance to configure services for
+            required_services: Optional set of service names to filter by.
+                              If provided, only services matching these names are checked.
 
         Returns:
             Number of core services successfully configured
@@ -146,14 +150,18 @@ class AgentServiceInjectionService:
         Raises:
             Exception: If service is unavailable or configuration fails
         """
-        return self._core_configurator.configure_core_services(agent)
+        return self._core_configurator.configure_core_services(agent, required_services)
 
-    def configure_storage_services(self, agent: Any) -> int:
+    def configure_storage_services(
+        self, agent: Any, required_services: Optional[Set[str]] = None
+    ) -> int:
         """
         Configure storage services on an agent using protocol-based injection.
 
         Args:
             agent: Agent instance to configure storage services for
+            required_services: Optional set of service names to filter by.
+                              If provided, only storage services matching these names are checked.
 
         Returns:
             Number of storage services successfully configured
@@ -161,7 +169,9 @@ class AgentServiceInjectionService:
         Raises:
             Exception: If storage service is unavailable or configuration fails
         """
-        return self._storage_configurator.configure_storage_services(agent)
+        return self._storage_configurator.configure_storage_services(
+            agent, required_services
+        )
 
     def requires_storage_services(self, agent: Any) -> bool:
         """
@@ -214,13 +224,21 @@ class AgentServiceInjectionService:
         """
         return self._host_configurator.configure_execution_tracker(agent, tracker)
 
-    def configure_all_services(self, agent: Any, tracker: Optional[Any] = None) -> dict:
+    def configure_all_services(
+        self,
+        agent: Any,
+        tracker: Optional[Any] = None,
+        required_services: Optional[Set[str]] = None,
+    ) -> dict:
         """
         Configure core services, storage services, host services, and execution tracker for an agent.
 
         Args:
             agent: Agent instance to configure all services for
             tracker: Optional ExecutionTracker instance for execution monitoring
+            required_services: Optional set of service names to filter by.
+                              If provided, only services matching these names are checked,
+                              reducing unnecessary isinstance() calls and service lookups.
 
         Returns:
             Dictionary with configuration summary including counts and status
@@ -228,11 +246,16 @@ class AgentServiceInjectionService:
         agent_name = getattr(agent, "name", "unknown")
         self._logger.debug(
             f"[AgentServiceInjectionService] Configuring all services for agent: {agent_name}"
+            + (
+                f" (filtered to {len(required_services)} required services)"
+                if required_services
+                else ""
+            )
         )
 
-        # Configure all service categories
-        core_configured = self.configure_core_services(agent)
-        storage_configured = self.configure_storage_services(agent)
+        # Configure all service categories, passing required_services filter
+        core_configured = self.configure_core_services(agent, required_services)
+        storage_configured = self.configure_storage_services(agent, required_services)
         host_configured = self.configure_host_services(agent)
         tracker_configured = self.configure_execution_tracker(agent, tracker)
 

@@ -9,6 +9,7 @@ is organized here.
 from typing import TYPE_CHECKING
 
 from .base import BaseStorageService
+
 # CSVStorageService is lazy-loaded to defer pandas import
 from .file_service import FileStorageService
 from .json_service import JSONStorageService
@@ -116,6 +117,7 @@ def __getattr__(name: str):
     if name in _LAZY_IMPORTS:
         module_name, attr_name = _LAZY_IMPORTS[name]
         import importlib
+
         module = importlib.import_module(f".{module_name}", __package__)
         return getattr(module, attr_name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
