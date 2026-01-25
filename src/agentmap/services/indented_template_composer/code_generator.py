@@ -4,7 +4,7 @@ Code generation utilities for IndentedTemplateComposer.
 Handles generation of class names, attributes, documentation, and other code snippets.
 """
 
-from typing import List
+from typing import Any, Dict, List
 
 from agentmap.models.scaffold_types import ServiceAttribute, ServiceRequirements
 from agentmap.services.logging_service import LoggingService
@@ -218,3 +218,71 @@ class CodeGenerator:
             context_fields = ["    No specific fields defined in the CSV"]
 
         return "\n".join(context_fields)
+
+    def generate_multi_output_scaffold(self, output_fields: List[str]) -> Dict[str, str]:
+        """
+        Generate scaffolding for multi-output process method.
+
+        Args:
+            output_fields: List of declared output field names
+
+        Returns:
+            Dict with 'return_type_hint', 'return_docstring', 'process_body'
+        """
+        if len(output_fields) <= 1:
+            # Single output - existing behavior
+            single_field = output_fields[0] if output_fields else "result"
+            return {
+                "return_type_hint": "Any",
+                "return_docstring": f"Output value to store in graph state under '{single_field}'\n            (BaseAgent handles state management automatically)",
+                "process_body": self._generate_single_output_body(single_field),
+            }
+
+        # Multi-output - generate dict return
+        fields_doc = ", ".join(f"'{f}'" for f in output_fields)
+        return_dict = "{\n" + "\n".join(
+            f'            "{f}": None,  # Required output' for f in output_fields
+        ) + "\n        }"
+
+        return {
+            "return_type_hint": "Dict[str, Any]",
+            "return_docstring": f"Dictionary with keys: {fields_doc}\n            All declared output fields should be included.",
+            "process_body": self._generate_multi_output_body(output_fields, return_dict),
+        }
+
+    def _generate_single_output_body(self, output_field: str) -> str:
+        """Generate process body for single output."""
+        return f'''        # Example implementation (REPLACE WITH YOUR LOGIC):
+        try:
+            # Your processing logic goes here
+            result = {{
+                "processed": True,
+                "agent_type": "{{agent_type}}",
+                "node": "{{node_name}}",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }}
+
+            # BaseAgent will automatically store this in state['{output_field}']
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Processing error in {{class_name}}: {{str(e)}}")
+            return {{"error": str(e), "success": False}}'''
+
+    def _generate_multi_output_body(
+        self, output_fields: List[str], return_dict: str
+    ) -> str:
+        """Generate process body for multi-output."""
+        return f'''        # Example implementation for MULTI-OUTPUT agent:
+        # This agent must return a dict with ALL declared output fields.
+        try:
+            # Your processing logic goes here
+            # Extract/compute values for each output field
+
+            # Return dict with all declared fields
+            return {return_dict}
+
+        except Exception as e:
+            self.logger.error(f"Processing error in {{class_name}}: {{str(e)}}")
+            # On error, return dict with error info in each field
+            return {{f: {{"error": str(e)}} for f in {output_fields}}}'''
