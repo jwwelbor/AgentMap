@@ -659,7 +659,9 @@ class TestAgentFactoryService(unittest.TestCase):
     # =============================================================================
 
     @patch.object(AgentClassResolver, "resolve_agent_class")
-    def test_create_agent_instance_includes_output_validation_config(self, mock_resolve):
+    def test_create_agent_instance_includes_output_validation_config(
+        self, mock_resolve
+    ):
         """Test create_agent_instance() includes output_validation from AppConfigService."""
         # Arrange
         mock_app_config_service = Mock()

@@ -246,12 +246,16 @@ class AgentTemplateComposer:
         # Parse output fields for multi-output scaffolding
         output_fields = []
         if info.get("output_field") and "|" in info["output_field"]:
-            output_fields = [f.strip() for f in info["output_field"].split("|") if f.strip()]
+            output_fields = [
+                f.strip() for f in info["output_field"].split("|") if f.strip()
+            ]
         elif info.get("output_field"):
             output_fields = [info["output_field"]]
 
         # Generate multi-output scaffolding
-        multi_output_vars = self.code_generator.generate_multi_output_scaffold(output_fields)
+        multi_output_vars = self.code_generator.generate_multi_output_scaffold(
+            output_fields
+        )
 
         # Service-related variables
         if service_reqs.protocols:

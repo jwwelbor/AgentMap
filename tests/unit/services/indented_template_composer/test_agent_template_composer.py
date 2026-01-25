@@ -44,6 +44,7 @@ class TestAgentTemplateComposerScaffoldGeneration(unittest.TestCase):
 
     def _mock_template_loader(self, templates: dict):
         """Configure mock template loader with provided templates."""
+
         def load_template(path):
             if path in templates:
                 return templates[path]
@@ -68,11 +69,10 @@ class TestAgentTemplateComposerScaffoldGeneration(unittest.TestCase):
         """Create basic modular templates for testing."""
         return {
             "master_template.txt": self._create_basic_master_template(),
-            "modular/header.txt": "{imports}\n\"\"\"Header for {agent_type} agent\"\"\"",
-            "modular/class_definition.txt": "class {class_definition}:\n    \"\"\"Agent class.\"\"\"",
+            "modular/header.txt": '{imports}\n"""Header for {agent_type} agent"""',
+            "modular/class_definition.txt": 'class {class_definition}:\n    """Agent class."""',
             "modular/init_method.txt": (
-                "    def __init__(self):{service_attributes}\n"
-                "        pass"
+                "    def __init__(self):{service_attributes}\n" "        pass"
             ),
             "modular/process_method.txt": (
                 "    def process(self, inputs) -> {return_type_hint}:\n"

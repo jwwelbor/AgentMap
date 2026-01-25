@@ -185,9 +185,7 @@ class TestRunMethodMultiOutput(unittest.TestCase):
     def test_run_detects_multi_output_when_three_fields(self):
         """Test run method detects multi-output with three or more fields."""
         # Arrange
-        agent = self._create_agent(
-            "multi_agent", ["field1", "field2", "field3"]
-        )
+        agent = self._create_agent("multi_agent", ["field1", "field2", "field3"])
 
         def mock_process(inputs):
             return {"field1": "v1", "field2": "v2", "field3": "v3"}
@@ -199,7 +197,11 @@ class TestRunMethodMultiOutput(unittest.TestCase):
 
         # Act
         with patch.object(agent, "_validate_multi_output") as mock_validate:
-            mock_validate.return_value = {"field1": "v1", "field2": "v2", "field3": "v3"}
+            mock_validate.return_value = {
+                "field1": "v1",
+                "field2": "v2",
+                "field3": "v3",
+            }
             result = agent.run(test_state)
 
             # Assert - _validate_multi_output should be called
@@ -232,9 +234,11 @@ class TestRunMethodMultiOutput(unittest.TestCase):
     # ======================================================================
 
     def test_run_multi_output_returns_filtered_dict(self):
-        """Test multi-output returns filtered dict from _validate_multi_output."""
+        """Test multi-output returns filtered dict in ignore mode."""
         # Arrange
-        agent = self._create_agent("multi_agent", ["field1", "field2"])
+        agent = self._create_agent(
+            "multi_agent", ["field1", "field2"], {"output_validation": "ignore"}
+        )
 
         def mock_process(inputs):
             return {"field1": "value1", "field2": "value2", "extra": "ignore"}
@@ -247,7 +251,7 @@ class TestRunMethodMultiOutput(unittest.TestCase):
         # Act
         result = agent.run(test_state)
 
-        # Assert
+        # Assert - Ignore mode filters extras
         self.assertIsInstance(result, dict)
         self.assertIn("field1", result)
         self.assertIn("field2", result)
@@ -257,9 +261,7 @@ class TestRunMethodMultiOutput(unittest.TestCase):
     def test_run_multi_output_returns_only_declared_fields(self):
         """Test multi-output returns only declared fields."""
         # Arrange
-        agent = self._create_agent(
-            "multi_agent", ["result1", "result2", "result3"]
-        )
+        agent = self._create_agent("multi_agent", ["result1", "result2", "result3"])
 
         def mock_process(inputs):
             return {"result1": "v1", "result2": "v2", "result3": "v3"}
@@ -387,8 +389,7 @@ class TestRunMethodMultiOutput(unittest.TestCase):
             log_calls = [call for call in mock_log_trace.call_args_list]
             trace_messages = [str(call[0][0]) for call in log_calls]
             found_timing = any(
-                "RUN COMPLETED" in msg and "s ***" in msg
-                for msg in trace_messages
+                "RUN COMPLETED" in msg and "s ***" in msg for msg in trace_messages
             )
             self.assertTrue(
                 found_timing,

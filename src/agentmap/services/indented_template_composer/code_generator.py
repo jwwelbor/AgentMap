@@ -219,7 +219,9 @@ class CodeGenerator:
 
         return "\n".join(context_fields)
 
-    def generate_multi_output_scaffold(self, output_fields: List[str]) -> Dict[str, str]:
+    def generate_multi_output_scaffold(
+        self, output_fields: List[str]
+    ) -> Dict[str, str]:
         """
         Generate scaffolding for multi-output process method.
 
@@ -240,19 +242,25 @@ class CodeGenerator:
 
         # Multi-output - generate dict return
         fields_doc = ", ".join(f"'{f}'" for f in output_fields)
-        return_dict = "{\n" + "\n".join(
-            f'            "{f}": None,  # Required output' for f in output_fields
-        ) + "\n        }"
+        return_dict = (
+            "{\n"
+            + "\n".join(
+                f'            "{f}": None,  # Required output' for f in output_fields
+            )
+            + "\n        }"
+        )
 
         return {
             "return_type_hint": "Dict[str, Any]",
             "return_docstring": f"Dictionary with keys: {fields_doc}\n            All declared output fields should be included.",
-            "process_body": self._generate_multi_output_body(output_fields, return_dict),
+            "process_body": self._generate_multi_output_body(
+                output_fields, return_dict
+            ),
         }
 
     def _generate_single_output_body(self, output_field: str) -> str:
         """Generate process body for single output."""
-        return f'''        # Example implementation (REPLACE WITH YOUR LOGIC):
+        return f"""        # Example implementation (REPLACE WITH YOUR LOGIC):
         try:
             # Your processing logic goes here
             result = {{
@@ -267,13 +275,13 @@ class CodeGenerator:
 
         except Exception as e:
             self.logger.error(f"Processing error in {{class_name}}: {{str(e)}}")
-            return {{"error": str(e), "success": False}}'''
+            return {{"error": str(e), "success": False}}"""
 
     def _generate_multi_output_body(
         self, output_fields: List[str], return_dict: str
     ) -> str:
         """Generate process body for multi-output."""
-        return f'''        # Example implementation for MULTI-OUTPUT agent:
+        return f"""        # Example implementation for MULTI-OUTPUT agent:
         # This agent must return a dict with ALL declared output fields.
         try:
             # Your processing logic goes here
@@ -285,4 +293,4 @@ class CodeGenerator:
         except Exception as e:
             self.logger.error(f"Processing error in {{class_name}}: {{str(e)}}")
             # On error, return dict with error info in each field
-            return {{f: {{"error": str(e)}} for f in {output_fields}}}'''
+            return {{f: {{"error": str(e)}} for f in {output_fields}}}"""

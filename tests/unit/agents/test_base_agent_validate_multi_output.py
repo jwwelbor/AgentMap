@@ -114,9 +114,11 @@ class TestValidateMultiOutput(unittest.TestCase):
     # ======================================================================
 
     def test_validate_multi_output_filters_extra_fields(self):
-        """Test that extra fields not in output_fields are removed from result."""
+        """Test that extra fields are removed in 'ignore' mode."""
         # Arrange
-        agent = self._create_agent(["field1", "field2"])
+        agent = self._create_agent(
+            ["field1", "field2"], {"output_validation": "ignore"}
+        )
         output = {
             "field1": "value1",
             "field2": "value2",
@@ -127,7 +129,7 @@ class TestValidateMultiOutput(unittest.TestCase):
         # Act
         result = agent._validate_multi_output(output)
 
-        # Assert
+        # Assert - Only declared fields should be present
         self.assertEqual(len(result), 2)
         self.assertIn("field1", result)
         self.assertIn("field2", result)
@@ -135,9 +137,9 @@ class TestValidateMultiOutput(unittest.TestCase):
         self.assertNotIn("another_extra", result)
 
     def test_validate_multi_output_filters_extra_with_debug_logging(self):
-        """Test that extra fields are logged at debug level."""
+        """Test that extra fields are logged at debug level in 'ignore' mode."""
         # Arrange
-        agent = self._create_agent(["field1"])
+        agent = self._create_agent(["field1"], {"output_validation": "ignore"})
         output = {"field1": "value1", "extra1": "ex1", "extra2": "ex2"}
 
         # Act
@@ -149,6 +151,118 @@ class TestValidateMultiOutput(unittest.TestCase):
             call_args = mock_log_debug.call_args[0][0]
             self.assertIn("extra1", call_args)
             self.assertIn("extra2", call_args)
+
+    def test_validate_multi_output_extra_fields_mode_warn(self):
+        """Test extra fields with 'warn' mode - logs warning, keeps extras in state."""
+        # Arrange
+        agent = self._create_agent(["field1", "field2"], {"output_validation": "warn"})
+        output = {
+            "field1": "value1",
+            "field2": "value2",
+            "extra1": "ex1",
+            "extra2": "ex2",
+        }
+
+        # Act
+        with patch.object(agent, "log_warning") as mock_log_warning:
+            result = agent._validate_multi_output(output)
+
+            # Assert
+            mock_log_warning.assert_called_once()
+            warning_msg = mock_log_warning.call_args[0][0]
+            self.assertIn("returned extra fields", warning_msg)
+            self.assertIn("extra1", warning_msg)
+            self.assertIn("extra2", warning_msg)
+            self.assertIn("test_agent", warning_msg)
+            self.assertIn("will be included in state", warning_msg)
+            # Result should contain ALL fields (declared + extras)
+            self.assertEqual(result, output)
+            self.assertIn("extra1", result)
+            self.assertIn("extra2", result)
+
+    def test_validate_multi_output_extra_fields_default_warn_behavior(self):
+        """Test that default mode (warn) keeps extra fields in state."""
+        # Arrange - No validation mode specified, should default to warn
+        agent = self._create_agent(["field1", "field2"])
+        output = {
+            "field1": "value1",
+            "field2": "value2",
+            "extra1": "ex1",
+            "extra2": "ex2",
+        }
+
+        # Act
+        with patch.object(agent, "log_warning") as mock_log_warning:
+            result = agent._validate_multi_output(output)
+
+            # Assert - Should keep all fields (warn mode default)
+            self.assertEqual(result, output)
+            self.assertIn("extra1", result)
+            self.assertIn("extra2", result)
+            mock_log_warning.assert_called_once()
+
+    def test_validate_multi_output_missing_and_extra_fields_warn_mode(self):
+        """Test warn mode with both missing and extra fields - warns about both, keeps extras, adds None for missing."""
+        # Arrange
+        agent = self._create_agent(
+            ["field1", "field2", "field3"], {"output_validation": "warn"}
+        )
+        output = {
+            "field1": "value1",
+            # field2 is missing
+            # field3 is missing
+            "extra1": "ex1",
+            "extra2": "ex2",
+        }
+
+        # Act
+        with patch.object(agent, "log_warning") as mock_log_warning:
+            result = agent._validate_multi_output(output)
+
+            # Assert - Should have 2 warnings (one for missing, one for extras)
+            self.assertEqual(mock_log_warning.call_count, 2)
+
+            # Check warnings
+            warning_calls = [call[0][0] for call in mock_log_warning.call_args_list]
+            missing_warning = [
+                w for w in warning_calls if "missing declared output fields" in w
+            ][0]
+            extra_warning = [w for w in warning_calls if "extra fields" in w][0]
+
+            self.assertIn("field2", missing_warning)
+            self.assertIn("field3", missing_warning)
+            self.assertIn("extra1", extra_warning)
+            self.assertIn("extra2", extra_warning)
+
+            # Result should have: declared fields (with None for missing) + extras
+            self.assertEqual(len(result), 5)  # 3 declared + 2 extras
+            self.assertEqual(result["field1"], "value1")
+            self.assertIsNone(result["field2"])
+            self.assertIsNone(result["field3"])
+            self.assertEqual(result["extra1"], "ex1")
+            self.assertEqual(result["extra2"], "ex2")
+
+    def test_validate_multi_output_extra_fields_mode_error(self):
+        """Test extra fields with 'error' mode - raises ValueError."""
+        # Arrange
+        agent = self._create_agent(["field1", "field2"], {"output_validation": "error"})
+        output = {
+            "field1": "value1",
+            "field2": "value2",
+            "extra1": "ex1",
+            "extra2": "ex2",
+        }
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            agent._validate_multi_output(output)
+
+        error_msg = str(context.exception)
+        self.assertIn("returned extra fields", error_msg)
+        self.assertIn("extra1", error_msg)
+        self.assertIn("extra2", error_msg)
+        self.assertIn("test_agent", error_msg)
+        self.assertIn("Declared fields are", error_msg)
 
     # ======================================================================
     # TESTS: Missing Fields - Validation Mode Behavior
@@ -169,14 +283,14 @@ class TestValidateMultiOutput(unittest.TestCase):
             # Assert
             mock_log_warning.assert_not_called()
             # With ignore mode, still include missing fields as None
-            self.assertEqual(result, {"field1": "value1", "field2": None, "field3": None})
+            self.assertEqual(
+                result, {"field1": "value1", "field2": None, "field3": None}
+            )
 
     def test_validate_multi_output_missing_fields_mode_warn(self):
         """Test missing fields with 'warn' mode - logs warning, includes None values."""
         # Arrange
-        agent = self._create_agent(
-            ["field1", "field2"], {"output_validation": "warn"}
-        )
+        agent = self._create_agent(["field1", "field2"], {"output_validation": "warn"})
         output = {"field1": "value1"}  # Missing field2
 
         # Act
@@ -195,9 +309,7 @@ class TestValidateMultiOutput(unittest.TestCase):
     def test_validate_multi_output_missing_fields_mode_error(self):
         """Test missing fields with 'error' mode - raises ValueError."""
         # Arrange
-        agent = self._create_agent(
-            ["field1", "field2"], {"output_validation": "error"}
-        )
+        agent = self._create_agent(["field1", "field2"], {"output_validation": "error"})
         output = {"field1": "value1"}  # Missing field2
 
         # Act & Assert
@@ -230,9 +342,7 @@ class TestValidateMultiOutput(unittest.TestCase):
     def test_validate_multi_output_all_fields_missing_error(self):
         """Test error when all declared fields are missing."""
         # Arrange
-        agent = self._create_agent(
-            ["field1", "field2"], {"output_validation": "error"}
-        )
+        agent = self._create_agent(["field1", "field2"], {"output_validation": "error"})
         output = {"unrelated": "value"}  # All declared fields missing
 
         # Act & Assert
@@ -265,9 +375,7 @@ class TestValidateMultiOutput(unittest.TestCase):
     def test_validate_multi_output_wraps_scalar_with_warning(self):
         """Test scalar return logs warning before wrapping."""
         # Arrange
-        agent = self._create_agent(
-            ["field1", "field2"], {"output_validation": "warn"}
-        )
+        agent = self._create_agent(["field1", "field2"], {"output_validation": "warn"})
         scalar_value = 42
 
         # Act
@@ -286,9 +394,7 @@ class TestValidateMultiOutput(unittest.TestCase):
     def test_validate_multi_output_wraps_list_with_error(self):
         """Test list return raises error with 'error' mode."""
         # Arrange
-        agent = self._create_agent(
-            ["field1", "field2"], {"output_validation": "error"}
-        )
+        agent = self._create_agent(["field1", "field2"], {"output_validation": "error"})
         list_value = ["item1", "item2"]
 
         # Act & Assert
@@ -378,9 +484,7 @@ class TestValidateMultiOutput(unittest.TestCase):
     def test_validate_multi_output_empty_output_dict_error(self):
         """Test empty dict with 'error' mode raises ValueError."""
         # Arrange
-        agent = self._create_agent(
-            ["field1"], {"output_validation": "error"}
-        )
+        agent = self._create_agent(["field1"], {"output_validation": "error"})
         output = {}
 
         # Act & Assert
@@ -388,27 +492,29 @@ class TestValidateMultiOutput(unittest.TestCase):
             agent._validate_multi_output(output)
 
     def test_validate_multi_output_empty_fields_list(self):
-        """Test with empty output_fields list."""
+        """Test with empty output_fields list in ignore mode."""
         # Arrange
-        agent = self._create_agent([])
+        agent = self._create_agent([], {"output_validation": "ignore"})
         output = {"field1": "value1"}
 
         # Act
         result = agent._validate_multi_output(output)
 
-        # Assert - Empty fields list means nothing should be returned
+        # Assert - Empty fields list with ignore mode means nothing should be returned
         self.assertEqual(result, {})
 
     def test_validate_multi_output_case_sensitive_field_matching(self):
-        """Test that field matching is case-sensitive."""
+        """Test that field matching is case-sensitive in ignore mode."""
         # Arrange
-        agent = self._create_agent(["Field1", "field2"])
+        agent = self._create_agent(
+            ["Field1", "field2"], {"output_validation": "ignore"}
+        )
         output = {"field1": "wrong", "Field1": "correct", "field2": "value2"}
 
         # Act
         result = agent._validate_multi_output(output)
 
-        # Assert
+        # Assert - Only declared fields (case-sensitive match)
         self.assertEqual(result, {"Field1": "correct", "field2": "value2"})
         self.assertNotIn("field1", result)
 
@@ -442,9 +548,7 @@ class TestValidateMultiOutput(unittest.TestCase):
     def test_validate_multi_output_wraps_dict_error_with_non_dict(self):
         """Test error message correctly identifies non-dict type."""
         # Arrange
-        agent = self._create_agent(
-            ["out1"], {"output_validation": "error"}
-        )
+        agent = self._create_agent(["out1"], {"output_validation": "error"})
 
         # Test with various types
         test_cases = [
@@ -470,9 +574,7 @@ class TestValidateMultiOutput(unittest.TestCase):
     def test_validate_multi_output_uses_agent_logging(self):
         """Test that validation uses agent's logging methods."""
         # Arrange
-        agent = self._create_agent(
-            ["field1"], {"output_validation": "warn"}
-        )
+        agent = self._create_agent(["field1"], {"output_validation": "warn"})
         output = {}
 
         # Act

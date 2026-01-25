@@ -6,6 +6,7 @@ ensuring backward compatibility with existing output_field string.
 """
 
 import unittest
+
 from agentmap.models.graph_spec import NodeSpec
 
 

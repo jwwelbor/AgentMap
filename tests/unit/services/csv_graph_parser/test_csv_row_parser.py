@@ -219,9 +219,7 @@ class TestCSVRowParserOutputField(unittest.TestCase):
 
         # Assert
         self.assertIsNotNone(node_spec)
-        self.assertEqual(
-            node_spec.output_field, "result_data|status-code|count.value"
-        )
+        self.assertEqual(node_spec.output_field, "result_data|status-code|count.value")
 
     def test_output_field_nan_handling(self):
         """Test NaN value handling for output field."""
@@ -252,7 +250,9 @@ class TestCSVRowParserOutputField(unittest.TestCase):
     def test_output_field_long_field_names(self):
         """Test multi-output with long field names."""
         # Arrange
-        long_field = "very_long_result_field_name|another_very_long_status_field|long_count"
+        long_field = (
+            "very_long_result_field_name|another_very_long_status_field|long_count"
+        )
         row = self._create_test_row(output_field=long_field)
 
         # Act
@@ -528,9 +528,7 @@ class TestCSVRowParserNodeSpecParsing(unittest.TestCase):
     def test_node_spec_with_single_output_and_edge(self):
         """Test parsing NodeSpec with single output and edge target."""
         # Arrange
-        row = self._create_test_row(
-            output_field="result", edge="NextNode"
-        )
+        row = self._create_test_row(output_field="result", edge="NextNode")
 
         # Act
         node_spec = self.parser.parse_row_to_node_spec(row, line_number=2)
@@ -543,10 +541,7 @@ class TestCSVRowParserNodeSpecParsing(unittest.TestCase):
     def test_node_spec_with_multi_output_and_parallel_edges(self):
         """Test parsing NodeSpec with multi-output and parallel edge targets."""
         # Arrange
-        row = self._create_test_row(
-            output_field="result|status",
-            edge="NodeA|NodeB"
-        )
+        row = self._create_test_row(output_field="result|status", edge="NodeA|NodeB")
 
         # Act
         node_spec = self.parser.parse_row_to_node_spec(row, line_number=2)

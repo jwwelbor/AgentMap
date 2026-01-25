@@ -26,12 +26,18 @@ class GraphAgentContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_agent_factory_service(
-        features_registry_service, logging_service, custom_agent_loader, app_config_service
+        features_registry_service,
+        logging_service,
+        custom_agent_loader,
+        app_config_service,
     ):
         from agentmap.services.agent.agent_factory_service import AgentFactoryService
 
         return AgentFactoryService(
-            features_registry_service, logging_service, custom_agent_loader, app_config_service
+            features_registry_service,
+            logging_service,
+            custom_agent_loader,
+            app_config_service,
         )
 
     agent_factory_service = providers.Singleton(

@@ -204,7 +204,10 @@ class TestPrepareTemplateVariables(unittest.TestCase):
                 ServiceAttribute("llm_service", "LLMServiceProtocol", "LLM service"),
                 ServiceAttribute("csv_service", "CSVServiceProtocol", "CSV service"),
             ],
-            usage_examples={"llm": "response = self.llm_service.call()", "csv": "data = self.csv_service.read()"},
+            usage_examples={
+                "llm": "response = self.llm_service.call()",
+                "csv": "data = self.csv_service.read()",
+            },
         )
 
         variables = self.composer._prepare_template_variables(

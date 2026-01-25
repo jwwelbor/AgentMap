@@ -164,12 +164,12 @@ When you declare multiple outputs but the agent returns unexpected data, AgentMa
 
 ### Three Validation Modes
 
-#### 1. **ignore** Mode (Silent)
-- Missing fields: Silently omitted from state
-- Extra fields: Silently filtered out
+#### 1. **ignore** Mode (Silent Filtering)
+- Missing fields: Silently omitted from state (set to None)
+- Extra fields: Silently filtered out (removed from state)
 - Wrong type: Silently wrapped in first field
 - **Use when**: You trust agent implementation, want zero logging overhead
-- **Effect**: Degraded but continuing
+- **Effect**: Only declared fields in state, no warnings
 
 ```python
 # Config for ignore mode
@@ -184,12 +184,12 @@ output_validation: ignore
 # Log: Nothing
 ```
 
-#### 2. **warn** Mode (Logged but Continues - DEFAULT)
-- Missing fields: Warning logged, continue with available fields
-- Extra fields: Warning logged, filtered from state
+#### 2. **warn** Mode (Permissive with Warnings - DEFAULT)
+- Missing fields: Warning logged, continue with available fields (set to None)
+- Extra fields: Warning logged, **kept in state** (allows inspection)
 - Wrong type: Warning logged, wrapped in first field
-- **Use when**: Development/testing, want visibility into issues
-- **Effect**: Problems logged but workflow continues
+- **Use when**: Development/testing, want visibility and flexibility
+- **Effect**: All data preserved in state, warnings logged for contract violations
 - **This is the default if not specified**
 
 ```python
@@ -199,12 +199,20 @@ output_validation: warn
 # Or omit the setting entirely - warn is default
 ```
 
-**Example:**
+**Example (Missing Fields):**
 ```python
 # Agent declares: result|status|count
 # Agent returns: {result: "data"}  (missing status, count)
-# Result: {result: "data"} in state
+# Result: {result: "data", status: None, count: None} in state
 # Log: WARNING - Agent MissingFields missing declared output fields: ['status', 'count']
+```
+
+**Example (Extra Fields):**
+```python
+# Agent declares: result|status
+# Agent returns: {result: "data", status: "ok", debug_info: "extra", timing: 1.5}
+# Result: {result: "data", status: "ok", debug_info: "extra", timing: 1.5} in state
+# Log: WARNING - Extra fields ['debug_info', 'timing'] will be included in state
 ```
 
 #### 3. **error** Mode (Strict)
@@ -269,10 +277,15 @@ Agent ParseData missing declared output fields: ['row_count', 'parse_status'].
 Returned keys: ['parsed']
 ```
 
-**Extra Fields (auto-filtered):**
+**Extra Fields (warn mode - kept in state):**
 ```
-Agent TransformData declared output fields ['transformed', 'count'] but returned
-['transformed', 'count', 'metadata', 'timing']. Extra fields filtered: ['metadata', 'timing']
+Agent TransformData returned extra fields ['metadata', 'timing'] not declared in output_fields.
+Declared fields are: ['transformed', 'count']. Extra fields will be included in state.
+```
+
+**Extra Fields (ignore mode - filtered out):**
+```
+DEBUG - Filtering extra output fields: ['metadata', 'timing']
 ```
 
 **Wrong Return Type:**

@@ -46,14 +46,14 @@ class TestCodeGeneratorMultiOutputScaffold(unittest.TestCase):
 
     def test_multi_output_fields_two_fields(self):
         """Test with two output fields."""
-        result = self.generator.generate_multi_output_scaffold(
-            ["field1", "field2"]
-        )
+        result = self.generator.generate_multi_output_scaffold(["field1", "field2"])
 
         self.assertEqual(result["return_type_hint"], "Dict[str, Any]")
         self.assertIn("'field1'", result["return_docstring"])
         self.assertIn("'field2'", result["return_docstring"])
-        self.assertIn("All declared output fields should be included", result["return_docstring"])
+        self.assertIn(
+            "All declared output fields should be included", result["return_docstring"]
+        )
         self.assertIn("field1", result["process_body"])
         self.assertIn("field2", result["process_body"])
         self.assertIn("MULTI-OUTPUT agent", result["process_body"])

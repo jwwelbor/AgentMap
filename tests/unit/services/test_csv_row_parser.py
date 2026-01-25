@@ -27,17 +27,19 @@ class TestCSVRowParserOutputFieldParsing(unittest.TestCase):
 
     def test_parse_single_output_field(self):
         """Test parsing single output field (backward compatibility)."""
-        row = pd.Series({
-            "GraphName": "TestGraph",
-            "Node": "TestNode",
-            "Output_Field": "result",
-            "Input_Fields": "",
-            "Edge": "",
-            "Success_Next": "",
-            "Failure_Next": "",
-            "Tool_Source": "",
-            "Available_Tools": "",
-        })
+        row = pd.Series(
+            {
+                "GraphName": "TestGraph",
+                "Node": "TestNode",
+                "Output_Field": "result",
+                "Input_Fields": "",
+                "Edge": "",
+                "Success_Next": "",
+                "Failure_Next": "",
+                "Tool_Source": "",
+                "Available_Tools": "",
+            }
+        )
 
         node_spec = self.parser.parse_row_to_node_spec(row, line_number=2)
 
@@ -47,17 +49,19 @@ class TestCSVRowParserOutputFieldParsing(unittest.TestCase):
 
     def test_parse_pipe_delimited_output_fields(self):
         """Test parsing pipe-delimited output fields."""
-        row = pd.Series({
-            "GraphName": "TestGraph",
-            "Node": "TestNode",
-            "Output_Field": "field1|field2|field3",
-            "Input_Fields": "",
-            "Edge": "",
-            "Success_Next": "",
-            "Failure_Next": "",
-            "Tool_Source": "",
-            "Available_Tools": "",
-        })
+        row = pd.Series(
+            {
+                "GraphName": "TestGraph",
+                "Node": "TestNode",
+                "Output_Field": "field1|field2|field3",
+                "Input_Fields": "",
+                "Edge": "",
+                "Success_Next": "",
+                "Failure_Next": "",
+                "Tool_Source": "",
+                "Available_Tools": "",
+            }
+        )
 
         node_spec = self.parser.parse_row_to_node_spec(row, line_number=2)
 
@@ -68,17 +72,19 @@ class TestCSVRowParserOutputFieldParsing(unittest.TestCase):
 
     def test_parse_output_fields_with_whitespace(self):
         """Test parsing output fields with whitespace around pipes."""
-        row = pd.Series({
-            "GraphName": "TestGraph",
-            "Node": "TestNode",
-            "Output_Field": "field1 | field2 | field3",
-            "Input_Fields": "",
-            "Edge": "",
-            "Success_Next": "",
-            "Failure_Next": "",
-            "Tool_Source": "",
-            "Available_Tools": "",
-        })
+        row = pd.Series(
+            {
+                "GraphName": "TestGraph",
+                "Node": "TestNode",
+                "Output_Field": "field1 | field2 | field3",
+                "Input_Fields": "",
+                "Edge": "",
+                "Success_Next": "",
+                "Failure_Next": "",
+                "Tool_Source": "",
+                "Available_Tools": "",
+            }
+        )
 
         node_spec = self.parser.parse_row_to_node_spec(row, line_number=2)
 
@@ -89,17 +95,19 @@ class TestCSVRowParserOutputFieldParsing(unittest.TestCase):
 
     def test_parse_output_fields_with_empty_pipes(self):
         """Test parsing output fields with empty values (should be filtered)."""
-        row = pd.Series({
-            "GraphName": "TestGraph",
-            "Node": "TestNode",
-            "Output_Field": "field1||field2||field3",
-            "Input_Fields": "",
-            "Edge": "",
-            "Success_Next": "",
-            "Failure_Next": "",
-            "Tool_Source": "",
-            "Available_Tools": "",
-        })
+        row = pd.Series(
+            {
+                "GraphName": "TestGraph",
+                "Node": "TestNode",
+                "Output_Field": "field1||field2||field3",
+                "Input_Fields": "",
+                "Edge": "",
+                "Success_Next": "",
+                "Failure_Next": "",
+                "Tool_Source": "",
+                "Available_Tools": "",
+            }
+        )
 
         node_spec = self.parser.parse_row_to_node_spec(row, line_number=2)
 
@@ -110,17 +118,19 @@ class TestCSVRowParserOutputFieldParsing(unittest.TestCase):
 
     def test_parse_empty_output_field(self):
         """Test parsing empty output field."""
-        row = pd.Series({
-            "GraphName": "TestGraph",
-            "Node": "TestNode",
-            "Output_Field": "",
-            "Input_Fields": "",
-            "Edge": "",
-            "Success_Next": "",
-            "Failure_Next": "",
-            "Tool_Source": "",
-            "Available_Tools": "",
-        })
+        row = pd.Series(
+            {
+                "GraphName": "TestGraph",
+                "Node": "TestNode",
+                "Output_Field": "",
+                "Input_Fields": "",
+                "Edge": "",
+                "Success_Next": "",
+                "Failure_Next": "",
+                "Tool_Source": "",
+                "Available_Tools": "",
+            }
+        )
 
         node_spec = self.parser.parse_row_to_node_spec(row, line_number=2)
 
@@ -131,17 +141,19 @@ class TestCSVRowParserOutputFieldParsing(unittest.TestCase):
 
     def test_parse_whitespace_only_output_field(self):
         """Test parsing output field with only whitespace."""
-        row = pd.Series({
-            "GraphName": "TestGraph",
-            "Node": "TestNode",
-            "Output_Field": "   ",
-            "Input_Fields": "",
-            "Edge": "",
-            "Success_Next": "",
-            "Failure_Next": "",
-            "Tool_Source": "",
-            "Available_Tools": "",
-        })
+        row = pd.Series(
+            {
+                "GraphName": "TestGraph",
+                "Node": "TestNode",
+                "Output_Field": "   ",
+                "Input_Fields": "",
+                "Edge": "",
+                "Success_Next": "",
+                "Failure_Next": "",
+                "Tool_Source": "",
+                "Available_Tools": "",
+            }
+        )
 
         node_spec = self.parser.parse_row_to_node_spec(row, line_number=2)
 
@@ -152,17 +164,19 @@ class TestCSVRowParserOutputFieldParsing(unittest.TestCase):
 
     def test_parse_output_fields_consistency_with_input_fields(self):
         """Test that output field parsing follows same pattern as input_fields."""
-        row = pd.Series({
-            "GraphName": "TestGraph",
-            "Node": "TestNode",
-            "Output_Field": "out1|out2|out3",
-            "Input_Fields": "in1|in2|in3",
-            "Edge": "",
-            "Success_Next": "",
-            "Failure_Next": "",
-            "Tool_Source": "",
-            "Available_Tools": "",
-        })
+        row = pd.Series(
+            {
+                "GraphName": "TestGraph",
+                "Node": "TestNode",
+                "Output_Field": "out1|out2|out3",
+                "Input_Fields": "in1|in2|in3",
+                "Edge": "",
+                "Success_Next": "",
+                "Failure_Next": "",
+                "Tool_Source": "",
+                "Available_Tools": "",
+            }
+        )
 
         node_spec = self.parser.parse_row_to_node_spec(row, line_number=2)
 
@@ -174,17 +188,19 @@ class TestCSVRowParserOutputFieldParsing(unittest.TestCase):
 
     def test_single_field_backward_compatibility_check(self):
         """Test backward compatibility: single field maintains string in output_field."""
-        row = pd.Series({
-            "GraphName": "TestGraph",
-            "Node": "TestNode",
-            "Output_Field": "single_result",
-            "Input_Fields": "",
-            "Edge": "",
-            "Success_Next": "",
-            "Failure_Next": "",
-            "Tool_Source": "",
-            "Available_Tools": "",
-        })
+        row = pd.Series(
+            {
+                "GraphName": "TestGraph",
+                "Node": "TestNode",
+                "Output_Field": "single_result",
+                "Input_Fields": "",
+                "Edge": "",
+                "Success_Next": "",
+                "Failure_Next": "",
+                "Tool_Source": "",
+                "Available_Tools": "",
+            }
+        )
 
         node_spec = self.parser.parse_row_to_node_spec(row, line_number=2)
 
@@ -196,17 +212,19 @@ class TestCSVRowParserOutputFieldParsing(unittest.TestCase):
 
     def test_parse_output_fields_with_special_characters(self):
         """Test parsing output fields with valid special characters in field names."""
-        row = pd.Series({
-            "GraphName": "TestGraph",
-            "Node": "TestNode",
-            "Output_Field": "result_1|result-2|result.3",
-            "Input_Fields": "",
-            "Edge": "",
-            "Success_Next": "",
-            "Failure_Next": "",
-            "Tool_Source": "",
-            "Available_Tools": "",
-        })
+        row = pd.Series(
+            {
+                "GraphName": "TestGraph",
+                "Node": "TestNode",
+                "Output_Field": "result_1|result-2|result.3",
+                "Input_Fields": "",
+                "Edge": "",
+                "Success_Next": "",
+                "Failure_Next": "",
+                "Tool_Source": "",
+                "Available_Tools": "",
+            }
+        )
 
         node_spec = self.parser.parse_row_to_node_spec(row, line_number=2)
 

@@ -125,7 +125,9 @@ class AgentFactoryService:
         # Add output validation mode from AppConfigService
         if self.app_config_service:
             validation_config = self.app_config_service.get_output_validation_config()
-            context["output_validation"] = validation_config.get("multi_output_mode", "warn")
+            context["output_validation"] = validation_config.get(
+                "multi_output_mode", "warn"
+            )
             self.logger.debug(
                 f"[AgentFactoryService] Added output_validation mode: {context['output_validation']}"
             )

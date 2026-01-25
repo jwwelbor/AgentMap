@@ -124,6 +124,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_single_output_scalar_wrapped_correctly(self):
         """Test scalar value is wrapped in single output field."""
+
         # Arrange
         class ScalarAgent(ConcreteAgent):
             def process(self, inputs):
@@ -148,6 +149,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_single_output_none_value_wrapped(self):
         """Test None values return empty dict (not wrapped) in single output."""
+
         # Arrange
         class NoneAgent(ConcreteAgent):
             def process(self, inputs):
@@ -176,6 +178,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_valid_dict_returns_all_fields(self):
         """Test multi-output agent returning valid dict returns all fields."""
+
         # Arrange
         class MultiOutputAgent(ConcreteAgent):
             def process(self, inputs):
@@ -208,6 +211,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_state_updates_pattern(self):
         """Test run() returns state_updates dict for multi-field updates."""
+
         # Arrange
         class MultiUpdateAgent(ConcreteAgent):
             def process(self, inputs):
@@ -244,6 +248,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_dict_with_none_values(self):
         """Test multi-output dict with None values for some fields."""
+
         # Arrange
         class PartialAgent(ConcreteAgent):
             def process(self, inputs):
@@ -275,6 +280,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_scalar_wrapped_in_first_field_warn_mode(self):
         """Test scalar return wrapped in first field with warn mode."""
+
         # Arrange
         class ScalarMultiAgent(ConcreteAgent):
             def process(self, inputs):
@@ -302,7 +308,8 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
             # Assert - Should log warning about type mismatch via _validate_multi_output
             # Check that warning was called during validation
             warning_calls = [
-                c for c in mock_warn.call_args_list
+                c
+                for c in mock_warn.call_args_list
                 if "declares multiple outputs" in str(c)
             ]
             self.assertTrue(len(warning_calls) > 0 or mock_warn.called)
@@ -312,6 +319,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_list_wrapped_in_first_field(self):
         """Test list return wrapped in first field of multi-output (graceful degradation)."""
+
         # Arrange
         class ListAgent(ConcreteAgent):
             def process(self, inputs):
@@ -339,6 +347,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_object_wrapped_in_first_field(self):
         """Test custom object wrapped in first field (graceful degradation)."""
+
         # Arrange
         class CustomObject:
             def __init__(self):
@@ -375,6 +384,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_missing_fields_ignore_mode(self):
         """Test missing fields with ignore mode - includes None values."""
+
         # Arrange
         class IncompleteAgent(ConcreteAgent):
             def process(self, inputs):
@@ -406,6 +416,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_missing_fields_warn_mode(self):
         """Test missing fields with warn mode - logs warning."""
+
         # Arrange
         class IncompleteAgent(ConcreteAgent):
             def process(self, inputs):
@@ -442,6 +453,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_missing_fields_error_mode(self):
         """Test missing fields with error mode - returns error state (caught by run method)."""
+
         # Arrange
         class IncompleteAgent(ConcreteAgent):
             def process(self, inputs):
@@ -476,6 +488,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_all_fields_missing_error(self):
         """Test error when all declared fields are missing (caught by run method)."""
+
         # Arrange
         class EmptyAgent(ConcreteAgent):
             def process(self, inputs):
@@ -513,7 +526,8 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
     # =========================================================================
 
     def test_run_multi_output_extra_fields_filtered_out(self):
-        """Test extra fields not in output_fields are removed."""
+        """Test extra fields not in output_fields are removed in ignore mode."""
+
         # Arrange
         class ExtraAgent(ConcreteAgent):
             def process(self, inputs):
@@ -524,7 +538,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
                     "another_extra": "extra2",
                 }
 
-        context = {"output_field": "field1|field2"}
+        context = {"output_field": "field1|field2", "output_validation": "ignore"}
         agent = ExtraAgent(
             name="extra_agent",
             prompt="Test",
@@ -539,7 +553,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
         # Act
         result = agent.run({})
 
-        # Assert - Only declared fields in result
+        # Assert - Only declared fields in result (ignore mode)
         self.assertEqual(len(result), 2)
         self.assertIn("field1", result)
         self.assertIn("field2", result)
@@ -548,6 +562,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_extra_fields_debug_logged(self):
         """Test extra fields are logged at debug level."""
+
         # Arrange
         class ExtraAgent(ConcreteAgent):
             def process(self, inputs):
@@ -575,9 +590,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
             # Assert
             debug_calls = [call for call in mock_debug.call_args_list]
-            extra_logged = any(
-                "extra" in str(call).lower() for call in debug_calls
-            )
+            extra_logged = any("extra" in str(call).lower() for call in debug_calls)
             # At least one debug call mentions filtering extras
             self.assertTrue(extra_logged or "extra" in str(debug_calls).lower())
 
@@ -587,6 +600,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_default_validation_is_warn(self):
         """Test default validation mode is 'warn'."""
+
         # Arrange
         class IncompleteAgent(ConcreteAgent):
             def process(self, inputs):
@@ -613,6 +627,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_validation_mode_ignore(self):
         """Test 'ignore' validation mode doesn't log warnings."""
+
         # Arrange
         class IncompleteAgent(ConcreteAgent):
             def process(self, inputs):
@@ -650,6 +665,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_calls_tracking_service_for_multi_output(self):
         """Test run() calls execution tracking service for multi-output agents."""
+
         # Arrange
         class MultiAgent(ConcreteAgent):
             def process(self, inputs):
@@ -675,14 +691,13 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
         self.mock_execution_tracking.record_node_result.assert_called()
 
         # Verify node result was logged
-        result_call_args = (
-            self.mock_execution_tracking.record_node_result.call_args
-        )
+        result_call_args = self.mock_execution_tracking.record_node_result.call_args
         result_args, result_kwargs = result_call_args
         self.assertTrue(result_args[2])  # success=True
 
     def test_run_tracking_includes_all_output_fields(self):
         """Test tracking service receives complete multi-output result."""
+
         # Arrange
         class MultiAgent(ConcreteAgent):
             def process(self, inputs):
@@ -715,6 +730,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_with_complex_data_types(self):
         """Test multi-output with complex data types (lists, dicts, objects)."""
+
         # Arrange
         class ComplexAgent(ConcreteAgent):
             def process(self, inputs):
@@ -746,6 +762,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_empty_dict_return(self):
         """Test multi-output agent returning empty dict."""
+
         # Arrange
         class EmptyDictAgent(ConcreteAgent):
             def process(self, inputs):
@@ -775,7 +792,8 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
         self.assertEqual(result["field2"], None)
 
     def test_run_case_sensitive_field_matching(self):
-        """Test that field matching is case-sensitive."""
+        """Test that field matching is case-sensitive in ignore mode."""
+
         # Arrange
         class CaseSensitiveAgent(ConcreteAgent):
             def process(self, inputs):
@@ -785,7 +803,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
                     "field2": "value2",
                 }
 
-        context = {"output_field": "Field1|field2"}
+        context = {"output_field": "Field1|field2", "output_validation": "ignore"}
         agent = CaseSensitiveAgent(
             name="case_agent",
             prompt="Test",
@@ -800,13 +818,14 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
         # Act
         result = agent.run({})
 
-        # Assert - Only exact case matches
+        # Assert - Only exact case matches (ignore mode filters extras)
         self.assertEqual(result["Field1"], "correct")
         self.assertEqual(result["field2"], "value2")
         self.assertNotIn("field1", result)
 
     def test_run_with_whitespace_in_output_field_names(self):
         """Test output field names with whitespace are handled correctly."""
+
         # Arrange
         class WhitespaceAgent(ConcreteAgent):
             def process(self, inputs):
@@ -838,6 +857,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_process_error_handling(self):
         """Test error handling preserves tracking info."""
+
         # Arrange
         class ErrorAgent(ConcreteAgent):
             def process(self, inputs):
@@ -873,6 +893,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
     def test_run_multi_output_with_post_process_hook(self):
         """Test multi-output agent using _post_process hook."""
+
         # Arrange
         class PostProcessAgent(BaseAgent):
             def process(self, inputs):
