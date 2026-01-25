@@ -7,7 +7,7 @@
       "env": {}
     },
     "mcp-sequentialthinking-tools": {
-			"type": "stdio",
+      "type": "stdio",
 			"command": "/usr/bin/npx",
 			"args": ["-y", "mcp-sequentialthinking-tools"]
 		}
