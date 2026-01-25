@@ -190,6 +190,9 @@ data/
 .git-original-backup/
 .vscode/
 dev-artifacts/
+.vectorstore/
+.pycharm_env/
+.swarm/
 
 .idea
 # Code Index MCP cache directory
