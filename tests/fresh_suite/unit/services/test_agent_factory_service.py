@@ -654,6 +654,99 @@ class TestAgentFactoryService(unittest.TestCase):
         self.assertEqual(result["state_adapter_service"], mock_state_adapter)
         self.assertEqual(result["prompt_manager_service"], mock_prompt_manager)
 
+    # =============================================================================
+    # 7. Output Validation Config Tests - NEW TESTS FOR TASK T-E08-F01-015
+    # =============================================================================
+
+    @patch.object(AgentClassResolver, "resolve_agent_class")
+    def test_create_agent_instance_includes_output_validation_config(self, mock_resolve):
+        """Test create_agent_instance() includes output_validation from AppConfigService."""
+        # Arrange
+        mock_app_config_service = Mock()
+        mock_app_config_service.get_output_validation_config.return_value = {
+            "multi_output_mode": "error",
+            "require_all_outputs": True,
+            "allow_extra_outputs": False,
+        }
+
+        # Update service with app_config_service dependency
+        self.service.app_config_service = mock_app_config_service
+
+        mock_node = Mock()
+        mock_node.name = "test_node"
+        mock_node.agent_type = "default"
+        mock_node.prompt = "test prompt"
+        mock_node.inputs = ["input1"]
+        mock_node.output = "result"
+        mock_node.description = "test description"
+        mock_node.context = {}
+
+        mock_agent_class = Mock()
+        mock_agent_class.__name__ = "DefaultAgent"
+        mock_agent_instance = Mock()
+        mock_agent_instance.name = "test_node"
+        mock_agent_class.return_value = mock_agent_instance
+        mock_resolve.return_value = mock_agent_class
+
+        agent_mappings = {
+            "default": "agentmap.agents.builtins.default_agent.DefaultAgent"
+        }
+
+        # Act
+        result = self.service.create_agent_instance(
+            mock_node, "test_graph", agent_mappings
+        )
+
+        # Assert - Verify app_config_service was called
+        mock_app_config_service.get_output_validation_config.assert_called_once()
+
+        # Verify result is created
+        self.assertIsNotNone(result)
+        self.assertEqual(result.name, "test_node")
+
+    @patch.object(AgentClassResolver, "resolve_agent_class")
+    def test_create_agent_instance_output_validation_default_warn(self, mock_resolve):
+        """Test create_agent_instance() defaults to 'warn' mode when not configured."""
+        # Arrange
+        mock_app_config_service = Mock()
+        # Return defaults with warn mode
+        mock_app_config_service.get_output_validation_config.return_value = {
+            "multi_output_mode": "warn",
+            "require_all_outputs": True,
+            "allow_extra_outputs": True,
+        }
+
+        self.service.app_config_service = mock_app_config_service
+
+        mock_node = Mock()
+        mock_node.name = "test_node"
+        mock_node.agent_type = "default"
+        mock_node.prompt = "test prompt"
+        mock_node.inputs = []
+        mock_node.output = "result"
+        mock_node.description = ""
+        mock_node.context = {}
+
+        mock_agent_class = Mock()
+        mock_agent_class.__name__ = "DefaultAgent"
+        mock_agent_instance = Mock()
+        mock_agent_instance.name = "test_node"
+        mock_agent_class.return_value = mock_agent_instance
+        mock_resolve.return_value = mock_agent_class
+
+        agent_mappings = {
+            "default": "agentmap.agents.builtins.default_agent.DefaultAgent"
+        }
+
+        # Act
+        result = self.service.create_agent_instance(
+            mock_node, "test_graph", agent_mappings
+        )
+
+        # Assert
+        self.assertIsNotNone(result)
+        mock_app_config_service.get_output_validation_config.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
