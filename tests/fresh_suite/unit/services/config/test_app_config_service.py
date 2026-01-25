@@ -146,6 +146,68 @@ class TestAppConfigService(unittest.TestCase):
         result = self.app_config_service.get_tracking_config()
         self.assertEqual(result, {"enabled": True})
 
+    def test_get_output_validation_config_with_defaults(self):
+        """Test getting output validation config returns proper defaults."""
+        # When no config exists, should return all defaults
+        result = self.app_config_service.get_output_validation_config()
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["multi_output_mode"], "warn")
+        self.assertTrue(result["require_all_outputs"])
+        self.assertTrue(result["allow_extra_outputs"])
+
+    def test_get_output_validation_config_merges_with_config(self):
+        """Test that configured values override defaults."""
+        # Update mock config data to include validation config
+        self.mock_config_service.load_config.return_value.update(
+            {
+                "execution": {
+                    "validation": {
+                        "multi_output_mode": "error",
+                        "require_all_outputs": False,
+                    }
+                }
+            }
+        )
+
+        # Recreate service with updated config
+        app_config_updated = AppConfigService(
+            config_service=self.mock_config_service, config_path="test_config.yaml"
+        )
+
+        result = app_config_updated.get_output_validation_config()
+
+        # User values should override defaults
+        self.assertEqual(result["multi_output_mode"], "error")
+        self.assertFalse(result["require_all_outputs"])
+        # Default values should still be present for keys not in config
+        self.assertTrue(result["allow_extra_outputs"])
+
+    def test_get_output_validation_config_partial_override(self):
+        """Test that partial config overrides only specified keys."""
+        # Update mock config with partial validation settings
+        self.mock_config_service.load_config.return_value.update(
+            {
+                "execution": {
+                    "validation": {
+                        "multi_output_mode": "ignore",
+                    }
+                }
+            }
+        )
+
+        app_config_partial = AppConfigService(
+            config_service=self.mock_config_service, config_path="test_config.yaml"
+        )
+
+        result = app_config_partial.get_output_validation_config()
+
+        # Only specified key should be overridden
+        self.assertEqual(result["multi_output_mode"], "ignore")
+        # Other defaults should remain
+        self.assertTrue(result["require_all_outputs"])
+        self.assertTrue(result["allow_extra_outputs"])
+
     def test_get_storage_config_path(self):
         """Test getting storage config path."""
         # Test when config key doesn't exist - should return None
