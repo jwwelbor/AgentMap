@@ -1,0 +1,45 @@
+{
+  "default_epic": null,
+  "default_agent": null,
+  "color_enabled": true,
+  "json_output": false,
+  "patterns": {
+    "epic": {
+      "folder": [
+        "^E(?P<number>\\d{2})-(?P<slug>[a-z0-9-]+)$",
+        "^(?P<epic_id>tech-debt|bugs|change-cards)$"
+      ],
+      "file": [
+        "^epic\\.md$"
+      ],
+      "generation": {
+        "format": "E{number:02d}-{slug}"
+      }
+    },
+    "feature": {
+      "folder": [
+        "^E(?P<epic_num>\\d{2})-F(?P<number>\\d{2})-(?P<slug>[a-z0-9-]+)$",
+        "^F(?P<number>\\d{2})-(?P<slug>[a-z0-9-]+)$"
+      ],
+      "file": [
+        "^prd\\.md$",
+        "^PRD_F(?P<number>\\d{2})-(?P<slug>.+)\\.md$",
+        "^(?P<slug>[a-z0-9-]+)\\.md$"
+      ],
+      "generation": {
+        "format": "E{epic:02d}-F{number:02d}-{slug}"
+      }
+    },
+    "task": {
+      "folder": [],
+      "file": [
+        "^T-E(?P<epic_num>\\d{2})-F(?P<feature_num>\\d{2})-(?P<number>\\d{3}).*\\.md$",
+        "^(?P<number>\\d{3})-(?P<slug>.+)\\.md$",
+        "^(?P<slug>.+)\\.prp\\.md$"
+      ],
+      "generation": {
+        "format": "T-E{epic:02d}-F{feature:02d}-{number:03d}.md"
+      }
+    }
+  }
+}

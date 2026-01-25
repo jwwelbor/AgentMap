@@ -1,0 +1,10 @@
+graph_name,node_name,agent_type,input_fields,output_field,next_node,next_on_success,next_on_failure,prompt,description,context
+gm_orchestration,UserInput,input,input,input,Orchestrator,,,What do you want to do?,This is to simulate user input,
+gm_orchestration,Orchestrator,orchestrator,input,orchestrator_result,,,,,This is the main orchestration node that routes the player's input to the appropriate graph based on the intent or action requested,"{""llm_type"":""anthropic""}"
+gm_orchestration,CombatTurn,combat_router,input,combat_result,UserInput,,,##NOLLM Route input to the combat resolution graph,Triggered when player initiates combat or combat conditions are detected,
+gm_orchestration,SocialEncounter,social_router,input,dialogue_result,UserInput,,,##NOLLM Route input to the social interaction graph,Triggered when a player is speaking with an NPC or engaging in social dialogue,
+gm_orchestration,EnvironmentInteraction,exploration_router,input,exploration_result,UserInput,,,##NOLLM Route input to the environment exploration graph,Triggered when the player is exploring or searching the environment or examining objects,
+gm_orchestration,SessionWrapUp,wrapup,input,summary,UserInput,,,Summarize the session,update logs and prepare post-session feedback,Triggered at the end of a session or when the GM initiates a session wrap-up
+gm_orchestration,FallbackHelp,help,input,help_response,UserInput,,,Provide help or re-prompt based on unrecognized player input,Fallback step if no other route matches the player input or intent is unclear,
+gm_orchestration,EndNode,default,input,,,,,End the session,,
+gm_orchestration,ErrorHandler,default,,,,,,The following error occurred,This is the error handler,

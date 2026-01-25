@@ -1,0 +1,188 @@
+{
+  "version": "1.0.0",
+  "saved": "2025-09-29T04:19:21.987Z",
+  "entries": {
+    "context-forge:detected": {
+      "value": true,
+      "created": 1759119532539,
+      "expires": null,
+      "accessed": 1759119532539,
+      "accessCount": 1
+    },
+    "context-forge:config": {
+      "value": {
+        "projectPath": "/mnt/c/Users/jwwel/Documents/code/AgentMap",
+        "structure": {
+          "hasClaudeMd": true,
+          "hasPRPs": false,
+          "hasSlashCommands": true,
+          "hasHooks": false,
+          "hasImplementationDocs": false
+        },
+        "techStack": null,
+        "features": []
+      },
+      "created": 1759119532540,
+      "expires": null,
+      "accessed": 1759119532540,
+      "accessCount": 1
+    },
+    "context-forge:rules": {
+      "value": {
+        "projectName": "Claude Code Sub Agent Configuration",
+        "description": null,
+        "techStack": [],
+        "rules": [],
+        "conventions": [],
+        "structure": null
+      },
+      "created": 1759119532543,
+      "expires": null,
+      "accessed": 1759119532543,
+      "accessCount": 1
+    },
+    "context-forge:commands": {
+      "value": [
+        {
+          "name": "agents:agent-api-docs",
+          "category": "custom",
+          "description": "Launch the API documentation specialist for OpenAPI specs"
+        },
+        {
+          "name": "agents:agent-api",
+          "category": "custom",
+          "description": "Launch the API development agent for backend implementation"
+        },
+        {
+          "name": "agents:agent-content",
+          "category": "custom",
+          "description": "Alternative command for content creation"
+        },
+        {
+          "name": "agents:agent-debug",
+          "category": "custom",
+          "description": "Debug an error or issue"
+        },
+        {
+          "name": "agents:agent-deploy",
+          "category": "custom",
+          "description": "Alternative command for DevOps deployment tasks"
+        },
+        {
+          "name": "agents:agent-devops",
+          "category": "custom",
+          "description": "Launch the DevOps specialist for CI/CD and deployment"
+        },
+        {
+          "name": "agents:agent-document",
+          "category": "custom",
+          "description": "Generate or update documentation"
+        },
+        {
+          "name": "agents:agent-frontend",
+          "category": "custom",
+          "description": "Launch the frontend development agent for UI implementation"
+        },
+        {
+          "name": "agents:agent-marketing",
+          "category": "custom",
+          "description": "Launch the marketing content specialist"
+        },
+        {
+          "name": "agents:agent-plan",
+          "category": "custom",
+          "description": "Launch the project planning agent for strategic task decomposition"
+        },
+        {
+          "name": "agents:agent-product",
+          "category": "custom",
+          "description": "Launch the product management specialist"
+        },
+        {
+          "name": "agents:agent-refactor",
+          "category": "custom",
+          "description": "Refactor code for better structure and maintainability"
+        },
+        {
+          "name": "agents:agent-requirements",
+          "category": "custom",
+          "description": "Alternative command for requirements gathering"
+        },
+        {
+          "name": "agents:agent-review",
+          "category": "custom",
+          "description": "Trigger code review on recent changes"
+        },
+        {
+          "name": "agents:agent-security-scan",
+          "category": "custom",
+          "description": "Scan for security vulnerabilities"
+        },
+        {
+          "name": "agents:agent-shadcn",
+          "category": "custom",
+          "description": "Launch the ShadCN UI builder agent for component-based UI development"
+        },
+        {
+          "name": "agents:agent-tdd",
+          "category": "custom",
+          "description": "Launch the TDD specialist for test-driven development"
+        },
+        {
+          "name": "agents:agent-test-first",
+          "category": "custom",
+          "description": "Alternative command for TDD specialist focusing on test-first approach"
+        },
+        {
+          "name": "agents:agent-test",
+          "category": "custom",
+          "description": "Run tests and fix failures"
+        },
+        {
+          "name": "agents:agent-ui",
+          "category": "custom",
+          "description": "Launch the ShadCN UI builder agent for interface design and implementation"
+        }
+      ],
+      "created": 1759119532545,
+      "expires": 1759123132545,
+      "accessed": 1759119532545,
+      "accessCount": 1
+    },
+    "agent:test-runner:current-execution": {
+      "value": {
+        "id": "execution:1759119553370",
+        "task": "fix broken tests in C:\\Users\\jwwel\\Documents\\code\\AgentMap\\tests\\fresh_suite\\integration\\api\\test_execution_routes_fixed.py if there are conflicts between test logic and app logic confirm with me before changing code. There have been refactorings. The code is more up to date than the tests.",
+        "startTime": "2025-09-29T04:19:13.370Z",
+        "status": "running"
+      },
+      "created": 1759119553370,
+      "expires": 1759123153370,
+      "accessed": 1759119553370,
+      "accessCount": 1
+    },
+    "shared:current-task": {
+      "value": {
+        "agent": "test-runner",
+        "task": "fix broken tests in C:\\Users\\jwwel\\Documents\\code\\AgentMap\\tests\\fresh_suite\\integration\\api\\test_execution_routes_fixed.py if there are conflicts between test logic and app logic confirm with me before changing code. There have been refactorings. The code is more up to date than the tests.",
+        "executionId": "execution:1759119553370"
+      },
+      "created": 1759119553377,
+      "expires": 1759123153377,
+      "accessed": 1759119553377,
+      "accessCount": 1
+    },
+    "agent:test-runner:last-execution": {
+      "value": {
+        "id": "execution:1759119553370",
+        "task": "fix broken tests in C:\\Users\\jwwel\\Documents\\code\\AgentMap\\tests\\fresh_suite\\integration\\api\\test_execution_routes_fixed.py if there are conflicts between test logic and app logic confirm with me before changing code. There have been refactorings. The code is more up to date than the tests.",
+        "completedAt": "2025-09-29T04:19:16.888Z",
+        "status": "completed"
+      },
+      "created": 1759119556888,
+      "expires": null,
+      "accessed": 1759119556888,
+      "accessCount": 1
+    }
+  }
+}
