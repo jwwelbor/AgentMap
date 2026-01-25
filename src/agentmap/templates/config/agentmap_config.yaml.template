@@ -30,6 +30,22 @@ execution:
     critical_nodes: []
     custom_function: ""
 
+  # Output validation configuration
+  validation:
+    # How to handle multi-output validation
+    # Options: ignore (skip validation), warn (log warnings), error (raise exceptions)
+    multi_output_mode: "warn"
+
+    # Require agents to return all declared output fields
+    # When true: agents must provide all fields declared in their output schema
+    # When false: agents can return a subset of fields
+    require_all_outputs: true
+
+    # Allow agents to return undeclared fields
+    # When true: agents can return extra fields (they will be filtered out)
+    # When false: extra fields cause validation to fail
+    allow_extra_outputs: true
+
 # Separate LangChain tracing for debugging
 tracing:
   enabled: false
