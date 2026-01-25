@@ -530,5 +530,5 @@ class BaseAgent:
         if extra_fields:
             self.log_debug(f"Filtering extra output fields: {extra_fields}")
 
-        # Return only declared fields, using output.get(k) to handle missing fields as None
-        return {k: output.get(k) for k in self.output_fields if k in output or validation_mode == "ignore"}
+        # Return only declared fields, including missing ones as None
+        return {k: output.get(k) for k in self.output_fields}
