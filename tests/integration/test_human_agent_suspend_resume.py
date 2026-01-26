@@ -101,8 +101,6 @@ logging:
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 execution:
   success_policy: any_end_node
-tracing:
-  enabled: false
 """
 
         config_path = os.path.join(self.temp_dir, "config.yaml")

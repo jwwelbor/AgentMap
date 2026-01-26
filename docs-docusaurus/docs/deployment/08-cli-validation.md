@@ -248,7 +248,7 @@ agentmap validate config --config configs/staging.yaml --no-cache
 ```
 🔍 Validating configuration file: agentmap_config.yaml
 ✅ Configuration file format is valid
-ℹ️ Found 5 configuration sections: paths, llm, execution, tracing, memory
+ℹ️ Found 4 configuration sections: paths, llm, execution, memory
 ✅ Configuration schema validation passed
 ℹ️ Custom agents directory will be created: ./custom_agents
 ℹ️ OpenAI API key found in environment variable OPENAI_API_KEY
@@ -271,11 +271,8 @@ agentmap validate config --config configs/staging.yaml --no-cache
   1. No API key configured for anthropic
      Field: llm.anthropic.api_key
      Suggestion: Set api_key in config or ANTHROPIC_API_KEY environment variable
-  2. Tracing enabled but project name not configured
-     Field: tracing.project
-     Suggestion: Set a meaningful project name for tracing
 
-ℹ️ Validation complete with 2 errors and 2 warnings
+ℹ️ Validation complete with 1 error and 1 warning
 ```
 
 ### Validation Checks Performed
@@ -305,7 +302,6 @@ agentmap validate config --config configs/staging.yaml --no-cache
 - Provider-specific settings
 
 **Cross-Reference Validation**:
-- Tracing configuration completeness
 - Execution policy consistency
 - Inter-section dependency verification
 

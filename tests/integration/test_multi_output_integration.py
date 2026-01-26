@@ -186,7 +186,7 @@ MultiOutputGraph,EndNode,End node,echo,Done,result|status|count,final_output,"""
     def test_multi_output_agent_with_all_fields(
         self, logger, execution_tracking_service, state_adapter_service
     ):
-        """Test multi-output agent that returns all declared fields."""
+        """Test multi-output agent that returns all declared fields with warn mode."""
         # Create agent with multi-output specification
         agent = MultiOutputTestAgent(
             name="ProcessNode",
@@ -221,12 +221,20 @@ MultiOutputGraph,EndNode,End node,echo,Done,result|status|count,final_output,"""
         assert result["status"] == "success"
         assert result["count"] == 42
 
-        # Verify extra fields are filtered out
-        assert "extra_field_1" not in result
-        assert "extra_field_2" not in result
+        # Verify extra fields are KEPT in warn mode (new behavior)
+        assert "extra_field_1" in result
+        assert "extra_field_2" in result
+        assert result["extra_field_1"] == "should_be_ignored"
+        assert result["extra_field_2"] == "also_ignored"
 
-        # Verify state updates contain exactly the declared fields
-        assert set(result.keys()) == {"result", "status", "count"}
+        # Verify state updates contain declared fields + extras
+        assert set(result.keys()) == {
+            "result",
+            "status",
+            "count",
+            "extra_field_1",
+            "extra_field_2",
+        }
 
     def test_multi_output_agent_with_missing_fields_warn_mode(
         self, logger, execution_tracking_service, state_adapter_service
@@ -261,9 +269,11 @@ MultiOutputGraph,EndNode,End node,echo,Done,result|status|count,final_output,"""
         # Missing fields should be None
         assert result["status"] is None
         assert result["count"] is None
+        # Extra field should be KEPT in warn mode (new behavior)
+        assert result["extra"] == "will_be_filtered"
 
-        # Verify correct fields in result
-        assert set(result.keys()) == {"result", "status", "count"}
+        # Verify correct fields in result (declared + extras)
+        assert set(result.keys()) == {"result", "status", "count", "extra"}
 
     def test_multi_output_agent_with_missing_fields_error_mode(
         self, logger, execution_tracking_service, state_adapter_service
@@ -295,6 +305,46 @@ MultiOutputGraph,EndNode,End node,echo,Done,result|status|count,final_output,"""
         # Error handling returns error_updates
         # Verify error was recorded
         assert execution_tracking_service.record_node_result.called
+
+    def test_multi_output_agent_with_extra_fields_ignore_mode(
+        self, logger, execution_tracking_service, state_adapter_service
+    ):
+        """Test multi-output agent with extra fields in ignore mode - extras filtered."""
+        agent = MultiOutputTestAgent(
+            name="IgnoreNode",
+            prompt="Process with extra fields",
+            context={
+                "input_fields": ["data"],
+                "output_field": "result|status|count",
+                "output_validation": "ignore",
+            },
+            logger=logger,
+            execution_tracking_service=execution_tracking_service,
+            state_adapter_service=state_adapter_service,
+        )
+
+        # Create test state
+        state = {"data": "test_input"}
+
+        # Set execution tracker
+        tracker = MagicMock()
+        agent.set_execution_tracker(tracker)
+
+        # Run agent
+        result = agent.run(state)
+
+        # Verify results
+        assert isinstance(result, dict)
+        assert result["result"] == "processed"
+        assert result["status"] == "success"
+        assert result["count"] == 42
+
+        # Verify extra fields are FILTERED in ignore mode
+        assert "extra_field_1" not in result
+        assert "extra_field_2" not in result
+
+        # Verify state updates contain only declared fields
+        assert set(result.keys()) == {"result", "status", "count"}
 
     def test_multi_output_agent_with_scalar_return_warn_mode(
         self, logger, execution_tracking_service, state_adapter_service
@@ -722,9 +772,15 @@ SingleOutput,EndNode,Done,echo,,,output_value,result,Complete,"""
 
         # Verify single-output nodes work correctly
         assert "SingleOutput" in graph_spec.graphs
-        graph = graph_spec.graphs["SingleOutput"]
+        nodes = graph_spec.graphs["SingleOutput"]
 
-        process_node = graph.nodes.get("ProcessNode")
+        # Find ProcessNode in the list
+        process_node = None
+        for node in nodes:
+            if node.name == "ProcessNode":
+                process_node = node
+                break
+
         assert process_node is not None
         assert process_node.output_field == "output_value"
         # Should NOT be split into list for single output

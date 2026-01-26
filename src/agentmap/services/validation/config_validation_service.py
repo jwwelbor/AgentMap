@@ -356,40 +356,6 @@ class ConfigValidationService:
     ) -> None:
         """Validate cross-references between different config sections."""
 
-        # Check if tracing is enabled but required fields are missing
-        tracing_config = config_data.get("tracing", {})
-        if tracing_config.get("enabled"):
-            mode = tracing_config.get("mode", "langsmith")
-
-            if mode == "langsmith":
-                api_key = tracing_config.get("langsmith_api_key")
-                env_key = os.environ.get("LANGCHAIN_API_KEY")
-
-                if not api_key and not env_key:
-                    result.add_warning(
-                        "Tracing enabled with LangSmith mode but no API key found",
-                        field="tracing.langsmith_api_key",
-                        suggestion="Set langsmith_api_key or LANGCHAIN_API_KEY environment variable",
-                    )
-
-                project = tracing_config.get("project")
-                if not project or project == "your_project_name":
-                    result.add_warning(
-                        "Tracing enabled but project name not configured",
-                        field="tracing.project",
-                        suggestion="Set a meaningful project name for tracing",
-                    )
-
-            elif mode == "local":
-                local_dir = tracing_config.get("local_directory", "./traces")
-                local_path = Path(local_dir)
-
-                if not local_path.parent.exists():
-                    result.add_warning(
-                        f"Local tracing directory parent does not exist: {local_dir}",
-                        field="tracing.local_directory",
-                    )
-
         # Check execution policy configuration
         execution_config = config_data.get("execution", {})
         if execution_config:

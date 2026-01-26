@@ -104,14 +104,6 @@ execution:
   success_policy:
     type: "all_nodes"
 
-# Local tracing for debugging
-tracing:
-  enabled: true
-  mode: "local"
-  local_exporter: "file"
-  local_directory: "./dev_traces"
-  trace_all: true
-
 # Development logging
 logging:
   version: 1
@@ -294,14 +286,6 @@ execution:
   success_policy:
     type: "all_nodes"
 
-# LangSmith integration for monitoring
-tracing:
-  enabled: true
-  mode: "langsmith"
-  project: "production-workflows"
-  langsmith_api_key: "env:LANGSMITH_API_KEY"
-  trace_all: true
-
 # Production logging with file output
 logging:
   version: 1
@@ -458,7 +442,6 @@ file:
 OPENAI_API_KEY=sk-production-openai-key-with-full-access
 ANTHROPIC_API_KEY=sk-ant-api03-production-anthropic-key
 GOOGLE_API_KEY=AIzaSy-production-google-key
-LANGSMITH_API_KEY=ls-production-langsmith-key
 
 # Cloud Storage Credentials
 AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...
@@ -608,14 +591,6 @@ execution:
   success_policy:
     type: "critical_nodes"
     critical_nodes: ["validation", "security_check", "final_output"]
-
-# Enterprise tracing
-tracing:
-  enabled: true
-  mode: "langsmith"
-  project: "enterprise-workflows"
-  langsmith_api_key: "env:LANGSMITH_API_KEY"
-  trace_all: true
 
 # Enterprise logging
 logging:
@@ -888,7 +863,6 @@ memory:
 OPENAI_API_KEY=sk-enterprise-openai-unlimited-access
 ANTHROPIC_API_KEY=sk-ant-api03-enterprise-anthropic-key
 GOOGLE_API_KEY=AIzaSy-enterprise-google-unlimited
-LANGSMITH_API_KEY=ls-enterprise-langsmith-monitoring
 
 # Azure Cloud Storage
 AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=enterprisestorage;AccountKey=...
@@ -952,7 +926,6 @@ AGENTMAP_ENTERPRISE_FEATURES=true
 # Monitoring & Observability
 METRICS_ENABLED=true
 HEALTH_CHECK_ENABLED=true
-TRACING_ENABLED=true
 AUDIT_LOGGING_ENABLED=true
 ```
 
@@ -999,10 +972,6 @@ execution:
     track_inputs: true
   success_policy:
     type: "all_nodes"
-
-# No tracing in tests
-tracing:
-  enabled: false
 
 # Test logging
 logging:
@@ -1090,12 +1059,6 @@ OPENAI_API_KEY=sk-your-openai-api-key-here
 # Firebase (for document storage)
 # FIREBASE_PROJECT_ID=your-project-id
 # FIREBASE_SERVICE_ACCOUNT=/path/to/service-account.json
-
-# =============================================================================
-# OPTIONAL: MONITORING & DEBUGGING
-# =============================================================================
-# LangSmith (for tracing and monitoring)
-# LANGSMITH_API_KEY=ls-your-langsmith-api-key
 
 # =============================================================================
 # ENVIRONMENT CONFIGURATION

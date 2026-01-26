@@ -46,17 +46,6 @@ execution:
     # When false: extra fields cause validation to fail
     allow_extra_outputs: true
 
-# Separate LangChain tracing for debugging
-tracing:
-  enabled: false
-  mode: "local"
-  local_exporter: "file"
-  local_directory: "agentmap_data/traces"
-  project: "your_project_name"  # Replace with your project name`
-  langsmith_api_key: ""
-  trace_all: true
-  trace_graphs: []
-
 # Logging configuration
 logging:
   version: 1

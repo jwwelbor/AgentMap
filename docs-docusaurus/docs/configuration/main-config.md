@@ -115,13 +115,6 @@ execution:
     critical_nodes: []
     custom_function: ""
 
-# Tracing and debugging
-tracing:
-  enabled: false
-  mode: "local"
-  project: "your_project_name"
-  langsmith_api_key: "env:LANGSMITH_API_KEY"
-
 # Logging configuration
 logging:
   version: 1
@@ -468,51 +461,6 @@ execution:
 - Use custom function to evaluate success
 - Best for: Complex business logic, custom success criteria
 
-## 📊 Tracing Configuration
-
-Configure debugging and monitoring:
-
-```yaml
-tracing:
-  enabled: false
-  
-  # Tracing mode: "local" or "langsmith"
-  mode: "local"
-  
-  # Local tracing settings
-  local_exporter: "file"    # "file" or "csv"
-  local_directory: "./traces"
-  
-  # LangSmith integration
-  project: "your_project_name"
-  langsmith_api_key: "env:LANGSMITH_API_KEY"
-  
-  # What to trace
-  trace_all: true           # Trace all workflows
-  trace_graphs: []          # Specific workflows to trace
-```
-
-### Local Tracing
-
-**File Export:**
-- Creates detailed trace files in JSON format
-- Best for: Development, detailed debugging
-
-**CSV Export:**
-- Creates CSV files with execution data
-- Best for: Data analysis, performance monitoring
-
-### LangSmith Integration
-
-```yaml
-tracing:
-  enabled: true
-  mode: "langsmith"
-  project: "production-workflows"
-  langsmith_api_key: "env:LANGSMITH_API_KEY"
-  trace_all: true
-```
-
 ## 📝 Logging Configuration
 
 Comprehensive logging setup using Python's logging configuration:
@@ -720,7 +668,6 @@ AgentMap automatically validates configuration using Pydantic models:
 
 - **Required Fields**: `csv_path` must be provided and end with `.csv`
 - **Numeric Ranges**: `temperature` must be between 0.0 and 2.0
-- **Enum Values**: `tracing.mode` must be "local" or "langsmith"
 - **Default Values**: All optional fields have sensible defaults
 
 ### Validation Examples

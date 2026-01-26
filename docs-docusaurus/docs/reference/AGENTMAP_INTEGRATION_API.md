@@ -80,7 +80,7 @@ AgentMap requires a configuration file (`agentmap_config.yaml`) in your project 
 - **Workflow locations**: Where to find your CSV workflow files
 - **LLM providers**: API keys and model settings (OpenAI, Anthropic, Google)
 - **Storage backends**: Data persistence configuration
-- **Logging and tracing**: Monitoring and debugging settings
+- **Logging**: Monitoring and debugging settings
 
 ### Quick Configuration Setup
 
@@ -108,7 +108,7 @@ For full configuration options including:
 - Storage backends (CSV, JSON, Vector databases, Firebase)
 - Memory management for conversational agents
 - Authentication and security settings
-- Performance tuning and tracing
+- Performance tuning and optimization
 
 **See: [Configuration Documentation](../configuration/)**
 

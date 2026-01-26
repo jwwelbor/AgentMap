@@ -29,7 +29,7 @@ AgentMap uses a **hierarchical configuration system** with multiple layers:
 - [ ] Configure [LLM routing](./main-config#llm-routing-configuration) for cost optimization
 - [ ] Set up [authentication](./auth-config) and security
 - [ ] Configure [messaging services](./messaging-config) for async processing
-- [ ] Configure [logging and tracing](./main-config#logging-and-tracing) for monitoring
+- [ ] Configure [logging](./main-config#logging-configuration) for monitoring
 - [ ] Review [performance settings](./main-config#performance-optimization)
 
 ### Advanced Setup (1 hour)
@@ -56,7 +56,6 @@ AgentMap uses a **hierarchical configuration system** with multiple layers:
 
 ### Enterprise Features
 - **Service Discovery**: Host application protocol integration
-- **Tracing & Monitoring**: LangSmith integration with local export options
 - **Security**: Comprehensive authentication and authorization system
 - **Scalability**: Configuration for high-throughput production deployments
 
@@ -112,11 +111,6 @@ routing:
 
 logging:
   file_path: "/var/log/agentmap/app.log"
-  
-tracing:
-  enabled: true
-  mode: "langsmith"
-  project: "production-workflows"
 ```
 
 ### Multi-Cloud Integration
@@ -183,8 +177,7 @@ icacls agentmap_config.yaml /inheritance:r /grant:r "%USERNAME%:F"
 
 ### Production Security
 - Use dedicated service accounts for cloud storage access
-- Implement proper authentication and authorization policies  
-- Enable tracing and monitoring for security auditing
+- Implement proper authentication and authorization policies
 - Regular rotation of API keys and access credentials
 
 ## 📈 Performance Configuration
@@ -197,7 +190,6 @@ icacls agentmap_config.yaml /inheritance:r /grant:r "%USERNAME%:F"
 ### Resource Management
 - Configure memory buffers based on workflow complexity
 - Set appropriate timeout and retry policies
-- Enable performance tracing for optimization
 
 ### Scalability Settings
 - Configure connection pooling for storage providers
