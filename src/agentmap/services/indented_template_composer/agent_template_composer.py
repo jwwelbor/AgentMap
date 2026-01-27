@@ -243,6 +243,20 @@ class AgentTemplateComposer:
         )
         output_field = info["output_field"] or "None specified"
 
+        # Parse output fields for multi-output scaffolding
+        output_fields = []
+        if info.get("output_field") and "|" in info["output_field"]:
+            output_fields = [
+                f.strip() for f in info["output_field"].split("|") if f.strip()
+            ]
+        elif info.get("output_field"):
+            output_fields = [info["output_field"]]
+
+        # Generate multi-output scaffolding
+        multi_output_vars = self.code_generator.generate_multi_output_scaffold(
+            output_fields
+        )
+
         # Service-related variables
         if service_reqs.protocols:
             protocols_str = ", " + ", ".join(service_reqs.protocols)
@@ -287,6 +301,10 @@ class AgentTemplateComposer:
             "node_name": info["node_name"],
             "input_fields": input_fields,
             "output_field": output_field,
+            "output_fields_list": str(output_fields),
+            "return_type_hint": multi_output_vars["return_type_hint"],
+            "return_docstring": multi_output_vars["return_docstring"],
+            "process_body": multi_output_vars["process_body"],
             "services_doc": services_doc,
             "prompt_doc": (
                 f"\n    Default prompt: {info['prompt']}" if info.get("prompt") else ""

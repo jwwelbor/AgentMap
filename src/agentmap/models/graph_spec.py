@@ -23,6 +23,7 @@ class NodeSpec:
     context: Optional[str] = None
     input_fields: List[str] = field(default_factory=list)
     output_field: Optional[str] = None
+    output_fields: List[str] = field(default_factory=list)
 
     # Edge information (raw from CSV)
     # Support both single target (str) and multiple targets (list[str]) for parallel execution
@@ -65,6 +66,14 @@ class NodeSpec:
             return [edge_value]
         else:
             return edge_value
+
+    def is_multi_output(self) -> bool:
+        """Check if node declares multiple output fields.
+
+        Returns:
+            True if output_fields list contains more than one field, False otherwise
+        """
+        return len(self.output_fields) > 1
 
 
 @dataclass

@@ -32,8 +32,8 @@ Runtime modification of application behavior
 ### Authentication & Security
 JWT secrets, API keys, and security settings
 
-### Monitoring & Tracing
-LangSmith, logging, and debugging configuration
+### Monitoring
+Logging and debugging configuration
 
 ### Performance & Optimization
 Connection limits, timeouts, and resource settings
@@ -293,21 +293,7 @@ RATE_LIMIT_REQUESTS_PER_MINUTE=60
 RATE_LIMIT_BURST_SIZE=10
 ```
 
-## 📊 Monitoring & Tracing
-
-### LangSmith Configuration
-
-```bash
-# LangSmith tracing
-LANGSMITH_API_KEY=ls_1234567890abcdef1234567890abcdef
-LANGSMITH_PROJECT=production-workflows
-LANGSMITH_ENDPOINT=https://api.smith.langchain.com
-
-# Tracing configuration
-AGENTMAP_TRACING_ENABLED=true
-AGENTMAP_TRACING_MODE=langsmith
-AGENTMAP_TRACE_ALL=true
-```
+## 📊 Monitoring
 
 ### Logging Configuration
 
@@ -674,5 +660,4 @@ validation:
     - ANTHROPIC_API_KEY
   optional_variables:
     - REDIS_URL
-    - LANGSMITH_API_KEY
 ```

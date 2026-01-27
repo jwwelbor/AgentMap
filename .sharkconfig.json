@@ -1,0 +1,310 @@
+{
+  "color_enabled": true,
+  "default_agent": null,
+  "default_epic": null,
+  "json_output": false,
+  "patterns": {
+    "epic": {
+      "file": [
+        "^epic\\.md$"
+      ],
+      "folder": [
+        "^E(?P<number>\\d{2})-(?P<slug>[a-z0-9-]+)$",
+        "^(?P<epic_id>tech-debt|bugs|change-cards)$"
+      ],
+      "generation": {
+        "format": "E{number:02d}-{slug}"
+      }
+    },
+    "feature": {
+      "file": [
+        "^prd\\.md$",
+        "^PRD_F(?P<number>\\d{2})-(?P<slug>.+)\\.md$",
+        "^(?P<slug>[a-z0-9-]+)\\.md$"
+      ],
+      "folder": [
+        "^E(?P<epic_num>\\d{2})-F(?P<number>\\d{2})-(?P<slug>[a-z0-9-]+)$",
+        "^F(?P<number>\\d{2})-(?P<slug>[a-z0-9-]+)$"
+      ],
+      "generation": {
+        "format": "E{epic:02d}-F{number:02d}-{slug}"
+      }
+    },
+    "task": {
+      "file": [
+        "^T-E(?P<epic_num>\\d{2})-F(?P<feature_num>\\d{2})-(?P<number>\\d{3}).*\\.md$",
+        "^(?P<number>\\d{3})-(?P<slug>.+)\\.md$",
+        "^(?P<slug>.+)\\.prp\\.md$"
+      ],
+      "folder": [],
+      "generation": {
+        "format": "T-E{epic:02d}-F{feature:02d}-{number:03d}.md"
+      }
+    }
+  },
+  "special_statuses": {
+    "_blocked_": [
+      "blocked",
+      "on_hold"
+    ],
+    "_complete_": [
+      "completed",
+      "cancelled"
+    ],
+    "_start_": [
+      "draft",
+      "ready_for_development"
+    ]
+  },
+  "status_flow": {
+    "blocked": [
+      "ready_for_development",
+      "ready_for_refinement_ba",
+      "cancelled"
+    ],
+    "cancelled": [],
+    "changes_requested": [
+      "ready_for_code_review",
+      "in_development",
+      "on_hold"
+    ],
+    "completed": [],
+    "draft": [
+      "ready_for_refinement_ba",
+      "cancelled",
+      "on_hold"
+    ],
+    "in_approval": [
+      "completed",
+      "ready_for_qa",
+      "ready_for_development",
+      "ready_for_refinement_ba",
+      "on_hold"
+    ],
+    "in_code_review": [
+      "ready_for_qa",
+      "changes_requested",
+      "in_development",
+      "ready_for_refinement_ba",
+      "on_hold"
+    ],
+    "in_development": [
+      "ready_for_code_review",
+      "ready_for_refinement_ba",
+      "blocked",
+      "on_hold"
+    ],
+    "in_qa": [
+      "ready_for_approval",
+      "qa_failed",
+      "in_development",
+      "ready_for_refinement_ba",
+      "blocked",
+      "on_hold"
+    ],
+    "in_refinement_ba": [
+      "ready_for_refinement_tech",
+      "draft",
+      "blocked",
+      "on_hold"
+    ],
+    "in_refinement_tech": [
+      "ready_for_development",
+      "draft",
+      "blocked",
+      "on_hold"
+    ],
+    "on_hold": [
+      "ready_for_refinement_ba",
+      "ready_for_development",
+      "cancelled"
+    ],
+    "qa_failed": [
+      "ready_for_code_review",
+      "in_development",
+      "on_hold"
+    ],
+    "ready_for_approval": [
+      "in_approval",
+      "on_hold"
+    ],
+    "ready_for_code_review": [
+      "in_code_review",
+      "in_development",
+      "on_hold"
+    ],
+    "ready_for_development": [
+      "in_development",
+      "ready_for_refinement_ba",
+      "cancelled",
+      "on_hold"
+    ],
+    "ready_for_qa": [
+      "in_qa",
+      "on_hold"
+    ],
+    "ready_for_refinement_ba": [
+      "in_refinement_ba",
+      "on_hold"
+    ],
+    "ready_for_refinement_tech": [
+      "in_refinement_tech",
+      "on_hold"
+    ]
+  },
+  "status_flow_version": "1.0",
+  "status_metadata": {
+    "blocked": {
+      "blocks_feature": true,
+      "color": "red",
+      "description": "Temporarily blocked by external dependency",
+      "phase": "any",
+      "progress_weight": 0,
+      "responsibility": "none"
+    },
+    "cancelled": {
+      "blocks_feature": false,
+      "color": "gray",
+      "description": "Task abandoned or deprecated",
+      "phase": "done",
+      "progress_weight": 0,
+      "responsibility": "none"
+    },
+    "changes_requested": {
+      "blocks_feature": false,
+      "color": "orange",
+      "description": "Code review changes requested",
+      "phase": "development",
+      "progress_weight": 0.6,
+      "responsibility": "agent"
+    },
+    "completed": {
+      "blocks_feature": false,
+      "color": "white",
+      "description": "Task finished and approved",
+      "phase": "done",
+      "progress_weight": 1,
+      "responsibility": "none"
+    },
+    "draft": {
+      "blocks_feature": false,
+      "color": "gray",
+      "description": "Task created but not yet refined",
+      "phase": "planning",
+      "progress_weight": 0,
+      "responsibility": "none"
+    },
+    "in_approval": {
+      "blocks_feature": false,
+      "color": "purple",
+      "description": "Under final review",
+      "phase": "approval",
+      "progress_weight": 0.95,
+      "responsibility": "human"
+    },
+    "in_code_review": {
+      "blocks_feature": false,
+      "color": "magenta",
+      "description": "Under code review",
+      "phase": "review",
+      "progress_weight": 0.8,
+      "responsibility": "agent"
+    },
+    "in_development": {
+      "blocks_feature": false,
+      "color": "yellow",
+      "description": "Code implementation in progress",
+      "phase": "development",
+      "progress_weight": 0.5,
+      "responsibility": "agent"
+    },
+    "in_qa": {
+      "blocks_feature": false,
+      "color": "green",
+      "description": "Being tested",
+      "phase": "qa",
+      "progress_weight": 0.85,
+      "responsibility": "qa_team"
+    },
+    "in_refinement_ba": {
+      "blocks_feature": false,
+      "color": "cyan",
+      "description": "Under business analysis",
+      "phase": "planning",
+      "progress_weight": 0.1,
+      "responsibility": "human"
+    },
+    "in_refinement_tech": {
+      "blocks_feature": false,
+      "color": "blue",
+      "description": "Under technical review",
+      "phase": "planning",
+      "progress_weight": 0.2,
+      "responsibility": "human"
+    },
+    "on_hold": {
+      "blocks_feature": false,
+      "color": "orange",
+      "description": "Intentionally paused",
+      "phase": "any",
+      "progress_weight": 0,
+      "responsibility": "none"
+    },
+    "qa_failed": {
+      "blocks_feature": false,
+      "color": "orange",
+      "description": "QA testing failed",
+      "phase": "development",
+      "progress_weight": 0.5,
+      "responsibility": "agent"
+    },
+    "ready_for_approval": {
+      "blocks_feature": true,
+      "color": "cyan",
+      "description": "Ready for final approval",
+      "phase": "approval",
+      "progress_weight": 0.9,
+      "responsibility": "none"
+    },
+    "ready_for_code_review": {
+      "blocks_feature": true,
+      "color": "magenta",
+      "description": "Awaiting code review",
+      "phase": "review",
+      "progress_weight": 0.75,
+      "responsibility": "human"
+    },
+    "ready_for_development": {
+      "blocks_feature": false,
+      "color": "orange",
+      "description": "Ready for development",
+      "phase": "planning",
+      "progress_weight": 0.25,
+      "responsibility": "none"
+    },
+    "ready_for_qa": {
+      "blocks_feature": false,
+      "color": "cyan",
+      "description": "Ready for QA testing",
+      "phase": "qa",
+      "progress_weight": 0.85,
+      "responsibility": "none"
+    },
+    "ready_for_refinement_ba": {
+      "blocks_feature": false,
+      "color": "cyan",
+      "description": "Awaiting business analysis",
+      "phase": "planning",
+      "progress_weight": 0.05,
+      "responsibility": "human"
+    },
+    "ready_for_refinement_tech": {
+      "blocks_feature": false,
+      "color": "blue",
+      "description": "Awaiting technical review",
+      "phase": "planning",
+      "progress_weight": 0.15,
+      "responsibility": "human"
+    }
+  }
+}

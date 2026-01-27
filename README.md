@@ -42,7 +42,7 @@ This creates three files in your current directory:
 
 | File | Purpose |
 |------|---------|
-| `agentmap_config.yaml` | Main configuration (LLM providers, paths, memory, tracing) |
+| `agentmap_config.yaml` | Main configuration (LLM providers, paths, memory, execution) |
 | `agentmap_config_storage.yaml` | Storage configuration (CSV, JSON, vector DBs, cloud storage) |
 | `hello_world.csv` | Sample workflow to get started |
 
@@ -96,7 +96,6 @@ agentmap run hello_world.csv --state '{"name": "Alice"}' --pretty
 | `llm` | LLM provider settings (API keys, models, parameters) |
 | `memory` | Conversation memory settings |
 | `execution` | Tracking and success policies |
-| `tracing` | Execution tracing (local or LangSmith) |
 | `routing` | Intelligent LLM routing configuration |
 | `logging` | Log levels and output configuration |
 

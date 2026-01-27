@@ -78,6 +78,20 @@ class BaseAgent:
         if len(self.input_fields) == 1 and self.input_fields[0].find("|") != -1:
             self.input_fields = str(self.input_fields[0]).split("|")
 
+        # Parse output_field into output_fields list for multi-output support
+        # Store both raw and parsed values for backward compatibility
+        if self.output_field and "|" in self.output_field:
+            # Pipe-delimited: split and strip whitespace
+            self.output_fields = [
+                f.strip() for f in self.output_field.split("|") if f.strip()
+            ]
+        elif self.output_field:
+            # Single output field: wrap in list
+            self.output_fields = [self.output_field]
+        else:
+            # No output field specified
+            self.output_fields = []
+
         # Infrastructure services (required) - only core services ALL agents need
         self._logger = logger
 
@@ -272,16 +286,31 @@ class BaseAgent:
                 )
                 return state_updates
 
-            # NORMAL CASE: Return only the output field
-            if self.output_field and output is not None:
-                self.log_debug(f"Set output field '{self.output_field}' = {output}")
-                end_time = time.time()
-                duration = end_time - start_time
-                self.log_trace(
-                    f"\n*** AGENT {self.name} RUN COMPLETED [{execution_id}] in {duration:.4f}s ***"
-                )
-                # Return only the updated field (partial update pattern)
-                return {self.output_field: output}
+            # NORMAL CASE: Handle single or multiple output fields
+            if self.output_fields and output is not None:
+                if len(self.output_fields) > 1:
+                    # MULTI-OUTPUT: Validate and filter dict return
+                    state_updates = self._validate_multi_output(output)
+                    self.log_debug(
+                        f"Multi-output: updating fields {list(state_updates.keys())}"
+                    )
+                    end_time = time.time()
+                    duration = end_time - start_time
+                    self.log_trace(
+                        f"\n*** AGENT {self.name} RUN COMPLETED [{execution_id}] in {duration:.4f}s ***"
+                    )
+                    return state_updates
+                else:
+                    # SINGLE OUTPUT: Existing behavior
+                    self.log_debug(
+                        f"Set output field '{self.output_fields[0]}' = {output}"
+                    )
+                    end_time = time.time()
+                    duration = end_time - start_time
+                    self.log_trace(
+                        f"\n*** AGENT {self.name} RUN COMPLETED [{execution_id}] in {duration:.4f}s ***"
+                    )
+                    return {self.output_fields[0]: output}
 
             # No output field - return empty dict (no updates)
             end_time = time.time()
@@ -434,6 +463,7 @@ class BaseAgent:
             "configuration": {
                 "input_fields": self.input_fields,
                 "output_field": self.output_field,
+                "output_fields": self.output_fields,
                 "description": self.description,
             },
         }
@@ -466,3 +496,72 @@ class BaseAgent:
             Dictionary with child-specific service info, or None
         """
         return None
+
+    def _validate_multi_output(self, output: Any) -> Dict[str, Any]:
+        """
+        Validate and filter multi-output return value.
+
+        Validates dict returns for multi-output agents, handles missing/extra
+        fields, and supports configurable validation modes (ignore/warn/error).
+
+        Args:
+            output: Value returned from process() - expected to be dict for multi-output
+
+        Returns:
+            Filtered dict containing only declared output fields
+
+        Raises:
+            ValueError: If validation mode is 'error' and validation fails
+        """
+        # Get validation mode from context or default to 'warn'
+        validation_mode = self.context.get("output_validation", "warn")
+
+        # Handle non-dict returns: wrap scalar in first output field (graceful degradation)
+        if not isinstance(output, dict):
+            msg = (
+                f"Agent {self.name} declares multiple outputs {self.output_fields} "
+                f"but returned {type(output).__name__} instead of dict. "
+                f"Assigning to first output field '{self.output_fields[0]}'."
+            )
+            if validation_mode == "error":
+                raise ValueError(msg)
+            elif validation_mode == "warn":
+                self.log_warning(msg)
+            # Return scalar wrapped in first output field only
+            return {self.output_fields[0]: output}
+
+        # Check for missing declared fields
+        missing_fields = [f for f in self.output_fields if f not in output]
+        if missing_fields:
+            msg = (
+                f"Agent {self.name} missing declared output fields: {missing_fields}. "
+                f"Returned keys: {list(output.keys())}"
+            )
+            if validation_mode == "error":
+                raise ValueError(msg)
+            elif validation_mode == "warn":
+                self.log_warning(msg)
+
+        # Handle extra fields based on validation mode
+        extra_fields = [k for k in output.keys() if k not in self.output_fields]
+        if extra_fields:
+            msg = (
+                f"Agent {self.name} returned extra fields not declared in output_fields: {extra_fields}. "
+                f"Declared fields are: {self.output_fields}."
+            )
+            if validation_mode == "error":
+                raise ValueError(msg)
+            elif validation_mode == "warn":
+                # Keep extra fields in state but warn about them
+                self.log_warning(f"{msg} Extra fields will be included in state.")
+                # Build result with declared fields + extras, adding None for missing declared fields
+                result = {k: output.get(k) for k in self.output_fields}
+                # Add the extra fields
+                for k in extra_fields:
+                    result[k] = output[k]
+                return result
+            else:  # 'ignore' mode - filter out extras silently
+                self.log_debug(f"Filtering extra output fields: {extra_fields}")
+
+        # Return only declared fields, including missing ones as None
+        return {k: output.get(k) for k in self.output_fields}

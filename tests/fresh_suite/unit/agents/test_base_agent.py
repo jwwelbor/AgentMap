@@ -823,6 +823,167 @@ class TestBaseAgent(unittest.TestCase):
         self.assertIn("output", result_from_invoke)
         self.assertEqual(len(result_from_invoke), 1)
 
+    # =============================================================================
+    # 10. Multi-Output Detection Tests
+    # =============================================================================
+
+    def test_single_output_field_stored_as_single_element_list(self):
+        """Test that single output_field is stored as list with one element."""
+        context = {
+            "input_fields": ["input"],
+            "output_field": "result",
+        }
+        agent = ConcreteAgent(
+            name="single_output_test",
+            prompt="Test",
+            context=context,
+        )
+
+        # Verify output_field is preserved as string
+        self.assertEqual(agent.output_field, "result")
+
+        # Verify output_fields list contains single element
+        self.assertIsNotNone(agent.output_fields)
+        self.assertIsInstance(agent.output_fields, list)
+        self.assertEqual(len(agent.output_fields), 1)
+        self.assertEqual(agent.output_fields, ["result"])
+
+    def test_pipe_delimited_output_field_parsed_into_list(self):
+        """Test that pipe-delimited output_field is parsed into output_fields list."""
+        context = {
+            "input_fields": ["input"],
+            "output_field": "result1 | result2 | result3",
+        }
+        agent = ConcreteAgent(
+            name="multi_output_test",
+            prompt="Test",
+            context=context,
+        )
+
+        # Verify raw output_field is preserved for backward compatibility
+        self.assertEqual(agent.output_field, "result1 | result2 | result3")
+
+        # Verify output_fields list is parsed correctly
+        self.assertIsNotNone(agent.output_fields)
+        self.assertIsInstance(agent.output_fields, list)
+        self.assertEqual(len(agent.output_fields), 3)
+        self.assertEqual(agent.output_fields, ["result1", "result2", "result3"])
+
+    def test_pipe_delimited_output_field_with_whitespace_trimmed(self):
+        """Test that whitespace around pipe-delimited fields is trimmed."""
+        context = {
+            "input_fields": ["input"],
+            "output_field": "  field1  |  field2  |  field3  ",
+        }
+        agent = ConcreteAgent(
+            name="whitespace_test",
+            prompt="Test",
+            context=context,
+        )
+
+        # Verify raw output_field is preserved
+        self.assertEqual(agent.output_field, "  field1  |  field2  |  field3  ")
+
+        # Verify output_fields are trimmed
+        self.assertEqual(agent.output_fields, ["field1", "field2", "field3"])
+
+    def test_pipe_delimited_output_field_empty_segments_ignored(self):
+        """Test that empty segments in pipe-delimited output_field are ignored."""
+        context = {
+            "input_fields": ["input"],
+            "output_field": "field1 | | field2 |  | field3",
+        }
+        agent = ConcreteAgent(
+            name="empty_segments_test",
+            prompt="Test",
+            context=context,
+        )
+
+        # Verify raw output_field is preserved
+        self.assertEqual(agent.output_field, "field1 | | field2 |  | field3")
+
+        # Verify empty segments are filtered out
+        self.assertEqual(agent.output_fields, ["field1", "field2", "field3"])
+
+    def test_no_output_field_results_empty_list(self):
+        """Test that when output_field is None, output_fields is empty list."""
+        context = {
+            "input_fields": ["input"],
+        }
+        agent = ConcreteAgent(
+            name="no_output_test",
+            prompt="Test",
+            context=context,
+        )
+
+        # Verify output_field is None
+        self.assertIsNone(agent.output_field)
+
+        # Verify output_fields is empty list
+        self.assertEqual(agent.output_fields, [])
+
+    def test_output_field_with_single_pipe_no_split(self):
+        """Test that output_field with pipe but only spaces is handled correctly."""
+        context = {
+            "input_fields": ["input"],
+            "output_field": "only_one_field",
+        }
+        agent = ConcreteAgent(
+            name="single_no_pipe_test",
+            prompt="Test",
+            context=context,
+        )
+
+        # Verify single field without pipe is stored correctly
+        self.assertEqual(agent.output_field, "only_one_field")
+        self.assertEqual(agent.output_fields, ["only_one_field"])
+
+    def test_backward_compatibility_output_field_preserved(self):
+        """Test backward compatibility: output_field is preserved unchanged."""
+        context = {
+            "input_fields": ["input"],
+            "output_field": "original | format | preserved",
+        }
+        agent = ConcreteAgent(
+            name="backward_compat_test",
+            prompt="Test",
+            context=context,
+        )
+
+        # Verify that original output_field is preserved for debugging/logging
+        self.assertEqual(agent.output_field, "original | format | preserved")
+
+        # Also verify parsed output_fields exist
+        self.assertIsNotNone(agent.output_fields)
+        self.assertEqual(len(agent.output_fields), 3)
+
+    def test_service_info_includes_output_fields(self):
+        """Test that service info includes output_fields when available."""
+        context = {
+            "input_fields": ["input1", "input2"],
+            "output_field": "result1 | result2",
+            "description": "Test agent",
+        }
+        agent = ConcreteAgent(
+            name="service_info_test",
+            prompt="Test",
+            context=context,
+            logger=self.mock_logger,
+            execution_tracking_service=self.mock_execution_tracking_service,
+            state_adapter_service=self.mock_state_adapter_service,
+        )
+
+        service_info = agent.get_service_info()
+
+        # Verify output_fields is in configuration
+        config = service_info["configuration"]
+        self.assertIn("output_field", config)
+        self.assertEqual(config["output_field"], "result1 | result2")
+
+        # Verify output_fields list is also in configuration
+        self.assertIn("output_fields", config)
+        self.assertEqual(config["output_fields"], ["result1", "result2"])
+
 
 if __name__ == "__main__":
     unittest.main()

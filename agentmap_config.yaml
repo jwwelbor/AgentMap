@@ -38,17 +38,6 @@ execution:
     critical_nodes: []
     custom_function: ""
 
-# Separate LangChain tracing for debugging
-tracing:
-  enabled: false
-  mode: "local"
-  local_exporter: "file"
-  local_directory: "./traces"
-  project: "your_project_name"  # Replace with your project name`
-  langsmith_api_key: ""
-  trace_all: true
-  trace_graphs: []
-
 # Logging configuration
 logging:
   version: 1

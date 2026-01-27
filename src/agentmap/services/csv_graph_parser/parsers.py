@@ -204,6 +204,23 @@ class CSVRowParser:
             else []
         )
 
+        # Parse output fields (pipe-separated format, same as input_fields)
+        output_field_str = self._safe_get_field(row, "Output_Field").strip()
+        output_fields = (
+            [field.strip() for field in output_field_str.split("|") if field.strip()]
+            if output_field_str
+            else []
+        )
+        # For backward compatibility:
+        # - If no valid fields after splitting, output_field is None
+        # - If exactly one field, output_field is that single field (string)
+        # - If multiple fields, output_field preserves the original string format
+        if not output_fields:
+            output_field = None
+        elif len(output_fields) == 1:
+            output_field = output_fields[0]
+        # else: output_field stays as original (set earlier)
+
         # Parse edge information - supports parallel targets
         edge = self.parse_edge_targets(self._safe_get_field(row, "Edge"))
         success_next = self.parse_edge_targets(
@@ -231,6 +248,7 @@ class CSVRowParser:
             context=context,
             input_fields=input_fields,
             output_field=output_field,
+            output_fields=output_fields,
             edge=edge,
             success_next=success_next,
             failure_next=failure_next,

@@ -93,10 +93,6 @@ ANTHROPIC_API_KEY=sk-ant-your-anthropic-key-here
 
 # Google
 GOOGLE_API_KEY=your-google-api-key-here
-
-# Optional: LangSmith for monitoring
-LANGSMITH_API_KEY=your-langsmith-key-here
-LANGCHAIN_PROJECT="your-project-name"
 ```
 
 ### Getting API Keys
@@ -197,13 +193,6 @@ routing:
   cost_optimization:
     enabled: true
     max_cost_tier: "high"
-
-# LangSmith monitoring
-tracing:
-  enabled: true
-  mode: "langsmith"
-  project: "production-workflows"
-  langsmith_api_key: "env:LANGSMITH_API_KEY"
 
 # Production logging
 logging:
@@ -479,15 +468,6 @@ logging:
 ```
 
 ## 📊 Monitoring and Observability
-
-### LangSmith Integration
-```yaml
-tracing:
-  enabled: true
-  mode: "langsmith"
-  project: "my-agentmap-project" 
-  langsmith_api_key: "env:LANGSMITH_API_KEY"
-```
 
 ### Custom Logging
 ```yaml

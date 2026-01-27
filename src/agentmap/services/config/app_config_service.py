@@ -263,6 +263,18 @@ class AppConfigService:
         """Get tracking configuration."""
         return self.get_value("execution.tracking", {})
 
+    def get_output_validation_config(self) -> Dict[str, Any]:
+        """Get output validation configuration."""
+        validation_config = self.get_value("execution.validation", {})
+
+        defaults = {
+            "multi_output_mode": "warn",  # ignore, warn, error
+            "require_all_outputs": True,
+            "allow_extra_outputs": True,
+        }
+
+        return self._merge_with_defaults(validation_config, defaults)
+
     # Authentication accessors
     def get_auth_config(self) -> Dict[str, Any]:
         """Get authentication configuration with default values."""

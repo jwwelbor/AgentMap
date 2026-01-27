@@ -115,6 +115,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         features_registry_service=_expose(_bootstrap, "features_registry_service"),
         logging_service=_expose(_core, "logging_service"),
         custom_agent_loader=_expose(_bootstrap, "custom_agent_loader"),
+        app_config_service=_expose(_core, "app_config_service"),
         llm_service=_expose(_llm, "llm_service"),
         storage_service_manager=_expose(_storage, "storage_service_manager"),
         host_protocol_configuration_service=_expose(

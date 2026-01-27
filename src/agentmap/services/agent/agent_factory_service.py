@@ -23,6 +23,7 @@ class AgentFactoryService:
         features_registry_service: FeaturesRegistryService,
         logging_service: LoggingService,
         custom_agent_loader: CustomAgentLoader,
+        app_config_service: Optional[Any] = None,
     ):
         """Initialize service with dependency injection."""
         self.features = features_registry_service
@@ -30,6 +31,7 @@ class AgentFactoryService:
         self._custom_agent_loader = (
             custom_agent_loader  # Keep for backward compatibility with tests
         )
+        self.app_config_service = app_config_service
         self._resolver = AgentClassResolver(logging_service, custom_agent_loader)
         self._builder = AgentConstructorBuilder(logging_service)
         self._validator = AgentValidator(logging_service)
@@ -119,6 +121,22 @@ class AgentFactoryService:
             "description": getattr(node, "description", ""),
             "is_custom": custom_agents and agent_type in custom_agents,
         }
+
+        # Add output validation mode from AppConfigService
+        if self.app_config_service:
+            validation_config = self.app_config_service.get_output_validation_config()
+            context["output_validation"] = validation_config.get(
+                "multi_output_mode", "warn"
+            )
+            self.logger.debug(
+                f"[AgentFactoryService] Added output_validation mode: {context['output_validation']}"
+            )
+        else:
+            # Fallback to default if config service not available
+            context["output_validation"] = "warn"
+            self.logger.debug(
+                "[AgentFactoryService] AppConfigService not available, using default output_validation: warn"
+            )
 
         if hasattr(node, "context") and node.context:
             context.update(node.context)

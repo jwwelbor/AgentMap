@@ -61,31 +61,6 @@ class ExecutionConfigModel(BaseModel):
     success_policy: Optional[SuccessPolicyConfigModel] = None
 
 
-class TracingConfigModel(BaseModel):
-    enabled: Optional[bool] = False
-    mode: Optional[str] = "langsmith"
-    local_exporter: Optional[str] = "file"
-    local_directory: Optional[str] = "./traces"
-    project: Optional[str] = "your_project_name"
-    langsmith_api_key: Optional[str] = ""
-    trace_all: Optional[bool] = False
-    trace_graphs: Optional[List[str]] = []
-
-    @field_validator("mode")
-    @classmethod
-    def valid_mode(cls, v: Optional[str]) -> Optional[str]:
-        if v and v not in ["local", "langsmith"]:
-            raise ValueError("Tracing mode must be 'local' or 'langsmith'")
-        return v
-
-    @field_validator("local_exporter")
-    @classmethod
-    def valid_exporter(cls, v: Optional[str]) -> Optional[str]:
-        if v and v not in ["file", "csv"]:
-            raise ValueError("Local exporter must be 'file' or 'csv'")
-        return v
-
-
 class ConfigModel(BaseModel):
     csv_path: Optional[str] = None
     storage_config_path: Optional[str] = None
@@ -95,7 +70,6 @@ class ConfigModel(BaseModel):
     memory: Optional[MemoryConfigModel] = None
     prompts: Optional[PromptsConfigModel] = None
     execution: Optional[ExecutionConfigModel] = None
-    tracing: Optional[TracingConfigModel] = None
 
     class Config:
         extra = "allow"
