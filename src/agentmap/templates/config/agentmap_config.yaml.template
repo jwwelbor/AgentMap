@@ -16,6 +16,13 @@ memory:
   max_token_limit: 2000
   memory_key: "conversation_memory"
 
+# Prompts configuration
+# Manage prompt templates outside of CSV cells using registry, file, or YAML references
+prompts:
+  directory: "agentmap_data/prompts"                        # root directory for prompt files
+  registry_file: "agentmap_data/prompts/registry.yaml"      # name-to-text mapping (prompt: prefix)
+  enable_cache: true                                        # cache resolved prompts in memory
+
 # Execution tracking configuration
 execution:
   # What to record during execution

@@ -1,0 +1,9 @@
+Training Module Assignment for {employee_name}
+
+Based on your role as {role} in {department}, the following training modules
+have been assigned:
+
+{training_modules}
+
+Please complete all modules by {deadline}. Track your progress in the
+onboarding portal.

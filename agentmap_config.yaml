@@ -22,7 +22,7 @@ memory:
 # Prompts configuration
 prompts:
   directory: "agentmap_data/prompts"
-  #registry_file: "prompts/registry.yaml"
+  registry_file: "agentmap_data/prompts/registry.yaml"
   enable_cache: false
 
 execution:

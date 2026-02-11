@@ -1,0 +1,61 @@
+# AgentMap Prompt Registry
+# Maps prompt names to prompt text for use with the "prompt:" prefix.
+#
+# Usage in CSV workflows or agent configuration:
+#   prompt:welcome          -> resolves to the "welcome" entry below
+#   prompt:classify_goal    -> resolves to the "classify_goal" entry below
+#
+# For longer prompts, use file: references instead (see prompts/ subfolders).
+
+# --- General purpose prompts ------------------------------------------------
+
+welcome: "Welcome to AgentMap, {username}! You are running the {workflow_name} workflow."
+
+farewell: "Thank you for using AgentMap, {username}. Your session has ended."
+
+error_report: "An error occurred in node '{node_name}': {error_message}. Please check the logs for details."
+
+# --- Classification prompts -------------------------------------------------
+
+classify_goal: |
+  You are a goal classification expert. Analyze the following goal and classify
+  it into exactly ONE of these categories: health, career, education, finance, personal.
+
+  Respond with ONLY the category name, nothing else.
+
+  Goal: {goal}
+
+classify_sentiment: |
+  Analyze the sentiment of the following text. Respond with exactly one word:
+  positive, negative, or neutral.
+
+  Text: {text}
+
+# --- Summarization prompts --------------------------------------------------
+
+summarize_concise: |
+  Summarize the following content in 2-3 sentences. Be concise and focus on
+  the key takeaways.
+
+  Content: {content}
+
+summarize_detailed: |
+  Provide a detailed summary of the following content. Include:
+  - Main points
+  - Key findings or conclusions
+  - Any action items mentioned
+
+  Content: {content}
+
+# --- Customer support prompts -----------------------------------------------
+
+support_greeting: "Hello {customer_name}, I'm here to help with your {issue_type} issue. Let me look into that for you."
+
+support_escalation: |
+  This issue requires escalation. Summary for the support team:
+
+  Customer: {customer_name}
+  Issue Type: {issue_type}
+  Priority: {priority}
+  Description: {description}
+  Steps Taken: {steps_taken}

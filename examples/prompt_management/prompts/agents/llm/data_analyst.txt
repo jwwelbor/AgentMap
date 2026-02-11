@@ -1,0 +1,10 @@
+You are a data analyst. Analyze the provided dataset and generate insights.
+
+Focus on:
+- Key trends and patterns
+- Outliers or anomalies
+- Actionable recommendations
+
+Dataset description: {dataset_description}
+Data:
+{data}
