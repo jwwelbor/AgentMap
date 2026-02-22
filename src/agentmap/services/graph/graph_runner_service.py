@@ -516,9 +516,7 @@ class GraphRunnerService:
             raw_context = self._get_raw_context(node)
             if not raw_context:
                 # Legacy path: no {workflow=...} syntax — fall back to prompt-based resolution
-                self._resolve_legacy_subgraph(
-                    node_name, node, bundle, subgraph_bundles
-                )
+                self._resolve_legacy_subgraph(node_name, node, bundle, subgraph_bundles)
                 continue
 
             # Try {workflow=...} syntax

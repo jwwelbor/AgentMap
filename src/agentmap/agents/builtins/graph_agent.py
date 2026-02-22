@@ -219,9 +219,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
             subgraph_summary = output["__execution_summary"]
 
             if parent_tracker and hasattr(parent_tracker, "record_subgraph_execution"):
-                parent_tracker.record_subgraph_execution(
-                    self.name, subgraph_summary
-                )
+                parent_tracker.record_subgraph_execution(self.name, subgraph_summary)
                 self.log_debug(
                     f"[GraphAgent] Recorded subgraph execution in parent tracker"
                 )
@@ -268,10 +266,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
         # Case 3: No mapping or direct field passthrough
         if not self.input_fields:
             # Pass entire state, filtering internal keys
-            return {
-                k: v for k, v in inputs.items()
-                if k != "subgraph_bundles"
-            }
+            return {k: v for k, v in inputs.items() if k != "subgraph_bundles"}
         else:
             # Pass only specified fields
             return {

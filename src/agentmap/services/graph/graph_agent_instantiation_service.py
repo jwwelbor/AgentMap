@@ -407,7 +407,10 @@ class GraphAgentInstantiationService:
                 f"[GraphAgentInstantiationService] Injected GraphBundleService into {node_name}"
             )
 
-        if isinstance(agent_instance, GraphRunnerCapableAgent) and self._graph_runner_service:
+        if (
+            isinstance(agent_instance, GraphRunnerCapableAgent)
+            and self._graph_runner_service
+        ):
             agent_instance.configure_graph_runner_service(self._graph_runner_service)
             self.logger.debug(
                 f"[GraphAgentInstantiationService] Injected GraphRunnerService into {node_name}"

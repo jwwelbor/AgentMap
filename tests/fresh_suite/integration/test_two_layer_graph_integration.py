@@ -147,6 +147,7 @@ TestInner,InnerDone,default,processed|data,inner_final,,,,Return inner result
         and raises RuntimeError when it's missing.
         """
         import logging
+
         from agentmap.agents.builtins.graph_agent import GraphAgent
 
         agent = GraphAgent(
