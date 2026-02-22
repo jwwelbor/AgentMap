@@ -169,6 +169,30 @@ class GraphRegistryService:
                 )
                 return None
 
+    def get_csv_path(self, csv_hash: str) -> Optional[Path]:
+        """
+        Get the original CSV file path for a given CSV hash.
+
+        Looks up any registry entry for the hash and returns the stored csv_path.
+        All entries under the same hash share the same source CSV.
+
+        Args:
+            csv_hash: SHA-256 hash of CSV content
+
+        Returns:
+            Path to the original CSV file, or None if not found or file missing
+        """
+        with self._cache_lock:
+            hash_entry = self._registry_cache.get(csv_hash)
+            if not hash_entry:
+                return None
+            first_entry = next(iter(hash_entry.values()), None)
+            if first_entry and "csv_path" in first_entry:
+                csv_path = Path(first_entry["csv_path"])
+                if csv_path.exists():
+                    return csv_path
+        return None
+
     def register(
         self,
         csv_hash: str,

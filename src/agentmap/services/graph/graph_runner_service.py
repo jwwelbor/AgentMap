@@ -710,20 +710,11 @@ class GraphRunnerService:
         if not bundle.csv_hash:
             return None
         try:
-            registry_service = self.graph_bundle_service.graph_registry_service
-            # Access the registry cache directly to find the csv_path
-            with registry_service._cache_lock:
-                hash_entry = registry_service._registry_cache.get(bundle.csv_hash)
-                if hash_entry:
-                    # Get any entry under this hash — they all share the same CSV
-                    first_entry = next(iter(hash_entry.values()), None)
-                    if first_entry and "csv_path" in first_entry:
-                        csv_path = Path(first_entry["csv_path"])
-                        if csv_path.exists():
-                            return csv_path
+            return self.graph_bundle_service.graph_registry_service.get_csv_path(
+                bundle.csv_hash
+            )
         except Exception:
-            pass
-        return None
+            return None
 
     def resume_from_checkpoint(
         self,
