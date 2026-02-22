@@ -1,32 +1,33 @@
 # agentmap/agents/builtins/graph_agent.py
 import logging
-from pathlib import Path
+import re
 from typing import Any, Dict, Optional, Tuple
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.function_resolution_service import FunctionResolutionService
-from agentmap.services.graph.graph_runner_service import GraphRunnerService
 from agentmap.services.protocols import (
     GraphBundleCapableAgent,
     GraphBundleServiceProtocol,
+    GraphRunnerCapableAgent,
+    GraphRunnerServiceProtocol,
 )
 from agentmap.services.state_adapter_service import StateAdapterService
 
-# from agentmap.utils.function_utils import import_function
 
-
-class GraphAgent(BaseAgent, GraphBundleCapableAgent):
+class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
     """
     Agent that executes a subgraph and returns its result.
 
     This agent allows for composing multiple graphs into larger workflows
     by running a subgraph as part of a parent graph's execution.
 
-    Supports flexible input/output mapping and nested execution tracking.
-    Uses GraphBundleService for efficient bundle-based subgraph execution.
+    Subgraph bundles are pre-resolved by GraphRunnerService and passed via
+    state["subgraph_bundles"][node_name]. The agent reads its bundle from
+    there, prepares input state, and delegates execution to GraphRunnerService.
 
+    Supports flexible input/output mapping and nested execution tracking.
     Implements GraphBundleCapableAgent protocol for proper service injection.
     """
 
@@ -41,17 +42,15 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
         state_adapter_service: Optional[StateAdapterService] = None,
     ):
         """
-        Initialize the graph agent with new protocol-based pattern.
+        Initialize the graph agent.
 
         Args:
             name: Name of the agent node
-            prompt: Name of the subgraph to execute
-            context: Additional context (CSV path string or config dict)
+            prompt: Subgraph name (legacy) or descriptive prompt
+            context: Additional context (may contain {workflow=...} directives)
         """
-        # Handle string context (CSV path) by converting to dict for BaseAgent
-        original_context = context
+        # Handle string context by converting to dict for BaseAgent
         if isinstance(context, str):
-            # Convert any string context to dict for BaseAgent compatibility
             context = {}
 
         super().__init__(
@@ -63,29 +62,13 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
             state_adapter_service=state_adapter_service,
         )
 
-        # The subgraph name comes from the prompt field
-        self.subgraph_name = prompt
-
-        # Business services - these will need to be injected via DI
-        # TODO: Consider creating protocols for these services in future
+        # Business services — injected via DI protocols
         self._graph_runner_service = None
         self._function_resolution_service = None
-        self._graph_bundle_service = None  # For bundle-based execution
+        self._graph_bundle_service = None
 
-        # Handle context as either string (CSV path) or dict (config)
-        if isinstance(original_context, str) and original_context.strip():
-            self.csv_path = original_context.strip()
-            self.execution_mode = "separate"  # Default: separate execution
-        elif isinstance(original_context, dict):
-            self.csv_path = original_context.get("csv_path")
-            self.execution_mode = original_context.get(
-                "execution_mode", "separate"
-            )  # "separate" or "native"
-        else:
-            self.csv_path = None
-            self.execution_mode = "separate"
+    # --- Protocol-based service configuration ---
 
-    # Business service configuration (protocol-based and legacy)
     def configure_graph_bundle_service(
         self, graph_bundle_service: GraphBundleServiceProtocol
     ) -> None:
@@ -94,7 +77,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
         self.log_debug("Graph bundle service configured")
 
     def configure_graph_runner_service(
-        self, graph_runner_service: GraphRunnerService
+        self, graph_runner_service: GraphRunnerServiceProtocol
     ) -> None:
         """Configure graph runner service for this agent."""
         self._graph_runner_service = graph_runner_service
@@ -117,7 +100,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
         return self._graph_bundle_service
 
     @property
-    def graph_runner_service(self) -> GraphRunnerService:
+    def graph_runner_service(self) -> GraphRunnerServiceProtocol:
         """Get graph runner service, raising clear error if not configured."""
         if self._graph_runner_service is None:
             raise ValueError(
@@ -134,9 +117,20 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
             )
         return self._function_resolution_service
 
+    def _pre_process(
+        self, state: Any, inputs: Dict[str, Any]
+    ) -> Tuple[Any, Dict[str, Any]]:
+        """Inject subgraph_bundles from state into inputs for process()."""
+        if isinstance(state, dict) and "subgraph_bundles" in state:
+            inputs["subgraph_bundles"] = state["subgraph_bundles"]
+        return state, inputs
+
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
-        Process the inputs by running the subgraph using bundles.
+        Process the inputs by running the subgraph using a pre-resolved bundle.
+
+        The bundle is expected in inputs["subgraph_bundles"][self.name],
+        placed there by GraphRunnerService._resolve_subgraph_bundles().
 
         Args:
             inputs: Dictionary containing input values from input_fields
@@ -144,33 +138,33 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
         Returns:
             Output from the subgraph execution
         """
-        self.log_info(f"[GraphAgent] Executing subgraph: {self.subgraph_name}")
+        self.log_info(f"[GraphAgent] Executing subgraph for node: {self.name}")
 
-        # Check service configuration first (let configuration errors bubble up)
+        # Read pre-resolved bundle from state
+        bundle = inputs.get("subgraph_bundles", {}).get(self.name)
+        if not bundle:
+            raise RuntimeError(
+                f"No pre-resolved subgraph bundle for node '{self.name}'. "
+                f"Ensure the Context column uses {{workflow=...}} syntax or "
+                f"the Prompt column names the subgraph."
+            )
+
+        self.log_debug(
+            f"[GraphAgent] Got pre-resolved bundle for '{bundle.graph_name}' "
+            f"with {len(bundle.nodes) if bundle.nodes else 0} nodes"
+        )
+
+        # Check service configuration (let configuration errors bubble up)
         graph_runner = self.graph_runner_service
-        bundle_service = self.graph_bundle_service
 
-        # Determine and prepare the initial state for the subgraph
+        # Prepare the initial state for the subgraph
         subgraph_state = self._prepare_subgraph_state(inputs)
 
         try:
-            # Get or create the bundle for the subgraph
-            bundle = self._get_subgraph_bundle()
-
-            if not bundle:
-                raise RuntimeError(
-                    f"Failed to get or create bundle for subgraph '{self.subgraph_name}'"
-                )
-
-            self.log_debug(
-                f"[GraphAgent] Got bundle for subgraph '{self.subgraph_name}' "
-                f"with {len(bundle.nodes) if bundle.nodes else 0} nodes"
-            )
-
             # Get parent tracker if available for nested tracking
             parent_tracker = getattr(self, "current_execution_tracker", None)
 
-            # Execute the subgraph using the bundle (not run_graph)
+            # Execute the subgraph
             result = graph_runner.run(
                 bundle=bundle,
                 initial_state=subgraph_state,
@@ -179,17 +173,27 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
                 parent_graph_name=getattr(self, "parent_graph_name", None),
             )
 
+            # Extract final_state from ExecutionResult
+            from agentmap.models.execution.result import ExecutionResult
+
+            if isinstance(result, ExecutionResult):
+                if not result.success:
+                    self.log_error(
+                        f"[GraphAgent] Subgraph '{bundle.graph_name}' failed: {result.error}"
+                    )
+                    return {
+                        "error": f"Subgraph '{bundle.graph_name}' failed: {result.error}",
+                        "last_action_success": False,
+                    }
+                result = result.final_state or {}
+
             self.log_info(f"[GraphAgent] Subgraph execution completed successfully")
-
-            # Process the result based on output field mapping
-            processed_result = self._process_subgraph_result(result)
-
-            return processed_result
+            return self._process_subgraph_result(result)
 
         except Exception as e:
             self.log_error(f"[GraphAgent] Error executing subgraph: {str(e)}")
             return {
-                "error": f"Failed to execute subgraph '{self.subgraph_name}': {str(e)}",
+                "error": f"Failed to execute subgraph for node '{self.name}': {str(e)}",
                 "last_action_success": False,
             }
 
@@ -216,7 +220,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
 
             if parent_tracker and hasattr(parent_tracker, "record_subgraph_execution"):
                 parent_tracker.record_subgraph_execution(
-                    self.subgraph_name, subgraph_summary
+                    self.name, subgraph_summary
                 )
                 self.log_debug(
                     f"[GraphAgent] Recorded subgraph execution in parent tracker"
@@ -227,13 +231,11 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
                 output = {k: v for k, v in output.items() if k != "__execution_summary"}
 
         # Set success based on subgraph result and use state_updates pattern
-        # for LangGraph 1.x compatibility
         if isinstance(output, dict):
             graph_success = output.get(
                 "graph_success", output.get("last_action_success", True)
             )
 
-            # Use state_updates pattern to ensure state changes are returned
             state_updates = {
                 self.output_field: output,
                 "last_action_success": graph_success,
@@ -246,6 +248,8 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
     def _prepare_subgraph_state(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
         Prepare the initial state for the subgraph based on input mappings.
+
+        Filters out internal keys (like subgraph_bundles) from the subgraph state.
 
         Args:
             inputs: Input values from the parent graph
@@ -263,14 +267,17 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
 
         # Case 3: No mapping or direct field passthrough
         if not self.input_fields:
-            # Pass entire state
-            return inputs.copy()
+            # Pass entire state, filtering internal keys
+            return {
+                k: v for k, v in inputs.items()
+                if k != "subgraph_bundles"
+            }
         else:
             # Pass only specified fields
             return {
                 field: inputs.get(field)
                 for field in self.input_fields
-                if field in inputs
+                if field in inputs and field != "subgraph_bundles"
             }
 
     def _apply_field_mapping(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
@@ -288,7 +295,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
                     )
             else:
                 # Direct passthrough
-                if field_spec in inputs:
+                if field_spec in inputs and field_spec != "subgraph_bundles":
                     subgraph_state[field_spec] = inputs[field_spec]
                     self.log_debug(f"[GraphAgent] Passed through {field_spec}")
 
@@ -303,88 +310,24 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
             self.log_warning(
                 f"[GraphAgent] Invalid function reference: {self.input_fields[0]}"
             )
-            return inputs.copy()
+            return {k: v for k, v in inputs.items() if k != "subgraph_bundles"}
 
         try:
-            # Import the mapping function
             mapping_func = self.function_resolution_service.import_function(func_ref)
-
-            # Execute the function to transform the state
             mapped_state = mapping_func(inputs)
 
-            # Ensure we got a dictionary back
             if not isinstance(mapped_state, dict):
                 self.log_warning(
                     f"[GraphAgent] Mapping function {func_ref} returned non-dict: {type(mapped_state)}"
                 )
-                return inputs.copy()
+                return {k: v for k, v in inputs.items() if k != "subgraph_bundles"}
 
             self.log_debug(f"[GraphAgent] Applied function mapping: {func_ref}")
             return mapped_state
 
         except Exception as e:
             self.log_error(f"[GraphAgent] Error in mapping function: {str(e)}")
-            return inputs.copy()
-
-    def _get_subgraph_bundle(self) -> Optional[GraphBundle]:
-        """
-        Get or create the bundle for the subgraph execution.
-
-        Determines the CSV path from either:
-        1. self.csv_path (external CSV subgraph)
-        2. Current bundle's csv_path (embedded subgraph in same CSV)
-
-        Returns:
-            GraphBundle for the subgraph, or None if failed
-        """
-        bundle_service = self.graph_bundle_service
-
-        # Determine CSV path
-        if self.csv_path:
-            # External CSV specified in context
-            csv_path = Path(self.csv_path)
-            self.log_debug(
-                f"[GraphAgent] Using external CSV path: {csv_path} "
-                f"for subgraph '{self.subgraph_name}'"
-            )
-        else:
-            # Try to get CSV path from current bundle (embedded subgraph)
-            # This would be set by the parent graph runner when it creates this agent
-            current_bundle = getattr(self, "current_bundle", None)
-            if current_bundle and hasattr(current_bundle, "csv_path"):
-                csv_path = Path(current_bundle.csv_path)
-                self.log_debug(
-                    f"[GraphAgent] Using current bundle's CSV path: {csv_path} "
-                    f"for embedded subgraph '{self.subgraph_name}'"
-                )
-            else:
-                # Fallback: try to get from parent context if available
-                parent_csv_path = getattr(self, "parent_csv_path", None)
-                if parent_csv_path:
-                    csv_path = Path(parent_csv_path)
-                    self.log_debug(
-                        f"[GraphAgent] Using parent CSV path: {csv_path} "
-                        f"for subgraph '{self.subgraph_name}'"
-                    )
-                else:
-                    self.log_error(
-                        f"[GraphAgent] No CSV path available for subgraph '{self.subgraph_name}'"
-                    )
-                    return None
-
-        # Get or create bundle using the service
-        try:
-            bundle, _ = bundle_service.get_or_create_bundle(
-                csv_path=csv_path,
-                graph_name=self.subgraph_name,
-                config_path=getattr(self, "config_path", None),
-            )
-            return bundle
-        except Exception as e:
-            self.log_error(
-                f"[GraphAgent] Failed to get bundle for subgraph '{self.subgraph_name}': {e}"
-            )
-            return None
+            return {k: v for k, v in inputs.items() if k != "subgraph_bundles"}
 
     def _process_subgraph_result(self, result: Dict[str, Any]) -> Any:
         """
@@ -410,5 +353,5 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent):
         elif self.output_field and self.output_field in result:
             return result[self.output_field]
 
-        # Default: return entire result (your current behavior)
+        # Default: return entire result
         return result

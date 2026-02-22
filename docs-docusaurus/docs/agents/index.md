@@ -9,12 +9,6 @@ Explore the comprehensive collection of pre-built agents ready to use in your wo
 
 **[View Built-in Agents →](built-in-agents.md)**
 
-Key built-in agents include:
-- **Research Agent**: Conducts web searches and information gathering
-- **Summary Agent**: Creates concise summaries of content
-- **Analysis Agent**: Performs data analysis and insights
-- **Validation Agent**: Validates data and workflow outputs
-
 ### Custom Agents
 Learn how to create your own custom agents tailored to your specific use cases.
 

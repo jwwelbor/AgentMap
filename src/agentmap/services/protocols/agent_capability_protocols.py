@@ -13,6 +13,7 @@ from agentmap.services.protocols.service_protocols import (
     BlobStorageServiceProtocol,
     EmbeddingServiceProtocol,
     GraphBundleServiceProtocol,
+    GraphRunnerServiceProtocol,
     LLMServiceProtocol,
     MessagingServiceProtocol,
     PromptManagerServiceProtocol,
@@ -37,6 +38,17 @@ class GraphBundleCapableAgent(Protocol):
         self, graph_bundle_service: GraphBundleServiceProtocol
     ) -> None:
         """Configure graph bundle service for this agent."""
+        ...
+
+
+@runtime_checkable
+class GraphRunnerCapableAgent(Protocol):
+    """Protocol for agents that can execute subgraphs via graph runner service."""
+
+    def configure_graph_runner_service(
+        self, graph_runner_service: GraphRunnerServiceProtocol
+    ) -> None:
+        """Configure graph runner service for this agent."""
         ...
 
 

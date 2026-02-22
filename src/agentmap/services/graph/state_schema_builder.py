@@ -17,6 +17,7 @@ class StateSchemaBuilder:
         "last_action_success",
         "graph_success",
         "errors",
+        "subgraph_bundles",
     }
 
     def __init__(

@@ -25,6 +25,7 @@ from agentmap.services.logging_service import LoggingService
 from agentmap.services.prompt_manager_service import PromptManagerService
 from agentmap.services.protocols import (
     GraphBundleCapableAgent,
+    GraphRunnerCapableAgent,
     ToolCapableAgent,
 )
 from agentmap.services.state_adapter_service import StateAdapterService
@@ -73,6 +74,7 @@ class GraphAgentInstantiationService:
         self.graph_bundle_service = graph_bundle_service
         self.declaration_registry = declaration_registry_service
         self.logger = logging_service.get_class_logger(self)
+        self._graph_runner_service = None  # Late-bound to avoid circular dependency
 
         # Initialize helper services
         self._tool_loading_service = GraphToolLoadingService(logging_service)
@@ -300,9 +302,6 @@ class GraphAgentInstantiationService:
             agent_instance, node_name, execution_tracker, node.agent_type, bundle
         )
 
-        # Step 2a: Inject GraphBundleService if agent supports it
-        self._inject_graph_bundle_service(agent_instance, node_name)
-
         # Phase 3: Tool Binding - Configure tools for ToolCapableAgent instances
         self._configure_tools(bundle, agent_instance, node_name)
 
@@ -367,7 +366,11 @@ class GraphAgentInstantiationService:
         bundle: Optional[GraphBundle] = None,
     ) -> None:
         """
-        Inject services into an agent instance.
+        Inject all services into an agent instance.
+
+        Handles both the generic injection pipeline (LLM, storage, etc.) and
+        graph-specific services (GraphBundleService, GraphRunnerService) that
+        use the same protocol-based pattern.
 
         Args:
             agent_instance: Agent to configure
@@ -397,19 +400,31 @@ class GraphAgentInstantiationService:
             )
         )
 
-    def _inject_graph_bundle_service(self, agent_instance: Any, node_name: str) -> None:
-        """
-        Inject GraphBundleService if agent supports it.
-
-        Args:
-            agent_instance: Agent to configure
-            node_name: Name of the node for logging
-        """
+        # Graph-specific services (late-bound to avoid circular dependency)
         if isinstance(agent_instance, GraphBundleCapableAgent):
             agent_instance.configure_graph_bundle_service(self.graph_bundle_service)
             self.logger.debug(
                 f"[GraphAgentInstantiationService] Injected GraphBundleService into {node_name}"
             )
+
+        if isinstance(agent_instance, GraphRunnerCapableAgent) and self._graph_runner_service:
+            agent_instance.configure_graph_runner_service(self._graph_runner_service)
+            self.logger.debug(
+                f"[GraphAgentInstantiationService] Injected GraphRunnerService into {node_name}"
+            )
+
+    def set_graph_runner_service(self, graph_runner_service: Any) -> None:
+        """
+        Late-bind the graph runner service to avoid circular dependency.
+
+        GraphRunnerService depends on this service, so it cannot be injected
+        at construction time. Instead, GraphRunnerService calls this method
+        after its own initialization.
+        """
+        self._graph_runner_service = graph_runner_service
+        self.logger.debug(
+            "[GraphAgentInstantiationService] Graph runner service registered"
+        )
 
     def _configure_tools(
         self, bundle: GraphBundle, agent_instance: Any, node_name: str

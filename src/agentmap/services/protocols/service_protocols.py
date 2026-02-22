@@ -190,6 +190,20 @@ class GraphBundleServiceProtocol(Protocol):
 
 
 @runtime_checkable
+class GraphRunnerServiceProtocol(Protocol):
+    """Protocol for graph runner service interface used by agents."""
+
+    def run(
+        self,
+        bundle: Any,  # GraphBundle
+        initial_state: Optional[dict] = None,
+        **kwargs,
+    ) -> Any:  # ExecutionResult
+        """Execute a graph bundle and return the result."""
+        ...
+
+
+@runtime_checkable
 class PromptManagerServiceProtocol(Protocol):
     """Protocol for prompt manager service interface used by agents."""
 
