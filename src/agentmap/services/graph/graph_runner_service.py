@@ -12,6 +12,7 @@ Approach is configurable via execution.use_direct_import_agents setting.
 Refactored: Large methods extracted to dedicated modules in runner/ package.
 """
 
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -100,6 +101,10 @@ class GraphRunnerService:
             interaction_handler_service=interaction_handler_service,
         )
 
+        # Register self with instantiation service for GraphAgent injection
+        # (late-bound to avoid circular dependency)
+        self.graph_instantiation.set_graph_runner_service(self)
+
         # Check configuration for execution approach
         self.logger.info("GraphRunnerService initialized")
 
@@ -176,6 +181,9 @@ class GraphRunnerService:
                 self.logger.debug(
                     f"[GraphRunnerService] Created root tracker for graph: {graph_name}"
                 )
+
+            # Phase 3.5: Pre-resolve subgraph bundles for GraphAgent nodes
+            self._resolve_subgraph_bundles(bundle, initial_state)
 
             # Phase 4: Instantiate - create and configure agent instances
             self.logger.debug(
@@ -474,6 +482,239 @@ class GraphRunnerService:
                 total_duration=0.0,
                 error=str(e),
             )
+
+    # --- Subgraph bundle pre-resolution ---
+
+    _WORKFLOW_RE = re.compile(r"\{workflow=([^}]+)\}")
+    _WORKFLOW_FIELD_RE = re.compile(r"\{workflow_field=([^}]+)\}")
+
+    def _resolve_subgraph_bundles(
+        self,
+        bundle: GraphBundle,
+        initial_state: Dict[str, Any],
+    ) -> None:
+        """
+        Scan bundle nodes for graph-type agents and pre-resolve their subgraph bundles.
+
+        Supported context syntaxes:
+            {workflow=::InnerGraph}          — embedded subgraph in same CSV
+            {workflow=other.csv::OtherGraph} — external CSV subgraph
+            {workflow_field=state_key}       — dynamic: reads initial_state[key]
+
+        Resolved bundles are stored in initial_state["subgraph_bundles"][node_name].
+        """
+        if not bundle.nodes:
+            return
+
+        subgraph_bundles: Dict[str, GraphBundle] = {}
+
+        for node_name, node in bundle.nodes.items():
+            if node.agent_type != "graph":
+                continue
+
+            # Extract the raw context string from the node's context dict
+            raw_context = self._get_raw_context(node)
+            if not raw_context:
+                # Legacy path: no {workflow=...} syntax — fall back to prompt-based resolution
+                self._resolve_legacy_subgraph(node_name, node, bundle, subgraph_bundles)
+                continue
+
+            # Try {workflow=...} syntax
+            m = self._WORKFLOW_RE.search(raw_context)
+            if m:
+                workflow_ref = m.group(1)
+                resolved = self._resolve_workflow_ref(workflow_ref, bundle)
+                if resolved:
+                    subgraph_bundles[node_name] = resolved
+                    self.logger.debug(
+                        f"[GraphRunnerService] Pre-resolved subgraph bundle for "
+                        f"node '{node_name}' via {{workflow={workflow_ref}}}"
+                    )
+                else:
+                    self.logger.warning(
+                        f"[GraphRunnerService] Failed to resolve {{workflow={workflow_ref}}} "
+                        f"for node '{node_name}'"
+                    )
+                continue
+
+            # Try {workflow_field=...} syntax (dynamic)
+            m = self._WORKFLOW_FIELD_RE.search(raw_context)
+            if m:
+                state_key = m.group(1)
+                workflow_ref = initial_state.get(state_key)
+                if not workflow_ref:
+                    self.logger.warning(
+                        f"[GraphRunnerService] Dynamic workflow_field '{state_key}' "
+                        f"not found in initial_state for node '{node_name}'"
+                    )
+                    continue
+                resolved = self._resolve_workflow_ref(str(workflow_ref), bundle)
+                if resolved:
+                    subgraph_bundles[node_name] = resolved
+                    self.logger.debug(
+                        f"[GraphRunnerService] Pre-resolved dynamic subgraph bundle for "
+                        f"node '{node_name}' via state['{state_key}']={workflow_ref}"
+                    )
+                continue
+
+            # No recognized syntax — fall back to legacy resolution
+            self._resolve_legacy_subgraph(node_name, node, bundle, subgraph_bundles)
+
+        if subgraph_bundles:
+            initial_state["subgraph_bundles"] = subgraph_bundles
+            self.logger.info(
+                f"[GraphRunnerService] Pre-resolved {len(subgraph_bundles)} "
+                f"subgraph bundle(s) for graph '{bundle.graph_name}'"
+            )
+
+    def _get_raw_context(self, node) -> Optional[str]:
+        """Extract the raw context string from a node's context dict."""
+        if not node.context:
+            return None
+        if isinstance(node.context, dict):
+            return node.context.get("context")
+        if isinstance(node.context, str):
+            return node.context
+        return None
+
+    def _resolve_workflow_ref(
+        self, workflow_ref: str, parent_bundle: GraphBundle
+    ) -> Optional[GraphBundle]:
+        """
+        Resolve a workflow reference to a GraphBundle.
+
+        Formats:
+            ::GraphName         — embedded subgraph (same CSV)
+            path.csv::GraphName — external CSV subgraph
+        """
+        if "::" in workflow_ref:
+            csv_part, graph_name = workflow_ref.split("::", 1)
+        else:
+            # Bare name — treat as embedded subgraph
+            csv_part = ""
+            graph_name = workflow_ref
+
+        if not csv_part:
+            # Embedded subgraph — look up via parent's csv_hash
+            if parent_bundle.csv_hash:
+                resolved = self.graph_bundle_service.lookup_bundle(
+                    parent_bundle.csv_hash, graph_name
+                )
+                if resolved:
+                    return resolved
+
+            # Hash lookup missed — try get_or_create_bundle if we can find the CSV
+            # Fall through to external resolution with parent CSV path
+            csv_path = self._get_csv_path_from_bundle(parent_bundle)
+            if csv_path:
+                try:
+                    resolved, _ = self.graph_bundle_service.get_or_create_bundle(
+                        csv_path=csv_path,
+                        graph_name=graph_name,
+                    )
+                    return resolved
+                except Exception as e:
+                    self.logger.warning(
+                        f"[GraphRunnerService] Failed to create bundle for "
+                        f"embedded subgraph '{graph_name}': {e}"
+                    )
+            return None
+        else:
+            # External CSV subgraph
+            csv_path = Path(csv_part)
+            try:
+                resolved, _ = self.graph_bundle_service.get_or_create_bundle(
+                    csv_path=csv_path,
+                    graph_name=graph_name,
+                )
+                return resolved
+            except Exception as e:
+                self.logger.warning(
+                    f"[GraphRunnerService] Failed to create bundle for "
+                    f"external subgraph '{csv_part}::{graph_name}': {e}"
+                )
+                return None
+
+    def _resolve_legacy_subgraph(
+        self,
+        node_name: str,
+        node,
+        parent_bundle: GraphBundle,
+        subgraph_bundles: Dict[str, GraphBundle],
+    ) -> None:
+        """
+        Legacy resolution: subgraph name from prompt, CSV path from context.
+
+        Falls back to embedded subgraph lookup via parent csv_hash.
+        """
+        subgraph_name = node.prompt
+        if not subgraph_name:
+            return
+
+        raw_context = self._get_raw_context(node)
+
+        # If context looks like a CSV path (not a {workflow=...} directive)
+        if raw_context and not raw_context.startswith("{"):
+            csv_path = Path(raw_context)
+            try:
+                resolved, _ = self.graph_bundle_service.get_or_create_bundle(
+                    csv_path=csv_path,
+                    graph_name=subgraph_name,
+                )
+                subgraph_bundles[node_name] = resolved
+                self.logger.debug(
+                    f"[GraphRunnerService] Legacy-resolved subgraph '{subgraph_name}' "
+                    f"from CSV path '{raw_context}' for node '{node_name}'"
+                )
+                return
+            except Exception as e:
+                self.logger.warning(
+                    f"[GraphRunnerService] Legacy resolution failed for "
+                    f"'{subgraph_name}' from '{raw_context}': {e}"
+                )
+
+        # Embedded subgraph — look up via parent's csv_hash
+        if parent_bundle.csv_hash:
+            resolved = self.graph_bundle_service.lookup_bundle(
+                parent_bundle.csv_hash, subgraph_name
+            )
+            if resolved:
+                subgraph_bundles[node_name] = resolved
+                self.logger.debug(
+                    f"[GraphRunnerService] Legacy-resolved embedded subgraph "
+                    f"'{subgraph_name}' via csv_hash for node '{node_name}'"
+                )
+                return
+
+        # Final fallback — try get_or_create with parent CSV path
+        csv_path = self._get_csv_path_from_bundle(parent_bundle)
+        if csv_path:
+            try:
+                resolved, _ = self.graph_bundle_service.get_or_create_bundle(
+                    csv_path=csv_path,
+                    graph_name=subgraph_name,
+                )
+                subgraph_bundles[node_name] = resolved
+                self.logger.debug(
+                    f"[GraphRunnerService] Legacy-resolved subgraph '{subgraph_name}' "
+                    f"via parent CSV for node '{node_name}'"
+                )
+            except Exception as e:
+                self.logger.warning(
+                    f"[GraphRunnerService] Could not resolve subgraph "
+                    f"'{subgraph_name}' for node '{node_name}': {e}"
+                )
+
+    def _get_csv_path_from_bundle(self, bundle: GraphBundle) -> Optional[Path]:
+        """Try to recover the CSV path for a bundle from the registry."""
+        if not bundle.csv_hash:
+            return None
+        try:
+            return self.graph_bundle_service.graph_registry_service.get_csv_path(
+                bundle.csv_hash
+            )
+        except Exception:
+            return None
 
     def resume_from_checkpoint(
         self,

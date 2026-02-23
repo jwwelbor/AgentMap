@@ -80,8 +80,11 @@ class BuiltinDefinitionConstants:
         "graph": {
             "class_path": "agentmap.agents.builtins.graph_agent.GraphAgent",
             "category": "core",
-            "requires": ["graph_runner_service"],
-            "protocols_implemented": [],
+            "requires": ["graph_runner_service", "graph_bundle_service"],
+            "protocols_implemented": [
+                "GraphBundleCapableAgent",
+                "GraphRunnerCapableAgent",
+            ],
             "source": "builtin",
         },
         # ============ LLM AGENTS ============

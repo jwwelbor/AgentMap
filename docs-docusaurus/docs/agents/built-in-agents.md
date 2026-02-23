@@ -89,8 +89,9 @@ Workflow orchestration and routing logic:
 | Agent Type | Purpose | Key Features |
 |------------|---------|--------------|
 | **orchestrator** | Intelligent routing | Multi-strategy node selection |
-| **router** | Conditional routing | Rule-based decision making |
-| **parallel** | Parallel execution | Concurrent processing, synchronization |
+| **branching** | Conditional routing | Rule-based decision making |
+| **graph** | Subgraph execution | Compose workflows, input/output mapping |
+| **tool** | Tool selection & execution | Auto-matching, LangChain tools, multi-strategy |
 
 ### 🏗️ Core Agents
 Basic building blocks for data flow and workflow control:
@@ -100,6 +101,225 @@ Basic building blocks for data flow and workflow control:
 | **input** | User input collection | Interactive prompts, validation |
 | **echo** | Data passthrough | State inspection, debugging |
 | **default** | Custom processing | Placeholder for custom logic |
+
+## Graph Agent
+
+The **Graph Agent** lets you compose workflows by running one graph inside another. A node of type `graph` executes an entire subgraph and returns its result to the parent workflow. This is the primary mechanism for building modular, reusable workflows in AgentMap.
+
+### When to Use
+
+- **Modular design** — Break a large workflow into smaller, self-contained graphs that can be developed and tested independently.
+- **Reusable sub-processes** — Call the same validation or processing graph from multiple parent workflows.
+- **Cross-file composition** — Reference a subgraph defined in a different CSV file.
+
+### CSV Configuration
+
+The Graph Agent uses the **Context** column to specify which subgraph to execute via the `{workflow=...}` syntax. The **Prompt** column is free for a human-readable description.
+
+#### Workflow reference syntax
+
+| Context value | Meaning |
+|---|---|
+| `{workflow=::SubgraphName}` | Embedded subgraph defined in the same CSV |
+| `{workflow=other.csv::SubgraphName}` | External subgraph in a different CSV file |
+| `{workflow_field=state_key}` | Dynamic — reads the workflow reference from `initial_state[state_key]` at runtime |
+
+#### Embedded subgraph (same CSV file)
+
+Use `::` with no filename prefix to reference a graph in the same CSV:
+
+```csv
+GraphName,Node,AgentType,Input_Fields,Output_Field,Success_Next,Failure_Next,Context,Prompt
+MainWorkflow,validate,graph,raw_data,validated_data,process,handle_error,{workflow=::DataValidation},Run validation
+```
+
+`DataValidation` is defined in the same CSV:
+
+```csv
+DataValidation,check_format,default,,,check_rules,format_error,,Validate format
+DataValidation,check_rules,default,,,done,rules_error,,Validate rules
+DataValidation,done,echo,,,,,,Validation passed
+```
+
+#### External subgraph (separate CSV file)
+
+Prefix the graph name with the CSV path:
+
+```csv
+GraphName,Node,AgentType,Input_Fields,Output_Field,Success_Next,Failure_Next,Context,Prompt
+MainWorkflow,analyze,graph,,analysis_result,report,handle_error,{workflow=analysis.csv::AnalysisWorkflow},Run analysis
+```
+
+#### Dynamic subgraph (resolved from state)
+
+Use `{workflow_field=...}` to read the workflow reference from the initial state at runtime. The state value should be a string in `::GraphName` or `file.csv::GraphName` format:
+
+```csv
+GraphName,Node,AgentType,Input_Fields,Output_Field,Success_Next,Failure_Next,Context,Prompt
+MainWorkflow,run_step,graph,data,step_result,next,error,{workflow_field=next_graph_ref},Run dynamic step
+```
+
+### Input / Output Mapping
+
+By default the Graph Agent passes all parent state fields into the subgraph. You can control exactly which fields are forwarded and how they are renamed.
+
+| Technique | Input_Fields example | Behavior |
+|-----------|---------------------|----------|
+| Pass all state | *(empty)* | Every field in the current state is forwarded |
+| Select specific fields | `raw_data\|user_id` | Only listed fields are forwarded |
+| Rename fields | `sub_input=raw_data` | Parent field `raw_data` is passed as `sub_input` |
+| Function mapping | `func:mymodule.transform_state` | A Python function transforms the state before forwarding |
+
+Output mapping works similarly via the **Output_Field** column:
+
+| Output_Field value | Behavior |
+|-------------------|----------|
+| `result` | The entire subgraph result is stored in `result` |
+| `parent_field=sub_field` | Only `sub_field` from the subgraph result is stored as `parent_field` |
+
+### Full Example
+
+```csv
+GraphName,Node,AgentType,Input_Fields,Output_Field,Success_Next,Failure_Next,Context,Prompt
+MainWorkflow,start,input,user_input,raw_data,validate,,,,Collect input
+MainWorkflow,validate,graph,raw_data,validated_data,process,retry,{workflow=::DataValidation},Run validation subgraph
+MainWorkflow,process,default,validated_data,processed,report,error,,Core processing
+MainWorkflow,retry,graph,raw_data,validated_data,process,error,{workflow=::DataValidation},Retry validation
+MainWorkflow,report,echo,processed,final,,,,,Show results
+
+DataValidation,check_format,default,,,check_rules,format_err,,Check format
+DataValidation,check_rules,default,,,done,rules_err,,Check rules
+DataValidation,done,echo,,,,,,Valid
+DataValidation,format_err,echo,,,,,,Format invalid
+DataValidation,rules_err,echo,,,,,,Rules failed
+```
+
+### How It Works
+
+Subgraph bundles are **pre-resolved** before the parent graph starts executing. During the run pipeline, `GraphRunnerService` scans all `graph`-type nodes, resolves their `{workflow=...}` references into ready-to-execute bundles, and stores them in the execution state. When a Graph Agent node executes, it reads its pre-resolved bundle from state and delegates to `GraphRunnerService.run()`.
+
+### Key Behaviors
+
+- **Pre-resolution** — All subgraph bundles are resolved before graph execution begins, so missing references fail fast rather than mid-execution.
+- **Nested tracking** — Subgraph execution is recorded inside the parent execution tracker, so logs and summaries include the full call tree.
+- **Error propagation** — If the subgraph fails, the error is captured and the parent routes to the configured `error_node`.
+- **State isolation** — The subgraph runs with its own copy of state. Only the mapped output is returned to the parent.
+
+---
+
+## Tool Agent
+
+The **Tool Agent** selects and executes [LangChain tools](https://python.langchain.com/docs/concepts/tools/) from within a workflow node. You write plain Python functions decorated with `@tool`, point the agent at the file containing them, and AgentMap handles discovery, selection, and execution.
+
+### When to Use
+
+- **Call Python functions** from a CSV-defined workflow without writing a custom agent.
+- **Auto-select** the right tool when multiple tools are available and the best match depends on the input.
+- **Chain tools** by wiring multiple Tool Agent nodes together in the graph.
+
+### Writing Tools
+
+Tools are standard LangChain tool functions. Place them in a Python file anywhere in your project:
+
+```python
+# tools/math_tools.py
+from langchain_core.tools import tool
+
+@tool
+def add(a: int, b: int) -> int:
+    """Add two numbers together."""
+    return a + b
+
+@tool
+def multiply(a: int, b: int) -> int:
+    """Multiply two numbers together."""
+    return a * b
+```
+
+### CSV Configuration
+
+The Tool Agent requires two extra columns beyond the standard set:
+
+| Column | Purpose | Example |
+|--------|---------|---------|
+| **Tool_Source** | Path to the Python file containing `@tool` functions | `tools/math_tools.py` |
+| **Available_Tools** | Pipe-separated list of tool names to make available | `add\|multiply` |
+
+#### Single tool
+
+When only one tool is listed, the agent executes it directly without any selection logic:
+
+```csv
+GraphName,Node,AgentType,Tool_Source,Available_Tools,Prompt,Input_Fields,Output_Field,Success_Next
+SimpleCalc,Calculate,tool_agent,tools/math_tools.py,add,Add the numbers,a|b,result,ShowResult
+```
+
+#### Multiple tools with auto-selection
+
+List several tools and the agent picks the best match based on the prompt and input:
+
+```csv
+GraphName,Node,AgentType,Tool_Source,Available_Tools,Prompt,Input_Fields,Output_Field,Success_Next,Context
+MathNode,Compute,tool_agent,tools/math_tools.py,add|multiply,Calculate the result,a|b,answer,Next,"{""matching_strategy"": ""algorithm""}"
+```
+
+#### Inline tool descriptions
+
+Override or supplement the tool's docstring with a description in parentheses. This helps the selection logic when docstrings are generic:
+
+```csv
+Available_Tools
+add("adds two numbers")|multiply("multiplies two numbers")
+```
+
+### Matching Strategies
+
+When multiple tools are available, the agent uses a matching strategy to decide which one to invoke. Set the strategy in the **context** column:
+
+| Strategy | Description |
+|----------|-------------|
+| `tiered` *(default)* | Tries fast algorithmic matching first, then falls back to LLM-based selection |
+| `algorithm` | Pure algorithmic matching — no LLM calls, fastest option |
+| `llm` | Uses an LLM to reason about which tool best fits the input |
+
+```csv
+Context
+"{""matching_strategy"": ""algorithm""}"
+```
+
+You can also set a **confidence threshold** (0.0–1.0) that controls when the tiered strategy escalates from algorithmic to LLM matching:
+
+```csv
+Context
+"{""matching_strategy"": ""tiered"", ""confidence_threshold"": 0.9}"
+```
+
+### Input Mapping
+
+The Tool Agent automatically maps workflow state fields to tool parameters:
+
+1. **Exact name match** — If a state field name matches a tool parameter name, it maps directly.
+2. **Positional match** — Fields listed in `input_fields` are mapped to tool parameters in order.
+3. **Single-parameter shortcut** — For tools with one parameter, the first input field value is used regardless of name.
+
+### Full Example
+
+```csv
+GraphName,Node,AgentType,Tool_Source,Available_Tools,Prompt,Input_Fields,Output_Field,Success_Next,Failure_Next,Context
+TextFlow,Start,input,,,Enter some text,text,text,ToUpper,,
+TextFlow,ToUpper,tool_agent,tools/string_tools.py,uppercase,Convert to uppercase,text,upper_text,Reverse,Error,"{""matching_strategy"": ""algorithm""}"
+TextFlow,Reverse,tool_agent,tools/string_tools.py,reverse,Reverse the text,upper_text,reversed_text,Show,Error,"{""matching_strategy"": ""algorithm""}"
+TextFlow,Show,echo,,,Result: {reversed_text},reversed_text,final,,,
+TextFlow,Error,echo,,,Something went wrong,error,error_msg,,,
+```
+
+### Key Behaviors
+
+- **Direct execution** — When only one tool is available, the agent skips selection and invokes it immediately.
+- **Parameter mapping** — State fields are automatically matched to tool function parameters by name or position.
+- **Error routing** — If a tool raises an exception, the workflow routes to the configured `error_node`.
+
+---
 
 ## Interactive Agent Catalog
 
