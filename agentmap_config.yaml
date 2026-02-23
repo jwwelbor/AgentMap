@@ -23,7 +23,7 @@ memory:
 prompts:
   directory: "agentmap_data/prompts"
   registry_file: "agentmap_data/prompts/registry.yaml"
-  enable_cache: false
+  enable_cache: true
 
 execution:
   # What to record during execution

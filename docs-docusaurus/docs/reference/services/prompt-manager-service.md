@@ -42,7 +42,7 @@ The prompts section in `agentmap_config.yaml` controls where the service looks f
 prompts:
   directory: "agentmap_data/prompts"          # root directory for prompt files
   registry_file: "agentmap_data/prompts/registry.yaml"  # name-to-text mapping
-  enable_cache: false                         # cache resolved prompts in memory
+  enable_cache: true                          # cache resolved prompts in memory
 ```
 
 | Setting | Default | Purpose |
@@ -339,30 +339,28 @@ info = prompt_mgr.get_service_info()
 
 ## Complete Example
 
-A working integration test with sample prompts is available at:
+Sample prompt files showing all three backends are available at:
 
 ```
-examples/prompt_management/
-├── test_prompt_management.py   # 37 assertions covering all features
-└── prompts/
-    ├── registry.yaml
-    ├── agents/
-    │   ├── llm/
-    │   │   ├── code_reviewer.txt
-    │   │   └── data_analyst.txt
-    │   └── summary/
-    │       └── executive_brief.txt
-    └── workflows/
-        ├── onboarding/
-        │   ├── step1_welcome.txt
-        │   └── step2_training.txt
-        └── support/
-            ├── triage.txt
-            └── resolution_template.yaml
+examples/prompt_management/prompts/
+├── registry.yaml
+├── agents/
+│   ├── llm/
+│   │   ├── code_reviewer.txt
+│   │   └── data_analyst.txt
+│   └── summary/
+│       └── executive_brief.txt
+└── workflows/
+    ├── onboarding/
+    │   ├── step1_welcome.txt
+    │   └── step2_training.txt
+    └── support/
+        ├── triage.txt
+        └── resolution_template.yaml
 ```
 
-Run it from the repo root:
+Integration tests covering all features live at:
 
 ```bash
-uv run python examples/prompt_management/test_prompt_management.py
+uv run pytest tests/fresh_suite/integration/test_prompt_management_integration.py -v
 ```
