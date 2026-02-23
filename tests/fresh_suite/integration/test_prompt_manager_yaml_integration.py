@@ -43,9 +43,7 @@ class TestPromptManagerYamlIntegration(unittest.TestCase):
                 "escalated": "Ticket {ticket_id} escalated to tier 2.",
             },
             "internal": {
-                "handoff": {
-                    "notes": "Handoff from {previous_agent} to {new_agent}."
-                }
+                "handoff": {"notes": "Handoff from {previous_agent} to {new_agent}."}
             },
         }
         support_file = self.support_dir / "resolution_template.yaml"
@@ -109,9 +107,7 @@ class TestPromptManagerYamlIntegration(unittest.TestCase):
         result = self.service.resolve_prompt(
             "yaml:workflows/support/resolution_template.yaml#responses.resolved"
         )
-        self.assertEqual(
-            result, "Hi {customer_name}, ticket {ticket_id} is resolved."
-        )
+        self.assertEqual(result, "Hi {customer_name}, ticket {ticket_id} is resolved.")
 
     def test_yaml_resolve_sibling_key(self):
         """yaml: prefix resolves a different key from the same file."""
@@ -125,9 +121,7 @@ class TestPromptManagerYamlIntegration(unittest.TestCase):
         result = self.service.resolve_prompt(
             "yaml:workflows/support/resolution_template.yaml#internal.handoff.notes"
         )
-        self.assertEqual(
-            result, "Handoff from {previous_agent} to {new_agent}."
-        )
+        self.assertEqual(result, "Handoff from {previous_agent} to {new_agent}.")
 
     def test_yaml_resolve_from_second_file(self):
         """yaml: prefix resolves from a completely different YAML file."""
@@ -169,9 +163,7 @@ class TestPromptManagerYamlIntegration(unittest.TestCase):
 
     def test_yaml_missing_file_returns_error(self):
         """yaml: prefix returns descriptive error for nonexistent file."""
-        result = self.service.resolve_prompt(
-            "yaml:does_not_exist.yaml#some.key"
-        )
+        result = self.service.resolve_prompt("yaml:does_not_exist.yaml#some.key")
         self.assertIn("not found", result.lower())
 
     def test_yaml_missing_key_returns_error(self):

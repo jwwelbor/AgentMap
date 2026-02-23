@@ -12,7 +12,6 @@ from pathlib import Path
 
 import yaml
 
-
 # Path to the canonical template shipped with the package
 _TEMPLATE_PATH = (
     Path(__file__).resolve().parents[5]
