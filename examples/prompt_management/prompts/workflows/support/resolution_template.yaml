@@ -1,0 +1,51 @@
+# YAML-based prompt templates for the support workflow.
+# Referenced with yaml: prefix, e.g. yaml:workflows/support/resolution_template.yaml#responses.resolved
+
+responses:
+  resolved: |
+    Hi {customer_name},
+
+    Great news! Your issue ({ticket_id}) has been resolved.
+
+    Resolution: {resolution_summary}
+
+    If you experience any further issues, please don't hesitate to reach out.
+
+    Best regards,
+    {agent_name}
+
+  pending: |
+    Hi {customer_name},
+
+    We're still working on your issue ({ticket_id}). Here's a quick update:
+
+    Status: {status_detail}
+    Estimated resolution: {eta}
+
+    We'll keep you posted on any progress.
+
+    Best regards,
+    {agent_name}
+
+  escalated: |
+    Hi {customer_name},
+
+    Your issue ({ticket_id}) has been escalated to our senior support team
+    for further investigation.
+
+    Reason for escalation: {escalation_reason}
+    New priority: {new_priority}
+
+    A senior engineer will reach out within {sla_hours} hours.
+
+    Best regards,
+    {agent_name}
+
+internal:
+  handoff_notes: |
+    INTERNAL - Ticket Handoff Notes
+    Ticket: {ticket_id}
+    Previous handler: {previous_agent}
+    New handler: {new_agent}
+    Context: {context_summary}
+    Action needed: {required_action}

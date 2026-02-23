@@ -1,0 +1,12 @@
+Support Ticket Triage
+
+Ticket ID: {ticket_id}
+Customer: {customer_name}
+Issue: {issue_description}
+
+Classify this ticket:
+- Priority: (P1-Critical, P2-High, P3-Medium, P4-Low)
+- Category: (bug, feature_request, question, account, billing)
+- Estimated effort: (quick_fix, moderate, complex)
+
+Respond in JSON format.

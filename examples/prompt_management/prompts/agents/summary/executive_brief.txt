@@ -1,0 +1,9 @@
+Generate an executive brief from the following information.
+
+The brief should be:
+- No more than 3 paragraphs
+- Written for a non-technical audience
+- Focused on business impact and next steps
+
+Topic: {topic}
+Source Material: {source}

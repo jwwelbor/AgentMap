@@ -43,7 +43,7 @@ class PromptManagerService:
             prompts_config.get("directory", "agentmap_data/prompts")
         )
         self.registry_path = Path(
-            prompts_config.get("registry_file", "prompts/registry.yaml")
+            prompts_config.get("registry_file", "agentmap_data/prompts/registry.yaml")
         )
         self.enable_cache = prompts_config.get("enable_cache", True)
         self.template_location = "agentmap.templates.system"
