@@ -1,0 +1,12 @@
+Welcome to the onboarding process, {employee_name}!
+
+You're joining the {department} team as a {role}.
+Your start date is {start_date}.
+
+Here's what to expect in your first week:
+1. Team introductions
+2. System access setup
+3. Initial training modules
+4. Meet your onboarding buddy
+
+Your onboarding buddy is {buddy_name}. Don't hesitate to reach out!
