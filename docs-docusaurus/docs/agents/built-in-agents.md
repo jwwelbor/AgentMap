@@ -121,8 +121,8 @@ The Graph Agent uses the **Context** column to specify which subgraph to execute
 | Context value | Meaning |
 |---|---|
 | `{workflow=::SubgraphName}` | Embedded subgraph defined in the same CSV |
-| `{workflow=other.csv::SubgraphName}` | External subgraph in a different CSV file |
-| `{workflow_field=state_key}` | Dynamic — reads the workflow reference from `initial_state[state_key]` at runtime |
+| `{workflow=other_csv::SubgraphName}` | External subgraph in a different CSV file |
+| `{workflow_field=state_key}` | Dynamic — reads the workflow reference from `state[state_key]` at runtime |
 
 #### Embedded subgraph (same CSV file)
 

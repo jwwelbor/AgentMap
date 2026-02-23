@@ -346,7 +346,7 @@ Customer Metrics:
 
 Product Development:
 - Feature Releases: 23 major features, 67 improvements
-- Bug Resolution Time: Average 2.3 days (target: <3 days)
+- Bug Resolution Time: Average 2.3 days (target: &lt;3 days)
 - API Uptime: 99.7% (target: 99.5%)
 - Mobile App Downloads: 34,000 (up 67% from Q3)
 

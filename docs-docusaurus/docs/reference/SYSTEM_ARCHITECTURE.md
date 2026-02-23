@@ -1551,11 +1551,11 @@ def test_integration():
 ### 9.4 Performance Constraints
 
 **Requirements:**
-- Bundle creation must complete <100ms (static analysis)
-- Node execution overhead <5ms per node
-- Memory footprint <50MB for typical workflows
-- Cold start <500ms for serverless deployments
-- Cached execution <25ms for simple workflows
+- Bundle creation must complete &lt;100ms (static analysis)
+- Node execution overhead &lt;5ms per node
+- Memory footprint &lt;50MB for typical workflows
+- Cold start &lt;500ms for serverless deployments
+- Cached execution &lt;25ms for simple workflows
 
 ---
 
