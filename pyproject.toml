@@ -1,6 +1,6 @@
 [project]
 name = "agentmap"
-version = "0.9.201"
+version = "0.9.202"
 description = "AgentMap: Build and deploy LangGraph agentic workflows from CSV files for fun and profit!"
 authors = [{ name = "John Welborn", email = "jwwelbor@gmail.com" }]
 requires-python = ">=3.11,<4.0"
