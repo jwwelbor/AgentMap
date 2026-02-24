@@ -173,13 +173,13 @@ class TestLLMServiceEnhanced(unittest.TestCase):
             self.assertEqual(config_arg["api_key"], "test_key")  # From base config
             self.assertEqual(result, "Override test")
 
-    def test_can_use_simple_generate_interface(self):
-        """Test that generate() provides a simple interface for basic use cases."""
+    def test_can_use_simple_ask_interface(self):
+        """Test that ask() provides a simple interface for basic use cases."""
         with patch.object(self.service, "call_llm") as mock_call_llm:
             mock_call_llm.return_value = "Generated: The answer is 42."
 
             # Simple interface test
-            result = self.service.generate("What is the answer to everything?")
+            result = self.service.ask("What is the answer to everything?")
 
             # Verify it converts to proper message format
             expected_messages = [

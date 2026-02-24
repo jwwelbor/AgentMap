@@ -1,631 +1,287 @@
 ---
 sidebar_position: 2
 title: LLM Service
-description: Comprehensive guide to AgentMap's LLM service integration with multiple providers
-keywords: [LLM service, OpenAI, Anthropic, Google, language models, provider configuration]
+description: Unified LLM interface with optional intelligent routing across providers
+keywords: [LLM service, OpenAI, Anthropic, Google, routing, language models]
 ---
 
 # LLM Service
 
-The LLM Service provides unified access to multiple language model providers through a consistent interface, enabling seamless switching between OpenAI, Anthropic, Google, and other LLM providers.
+`LLMService` provides a unified interface for calling language model providers (Anthropic, OpenAI, Google) with optional intelligent routing that selects the best provider and model based on task type, complexity, and cost preferences.
 
-## Service Architecture
+---
 
-```mermaid
-flowchart TB
-    subgraph "LLM Service Architecture"
-        subgraph "Service Layer"
-            A[LLMService]
-            B[Provider Manager]
-            C[Configuration Manager]
-        end
-        
-        subgraph "Provider Implementations"
-            D[OpenAI Provider]
-            E[Anthropic Provider]
-            F[Google Provider]
-            G[Custom Provider]
-        end
-        
-        subgraph "Agent Integration"
-            H[LLMCapableAgent]
-            I[PromptCapableAgent]
-            J[Agent Factory]
-        end
-        
-        A --> B
-        A --> C
-        B --> D
-        B --> E
-        B --> F
-        B --> G
-        
-        H --> A
-        I --> A
-        J --> A
-    end
+## Configuration
+
+`LLMService` is configured entirely through `agentmap_config.yaml`. There are two top-level sections.
+
+### Provider config (`llm:`)
+
+API keys, default model, and temperature per provider:
+
+```yaml
+llm:
+  anthropic:
+    api_key: "${ANTHROPIC_API_KEY}"
+    model: "claude-3-5-sonnet-20241022"
+    temperature: 0.7
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+    model: "gpt-4o"
+    temperature: 0.7
+  google:
+    api_key: "${GOOGLE_API_KEY}"
+    model: "gemini-1.5-pro"
+    temperature: 0.5
 ```
 
-## Supported Providers
+### Routing config (`routing:`)
 
-### OpenAI
-**Models**: GPT-4, GPT-3.5-turbo, GPT-4-turbo
-**Features**: Chat completions, function calling, streaming
-**Configuration**: API key, organization ID
+Opt-in intelligent routing. Key sub-sections:
 
-```python
-openai_config = {
-    'provider': 'openai',
-    'model': 'gpt-4',
-    'temperature': 0.7,
-    'max_tokens': 2000,
-    'api_key': 'your-api-key'
-}
-```
+| Sub-section | Purpose |
+|---|---|
+| `routing_matrix` | Provider × complexity → model mapping (used as fallback when no activity matches) |
+| `activities` | Explicit provider/model plans per activity + complexity tier — evaluated **first** |
+| `task_types` | Keyword-based complexity detection and provider preferences (used when no activity is set) |
+| `complexity_analysis` | Thresholds for auto-detecting complexity from prompt length, keywords, memory size |
+| `cost_optimization` | Prefer cost-effective models |
+| `fallback` | Default provider/model when routing fails |
 
-### Anthropic
-**Models**: Claude-3 Opus, Sonnet, Haiku
-**Features**: Long context, safety features
-**Configuration**: API key, model selection
+See `src/agentmap/templates/config/agentmap_config.yaml.template` (lines 105–365) for the full annotated routing config.
 
-```python
-anthropic_config = {
-    'provider': 'anthropic',
-    'model': 'claude-3-5-sonnet-20241022',
-    'temperature': 0.3,
-    'max_tokens': 4096,
-    'api_key': 'your-api-key'
-}
-```
+---
 
-### Google
-**Models**: Gemini Pro, Gemini Ultra
-**Features**: Multimodal capabilities, code generation
-**Configuration**: API key, project settings
+## Execution Patterns
+
+`call_llm()` has two mutually exclusive modes:
+
+| Mode | Triggered by | `provider` | `model` |
+|---|---|---|---|
+| Direct | no `routing_context` | Required — target provider | Optional — overrides config default |
+| Routing | `routing_context` present | **Ignored** (warning logged) | **Ignored** (warning logged) |
+
+Use `routing_context['provider_preference']` / `routing_context['fallback_provider']` and `routing_context['model_override']` to control those within the routing path.
+
+### Pattern 1: Direct provider call
+
+Specify the provider directly, optionally overriding model and temperature. `provider` is required in this path.
 
 ```python
-google_config = {
-    'provider': 'google',
-    'model': 'gemini-1.0-pro',
-    'temperature': 0.5,
-    'max_tokens': 1024,
-    'api_key': 'your-api-key'
-}
-```
-
-## Service Interface
-
-### Core Methods
-
-#### call_llm()
-**Purpose**: Make LLM requests with provider abstraction
-
-```python
-def call_llm(
-    self,
-    provider: str,
-    messages: List[Dict[str, Any]],
-    model: Optional[str] = None,
-    temperature: float = 0.7,
-    max_tokens: Optional[int] = None,
-    **kwargs
-) -> str:
-    """
-    Call LLM with standardized interface
-    
-    Args:
-        provider: LLM provider name ('openai', 'anthropic', 'google')
-        messages: List of message dictionaries
-        model: Specific model to use (optional)
-        temperature: Response randomness (0.0-1.0)
-        max_tokens: Maximum response length
-        **kwargs: Provider-specific parameters
-    
-    Returns:
-        str: LLM response text
-    
-    Raises:
-        ValueError: If provider not configured
-        APIError: If LLM request fails
-    """
-```
-
-**Usage Examples**:
-```python
-# Basic usage
 response = llm_service.call_llm(
     provider="anthropic",
-    messages=[{"role": "user", "content": "Explain quantum physics"}]
+    messages=[{"role": "user", "content": "Explain quantum entanglement"}],
+    model="claude-3-5-sonnet-20241022",  # optional override
+    temperature=0.2,                      # optional override
 )
+```
 
-# With configuration
+### Pattern 2: Simple string prompt (`ask()`)
+
+Convenience wrapper for single plain-string prompts — no messages list required:
+
+```python
+response = llm_service.ask("Summarize this document: ...")
+response = llm_service.ask("...", provider="openai", temperature=0.5)
+```
+
+`ask()` constructs `[{"role": "user", "content": prompt}]` and calls `call_llm()`. The default provider is `"anthropic"`.
+
+### Pattern 3: Intelligent routing
+
+Pass a `routing_context` dict to let the routing system select provider and model. When `routing_context` is present, **routing owns all provider and model selection** — the `provider` and `model` parameters are ignored and a warning is logged if you pass them.
+
+```python
+# Route by task type
 response = llm_service.call_llm(
-    provider="openai",
-    messages=[{"role": "user", "content": "Write a Python function"}],
-    model="gpt-4",
-    temperature=0.2,
-    max_tokens=500
+    messages=messages,
+    routing_context={"task_type": "code_generation"}
 )
 
-# With conversation context
-messages = [
-    {"role": "system", "content": "You are a helpful assistant"},
-    {"role": "user", "content": "What is 2+2?"},
-    {"role": "assistant", "content": "2+2 equals 4"},
-    {"role": "user", "content": "What about 3+3?"}
-]
-response = llm_service.call_llm("anthropic", messages)
+# Route by activity (takes priority over task_type)
+response = llm_service.call_llm(
+    messages=messages,
+    routing_context={"activity": "code_generation"}
+)
+
+# Force a specific model through routing
+response = llm_service.call_llm(
+    messages=messages,
+    routing_context={"task_type": "code_generation", "model_override": "claude-3-5-sonnet-20241022"}
+)
+
+# Set a fallback if routing fails
+response = llm_service.call_llm(
+    messages=messages,
+    routing_context={"task_type": "code_generation", "fallback_provider": "openai"}
+)
 ```
 
-#### get_available_providers()
-**Purpose**: List configured providers
+---
+
+## Routing System
+
+### Activity vs Task Type
+
+| Concept | Config key | Evaluated | Purpose |
+|---|---|---|---|
+| `activity` | `routing.activities` | **First** | Explicit per-activity routing plan: primary provider/model + fallbacks per complexity tier |
+| `task_type` | `routing.task_types` | Fallback | General classification; drives provider preference and complexity keyword detection |
+
+### How routing selects a model
+
+1. Determine complexity (from `complexity_analysis` config — prompt length, keywords, memory size)
+2. Check routing cache
+3. If `activity` is set → look up activity routing table → get ordered candidates
+4. If no activity candidates → fall back to `routing_matrix` (task_type + complexity → model)
+5. On failure → use `fallback.default_provider` + `fallback.default_model`
+
+### `routing_context` fields
+
+All fields are optional. Routing is activated by passing a `routing_context` dict — no flag required.
+
+| Field | Default | Description |
+|---|---|---|
+| `task_type` | `"general"` | Task classification; valid values come from `routing.task_types` in config |
+| `activity` | `None` | Explicit activity name; takes priority over task_type |
+| `complexity_override` | `None` | Skip auto-detection: `"low"`, `"medium"`, `"high"`, `"critical"` |
+| `auto_detect_complexity` | `True` | Enable keyword/length-based complexity analysis |
+| `provider_preference` | `[]` | Override provider order |
+| `excluded_providers` | `[]` | Providers to skip |
+| `model_override` | `None` | Force a specific model |
+| `max_cost_tier` | `None` | Cap complexity tier (e.g. `"medium"` prevents high/critical models) |
+| `cost_optimization` | `True` | Prefer cost-effective models |
+| `prefer_speed` | `False` | Bias toward faster models |
+| `prefer_quality` | `False` | Bias toward highest-quality models |
+| `fallback_provider` | `None` | Override fallback provider for this call |
+| `fallback_model` | `None` | Override fallback model for this call |
+| `retry_with_lower_complexity` | `True` | On failure, retry with lower complexity tier |
+
+---
+
+## Exception Types
+
+Import from `agentmap.exceptions`.
+
+| Exception | When raised |
+|---|---|
+| `LLMConfigurationError` | Bad API key, auth failure, model config error |
+| `LLMDependencyError` | Missing provider package (e.g. `anthropic` not installed) |
+| `LLMProviderError` | Provider-level errors |
+| `LLMServiceError` | General service errors, routing failure |
 
 ```python
-def get_available_providers(self) -> List[str]:
-    """Get list of available LLM providers"""
-    
-# Usage
+from agentmap.exceptions import LLMServiceError, LLMConfigurationError
+
+try:
+    response = llm_service.call_llm(provider="anthropic", messages=messages)
+except LLMConfigurationError:
+    # Bad API key, invalid config
+    raise
+except LLMServiceError as e:
+    # Routing failure, general service error
+    self.log_error(f"LLM call failed: {e}")
+    raise
+```
+
+---
+
+## Available Providers
+
+```python
 providers = llm_service.get_available_providers()
-# Returns: ['openai', 'anthropic', 'google']
+# Returns: ['anthropic', 'openai', 'google']  (only those with API keys configured)
 ```
 
-#### get_provider_models()
-**Purpose**: Get available models for a provider
-
-```python
-def get_provider_models(self, provider: str) -> List[str]:
-    """Get available models for specific provider"""
-
-# Usage
-models = llm_service.get_provider_models("openai")
-# Returns: ['gpt-4', 'gpt-3.5-turbo', 'gpt-4-turbo']
-```
-
-## Configuration Management
-
-### Environment Variables
-```bash
-# OpenAI
-OPENAI_API_KEY=your-openai-key
-OPENAI_ORGANIZATION=your-org-id
-
-# Anthropic
-ANTHROPIC_API_KEY=your-anthropic-key
-
-# Google
-GOOGLE_API_KEY=your-google-key
-GOOGLE_PROJECT_ID=your-project-id
-```
-
-### Configuration File
-```yaml
-# config/llm.yml
-llm:
-  default_provider: "anthropic"
-  providers:
-    openai:
-      api_key: "${OPENAI_API_KEY}"
-      default_model: "gpt-4"
-      timeout: 30
-    anthropic:
-      api_key: "${ANTHROPIC_API_KEY}"
-      default_model: "claude-3-5-sonnet-20241022"
-      timeout: 30
-    google:
-      api_key: "${GOOGLE_API_KEY}"
-      default_model: "gemini-1.0-pro"
-      timeout: 30
-```
-
-### Dynamic Configuration
-```python
-# Runtime configuration
-llm_service.configure_provider("openai", {
-    "api_key": "new-key",
-    "default_model": "gpt-4-turbo",
-    "temperature": 0.5
-})
-```
+---
 
 ## Agent Integration
 
-### LLMCapableAgent Protocol
-
-Agents implement the `LLMCapableAgent` protocol to use LLM services:
+Agents that need LLM access implement the `LLMCapableAgent` protocol:
 
 ```python
+from agentmap.agents.base_agent import BaseAgent
+from agentmap.services.protocols.llm_protocol import LLMCapableAgent
+
 class MyLLMAgent(BaseAgent, LLMCapableAgent):
-    def configure_llm_service(self, llm_service: LLMServiceProtocol) -> None:
-        """Configure LLM service for this agent"""
+    def configure_llm_service(self, llm_service) -> None:
         self._llm_service = llm_service
-        self.log_debug("LLM service configured")
-    
+
     @property
-    def llm_service(self) -> LLMServiceProtocol:
-        """Get LLM service with error checking"""
+    def llm_service(self):
         if self._llm_service is None:
             raise ValueError(f"LLM service not configured for agent '{self.name}'")
         return self._llm_service
-    
-    def process(self, inputs: Dict[str, Any]) -> Any:
-        # Extract query from inputs
-        query = inputs.get("query", inputs.get("message", ""))
-        
-        # Get provider from context or use default
+
+    def process(self, inputs):
         provider = self.context.get("provider", "anthropic")
-        model = self.context.get("model")
-        
-        # Build messages
-        messages = self._build_messages(query, inputs)
-        
-        # Call LLM
-        response = self.llm_service.call_llm(
+        messages = [
+            {"role": "system", "content": self.prompt},
+            {"role": "user", "content": inputs.get("query", "")}
+        ]
+        return self.llm_service.call_llm(
             provider=provider,
             messages=messages,
-            model=model,
-            temperature=self.context.get("temperature", 0.7)
+            temperature=self.context.get("temperature", 0.7),
         )
-        
-        return response
-    
-    def _build_messages(self, query: str, inputs: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Build message list for LLM"""
-        messages = []
-        
-        # Add system message if prompt exists
-        if self.prompt:
-            messages.append({"role": "system", "content": self.prompt})
-        
-        # Add conversation history if available
-        history = inputs.get("conversation_history", [])
-        messages.extend(history)
-        
-        # Add current query
-        messages.append({"role": "user", "content": query})
-        
-        return messages
 ```
 
-### CSV Configuration
+### CSV configuration
+
+The `context` field contains JSON. In CSV, double quotes inside a quoted field must be escaped as `""` — this is standard CSV encoding, not AgentMap-specific.
+
+Direct provider call:
 
 ```csv
 workflow,node,description,type,next_node,error_node,input_fields,output_field,prompt,context
-ChatBot,Welcome,Welcome message,input,Chat,Error,,message,Welcome! Ask me anything:,
 ChatBot,Chat,Chat with AI,llm,Chat,Error,message,response,You are a helpful assistant,"{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.7}"
 ```
 
-## Advanced Features
+With routing context — routing selects the provider and model; `provider` and `model` are omitted:
 
-### Memory Management
-
-The LLM service supports conversation memory:
-
-```python
-class MemoryLLMAgent(BaseAgent, LLMCapableAgent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.conversation_memory = []
-        self.max_memory_messages = self.context.get("max_memory_messages", 10)
-    
-    def process(self, inputs: Dict[str, Any]) -> Any:
-        query = inputs.get("query", "")
-        
-        # Build messages with memory
-        messages = self._build_messages_with_memory(query)
-        
-        # Call LLM
-        response = self.llm_service.call_llm(
-            provider=self.context.get("provider", "anthropic"),
-            messages=messages
-        )
-        
-        # Update memory
-        self._update_memory(query, response)
-        
-        return response
-    
-    def _build_messages_with_memory(self, query: str) -> List[Dict[str, Any]]:
-        messages = []
-        
-        # System message
-        if self.prompt:
-            messages.append({"role": "system", "content": self.prompt})
-        
-        # Recent conversation history
-        messages.extend(self.conversation_memory[-self.max_memory_messages:])
-        
-        # Current query
-        messages.append({"role": "user", "content": query})
-        
-        return messages
-    
-    def _update_memory(self, query: str, response: str):
-        """Update conversation memory"""
-        self.conversation_memory.extend([
-            {"role": "user", "content": query},
-            {"role": "assistant", "content": response}
-        ])
-        
-        # Trim memory if too long
-        if len(self.conversation_memory) > self.max_memory_messages * 2:
-            self.conversation_memory = self.conversation_memory[-self.max_memory_messages * 2:]
+```csv
+workflow,node,description,type,next_node,error_node,input_fields,output_field,prompt,context
+CodeBot,Generate,Generate code,llm,Review,Error,request,code,You are an expert software engineer,"{""routing_context"": {""activity"": ""code_generation"", ""complexity_override"": ""high""}, ""temperature"": 0.2}"
 ```
 
-### Function Calling
+With task-type routing and a cost cap:
 
-For providers that support function calling:
-
-```python
-class FunctionLLMAgent(BaseAgent, LLMCapableAgent):
-    def process(self, inputs: Dict[str, Any]) -> Any:
-        query = inputs.get("query", "")
-        
-        # Define available functions
-        functions = [
-            {
-                "name": "get_weather",
-                "description": "Get current weather for a location",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "location": {"type": "string", "description": "City name"}
-                    },
-                    "required": ["location"]
-                }
-            }
-        ]
-        
-        # Call LLM with functions
-        response = self.llm_service.call_llm(
-            provider="openai",
-            messages=[{"role": "user", "content": query}],
-            functions=functions,
-            function_call="auto"
-        )
-        
-        return response
+```csv
+workflow,node,description,type,next_node,error_node,input_fields,output_field,prompt,context
+Analyst,Analyze,Analyze data,llm,Output,Error,data,analysis,You are a data analyst,"{""routing_context"": {""task_type"": ""data_analysis"", ""max_cost_tier"": ""medium""}, ""temperature"": 0.5}"
 ```
 
-### Streaming Responses
+---
 
-For real-time applications:
-
-```python
-class StreamingLLMAgent(BaseAgent, LLMCapableAgent):
-    def process(self, inputs: Dict[str, Any]) -> Any:
-        query = inputs.get("query", "")
-        
-        # Stream response
-        response_stream = self.llm_service.call_llm_stream(
-            provider=self.context.get("provider", "openai"),
-            messages=[{"role": "user", "content": query}]
-        )
-        
-        # Process stream
-        full_response = ""
-        for chunk in response_stream:
-            full_response += chunk
-            # Optional: emit partial response
-            self.emit_partial_response(chunk)
-        
-        return full_response
-```
-
-## Error Handling
-
-### Common Error Patterns
+## External Usage
 
 ```python
-try:
-    response = llm_service.call_llm(provider, messages)
-except ProviderNotConfiguredError:
-    # Handle missing provider configuration
-    fallback_response = self.get_fallback_response()
-except APIKeyError:
-    # Handle authentication issues
-    self.log_error("LLM API key invalid or missing")
-    raise
-except RateLimitError:
-    # Handle rate limiting
-    time.sleep(60)  # Wait before retry
-    response = llm_service.call_llm(provider, messages)
-except ModelNotFoundError:
-    # Handle model availability issues
-    response = llm_service.call_llm(provider, messages, model="default")
-except Exception as e:
-    # Handle unexpected errors
-    self.log_error(f"LLM service error: {e}")
-    raise
+from agentmap import agentmap_initialize
+from agentmap.runtime_api import get_container  # not exported from top-level agentmap
+
+agentmap_initialize()
+llm_service = get_container().llm_service()
+
+response = llm_service.call_llm(
+    provider="anthropic",
+    messages=[{"role": "user", "content": "Hello"}]
+)
 ```
 
-### Graceful Degradation
-
-```python
-class RobustLLMAgent(BaseAgent, LLMCapableAgent):
-    def process(self, inputs: Dict[str, Any]) -> Any:
-        query = inputs.get("query", "")
-        providers = ["anthropic", "openai", "google"]  # Fallback order
-        
-        for provider in providers:
-            try:
-                response = self.llm_service.call_llm(
-                    provider=provider,
-                    messages=[{"role": "user", "content": query}]
-                )
-                return response
-            except Exception as e:
-                self.log_warning(f"Provider {provider} failed: {e}")
-                continue
-        
-        # All providers failed
-        return "I'm sorry, I'm currently unable to process your request."
-```
-
-## Performance Optimization
-
-### Caching Responses
-
-```python
-from functools import lru_cache
-import hashlib
-
-class CachedLLMAgent(BaseAgent, LLMCapableAgent):
-    @lru_cache(maxsize=128)
-    def _cached_llm_call(self, messages_hash: str, provider: str) -> str:
-        """Cache LLM responses based on message content"""
-        # Note: This is a simplified example
-        # In practice, you'd want more sophisticated caching
-        pass
-    
-    def process(self, inputs: Dict[str, Any]) -> Any:
-        query = inputs.get("query", "")
-        messages = [{"role": "user", "content": query}]
-        
-        # Create hash for caching
-        messages_str = str(messages)
-        messages_hash = hashlib.md5(messages_str.encode()).hexdigest()
-        
-        try:
-            return self._cached_llm_call(messages_hash, "anthropic")
-        except:
-            # Cache miss or error, make fresh call
-            return self.llm_service.call_llm("anthropic", messages)
-```
-
-### Batch Processing
-
-```python
-class BatchLLMAgent(BaseAgent, LLMCapableAgent):
-    def process(self, inputs: Dict[str, Any]) -> Any:
-        queries = inputs.get("queries", [])
-        
-        # Process multiple queries efficiently
-        responses = []
-        for query in queries:
-            response = self.llm_service.call_llm(
-                provider="anthropic",
-                messages=[{"role": "user", "content": query}]
-            )
-            responses.append(response)
-        
-        return responses
-```
-
-## Testing
-
-### Unit Testing with Mocks
-
-```python
-def test_llm_agent():
-    from unittest.mock import Mock
-    
-    # Create mock LLM service
-    mock_llm = Mock()
-    mock_llm.call_llm.return_value = "Test response"
-    
-    # Create agent
-    agent = MyLLMAgent("TestAgent", "Test prompt")
-    agent.configure_llm_service(mock_llm)
-    
-    # Test
-    result = agent.process({"query": "test question"})
-    assert result == "Test response"
-    
-    # Verify call
-    mock_llm.call_llm.assert_called_once_with(
-        provider="anthropic",
-        messages=[
-            {"role": "system", "content": "Test prompt"},
-            {"role": "user", "content": "test question"}
-        ],
-        model=None,
-        temperature=0.7
-    )
-```
-
-### Integration Testing
-
-```python
-def test_llm_service_integration():
-    from agentmap.di.containers import Container
-    
-    # Use real container
-    container = Container()
-    llm_service = container.llm_service()
-    
-    if llm_service:  # Only test if configured
-        response = llm_service.call_llm(
-            provider="anthropic",
-            messages=[{"role": "user", "content": "Hello"}]
-        )
-        assert isinstance(response, str)
-        assert len(response) > 0
-```
+---
 
 ## Best Practices
 
-### 1. Provider Selection
-- Use Anthropic for safety-critical applications
-- Use OpenAI for function calling and structured outputs
-- Use Google for multimodal and code generation tasks
+1. **Store API keys in environment variables** — never hardcode them.
+2. **Use routing for complex pipelines** — activities give you explicit control; task_types offer keyword-driven automation.
+3. **Use `ask()` for quick one-off prompts** — only reach for `call_llm()` when you need messages, routing, or model overrides.
+4. **Cap complexity tier with `max_cost_tier`** — prevents accidentally routing simple tasks to expensive models.
+5. **Keep conversation history reasonable** — 10–20 messages is a good ceiling; trim older messages when memory grows.
 
-### 2. Configuration Management
-- Store API keys in environment variables
-- Use configuration files for non-sensitive settings
-- Implement fallback providers for reliability
-
-### 3. Context Management
-- Keep conversation history reasonable (10-20 messages)
-- Use system messages for consistent behavior
-- Implement memory trimming for long conversations
-
-### 4. Error Handling
-- Always implement graceful degradation
-- Log errors with sufficient context
-- Use retry logic for transient failures
-
-### 5. Cost Optimization
-- Cache repeated queries when appropriate
-- Use cheaper models for simple tasks
-- Implement token counting for cost tracking
-
-## Troubleshooting
-
-### Common Issues
-
-**Provider Not Configured**
-```python
-# Error: Provider 'openai' not configured
-# Solution: Check API key and configuration
-container.app_config_service().get_llm_config("openai")
-```
-
-**Model Not Available**
-```python
-# Error: Model 'gpt-5' not found
-# Solution: Check available models
-llm_service.get_provider_models("openai")
-```
-
-**Rate Limiting**
-```python
-# Error: Rate limit exceeded
-# Solution: Implement backoff and retry
-import time
-time.sleep(60)  # Wait before retry
-```
-
-**Authentication Failed**
-```python
-# Error: Invalid API key
-# Solution: Verify environment variables
-import os
-print(os.getenv("ANTHROPIC_API_KEY"))
-```
+---
 
 ## Next Steps
 
-- **[Storage Services](./storage-services-overview)** - Learn about data persistence
-- **[Capability Protocols](../capabilities/)** - Understand agent protocols
-- **[Agent Development](../agents/custom-agents)** - Build custom LLM agents
-- **[Service Integration](/docs/contributing/service-injection)** - Advanced patterns
+- **[Storage Services](./storage-services-overview)** — Data persistence options
+- **[Capability Protocols](../capabilities/)** — Agent protocol reference
+- **[Agent Development](../agents/custom-agents)** — Build custom LLM agents

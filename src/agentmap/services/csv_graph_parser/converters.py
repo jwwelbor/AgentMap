@@ -5,6 +5,8 @@ Provides functionality to convert NodeSpec domain models to Node objects
 for use in graph building and metadata bundle creation.
 """
 
+import ast
+import json
 from typing import TYPE_CHECKING, Dict, List
 
 from agentmap.models.graph_spec import NodeSpec
@@ -53,10 +55,7 @@ class NodeSpecConverter:
 
             # Only create if not already exists (handle duplicate definitions)
             if node_spec.name not in nodes_dict:
-                # Convert context string to dict if needed
-                context_dict = (
-                    {"context": node_spec.context} if node_spec.context else {}
-                )
+                context_dict = self._parse_context(node_spec.context)
 
                 # Use default agent type if not specified
                 agent_type = node_spec.agent_type or "default"
@@ -92,3 +91,33 @@ class NodeSpecConverter:
                 self.logger.debug(f"Node {node_spec.name} already exists, skipping")
 
         return nodes_dict
+
+    def _parse_context(self, context: str) -> Dict:
+        """
+        Parse the raw context string from a CSV cell into a dict.
+
+        Tries formats in order:
+          1. JSON  — {"key": value, ...}
+          2. Python dict literal — {'key': value, ...}
+          3. Plain string fallback — {"context": original_string}
+          4. Empty/None — {}
+
+        This ensures that structured keys (e.g. provider, routing_enabled,
+        task_type) are accessible at the top level of Node.context, matching
+        the way LLMAgent and other agents read them via self.context.get(...).
+        """
+        if not context:
+            return {}
+        try:
+            parsed = json.loads(context)
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+        try:
+            parsed = ast.literal_eval(context)
+            if isinstance(parsed, dict):
+                return parsed
+        except (ValueError, SyntaxError):
+            pass
+        return {"context": context}

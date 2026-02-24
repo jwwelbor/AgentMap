@@ -222,13 +222,13 @@ class TestLLMService(unittest.TestCase):
 
             self.assertEqual(result, "Fallback response")
 
-    def test_generate_method_simple_interface(self):
-        """Test generate() method as simplified LLM interface."""
+    def test_ask_method_simple_interface(self):
+        """Test ask() method as simplified LLM interface."""
         with patch.object(self.service, "call_llm") as mock_call_llm:
             mock_call_llm.return_value = "Generated text"
 
             # Execute test
-            result = self.service.generate(
+            result = self.service.ask(
                 "What is AI?", provider="anthropic", temperature=0.8
             )
 
@@ -240,13 +240,13 @@ class TestLLMService(unittest.TestCase):
 
             self.assertEqual(result, "Generated text")
 
-    def test_generate_method_default_provider(self):
-        """Test generate() method with default provider."""
+    def test_ask_method_default_provider(self):
+        """Test ask() method with default provider."""
         with patch.object(self.service, "call_llm") as mock_call_llm:
             mock_call_llm.return_value = "Default response"
 
             # Execute test without specifying provider
-            result = self.service.generate("Hello")
+            result = self.service.ask("Hello")
 
             # Verify default provider is used
             expected_messages = [{"role": "user", "content": "Hello"}]
