@@ -286,7 +286,7 @@ kv:
 
         # Assert
         self.assertIsNotNone(service)
-        self.assertTrue(hasattr(service, "generate"))
+        self.assertTrue(hasattr(service, "ask"))
 
         # Verify service interface using auditor
         service_info = self.service_auditor.audit_service_interface(type(service))

@@ -1103,12 +1103,12 @@ class MockServiceFactory:
 
         Example:
             mock_llm = MockServiceFactory.create_mock_llm_service()
-            response = mock_llm.generate("test prompt")
+            response = mock_llm.ask("test prompt")
         """
         mock_service = Mock()
 
         # Configure basic LLM methods
-        mock_service.generate.return_value = "Mock LLM response"
+        mock_service.ask.return_value = "Mock LLM response"
         mock_service.get_model_name.return_value = "mock-model"
         mock_service.is_available.return_value = True
 

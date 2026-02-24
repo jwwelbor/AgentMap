@@ -222,13 +222,13 @@ class TestLLMService(unittest.TestCase):
 
             self.assertEqual(result, "Fallback response")
 
-    def test_generate_method_simple_interface(self):
-        """Test generate() method as simplified LLM interface."""
+    def test_ask_method_simple_interface(self):
+        """Test ask() method as simplified LLM interface."""
         with patch.object(self.service, "call_llm") as mock_call_llm:
             mock_call_llm.return_value = "Generated text"
 
             # Execute test
-            result = self.service.generate(
+            result = self.service.ask(
                 "What is AI?", provider="anthropic", temperature=0.8
             )
 
@@ -240,13 +240,13 @@ class TestLLMService(unittest.TestCase):
 
             self.assertEqual(result, "Generated text")
 
-    def test_generate_method_default_provider(self):
-        """Test generate() method with default provider."""
+    def test_ask_method_default_provider(self):
+        """Test ask() method with default provider."""
         with patch.object(self.service, "call_llm") as mock_call_llm:
             mock_call_llm.return_value = "Default response"
 
             # Execute test without specifying provider
-            result = self.service.generate("Hello")
+            result = self.service.ask("Hello")
 
             # Verify default provider is used
             expected_messages = [{"role": "user", "content": "Hello"}]
@@ -481,7 +481,9 @@ class TestLLMService(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             # Execute and verify error
             with self.assertRaises(LLMConfigurationError) as context:
-                self.service.call_llm("openai", [{"role": "user", "content": "test"}])
+                self.service.call_llm(
+                    messages=[{"role": "user", "content": "test"}], provider="openai"
+                )
 
             self.assertIn("No API key found", str(context.exception))
 
@@ -502,7 +504,9 @@ class TestLLMService(unittest.TestCase):
 
             # Execute and verify error
             with self.assertRaises(LLMDependencyError) as context:
-                self.service.call_llm("openai", [{"role": "user", "content": "test"}])
+                self.service.call_llm(
+                    messages=[{"role": "user", "content": "test"}], provider="openai"
+                )
 
             self.assertIn("Missing dependencies", str(context.exception))
 
@@ -521,7 +525,9 @@ class TestLLMService(unittest.TestCase):
 
             # Execute and verify error
             with self.assertRaises(LLMConfigurationError) as context:
-                self.service.call_llm("unknown", [{"role": "user", "content": "test"}])
+                self.service.call_llm(
+                    messages=[{"role": "user", "content": "test"}], provider="unknown"
+                )
 
             self.assertIn("Unsupported provider", str(context.exception))
 
@@ -553,7 +559,9 @@ class TestLLMService(unittest.TestCase):
 
             # Execute and verify error conversion
             with self.assertRaises(LLMConfigurationError) as context:
-                self.service.call_llm("openai", [{"role": "user", "content": "test"}])
+                self.service.call_llm(
+                    messages=[{"role": "user", "content": "test"}], provider="openai"
+                )
 
             self.assertIn("Authentication failed", str(context.exception))
 

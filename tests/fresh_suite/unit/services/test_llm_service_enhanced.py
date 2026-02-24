@@ -173,13 +173,13 @@ class TestLLMServiceEnhanced(unittest.TestCase):
             self.assertEqual(config_arg["api_key"], "test_key")  # From base config
             self.assertEqual(result, "Override test")
 
-    def test_can_use_simple_generate_interface(self):
-        """Test that generate() provides a simple interface for basic use cases."""
+    def test_can_use_simple_ask_interface(self):
+        """Test that ask() provides a simple interface for basic use cases."""
         with patch.object(self.service, "call_llm") as mock_call_llm:
             mock_call_llm.return_value = "Generated: The answer is 42."
 
             # Simple interface test
-            result = self.service.generate("What is the answer to everything?")
+            result = self.service.ask("What is the answer to everything?")
 
             # Verify it converts to proper message format
             expected_messages = [
@@ -394,7 +394,9 @@ class TestLLMServiceEnhanced(unittest.TestCase):
         # No environment variable either
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(LLMConfigurationError) as context:
-                self.service.call_llm("openai", [{"role": "user", "content": "test"}])
+                self.service.call_llm(
+                    messages=[{"role": "user", "content": "test"}], provider="openai"
+                )
 
             # Should provide clear business error
             self.assertIn("No API key found", str(context.exception))
@@ -407,7 +409,9 @@ class TestLLMServiceEnhanced(unittest.TestCase):
         self.mock_app_config_service.get_llm_config.return_value = None
 
         with self.assertRaises(LLMConfigurationError) as context:
-            self.service.call_llm("nonexistent", [{"role": "user", "content": "test"}])
+            self.service.call_llm(
+                messages=[{"role": "user", "content": "test"}], provider="nonexistent"
+            )
 
         self.assertIn("No configuration found for provider", str(context.exception))
 
@@ -434,7 +438,9 @@ class TestLLMServiceEnhanced(unittest.TestCase):
             mock_client.return_value = mock_llm_client
 
             with self.assertRaises(LLMProviderError) as context:
-                self.service.call_llm("openai", [{"role": "user", "content": "test"}])
+                self.service.call_llm(
+                    messages=[{"role": "user", "content": "test"}], provider="openai"
+                )
 
             # Should provide clear business error
             self.assertIn("Rate limit exceeded", str(context.exception))
@@ -462,7 +468,9 @@ class TestLLMServiceEnhanced(unittest.TestCase):
             mock_client.return_value = mock_llm_client
 
             with self.assertRaises(LLMConfigurationError) as context:
-                self.service.call_llm("openai", [{"role": "user", "content": "test"}])
+                self.service.call_llm(
+                    messages=[{"role": "user", "content": "test"}], provider="openai"
+                )
 
             # Should identify as configuration issue
             self.assertIn("Invalid API key", str(context.exception))
@@ -539,7 +547,7 @@ class TestLLMServiceEnhanced(unittest.TestCase):
             mock_convert.return_value = [Mock()]
 
             # Should handle large payloads
-            result = self.service.call_llm("openai", large_messages)
+            result = self.service.call_llm(messages=large_messages, provider="openai")
 
             self.assertEqual(result, "Document analysis complete.")
             # Verify large messages were processed

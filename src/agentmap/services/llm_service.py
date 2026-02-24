@@ -111,8 +111,8 @@ class LLMService:
 
     def call_llm(
         self,
-        provider: str,
         messages: List[Dict[str, str]],
+        provider: Optional[str] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
@@ -121,12 +121,20 @@ class LLMService:
         """
         Make an LLM call with standardized interface.
 
+        When routing_context is provided, routing owns all provider and model selection.
+        The provider and model parameters are ignored in that case — use
+        routing_context['provider_preference'] / routing_context['fallback_provider'] and
+        routing_context['model_override'] instead. Warnings are logged if provider or model
+        are passed alongside routing_context.
+
         Args:
-            provider: Provider name ("openai", "anthropic", "google", etc.)
+            provider: Provider name ("openai", "anthropic", "google", etc.).
+                      Ignored when routing_context is provided.
             messages: List of message dictionaries
-            model: Optional model override
+            model: Optional model override. Ignored when routing_context is provided.
             temperature: Optional temperature override
-            routing_context: Optional routing context for intelligent model selection
+            routing_context: Optional routing context for intelligent model selection.
+                             When present, routing owns all provider/model decisions.
             **kwargs: Additional provider-specific parameters
 
         Returns:
@@ -135,12 +143,23 @@ class LLMService:
         Raises:
             LLMServiceError: On various error conditions
         """
-        if (
-            routing_context
-            and routing_context.get("routing_enabled", False)
-            and self.routing_service
-        ):
+        if routing_context is not None and self.routing_service:
+            if model is not None:
+                self._logger.warning(
+                    "[LLMService] 'model' parameter is ignored when routing_context is provided. "
+                    "Use routing_context['model_override'] to force a specific model."
+                )
+            if provider is not None:
+                self._logger.warning(
+                    "[LLMService] 'provider' parameter is ignored when routing_context is provided. "
+                    "Use routing_context['provider_preference'] to influence provider selection "
+                    "or routing_context['fallback_provider'] to set the fallback."
+                )
             return self._call_llm_with_routing(messages, routing_context, **kwargs)
+        if not provider:
+            raise LLMServiceError(
+                "provider is required when routing_context is not provided."
+            )
         return self._call_llm_direct(
             provider,
             messages,
@@ -408,17 +427,20 @@ class LLMService:
         """
         return self._routing_enabled
 
-    def generate(self, prompt: str, provider: Optional[str] = None, **kwargs) -> str:
+    def ask(self, prompt: str, provider: Optional[str] = None, **kwargs) -> str:
         """
-        Generate text using LLM with simplified interface.
+        Ask the LLM a single plain-string question.
+
+        Convenience wrapper around call_llm() for simple single-turn prompts
+        that don't require constructing a messages list.
 
         Args:
-            prompt: The prompt text to generate from
+            prompt: The prompt text to send
             provider: Optional provider name (defaults to 'anthropic')
-            **kwargs: Additional LLM parameters
+            **kwargs: Additional LLM parameters (e.g. temperature, model)
 
         Returns:
-            Generated text response
+            Response text string
         """
         provider = provider or "anthropic"
         messages = [{"role": "user", "content": prompt}]
