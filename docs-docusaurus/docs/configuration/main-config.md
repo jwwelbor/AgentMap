@@ -175,6 +175,78 @@ paths:
 - Ensure directories exist or AgentMap will create them automatically
 - Consider using environment-specific paths for different deployments
 
+## 🔐 Secrets Management
+
+:::danger Never commit API keys to version control
+`agentmap_config.yaml` may contain sensitive credentials (LLM API keys, JWT secrets, database URLs). **Do not commit it with api keys** — The recommended approach is to use environment variables instead. Then you are able to check in the file to save your configuration.
+:::
+
+### Add config file to `.gitignore` if using secrets in the file.
+
+```
+# .gitignore
+agentmap_config.yaml
+.env
+```
+
+Keep a `agentmap_config.yaml.example` (or use `agentmap init-config` output) with placeholder values checked in for reference.
+
+### Recommended: use environment variables for all secrets
+
+Set secrets in a `.env` file at your project root (also excluded from git):
+
+```bash
+# .env  — never commit this file
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_API_KEY=AIza...
+```
+
+Then reference them in `agentmap_config.yaml` using the `${VAR:default}` syntax:
+
+
+```yaml
+llm:
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+```
+
+### Loading `.env` at runtime
+
+AgentMap does not auto-load `.env` files — the variables must be present in the process environment before the app starts. Source them in your shell or run script:
+
+```bash
+# Option 1 — source before running
+set -a && source .env && set +a
+agentmap run
+
+# Option 2 — prefix the command
+env $(grep -v '^#' .env | xargs) agentmap run
+```
+
+For programmatic use, add [`python-dotenv`](https://pypi.org/project/python-dotenv/) to your project and call `load_dotenv()` before importing AgentMap:
+
+```python
+from dotenv import load_dotenv
+load_dotenv()  # loads .env into os.environ
+
+from agentmap import AgentMap
+```
+
+### Environment-specific configuration
+
+For multi-environment deployments, use separate `.env` files and override the config path:
+
+```bash
+# Development
+cp .env.development .env && agentmap run
+
+# Production — inject vars from your secret manager (e.g. AWS Secrets Manager, Vault)
+agentmap run --config /etc/agentmap/prod_config.yaml
+```
+
+---
+
 ## 🤖 LLM Provider Configuration
 
 ### Multi-Provider Setup
@@ -706,8 +778,8 @@ Some configuration changes can be applied without restart:
 
 ## 📖 Next Steps
 
-1. **Configure [Storage](./storage-config)** - Set up your data persistence layer
-2. **Set [Environment Variables](./environment-variables)** - Secure your credentials  
+1. **Secure your secrets** - Add `agentmap_config.yaml` and `.env` to `.gitignore` before your first commit
+2. **Configure [Storage](./storage-config)** - Set up your data persistence layer
 3. **Review [Examples](./examples)** - See complete configuration examples
 4. **Test Configuration** - Validate your setup before deployment
 
