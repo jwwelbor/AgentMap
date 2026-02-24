@@ -55,7 +55,7 @@ class LLMCapableTestAgent(BaseAgent, LLMCapableMixin, LLMCapableAgent):
 
     def process(self, inputs: Dict[str, Any]) -> Any:
         """Test implementation that uses LLM service."""
-        response = self.llm_service.call_llm("test", [])
+        response = self.llm_service.call_llm(messages=[], provider="test")
         return f"llm_result: {response}"
 
 
@@ -79,7 +79,7 @@ class MultiServiceTestAgent(
 
     def process(self, inputs: Dict[str, Any]) -> Any:
         """Test implementation that uses both services."""
-        llm_response = self.llm_service.call_llm("test", [])
+        llm_response = self.llm_service.call_llm(messages=[], provider="test")
         storage_data = self.storage_service.read("test")
         return f"multi_result: {llm_response}, {storage_data}"
 
@@ -336,7 +336,9 @@ class TestBaseAgent(unittest.TestCase):
         result = agent.process(inputs)
 
         # Verify LLM service was called
-        self.mock_llm_service.call_llm.assert_called_once_with("test", [])
+        self.mock_llm_service.call_llm.assert_called_once_with(
+            messages=[], provider="test"
+        )
         self.assertEqual(result, "llm_result: mock_llm_response")
 
     def test_storage_capable_agent_protocol_implementation(self):
@@ -383,7 +385,9 @@ class TestBaseAgent(unittest.TestCase):
         result = agent.process(inputs)
 
         # Verify both services were called
-        self.mock_llm_service.call_llm.assert_called_once_with("test", [])
+        self.mock_llm_service.call_llm.assert_called_once_with(
+            messages=[], provider="test"
+        )
         self.mock_storage_service.read.assert_called_once_with("test")
         self.assertEqual(result, "multi_result: mock_llm_response, mock_storage_data")
 

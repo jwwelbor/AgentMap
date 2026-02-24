@@ -481,7 +481,9 @@ class TestLLMService(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             # Execute and verify error
             with self.assertRaises(LLMConfigurationError) as context:
-                self.service.call_llm("openai", [{"role": "user", "content": "test"}])
+                self.service.call_llm(
+                    messages=[{"role": "user", "content": "test"}], provider="openai"
+                )
 
             self.assertIn("No API key found", str(context.exception))
 
@@ -502,7 +504,9 @@ class TestLLMService(unittest.TestCase):
 
             # Execute and verify error
             with self.assertRaises(LLMDependencyError) as context:
-                self.service.call_llm("openai", [{"role": "user", "content": "test"}])
+                self.service.call_llm(
+                    messages=[{"role": "user", "content": "test"}], provider="openai"
+                )
 
             self.assertIn("Missing dependencies", str(context.exception))
 
@@ -521,7 +525,9 @@ class TestLLMService(unittest.TestCase):
 
             # Execute and verify error
             with self.assertRaises(LLMConfigurationError) as context:
-                self.service.call_llm("unknown", [{"role": "user", "content": "test"}])
+                self.service.call_llm(
+                    messages=[{"role": "user", "content": "test"}], provider="unknown"
+                )
 
             self.assertIn("Unsupported provider", str(context.exception))
 
@@ -553,7 +559,9 @@ class TestLLMService(unittest.TestCase):
 
             # Execute and verify error conversion
             with self.assertRaises(LLMConfigurationError) as context:
-                self.service.call_llm("openai", [{"role": "user", "content": "test"}])
+                self.service.call_llm(
+                    messages=[{"role": "user", "content": "test"}], provider="openai"
+                )
 
             self.assertIn("Authentication failed", str(context.exception))
 

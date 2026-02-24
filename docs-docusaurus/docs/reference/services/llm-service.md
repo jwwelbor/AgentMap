@@ -92,6 +92,11 @@ response = llm_service.ask("...", provider="openai", temperature=0.5)
 Pass a `routing_context` dict to let the routing system select provider and model. When `routing_context` is present, **routing owns all provider and model selection** — the `provider` and `model` parameters are ignored and a warning is logged if you pass them.
 
 ```python
+messages = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Write a short story about a robot who learns to paint."}
+]
+
 # Route by task type
 response = llm_service.call_llm(
     messages=messages,
@@ -201,19 +206,20 @@ Agents that need LLM access implement the `LLMCapableAgent` protocol:
 
 ```python
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.services.protocols.llm_protocol import LLMCapableAgent
+from agentmap.services.protocols.llm_protocol import LLMCapableAgent, LLMServiceProtocol
+from typing import Any, Dict
 
 class MyLLMAgent(BaseAgent, LLMCapableAgent):
-    def configure_llm_service(self, llm_service) -> None:
+    def configure_llm_service(self, llm_service: LLMServiceProtocol) -> None:
         self._llm_service = llm_service
 
     @property
-    def llm_service(self):
+    def llm_service(self) -> LLMServiceProtocol:
         if self._llm_service is None:
             raise ValueError(f"LLM service not configured for agent '{self.name}'")
         return self._llm_service
 
-    def process(self, inputs):
+    def process(self, inputs: Dict[str, Any]) -> Any:
         provider = self.context.get("provider", "anthropic")
         messages = [
             {"role": "system", "content": self.prompt},

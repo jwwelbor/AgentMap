@@ -111,8 +111,8 @@ class LLMService:
 
     def call_llm(
         self,
+        messages: List[Dict[str, str]],
         provider: Optional[str] = None,
-        messages: List[Dict[str, str]] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
