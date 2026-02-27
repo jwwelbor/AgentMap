@@ -301,6 +301,150 @@ class YAMLDeclarationSource(DeclarationSource):
             return {}
 
 
+class HostServiceYAMLSource(DeclarationSource):
+    """
+    Declaration source for host_services.yaml file.
+
+    Loads host service declarations from host_services.yaml file and converts them to
+    ServiceDeclaration models for use by DeclarationRegistryService. These declarations
+    are later used by the bootstrap process to instantiate and register host services.
+    """
+
+    HOST_SERVICES_SOURCE_PREFIX = "yaml:host_services:"
+
+    def __init__(
+        self,
+        app_config_service,
+        parser: DeclarationParser,
+        logging_service: LoggingService,
+    ):
+        """
+        Initialize HostServiceYAMLSource with dependency injection.
+
+        Args:
+            app_config_service: Application configuration service for file paths
+            parser: Declaration parser for normalizing service data
+            logging_service: Logging service for error reporting
+        """
+        self.config = app_config_service
+        self.parser = parser
+        self.logger = logging_service.get_class_logger(self)
+        self.logger.debug("[HostServiceYAMLSource] Initialized")
+
+    def load_agents(self) -> Dict[str, AgentDeclaration]:
+        """Returns empty dict since host_services.yaml only contains services."""
+        return {}
+
+    def load_services(self) -> Dict[str, ServiceDeclaration]:
+        """
+        Load service declarations from host_services.yaml file.
+
+        Returns:
+            Dictionary mapping service names to ServiceDeclaration models
+        """
+        self.logger.debug("Loading host service declarations from YAML")
+
+        file_path = self._get_host_services_path()
+        yaml_data = self._load_yaml_file(file_path)
+        if not yaml_data or "services" not in yaml_data:
+            self.logger.debug("No services section found in host_services.yaml")
+            return {}
+
+        services = {}
+        services_data = yaml_data["services"]
+
+        for service_name, service_data in services_data.items():
+            try:
+                normalized_data = self._normalize_service_data(service_data)
+                source = f"{self.HOST_SERVICES_SOURCE_PREFIX}{file_path}"
+                declaration = self.parser.parse_service(
+                    service_name, normalized_data, source
+                )
+                services[service_name] = declaration
+                self.logger.trace(f"Loaded host service: {service_name}")
+            except Exception as e:
+                self.logger.error(f"Failed to load host service '{service_name}': {e}")
+                continue
+
+        self.logger.debug(f"Loaded {len(services)} host service declarations")
+        return services
+
+    def _get_host_services_path(self) -> Path:
+        """Get the path to the host_services.yaml file from configuration."""
+        custom_agents_dir = self.config.get_custom_agents_path()
+        return custom_agents_dir / "host_services.yaml"
+
+    def _load_yaml_file(self, file_path: Path) -> Dict[str, Any]:
+        """Load and parse YAML file with graceful error handling."""
+        if not file_path.exists():
+            self.logger.debug(f"Host services YAML file not found: {file_path}")
+            return {}
+
+        if not file_path.is_file():
+            self.logger.warning(f"Host services path is not a file: {file_path}")
+            return {}
+
+        try:
+            import yaml
+
+            with open(file_path, "r", encoding="utf-8") as file:
+                data = yaml.safe_load(file)
+
+            if not isinstance(data, dict):
+                self.logger.warning(
+                    f"Host services YAML file does not contain valid dictionary: {file_path}"
+                )
+                return {}
+
+            self.logger.debug(
+                f"Successfully loaded host services YAML file: {file_path}"
+            )
+            return data
+
+        except ImportError:
+            self.logger.error(
+                "PyYAML not available - cannot load host services YAML file"
+            )
+            return {}
+        except Exception as e:
+            self.logger.error(
+                f"Failed to load host services YAML file '{file_path}': {e}"
+            )
+            return {}
+
+    def _normalize_service_data(self, service_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize host_services.yaml format to parser-expected format.
+
+        Args:
+            service_data: Raw service data from host_services.yaml
+
+        Returns:
+            Normalized data for DeclarationParser
+        """
+        normalized = {
+            "class_path": service_data.get("class_path") or service_data.get("class"),
+        }
+
+        # Map implements -> implements (protocol paths)
+        if "implements" in service_data:
+            normalized["implements"] = service_data["implements"]
+
+        # Map dependencies -> dependencies
+        if "dependencies" in service_data:
+            normalized["dependencies"] = service_data["dependencies"]
+
+        # Map config -> config
+        if "config" in service_data:
+            normalized["config"] = service_data["config"]
+
+        # Map factory_method -> factory_method
+        if "factory_method" in service_data:
+            normalized["factory_method"] = service_data["factory_method"]
+
+        return normalized
+
+
 class CustomAgentYAMLSource(DeclarationSource):
     """
     Declaration source for custom_agents.yaml file.

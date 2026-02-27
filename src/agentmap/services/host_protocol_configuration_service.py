@@ -6,7 +6,7 @@ removing the need for services to access the container directly.
 """
 
 import re
-from typing import Any
+from typing import Any, Optional, Set
 
 from agentmap.services.host_service_registry import HostServiceRegistry
 from agentmap.services.logging_service import LoggingService
@@ -20,12 +20,17 @@ class HostProtocolConfigurationService:
     implements and automatically injecting the corresponding services. It follows
     proper dependency injection principles by receiving all dependencies through
     its constructor rather than accessing the container directly.
+
+    On first use, it lazily bootstraps host services from YAML declarations
+    via the DeclarationRegistryService.
     """
 
     def __init__(
         self,
         host_service_registry: HostServiceRegistry,
         logging_service: LoggingService,
+        declaration_registry_service: Optional[Any] = None,
+        app_config_service: Optional[Any] = None,
     ):
         """
         Initialize the host protocol configuration service.
@@ -33,11 +38,54 @@ class HostProtocolConfigurationService:
         Args:
             host_service_registry: Registry containing host service registrations
             logging_service: Service for logging operations
+            declaration_registry_service: Optional declaration registry for bootstrapping
+            app_config_service: Optional app config for host service configuration
         """
         self.registry = host_service_registry
+        self.logging_service = logging_service
         self.logger = logging_service.get_logger("agentmap.host_protocol_config")
+        self._declaration_registry_service = declaration_registry_service
+        self._app_config_service = app_config_service
+        self._bootstrapped = False
 
-    def configure_host_protocols(self, agent: Any) -> int:
+    def _ensure_services_bootstrapped(self) -> None:
+        """
+        Lazily bootstrap host services from YAML declarations on first use.
+
+        This is called once before the first configure_host_protocols() invocation.
+        If no declaration_registry_service is available, bootstrapping is skipped.
+        """
+        if self._bootstrapped:
+            return
+        self._bootstrapped = True
+
+        if not self._declaration_registry_service:
+            self.logger.debug(
+                "No declaration registry available, skipping host service bootstrap"
+            )
+            return
+
+        try:
+            from agentmap.services.host_service_registry import (
+                bootstrap_from_declarations,
+            )
+
+            count = bootstrap_from_declarations(
+                declaration_registry_service=self._declaration_registry_service,
+                host_service_registry=self.registry,
+                app_config_service=self._app_config_service,
+                logger=self.logger,
+            )
+            if count > 0:
+                self.logger.info(
+                    f"Bootstrapped {count} host services from declarations"
+                )
+        except Exception as e:
+            self.logger.error(f"Failed to bootstrap host services: {e}")
+
+    def configure_host_protocols(
+        self, agent: Any, required_services: Optional[Set[str]] = None
+    ) -> int:
         """
         Configure host-defined protocols on an agent.
 
@@ -46,10 +94,15 @@ class HostProtocolConfigurationService:
 
         Args:
             agent: Agent instance to configure
+            required_services: Optional set of service names to filter by.
+                              If provided, only matching services are checked.
 
         Returns:
             Number of host services successfully configured
         """
+        # Ensure host services are bootstrapped from declarations
+        self._ensure_services_bootstrapped()
+
         configured_count = 0
         agent_name = getattr(agent, "name", "unknown")
 
@@ -60,6 +113,13 @@ class HostProtocolConfigurationService:
             for service_name in registered_services:
                 # Skip protocol placeholders
                 if service_name.startswith("protocol:"):
+                    continue
+
+                # Skip services not in required_services filter
+                if (
+                    required_services is not None
+                    and service_name not in required_services
+                ):
                     continue
 
                 # Get protocols for this service

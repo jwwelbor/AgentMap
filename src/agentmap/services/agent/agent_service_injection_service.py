@@ -197,17 +197,22 @@ class AgentServiceInjectionService:
         """
         return self._storage_configurator.get_required_service_types(agent)
 
-    def configure_host_services(self, agent: Any) -> int:
+    def configure_host_services(
+        self, agent: Any, required_services: Optional[Set[str]] = None
+    ) -> int:
         """
         Configure host-defined services using HostProtocolConfigurationService.
 
         Args:
             agent: Agent instance to configure host services for
+            required_services: Optional set of service names to filter by
 
         Returns:
             Number of host services successfully configured
         """
-        return self._host_configurator.configure_host_services(agent)
+        return self._host_configurator.configure_host_services(
+            agent, required_services=required_services
+        )
 
     def configure_execution_tracker(
         self, agent: Any, tracker: Optional[Any] = None
@@ -256,7 +261,7 @@ class AgentServiceInjectionService:
         # Configure all service categories, passing required_services filter
         core_configured = self.configure_core_services(agent, required_services)
         storage_configured = self.configure_storage_services(agent, required_services)
-        host_configured = self.configure_host_services(agent)
+        host_configured = self.configure_host_services(agent, required_services)
         tracker_configured = self.configure_execution_tracker(agent, tracker)
 
         total_configured = (
