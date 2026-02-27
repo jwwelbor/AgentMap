@@ -93,7 +93,7 @@ class TestHostServiceYAMLSource(unittest.TestCase):
         }
 
         source = self._make_source()
-        with patch.object(source, "_load_yaml_file", return_value=yaml_content):
+        with patch("agentmap.services.declaration_sources.host_service_yaml_source.load_yaml_file", return_value=yaml_content):
             services = source.load_services()
 
         self.assertIn("my_service", services)
@@ -107,7 +107,7 @@ class TestHostServiceYAMLSource(unittest.TestCase):
 
     def test_load_services_no_services_section(self):
         source = self._make_source()
-        with patch.object(source, "_load_yaml_file", return_value={"version": "1.0"}):
+        with patch("agentmap.services.declaration_sources.host_service_yaml_source.load_yaml_file", return_value={"version": "1.0"}):
             services = source.load_services()
         self.assertEqual(services, {})
 
