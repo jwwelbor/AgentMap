@@ -166,8 +166,6 @@ def auth_init(
     Creates a new auth section with API keys. Will error if auth section already exists
     unless --force is used.
     """
-    Path(config)
-
     # Load existing config or create new one
     existing_config = load_yaml_config(config)
 

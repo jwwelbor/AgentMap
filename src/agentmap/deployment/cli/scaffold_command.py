@@ -82,7 +82,6 @@ def scaffold_command(
         # Display results using CLI presenter for consistency
         if result.get("success", False):
             outputs = result.get("outputs", {})
-            result.get("metadata", {})
 
             # Display progress messages from the facade
             progress_messages = outputs.get("progress_messages", [])

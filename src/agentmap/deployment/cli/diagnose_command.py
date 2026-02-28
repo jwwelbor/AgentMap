@@ -46,7 +46,6 @@ def diagnose_cmd(
         # Display results using CLI presenter for consistency
         if result.get("success", False):
             outputs = result.get("outputs", {})
-            metadata = result.get("metadata", {})
 
             typer.echo("\n✅ Discovery complete. Showing actual runtime state:\n")
 
@@ -143,8 +142,6 @@ def diagnose_cmd(
             typer.echo("Summary:")
 
             overall_status = outputs.get("overall_status", "unknown")
-            metadata.get("llm_ready", False)
-            metadata.get("storage_ready", False)
 
             if overall_status == "fully_operational":
                 typer.echo(

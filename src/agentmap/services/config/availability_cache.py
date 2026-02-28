@@ -278,8 +278,6 @@ class AvailabilityCacheManager:
                 "checked_at": datetime.now(timezone.utc).isoformat(),
             }
 
-        validator.get_cache_key(config)
-
         # Check cache first
         cached_data = self._cache.load_cache()
         if cached_data:

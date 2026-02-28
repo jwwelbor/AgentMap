@@ -53,7 +53,6 @@ def inspect_graph_cmd(
         )
 
         outputs = result["outputs"]
-        result["metadata"]
 
         typer.echo("\n📊 Graph Overview:")
         typer.echo(f"   Resolved Name: {outputs['resolved_name']}")

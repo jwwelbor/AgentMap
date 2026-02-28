@@ -394,7 +394,6 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
 
         # Should detect provider reference errors
         if routing_validation_errors:
-            " ".join(routing_validation_errors).lower()
             # Should detect that providers in routing matrix don't exist in LLM config
             # (The exact error depends on validation implementation)
             self.assertTrue(
