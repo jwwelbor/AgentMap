@@ -197,8 +197,10 @@ def bootstrap_from_declarations(
                     merged = dict(yaml_config)
                     merged.update(config)
                     config = merged
-                except Exception:
-                    pass  # No app config override, use declaration config only
+                except Exception as e:
+                    if logger:
+                        logger.debug(f"Could not get app config override for '{service_name}': {e}")
+                    # No app config override, use declaration config only
 
             # Resolve dependency instances
             dep_instances = {}
