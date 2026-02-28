@@ -96,7 +96,7 @@ test_graph,end_node,echo,Echo the result,End node,{},result,final_output,,,
             "llm": {
                 "anthropic": {
                     "api_key": "test_key",
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "claude-sonnet-4-6",
                 }
             },
         }
@@ -244,7 +244,7 @@ test_graph,end_node,echo,Echo the result,End node,{},result,final_output,,,
             "llm": {
                 "anthropic": {
                     "api_key": "test_key",
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "claude-sonnet-4-6",
                 }
             },
         }
@@ -383,7 +383,7 @@ test_graph,start_node,echo,Echo test,Test node,{},input,output,,,
             "llm": {
                 "anthropic": {
                     "api_key": "test_key",
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "claude-sonnet-4-6",
                 }
             },
         }

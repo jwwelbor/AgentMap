@@ -54,15 +54,15 @@ Edit `agentmap_config.yaml` and add your API key:
 llm:
   openai:
     api_key: "your-openai-key"  # Or use env var: OPENAI_API_KEY
-    model: "gpt-4o-mini-2024-07-18"
+    model: "gpt-4o-mini"
 
   anthropic:
     api_key: "your-anthropic-key"  # Or use env var: ANTHROPIC_API_KEY
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-sonnet-4-6"
 
   google:
     api_key: "your-google-key"  # Or use env var: GOOGLE_API_KEY
-    model: "gemini-1.5-flash"
+    model: "gemini-2.5-flash"
 ```
 
 You can also set API keys via environment variables:

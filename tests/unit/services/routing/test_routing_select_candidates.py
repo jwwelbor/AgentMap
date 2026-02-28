@@ -9,9 +9,9 @@ from agentmap.services.routing.types import TaskComplexity
 
 class DummyCfg:
     routing_matrix = {
-        "anthropic": {"low": "claude-3-haiku", "medium": "claude-3-5-sonnet"},
+        "anthropic": {"low": "claude-haiku-4-5", "medium": "claude-sonnet-4-6"},
         "openai": {"low": "gpt-4o-mini", "medium": "gpt-4o"},
-        "google": {"low": "gemini-1.5-flash", "medium": "gemini-1.5-pro"},
+        "google": {"low": "gemini-2.5-flash", "medium": "gemini-2.5-pro"},
     }
     performance = {"max_cache_size": 1000}
 
@@ -28,7 +28,7 @@ class DummyCfg:
         return "anthropic"
 
     def get_fallback_model(self):
-        return "claude-3-5-sonnet"
+        return "claude-sonnet-4-6"
 
     def get_provider_preference(self):
         return ["anthropic", "openai"]
@@ -41,11 +41,11 @@ class DummyCfg:
                         "medium": {
                             "primary": {
                                 "provider": "anthropic",
-                                "model": "claude-3-5-sonnet",
+                                "model": "claude-sonnet-4-6",
                             },
                             "fallbacks": [
                                 {"provider": "openai", "model": "gpt-4o"},
-                                {"provider": "google", "model": "gemini-1.5-pro"},
+                                {"provider": "google", "model": "gemini-2.5-pro"},
                             ],
                         }
                     }
@@ -92,9 +92,9 @@ def test_activity_first_candidates():
         "provider_preference": ["anthropic", "openai"],
     }
     cands = LLMRoutingService.select_candidates(router, ctx)
-    assert cands[0] == {"provider": "anthropic", "model": "claude-3-5-sonnet"}
+    assert cands[0] == {"provider": "anthropic", "model": "claude-sonnet-4-6"}
     # matrix peers should still appear (but after explicit fallbacks)
-    assert {"provider": "google", "model": "gemini-1.5-pro"} in cands
+    assert {"provider": "google", "model": "gemini-2.5-pro"} in cands
 
 
 def test_matrix_backstop_when_no_activity():

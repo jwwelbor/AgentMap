@@ -195,7 +195,7 @@ class MyLLMAgent(BaseAgent, LLMCapableAgent):
         response = self.llm_service.call_llm(
             provider="anthropic",
             messages=messages,
-            model="claude-3-5-sonnet-20241022"
+            model="claude-sonnet-4-6"
         )
         return response
 ```

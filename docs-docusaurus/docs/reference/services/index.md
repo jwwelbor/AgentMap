@@ -222,7 +222,7 @@ def process(self, inputs: Dict[str, Any]) -> Any:
     response = self.llm_service.call_llm(
         provider="anthropic",
         messages=messages,
-        model="claude-3-5-sonnet-20241022"
+        model="claude-sonnet-4-6"
     )
     return response
 ```
@@ -359,7 +359,7 @@ llm:
       model: gpt-4
       temperature: 0.7
     anthropic:
-      model: claude-3-5-sonnet-20241022
+      model: claude-sonnet-4-6
       temperature: 0.7
 
 storage:

@@ -63,7 +63,7 @@ OPENAI_API_BASE=https://api.openai.com/v1
 ANTHROPIC_API_KEY=sk-ant-api03-1234567890abcdef1234567890abcdef12345678
 
 # Optional: Default model override
-ANTHROPIC_DEFAULT_MODEL=claude-3-5-sonnet-20241022
+ANTHROPIC_DEFAULT_MODEL=claude-sonnet-4-6
 
 # Optional: API base URL
 ANTHROPIC_API_BASE=https://api.anthropic.com
@@ -76,7 +76,7 @@ ANTHROPIC_API_BASE=https://api.anthropic.com
 GOOGLE_API_KEY=AIzaSy1234567890abcdef1234567890abcdef123
 
 # Optional: Default model override  
-GOOGLE_DEFAULT_MODEL=gemini-1.5-pro
+GOOGLE_DEFAULT_MODEL=gemini-2.5-pro
 
 # Optional: Project ID (for Vertex AI)
 GOOGLE_PROJECT_ID=my-project-123456
@@ -89,13 +89,13 @@ GOOGLE_PROJECT_ID=my-project-123456
 llm:
   openai:
     api_key: "env:OPENAI_API_KEY"
-    model: "env:OPENAI_DEFAULT_MODEL:gpt-3.5-turbo"  # With fallback
+    model: "env:OPENAI_DEFAULT_MODEL:gpt-4o-mini"  # With fallback
   anthropic:
     api_key: "env:ANTHROPIC_API_KEY"
-    model: "env:ANTHROPIC_DEFAULT_MODEL:claude-3-5-sonnet-20241022"
+    model: "env:ANTHROPIC_DEFAULT_MODEL:claude-sonnet-4-6"
   google:
     api_key: "env:GOOGLE_API_KEY"
-    model: "env:GOOGLE_DEFAULT_MODEL:gemini-1.0-pro"
+    model: "env:GOOGLE_DEFAULT_MODEL:gemini-2.5-flash"
 ```
 
 ## 🗄️ Storage Provider Credentials
@@ -414,7 +414,7 @@ DATABASE_SERVICE_URL=postgresql://localhost:5432/app
 api_key: "env:OPENAI_API_KEY"
 
 # Environment variable with default value
-model: "env:OPENAI_DEFAULT_MODEL:gpt-3.5-turbo"
+model: "env:OPENAI_DEFAULT_MODEL:gpt-4o-mini"
 
 # Boolean environment variables
 enabled: "env:FEATURE_ENABLED:true"

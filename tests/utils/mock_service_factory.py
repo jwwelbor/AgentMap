@@ -721,9 +721,9 @@ class MockServiceFactory:
 
         # Default models for each provider (matching config file)
         default_models = {
-            "anthropic": "claude-3-5-sonnet-20241022",
+            "anthropic": "claude-sonnet-4-6",
             "openai": "gpt-4o-mini",
-            "google": "gemini-1.5-flash",
+            "google": "gemini-2.5-flash",
         }
 
         def get_default_model(provider: str):
