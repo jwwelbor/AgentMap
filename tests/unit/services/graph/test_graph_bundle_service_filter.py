@@ -178,7 +178,7 @@ class TestGraphBundleServiceFilterServices(unittest.TestCase):
         input_services = {"service_a", "service_b", "service_c"}
 
         # Act: Filter the services
-        result = self.service._filter_actual_services(input_services)
+        self.service._filter_actual_services(input_services)
 
         # Assert: Should call get_service_declaration for each service
         self.assertEqual(

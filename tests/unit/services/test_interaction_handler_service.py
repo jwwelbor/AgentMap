@@ -6,16 +6,13 @@ thread metadata storage, bundle context preservation, and CLI coordination.
 """
 
 import pickle
-import time
 import unittest
 import unittest.mock
-from datetime import datetime
 from typing import Any, Dict, Optional
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 from uuid import uuid4
 
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
-from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.human_interaction import HumanInteractionRequest, InteractionType
 from agentmap.services.interaction_handler_service import InteractionHandlerService
 from agentmap.services.storage.types import StorageResult, WriteMode

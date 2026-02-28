@@ -52,7 +52,7 @@ class TestGraphIdentifierParsing:
     def test_double_colon_syntax_direct_path(self):
         """Test filename::graph_name syntax with direct file path."""
         graph_name = "custom_workflow::my_graph"
-        workflow_file = self.csv_repository / "custom_workflow.csv"
+        self.csv_repository / "custom_workflow.csv"
 
         with patch.object(Path, "exists", return_value=False):
             csv_path, resolved_graph_name = _resolve_csv_path(

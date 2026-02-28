@@ -22,7 +22,6 @@ class DeclarationSource(ABC):
         Returns:
             Dictionary mapping agent types to AgentDeclaration models
         """
-        pass
 
     @abstractmethod
     def load_services(self) -> Dict[str, ServiceDeclaration]:
@@ -32,4 +31,3 @@ class DeclarationSource(ABC):
         Returns:
             Dictionary mapping service names to ServiceDeclaration models
         """
-        pass

@@ -6,14 +6,11 @@ and follow the established MockServiceFactory patterns for consistent testing.
 """
 
 import unittest
-from pathlib import Path
-from typing import Any, Dict, Type
 from unittest.mock import Mock, patch
 
 from agentmap.services.agent.agent_class_resolver import AgentClassResolver
 from agentmap.services.agent.agent_factory_service import AgentFactoryService
 from tests.utils.migration_utils import MockLoggingService
-from tests.utils.mock_service_factory import MockServiceFactory
 
 
 class TestAgentFactoryService(unittest.TestCase):

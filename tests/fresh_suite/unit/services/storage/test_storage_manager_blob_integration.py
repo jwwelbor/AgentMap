@@ -10,7 +10,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from agentmap.di import initialize_di
 from agentmap.services.config.storage_config_service import StorageConfigService

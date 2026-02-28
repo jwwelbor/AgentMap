@@ -6,8 +6,7 @@ making it easier to understand execution flow during development and testing.
 """
 
 import json
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 
 class ExecutionFormatterService:
@@ -145,7 +144,7 @@ class ExecutionFormatterService:
         # If not verbose, show a hint
         if not verbose and exec_summary and hasattr(exec_summary, "node_executions"):
             lines.append(
-                f"\nℹ️  Use --pretty --verbose to see detailed node execution info"
+                "\nℹ️  Use --pretty --verbose to see detailed node execution info"
             )
 
         return "\n".join(lines)

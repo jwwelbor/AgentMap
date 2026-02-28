@@ -20,17 +20,15 @@ Test Approach:
 - Follow established BaseIntegrationTest patterns
 """
 
-import json
 import unittest
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from unittest.mock import Mock, patch
 
 from agentmap.models.execution.result import ExecutionResult
 from tests.fresh_suite.integration.base_integration_test import BaseIntegrationTest
 from tests.fresh_suite.integration.test_data_factories import (
     CSVTestDataFactory,
-    ExecutionTestDataFactory,
     IntegrationTestDataManager,
 )
 
@@ -387,7 +385,7 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
         accessible_files = []
         for filename in expected_files:
             try:
-                csv_path = self.load_example_csv_file(filename)
+                self.load_example_csv_file(filename)
                 accessible_files.append(filename)
                 print(f"✅ {filename} - accessible")
             except FileNotFoundError:
@@ -504,7 +502,7 @@ class TestCSVExamplesIntegration(BaseIntegrationTest):
                     # Log the failure but continue with other files
 
         # Summary
-        print(f"\n=== Physical CSV Tests Summary ===")
+        print("\n=== Physical CSV Tests Summary ===")
         print(f"✅ Successful: {len(successful_tests)} files")
         print(f"❌ Failed: {len(failed_tests)} files")
 

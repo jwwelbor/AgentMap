@@ -11,7 +11,6 @@ NO business logic testing - that belongs in service tests.
 
 import unittest
 from datetime import datetime, timedelta
-from typing import Any, Dict
 
 from agentmap.models.execution.result import ExecutionResult
 from agentmap.models.execution.summary import ExecutionSummary

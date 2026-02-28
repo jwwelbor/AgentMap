@@ -7,13 +7,12 @@ in a local directory structure.
 """
 
 import json
-import os
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from agentmap.exceptions import MessagingConnectionError, MessagingOperationError
+from agentmap.exceptions import MessagingConnectionError
 from agentmap.models.storage.types import StorageResult
 
 

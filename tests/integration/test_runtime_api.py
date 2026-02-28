@@ -6,37 +6,24 @@ Tests the facade pattern implementation, error mapping, and RuntimeManager deleg
 
 import json
 from pathlib import Path
-from typing import Any, Dict
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 from agentmap.exceptions.runtime_exceptions import (
-    AgentMapError,
     AgentMapNotInitialized,
     GraphNotFound,
     InvalidInputs,
 )
 from agentmap.runtime import (
-    diagnose_system,
     ensure_initialized,
-    get_config,
     get_container,
-    inspect_graph,
     list_graphs,
-    refresh_cache,
     resume_workflow,
     run_workflow,
-    scaffold_agents,
-    update_bundle,
-    validate_cache,
-    validate_workflow,
 )
 from agentmap.runtime.init_ops import _is_cache_initialized, _refresh_cache
 from agentmap.runtime.workflow_ops import _resolve_csv_path
-from agentmap.services.workflow_orchestration_service import (
-    WorkflowOrchestrationService,
-)
 
 
 class TestEnsureInitialized:

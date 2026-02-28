@@ -9,10 +9,7 @@ Refactored to use pure Mock objects for cleaner, more maintainable tests.
 import unittest
 from unittest.mock import Mock
 
-from agentmap.models.execution.summary import ExecutionSummary
-from agentmap.models.execution.tracker import ExecutionTracker, NodeExecution
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
-from tests.utils.mock_service_factory import MockServiceFactory
 
 
 class TestExecutionTrackingServiceEnhanced(unittest.TestCase):

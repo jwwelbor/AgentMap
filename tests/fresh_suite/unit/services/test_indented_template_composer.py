@@ -6,8 +6,7 @@ and follow the established MockServiceFactory patterns for consistent testing.
 """
 
 import unittest
-from typing import Any, Dict
-from unittest.mock import Mock, mock_open, patch
+from unittest.mock import patch
 
 from agentmap.models.scaffold_types import ServiceAttribute, ServiceRequirements
 from agentmap.services.indented_template_composer import (
@@ -150,7 +149,7 @@ class TestIndentedTemplateComposer(unittest.TestCase):
         with patch.object(self.composer._template_loader, "load_template") as mock_load:
             mock_load.return_value = "# Template content"
 
-            result = self.composer._load_template_internal(template_path)
+            self.composer._load_template_internal(template_path)
 
             # Verify normalized path was used
             mock_load.assert_called_once_with(normalized_path)

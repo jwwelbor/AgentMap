@@ -1,14 +1,10 @@
 # src/agentmap/services/messaging_service.py
 
-import json
-from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol
 
 from agentmap.exceptions import (
-    MessagingConnectionError,
-    MessagingOperationError,
     MessagingServiceUnavailableError,
 )
 from agentmap.models.storage.types import StorageResult

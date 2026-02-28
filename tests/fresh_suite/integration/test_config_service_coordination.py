@@ -7,10 +7,8 @@ between pure infrastructure (ConfigService) and domain logic (AppConfigService)
 are maintained.
 """
 
-import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, Optional
 
 import yaml
 

@@ -6,9 +6,7 @@ removing both ReaderOperationsMixin and StorageErrorHandlerMixin,
 ensuring clean architecture and proper error handling.
 """
 
-import os
 import unittest
-from typing import Any, Dict
 from unittest.mock import Mock, patch
 
 from agentmap.agents.builtins.storage.base_storage_agent import BaseStorageAgent
@@ -172,7 +170,7 @@ class TestModernizedFileReaderAgent(unittest.TestCase):
         collection = "simple.txt"
         inputs = {}  # Minimal inputs
 
-        result = agent._execute_operation(collection, inputs)
+        agent._execute_operation(collection, inputs)
 
         # Verify service called with defaults
         self.mock_file_service.read.assert_called_once_with(

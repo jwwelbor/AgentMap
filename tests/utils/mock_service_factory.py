@@ -1082,7 +1082,6 @@ class MockServiceFactory:
 
         def save_bundle(bundle: Any, bundle_path: Path) -> None:
             """Mock save operation."""
-            pass
 
         # Configure methods
         mock_service.load_bundle.side_effect = load_bundle
@@ -1521,7 +1520,6 @@ class MockServiceFactory:
             tracker: Mock, node_name: str, inputs: Dict[str, Any] = None
         ) -> None:
             """Mock record node start."""
-            pass
 
         def record_node_result(
             tracker: Mock,
@@ -1531,11 +1529,9 @@ class MockServiceFactory:
             error: str = None,
         ) -> None:
             """Mock record node result."""
-            pass
 
         def complete_execution(tracker: Mock) -> None:
             """Mock complete execution."""
-            pass
 
         def to_summary(tracker: Mock, graph_name: str) -> Mock:
             """Mock create execution summary."""
@@ -2191,7 +2187,7 @@ Usage Patterns and Examples:
     # Replace MockLoggingService with pure Mock
     mock_logging = MockServiceFactory.create_mock_logging_service()
     service = MyService(logging_service=mock_logging)
-    
+
     # Verify logging calls
     logger = mock_logging.get_class_logger.return_value
     assert ("info", "Service initialized", (), {}) in logger.calls
@@ -2200,7 +2196,7 @@ Usage Patterns and Examples:
     # Customize config behavior
     config_overrides = {"tracking": {"enabled": False}}
     mock_config = MockServiceFactory.create_mock_app_config_service(config_overrides)
-    
+
     # Use in service
     service = MyService(app_config_service=mock_config)
     assert not service.is_tracking_enabled()
@@ -2209,7 +2205,7 @@ Usage Patterns and Examples:
     # Test node registration
     mock_registry = MockServiceFactory.create_mock_node_registry_service()
     mock_registry.register_node("test_node", {"type": "processor"})
-    
+
     # Verify registration
     node = mock_registry.get_node("test_node")
     assert node["type"] == "processor"
@@ -2218,7 +2214,7 @@ Usage Patterns and Examples:
     # Replace migration_utils imports
     # Old: from agentmap.migration_utils import MockLoggingService
     # New: from tests.utils.mock_service_factory import MockServiceFactory
-    
+
     # Old: self.mock_logging = MockLoggingService()
     # New: self.mock_logging = MockServiceFactory.create_mock_logging_service()
 
@@ -2227,12 +2223,12 @@ Usage Patterns and Examples:
     mock_graph_execution = MockServiceFactory.create_mock_graph_execution_service()
     mock_graph_definition = MockServiceFactory.create_mock_graph_definition_service()
     mock_compilation = MockServiceFactory.create_mock_compilation_service()
-    
+
     # Test execution delegation
     result = mock_graph_execution.execute_compiled_graph(Path("test.pkl"), {})
     assert result.graph_name == "test"
     assert result.success == True
-    
+
 6. Complex Service Coordination:
     # Test service interaction patterns
     mock_deps = MockServiceFactory.create_mock_dependency_checker_service()

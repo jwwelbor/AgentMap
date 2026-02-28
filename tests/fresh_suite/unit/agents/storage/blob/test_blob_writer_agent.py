@@ -15,10 +15,8 @@ These tests validate the BlobWriterAgent implementation including:
 """
 
 import json
-import logging
 import unittest
-from typing import Any, Dict, Optional
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from agentmap.agents.builtins.storage.blob.blob_writer_agent import BlobWriterAgent
 from agentmap.exceptions import StorageOperationError
@@ -166,7 +164,7 @@ class TestBlobWriterAgent(unittest.TestCase):
         # Mock write_blob to verify URI extraction
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         # Verify URI was extracted correctly
         self.mock_blob_storage_service.write_blob.assert_called_once()
@@ -180,7 +178,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         call_args = self.mock_blob_storage_service.write_blob.call_args
         self.assertEqual(call_args[0][0], test_uri)
@@ -192,7 +190,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         call_args = self.mock_blob_storage_service.write_blob.call_args
         self.assertEqual(call_args[0][0], test_uri)
@@ -204,7 +202,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         call_args = self.mock_blob_storage_service.write_blob.call_args
         self.assertEqual(call_args[0][0], test_uri)
@@ -216,7 +214,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         call_args = self.mock_blob_storage_service.write_blob.call_args
         self.assertEqual(call_args[0][0], test_uri)
@@ -229,7 +227,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         # Should use the first URI found (blob_uri)
         call_args = self.mock_blob_storage_service.write_blob.call_args
@@ -278,7 +276,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         # Verify data was converted to bytes
         call_args = self.mock_blob_storage_service.write_blob.call_args
@@ -294,7 +292,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         call_args = self.mock_blob_storage_service.write_blob.call_args
         self.assertEqual(call_args[0][1], expected_bytes)
@@ -307,7 +305,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         call_args = self.mock_blob_storage_service.write_blob.call_args
         self.assertEqual(call_args[0][1], expected_bytes)
@@ -320,7 +318,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         call_args = self.mock_blob_storage_service.write_blob.call_args
         self.assertEqual(call_args[0][1], expected_bytes)
@@ -338,7 +336,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         # Should use the first data found (data)
         call_args = self.mock_blob_storage_service.write_blob.call_args
@@ -377,7 +375,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         call_args = self.mock_blob_storage_service.write_blob.call_args
         self.assertEqual(call_args[0][1], expected_bytes)
@@ -389,7 +387,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         call_args = self.mock_blob_storage_service.write_blob.call_args
         self.assertEqual(call_args[0][1], test_bytes)
@@ -403,7 +401,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         call_args = self.mock_blob_storage_service.write_blob.call_args
         self.assertEqual(call_args[0][1], expected_bytes)
@@ -417,7 +415,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         call_args = self.mock_blob_storage_service.write_blob.call_args
         self.assertEqual(call_args[0][1], expected_bytes)
@@ -430,7 +428,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         call_args = self.mock_blob_storage_service.write_blob.call_args
         self.assertEqual(call_args[0][1], expected_bytes)
@@ -443,7 +441,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         call_args = self.mock_blob_storage_service.write_blob.call_args
         self.assertEqual(call_args[0][1], expected_bytes)
@@ -459,7 +457,7 @@ class TestBlobWriterAgent(unittest.TestCase):
 
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         call_args = self.mock_blob_storage_service.write_blob.call_args
         self.assertEqual(call_args[0][1], expected_bytes)
@@ -479,7 +477,7 @@ class TestBlobWriterAgent(unittest.TestCase):
         self.mock_blob_storage_service.write_blob.return_value = {"success": True}
 
         # Should not raise exception - non-JSON objects get converted to string
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         # Verify conversion to string bytes
         call_args = self.mock_blob_storage_service.write_blob.call_args
@@ -670,7 +668,7 @@ class TestBlobWriterAgent(unittest.TestCase):
         self.mock_blob_storage_service.write_blob.return_value = expected_result
 
         inputs = {"blob_uri": test_uri, "data": test_data}
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         # Verify logging was attempted (through BaseAgent)
         self.assertIsNotNone(self.agent.logger)
@@ -859,7 +857,7 @@ class TestBlobWriterAgent(unittest.TestCase):
         self.mock_blob_storage_service.write_blob.return_value = expected_result
 
         inputs = {"blob_uri": test_uri, "data": special_data}
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         # Verify special characters were encoded correctly
         call_args = self.mock_blob_storage_service.write_blob.call_args
@@ -875,7 +873,7 @@ class TestBlobWriterAgent(unittest.TestCase):
         self.mock_blob_storage_service.write_blob.return_value = expected_result
 
         inputs = {"blob_uri": test_uri, "data": empty_data}
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         # Verify empty data was handled correctly
         call_args = self.mock_blob_storage_service.write_blob.call_args

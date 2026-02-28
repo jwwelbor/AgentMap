@@ -1,10 +1,8 @@
 # agentmap/agents/builtins/graph_agent.py
 import logging
-import re
 from typing import Any, Dict, Optional, Tuple
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.function_resolution_service import FunctionResolutionService
 from agentmap.services.protocols import (
@@ -187,7 +185,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
                     }
                 result = result.final_state or {}
 
-            self.log_info(f"[GraphAgent] Subgraph execution completed successfully")
+            self.log_info("[GraphAgent] Subgraph execution completed successfully")
             return self._process_subgraph_result(result)
 
         except Exception as e:
@@ -221,7 +219,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
             if parent_tracker and hasattr(parent_tracker, "record_subgraph_execution"):
                 parent_tracker.record_subgraph_execution(self.name, subgraph_summary)
                 self.log_debug(
-                    f"[GraphAgent] Recorded subgraph execution in parent tracker"
+                    "[GraphAgent] Recorded subgraph execution in parent tracker"
                 )
 
             # Remove execution summary from output to avoid polluting final state

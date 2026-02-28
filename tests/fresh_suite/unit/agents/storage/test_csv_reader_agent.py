@@ -6,9 +6,7 @@ removing ReaderOperationsMixin, ensuring clean architecture and
 proper service delegation.
 """
 
-import os
 import unittest
-from typing import Any, Dict
 from unittest.mock import Mock, patch
 
 from agentmap.agents.builtins.storage.base_storage_agent import BaseStorageAgent
@@ -192,7 +190,7 @@ class TestModernizedCSVReaderAgent(unittest.TestCase):
         collection = "simple.csv"
         inputs = {}  # Minimal inputs
 
-        result = agent._execute_operation(collection, inputs)
+        agent._execute_operation(collection, inputs)
 
         # Verify service called with defaults
         self.mock_csv_service.read.assert_called_once_with(

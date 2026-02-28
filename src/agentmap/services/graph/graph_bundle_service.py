@@ -1,6 +1,5 @@
 # services/graph_bundle_service.py
 
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -915,7 +914,7 @@ class GraphBundleService:
                 csv_path, graph_name
             )
             self.logger.info("Created bundle using fast static analysis")
-        except FileNotFoundError as e:
+        except FileNotFoundError:
             self.logger.warning(f"CSV not found: {csv_path}")
         except Exception as e:
             self.logger.warning("Failed to create bundle using fast static analysis")

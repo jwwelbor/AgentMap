@@ -7,7 +7,6 @@ and follow the established MockServiceFactory patterns for consistent testing.
 
 import sys
 import unittest
-from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, Mock, patch
 
 from agentmap.services.dependency_checker_service import DependencyCheckerService

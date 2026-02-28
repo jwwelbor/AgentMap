@@ -6,8 +6,8 @@ and correctly delegates from GraphRunnerService to AgentServiceInjectionService.
 """
 
 import unittest
-from typing import Any, Dict, Optional
-from unittest.mock import MagicMock, Mock, patch
+from typing import Any, Optional
+from unittest.mock import Mock
 
 try:
     from agentmap.services.agent.agent_service_injection_service import (

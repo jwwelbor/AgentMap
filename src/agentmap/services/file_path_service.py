@@ -13,7 +13,6 @@ from typing import List, Optional
 from pathvalidate import is_valid_filename, sanitize_filename
 
 from agentmap.exceptions.base_exceptions import (
-    AgentMapException,
     InvalidPathError,
     PathTraversalError,
     SystemPathError,
@@ -244,7 +243,7 @@ class FilePathService:
                         raise SystemPathError(
                             f"Access denied to system path: {dangerous_path}"
                         )
-                except:
+                except Exception:
                     continue
 
             # Direct path check

@@ -1,7 +1,7 @@
 """Edge processing for graph assembly."""
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from langgraph.graph import END, StateGraph
 

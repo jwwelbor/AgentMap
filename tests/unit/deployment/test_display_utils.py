@@ -4,10 +4,8 @@ Unit tests for display_utils.py - Presentation Layer Display Utilities.
 Tests pure display functions that format and present information to users.
 """
 
-import json
 import unittest
-from unittest.mock import call, patch
-from uuid import uuid4
+from unittest.mock import patch
 
 from agentmap.deployment.cli.display_utils import (
     display_error,

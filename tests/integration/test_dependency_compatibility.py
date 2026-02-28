@@ -31,9 +31,7 @@ class TestDependencyCompatibility:
         """
         try:
             # This should not raise an MRO error
-            import langgraph
             from langgraph.graph import StateGraph
-            from langgraph.pregel.protocol import PregelProtocol
 
             # Verify we can create a basic StateGraph
             graph = StateGraph(state_schema=dict)
@@ -48,7 +46,7 @@ class TestDependencyCompatibility:
     def test_langgraph_version_compatibility(self):
         """Test that installed LangGraph version is in compatible range."""
         try:
-            import langgraph  # Verify package can be imported
+            import langgraph  # noqa: F401 -- Verify package can be imported
 
             version_string = version("langgraph")
 
@@ -83,7 +81,7 @@ class TestDependencyCompatibility:
         problematic_versions = ["0.5.0", "0.5.1", "0.6.0", "0.6.1"]
 
         try:
-            import langgraph  # Verify package can be imported
+            import langgraph  # noqa: F401 -- Verify package can be imported
 
             current_version = version("langgraph")
 
@@ -199,7 +197,7 @@ class TestDependencyVersionDetection:
 
         # Check LangGraph version
         try:
-            import langgraph  # Verify package can be imported
+            import langgraph  # noqa: F401 -- Verify package can be imported
 
             version_string = version("langgraph")
             major, minor, patch = map(int, version_string.split("."))
@@ -219,9 +217,9 @@ class TestDependencyVersionDetection:
 
         # Check for known problematic combinations
         try:
-            import pydantic  # Verify package can be imported
+            import pydantic  # noqa: F401 -- Verify package can be imported
 
-            pydantic_version = version("pydantic")
+            version("pydantic")
 
             # Add other compatibility checks here as needed
 

@@ -9,7 +9,6 @@ This module also provides RunScopedDeclarationRegistry for thread-safe, isolated
 per-graph-run declaration access that eliminates race conditions in concurrent execution.
 """
 
-import logging
 from types import MappingProxyType
 from typing import Any, Callable, Dict, List, Mapping, Optional, Set
 

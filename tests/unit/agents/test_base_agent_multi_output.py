@@ -13,11 +13,9 @@ Tests cover:
 
 import unittest
 from typing import Any, Dict
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.services.execution_tracking_service import ExecutionTrackingService
-from agentmap.services.state_adapter_service import StateAdapterService
 from tests.utils.mock_service_factory import MockServiceFactory
 
 
@@ -586,7 +584,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
         # Act
         with patch.object(agent, "log_debug") as mock_debug:
-            result = agent.run({})
+            agent.run({})
 
             # Assert
             debug_calls = [call for call in mock_debug.call_args_list]
@@ -620,7 +618,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
 
         # Act & Assert
         with patch.object(agent, "log_warning") as mock_warn:
-            result = agent.run({})
+            agent.run({})
 
             # Should warn (default mode)
             mock_warn.assert_called()
@@ -684,7 +682,7 @@ class TestBaseAgentMultiOutput(unittest.TestCase):
         self._configure_state_adapter({"input": "test"})
 
         # Act
-        result = agent.run({"input": "test"})
+        agent.run({"input": "test"})
 
         # Assert - Tracking service should be called
         self.mock_execution_tracking.record_node_start.assert_called()

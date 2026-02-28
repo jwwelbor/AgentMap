@@ -5,7 +5,6 @@ This module provides the inspect-graph command for analyzing agent service
 configuration and graph structure.
 """
 
-from pathlib import Path
 from typing import Optional
 
 import typer
@@ -54,9 +53,9 @@ def inspect_graph_cmd(
         )
 
         outputs = result["outputs"]
-        metadata = result["metadata"]
+        result["metadata"]
 
-        typer.echo(f"\n📊 Graph Overview:")
+        typer.echo("\n📊 Graph Overview:")
         typer.echo(f"   Resolved Name: {outputs['resolved_name']}")
         typer.echo(f"   Total Nodes: {outputs['total_nodes']}")
         typer.echo(f"   Unique Agent Types: {outputs['unique_agent_types']}")
@@ -70,7 +69,7 @@ def inspect_graph_cmd(
             typer.echo(f"   Description: {node_info['description']}")
 
             if show_resolution:
-                typer.echo(f"   🔧 Resolution:")
+                typer.echo("   🔧 Resolution:")
                 typer.echo(
                     f"      Resolvable: {'✅' if node_info['resolvable'] else '❌'}"
                 )
@@ -85,13 +84,13 @@ def inspect_graph_cmd(
                 service_info = node_info["service_info"]
 
                 if show_services and "services" in service_info:
-                    typer.echo(f"   📋 Services:")
+                    typer.echo("   📋 Services:")
                     for service, available in service_info["services"].items():
                         status = "✅" if available else "❌"
                         typer.echo(f"      {service}: {status}")
 
                 if show_protocols and "protocols" in service_info:
-                    typer.echo(f"   🔌 Protocols:")
+                    typer.echo("   🔌 Protocols:")
                     for protocol, implemented in service_info["protocols"].items():
                         status = "✅" if implemented else "❌"
                         typer.echo(f"      {protocol}: {status}")
@@ -115,7 +114,7 @@ def inspect_graph_cmd(
 
                 # Show basic configuration always
                 if "configuration" in service_info:
-                    typer.echo(f"   📝 Configuration:")
+                    typer.echo("   📝 Configuration:")
                     config = service_info["configuration"]
                     typer.echo(f"      Input Fields: {config.get('input_fields', [])}")
                     typer.echo(
@@ -139,14 +138,14 @@ def inspect_graph_cmd(
                     typer.echo(f"      Error: {issue['resolution_error']}")
         else:
             typer.secho(
-                f"\n✅ No issues found - all agents properly configured!",
+                "\n✅ No issues found - all agents properly configured!",
                 fg=typer.colors.GREEN,
             )
 
         # Helpful suggestions
-        typer.echo(f"\n💡 Helpful Commands:")
+        typer.echo("\n💡 Helpful Commands:")
         typer.echo(
-            f"   agentmap diagnose                    # Check system dependencies"
+            "   agentmap diagnose                    # Check system dependencies"
         )
         typer.echo(
             f"   agentmap inspect-graph {graph_name} --config-details  # Show detailed config"
@@ -165,5 +164,5 @@ def inspect_graph_cmd(
         typer.echo("\n💡 Troubleshooting:")
         typer.echo(f"   • Check that graph '{graph_name}' exists in the CSV file")
         typer.echo(f"   • Verify CSV file path: {csv_file or 'default from config'}")
-        typer.echo(f"   • Run 'agentmap diagnose' to check system dependencies")
+        typer.echo("   • Run 'agentmap diagnose' to check system dependencies")
         raise typer.Exit(code=1)

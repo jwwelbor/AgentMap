@@ -12,7 +12,6 @@ import typer
 from agentmap.deployment.cli.utils.cli_presenter import (
     map_exception_to_exit_code,
     print_err,
-    print_json,
 )
 
 # Lazy import: moved to function to avoid DI container init at module load
@@ -170,7 +169,7 @@ def update_bundle_command(
                 if required_services > 0:
                     typer.echo(f"   Required services: {required_services}")
 
-                typer.echo(f"\n💡 Tips:")
+                typer.echo("\n💡 Tips:")
                 typer.echo("   • Use --dry-run to preview changes before updating")
                 typer.echo("   • Run 'agentmap scaffold' to create missing agents")
                 typer.echo("   • Check custom_agents.yaml for agent declarations")

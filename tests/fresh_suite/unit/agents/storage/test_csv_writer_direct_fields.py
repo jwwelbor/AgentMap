@@ -6,8 +6,7 @@ without requiring a 'data' wrapper field.
 """
 
 import unittest
-from typing import Any, Dict
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 from agentmap.agents.builtins.storage.csv.writer import CSVWriterAgent
 from agentmap.models.storage import DocumentResult, WriteMode

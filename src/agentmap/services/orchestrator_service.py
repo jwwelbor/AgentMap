@@ -6,7 +6,6 @@ Extracted from OrchestratorAgent following Domain Model Principles where
 models are data containers and services contain business logic.
 """
 
-import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from agentmap.services.features_registry_service import FeaturesRegistryService

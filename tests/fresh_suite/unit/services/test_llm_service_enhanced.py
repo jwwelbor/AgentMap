@@ -7,15 +7,8 @@ implementation details. They validate what the service does, not how it does it.
 
 import os
 import unittest
-from typing import Any, Dict, List, Optional
 from unittest.mock import Mock, patch
 
-from agentmap.exceptions import (
-    LLMConfigurationError,
-    LLMDependencyError,
-    LLMProviderError,
-    LLMServiceError,
-)
 from agentmap.services.llm_service import LLMService
 from tests.utils.mock_service_factory import MockServiceFactory
 

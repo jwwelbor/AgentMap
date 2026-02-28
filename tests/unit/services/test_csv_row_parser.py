@@ -6,7 +6,6 @@ whitespace trimming, and backward compatibility with single values.
 """
 
 import unittest
-from unittest.mock import Mock
 
 import pandas as pd
 

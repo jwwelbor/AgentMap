@@ -68,7 +68,6 @@ implementation details that can vary.
 """
 
 import unittest
-from typing import Any, Dict, List
 
 
 class TestGraphInterruptResumeSummary(unittest.TestCase):
@@ -109,7 +108,7 @@ class TestGraphInterruptResumeSummary(unittest.TestCase):
         for module_name, class_name in components_to_test:
             try:
                 module = __import__(module_name, fromlist=[class_name])
-                component = getattr(module, class_name)
+                getattr(module, class_name)
                 successful_imports.append((module_name, class_name))
             except (ImportError, AttributeError) as e:
                 failed_imports.append((module_name, class_name, str(e)))
@@ -311,7 +310,7 @@ class TestGraphInterruptResumeSummary(unittest.TestCase):
         print(f"   - Interaction ID: {interaction_id}")
         print(f"   - Original data keys: {list(original_data.keys())}")
         print(f"   - Checkpoint data keys: {list(checkpoint_data.keys())}")
-        print(f"   - All data preserved through exception flow")
+        print("   - All data preserved through exception flow")
 
 
 if __name__ == "__main__":

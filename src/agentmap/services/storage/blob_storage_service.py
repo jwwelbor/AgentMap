@@ -13,7 +13,6 @@ from typing import Any, Callable, Dict, List, Optional, Type
 from agentmap.exceptions import (
     StorageConnectionError,
     StorageOperationError,
-    StorageServiceError,
 )
 from agentmap.services.config.availability_cache_service import (
     AvailabilityCacheService,

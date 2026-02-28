@@ -12,10 +12,8 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, Optional
 
 from agentmap.di import get_service_status, initialize_di, initialize_di_for_testing
-from agentmap.di.containers import ApplicationContainer
 from tests.utils.enhanced_service_auditor import EnhancedServiceInterfaceAuditor
 
 
@@ -58,7 +56,7 @@ llm:
     model: "claude-3-5-sonnet-20241022"
     temperature: 0.7
   openai:
-    api_key: "test_key"  
+    api_key: "test_key"
     model: "gpt-3.5-turbo"
     temperature: 0.7
 

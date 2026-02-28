@@ -9,8 +9,6 @@ following established testing patterns from TESTING_PATTERNS.md.
 """
 
 import unittest
-from pathlib import Path
-from unittest.mock import Mock, patch
 
 from tests.fresh_suite.integration.api.base_api_integration_test import (
     BaseAPIIntegrationTest,

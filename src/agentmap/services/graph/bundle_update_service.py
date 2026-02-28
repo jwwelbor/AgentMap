@@ -6,8 +6,7 @@ after scaffolding or when declarations change.
 """
 
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.custom_agent_declaration_manager import (

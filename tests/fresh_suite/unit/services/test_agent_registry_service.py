@@ -6,7 +6,6 @@ and follow the established MockServiceFactory patterns for consistent testing.
 """
 
 import unittest
-from typing import Any, Dict, Type
 from unittest.mock import Mock
 
 from agentmap.models.agent_registry import AgentRegistry

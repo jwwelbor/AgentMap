@@ -58,7 +58,7 @@ class EnvironmentChangeDetector:
                 return hashlib.sha256(
                     "\n".join(sorted(result.stdout.strip().split("\n"))).encode("utf-8")
                 ).hexdigest()[:12]
-        except:
+        except Exception:
             pass
         return hashlib.sha256(
             "\n".join(sorted(list(sys.modules.keys())[:100])).encode("utf-8")

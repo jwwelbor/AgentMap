@@ -89,7 +89,7 @@ class CheckpointManager:
             execution_tracker = self.execution_tracking.create_tracker(thread_id)
 
             # Instantiate agents
-            self.logger.debug(f"Re-instantiating agents for checkpoint resume")
+            self.logger.debug("Re-instantiating agents for checkpoint resume")
             bundle_with_instances = self.graph_instantiation.instantiate_agents(
                 bundle, execution_tracker
             )
@@ -105,7 +105,7 @@ class CheckpointManager:
 
             # Assemble graph with checkpoint support
             self.logger.debug(
-                f"Reassembling graph for checkpoint resume WITH checkpointer"
+                "Reassembling graph for checkpoint resume WITH checkpointer"
             )
 
             graph = Graph(

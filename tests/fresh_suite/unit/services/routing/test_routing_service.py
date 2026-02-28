@@ -5,12 +5,9 @@ These tests validate the core LLM routing service using actual interface methods
 and follow the established MockServiceFactory patterns for consistent testing.
 """
 
-import time
 import unittest
-from typing import Any, Dict, List, Optional
 from unittest.mock import Mock, patch
 
-from agentmap.exceptions.base_exceptions import ConfigurationException
 from agentmap.services.routing.routing_service import LLMRoutingService
 from agentmap.services.routing.types import (
     RoutingContext,

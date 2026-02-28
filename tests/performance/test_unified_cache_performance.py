@@ -18,29 +18,32 @@ Key Performance Metrics Validated:
 - File system I/O patterns with categorized single-file storage
 """
 
-import asyncio
 import concurrent.futures
 import json
 import os
 import statistics
 import sys
 import tempfile
-import threading
 import time
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
-from unittest.mock import Mock, patch
+from typing import Any, Dict, List
+from unittest.mock import Mock
 
 # Add the source directory to the Python path for testing
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from agentmap.models.features_registry import FeaturesRegistry
-from agentmap.services.config.availability_cache_service import AvailabilityCacheService
-from agentmap.services.dependency_checker_service import DependencyCheckerService
-from agentmap.services.features_registry_service import FeaturesRegistryService
-from agentmap.services.logging_service import LoggingService
+from agentmap.models.features_registry import FeaturesRegistry  # noqa: E402
+from agentmap.services.config.availability_cache_service import (  # noqa: E402
+    AvailabilityCacheService,
+)
+from agentmap.services.dependency_checker_service import (  # noqa: E402
+    DependencyCheckerService,
+)
+from agentmap.services.features_registry_service import (  # noqa: E402
+    FeaturesRegistryService,
+)
 
 
 class CachePerformanceBenchmark:
@@ -188,7 +191,7 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
                 self.assertTrue(result.get("validation_passed"))
 
         stats = hit_benchmark.get_stats()
-        print(f"\n=== Cache Hit Performance (All Categories) ===")
+        print("\n=== Cache Hit Performance (All Categories) ===")
         print(f"Operations: {stats['count']}")
         print(f"Mean: {stats['mean_ms']:.2f}ms")
         print(f"Median: {stats['median_ms']:.2f}ms")
@@ -243,7 +246,7 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
             miss_benchmark.stop()
 
         stats = miss_benchmark.get_stats()
-        print(f"\n=== Cache Miss + Work Performance ===")
+        print("\n=== Cache Miss + Work Performance ===")
         print(f"Operations: {stats['count']}")
         print(f"Mean: {stats['mean_ms']:.2f}ms")
         print(f"Median: {stats['median_ms']:.2f}ms")
@@ -324,7 +327,7 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
         unified_stats = unified_benchmark.get_stats()
         separate_stats = separate_benchmark.get_stats()
 
-        print(f"\n=== Unified vs Separate Cache Comparison ===")
+        print("\n=== Unified vs Separate Cache Comparison ===")
         print(
             f"Unified Cache - Mean: {unified_stats['mean_ms']:.2f}ms, P95: {unified_stats['p95_ms']:.2f}ms"
         )
@@ -393,7 +396,7 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
             self.assertIsNotNone(cached_result)
 
         stats = integration_benchmark.get_stats()
-        print(f"\n=== Service Integration Performance ===")
+        print("\n=== Service Integration Performance ===")
         print(f"Operations: {stats['count']}")
         print(f"Mean: {stats['mean_ms']:.2f}ms")
         print(f"Median: {stats['median_ms']:.2f}ms")
@@ -435,7 +438,7 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
         if stats["p95_ms"] > 1000.0:
             print(f"\nPerformance Warning: P95={stats['p95_ms']:.1f}ms is quite slow")
             print(
-                f"This may indicate: 1) Slow CI environment, 2) Cold dependency imports, 3) I/O bottlenecks"
+                "This may indicate: 1) Slow CI environment, 2) Cold dependency imports, 3) I/O bottlenecks"
             )
             print(
                 f"Operations breakdown: {stats['count']} operations, Mean: {stats['mean_ms']:.1f}ms each"
@@ -461,7 +464,7 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
                 cache_service.set_availability(category, key, test_data)
 
         # Concurrent access test
-        concurrent_benchmark = self.get_benchmark("concurrent_access")
+        self.get_benchmark("concurrent_access")
         results = []
         errors = []
 
@@ -517,7 +520,7 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
                 "stdev_ms": statistics.stdev(results) * 1000 if len(results) > 1 else 0,
             }
 
-            print(f"\n=== Concurrent Access Performance ===")
+            print("\n=== Concurrent Access Performance ===")
             print(f"Threads: {num_threads}")
             print(f"Operations per thread: {operations_per_thread}")
             print(f"Total operations: {concurrent_stats['count']}")
@@ -589,7 +592,7 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
         category_stats = category_invalidation_benchmark.get_stats()
         full_stats = full_invalidation_benchmark.get_stats()
 
-        print(f"\n=== Cache Invalidation Performance ===")
+        print("\n=== Cache Invalidation Performance ===")
         print(f"Key invalidation - Mean: {key_stats['mean_ms']:.2f}ms")
         print(f"Category invalidation - Time: {category_stats['mean_ms']:.2f}ms")
         print(f"Full invalidation - Time: {full_stats['mean_ms']:.2f}ms")
@@ -659,7 +662,7 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
         cold_stats = cold_start_benchmark.get_stats()
         warm_stats = warm_start_benchmark.get_stats()
 
-        print(f"\n=== Startup Performance Comparison ===")
+        print("\n=== Startup Performance Comparison ===")
         print(f"Cold start: {cold_stats['mean_ms']:.2f}ms")
         print(f"Warm start: {warm_stats['mean_ms']:.2f}ms")
         print(f"Speedup: {(cold_stats['mean_ms'] / warm_stats['mean_ms']):.1f}x")
@@ -744,7 +747,7 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
         separate_memory = process.memory_info().rss / 1024 / 1024  # MB
         separate_usage = separate_memory - unified_memory
 
-        print(f"\n=== Memory Usage Patterns ===")
+        print("\n=== Memory Usage Patterns ===")
         print(f"Baseline memory: {baseline_memory:.1f} MB")
         print(f"Unified cache memory usage: {unified_usage:.1f} MB")
         print(f"Separate caches additional usage: {separate_usage:.1f} MB")
@@ -837,7 +840,7 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
         cross_stats = cross_service_benchmark.get_stats()
         routing_stats = llm_routing_benchmark.get_stats()
 
-        print(f"\n=== Cross-Service Cache Benefits ===")
+        print("\n=== Cross-Service Cache Benefits ===")
         print(f"Dependency validation + cache: {cross_stats['mean_ms']:.2f}ms")
         print(f"LLM routing cache reuse: {routing_stats['mean_ms']:.2f}ms")
         print(
@@ -854,7 +857,7 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
         """Test file I/O patterns with categorized single-file storage."""
         cache_service = self.create_cache_service()
 
-        io_benchmark = self.get_benchmark("file_io_patterns")
+        self.get_benchmark("file_io_patterns")
 
         # Test mixed read/write patterns
         categories = ["dependency.llm", "dependency.storage", "llm_provider", "storage"]
@@ -906,7 +909,7 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
             "max_ms": max(read_times) * 1000,
         }
 
-        print(f"\n=== File I/O Patterns ===")
+        print("\n=== File I/O Patterns ===")
         print(f"Write operations: {write_stats['count']}")
         print(f"Write mean: {write_stats['mean_ms']:.2f}ms")
         print(f"Write max: {write_stats['max_ms']:.2f}ms")
@@ -1017,7 +1020,7 @@ class UnifiedCachePerformanceTests(unittest.TestCase):
             baseline_results[scenario_name] = benchmark.get_stats()
 
         # Report baseline results
-        print(f"\n=== Performance Regression Baselines ===")
+        print("\n=== Performance Regression Baselines ===")
         for scenario_name, stats in baseline_results.items():
             print(f"{scenario_name}:")
             print(f"  Mean: {stats['mean_ms']:.2f}ms")

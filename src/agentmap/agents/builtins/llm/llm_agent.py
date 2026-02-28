@@ -389,7 +389,7 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
                 truncate_memory(inputs, self.max_memory_messages, self.memory_key)
 
             # Log successful completion
-            self.log_info(f"LLM processing completed successfully")
+            self.log_info("LLM processing completed successfully")
 
             # Return result with memory included
             return {"output": result, self.memory_key: inputs.get(self.memory_key, [])}

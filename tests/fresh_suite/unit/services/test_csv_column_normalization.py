@@ -4,16 +4,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import pandas as pd
-
 # Add the project root to the path so we can import tests
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 
-from agentmap.services.csv_graph_parser_service import CSVGraphParserService
-from agentmap.services.validation.csv_validation_service import CSVValidationService
+from agentmap.services.csv_graph_parser_service import (  # noqa: E402
+    CSVGraphParserService,
+)
+from agentmap.services.validation.csv_validation_service import (  # noqa: E402
+    CSVValidationService,
+)
 
 # Import from tests which is at the project root level
-from tests.utils.mock_service_factory import MockServiceFactory
+from tests.utils.mock_service_factory import MockServiceFactory  # noqa: E402
 
 
 class TestCSVColumnNormalization(unittest.TestCase):
@@ -115,7 +117,7 @@ MyWorkflow,ErrorHandler,Echo,Show error,Error handler,error,error_msg,,"""
         # Create CSV with next_node alias
         csv_content = """GraphName,Node,next_node,AgentType
 LinearGraph,Start,Middle,Default
-LinearGraph,Middle,End,Default  
+LinearGraph,Middle,End,Default
 LinearGraph,End,,Echo"""
 
         csv_path = Path(self.temp_dir) / "test_next_node.csv"

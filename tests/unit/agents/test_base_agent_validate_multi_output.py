@@ -7,14 +7,11 @@ Tests validation of dict returns for multi-output agents, including:
 - Graceful degradation for non-dict returns
 """
 
-import logging
 import unittest
 from typing import Any, Dict
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import patch
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.services.execution_tracking_service import ExecutionTrackingService
-from agentmap.services.state_adapter_service import StateAdapterService
 from tests.utils.mock_service_factory import MockServiceFactory
 
 
@@ -144,7 +141,7 @@ class TestValidateMultiOutput(unittest.TestCase):
 
         # Act
         with patch.object(agent, "log_debug") as mock_log_debug:
-            result = agent._validate_multi_output(output)
+            agent._validate_multi_output(output)
 
             # Assert
             mock_log_debug.assert_called_once()
@@ -447,7 +444,7 @@ class TestValidateMultiOutput(unittest.TestCase):
 
         # Act
         with patch.object(agent, "log_warning") as mock_log_warning:
-            result = agent._validate_multi_output(output)
+            agent._validate_multi_output(output)
 
             # Assert - Should warn (not error)
             mock_log_warning.assert_called_once()
@@ -579,7 +576,7 @@ class TestValidateMultiOutput(unittest.TestCase):
 
         # Act
         with patch.object(agent, "log_warning") as mock_warning:
-            with patch.object(agent, "log_debug") as mock_debug:
+            with patch.object(agent, "log_debug"):
                 agent._validate_multi_output(output)
 
                 # Assert

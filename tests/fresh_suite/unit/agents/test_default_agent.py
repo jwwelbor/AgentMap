@@ -7,7 +7,6 @@ default processing behavior with message formatting and UUID tracking.
 """
 
 import unittest
-from typing import Any, Dict
 from unittest.mock import Mock, patch
 
 from agentmap.agents.builtins.default_agent import DefaultAgent

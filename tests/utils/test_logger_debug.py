@@ -1,7 +1,6 @@
 """Debug test to understand mock logger structure."""
 
 import unittest
-from unittest.mock import Mock
 
 from tests.utils.mock_service_factory import MockServiceFactory
 

@@ -6,9 +6,8 @@ the common issue where tests pass locally but fail in CI environments.
 """
 
 import functools
-import tempfile
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict
 from unittest.mock import patch
 
 

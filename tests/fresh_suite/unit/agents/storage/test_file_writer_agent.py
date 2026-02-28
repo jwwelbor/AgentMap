@@ -6,9 +6,7 @@ removing both WriterOperationsMixin and StorageErrorHandlerMixin,
 ensuring clean architecture and proper service delegation.
 """
 
-import os
 import unittest
-from typing import Any, Dict
 from unittest.mock import Mock, patch
 
 from agentmap.agents.builtins.storage.base_storage_agent import BaseStorageAgent
@@ -188,7 +186,7 @@ class TestModernizedFileWriterAgent(unittest.TestCase):
         collection = "simple.txt"
         inputs = {"data": "Simple content"}  # Minimal inputs
 
-        result = agent._execute_operation(collection, inputs)
+        agent._execute_operation(collection, inputs)
 
         # Verify service called with defaults
         self.mock_file_service.write.assert_called_once_with(
@@ -218,7 +216,7 @@ class TestModernizedFileWriterAgent(unittest.TestCase):
                 collection = f"test_{mode_str}.txt"
                 inputs = {"data": f"Content for {mode_str}", "mode": mode_str}
 
-                result = agent._execute_operation(collection, inputs)
+                agent._execute_operation(collection, inputs)
 
                 self.mock_file_service.write.assert_called_once_with(
                     collection=collection,

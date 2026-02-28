@@ -6,13 +6,10 @@ enhanced return type analysis, ensuring tests are built against real APIs with
 sophisticated type-aware test generation.
 """
 
-import ast
 import importlib
 import inspect
-import sys
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Type
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 
 @dataclass
@@ -422,8 +419,8 @@ class EnhancedServiceInterfaceAuditor:
                 "",
                 "    def test_service_initialization(self):",
                 '        """Test that service initializes correctly with all dependencies."""',
-                f"        # Verify service is properly configured",
-                f"        self.assertIsNotNone(self.service)",
+                "        # Verify service is properly configured",
+                "        self.assertIsNotNone(self.service)",
                 f'        self.assertEqual(self.service.logger.name, "{service_info.class_name}")',
                 "",
                 "        # Verify initialization log message",
@@ -490,7 +487,7 @@ class EnhancedServiceInterfaceAuditor:
             assertions.append("        # TODO: Set up return values for getter")
 
         assertions.append("")
-        assertions.append(f"        # Call the method")
+        assertions.append("        # Call the method")
 
         # Generate method call based on parameters
         if len(method.parameters) == 0:
@@ -570,7 +567,7 @@ class EnhancedServiceInterfaceAuditor:
             assertions.extend(
                 [
                     "        # Verify optional return type (can be None)",
-                    f"        if result is not None:",
+                    "        if result is not None:",
                     f"            # TODO: Add specific assertion for {inner_type} when not None",
                 ]
             )
@@ -625,7 +622,7 @@ class EnhancedServiceInterfaceAuditor:
         return_types = [method.return_type for method in service_info.public_methods]
         unique_return_types = list(set(return_types))
         if len(unique_return_types) > 1:
-            print(f"\nReturn Type Distribution:")
+            print("\nReturn Type Distribution:")
             for rt in unique_return_types:
                 count = return_types.count(rt)
                 print(f"  📊 {rt}: {count} method{'s' if count != 1 else ''}")

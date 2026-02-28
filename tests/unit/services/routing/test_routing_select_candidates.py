@@ -1,7 +1,4 @@
-from types import SimpleNamespace
-
 from agentmap.services.routing.routing_service import (
-    ActivityRoutingTable,
     LLMRoutingService,
 )
 from agentmap.services.routing.types import TaskComplexity

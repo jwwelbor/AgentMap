@@ -17,13 +17,11 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, List
-from unittest.mock import MagicMock, Mock, call, patch
+from unittest.mock import Mock, patch
 
 from agentmap.exceptions import (
     StorageConnectionError,
     StorageOperationError,
-    StorageServiceError,
 )
 from agentmap.services.storage.blob_storage_service import BlobStorageService
 from tests.utils.mock_service_factory import MockServiceFactory
@@ -1149,7 +1147,7 @@ class TestBlobStorageServiceIntegration(unittest.TestCase):
         """Create a test configuration file for DI container."""
         config_path = Path(self.temp_dir) / "test_config.yaml"
 
-        config_content = f"""logging:
+        config_content = """logging:
   version: 1
   level: DEBUG
   format: "[%(levelname)s] %(name)s: %(message)s"

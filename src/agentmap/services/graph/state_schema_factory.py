@@ -72,7 +72,7 @@ class StateSchemaFactory:
         try:
             from pydantic import BaseModel
 
-            model_class = execution_config.get("graph", {}).get("state_model_class")
+            execution_config.get("graph", {}).get("state_model_class")
             # TODO: Implement dynamic model class import when needed
             return BaseModel
         except ImportError:

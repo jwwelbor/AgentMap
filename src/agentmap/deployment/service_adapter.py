@@ -110,7 +110,7 @@ class ServiceAdapter:
                 status_code = 200
                 body = {
                     "success": True,
-                    "message": f"Successfully processed operation",
+                    "message": "Successfully processed operation",
                     "data": result,
                 }
             else:
@@ -354,7 +354,7 @@ class ResponseFormatter:
                 return f"❌ Execution failed: {result.error}"
         else:
             if result.get("success"):
-                return f"✅ Operation completed successfully"
+                return "✅ Operation completed successfully"
             else:
                 return f"❌ Operation failed: {result.get('error', 'Unknown error')}"
 

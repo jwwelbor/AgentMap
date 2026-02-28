@@ -7,7 +7,6 @@ and preserved result formatting.
 """
 
 import unittest
-from typing import Any, Dict
 from unittest.mock import Mock, patch
 
 from agentmap.agents.builtins.storage.vector.base_agent import VectorAgent
@@ -190,7 +189,7 @@ class TestModernizedVectorReaderAgent(unittest.TestCase):
             # No k or metadata_keys specified - should use agent defaults
         }
 
-        result = agent._execute_operation(collection, inputs)
+        agent._execute_operation(collection, inputs)
 
         # Verify service called with agent defaults
         self.mock_vector_service.read.assert_called_once_with(
@@ -330,7 +329,7 @@ class TestModernizedVectorReaderAgent(unittest.TestCase):
             "search_text": "custom field query"
         }  # Using first field from custom input_fields
 
-        result = agent._execute_operation(collection, inputs)
+        agent._execute_operation(collection, inputs)
 
         # Should use the custom input field
         self.mock_vector_service.read.assert_called_once()

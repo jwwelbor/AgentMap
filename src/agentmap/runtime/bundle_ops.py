@@ -26,7 +26,6 @@ def update_bundle(
         GraphNotFound: if the graph cannot be located.
         AgentMapNotInitialized: if runtime has not been initialized.
     """
-    from pathlib import Path
 
     from agentmap.exceptions.runtime_exceptions import (
         AgentMapNotInitialized,

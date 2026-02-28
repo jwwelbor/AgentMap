@@ -10,13 +10,9 @@ These tests validate the StorageServiceManager implementation including:
 - Configuration management
 """
 
-import os
-import shutil
-import tempfile
 import unittest
-from pathlib import Path
-from typing import Any, Dict, List, Type
-from unittest.mock import MagicMock, Mock, patch
+from typing import Any, Dict, Type
+from unittest.mock import Mock, patch
 
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.manager import StorageServiceManager
@@ -512,7 +508,7 @@ class TestStorageServiceManager(unittest.TestCase):
         self.manager.register_provider("unhealthy", MockStorageService)
 
         # Get services to initialize them
-        healthy_service = self.manager.get_service("healthy")
+        self.manager.get_service("healthy")
         unhealthy_service = self.manager.get_service("unhealthy")
 
         # Make one unhealthy
@@ -569,8 +565,8 @@ class TestStorageServiceManager(unittest.TestCase):
         self.manager.register_provider("provider1", MockStorageService)
         self.manager.register_provider("provider2", MockStorageService)
 
-        service1 = self.manager.get_service("provider1")
-        service2 = self.manager.get_service("provider2")
+        self.manager.get_service("provider1")
+        self.manager.get_service("provider2")
 
         # Verify services are cached
         self.assertEqual(len(self.manager._services), 2)
@@ -587,8 +583,8 @@ class TestStorageServiceManager(unittest.TestCase):
         self.manager.register_provider("provider1", MockStorageService)
         self.manager.register_provider("provider2", MockStorageService)
 
-        service1 = self.manager.get_service("provider1")
-        service2 = self.manager.get_service("provider2")
+        self.manager.get_service("provider1")
+        self.manager.get_service("provider2")
 
         # Clear cache for specific provider
         self.manager.clear_cache("provider1")
@@ -702,7 +698,7 @@ class TestStorageServiceManager(unittest.TestCase):
         mock_factory = MockStorageServiceFactory(MockStorageService)
         self.manager.register_factory("factory1", mock_factory)
 
-        service1 = self.manager.get_service("provider1")
+        self.manager.get_service("provider1")
 
         # Verify initial state
         self.assertTrue(len(self.manager._services) > 0)

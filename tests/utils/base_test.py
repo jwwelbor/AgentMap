@@ -8,10 +8,8 @@ testing patterns across the entire test suite.
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional, Type, Union
-from unittest.mock import Mock, patch
-
-import pytest
+from typing import Any, Dict, Optional, Type
+from unittest.mock import Mock
 
 from tests.utils.mock_service_factory import MockServiceFactory, ServiceMockBuilder
 
@@ -182,12 +180,12 @@ class AgentTestMixin:
         # For unit tests, use mocks
         if hasattr(self, "mock_logging_service"):
             logger = self.mock_logging_service.get_logger("test")
-            execution_tracker = self.mock_execution_tracker
+            execution_tracking_service = self.mock_execution_tracker
         # For integration tests, use real services
         elif hasattr(self, "container"):
             logging_service = self.container.logging_service()
             logger = logging_service.get_logger("test")
-            execution_tracker = self.container.execution_tracker()
+            execution_tracking_service = self.container.execution_tracker()
         else:
             raise ValueError(
                 "Test class must inherit from BaseUnitTest or BaseIntegrationTest"
@@ -290,22 +288,14 @@ class TestDataFactory:
 class AgentUnitTest(BaseUnitTest, AgentTestMixin):
     """Unit test class specifically for testing agents."""
 
-    pass
-
 
 class ServiceUnitTest(BaseUnitTest, ServiceTestMixin):
     """Unit test class specifically for testing services."""
-
-    pass
 
 
 class AgentIntegrationTest(BaseIntegrationTest, AgentTestMixin):
     """Integration test class specifically for testing agents."""
 
-    pass
-
 
 class ServiceIntegrationTest(BaseIntegrationTest, ServiceTestMixin):
     """Integration test class specifically for testing services."""
-
-    pass

@@ -12,9 +12,8 @@ from typing import Any, Dict, Optional
 
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
-from agentmap.services.storage.json_service import JSONStorageService
 from agentmap.services.storage.system_manager import SystemStorageManager
-from agentmap.services.storage.types import StorageResult, WriteMode
+from agentmap.services.storage.types import WriteMode
 
 
 class GraphRegistryService:

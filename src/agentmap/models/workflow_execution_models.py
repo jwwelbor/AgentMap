@@ -5,10 +5,9 @@ This module provides API endpoints that follow the same bundle pattern
 as the CLI, resolving workflows from the repository and using cached bundles.
 """
 
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from agentmap.di import initialize_di

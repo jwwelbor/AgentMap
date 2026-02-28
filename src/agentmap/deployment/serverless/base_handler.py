@@ -9,7 +9,6 @@ import asyncio
 import json
 import traceback
 import uuid
-from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
 
@@ -29,12 +28,6 @@ from agentmap.exceptions.runtime_exceptions import (
 )
 
 # Models and utilities (not services)
-from agentmap.models.serverless_models import (
-    ExecutionParams,
-    ExecutionRequest,
-    ExecutionResult,
-    RequestContext,
-)
 from agentmap.models.serverless_models import TriggerType as NewTriggerType
 
 # ✅ FACADE PATTERN: Only import from runtime facade

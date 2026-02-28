@@ -6,8 +6,6 @@ for agents that generate success messages with detailed context information.
 """
 
 import unittest
-from typing import Any, Dict
-from unittest.mock import Mock
 
 from agentmap.agents.builtins.success_agent import SuccessAgent
 from agentmap.services.protocols import LLMCapableAgent, StorageCapableAgent

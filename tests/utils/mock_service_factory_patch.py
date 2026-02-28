@@ -1,6 +1,5 @@
 """Temporary patch for MockServiceFactory to fix logging test issues."""
 
-from typing import Any, Dict, Optional
 from unittest.mock import Mock
 
 
@@ -73,7 +72,7 @@ def create_fixed_mock_logging_service(logger_name: str = "test") -> Mock:
 
 
 # Monkey patch the MockServiceFactory
-import sys
+import sys  # noqa: E402
 
 if "tests.utils.mock_service_factory" in sys.modules:
     sys.modules[

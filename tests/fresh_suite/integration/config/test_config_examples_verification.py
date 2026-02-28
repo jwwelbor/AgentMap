@@ -7,8 +7,6 @@ documentation against the current AppConfigService implementation.
 This ensures the documentation examples are accurate and work correctly.
 """
 
-import os
-import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, Dict

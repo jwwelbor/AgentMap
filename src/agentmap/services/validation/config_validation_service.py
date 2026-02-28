@@ -111,14 +111,6 @@ class ConfigValidationService:
         )
 
         # Check for common typos in section names
-        expected_sections = {
-            "paths",
-            "llm",
-            "memory",
-            "prompts",
-            "execution",
-            "tracing",
-        }
         typo_suggestions = {
             "path": "paths",
             "llms": "llm",

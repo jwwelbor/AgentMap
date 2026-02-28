@@ -5,13 +5,10 @@ These tests validate the StateAdapterService using actual interface methods
 and follow the established MockServiceFactory patterns for consistent testing.
 """
 
-import copy
 import unittest
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 from agentmap.services.state_adapter_service import StateAdapterService
-from tests.utils.mock_service_factory import MockServiceFactory
 
 
 class TestStateAdapterService(unittest.TestCase):
@@ -281,7 +278,7 @@ class TestStateAdapterService(unittest.TestCase):
             with patch("copy.copy") as mock_copy:
                 mock_copy.return_value = self.pydantic_state
 
-                result = StateAdapterService.set_value(
+                StateAdapterService.set_value(
                     self.pydantic_state, "key1", "fallback_value"
                 )
 

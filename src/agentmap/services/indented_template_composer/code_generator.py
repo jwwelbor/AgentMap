@@ -4,7 +4,7 @@ Code generation utilities for IndentedTemplateComposer.
 Handles generation of class names, attributes, documentation, and other code snippets.
 """
 
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from agentmap.models.scaffold_types import ServiceAttribute, ServiceRequirements
 from agentmap.services.logging_service import LoggingService

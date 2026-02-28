@@ -64,7 +64,7 @@ def validate_cache_cmd(
 
             if cache_stats["expired_files"] > 0:
                 typer.echo(
-                    f"\n💡 Run 'agentmap validate-cache --cleanup' to remove expired entries"
+                    "\n💡 Run 'agentmap validate-cache --cleanup' to remove expired entries"
                 )
 
             if cache_stats["corrupted_files"] > 0:

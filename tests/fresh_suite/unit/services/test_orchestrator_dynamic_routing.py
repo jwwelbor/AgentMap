@@ -4,7 +4,7 @@ Test orchestrator dynamic routing fix.
 
 import unittest
 from typing import Any, Dict
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 from agentmap.models.graph import Graph, Node
 from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
@@ -133,7 +133,7 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
 
         # Mock the builder to avoid actual compilation
         # We need to mock _initialize_builder to prevent it from creating a real StateGraph
-        original_init_builder = self.assembly_service._initialize_builder
+        self.assembly_service._initialize_builder
 
         def mock_init_builder(graph=None):
             """Mock that preserves orchestrator tracking but uses mock builder."""
@@ -159,7 +159,7 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         test_registry = {"NodeA": {}, "NodeB": {}, "NodeC": {}}
 
         # Call assemble_graph which should detect the orchestrator and inject the registry
-        compiled_graph = self.assembly_service.assemble_graph(
+        self.assembly_service.assemble_graph(
             graph,
             mock_agents,  # Pass agent instances directly
             orchestrator_node_registry=test_registry,
@@ -195,8 +195,6 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
 
     def test_dynamic_router_returns_valid_destination(self):
         """Test that the dynamic router validates destinations."""
-        # Create a mock state with __next_node set
-        mock_state = {"__next_node": "NodeB", "last_action_success": True}
         self.mock_state_adapter.get_value.side_effect = (
             lambda state, key, default=None: state.get(key, default)
         )

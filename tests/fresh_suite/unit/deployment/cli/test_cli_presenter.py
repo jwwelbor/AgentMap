@@ -7,7 +7,6 @@ StorageResult, ExecutionSummary, and other custom objects to JSON.
 
 import io
 import json
-import sys
 import unittest
 from datetime import datetime
 from unittest.mock import patch

@@ -165,7 +165,7 @@ class GraphRunnerService:
 
             # Phase 3: Create execution tracker for this run
             self.logger.debug(
-                f"[GraphRunnerService] Phase 3: Setting up execution tracking"
+                "[GraphRunnerService] Phase 3: Setting up execution tracking"
             )
 
             # Create execution tracker - always create a new tracker
@@ -273,7 +273,7 @@ class GraphRunnerService:
                     orchestrator_node_registry=node_definitions,  # Pass node definitions for orchestrators
                 )
 
-            self.logger.debug(f"[GraphRunnerService] Graph assembly completed")
+            self.logger.debug("[GraphRunnerService] Graph assembly completed")
 
             # Phase 6: Execution - run the graph
             self.logger.debug(
@@ -371,7 +371,7 @@ class GraphRunnerService:
 
         except GraphInterrupt as e:
             # Handle LangGraph interrupt (from interrupt() call in agents)
-            self.logger.info(f"🔄 Graph execution interrupted (LangGraph pattern)")
+            self.logger.info("🔄 Graph execution interrupted (LangGraph pattern)")
 
             # Get thread_id from execution tracker
             thread_id = execution_tracker.thread_id if execution_tracker else None

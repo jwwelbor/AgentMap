@@ -6,19 +6,12 @@ including CSV → JSON → Vector processing pipelines, memory caching with
 persistent storage, and storage cleanup and resource management.
 """
 
-import csv
 import json
-import tempfile
 import time
 import unittest
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
-from agentmap.exceptions.service_exceptions import (
-    StorageConfigurationNotAvailableException,
-)
-from agentmap.services.storage.types import StorageResult, WriteMode
 from tests.fresh_suite.integration.base_integration_test import BaseIntegrationTest
 
 
@@ -987,12 +980,12 @@ New data available in JSON format for modern applications.
         customers = self.json_service.read("customers", aggregation_id)["customers"]
         # FIX: Read all transactions, not a specific document
         transactions = self.csv_service.read("transactions", format="records")
-        products = self.json_service.read("products", aggregation_id)["products"]
+        products = self.json_service.read(  # noqa: F841
+            "products", aggregation_id
+        )["products"]
 
         # Create lookup dictionaries
         customer_lookup = {c["customer_id"]: c for c in customers}
-        product_lookup = {p["product_id"]: p for p in products}
-
         # Aggregate transaction data with customer and product information
         enriched_transactions = []
         customer_summary = {}
@@ -1410,7 +1403,7 @@ PERFORMANCE METRICS:
 - Health Status: {"HEALTHY" if metrics["health"] else "UNHEALTHY"}
 """
 
-        resource_report += f"""
+        resource_report += """
 RESOURCE MANAGEMENT SUMMARY:
 - All services tested under load: ✓
 - Cache management verified: ✓

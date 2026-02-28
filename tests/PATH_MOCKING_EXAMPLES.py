@@ -4,6 +4,10 @@ Example: Refactoring test_compilation_service.py with new Path Mocking Utilities
 This file shows before/after examples of how to use the new utilities.
 """
 
+import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
+
 
 # BEFORE: Complex manual mocking (from our recent fixes)
 def test_get_compilation_status_compiled_current_OLD(self):

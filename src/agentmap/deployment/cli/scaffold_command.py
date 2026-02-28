@@ -13,7 +13,6 @@ import typer
 from agentmap.deployment.cli.utils.cli_presenter import (
     map_exception_to_exit_code,
     print_err,
-    print_json,
 )
 
 # Lazy import: moved to function to avoid DI container init at module load
@@ -83,7 +82,7 @@ def scaffold_command(
         # Display results using CLI presenter for consistency
         if result.get("success", False):
             outputs = result.get("outputs", {})
-            metadata = result.get("metadata", {})
+            result.get("metadata", {})
 
             # Display progress messages from the facade
             progress_messages = outputs.get("progress_messages", [])

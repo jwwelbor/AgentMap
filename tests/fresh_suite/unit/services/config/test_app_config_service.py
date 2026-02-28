@@ -5,11 +5,9 @@ This module tests the AppConfigService which contains domain logic
 including configuration loading, validation, and business logic methods.
 """
 
-import os
-import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 from agentmap.exceptions.base_exceptions import ConfigurationException
 from src.agentmap.services.config.app_config_service import AppConfigService
@@ -60,7 +58,6 @@ class TestAppConfigService(unittest.TestCase):
 
     def tearDown(self):
         """Clean up test fixtures."""
-        pass
 
     def test_get_section_success(self):
         """Test getting configuration sections."""
@@ -337,7 +334,6 @@ class TestAppConfigService(unittest.TestCase):
     def test_configuration_not_loaded_error(self):
         """Test error when configuration is not loaded."""
         # Create service without loading config
-        mock_config_service = Mock(spec=ConfigService)
         service = AppConfigService.__new__(AppConfigService)
         service._config_data = None
 

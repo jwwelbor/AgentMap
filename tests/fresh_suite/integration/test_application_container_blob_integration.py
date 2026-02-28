@@ -12,11 +12,9 @@ These tests validate the complete DI container integration including:
 - Error handling and graceful degradation at container level
 """
 
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
 
 from agentmap.agents.builtins.storage.blob.blob_reader_agent import BlobReaderAgent
 from agentmap.agents.builtins.storage.blob.blob_writer_agent import BlobWriterAgent
@@ -28,7 +26,6 @@ from agentmap.services.storage.blob_storage_service import BlobStorageService
 from agentmap.services.storage.manager import StorageServiceManager
 from tests.fresh_suite.unit.services.storage.blob_storage_test_fixtures import (
     BlobStorageTestEnvironment,
-    BlobStorageTestFixtures,
 )
 
 
@@ -379,7 +376,7 @@ class TestApplicationContainerBlobIntegration(unittest.TestCase):
             # Get available providers that support listing
             providers = blob_service.get_available_providers()
             self.assertIn("file", providers)  # Local file should always be available
-        except Exception as e:
+        except Exception:
             # Some providers may not support listing
             pass
 
@@ -585,7 +582,7 @@ storage:
                 # (specific dependency checking for blob storage might not be implemented)
                 self.assertIsNotNone(dependency_checker)
 
-            except Exception as e:
+            except Exception:
                 # Even if specific blob dependency checking isn't implemented,
                 # services should coexist without conflicts
                 self.assertIsNotNone(blob_service)
@@ -675,7 +672,7 @@ storage:
                 service_config = blob_service._config
                 self.assertIsInstance(service_config, dict)
 
-            except Exception as e:
+            except Exception:
                 # Configuration validation should not crash the container
                 self.assertIsNotNone(app_config)
                 self.assertIsNotNone(blob_service)

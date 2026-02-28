@@ -11,14 +11,10 @@ These tests validate:
 """
 
 import concurrent.futures
-import shutil
-import tempfile
-import threading
 import time
 import unittest
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
-from unittest.mock import MagicMock, Mock, patch
+from typing import List, Tuple
+from unittest.mock import Mock, patch
 
 from agentmap.agents.builtins.storage.blob.blob_reader_agent import BlobReaderAgent
 from agentmap.agents.builtins.storage.blob.blob_writer_agent import BlobWriterAgent
@@ -470,7 +466,7 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
                     }
                 )
 
-                service = BlobStorageService(
+                BlobStorageService(
                     configuration=azure_config,
                     logging_service=self.mock_logging,
                     availability_cache=self.mock_availability_cache,
@@ -504,7 +500,7 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
         for scenario in error_scenarios:
             with self.subTest(scenario=scenario):
                 # Create service
-                service = BlobStorageService(
+                BlobStorageService(
                     configuration=self.mock_config,
                     logging_service=self.mock_logging,
                     availability_cache=self.mock_availability_cache,
@@ -552,7 +548,7 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
                     }
                 )
 
-                service = BlobStorageService(
+                BlobStorageService(
                     configuration=s3_config,
                     logging_service=self.mock_logging,
                     availability_cache=self.mock_availability_cache,
@@ -586,7 +582,7 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
         for scenario in error_scenarios:
             with self.subTest(scenario=scenario):
                 # Create service
-                service = BlobStorageService(
+                BlobStorageService(
                     configuration=self.mock_config,
                     logging_service=self.mock_logging,
                     availability_cache=self.mock_availability_cache,
@@ -632,7 +628,7 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
                     }
                 )
 
-                service = BlobStorageService(
+                BlobStorageService(
                     configuration=gcs_config,
                     logging_service=self.mock_logging,
                     availability_cache=self.mock_availability_cache,
@@ -666,7 +662,7 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
         for scenario in error_scenarios:
             with self.subTest(scenario=scenario):
                 # Create service
-                service = BlobStorageService(
+                BlobStorageService(
                     configuration=self.mock_config,
                     logging_service=self.mock_logging,
                     availability_cache=self.mock_availability_cache,
@@ -948,7 +944,7 @@ class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
                     result = agent.process(inputs)
                     # Success indicates good error recovery
                     self.assertIsNotNone(result)
-                except Exception as e:
+                except Exception:
                     # Some operations might still fail due to test setup, but agent should be stable
                     self.assertIsInstance(agent, (BlobReaderAgent, BlobWriterAgent))
 

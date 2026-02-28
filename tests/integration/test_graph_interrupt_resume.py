@@ -5,22 +5,17 @@ Tests the complete workflow including checkpoint persistence, interaction handli
 and bundle rehydration with real service dependencies.
 """
 
-import json
 import os
 import tempfile
 import unittest
-from pathlib import Path
-from typing import Any, Dict, Optional
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 from uuid import uuid4
 
 from agentmap.di.containers import ApplicationContainer
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
-from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.human_interaction import HumanInteractionRequest, InteractionType
 from agentmap.services.graph.graph_checkpoint_service import GraphCheckpointService
 from agentmap.services.interaction_handler_service import InteractionHandlerService
-from agentmap.services.storage.types import WriteMode
 
 
 class TestGraphInterruptResumeIntegration(unittest.TestCase):
@@ -178,7 +173,7 @@ providers:
         try:
             # Get services from container
             logging_service = self.container.logging_service()
-            app_config = self.container.app_config_service()
+            self.container.app_config_service()
             storage_config = self.container.storage_config_service()
             file_path_service = self.container.file_path_service()
 
@@ -357,7 +352,7 @@ providers:
                 final_tuple.checkpoint.channel_values["nodes"]["test_node"], "processed"
             )
 
-            final_metadata = interaction_service.get_thread_metadata(thread_id)
+            interaction_service.get_thread_metadata(thread_id)
             # Note: metadata might not be updated immediately in all storage backends
             # The important thing is that the workflow completed without errors
 

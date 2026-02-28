@@ -8,7 +8,7 @@ interface for publishing messages to AWS SNS topics or SQS queues.
 import json
 from typing import Any, Dict, Optional
 
-from agentmap.exceptions import MessagingConnectionError, MessagingOperationError
+from agentmap.exceptions import MessagingConnectionError
 from agentmap.models.storage.types import StorageResult
 
 
@@ -50,8 +50,6 @@ class AWSMessageAdapter:
             try:
                 import boto3
                 from botocore.exceptions import (
-                    BotoCoreError,
-                    ClientError,
                     NoCredentialsError,
                 )
             except ImportError:

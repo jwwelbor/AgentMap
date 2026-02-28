@@ -10,7 +10,6 @@ import unittest
 from unittest.mock import Mock
 
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
-from tests.utils.mock_service_factory import MockServiceFactory
 
 
 class TestExecutionTrackingService(unittest.TestCase):
@@ -301,7 +300,7 @@ class TestExecutionTrackingService(unittest.TestCase):
         self.mock_config_service.reset_mock()
 
         # Create a tracker
-        tracker = self.service.create_tracker()
+        self.service.create_tracker()
 
         # Verify config was called during tracker creation
         self.mock_config_service.get_tracking_config.assert_called_once()
@@ -310,7 +309,7 @@ class TestExecutionTrackingService(unittest.TestCase):
         self.mock_config_service.reset_mock()
 
         # Create another tracker
-        tracker2 = self.service.create_tracker()
+        self.service.create_tracker()
 
         # Verify config was called again
         self.mock_config_service.get_tracking_config.assert_called_once()

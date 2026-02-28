@@ -5,7 +5,7 @@ Extracted from IndentedTemplateComposer to handle all agent template
 composition logic, following the Single Responsibility Principle.
 """
 
-from typing import Any, Dict
+from typing import Dict
 
 from agentmap.models.scaffold_types import ServiceRequirements
 from agentmap.services.logging_service import LoggingService

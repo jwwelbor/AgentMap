@@ -8,7 +8,7 @@ interface for publishing messages to Azure Service Bus topics or queues.
 import json
 from typing import Any, Dict, Optional
 
-from agentmap.exceptions import MessagingConnectionError, MessagingOperationError
+from agentmap.exceptions import MessagingConnectionError
 from agentmap.models.storage.types import StorageResult
 
 
@@ -47,7 +47,6 @@ class AzureMessageAdapter:
         try:
             # Import Azure SDK
             try:
-                from azure.core.exceptions import AzureError
                 from azure.servicebus import ServiceBusClient
             except ImportError:
                 raise MessagingConnectionError(

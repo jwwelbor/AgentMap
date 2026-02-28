@@ -18,13 +18,12 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from typing import Any, Dict, List
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 from agentmap.agents.builtins.storage.blob.blob_reader_agent import BlobReaderAgent
 from agentmap.agents.builtins.storage.blob.blob_writer_agent import BlobWriterAgent
 from agentmap.di import initialize_di
-from agentmap.exceptions import StorageConnectionError, StorageOperationError
+from agentmap.exceptions import StorageOperationError
 from agentmap.services.storage.blob_storage_service import BlobStorageService
 from tests.utils.mock_service_factory import MockServiceFactory
 
@@ -883,7 +882,7 @@ kv:
         # Should work with minimal configuration
         test_uri = str(self.test_blob_data_path / "minimal_test.blob")
         write_inputs = {"blob_uri": test_uri, "data": "minimal test"}
-        write_result = minimal_writer.process(write_inputs)
+        minimal_writer.process(write_inputs)
 
         read_inputs = {"blob_uri": test_uri}
         read_result = minimal_reader.process(read_inputs)

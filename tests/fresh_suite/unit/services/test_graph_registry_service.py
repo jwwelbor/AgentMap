@@ -6,14 +6,12 @@ using (csv_hash, graph_name) for bundle lookups while maintaining backward compa
 """
 
 import unittest
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
 from unittest.mock import Mock, patch
 
 from agentmap.services.graph.graph_registry_service import GraphRegistryService
 from tests.utils.mock_service_factory import MockServiceFactory
-from tests.utils.path_mocking_utils import PathOperationsMocker, mock_path_exists
+from tests.utils.path_mocking_utils import PathOperationsMocker
 
 
 class TestGraphRegistryService(unittest.TestCase):

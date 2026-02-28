@@ -9,7 +9,7 @@ import logging
 import time
 import unittest
 from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock
 
 from agentmap.services.agent.agent_service_injection_service import (
     AgentServiceInjectionService,

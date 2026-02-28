@@ -7,12 +7,10 @@ eliminates race conditions in concurrent graph execution.
 Follows project testing patterns using MockServiceFactory and unittest.TestCase.
 """
 
-import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from types import MappingProxyType
-from typing import Dict, Set
-from unittest.mock import Mock, patch
+from typing import Set
 
 from agentmap.models.declaration_models import (
     AgentDeclaration,

@@ -6,7 +6,6 @@ and proper exception raising for human-in-the-loop functionality.
 """
 
 import unittest
-import uuid
 from unittest.mock import Mock, patch
 
 from agentmap.agents.builtins.human_agent import HumanAgent
@@ -87,7 +86,7 @@ class TestHumanAgent(unittest.TestCase):
         )
 
         # Test that process() raises GraphInterrupt
-        with self.assertRaises(GraphInterrupt) as context:
+        with self.assertRaises(GraphInterrupt):
             self.agent.process(inputs)
 
         # Verify interrupt was called with correct metadata

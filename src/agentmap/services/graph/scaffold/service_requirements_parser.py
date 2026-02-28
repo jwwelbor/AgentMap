@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from agentmap.models.scaffold_types import (
     ServiceAttribute,
@@ -236,7 +236,7 @@ class ServiceRequirementsParser:
                 # Read from any storage type
                 csv_data = self.storage_service.read("csv", "input.csv")
                 json_data = self.storage_service.read("json", "config.json")
-                
+
                 # Write to any storage type
                 self.storage_service.write("json", "output.json", processed_data)
                 return processed_data"""
@@ -246,8 +246,8 @@ class ServiceRequirementsParser:
                 return f"""# {service_upper} storage using unified service
             if hasattr(self, 'storage_service') and self.storage_service:
                 data = self.storage_service.read("{service}", "input.{service}")
-                
-                # Write {service_upper} data  
+
+                # Write {service_upper} data
                 result = self.storage_service.write("{service}", "output.{service}", processed_data)
                 return result"""
 
@@ -257,21 +257,21 @@ class ServiceRequirementsParser:
                 "csv": """# Read CSV data
             if hasattr(self, 'csv_service') and self.csv_service:
                 data = self.csv_service.read("data.csv")
-                
-                # Write CSV data  
+
+                # Write CSV data
                 result = self.csv_service.write("output.csv", processed_data)
                 return result""",
                 "json": """# Read JSON data
             if hasattr(self, 'json_service') and self.json_service:
                 data = self.json_service.read("data.json")
-                
+
                 # Write JSON data
                 result = self.json_service.write("output.json", processed_data)
                 return result""",
                 "file": """# Read file
             if hasattr(self, 'file_service') and self.file_service:
                 content = self.file_service.read("document.txt")
-                
+
                 # Write file
                 result = self.file_service.write("output.txt", processed_content)
                 return result""",
@@ -281,31 +281,31 @@ class ServiceRequirementsParser:
                     collection="documents",
                     query="search query"
                 )
-                
+
                 # Add documents to vector store
                 result = self.vector_service.add(
-                    collection="documents", 
+                    collection="documents",
                     documents=[{{"content": "text", "metadata": {{...}}}}]
                 )
                 return result""",
                 "memory": """# Store data in memory
             if hasattr(self, 'memory_service') and self.memory_service:
                 self.memory_service.set("session_key", {{"key": "value"}})
-                
-                # Retrieve data from memory  
+
+                # Retrieve data from memory
                 data = self.memory_service.get("session_key")
                 return data""",
                 "node_registry": """# Access node registry for routing decisions
             if hasattr(self, 'node_registry') and self.node_registry:
                 # Get information about available nodes
                 available_nodes = list(self.node_registry.keys())
-                
+
                 # Get specific node metadata
                 node_info = self.node_registry.get("target_node")
                 if node_info:
                     node_type = node_info["type"]
                     description = node_info["description"]
-                    
+
                 # Use for dynamic routing decisions
                 if "error_handler" in self.node_registry:
                     return "error_handler"  # Route to error handling node

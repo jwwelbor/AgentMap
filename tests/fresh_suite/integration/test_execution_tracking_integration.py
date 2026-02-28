@@ -19,11 +19,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from agentmap.models.execution.result import ExecutionResult
-from agentmap.models.graph_bundle import GraphBundle
 from tests.fresh_suite.integration.base_integration_test import BaseIntegrationTest
 from tests.fresh_suite.integration.test_data_factories import (
     CSVTestDataFactory,
-    ExecutionTestDataFactory,
     IntegrationTestDataManager,
 )
 
@@ -588,7 +586,7 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
                 "Summary should have correct graph name",
             )
 
-            print(f"✅ Complete pipeline test results:")
+            print("✅ Complete pipeline test results:")
             print(f"  - Graph name: {result.graph_name}")
             print(f"  - Execution time: {execution_time:.3f}s")
             print(f"  - Node executions: {len(node_executions)}")
@@ -712,7 +710,7 @@ class TestExecutionTrackingIntegration(BaseIntegrationTest):
                 "REGRESSION: Final output should not be None",
             )
 
-            print(f"✅ Regression prevention results:")
+            print("✅ Regression prevention results:")
             print(f"  - Graph name: {result.graph_name} (not auto-generated)")
             print(f"  - Node executions: {len(node_executions)} (not empty)")
             print(

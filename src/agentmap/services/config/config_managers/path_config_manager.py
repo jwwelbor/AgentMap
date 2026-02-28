@@ -3,7 +3,6 @@
 from pathlib import Path
 from typing import Optional
 
-from agentmap.exceptions.base_exceptions import ConfigurationException
 from agentmap.services.config.config_managers.base_config_manager import (
     BaseConfigManager,
 )

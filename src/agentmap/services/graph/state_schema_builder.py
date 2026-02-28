@@ -1,6 +1,6 @@
 """State schema builder for graph assembly."""
 
-from typing import Any, Dict, Optional, TypedDict
+from typing import Any, Optional, TypedDict
 
 from agentmap.models.graph import Graph
 from agentmap.services.config.app_config_service import AppConfigService

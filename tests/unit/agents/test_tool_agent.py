@@ -7,13 +7,12 @@ via LangGraph ToolNode.
 """
 
 import unittest
-from typing import Any, Dict
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 from langchain_core.tools import tool
 
 from agentmap.agents.builtins.tool_agent import ToolAgent
-from agentmap.services.protocols import ToolCapableAgent, ToolSelectionCapableAgent
+from agentmap.services.protocols import ToolSelectionCapableAgent
 from tests.utils.mock_service_factory import MockServiceFactory
 
 

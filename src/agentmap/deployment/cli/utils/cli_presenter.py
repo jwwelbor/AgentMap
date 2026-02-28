@@ -31,11 +31,11 @@ try:
     )
 except Exception:  # pragma: no cover
     # Fallback placeholders to avoid hard failures in stub usage.
-    class AgentMapNotInitialized(Exception): ...
+    class AgentMapNotInitialized(Exception): ...  # noqa: E701
 
-    class GraphNotFound(Exception): ...
+    class GraphNotFound(Exception): ...  # noqa: E701
 
-    class InvalidInputs(Exception): ...
+    class InvalidInputs(Exception): ...  # noqa: E701
 
 
 class AgentMapJSONEncoder(json.JSONEncoder):

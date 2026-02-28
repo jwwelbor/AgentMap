@@ -6,14 +6,13 @@ error handling, and integration with dependency services.
 """
 
 import hashlib
-import json
 import threading
 import time
 import unittest
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Any, Dict, Optional
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 from agentmap.services.graph.graph_registry_service import GraphRegistryService
 from agentmap.services.storage.types import StorageResult, WriteMode
@@ -1085,7 +1084,6 @@ class TestGraphRegistryServiceIntegration(unittest.TestCase):
         """Test with real file system persistence."""
         # This would require actual JSONStorageService implementation
         # For now, we verify the mock behavior matches expected interface
-        pass
 
     def test_concurrent_service_instances(self):
         """Test multiple service instances accessing same registry."""
@@ -1109,7 +1107,7 @@ class TestGraphRegistryServiceIntegration(unittest.TestCase):
             logging_service=logging1,
         )
 
-        service2 = GraphRegistryService(
+        GraphRegistryService(
             system_storage_manager=shared_system_storage_manager2,
             app_config_service=shared_config,
             logging_service=logging2,
