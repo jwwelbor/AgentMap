@@ -26,9 +26,9 @@ class LLMModelsConfigService:
 
     # Fallback constants - only used if config is completely missing
     _FALLBACK_DEFAULTS: Dict[str, str] = {
-        "anthropic": "claude-3-5-sonnet-20241022",
+        "anthropic": "claude-sonnet-4-6",
         "openai": "gpt-4o-mini",
-        "google": "gemini-1.5-flash",
+        "google": "gemini-2.5-flash",
     }
 
     def __init__(self, app_config_service: Optional["AppConfigService"] = None):

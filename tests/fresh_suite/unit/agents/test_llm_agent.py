@@ -118,8 +118,8 @@ class TestLLMAgent(unittest.TestCase):
     def test_agent_initialization_with_different_providers(self):
         """Test LLMAgent with different LLM providers."""
         providers_config = [
-            ("anthropic", "claude-3-5-sonnet-20241022", 0.5),
-            ("google", "gemini-1.0-pro", 0.3),
+            ("anthropic", "claude-sonnet-4-6", 0.5),
+            ("google", "gemini-2.5-flash", 0.3),
             ("openai", "gpt-4-turbo", 0.8),
         ]
 

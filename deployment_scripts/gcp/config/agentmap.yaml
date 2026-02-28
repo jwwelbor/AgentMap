@@ -50,15 +50,15 @@ logging:
 llm:
   openai:
     api_key: "env:OPENAI_API_KEY"
-    model: "gpt-4o-mini-2024-07-18"
+    model: "gpt-4o-mini"
     temperature: 0.7
   anthropic:
     api_key: "env:ANTHROPIC_API_KEY"
-    model: "claude-3-5-haiku-20241022"
+    model: "claude-haiku-4-5-20251001"
     temperature: 0.7
   google:
     api_key: "env:GOOGLE_API_KEY"
-    model: "gemini-1.5-flash"
+    model: "gemini-2.5-flash"
     temperature: 0.7
 
 # Routing - simplified for serverless to reduce cold start time

@@ -43,7 +43,7 @@ def test_config_path(temp_dir, repo):
 llm:
   anthropic:
     api_key: "test_key"
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-sonnet-4-6"
     temperature: 0.7
 
 paths:

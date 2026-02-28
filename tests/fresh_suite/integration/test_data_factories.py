@@ -283,12 +283,12 @@ class ConfigTestDataFactory:
             "llm": {
                 "anthropic": {
                     "api_key": "test_anthropic_key",
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "claude-sonnet-4-6",
                     "temperature": 0.7,
                 },
                 "openai": {
                     "api_key": "test_openai_key",
-                    "model": "gpt-3.5-turbo",
+                    "model": "gpt-4o-mini",
                     "temperature": 0.7,
                 },
             },

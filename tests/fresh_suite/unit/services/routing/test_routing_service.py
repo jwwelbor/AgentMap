@@ -45,16 +45,16 @@ class TestLLMRoutingService(unittest.TestCase):
         def mock_get_model(provider, complexity):
             matrix = {
                 "openai": {
-                    "low": "gpt-3.5-turbo",
+                    "low": "gpt-4o-mini",
                     "medium": "gpt-4",
                     "high": "gpt-4",
                     "critical": "gpt-4",
                 },
                 "anthropic": {
-                    "low": "claude-3-5-haiku-20241022",
+                    "low": "claude-haiku-4-5-20251001",
                     "medium": "claude-3-7-sonnet-20250219",
-                    "high": "claude-opus-4-20250514",
-                    "critical": "claude-opus-4-20250514",
+                    "high": "claude-opus-4-6",
+                    "critical": "claude-opus-4-6",
                 },
             }
             return matrix.get(provider, {}).get(complexity)
@@ -62,16 +62,16 @@ class TestLLMRoutingService(unittest.TestCase):
         self.mock_routing_config.get_model_for_complexity.side_effect = mock_get_model
         self.mock_routing_config.routing_matrix = {
             "openai": {
-                "low": "gpt-3.5-turbo",
+                "low": "gpt-4o-mini",
                 "medium": "gpt-4",
                 "high": "gpt-4",
                 "critical": "gpt-4",
             },
             "anthropic": {
-                "low": "claude-3-5-haiku-20241022",
+                "low": "claude-haiku-4-5-20251001",
                 "medium": "claude-3-7-sonnet-20250219",
-                "high": "claude-opus-4-20250514",
-                "critical": "claude-opus-4-20250514",
+                "high": "claude-opus-4-6",
+                "critical": "claude-opus-4-6",
             },
         }
 
@@ -179,7 +179,7 @@ class TestLLMRoutingService(unittest.TestCase):
         ):
             mock_decision = RoutingDecision(
                 provider="anthropic",
-                model="claude-opus-4-20250514",
+                model="claude-opus-4-6",
                 complexity=TaskComplexity.HIGH,
                 confidence=0.9,
                 reasoning="Selected for high complexity analysis",
@@ -196,7 +196,7 @@ class TestLLMRoutingService(unittest.TestCase):
 
             # Verify result
             self.assertEqual(result.provider, "anthropic")
-            self.assertEqual(result.model, "claude-opus-4-20250514")
+            self.assertEqual(result.model, "claude-opus-4-6")
             self.assertEqual(result.complexity, TaskComplexity.HIGH)
             self.assertFalse(result.fallback_used)
 
@@ -265,7 +265,7 @@ class TestLLMRoutingService(unittest.TestCase):
 
         decision = RoutingDecision(
             provider="anthropic",
-            model="claude-opus-4-20250514",
+            model="claude-opus-4-6",
             complexity=TaskComplexity.HIGH,
             confidence=0.9,
             reasoning="New decision",
@@ -299,7 +299,7 @@ class TestLLMRoutingService(unittest.TestCase):
         routing_context = RoutingContext(
             task_type=task_type,
             fallback_provider="openai",
-            fallback_model="gpt-3.5-turbo",
+            fallback_model="gpt-4o-mini",
         )
 
         # Mock to trigger fallback - need to mock select_candidates too
@@ -309,7 +309,7 @@ class TestLLMRoutingService(unittest.TestCase):
         ):
             fallback_decision = RoutingDecision(
                 provider="openai",
-                model="gpt-3.5-turbo",
+                model="gpt-4o-mini",
                 complexity=TaskComplexity.MEDIUM,
                 confidence=0.5,
                 reasoning="Fallback strategy",
@@ -416,7 +416,7 @@ class TestLLMRoutingService(unittest.TestCase):
         # Mock provider preference and model lookup
         self.mock_routing_config.get_provider_preference.return_value = ["anthropic"]
         self.mock_routing_config.get_model_for_complexity.return_value = (
-            "claude-opus-4-20250514"
+            "claude-opus-4-6"
         )
 
         # Execute test
@@ -426,7 +426,7 @@ class TestLLMRoutingService(unittest.TestCase):
 
         # Verify successful selection
         self.assertEqual(result.provider, "anthropic")
-        self.assertEqual(result.model, "claude-opus-4-20250514")
+        self.assertEqual(result.model, "claude-opus-4-6")
         self.assertEqual(result.complexity, complexity)
         self.assertFalse(result.fallback_used)
         self.assertGreaterEqual(result.confidence, 0.8)
@@ -467,7 +467,7 @@ class TestLLMRoutingService(unittest.TestCase):
         # Mock cost optimization enabled
         self.mock_routing_config.is_cost_optimization_enabled.return_value = True
         self.mock_routing_config.get_provider_preference.return_value = ["openai"]
-        self.mock_routing_config.get_model_for_complexity.return_value = "gpt-3.5-turbo"
+        self.mock_routing_config.get_model_for_complexity.return_value = "gpt-4o-mini"
 
         # Execute test
         result = self.service.select_optimal_model(
@@ -475,7 +475,7 @@ class TestLLMRoutingService(unittest.TestCase):
         )
 
         # Verify cost-optimized selection
-        self.assertEqual(result.model, "gpt-3.5-turbo")  # Lower cost model
+        self.assertEqual(result.model, "gpt-4o-mini")  # Lower cost model
         self.assertFalse(result.fallback_used)
 
     def test_select_optimal_model_fallback_strategy(self):

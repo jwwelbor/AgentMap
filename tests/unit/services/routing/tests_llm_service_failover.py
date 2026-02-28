@@ -27,7 +27,7 @@ class DummyLogger:
 class DummyRouting:
     def select_candidates(self, _ctx):
         return [
-            {"provider": "anthropic", "model": "claude-3-5-sonnet"},
+            {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             {"provider": "openai", "model": "gpt-4o"},
         ]
 
@@ -51,4 +51,4 @@ def test_failover_sequence(monkeypatch):
         routing_context={"routing_enabled": True},
     )
     assert out == "ok"
-    assert svc.seq == [("anthropic", "claude-3-5-sonnet"), ("openai", "gpt-4o")]
+    assert svc.seq == [("anthropic", "claude-sonnet-4-6"), ("openai", "gpt-4o")]

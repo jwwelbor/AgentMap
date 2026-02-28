@@ -169,7 +169,7 @@ class TestRoutingContext(unittest.TestCase):
             prefer_speed=True,
             prefer_quality=False,
             fallback_provider="openai",
-            fallback_model="gpt-3.5-turbo",
+            fallback_model="gpt-4o-mini",
             retry_with_lower_complexity=False,
         )
 
@@ -190,7 +190,7 @@ class TestRoutingContext(unittest.TestCase):
         self.assertTrue(context.prefer_speed)
         self.assertFalse(context.prefer_quality)
         self.assertEqual(context.fallback_provider, "openai")
-        self.assertEqual(context.fallback_model, "gpt-3.5-turbo")
+        self.assertEqual(context.fallback_model, "gpt-4o-mini")
         self.assertFalse(context.retry_with_lower_complexity)
 
     def test_routing_context_to_dict(self):
@@ -291,13 +291,13 @@ class TestRoutingDecision(unittest.TestCase):
         """Test RoutingDecision creation with required fields."""
         decision = RoutingDecision(
             provider="anthropic",
-            model="claude-opus-4-20250514",
+            model="claude-opus-4-6",
             complexity=TaskComplexity.HIGH,
         )
 
         # Verify required fields
         self.assertEqual(decision.provider, "anthropic")
-        self.assertEqual(decision.model, "claude-opus-4-20250514")
+        self.assertEqual(decision.model, "claude-opus-4-6")
         self.assertEqual(decision.complexity, TaskComplexity.HIGH)
 
         # Verify default values

@@ -23,6 +23,7 @@ AgentMap uses a **hierarchical configuration system** with multiple layers:
 ### Basic Setup (5 minutes)
 - [ ] Set up [environment variables](./environment-variables) for API keys
 - [ ] Create basic [main configuration](./main-config) file
+- [ ] Configure [LLM providers and resilience](./llm-config) settings
 - [ ] Configure [storage providers](./storage-config) if using external storage
 
 ### Production Setup (30 minutes)
@@ -64,6 +65,9 @@ AgentMap uses a **hierarchical configuration system** with multiple layers:
 ### [Main Configuration](./main-config)
 Complete YAML structure covering all core AgentMap settings including LLM providers, routing, memory, execution, and performance optimization.
 
+### [LLM Configuration](./llm-config)
+LLM provider setup, resilience settings (retry and circuit breaker), and routing matrix configuration.
+
 ### [Authentication Configuration](./auth-config)
 Complete guide to authentication setup including API keys, JWT tokens, permissions, security policies, and CLI commands for managing authentication.
 
@@ -92,7 +96,7 @@ autocompile: true
 llm:
   openai:
     api_key: "env:OPENAI_API_KEY"
-    model: "gpt-3.5-turbo"
+    model: "gpt-4o-mini"
 ```
 
 ### Production Deployment
@@ -129,10 +133,10 @@ routing:
   routing_matrix:
     anthropic:
       low: "claude-3-haiku-20240307"
-      medium: "claude-3-5-sonnet-20241022"
-      high: "claude-3-opus-20240229"
+      medium: "claude-sonnet-4-6"
+      high: "claude-opus-4-6"
     openai:
-      low: "gpt-3.5-turbo"
+      low: "gpt-4o-mini"
       medium: "gpt-4-turbo"
       high: "gpt-4"
 ```

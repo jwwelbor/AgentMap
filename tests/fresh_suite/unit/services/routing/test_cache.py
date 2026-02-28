@@ -329,7 +329,7 @@ class TestRoutingCache(unittest.TestCase):
         """Test putting a new entry in cache."""
         decision = RoutingDecision(
             provider="anthropic",
-            model="claude-opus-4-20250514",
+            model="claude-opus-4-6",
             complexity=TaskComplexity.HIGH,
             confidence=0.95,
             reasoning="New cache entry",
@@ -357,7 +357,7 @@ class TestRoutingCache(unittest.TestCase):
         )
 
         self.assertEqual(result.provider, "anthropic")
-        self.assertEqual(result.model, "claude-opus-4-20250514")
+        self.assertEqual(result.model, "claude-opus-4-6")
 
     def test_cache_put_update_existing_entry(self):
         """Test updating an existing cache entry."""

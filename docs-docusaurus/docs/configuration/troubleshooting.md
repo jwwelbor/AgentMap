@@ -210,7 +210,7 @@ google.auth.exceptions.RefreshError: The credentials do not contain the necessar
    llm:
      openai:
        api_key: "env:OPENAI_API_KEY"
-       model: "gpt-3.5-turbo"
+       model: "gpt-4o-mini"
    ```
 
 ### Storage Connection Issues
@@ -330,7 +330,7 @@ AttributeError: 'NoneType' object has no attribute 'get'
      enabled: true
      routing_matrix:
        openai:
-         low: "gpt-3.5-turbo"
+         low: "gpt-4o-mini"
          medium: "gpt-4-turbo"
      task_types:
        general:
@@ -349,7 +349,7 @@ AttributeError: 'NoneType' object has no attribute 'get'
    # ✅ Correct routing matrix
    routing_matrix:
      openai:
-       low: "gpt-3.5-turbo"
+       low: "gpt-4o-mini"
        medium: "gpt-4-turbo"
        high: "gpt-4"
    ```

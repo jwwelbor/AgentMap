@@ -209,7 +209,7 @@ BUILTIN_AGENTS = [
         "Default_Prompt": "You are a helpful assistant.",
         "Default_Context": json.dumps({
             "provider": "anthropic",
-            "model": "claude-3-5-sonnet-20241022",
+            "model": "claude-sonnet-4-6",
             "temperature": 0.7,
             "max_tokens": 1000
         }),
@@ -260,7 +260,7 @@ BUILTIN_AGENTS = [
         "Default_Prompt": "Process the input and return structured data.",
         "Default_Context": json.dumps({
             "provider": "anthropic",
-            "model": "claude-3-5-sonnet-20241022",
+            "model": "claude-sonnet-4-6",
             "temperature": 0.0,
             "max_tokens": 2000,
             "output_format": "json"
@@ -570,7 +570,7 @@ def build_agent_definitions_sheet(wb, styles):
         "query|context",
         "answer",
         "You are an expert assistant. Answer the query based on the context provided.",
-        '{"provider": "anthropic", "model": "claude-3-5-sonnet-20241022", "temperature": 0.5}',
+        '{"provider": "anthropic", "model": "claude-sonnet-4-6", "temperature": 0.5}',
         "",
         ""
     ]

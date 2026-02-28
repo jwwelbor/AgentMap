@@ -137,11 +137,11 @@ llm:
     temperature: 0.7
   anthropic:
     api_key: "env:ANTHROPIC_API_KEY" 
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-sonnet-4-6"
     temperature: 0.7
   google:
     api_key: "env:GOOGLE_API_KEY"
-    model: "gemini-1.5-pro"
+    model: "gemini-2.5-pro"
     temperature: 0.7
 
 # Intelligent routing
@@ -153,16 +153,16 @@ routing:
   routing_matrix:
     anthropic:
       low: "claude-3-haiku-20240307"
-      medium: "claude-3-5-sonnet-20241022"
-      high: "claude-3-opus-20240229"
+      medium: "claude-sonnet-4-6"
+      high: "claude-opus-4-6"
     openai:
-      low: "gpt-3.5-turbo"
+      low: "gpt-4o-mini"
       medium: "gpt-4-turbo"
       high: "gpt-4"
     google:
-      low: "gemini-1.5-flash"
-      medium: "gemini-1.5-pro"
-      high: "gemini-1.5-pro"
+      low: "gemini-2.5-flash"
+      medium: "gemini-2.5-pro"
+      high: "gemini-2.5-pro"
 
 # Memory for stateful conversations
 memory:
@@ -184,10 +184,10 @@ routing:
   routing_matrix:
     anthropic:
       low: "claude-3-haiku-20240307"
-      medium: "claude-3-5-sonnet-20241022"
-      high: "claude-3-opus-20240229"
+      medium: "claude-sonnet-4-6"
+      high: "claude-opus-4-6"
     openai:
-      low: "gpt-3.5-turbo"
+      low: "gpt-4o-mini"
       medium: "gpt-4-turbo"
       high: "gpt-4"
   cost_optimization:

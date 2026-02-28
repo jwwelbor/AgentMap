@@ -100,7 +100,7 @@ Provide analysis in this structured format:
 - [Ambiguous sections]
 - [Critical decision points]
 
-Focus on being thorough but concise. Highlight areas where human judgment would be most valuable.","{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.3}"
+Focus on being thorough but concise. Highlight areas where human judgment would be most valuable.","{""provider"": ""anthropic"", ""model"": ""claude-sonnet-4-6"", ""temperature"": 0.3}"
 InteractiveReview,GenerateSummary,Generate executive summary for human review,summary_agent,RequestHumanReview,ErrorHandler,analysis_result,executive_summary,,"{""summary_type"": ""executive"", ""focus_areas"": [""key_findings"", ""recommendations"", ""risks""], ""max_length"": 500}"
 InteractiveReview,RequestHumanReview,Get human feedback on analysis and summary,human,ProcessFeedback,ErrorHandler,"analysis_result,executive_summary",human_feedback,"Please review the AI analysis and summary below:
 
@@ -161,7 +161,7 @@ Respond in JSON format:
   ""changes_needed"": [""list of specific changes""],
   ""human_insights"": [""insights to incorporate""],
   ""confidence"": [0.0-1.0]
-}","{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.2}"
+}","{""provider"": ""anthropic"", ""model"": ""claude-sonnet-4-6"", ""temperature"": 0.2}"
 InteractiveReview,RouteBasedOnFeedback,Route workflow based on human feedback decision,router,GenerateFinalReport,ErrorHandler,feedback_analysis,routing_decision,,"{""decision_field"": ""decision"", ""routes"": {""APPROVE"": ""GenerateFinalReport"", ""REVISE"": ""EnhancedAnalysis"", ""REJECT"": ""AlternativeAnalysis""}}"
 InteractiveReview,EnhancedAnalysis,Enhanced analysis incorporating human feedback,llm,GenerateSummary,ErrorHandler,"content_data,human_feedback,feedback_analysis",enhanced_analysis,"You are an AI analyst creating an enhanced analysis incorporating human expert feedback.
 
@@ -196,7 +196,7 @@ Create an improved analysis that addresses all human concerns and incorporates t
 ### Collaborative Recommendations
 [Recommendations that combine AI analysis with human judgment]
 
-This enhanced analysis should address all feedback while maintaining analytical rigor.","{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.3}"
+This enhanced analysis should address all feedback while maintaining analytical rigor.","{""provider"": ""anthropic"", ""model"": ""claude-sonnet-4-6"", ""temperature"": 0.3}"
 InteractiveReview,AlternativeAnalysis,Alternative analysis approach based on rejection feedback,llm,GenerateSummary,ErrorHandler,"content_data,human_feedback,feedback_analysis",alternative_analysis,"You are an AI analyst taking a completely different approach based on human feedback that rejected the initial analysis.
 
 Original Content: {content_data}
@@ -230,7 +230,7 @@ Create a fundamentally different analysis approach that addresses the reasons fo
 ### Revised Recommendations
 [Recommendations aligned with the new approach]
 
-This alternative analysis should demonstrate responsiveness to human expertise and flexibility in analytical approach.","{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.4}"
+This alternative analysis should demonstrate responsiveness to human expertise and flexibility in analytical approach.","{""provider"": ""anthropic"", ""model"": ""claude-sonnet-4-6"", ""temperature"": 0.4}"
 InteractiveReview,GenerateFinalReport,Generate comprehensive final report with human insights,llm,SaveAndNotify,ErrorHandler,"executive_summary,feedback_analysis,human_feedback",final_report,"You are creating a comprehensive final report that seamlessly integrates AI analysis with human expert insights.
 
 Executive Summary: {executive_summary}
@@ -276,7 +276,7 @@ This report has been reviewed and approved by human experts, ensuring:
 
 ---
 *Report generated through Human-AI Collaborative Process*
-*AI Engine: Claude-3 | Human Expert: Domain Specialist*","{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.3}"
+*AI Engine: Claude-3 | Human Expert: Domain Specialist*","{""provider"": ""anthropic"", ""model"": ""claude-sonnet-4-6"", ""temperature"": 0.3}"
 InteractiveReview,SaveAndNotify,Save final report and notify completion,file_writer,HumanNotification,ErrorHandler,final_report,save_result,data/collaborative_report.md,"{""mode"": ""write""}"
 InteractiveReview,HumanNotification,Notify human of completion with summary,human,End,,"save_result",completion_feedback,"🎉 **Collaborative Analysis Complete!**
 

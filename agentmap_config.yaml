@@ -80,11 +80,11 @@ llm:
     temperature: 0.7
   anthropic:
     api_key: ""  # Or use env: ANTHROPIC_API_KEY
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-sonnet-4-6"
     temperature: 0.7
   google:
     api_key: ""  # Or use env: GOOGLE_API_KEY
-    model: "gemini-1.5-flash"
+    model: "gemini-2.5-flash"
     temperature: 0.7
 
   # Resilience settings — retry with backoff + circuit breaker
@@ -105,22 +105,22 @@ routing:
   # This is the core routing table that maps (provider, complexity) → model
   routing_matrix:
     anthropic:
-      low: "claude-3-5-haiku-20241022"
-      medium: "claude-3-5-sonnet-20241022"
-      high: "claude-sonnet-4-20250514"
-      critical: "claude-opus-4-20250514"
+      low: "claude-haiku-4-5-20251001"
+      medium: "claude-sonnet-4-6"
+      high: "claude-sonnet-4-6"
+      critical: "claude-opus-4-6"
 
     openai:
-      low: "gpt-4o-mini-2024-07-18"
-      medium: "gpt-4o-2024-11-20"
-      high: "gpt-4o-2024-11-20"
-      critical: "o3-mini-2025-01-31"
+      low: "gpt-4o-mini"
+      medium: "gpt-4.1-mini"
+      high: "gpt-4.1"
+      critical: "o3"
 
     google:
-      low: "gemini-1.5-flash"
-      medium: "gemini-1.5-pro"
-      high: "gemini-1.5-pro"
-      critical: "gemini-1.5-pro"
+      low: "gemini-2.5-flash-lite"
+      medium: "gemini-2.5-flash"
+      high: "gemini-2.5-pro"
+      critical: "gemini-2.5-pro"
 
   # Application-Specific Task Types
   # These define the business logic for your specific application
@@ -217,7 +217,7 @@ routing:
     # Default provider when preferences unavailable
     default_provider: "anthropic"
     # Default model when routing fails
-    default_model: "claude-3-5-haiku-20241022"
+    default_model: "claude-haiku-4-5-20251001"
     # Retry with lower complexity if model unavailable
     retry_with_lower_complexity: true
 

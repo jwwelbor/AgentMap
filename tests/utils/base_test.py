@@ -106,11 +106,11 @@ logging:
 llm:
   anthropic:
     api_key: "test_key"
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-sonnet-4-6"
     temperature: 0.7
   openai:
     api_key: "test_key"
-    model: "gpt-3.5-turbo"
+    model: "gpt-4o-mini"
     temperature: 0.7
 
 execution:
@@ -276,7 +276,7 @@ class TestDataFactory:
 
     @staticmethod
     def create_llm_config(
-        provider: str = "openai", model: str = "gpt-3.5-turbo", **additional_config
+        provider: str = "openai", model: str = "gpt-4o-mini", **additional_config
     ) -> Dict[str, Any]:
         """Create a sample LLM configuration."""
         config = {"api_key": "test_key", "model": model, "temperature": 0.7}

@@ -46,7 +46,7 @@ class TestLLMServiceEnhanced(unittest.TestCase):
         # Configure working provider
         self.mock_app_config_service.get_llm_config.return_value = {
             "api_key": "valid_key",
-            "model": "gpt-3.5-turbo",
+            "model": "gpt-4o-mini",
             "temperature": 0.7,
         }
 
@@ -289,7 +289,7 @@ class TestLLMServiceEnhanced(unittest.TestCase):
         # Mock routing decision
         mock_decision = Mock()
         mock_decision.provider = "anthropic"
-        mock_decision.model = "claude-opus-4-20250514"
+        mock_decision.model = "claude-opus-4-6"
         mock_decision.complexity = "high"
         mock_decision.confidence = 0.9
 
@@ -320,7 +320,7 @@ class TestLLMServiceEnhanced(unittest.TestCase):
             mock_direct.assert_called_once_with(
                 provider="anthropic",  # From routing decision
                 messages=[{"role": "user", "content": "Analyze this data"}],
-                model="claude-opus-4-20250514",  # From routing decision
+                model="claude-opus-4-6",  # From routing decision
                 temperature=None,
             )
 
