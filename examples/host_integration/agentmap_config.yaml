@@ -29,6 +29,11 @@ llm:
 # Path to your workflow CSV
 csv_path: "examples/host_integration/example_workflow.csv"
 
+# Path to custom agents directory (where host_services.yaml and custom_agents.yaml live)
+paths:
+  custom_agents: "examples/host_integration"
+  csv_repository: "examples/host_integration"
+
 #
 # plus whatever else you need. See the root level agentmap_config.yaml and agentmap_config_storage.yaml for more details.
 #
@@ -38,77 +43,9 @@ csv_path: "examples/host_integration/example_workflow.csv"
 # ============================================================================
 # HOST APPLICATION INTEGRATION
 # ============================================================================
-# This is where you configure your application's services and agents
-# Alternatively, you can inject your configuration into your agents or service via the same mechanism below
-
-host_application:
-  # Enable host service integration
-  enabled: true
-  
-  # Where to find your custom protocols (support multiple folders)
-  protocol_folders:
-    - "examples/host_integration"  # Your protocol definitions
-  
-  # Your custom services that get injected into agents
-  services:
-    # Database service example
-    database_service:
-      enabled: true
-      configuration:
-        database_path: "examples/host_integration/host_app.db"
-        connection_timeout: 30
-    
-    # Email service example  
-    email_service:
-      enabled: true
-      configuration:
-        demo_mode: true  # Set false for real email
-        smtp_host: "localhost"
-        smtp_port: 587
-    
-    # Notification service example
-    notification_service:
-      enabled: true
-      configuration:
-        default_channels: ["console", "slack"]
-        webhook_url: "${SLACK_WEBHOOK_URL}"  # Optional
-    
-    # File service example
-    file_service:
-      enabled: true
-      configuration:
-        storage_path: "examples/host_integration/files"
-        max_file_size: "10MB"
-
-# ============================================================================
-# EXAMPLE WORKFLOWS (Optional)
-# ============================================================================
-# Define some example workflows using your custom agents
-
-workflows:
-  # Simple database workflow
-  database_example:
-    description: "Show database service integration"
-    agents:
-      - name: "data_reader"
-        type: "database_agent"
-        operation: "get_users"
-  
-  # Multi-service coordination
-  notification_example:
-    description: "Show multi-service coordination"
-    agents:
-      - name: "processor" 
-        type: "multi_service_agent"
-        operation: "process_user_request"
-      - name: "notifier"
-        type: "notification_agent"
-        operation: "send_agent_notification"
-
-# ============================================================================
-# ENVIRONMENT VARIABLES
-# ============================================================================
-# Set these in your environment:
-# 
-# ANTHROPIC_API_KEY - Your Anthropic API key (if using LLM agents)
-# SLACK_WEBHOOK_URL - Your Slack webhook (if using Slack notifications)
+# Services and agents are declared in YAML files in the custom_agents directory:
+#   host_services.yaml  - declares host services + protocols
+#   custom_agents.yaml  - declares agents + required services
+#
+# AgentMap auto-imports, instantiates, and registers them at runtime.
+# No host_application section needed when using YAML declarations.

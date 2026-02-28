@@ -264,12 +264,13 @@ class TestConfigurationExamples(unittest.TestCase):
         if not result["passed"]:
             self.fail(f"Working example configuration test failed: {result['errors']}")
 
-        # Verify working example has multiple services
+        # Verify working example loads successfully
+        # Note: services are now declared in host_services.yaml (YAML-based approach)
+        # rather than inline in the host_application config section
         details = result["details"]
-        self.assertGreater(
-            details.get("services_count", 0),
-            1,
-            "Working example should have multiple services",
+        self.assertTrue(
+            details.get("config_loaded", False),
+            "Working example config should load successfully",
         )
 
     def test_all_examples_comprehensive_report(self):

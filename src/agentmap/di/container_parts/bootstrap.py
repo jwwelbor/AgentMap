@@ -87,6 +87,7 @@ class BootstrapContainer(containers.DeclarativeContainer):
         )
         from agentmap.services.declaration_sources import (
             CustomAgentYAMLSource,
+            HostServiceYAMLSource,
             PythonDeclarationSource,
         )
 
@@ -95,6 +96,9 @@ class BootstrapContainer(containers.DeclarativeContainer):
         registry.add_source(PythonDeclarationSource(parser, logging_service))
         registry.add_source(
             CustomAgentYAMLSource(app_config_service, parser, logging_service)
+        )
+        registry.add_source(
+            HostServiceYAMLSource(app_config_service, parser, logging_service)
         )
         logging_service.get_class_logger(registry).info(
             "Initialized declaration registry"

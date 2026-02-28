@@ -26,6 +26,13 @@ prompts:
   enable_cache: true
 
 execution:
+  # Graph state schema
+  # Options: "dynamic" (default), "dict", "pydantic"
+  # - dynamic: auto-builds TypedDict from CSV Input_Fields/Output_Field columns
+  # - dict: plain dict, accepts any key (use when custom agents override run())
+  # graph:
+  #   state_schema: "dynamic"
+
   # What to record during execution
   tracking:
     enabled: true
@@ -79,6 +86,17 @@ llm:
     api_key: ""  # Or use env: GOOGLE_API_KEY
     model: "gemini-1.5-flash"
     temperature: 0.7
+
+  # Resilience settings — retry with backoff + circuit breaker
+  resilience:
+    retry:
+      max_attempts: 3
+      backoff_base: 2.0
+      backoff_max: 30.0
+      jitter: true
+    circuit_breaker:
+      failure_threshold: 5
+      reset_timeout: 60
 
 routing:
   enabled: true

@@ -63,6 +63,10 @@ class ApplicationContainer(containers.DeclarativeContainer):
     _host_registry = providers.Container(
         HostRegistryContainer,
         logging_service=_expose(_core, "logging_service"),
+        declaration_registry_service=_expose(
+            _bootstrap, "declaration_registry_service"
+        ),
+        app_config_service=_expose(_core, "app_config_service"),
     )
 
     # Create orchestrator_service early to avoid circular dependency
@@ -277,30 +281,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     def invalidate_all_caches(self) -> bool:
         return self._core().invalidate_all_caches()
-
-    def register_host_service(self, *args, **kwargs):
-        return self._host_registry().register_host_service(*args, **kwargs)
-
-    def register_host_factory(self, *args, **kwargs):
-        return self._host_registry().register_host_factory(*args, **kwargs)
-
-    def get_host_services(self):
-        return self._host_registry().get_host_services()
-
-    def get_protocol_implementations(self):
-        return self._host_registry().get_protocol_implementations()
-
-    def configure_host_protocols(self, agent):
-        return self._host_registry().configure_host_protocols(agent)
-
-    def has_host_service(self, service_name: str) -> bool:
-        return self._host_registry().has_host_service(service_name)
-
-    def get_host_service_instance(self, service_name: str):
-        return self._host_registry().get_host_service_instance(service_name)
-
-    def clear_host_services(self) -> None:
-        self._host_registry().clear_host_services()
 
 
 __all__ = [

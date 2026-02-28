@@ -3,7 +3,7 @@
 Handles configuration of host-defined services and execution trackers.
 """
 
-from typing import Any, Optional
+from typing import Any, Optional, Set
 
 
 class HostServiceConfigurator:
@@ -23,11 +23,14 @@ class HostServiceConfigurator:
         self.logger = logging_service.get_class_logger(self)
         self.host_protocol_configuration_service = host_protocol_configuration_service
 
-    def configure_host_services(self, agent: Any) -> int:
+    def configure_host_services(
+        self, agent: Any, required_services: Optional[Set[str]] = None
+    ) -> int:
         """Configure host-defined services for an agent.
 
         Args:
             agent: Agent instance to configure
+            required_services: Optional set of service names to filter by
 
         Returns:
             Number of host services configured
@@ -37,7 +40,11 @@ class HostServiceConfigurator:
 
         try:
             # Delegate to host protocol configuration service
-            configured = self.host_protocol_configuration_service.configure_agent(agent)
+            configured = (
+                self.host_protocol_configuration_service.configure_host_protocols(
+                    agent, required_services=required_services
+                )
+            )
             return (
                 configured if isinstance(configured, int) else (1 if configured else 0)
             )

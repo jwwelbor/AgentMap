@@ -1,159 +1,110 @@
 #!/usr/bin/env python3
 """
-Simple test to verify basic host integration functionality.
+End-to-end test for host service integration.
 
-This simplified test checks core functionality without complex setup.
+Verifies the full pipeline: CSV parsing -> agent creation -> host service
+injection -> workflow execution using the declarative YAML approach.
+
+Run from repo root:
+    uv run python examples/host_integration/test_basic_integration.py
 """
 
+import os
 import sys
+import traceback
 from pathlib import Path
 
-# Add AgentMap to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-def test_basic_imports():
-    """Test that we can import all required modules."""
-    print("🔍 Testing basic imports...")
-    
-    try:
-        # Test AgentMap imports
-        from agentmap.di.containers import ApplicationContainer
-        print("   ✅ ApplicationContainer imported")
-        
-        from agentmap.agents.base_agent import BaseAgent
-        print("   ✅ BaseAgent imported")
-        
-        # Test host service imports
-        from host_services import DatabaseService, EmailService, NotificationService
-        print("   ✅ Host services imported")
-        
-        from host_protocols import DatabaseServiceProtocol, EmailServiceProtocol
-        print("   ✅ Host protocols imported")
-        
-        from custom_agents import DatabaseAgent, EmailAgent, MultiServiceAgent
-        print("   ✅ Custom agents imported")
-        
-        return True
-        
-    except Exception as e:
-        print(f"   ❌ Import failed: {e}")
-        return False
-
-def test_container_creation():
-    """Test that we can create a container and register host services."""
-    print("\n🏗️ Testing container creation...")
-    
-    try:
-        from agentmap.di.containers import ApplicationContainer
-        from host_services import create_database_service
-        from host_protocols import DatabaseServiceProtocol
-        
-        # Create container
-        container = ApplicationContainer()
-        print("   ✅ Container created")
-        
-        # Register a simple host service
-        container.register_host_factory(
-            service_name="test_db_service",
-            factory_function=create_database_service,
-            dependencies=["app_config_service", "logging_service"],
-            protocols=[DatabaseServiceProtocol]
-        )
-        print("   ✅ Host service registered")
-        
-        # Check if service is registered
-        if container.has_host_service("test_db_service"):
-            print("   ✅ Service registration verified")
-            return True
-        else:
-            print("   ❌ Service not found after registration")
-            return False
-            
-    except Exception as e:
-        print(f"   ❌ Container test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def test_agent_creation():
-    """Test that we can create custom agents."""
-    print("\n👤 Testing agent creation...")
-    
-    try:
-        from custom_agents import DatabaseAgent, EmailAgent, MultiServiceAgent
-        
-        # Create agents
-        db_agent = DatabaseAgent("test_db")
-        email_agent = EmailAgent("test_email")
-        multi_agent = MultiServiceAgent("test_multi")
-        
-        print("   ✅ All agents created successfully")
-        
-        # Check agent types
-        from host_protocols import DatabaseServiceProtocol, EmailServiceProtocol
-        
-        if isinstance(db_agent, DatabaseServiceProtocol):
-            print("   ✅ DatabaseAgent implements DatabaseServiceProtocol")
-        else:
-            print("   ❌ DatabaseAgent protocol check failed")
-            return False
-            
-        if isinstance(email_agent, EmailServiceProtocol):
-            print("   ✅ EmailAgent implements EmailServiceProtocol")
-        else:
-            print("   ❌ EmailAgent protocol check failed")
-            return False
-            
-        return True
-        
-    except Exception as e:
-        print(f"   ❌ Agent creation failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def main():
-    """Run basic host integration tests."""
-    print("🧪 AgentMap Host Integration - Basic Tests")
+def main() -> int:
+    """Run end-to-end host integration test."""
+    print("AgentMap Host Integration - End-to-End Test")
     print("=" * 50)
-    
-    tests = [
-        ("Basic Imports", test_basic_imports),
-        ("Container Creation", test_container_creation),
-        ("Agent Creation", test_agent_creation)
-    ]
-    
-    results = {}
-    
-    for test_name, test_func in tests:
-        try:
-            results[test_name] = test_func()
-        except Exception as e:
-            print(f"❌ Test '{test_name}' crashed: {e}")
-            results[test_name] = False
-    
-    # Summary
-    print("\n" + "=" * 50)
-    print("📊 Test Results")
-    
-    passed = sum(1 for success in results.values() if success)
-    total = len(results)
-    
-    for test_name, success in results.items():
-        status = "✅ PASS" if success else "❌ FAIL"
-        print(f"  {test_name:<20} {status}")
-    
-    print(f"\n🎯 Result: {passed}/{total} tests passed")
-    
-    if passed == total:
-        print("🎉 Basic host integration is working!")
-        print("\nNext steps:")
-        print("1. Run full integration example: python integration_example.py")
-        print("2. Run comprehensive tests: python test_host_integration.py")
-        return 0
-    else:
-        print("⚠️ Some basic tests failed. Check configuration and dependencies.")
+
+    # Resolve config path relative to this file's directory
+    example_dir = Path(__file__).parent.resolve()
+    config_file = str(example_dir / "agentmap_config.yaml")
+
+    print(f"Config: {config_file}")
+    print()
+
+    # Step 1: Initialize AgentMap with the example config
+    print("[1/3] Initializing AgentMap runtime...")
+    try:
+        from agentmap.runtime_api import ensure_initialized
+
+        ensure_initialized(config_file=config_file)
+        print("      OK - Runtime initialized")
+    except Exception as e:
+        print(f"      FAIL - {e}")
+        traceback.print_exc()
         return 1
 
+    # Step 2: Run the workflow
+    print("[2/3] Running HostIntegrationDemo workflow...")
+    try:
+        from agentmap.runtime_api import run_workflow
+
+        result = run_workflow(
+            "example_workflow::HostIntegrationDemo",
+            inputs={},
+            config_file=config_file,
+            force_create=True,
+        )
+        print("      OK - Workflow completed")
+    except Exception as e:
+        print(f"      FAIL - {e}")
+        traceback.print_exc()
+        return 1
+
+    # Step 3: Validate results
+    print("[3/3] Validating results...")
+    errors = []
+
+    if not result.get("success"):
+        errors.append(f"Workflow not successful: {result}")
+
+    outputs = result.get("outputs", {})
+
+    # Check database agent produced user data
+    db_result = outputs.get("database_result")
+    if not db_result:
+        errors.append("Missing database_result in outputs")
+    elif not db_result.get("users"):
+        errors.append("database_result has no users")
+
+    # Check multi-service agent processed request
+    ms_result = outputs.get("multi_service_result")
+    if not ms_result:
+        errors.append("Missing multi_service_result in outputs")
+
+    # Check notification agent sent notifications
+    notif_result = outputs.get("notification_result")
+    if not notif_result:
+        errors.append("Missing notification_result in outputs")
+
+    if errors:
+        for err in errors:
+            print(f"      FAIL - {err}")
+        print()
+        print("Full result:")
+        import json
+
+        print(json.dumps(result, indent=2, default=str))
+        return 1
+
+    print("      OK - All assertions passed")
+    print()
+    print("Result summary:")
+    print(f"  Users found: {db_result.get('count', '?')}")
+    print(f"  Multi-service status: {outputs.get('status', '?')}")
+    print(f"  Notification channels: {notif_result.get('channels', '?')}")
+    print()
+    print("End-to-end host integration is working!")
+    return 0
+
+
 if __name__ == "__main__":
+    # Run from repo root so relative paths in config resolve correctly
+    repo_root = Path(__file__).parent.parent.parent.resolve()
+    os.chdir(repo_root)
     sys.exit(main())

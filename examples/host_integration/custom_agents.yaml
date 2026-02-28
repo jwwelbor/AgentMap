@@ -1,0 +1,47 @@
+# Custom Agent Declarations for Host Integration Example
+# Place this file at: {custom_agents_dir}/custom_agents.yaml
+
+agents:
+  database_agent:
+    class: "custom_agents.DatabaseAgent"
+    requires:
+      services:
+        - "database_service"
+      protocols:
+        - "host_protocols.DatabaseServiceProtocol"
+
+  email_agent:
+    class: "custom_agents.EmailAgent"
+    requires:
+      services:
+        - "email_service"
+      protocols:
+        - "host_protocols.EmailServiceProtocol"
+
+  notification_agent:
+    class: "custom_agents.NotificationAgent"
+    requires:
+      services:
+        - "notification_service"
+      protocols:
+        - "host_protocols.NotificationServiceProtocol"
+
+  file_agent:
+    class: "custom_agents.FileAgent"
+    requires:
+      services:
+        - "file_service"
+      protocols:
+        - "host_protocols.FileServiceProtocol"
+
+  multi_service_agent:
+    class: "custom_agents.MultiServiceAgent"
+    requires:
+      services:
+        - "database_service"
+        - "email_service"
+        - "notification_service"
+      protocols:
+        - "host_protocols.DatabaseServiceProtocol"
+        - "host_protocols.EmailServiceProtocol"
+        - "host_protocols.NotificationServiceProtocol"

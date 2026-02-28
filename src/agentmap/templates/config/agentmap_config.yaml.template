@@ -25,6 +25,13 @@ prompts:
 
 # Execution tracking configuration
 execution:
+  # Graph state schema
+  # Options: "dynamic" (default), "dict", "pydantic"
+  # - dynamic: auto-builds TypedDict from CSV Input_Fields/Output_Field columns
+  # - dict: plain dict, accepts any key (use when custom agents override run())
+  # graph:
+  #   state_schema: "dynamic"
+
   # What to record during execution
   tracking:
     enabled: true
@@ -102,6 +109,18 @@ llm:
     top_p: 1.0  # Optional: nucleus sampling
     top_k: null  # Optional: top-k sampling
 
+  # Resilience settings — retry with backoff + circuit breaker
+  # Applied to every LLM invocation regardless of routing configuration
+  resilience:
+    retry:
+      max_attempts: 3          # per provider:model attempt
+      backoff_base: 2.0        # exponential backoff base (seconds): 1s, 2s, 4s
+      backoff_max: 30.0        # cap on backoff delay
+      jitter: true             # randomize to avoid thundering herd
+    circuit_breaker:
+      failure_threshold: 5     # failures before opening circuit for a provider:model
+      reset_timeout: 60        # seconds before half-open (allow one retry)
+
 routing:
   enabled: true
 
@@ -176,9 +195,6 @@ routing:
 
     # Retry with lower complexity if high-tier model unavailable
     retry_with_lower_complexity: true
-
-    # Log fallback attempts for debugging
-    log_fallback_attempts: true
 
   # Activity-Based Routing Configuration
   # Define specific activities with explicit provider/model pairs per complexity tier
@@ -358,10 +374,6 @@ routing:
     max_cache_size: 1000
     # Timeout for LLM API calls (seconds)
     request_timeout: 60
-    # Max retries before giving up
-    max_retries: 3
-    # Exponential backoff for retries
-    retry_backoff_factor: 2
 
 # Environment Variable Overrides
 # These allow runtime configuration without changing the file

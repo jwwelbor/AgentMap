@@ -1,0 +1,37 @@
+# Host Services Declaration for AgentMap
+# Place this file at: {custom_agents_dir}/host_services.yaml
+#
+# AgentMap auto-imports, instantiates, and registers these services
+# at runtime. Agents declaring matching protocols receive them via
+# dependency injection - no programmatic registration needed.
+
+version: "1.0"
+
+services:
+  database_service:
+    class_path: "host_services.DatabaseService"
+    implements:
+      - "host_protocols.DatabaseServiceProtocol"
+    config:
+      database_path: ":memory:"
+
+  email_service:
+    class_path: "host_services.EmailService"
+    implements:
+      - "host_protocols.EmailServiceProtocol"
+    config:
+      smtp_host: "localhost"
+      smtp_port: 587
+
+  notification_service:
+    class_path: "host_services.NotificationService"
+    implements:
+      - "host_protocols.NotificationServiceProtocol"
+    config: {}
+
+  file_service:
+    class_path: "host_services.FileService"
+    implements:
+      - "host_protocols.FileServiceProtocol"
+    config:
+      storage_path: "/tmp/agentmap_host_files"
