@@ -980,9 +980,9 @@ New data available in JSON format for modern applications.
         customers = self.json_service.read("customers", aggregation_id)["customers"]
         # FIX: Read all transactions, not a specific document
         transactions = self.csv_service.read("transactions", format="records")
-        products = self.json_service.read(  # noqa: F841
-            "products", aggregation_id
-        )["products"]
+        products = self.json_service.read("products", aggregation_id)[  # noqa: F841
+            "products"
+        ]
 
         # Create lookup dictionaries
         customer_lookup = {c["customer_id"]: c for c in customers}
