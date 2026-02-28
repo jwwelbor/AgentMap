@@ -199,7 +199,9 @@ def bootstrap_from_declarations(
                     config = merged
                 except Exception as e:
                     if logger:
-                        logger.debug(f"Could not get app config override for '{service_name}': {e}")
+                        logger.debug(
+                            f"Could not get app config override for '{service_name}': {e}"
+                        )
                     # No app config override, use declaration config only
 
             # Resolve dependency instances
