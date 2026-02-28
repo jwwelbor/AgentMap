@@ -434,7 +434,7 @@ class TestLLMService(unittest.TestCase):
         self.assertFalse(service_no_routing.is_routing_enabled())
 
     def test_get_routing_stats(self):
-        """Test get_routing_stats() delegates to routing service."""
+        """Test get_routing_stats() delegates to routing service and includes circuit breaker."""
         # Configure mock routing service
         mock_stats = {"total_requests": 100, "avg_confidence": 0.85}
         self.mock_routing_service.get_routing_stats.return_value = mock_stats
@@ -444,10 +444,12 @@ class TestLLMService(unittest.TestCase):
 
         # Verify delegation
         self.mock_routing_service.get_routing_stats.assert_called_once()
-        self.assertEqual(stats, mock_stats)
+        self.assertEqual(stats["total_requests"], 100)
+        self.assertEqual(stats["avg_confidence"], 0.85)
+        self.assertIn("circuit_breaker", stats)
 
     def test_get_routing_stats_no_routing_service(self):
-        """Test get_routing_stats() returns empty dict when no routing service."""
+        """Test get_routing_stats() returns circuit breaker info when no routing service."""
         service_no_routing = LLMService(
             configuration=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
@@ -458,8 +460,8 @@ class TestLLMService(unittest.TestCase):
         # Execute test
         stats = service_no_routing.get_routing_stats()
 
-        # Should return empty dict
-        self.assertEqual(stats, {})
+        # Should still include circuit breaker
+        self.assertIn("circuit_breaker", stats)
 
     # =============================================================================
     # 5. Error Handling Tests

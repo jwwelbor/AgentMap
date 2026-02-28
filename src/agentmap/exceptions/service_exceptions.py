@@ -24,6 +24,14 @@ class LLMDependencyError(LLMServiceError):
     """Exception raised when required dependencies are missing."""
 
 
+class LLMTimeoutError(LLMProviderError):
+    """Exception raised on timeout or connection errors (retryable)."""
+
+
+class LLMRateLimitError(LLMProviderError):
+    """Exception raised on 429/rate limit errors (retryable)."""
+
+
 class StorageConfigurationNotAvailableException(ConfigurationException):
     """Exception raised when storage configuration is not available or invalid."""
 

@@ -30,7 +30,9 @@ from agentmap.exceptions.service_exceptions import (
     LLMConfigurationError,
     LLMDependencyError,
     LLMProviderError,
+    LLMRateLimitError,
     LLMServiceError,
+    LLMTimeoutError,
 )
 from agentmap.exceptions.storage_exceptions import (
     CollectionNotFoundError,
@@ -70,6 +72,8 @@ __all__ = [
     "LLMProviderError",
     "LLMConfigurationError",
     "LLMDependencyError",
+    "LLMTimeoutError",
+    "LLMRateLimitError",
     "StorageAuthenticationError",
     "StorageConnectionError",
     "StorageConfigurationError",

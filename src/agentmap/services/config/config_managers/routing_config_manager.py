@@ -58,7 +58,6 @@ class RoutingConfigManager(BaseConfigManager):
                 "default_provider": "anthropic",
                 # Note: default_model is loaded from routing.fallback.default_model
                 # If not specified in config, LLMModelsConfigService provides the default
-                "max_retries": 2,
             },
             "performance": {
                 "enable_routing_cache": True,
