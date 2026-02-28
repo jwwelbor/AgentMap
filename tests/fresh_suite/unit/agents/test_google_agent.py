@@ -488,9 +488,7 @@ class TestGoogleAgent(unittest.TestCase):
 
         # Verify provider override but other fields preserved
         self.assertEqual(agent.provider, "google")
-        self.assertEqual(
-            agent.model, "claude-sonnet-4-6"
-        )  # Non-Google model preserved
+        self.assertEqual(agent.model, "claude-sonnet-4-6")  # Non-Google model preserved
         self.assertEqual(agent.temperature, 0.1)
         self.assertEqual(agent.context.get("custom_field"), "preserved")
         self.assertFalse(agent.routing_enabled)

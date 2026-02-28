@@ -380,9 +380,7 @@ class TestConfigServiceCoordination(BaseIntegrationTest):
         self.assertEqual(
             base_loaded["llm"]["anthropic"]["model"], "claude-3-haiku-20240307"
         )
-        self.assertEqual(
-            env_loaded["llm"]["anthropic"]["model"], "claude-sonnet-4-6"
-        )
+        self.assertEqual(env_loaded["llm"]["anthropic"]["model"], "claude-sonnet-4-6")
 
         # Verify infrastructure layer doesn't merge automatically
         self.assertNotEqual(
