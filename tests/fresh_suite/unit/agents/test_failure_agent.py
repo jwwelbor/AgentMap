@@ -6,12 +6,9 @@ for agents that simulate failure behavior with post-processing state modificatio
 """
 
 import unittest
-from typing import Any, Dict
-from unittest.mock import Mock, patch
 
 from agentmap.agents.builtins.failure_agent import FailureAgent
 from agentmap.services.protocols import LLMCapableAgent, StorageCapableAgent
-from agentmap.services.state_adapter_service import StateAdapterService
 from tests.utils.mock_service_factory import MockServiceFactory
 
 

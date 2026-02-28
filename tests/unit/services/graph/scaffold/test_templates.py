@@ -12,9 +12,11 @@ import unittest
 # Add tests directory to path to allow import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../../.."))
 
-from agentmap.models.scaffold_types import ServiceRequirements
-from agentmap.services.graph.scaffold.templates import Templates
-from agentmap.services.indented_template_composer import IndentedTemplateComposer
+from agentmap.models.scaffold_types import ServiceRequirements  # noqa: E402
+from agentmap.services.graph.scaffold.templates import Templates  # noqa: E402
+from agentmap.services.indented_template_composer import (  # noqa: E402
+    IndentedTemplateComposer,
+)
 
 try:
     from tests.utils.mock_service_factory import MockServiceFactory

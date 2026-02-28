@@ -10,7 +10,6 @@ Prompt-based resolution path.
 """
 
 import unittest
-from pathlib import Path
 
 from tests.fresh_suite.integration.base_integration_test import BaseIntegrationTest
 

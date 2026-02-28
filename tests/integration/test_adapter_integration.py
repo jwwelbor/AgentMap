@@ -5,16 +5,13 @@ Tests that CLI/HTTP/Serverless adapters show identical behavior and error semant
 for the same graph and inputs, ensuring the facade pattern works consistently.
 """
 
-import json
 import tempfile
 from pathlib import Path
-from typing import Any, Dict
 from unittest.mock import Mock, patch
 
 import pytest
 
 from agentmap.exceptions.runtime_exceptions import (
-    AgentMapNotInitialized,
     GraphNotFound,
     InvalidInputs,
 )

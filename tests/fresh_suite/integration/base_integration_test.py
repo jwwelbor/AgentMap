@@ -11,7 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import yaml
 
@@ -21,7 +21,7 @@ tests_dir = Path(__file__).parent.parent.parent
 if str(tests_dir) not in sys.path:
     sys.path.insert(0, str(tests_dir))
 
-from utils.enhanced_service_auditor import EnhancedServiceInterfaceAuditor
+from utils.enhanced_service_auditor import EnhancedServiceInterfaceAuditor  # noqa: E402
 
 
 class BaseIntegrationTest(unittest.TestCase):
@@ -453,5 +453,3 @@ class IntegrationTestCase(BaseIntegrationTest):
     This allows tests to use either BaseIntegrationTest or IntegrationTestCase
     based on naming preferences.
     """
-
-    pass

@@ -12,7 +12,6 @@ from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.scaffold_types import (
     ScaffoldOptions,
     ScaffoldResult,
-    ServiceRequirements,
 )
 from agentmap.services.agent.agent_registry_service import AgentRegistryService
 from agentmap.services.config.app_config_service import AppConfigService
@@ -393,7 +392,7 @@ class GraphScaffoldService:
                 f"{current_mappings} agent mappings, {missing_count} still missing"
             )
             self.logger.debug(
-                f"[GraphScaffoldService] Bundle persistence left to caller to avoid cache interference"
+                "[GraphScaffoldService] Bundle persistence left to caller to avoid cache interference"
             )
 
             return updated_bundle

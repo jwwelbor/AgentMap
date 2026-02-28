@@ -5,7 +5,7 @@ This module provides mixins for registry summary and service validation operatio
 """
 
 import inspect
-from typing import Any, Dict, Type
+from typing import Any, Dict
 
 
 class DiagnosticsMixin:

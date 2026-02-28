@@ -14,16 +14,14 @@ Key Test Areas:
 - Performance characteristics and statistics
 """
 
-import json
 import os
 import tempfile
 import threading
 import time
 import unittest
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, call, patch
+from unittest.mock import Mock, patch
 
 from src.agentmap.services.config.availability_cache_service import (
     AvailabilityCacheService,
@@ -786,7 +784,6 @@ class TestAvailabilityCacheService(unittest.TestCase):
                 if temp_file.exists():
                     temp_file.unlink()
                 # Permissions are enforced - proceed with test
-                pass
 
             # Write operation should fail but not crash
             success = self.cache_service.set_availability(
@@ -829,7 +826,7 @@ class TestAvailabilityCacheService(unittest.TestCase):
     def test_memory_cache_efficiency(self):
         """Test memory cache reduces file I/O operations."""
         # FIXED: Simplify test to focus on actual performance benefit rather than exact call counts
-        category, key = "performance", "test"
+        category = "performance"
 
         # Disable auto-invalidation to isolate memory cache behavior
         original_auto_invalidation = self.cache_service._auto_invalidation_enabled

@@ -10,8 +10,6 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from dependency_injector.wiring import inject
-
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.routing.types import RoutingDecision, TaskComplexity
 

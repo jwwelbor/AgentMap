@@ -6,10 +6,8 @@ fail-fast behavior coordination, and error propagation between all configuration
 services working together in real-world scenarios.
 """
 
-import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -396,7 +394,6 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
 
         # Should detect provider reference errors
         if routing_validation_errors:
-            error_messages = " ".join(routing_validation_errors).lower()
             # Should detect that providers in routing matrix don't exist in LLM config
             # (The exact error depends on validation implementation)
             self.assertTrue(

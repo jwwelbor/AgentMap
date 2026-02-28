@@ -6,8 +6,7 @@ compliance, service integration, and business logic.
 """
 
 import unittest
-from typing import Any, Dict
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from agentmap.agents.builtins.llm.llm_agent import LLMAgent
 from agentmap.services.protocols import LLMCapableAgent, LLMServiceProtocol

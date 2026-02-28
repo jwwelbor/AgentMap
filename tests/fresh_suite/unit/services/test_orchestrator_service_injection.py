@@ -5,7 +5,7 @@ Tests the specific fix for OrchestratorService injection into OrchestratorAgent.
 """
 
 import unittest
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 from agentmap.agents.builtins.orchestrator_agent import OrchestratorAgent
 from agentmap.services.logging_service import LoggingService

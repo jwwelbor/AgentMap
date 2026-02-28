@@ -15,7 +15,6 @@ This test now focuses on:
 import json
 import unittest
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
 
 import requests
 
@@ -63,7 +62,7 @@ class ResumeWorkflowUpdatedDiagnosisTest(unittest.TestCase):
             ResumeEndpointTest("/api/resume", 404, "API resume endpoint"),
         ]
 
-        print(f"\n🔍 Testing Resume Endpoint Existence")
+        print("\n🔍 Testing Resume Endpoint Existence")
         print("=" * 50)
 
         found_endpoints = []
@@ -108,7 +107,7 @@ class ResumeWorkflowUpdatedDiagnosisTest(unittest.TestCase):
     def test_runtime_api_directly(self):
         """Test the runtime resume_workflow function directly"""
 
-        print(f"\n🧪 Testing Runtime API Directly")
+        print("\n🧪 Testing Runtime API Directly")
         print("=" * 40)
 
         try:
@@ -145,20 +144,18 @@ class ResumeWorkflowUpdatedDiagnosisTest(unittest.TestCase):
         try:
             # Test 3: Invalid token
             print("\nTest 3: Invalid token (should fail gracefully)...")
-            result3 = runtime_resume_workflow(
-                resume_token="", config_file=None  # Empty token
-            )
-            print(f"❌ Empty token should have failed but didn't!")
+            runtime_resume_workflow(resume_token="", config_file=None)  # Empty token
+            print("❌ Empty token should have failed but didn't!")
 
         except Exception as e:
             print(f"✅ Empty token properly failed: {type(e).__name__}: {e}")
 
-        print(f"\n✅ Runtime API works correctly - the issue is missing REST endpoint")
+        print("\n✅ Runtime API works correctly - the issue is missing REST endpoint")
 
     def test_api_parameter_format_mismatch(self):
         """Demonstrate the parameter format that API should accept vs runtime needs"""
 
-        print(f"\n🔧 API Parameter Format Analysis")
+        print("\n🔧 API Parameter Format Analysis")
         print("=" * 40)
 
         # What the auth test was sending
@@ -182,21 +179,21 @@ class ResumeWorkflowUpdatedDiagnosisTest(unittest.TestCase):
         print("API Request (what auth test sent):")
         print(f"  {json.dumps(api_request, indent=2)}")
 
-        print(f"\nRuntime API Format (Simple):")
+        print("\nRuntime API Format (Simple):")
         print(f"  resume_token = '{runtime_simple}'")
 
-        print(f"\nRuntime API Format (Structured):")
+        print("\nRuntime API Format (Structured):")
         print(f"  resume_token = '{runtime_structured}'")
 
-        print(f"\n💡 Solution: API endpoint needs to translate:")
-        print(f"   workflow_id -> thread_id")
-        print(f"   action -> response_action")
-        print(f"   Create resume_token from API parameters")
+        print("\n💡 Solution: API endpoint needs to translate:")
+        print("   workflow_id -> thread_id")
+        print("   action -> response_action")
+        print("   Create resume_token from API parameters")
 
     def test_show_correct_api_implementation(self):
         """Show what the correct API endpoint implementation should look like"""
 
-        print(f"\n📝 Correct API Endpoint Implementation")
+        print("\n📝 Correct API Endpoint Implementation")
         print("=" * 50)
 
         print(
@@ -217,21 +214,21 @@ async def resume_workflow_endpoint(request: ResumeRequest):
                 resume_token = request.workflow_id
         else:
             resume_token = request.resume_token
-            
+
         # Call runtime API (same as run_workflow pattern)
         result = runtime_resume_workflow(
             resume_token=resume_token,
             profile=request.profile,
             config_file=request.config_file
         )
-        
+
         return {
             "success": True,
             "thread_id": result["thread_id"],
             "outputs": result["outputs"],
             "metadata": result["metadata"]
         }
-        
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -248,7 +245,7 @@ class ResumeWorkflowRootCauseTest(unittest.TestCase):
     def test_confirm_root_cause(self):
         """Confirm the actual root cause of the 500 errors"""
 
-        print(f"\n🎯 ROOT CAUSE CONFIRMATION")
+        print("\n🎯 ROOT CAUSE CONFIRMATION")
         print("=" * 50)
 
         # Check 1: Runtime API exists and works
@@ -275,12 +272,12 @@ class ResumeWorkflowRootCauseTest(unittest.TestCase):
 
         # Final determination
         if len(found_endpoints) == 0:
-            print(f"\n🚨 CONFIRMED ROOT CAUSE:")
+            print("\n🚨 CONFIRMED ROOT CAUSE:")
             print("   ❌ Missing REST API endpoint")
             print("   ✅ Runtime API works correctly")
             print("   💡 Need to create /workflows/resume endpoint")
         else:
-            print(f"\n🚨 PARTIAL ROOT CAUSE:")
+            print("\n🚨 PARTIAL ROOT CAUSE:")
             print(f"   ✅ Found {len(found_endpoints)} endpoints")
             print("   ❌ Endpoints exist but have implementation bugs")
             print("   💡 Need to fix parameter handling in existing endpoints")

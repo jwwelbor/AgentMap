@@ -7,14 +7,12 @@ normalized to lowercase when creating GraphBundles.
 
 import sys
 import unittest
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock
 
 sys.path.insert(0, r"C:\Users\jwwel\Documents\code\AgentMap\src")
 
-from agentmap.models.graph_bundle import GraphBundle
-from agentmap.models.node import Node
-from agentmap.services.static_bundle_analyzer import StaticBundleAnalyzer
+from agentmap.models.node import Node  # noqa: E402
+from agentmap.services.static_bundle_analyzer import StaticBundleAnalyzer  # noqa: E402
 
 
 class TestCaseInsensitiveAgentTypes(unittest.TestCase):

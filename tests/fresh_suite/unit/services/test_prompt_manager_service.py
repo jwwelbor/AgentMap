@@ -5,12 +5,10 @@ These tests validate the PromptManagerService using actual interface methods
 and follow the established MockServiceFactory patterns for consistent testing.
 """
 
-import os
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, Mock, mock_open, patch
+from unittest.mock import Mock, mock_open, patch
 
 import yaml
 

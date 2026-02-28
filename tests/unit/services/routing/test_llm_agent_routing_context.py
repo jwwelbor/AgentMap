@@ -1,5 +1,3 @@
-import types
-
 from agentmap.agents.builtins.llm.llm_agent import LLMAgent
 
 

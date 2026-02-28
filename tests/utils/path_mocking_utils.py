@@ -27,7 +27,7 @@ Usage Examples:
 
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Dict, Union
 from unittest.mock import Mock, patch
 
 

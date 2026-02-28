@@ -8,7 +8,6 @@ to verify proper wiring and end-to-end functionality.
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from agentmap.di.containers import ApplicationContainer
 
@@ -25,7 +24,6 @@ class TestGraphRegistryServiceIntegration(unittest.TestCase):
         # Create minimal test configuration
         # Use forward slashes for cross-platform compatibility
         cache_dir = str(Path(self.temp_dir.name) / "cache").replace("\\", "/")
-        storage_dir = str(Path(self.temp_dir.name) / "storage").replace("\\", "/")
         storage_config_path = str(
             Path(self.temp_dir.name) / "storage_config.yaml"
         ).replace("\\", "/")
@@ -36,28 +34,26 @@ class TestGraphRegistryServiceIntegration(unittest.TestCase):
             """
 json:
   default_provider: "local"
-  collections: {{}}
+  collections: {}
 
 vector:
   default_provider: "chroma"
-  collections: {{}}
+  collections: {}
 
 kv:
   default_provider: "local"
-  collections: {{}}
-""".format(
-                storage_dir=storage_dir
-            )
+  collections: {}
+"""
         )
 
         self.test_config_path.write_text(
             """
 app:
   cache_path: "{cache_dir}"
-  
+
 logging:
   level: INFO
-  
+
 storage_config_path: "{storage_config_path}"
 """.format(
                 cache_dir=cache_dir, storage_config_path=storage_config_path
@@ -113,7 +109,6 @@ storage_config_path: "{storage_config_path}"
 
         # Verify dependency types - FIXED: Check actual dependencies
         from agentmap.services.config.app_config_service import AppConfigService
-        from agentmap.services.logging_service import LoggingService
         from agentmap.services.storage.system_manager import SystemStorageManager
 
         # Check actual service attributes match expected types
@@ -273,7 +268,7 @@ storage_config_path: "{storage_config_path}"
         registry_service = self.container.graph_registry_service()
 
         # Verify that the service uses the configured cache path
-        expected_cache_dir = Path(self.temp_dir.name) / "cache"
+        Path(self.temp_dir.name) / "cache"
         expected_registry_path = (
             "graph_registry.json"  # FIXED: Service uses filename, not full path
         )
@@ -452,10 +447,10 @@ kv:
             """
 app:
   cache_path: "{cache_dir}"
-  
+
 logging:
   level: INFO
-  
+
 storage_config_path: "{storage_config_path}"
 """.format(
                 cache_dir=cache_dir, storage_config_path=storage_config_path

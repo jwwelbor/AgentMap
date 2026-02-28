@@ -41,8 +41,8 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, List
-from unittest.mock import MagicMock, Mock, patch
+from typing import Any, Dict
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -257,7 +257,7 @@ class TestFileStorageService(unittest.TestCase):
             except StorageProviderError as e:
                 # If exception was raised, verify it mentions path security
                 self.assertIn("outside base directory", str(e))
-            except Exception as e:
+            except Exception:
                 # Some paths might cause other exceptions (e.g., invalid path format)
                 # This is also acceptable as it prevents access
                 pass
@@ -279,7 +279,7 @@ class TestFileStorageService(unittest.TestCase):
             except StorageProviderError as e:
                 # If exception was raised, verify it mentions path security
                 self.assertIn("outside base directory", str(e))
-            except Exception as e:
+            except Exception:
                 # Some paths might cause other exceptions (e.g., invalid path format)
                 # This is also acceptable as it prevents access
                 pass

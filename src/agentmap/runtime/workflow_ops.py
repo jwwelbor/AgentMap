@@ -2,11 +2,10 @@
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Optional
 
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.exceptions.runtime_exceptions import (
-    AgentMapError,
     AgentMapNotInitialized,
     GraphNotFound,
     InvalidInputs,
@@ -16,7 +15,7 @@ from agentmap.runtime.runtime_manager import RuntimeManager
 from agentmap.services.graph.graph_bundle_service import GraphBundleService
 from agentmap.services.graph.graph_runner_service import GraphRunnerService
 
-from .init_ops import ensure_initialized, get_container
+from .init_ops import ensure_initialized
 
 
 def _resolve_csv_path(graph_identifier: str, container) -> tuple[Path, str]:

@@ -12,7 +12,6 @@ import typer
 from agentmap.deployment.cli.utils.cli_presenter import (
     map_exception_to_exit_code,
     print_err,
-    print_json,
 )
 
 # Lazy import: moved to function to avoid DI container init at module load
@@ -47,7 +46,6 @@ def diagnose_cmd(
         # Display results using CLI presenter for consistency
         if result.get("success", False):
             outputs = result.get("outputs", {})
-            metadata = result.get("metadata", {})
 
             typer.echo("\n✅ Discovery complete. Showing actual runtime state:\n")
 
@@ -144,8 +142,6 @@ def diagnose_cmd(
             typer.echo("Summary:")
 
             overall_status = outputs.get("overall_status", "unknown")
-            llm_ready = metadata.get("llm_ready", False)
-            storage_ready = metadata.get("storage_ready", False)
 
             if overall_status == "fully_operational":
                 typer.echo(

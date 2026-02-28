@@ -15,8 +15,7 @@ Supported formats:
 """
 
 import unittest
-from dataclasses import dataclass, field
-from typing import List, Optional, Union
+from typing import Optional
 
 from agentmap.models.graph_spec import NodeSpec
 from agentmap.services.csv_graph_parser.converters import NodeSpecConverter

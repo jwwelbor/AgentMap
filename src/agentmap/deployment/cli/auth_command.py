@@ -8,7 +8,6 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 import typer
 import yaml
@@ -167,8 +166,6 @@ def auth_init(
     Creates a new auth section with API keys. Will error if auth section already exists
     unless --force is used.
     """
-    config_path = Path(config)
-
     # Load existing config or create new one
     existing_config = load_yaml_config(config)
 
@@ -306,7 +303,7 @@ def auth_view(
                 typer.echo(f"  Key Hash: {hash_api_key(config['key'])}")
 
             typer.secho(
-                f"\n💡 Use --show-keys to display actual API keys", fg=colors.CYAN
+                "\n💡 Use --show-keys to display actual API keys", fg=colors.CYAN
             )
     else:
         typer.secho("\n❌ No API keys found in configuration", fg=colors.RED)
@@ -321,7 +318,7 @@ def auth_view(
             typer.echo(f"  - {endpoint}")
 
     if "permissions" in auth_config:
-        typer.secho(f"\n🔐 Permission Settings:", fg=colors.GREEN)
+        typer.secho("\n🔐 Permission Settings:", fg=colors.GREEN)
         permissions = auth_config["permissions"]
         for key, value in permissions.items():
             if isinstance(value, list):
@@ -334,7 +331,6 @@ def auth_view(
 @auth_app.callback()
 def auth_callback():
     """Authentication management for AgentMap."""
-    pass
 
 
 # Export the auth app for registration in main CLI

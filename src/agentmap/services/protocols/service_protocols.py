@@ -12,17 +12,13 @@ from typing import (
     List,
     Optional,
     Protocol,
-    Set,
     runtime_checkable,
 )
 
-from langchain_core.tools import Tool
-
 # Declaration system imports
-from agentmap.models.declaration_models import AgentDeclaration, ServiceDeclaration
 
 if TYPE_CHECKING:
-    from agentmap.services.declaration_sources import DeclarationSource
+    pass
 
 
 @runtime_checkable

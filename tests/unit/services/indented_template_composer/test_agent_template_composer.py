@@ -9,7 +9,7 @@ Tests the compose_template method with multi-output support, covering:
 """
 
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from agentmap.models.scaffold_types import (
     ServiceAttribute,

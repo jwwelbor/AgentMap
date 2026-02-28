@@ -113,7 +113,7 @@ class TestPathMockingUtilities(unittest.TestCase):
         """Test time progression mocking."""
         import time
 
-        with mock_time_progression(start_time=100.0, increment=0.5) as time_mock:
+        with mock_time_progression(start_time=100.0, increment=0.5):
             # First call
             time1 = time.time()
             self.assertEqual(time1, 100.0)

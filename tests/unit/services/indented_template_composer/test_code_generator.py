@@ -6,7 +6,6 @@ for generating type hints, docstrings, and template bodies.
 """
 
 import unittest
-from unittest.mock import Mock
 
 from agentmap.services.indented_template_composer.code_generator import CodeGenerator
 from tests.utils.mock_service_factory import MockServiceFactory

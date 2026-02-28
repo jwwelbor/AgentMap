@@ -6,7 +6,6 @@ mixin removal, ensuring clean architecture and proper service delegation.
 """
 
 import unittest
-from typing import Any, Dict
 from unittest.mock import Mock, patch
 
 from agentmap.agents.builtins.storage.json.base_agent import JSONDocumentAgent
@@ -193,7 +192,7 @@ class TestModernizedJSONDocumentReaderAgent(unittest.TestCase):
         collection = "simple.json"
         inputs = {}  # Minimal inputs
 
-        result = agent._execute_operation(collection, inputs)
+        agent._execute_operation(collection, inputs)
 
         # Verify service called with defaults
         self.mock_json_service.read.assert_called_once_with(

@@ -5,9 +5,7 @@ This module supports lightweight storage of graph metadata.
 """
 
 import copy
-import warnings
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 if TYPE_CHECKING:

@@ -6,9 +6,7 @@ requirement resolution without loading implementations, and backwards compatibil
 """
 
 import unittest
-from pathlib import Path
-from typing import Any, Dict, Set
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock
 
 from agentmap.models.declaration_models import AgentDeclaration, ServiceDeclaration
 from agentmap.services.declaration_registry_service import DeclarationRegistryService

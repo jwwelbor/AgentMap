@@ -13,6 +13,7 @@ class VectorIndex(Protocol):
         vectors: list[list[float]],
         metadatas: list[dict[str, Any]],
     ) -> None: ...
+
     def search(
         self, query: list[float], k: int, filters: dict[str, Any] | None = None
     ) -> list[tuple[str, float, dict[str, Any]]]: ...

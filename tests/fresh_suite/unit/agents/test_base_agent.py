@@ -7,7 +7,7 @@ that serves as the foundation for all AgentMap agents.
 
 import unittest
 from typing import Any, Dict
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.protocols import (

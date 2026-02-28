@@ -6,7 +6,6 @@ prompt resolution capabilities, and flexible input handling.
 """
 
 import unittest
-from typing import Any, Dict
 from unittest.mock import Mock
 
 from agentmap.agents.builtins.summary_agent import SummaryAgent

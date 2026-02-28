@@ -13,11 +13,9 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../src"))
 )
 
-import time
-from pathlib import Path
 
-import pytest
-import requests
+import pytest  # noqa: E402
+import requests  # noqa: E402
 
 
 @pytest.mark.integration_server
@@ -31,7 +29,7 @@ def test_api_fix_integration():
         response = requests.get(f"{base_url}/health", timeout=2)
         if response.status_code != 200:
             pytest.skip("Server not running. Skipping integration test.")
-    except:
+    except Exception:
         pytest.skip("Server not reachable. Skipping integration test.")
 
     # Try to execute a workflow

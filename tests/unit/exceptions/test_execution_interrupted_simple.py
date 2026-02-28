@@ -5,7 +5,6 @@ This test verifies the basic exception functionality works.
 """
 
 import unittest
-from typing import Any, Dict
 from uuid import uuid4
 
 from agentmap.exceptions.agent_exceptions import (

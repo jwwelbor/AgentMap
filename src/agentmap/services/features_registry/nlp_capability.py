@@ -75,7 +75,6 @@ class NLPCapabilityChecker:
 
         # Perform actual check
         try:
-            import fuzzywuzzy
             from fuzzywuzzy import fuzz
 
             # Test basic functionality

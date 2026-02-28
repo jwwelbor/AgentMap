@@ -6,7 +6,6 @@ for all declaration models without loading any implementations.
 """
 
 import unittest
-from typing import Any, Dict
 
 from agentmap.models.declaration_models import (
     AgentDeclaration,

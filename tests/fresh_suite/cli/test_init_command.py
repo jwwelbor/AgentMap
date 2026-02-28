@@ -11,9 +11,7 @@ Following TDD approach:
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
-import typer
 from typer.testing import CliRunner
 
 from agentmap.deployment.cli.main_cli import app

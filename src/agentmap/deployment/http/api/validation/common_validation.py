@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 from pydantic import BaseModel, Field, validator
 
 

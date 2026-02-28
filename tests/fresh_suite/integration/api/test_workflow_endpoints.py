@@ -7,7 +7,6 @@ using real DI container and service implementations.
 
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from tests.fresh_suite.integration.api.base_api_integration_test import (
     BaseAPIIntegrationTest,

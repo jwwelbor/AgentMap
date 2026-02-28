@@ -8,11 +8,9 @@ This follows AgentMap testing patterns:
 - Focus on actual workflow orchestration behavior
 """
 
-import json
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict
 from unittest.mock import Mock, patch
 from uuid import uuid4
 

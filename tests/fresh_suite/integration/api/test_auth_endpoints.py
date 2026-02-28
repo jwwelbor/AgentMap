@@ -6,7 +6,7 @@ testing patterns from the fresh test suite guide.
 """
 
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from agentmap.services.auth_service import AuthContext, AuthService
 from tests.fresh_suite.integration.api.base_api_integration_test import (

@@ -58,7 +58,6 @@ def main(
 
     Supports shorthand syntax: agentmap run file.csv is equivalent to agentmap run --csv file.csv
     """
-    pass
 
 
 # ============================================================================

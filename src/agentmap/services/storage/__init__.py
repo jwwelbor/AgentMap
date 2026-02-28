@@ -54,9 +54,7 @@ _LAZY_IMPORTS = {
 }
 
 if TYPE_CHECKING:
-    from agentmap.services.storage.blob_storage_service import BlobStorageService
     from agentmap.services.storage.csv_service import CSVStorageService
-    from agentmap.services.storage.manager import StorageServiceManager
     from agentmap.services.storage.vector.service import VectorStorageService
 
 
@@ -100,12 +98,6 @@ __all__ = [
 ]
 
 # Import connector modules so they can be patched in tests
-from . import (
-    aws_s3_connector,
-    azure_blob_connector,
-    gcp_storage_connector,
-    local_file_connector,
-)
 
 # BlobStorageService is lazy-loaded via __getattr__ to avoid importing langchain_core.tools
 # Add to exports list

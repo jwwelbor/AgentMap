@@ -12,10 +12,8 @@ These tests validate the BlobReaderAgent implementation including:
 - Service debugging information
 """
 
-import logging
 import unittest
-from typing import Any, Dict, Optional
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from agentmap.agents.builtins.storage.blob.blob_reader_agent import BlobReaderAgent
 from agentmap.exceptions import StorageOperationError
@@ -424,7 +422,7 @@ class TestBlobReaderAgent(unittest.TestCase):
         inputs = {"blob_uri": test_uri}
 
         # Process inputs
-        result = self.agent.process(inputs)
+        self.agent.process(inputs)
 
         # Verify logging calls were made
         # Note: The actual logging method calls depend on the agent's log_debug, log_info, etc. methods

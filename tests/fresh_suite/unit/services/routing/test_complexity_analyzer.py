@@ -7,12 +7,9 @@ and follow the established MockServiceFactory patterns for consistent testing.
 
 import re
 import unittest
-from typing import Any, Dict, List
-from unittest.mock import Mock, patch
 
 from agentmap.services.routing.complexity_analyzer import PromptComplexityAnalyzer
 from agentmap.services.routing.types import (
-    ComplexitySignal,
     RoutingContext,
     TaskComplexity,
 )
@@ -265,20 +262,20 @@ class TestPromptComplexityAnalyzer(unittest.TestCase):
         # Create a prompt with clear structural complexity
         complex_prompt = """
         Please analyze the following comprehensive data set carefully.
-        
+
         First, examine these key components:
         1. Data quality assessment
         2. Statistical analysis requirements
         3. Visualization needs
         4. Reporting standards
-        
+
         Then address these critical questions:
         - What are the primary data sources?
         - How should we validate the results?
         - Which metrics are most important?
         - When should we complete this analysis?
         - Where should we focus our efforts?
-        
+
         Finally, create a detailed implementation plan.
         Include specific timelines and deliverables.
         Address potential risks and mitigation strategies.

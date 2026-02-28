@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, List
 
 if TYPE_CHECKING:
-    from langchain_core.tools import BaseTool
+    pass
 
 
 def load_tools_from_module(module_path: str) -> List[Any]:

@@ -8,7 +8,6 @@ eliminating circular dependencies and providing 10x performance improvement.
 import hashlib
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
-from uuid import uuid4
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.node import Node
@@ -69,7 +68,7 @@ class StaticBundleAnalyzer:
 
         # Parse CSV to extract structure (lightweight operation)
         try:
-            self.logger.debug(f"Parsing CSV to graph specification")
+            self.logger.debug("Parsing CSV to graph specification")
             graph_spec = self.csv_parser.parse_csv_to_graph_spec(csv_path)
 
             # Get available graphs

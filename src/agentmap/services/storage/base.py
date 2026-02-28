@@ -16,7 +16,6 @@ from agentmap.services.storage.error_handling import ErrorHandlerMixin
 from agentmap.services.storage.path_resolver import PathResolverMixin
 from agentmap.services.storage.protocols import StorageService
 from agentmap.services.storage.types import (
-    StorageConfig,
     StorageResult,
     StorageServiceConfigurationError,
     WriteMode,

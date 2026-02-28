@@ -9,7 +9,6 @@ Tests verify:
 - Raw return value handling (not wrapped)
 """
 
-import time
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 

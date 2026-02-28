@@ -6,12 +6,10 @@ role in workflow testing and conditional execution paths.
 """
 
 import unittest
-from typing import Any, Dict
 from unittest.mock import Mock
 
 from agentmap.agents.builtins.branching_agent import BranchingAgent
 from agentmap.services.protocols import LLMCapableAgent, StorageCapableAgent
-from agentmap.services.state_adapter_service import StateAdapterService
 from tests.utils.mock_service_factory import MockServiceFactory
 
 

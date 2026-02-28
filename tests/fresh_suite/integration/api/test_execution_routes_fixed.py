@@ -5,16 +5,11 @@ Tests the fixed API execution endpoints to ensure they properly use
 the runtime facade pattern and call the correct runtime API functions.
 """
 
-from pathlib import Path
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-
-from agentmap.models.execution.result import ExecutionResult
-from agentmap.models.execution.summary import ExecutionSummary
-from agentmap.models.graph_bundle import GraphBundle
 
 
 class TestExecutionRoutes(TestCase):

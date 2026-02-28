@@ -11,13 +11,12 @@ Validates that _invoke_with_resilience() in LLMService correctly:
 """
 
 import unittest
-from unittest.mock import Mock, call, patch
+from unittest.mock import Mock, patch
 
 from agentmap.exceptions.service_exceptions import (
     LLMConfigurationError,
     LLMDependencyError,
     LLMProviderError,
-    LLMRateLimitError,
     LLMTimeoutError,
 )
 from agentmap.services.llm_service import LLMService

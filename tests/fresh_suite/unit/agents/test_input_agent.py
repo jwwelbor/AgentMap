@@ -6,8 +6,7 @@ for agents that require no business services (LLM, storage) but handle user inpu
 """
 
 import unittest
-from typing import Any, Dict
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from agentmap.agents.builtins.input_agent import InputAgent
 from agentmap.services.protocols import LLMCapableAgent, StorageCapableAgent

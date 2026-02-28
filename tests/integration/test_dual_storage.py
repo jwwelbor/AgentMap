@@ -9,15 +9,9 @@ while both using FilePathService for path validation.
 import os
 import tempfile
 import unittest
-from pathlib import Path
 
 from agentmap.di.containers import ApplicationContainer
-from agentmap.services.config.app_config_service import AppConfigService
-from agentmap.services.config.storage_config_service import StorageConfigService
-from agentmap.services.file_path_service import FilePathService
-from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.manager import StorageServiceManager
-from agentmap.services.storage.system_manager import SystemStorageManager
 
 
 class TestDualStorageIntegration(unittest.TestCase):
@@ -101,7 +95,7 @@ providers:
 
             # For user storage, we'll create it manually since container setup is complex
             # and we want to focus on testing the storage separation
-            app_config = self.container.app_config_service()
+            self.container.app_config_service()
             logging_service = self.container.logging_service()
             storage_config = self.container.storage_config_service()
 
@@ -181,9 +175,9 @@ providers:
 
         # Verify namespace directories exist
         cache_folder = system_storage._cache_folder
-        bundles_dir = os.path.join(cache_folder, "bundles")
-        registry_dir = os.path.join(cache_folder, "registry")
-        files_dir = os.path.join(cache_folder, "files")
+        os.path.join(cache_folder, "bundles")
+        os.path.join(cache_folder, "registry")
+        os.path.join(cache_folder, "files")
 
         # Note: Directories might not exist until services are used
         # but the services should be created without error

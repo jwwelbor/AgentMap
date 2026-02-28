@@ -16,9 +16,13 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
-from agentmap.services.csv_graph_parser_service import CSVGraphParserService
-from agentmap.services.validation.csv_validation_service import CSVValidationService
-from tests.utils.mock_service_factory import MockServiceFactory
+from agentmap.services.csv_graph_parser_service import (  # noqa: E402
+    CSVGraphParserService,
+)
+from agentmap.services.validation.csv_validation_service import (  # noqa: E402
+    CSVValidationService,
+)
+from tests.utils.mock_service_factory import MockServiceFactory  # noqa: E402
 
 
 class TestCSVColumnAliasIntegration(unittest.TestCase):

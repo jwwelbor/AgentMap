@@ -7,7 +7,7 @@ code duplication while maintaining clear error handling and user feedback.
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import typer
 

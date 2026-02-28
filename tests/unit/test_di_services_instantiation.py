@@ -94,7 +94,7 @@ def test_service_provider_instantiates(container, service_name):
 
     # Attempt to build the instance. Some optional services may return None by design.
     try:
-        _instance = provider()
+        provider()
     except ImportError as e:
         # If your environment lacks certain optional integrations, you can xfail instead of failing hard.
         pytest.xfail(f"ImportError while instantiating '{service_name}': {e}")

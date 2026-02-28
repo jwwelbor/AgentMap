@@ -15,15 +15,12 @@ This test focuses on the core suspend/resume mechanics without UI complexity.
 import os
 import tempfile
 import unittest
-from pathlib import Path
-from typing import Any, Dict
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 from agentmap.di.containers import ApplicationContainer
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
-from agentmap.models.human_interaction import HumanInteractionRequest, InteractionType
-from agentmap.services.graph.graph_runner_service import GraphRunnerService
+from agentmap.models.human_interaction import InteractionType
 
 
 class TestHumanAgentSuspendResumeIntegration(unittest.TestCase):
@@ -140,7 +137,7 @@ csv:
             workflow_id = "document_review_workflow::DocumentReview"
 
             with self.assertRaises(ExecutionInterruptedException) as context:
-                result = graph_runner_service.run_graph(
+                graph_runner_service.run_graph(
                     csv_identifier=workflow_id, config_path=None
                 )
 
@@ -221,7 +218,7 @@ csv:
         print(
             f"[SIMULATED] User interaction requested for: {exception.interaction_request.prompt}"
         )
-        print(f"[SIMULATED] User responded: approved")
+        print("[SIMULATED] User responded: approved")
 
         # In real implementation, this would save the user response
         # and prepare for resumption
@@ -274,10 +271,6 @@ csv:
         try:
             # Create a minimal workflow just to test HumanAgent behavior
             from agentmap.agents.builtins.human_agent import HumanAgent
-            from agentmap.services.execution_tracking_service import (
-                ExecutionTrackingService,
-            )
-            from agentmap.services.state_adapter_service import StateAdapterService
 
             # Get services from container
             execution_tracking = self.container.execution_tracking_service()

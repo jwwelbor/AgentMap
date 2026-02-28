@@ -9,11 +9,9 @@ Based on docs/contributing/architecture/storage-config-availability-cache-review
 """
 
 import asyncio
-import concurrent.futures
 import hashlib
 import json
 import os
-import platform
 import tempfile
 import threading
 import time
@@ -21,10 +19,9 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import patch
 
 from agentmap.services.config.availability_cache import (
-    AvailabilityCacheInterface,
     AvailabilityCacheManager,
     CacheValidationResult,
     ThreadSafeFileCache,
@@ -35,7 +32,7 @@ from agentmap.services.config.availability_cache import (
 def _psutil_available():
     """Check if psutil is available for optional memory testing."""
     try:
-        import psutil
+        pass
 
         return True
     except ImportError:
@@ -535,7 +532,7 @@ class TestThreadSafetyConcurrentAccess(unittest.TestCase):
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                 }
                 self.cache.save_cache(cache_data)
-            except Exception as e:
+            except Exception:
                 pass  # Expected that some may fail due to race conditions
 
         # Start multiple generators simultaneously
@@ -650,7 +647,6 @@ class TestCacheCorruptionScenarios(unittest.TestCase):
                 if temp_file.exists():
                     temp_file.unlink()
                 # Permissions are enforced - proceed with test
-                pass
 
             # Attempt to write should fail gracefully
             new_data = {"updated": "data"}
@@ -984,10 +980,10 @@ class TestAvailabilityCacheManager(unittest.TestCase):
             self.manager.clear_cache("csv_storage")
 
             # CSV storage should regenerate, vector should hit cache
-            csv_result = await self.manager.get_or_generate_availability(
+            await self.manager.get_or_generate_availability(
                 "csv_storage", self.test_config
             )
-            vector_result = await self.manager.get_or_generate_availability(
+            await self.manager.get_or_generate_availability(
                 "vector_storage", self.test_config
             )
 
@@ -1021,7 +1017,7 @@ class TestAvailabilityCacheManager(unittest.TestCase):
             self.assertFalse(self.cache_file.exists())
 
             # Next request should regenerate
-            result = await self.manager.get_or_generate_availability(
+            await self.manager.get_or_generate_availability(
                 "csv_storage", self.test_config
             )
             self.assertEqual(strategy.call_count, 2)

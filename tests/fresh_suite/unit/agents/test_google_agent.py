@@ -6,7 +6,6 @@ and inheritance from LLMAgent while ensuring protocol compliance.
 """
 
 import unittest
-from typing import Any, Dict
 from unittest.mock import Mock
 
 from agentmap.agents.builtins.llm.google_agent import GoogleAgent

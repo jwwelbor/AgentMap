@@ -7,8 +7,7 @@ proper service delegation with correct result formatting.
 """
 
 import unittest
-from typing import Any, Dict
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from agentmap.agents.builtins.storage.base_storage_agent import BaseStorageAgent
 from agentmap.agents.builtins.storage.vector.base_agent import VectorAgent
@@ -197,7 +196,7 @@ class TestModernizedVectorWriterAgent(unittest.TestCase):
         docs = [{"text": "Test document"}]
         inputs = {"docs": docs}  # No explicit should_persist
 
-        result = agent._execute_operation(collection, inputs)
+        agent._execute_operation(collection, inputs)
 
         # Verify service called with agent's default should_persist
         self.mock_vector_service.write.assert_called_once_with(

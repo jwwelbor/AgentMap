@@ -14,15 +14,13 @@ Key Integration Areas:
 - Performance benefits of unified cache approach
 """
 
-import json
 import tempfile
 import threading
 import time
 import unittest
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, call, patch
+from unittest.mock import Mock
 
 from src.agentmap.services.config.availability_cache_service import (
     AvailabilityCacheService,

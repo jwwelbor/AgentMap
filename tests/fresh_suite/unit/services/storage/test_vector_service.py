@@ -14,11 +14,9 @@ import os
 import shutil
 import tempfile
 import unittest
-from pathlib import Path
-from typing import Any, Dict, List
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
-from agentmap.services.storage.types import StorageResult, WriteMode
+from agentmap.services.storage.types import StorageResult
 from agentmap.services.storage.vector.service import VectorStorageService
 from tests.utils.mock_service_factory import MockServiceFactory
 
@@ -286,7 +284,7 @@ class TestVectorStorageService(unittest.TestCase):
 
         # Perform search with custom k
         query = {"text": "search query"}
-        result = self.service.read("test_collection", query=query, k=10)
+        self.service.read("test_collection", query=query, k=10)
 
         # Verify k parameter was used
         mock_store.similarity_search.assert_called_once_with("search query", k=10)
@@ -344,7 +342,7 @@ class TestVectorStorageService(unittest.TestCase):
 
             # Use 'query' field instead of 'text'
             query = {"query": "search text"}
-            result = self.service.read("test_collection", query=query)
+            self.service.read("test_collection", query=query)
 
             # Should work with 'query' field
             mock_store.similarity_search.assert_called_once_with("search text", k=4)
@@ -448,7 +446,7 @@ class TestVectorStorageService(unittest.TestCase):
         text = "Single text document"
 
         # Write text
-        result = self.service.write("test_collection", text)
+        self.service.write("test_collection", text)
 
         # Verify text was converted to list
         mock_store.add_texts.assert_called_once_with(["Single text document"])

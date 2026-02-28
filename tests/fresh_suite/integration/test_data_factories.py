@@ -6,10 +6,9 @@ and other test artifacts needed for service integration testing. It follows
 the established patterns and provides realistic test data for various scenarios.
 """
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import yaml
 

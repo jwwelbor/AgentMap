@@ -300,5 +300,3 @@ class APITestCase(BaseAPIIntegrationTest):
     """
     Alias for BaseAPIIntegrationTest for backward compatibility.
     """
-
-    pass

@@ -12,7 +12,6 @@ Follows project testing patterns using unittest.TestCase and MockServiceFactory.
 """
 
 import unittest
-from unittest.mock import Mock
 
 import pandas as pd
 

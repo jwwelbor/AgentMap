@@ -38,22 +38,18 @@ class AvailabilityCacheInterface(ABC):
     @abstractmethod
     async def get_availability(self, key: str) -> Optional[Dict[str, Any]]:
         """Get cached availability data for a key."""
-        pass
 
     @abstractmethod
     async def set_availability(self, key: str, data: Dict[str, Any]) -> bool:
         """Set availability data for a key. Returns success status."""
-        pass
 
     @abstractmethod
     async def invalidate_cache(self, key: Optional[str] = None) -> None:
         """Invalidate cache for specific key or all keys if None."""
-        pass
 
     @abstractmethod
     def is_cache_valid(self, key: str) -> CacheValidationResult:
         """Check if cached data is still valid."""
-        pass
 
 
 class ValidationStrategy(ABC):
@@ -62,12 +58,10 @@ class ValidationStrategy(ABC):
     @abstractmethod
     async def validate(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Validate configuration and return result with metadata."""
-        pass
 
     @abstractmethod
     def get_cache_key(self, config: Dict[str, Any]) -> str:
         """Generate cache key for this validation strategy."""
-        pass
 
 
 class ThreadSafeFileCache:
@@ -283,8 +277,6 @@ class AvailabilityCacheManager:
                 "error": f"No validator registered for storage type: {storage_type}",
                 "checked_at": datetime.now(timezone.utc).isoformat(),
             }
-
-        cache_key = validator.get_cache_key(config)
 
         # Check cache first
         cached_data = self._cache.load_cache()

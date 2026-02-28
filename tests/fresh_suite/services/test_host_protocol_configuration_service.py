@@ -6,7 +6,7 @@ including method name generation and protocol configuration.
 """
 
 import unittest
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 from agentmap.services.host_protocol_configuration_service import (
     HostProtocolConfigurationService,

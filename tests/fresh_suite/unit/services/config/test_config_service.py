@@ -8,8 +8,7 @@ This module tests the ConfigService which should contain ONLY infrastructure cod
 import os
 import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import Mock, mock_open, patch
+from unittest.mock import Mock
 
 import yaml
 

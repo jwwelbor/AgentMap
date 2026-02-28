@@ -6,7 +6,6 @@ This service determines which services are needed by examining which protocols e
 implements (LLMCapableAgent, StorageCapableAgent, etc).
 """
 
-from pathlib import Path
 from typing import Any, Dict, Optional, Set, Type
 
 from agentmap.services.agent.agent_factory_service import AgentFactoryService

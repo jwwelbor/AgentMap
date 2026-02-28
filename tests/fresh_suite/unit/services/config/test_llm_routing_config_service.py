@@ -5,12 +5,9 @@ This module tests the LlmRoutingConfigService which handles LLM provider
 routing configuration, provider selection, and routing logic.
 """
 
-import os
-import tempfile
 import unittest
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock
 
-from agentmap.services.logging_service import LoggingService
 from src.agentmap.services.config.app_config_service import AppConfigService
 from src.agentmap.services.config.llm_routing_config_service import (
     LLMRoutingConfigService,
@@ -87,7 +84,6 @@ class TestLlmRoutingConfigService(unittest.TestCase):
 
     def tearDown(self):
         """Clean up test fixtures."""
-        pass
 
     def test_initialization_success(self):
         """Test successful initialization with valid config."""

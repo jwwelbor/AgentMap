@@ -190,7 +190,7 @@ class TestCSVToolValidation(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
 
-            row = CSVRowModel(
+            CSVRowModel(
                 GraphName="test_graph",
                 Node="test_node",
                 Available_Tools="tool1|tool2",
@@ -208,7 +208,7 @@ class TestCSVToolValidation(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
 
-            row = CSVRowModel(
+            CSVRowModel(
                 GraphName="test_graph",
                 Node="test_node",
                 Available_Tools="tool1",
@@ -224,7 +224,7 @@ class TestCSVToolValidation(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
 
-            row = CSVRowModel(
+            CSVRowModel(
                 GraphName="test_graph",
                 Node="test_node",
                 Available_Tools=None,

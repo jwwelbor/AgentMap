@@ -7,7 +7,6 @@ use RuntimeManager.reset() for test isolation.
 """
 
 import threading
-import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from unittest.mock import MagicMock, patch

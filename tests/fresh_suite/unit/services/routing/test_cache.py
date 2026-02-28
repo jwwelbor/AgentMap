@@ -5,11 +5,9 @@ These tests validate the routing decision caching system using actual interface 
 and follow the established MockServiceFactory patterns for consistent testing.
 """
 
-import hashlib
 import time
 import unittest
-from typing import Any, Dict, List
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from agentmap.services.routing.cache import CacheEntry, RoutingCache
 from agentmap.services.routing.types import RoutingDecision, TaskComplexity

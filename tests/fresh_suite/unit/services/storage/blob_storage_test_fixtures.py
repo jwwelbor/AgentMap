@@ -11,12 +11,11 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 from agentmap.agents.builtins.storage.blob.blob_reader_agent import BlobReaderAgent
 from agentmap.agents.builtins.storage.blob.blob_writer_agent import BlobWriterAgent
 from agentmap.services.protocols import BlobStorageServiceProtocol
-from agentmap.services.storage.blob_storage_service import BlobStorageService
 from tests.utils.mock_service_factory import MockServiceFactory
 
 
@@ -454,7 +453,7 @@ blob:
       region: "us-east-1"
     gs:
       credentials_path: "/path/to/credentials.json"
-      project_id: "test-project" 
+      project_id: "test-project"
     file:
       base_directory: "{blob_data_path_str}"
     local:
@@ -567,7 +566,7 @@ class BlobAgentTestHelpers:
         try:
             # Write data
             write_inputs = {"blob_uri": test_uri, "data": test_data}
-            write_result = writer.process(write_inputs)
+            writer.process(write_inputs)
 
             # Read data back
             read_inputs = {"blob_uri": test_uri}
@@ -661,7 +660,7 @@ class MockCloudProviderHelpers:
     @staticmethod
     def mock_azure_behavior(mock_service: Mock, scenario: str = "success"):
         """Configure mock service to behave like Azure Blob Storage."""
-        from agentmap.exceptions import StorageConnectionError, StorageOperationError
+        from agentmap.exceptions import StorageConnectionError
 
         if scenario == "success":
             mock_service.read_blob.return_value = (
@@ -786,9 +785,7 @@ class BlobStorageTestRunner:
                 mock_service = MockBlobStorageServiceFactory.create_failing_service()
 
                 # Create agents
-                writer = BlobAgentTestHelpers.create_test_blob_writer(
-                    blob_service=mock_service
-                )
+                BlobAgentTestHelpers.create_test_blob_writer(blob_service=mock_service)
                 reader = BlobAgentTestHelpers.create_test_blob_reader(
                     blob_service=mock_service
                 )

@@ -8,9 +8,9 @@ performance characteristics, and error handling for missing declarations.
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, mock_open, patch
+from unittest.mock import Mock, mock_open, patch
 
-from agentmap.models.declaration_models import AgentDeclaration, ServiceDeclaration
+from agentmap.models.declaration_models import AgentDeclaration
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.node import Node
 from agentmap.services.static_bundle_analyzer import StaticBundleAnalyzer

@@ -12,13 +12,8 @@ from agentmap.services.protocol_requirements_analyzer import (
     ProtocolBasedRequirementsAnalyzer,
 )
 from agentmap.services.protocols import (
-    BlobStorageCapableAgent,
     CSVCapableAgent,
-    FileCapableAgent,
-    JSONCapableAgent,
     LLMCapableAgent,
-    MemoryCapableAgent,
-    OrchestrationCapableAgent,
     PromptCapableAgent,
     StorageCapableAgent,
     VectorCapableAgent,

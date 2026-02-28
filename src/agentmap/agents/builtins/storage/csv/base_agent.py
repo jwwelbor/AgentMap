@@ -8,7 +8,6 @@ operations to CSVStorageService, keeping agents simple and focused.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.base_storage_agent import (

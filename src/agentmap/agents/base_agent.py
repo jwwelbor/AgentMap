@@ -12,7 +12,6 @@ from typing import Any, Dict, Optional, Tuple
 
 from langgraph.errors import GraphInterrupt
 
-from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.protocols import (
     LLMCapableAgent,

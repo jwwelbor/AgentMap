@@ -6,7 +6,7 @@ Tests the public runtime API resume_workflow() function and _parse_resume_token 
 
 import json
 import unittest
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import patch
 
 from agentmap.exceptions.runtime_exceptions import InvalidInputs
 from agentmap.models.execution.result import ExecutionResult
@@ -131,7 +131,7 @@ class TestResumeWorkflowRuntimeAPI(unittest.TestCase):
         config_file = "custom_config.yaml"
 
         # Execute
-        result = resume_workflow(resume_token, config_file=config_file)
+        resume_workflow(resume_token, config_file=config_file)
 
         # Verify initialization with config
         mock_ensure_init.assert_called_once_with(config_file=config_file)

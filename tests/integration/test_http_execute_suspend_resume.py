@@ -14,7 +14,9 @@ from agentmap.deployment.http.api.server import create_fastapi_app
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from fresh_suite.integration.base_integration_test import BaseIntegrationTest
+from fresh_suite.integration.base_integration_test import (  # noqa: E402
+    BaseIntegrationTest,
+)
 
 
 class TestHTTPExecuteSuspendResume(BaseIntegrationTest):

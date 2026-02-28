@@ -109,7 +109,7 @@ def validate_auditor_results():
     print("=" * 60)
 
     # Validate ExecutionTrackingService
-    print(f"\\n📋 ExecutionTrackingService Analysis:")
+    print("\\n📋 ExecutionTrackingService Analysis:")
     print(
         f"✅ Found {len(EXECUTION_TRACKING_SERVICE_ANALYSIS['public_methods'])} public methods"
     )
@@ -132,7 +132,7 @@ def validate_auditor_results():
             print(f"   ❌ {method}() - MISSING!")
 
     # Validate GraphRunnerService
-    print(f"\\n📋 GraphRunnerService Analysis:")
+    print("\\n📋 GraphRunnerService Analysis:")
     print(
         f"✅ Found {len(GRAPH_RUNNER_SERVICE_ANALYSIS['public_methods'])} public methods"
     )
@@ -153,7 +153,7 @@ def validate_auditor_results():
             print(f"   ❌ {method}() - MISSING!")
 
     # Validate GraphDefinitionService
-    print(f"\\n📋 GraphDefinitionService Analysis:")
+    print("\\n📋 GraphDefinitionService Analysis:")
     print(
         f"✅ Found {len(GRAPH_DEFINITION_SERVICE_ANALYSIS['public_methods'])} public methods"
     )
@@ -172,7 +172,7 @@ def validate_auditor_results():
         else:
             print(f"   ❌ {method}() - MISSING!")
 
-    print(f"\\n🎯 Key Benefits Demonstrated:")
+    print("\\n🎯 Key Benefits Demonstrated:")
     print("✅ Auditor identifies REAL methods only (no phantom methods)")
     print("✅ Proper dependency analysis for service mocking")
     print("✅ Accurate method signatures for test generation")

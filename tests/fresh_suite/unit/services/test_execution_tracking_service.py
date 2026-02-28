@@ -7,17 +7,12 @@ and follow the established MockServiceFactory patterns for consistent testing.
 
 import unittest
 from datetime import datetime, timedelta
-from typing import Any, Dict
-from unittest.mock import Mock, patch
 
 from agentmap.models.execution.summary import ExecutionSummary
 from agentmap.models.execution.tracker import ExecutionTracker
-from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.execution_tracking_service import (
     ExecutionTrackingService,
-    NodeExecution,
 )
-from agentmap.services.logging_service import LoggingService
 from tests.utils.migration_utils import MockLoggingService
 from tests.utils.mock_service_factory import MockServiceFactory
 

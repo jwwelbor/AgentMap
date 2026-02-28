@@ -10,11 +10,9 @@ Tests for the new multi-output detection and validation in the run method:
 
 import unittest
 from typing import Any, Dict
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import patch
 
 from agentmap.agents.base_agent import BaseAgent
-from agentmap.services.execution_tracking_service import ExecutionTrackingService
-from agentmap.services.state_adapter_service import StateAdapterService
 from tests.utils.mock_service_factory import MockServiceFactory
 
 
@@ -128,7 +126,7 @@ class TestRunMethodMultiOutput(unittest.TestCase):
 
         # Act
         with patch.object(agent, "_validate_multi_output") as mock_validate:
-            result = agent.run(test_state)
+            agent.run(test_state)
 
             # Assert - _validate_multi_output should NOT be called for single output
             mock_validate.assert_not_called()
@@ -143,7 +141,7 @@ class TestRunMethodMultiOutput(unittest.TestCase):
 
         # Act
         with patch.object(agent, "log_debug") as mock_log_debug:
-            result = agent.run(test_state)
+            agent.run(test_state)
 
             # Assert - Should log with old format for backward compatibility
             # Should include the old message pattern: "Set output field 'X' = Y"
@@ -177,7 +175,7 @@ class TestRunMethodMultiOutput(unittest.TestCase):
         # Act
         with patch.object(agent, "_validate_multi_output") as mock_validate:
             mock_validate.return_value = {"field1": "value1", "field2": "value2"}
-            result = agent.run(test_state)
+            agent.run(test_state)
 
             # Assert - _validate_multi_output should be called
             mock_validate.assert_called_once()
@@ -202,7 +200,7 @@ class TestRunMethodMultiOutput(unittest.TestCase):
                 "field2": "v2",
                 "field3": "v3",
             }
-            result = agent.run(test_state)
+            agent.run(test_state)
 
             # Assert - _validate_multi_output should be called
             mock_validate.assert_called_once()
@@ -224,7 +222,7 @@ class TestRunMethodMultiOutput(unittest.TestCase):
         # Act
         with patch.object(agent, "_validate_multi_output") as mock_validate:
             mock_validate.return_value = output_value
-            result = agent.run(test_state)
+            agent.run(test_state)
 
             # Assert - _validate_multi_output called with correct output
             mock_validate.assert_called_once_with(output_value)
@@ -323,7 +321,7 @@ class TestRunMethodMultiOutput(unittest.TestCase):
 
         # Act
         with patch.object(agent, "log_debug") as mock_log_debug:
-            result = agent.run(test_state)
+            agent.run(test_state)
 
             # Assert - Should log multi-output message
             log_calls = [call for call in mock_log_debug.call_args_list]
@@ -351,7 +349,7 @@ class TestRunMethodMultiOutput(unittest.TestCase):
 
         # Act
         with patch.object(agent, "log_debug") as mock_log_debug:
-            result = agent.run(test_state)
+            agent.run(test_state)
 
             # Assert
             log_calls = [call for call in mock_log_debug.call_args_list]
@@ -383,7 +381,7 @@ class TestRunMethodMultiOutput(unittest.TestCase):
 
         # Act
         with patch.object(agent, "log_trace") as mock_log_trace:
-            result = agent.run(test_state)
+            agent.run(test_state)
 
             # Assert - Should log timing in completion message
             log_calls = [call for call in mock_log_trace.call_args_list]
@@ -411,7 +409,7 @@ class TestRunMethodMultiOutput(unittest.TestCase):
 
         # Act
         with patch.object(agent, "log_trace") as mock_log_trace:
-            result = agent.run(test_state)
+            agent.run(test_state)
 
             # Assert - Start and completion messages should have execution IDs
             log_calls = [call for call in mock_log_trace.call_args_list]
@@ -499,7 +497,7 @@ class TestRunMethodMultiOutput(unittest.TestCase):
 
         # Act
         with patch.object(agent, "_validate_multi_output") as mock_validate:
-            result = agent.run(test_state)
+            agent.run(test_state)
 
             # Assert
             mock_validate.assert_not_called()

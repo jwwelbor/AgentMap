@@ -8,13 +8,12 @@ this service only loads what's required by the graph.
 Follows the same patterns as ApplicationBootstrapService but with filtered, minimal loading.
 """
 
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.agent.agent_registry_service import AgentRegistryService
 from agentmap.services.config.agent_config_service import AgentConfigService
 from agentmap.services.config.app_config_service import AppConfigService
-from agentmap.services.dependency_checker_service import DependencyCheckerService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
 

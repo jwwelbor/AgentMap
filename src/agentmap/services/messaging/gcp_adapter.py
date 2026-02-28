@@ -8,7 +8,7 @@ interface for publishing messages to Google Cloud Pub/Sub topics.
 import json
 from typing import Any, Dict, Optional
 
-from agentmap.exceptions import MessagingConnectionError, MessagingOperationError
+from agentmap.exceptions import MessagingConnectionError
 from agentmap.models.storage.types import StorageResult
 
 

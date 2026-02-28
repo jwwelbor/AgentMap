@@ -17,8 +17,8 @@ import os
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional
-from unittest.mock import MagicMock, Mock, patch
+from typing import Any, Dict
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -300,7 +300,7 @@ MultiOutputGraph,EndNode,End node,echo,Done,result|status|count,final_output,"""
         agent.set_execution_tracker(tracker)
 
         # Run agent - should handle error gracefully
-        result = agent.run(state)
+        agent.run(state)
 
         # Error handling returns error_updates
         # Verify error was recorded
@@ -402,7 +402,7 @@ MultiOutputGraph,EndNode,End node,echo,Done,result|status|count,final_output,"""
         agent.set_execution_tracker(tracker)
 
         # Run agent - error mode should raise or handle error
-        result = agent.run(state)
+        agent.run(state)
 
         # Error should be handled and returned as error_updates
         assert execution_tracking_service.record_node_result.called
@@ -634,7 +634,7 @@ MultiOutputGraph,EndNode,End node,echo,Done,result|status|count,final_output,"""
             agent.set_execution_tracker(tracker)
 
             # Run agent
-            result = agent.run(state)
+            agent.run(state)
 
             # Check that warning was logged
             # The exact log message depends on the logging implementation
@@ -665,7 +665,7 @@ MultiOutputGraph,EndNode,End node,echo,Done,result|status|count,final_output,"""
         agent.set_execution_tracker(tracker)
 
         # Run agent
-        result = agent.run(state)
+        agent.run(state)
 
         # Verify execution tracking was called
         assert execution_tracking_service.record_node_start.called
