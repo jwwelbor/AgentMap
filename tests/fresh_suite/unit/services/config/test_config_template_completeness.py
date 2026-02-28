@@ -121,6 +121,19 @@ class TestConfigTemplateCompleteness(unittest.TestCase):
         self.assertIsInstance(llm, dict, "llm section is not a dict")
         self.assertTrue(len(llm) >= 1, "llm section must have at least one provider")
 
+    def test_llm_section_has_resilience(self):
+        """llm: must define a resilience sub-section with retry and circuit_breaker."""
+        llm = self.config.get("llm")
+        self.assertIsInstance(llm, dict, "llm section is not a dict")
+        resilience = llm.get("resilience")
+        self.assertIsInstance(
+            resilience, dict, "llm section missing 'resilience' sub-section"
+        )
+        self.assertIn("retry", resilience, "resilience missing 'retry'")
+        self.assertIn(
+            "circuit_breaker", resilience, "resilience missing 'circuit_breaker'"
+        )
+
     def test_routing_section_exists(self):
         """routing: must be present as a dict."""
         routing = self.config.get("routing")

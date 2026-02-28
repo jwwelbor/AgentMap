@@ -12,6 +12,9 @@ from agentmap.services.config.config_managers.declaration_config_manager import 
 from agentmap.services.config.config_managers.host_config_manager import (
     HostConfigManager,
 )
+from agentmap.services.config.config_managers.llm_config_manager import (
+    LLMConfigManager,
+)
 from agentmap.services.config.config_managers.path_config_manager import (
     PathConfigManager,
 )
@@ -26,4 +29,5 @@ __all__ = [
     "HostConfigManager",
     "DeclarationConfigManager",
     "RoutingConfigManager",
+    "LLMConfigManager",
 ]

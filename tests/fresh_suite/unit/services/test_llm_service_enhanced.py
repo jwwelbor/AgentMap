@@ -373,7 +373,10 @@ class TestLLMServiceEnhanced(unittest.TestCase):
 
         stats = self.service.get_routing_stats()
 
-        self.assertEqual(stats, mock_stats)
+        # Routing stats are included alongside circuit_breaker section
+        for key in mock_stats:
+            self.assertEqual(stats[key], mock_stats[key])
+        self.assertIn("circuit_breaker", stats)
         self.mock_routing_service.get_routing_stats.assert_called_once()
 
     # =============================================================================

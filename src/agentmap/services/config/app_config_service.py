@@ -16,6 +16,7 @@ from agentmap.services.config.config_managers import (
     AuthConfigManager,
     DeclarationConfigManager,
     HostConfigManager,
+    LLMConfigManager,
     PathConfigManager,
     RoutingConfigManager,
 )
@@ -76,6 +77,9 @@ class AppConfigService:
         self._routing_manager = RoutingConfigManager(
             self._config_service, self._config_data, self._logger
         )
+        self._llm_manager = LLMConfigManager(
+            self._config_service, self._config_data, self._logger
+        )
 
         # Group managers for easier iteration
         self._managers = [
@@ -84,6 +88,7 @@ class AppConfigService:
             self._host_manager,
             self._declaration_manager,
             self._routing_manager,
+            self._llm_manager,
         ]
 
     def _setup_bootstrap_logging(self):
@@ -179,7 +184,11 @@ class AppConfigService:
     # LLM accessors
     def get_llm_config(self, provider: str) -> Dict[str, Any]:
         """Get configuration for a specific LLM provider."""
-        return self.get_value(f"llm.{provider}", {})
+        return self._llm_manager.get_provider_config(provider)
+
+    def get_llm_resilience_config(self) -> Dict[str, Any]:
+        """Get LLM resilience configuration (retry + circuit breaker)."""
+        return self._llm_manager.get_resilience_config()
 
     # Routing accessors
     def get_routing_config(self) -> Dict[str, Any]:
@@ -225,7 +234,6 @@ class AppConfigService:
                 "default_provider": "anthropic",
                 # Note: default_model is loaded from routing.fallback.default_model
                 # If not specified in config, LLMModelsConfigService provides the default
-                "max_retries": 2,
             },
             "performance": {
                 "enable_routing_cache": True,

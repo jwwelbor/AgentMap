@@ -8,7 +8,7 @@ Handles multi-tier fallback logic when LLM calls fail, including:
 - Tier 4: Error with full context
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from agentmap.exceptions import LLMServiceError
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
@@ -24,6 +24,7 @@ class LLMFallbackHandler:
         logging_service: LoggingService,
         routing_config: Optional[LLMRoutingConfigService] = None,
         features_registry: Optional[FeaturesRegistryService] = None,
+        invoke_fn: Optional[Callable[..., str]] = None,
     ):
         """
         Initialize fallback handler.
@@ -32,10 +33,27 @@ class LLMFallbackHandler:
             logging_service: Logging service
             routing_config: Optional routing configuration service
             features_registry: Optional features registry service
+            invoke_fn: Optional callable (client, messages, provider, model) -> str
+                       that wraps invocation with resilience (retry + circuit breaker).
+                       When None, falls back to direct ``client.invoke()``.
         """
         self._logger = logging_service.get_class_logger("agentmap.llm.fallback")
         self.routing_config = routing_config
         self.features_registry = features_registry
+        self._invoke_fn = invoke_fn
+
+    def _invoke_client(
+        self,
+        client: Any,
+        langchain_messages: List[Any],
+        provider: str,
+        model: str,
+    ) -> str:
+        """Invoke client through resilience layer when available, else direct."""
+        if self._invoke_fn is not None:
+            return self._invoke_fn(client, langchain_messages, provider, model)
+        response = client.invoke(langchain_messages)
+        return response.content if hasattr(response, "content") else str(response)
 
     def get_fallback_model(
         self, provider: str, complexity: str = "low"
@@ -200,12 +218,13 @@ class LLMFallbackHandler:
                 config = get_provider_config_fn(original_provider)
                 config["model"] = fallback_model
                 client = get_or_create_client_fn(original_provider, config)
-                response = client.invoke(convert_messages_fn(messages))
+                langchain_msgs = convert_messages_fn(messages)
+                result = self._invoke_client(
+                    client, langchain_msgs, original_provider, fallback_model
+                )
 
                 self._logger.info("Tier 1 fallback successful")
-                return (
-                    response.content if hasattr(response, "content") else str(response)
-                )
+                return result
         except Exception as e:
             self._logger.warning(f"Tier 1 fallback failed: {e}")
 
@@ -246,12 +265,13 @@ class LLMFallbackHandler:
                 config = get_provider_config_fn(fallback_provider)
                 config["model"] = fallback_model
                 client = get_or_create_client_fn(fallback_provider, config)
-                response = client.invoke(convert_messages_fn(messages))
+                langchain_msgs = convert_messages_fn(messages)
+                result = self._invoke_client(
+                    client, langchain_msgs, fallback_provider, fallback_model
+                )
 
                 self._logger.info("Tier 2 fallback successful")
-                return (
-                    response.content if hasattr(response, "content") else str(response)
-                )
+                return result
         except Exception as e:
             self._logger.warning(f"Tier 2 fallback failed: {e}")
 
@@ -299,14 +319,13 @@ class LLMFallbackHandler:
                     config = get_provider_config_fn(provider)
                     config["model"] = fallback_model
                     client = get_or_create_client_fn(provider, config)
-                    response = client.invoke(convert_messages_fn(messages))
+                    langchain_msgs = convert_messages_fn(messages)
+                    result = self._invoke_client(
+                        client, langchain_msgs, provider, fallback_model
+                    )
 
                     self._logger.info("Tier 3 emergency fallback successful")
-                    return (
-                        response.content
-                        if hasattr(response, "content")
-                        else str(response)
-                    )
+                    return result
             except Exception as e:
                 self._logger.warning(f"Tier 3 fallback failed for {provider}: {e}")
 
