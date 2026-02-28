@@ -31,18 +31,14 @@ def load_yaml_file(path: Path, logger: logging.Logger) -> Dict[str, Any]:
             data = yaml.safe_load(file)
 
         if not isinstance(data, dict):
-            logger.warning(
-                f"YAML file does not contain valid dictionary: {path}"
-            )
+            logger.warning(f"YAML file does not contain valid dictionary: {path}")
             return {}
 
         logger.debug(f"Successfully loaded YAML file: {path}")
         return data
 
     except ImportError:
-        logger.error(
-            "PyYAML not available - cannot load YAML declaration files"
-        )
+        logger.error("PyYAML not available - cannot load YAML declaration files")
         return {}
     except yaml.YAMLError as e:
         logger.error(f"Failed to parse YAML file '{path}': {e}")

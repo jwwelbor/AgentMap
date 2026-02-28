@@ -9,29 +9,29 @@ version: "1.0"
 
 services:
   database_service:
-    class_path: "examples.host_integration.host_services.DatabaseService"
+    class_path: "host_services.DatabaseService"
     implements:
-      - "examples.host_integration.host_protocols.DatabaseServiceProtocol"
+      - "host_protocols.DatabaseServiceProtocol"
     config:
       database_path: ":memory:"
 
   email_service:
-    class_path: "examples.host_integration.host_services.EmailService"
+    class_path: "host_services.EmailService"
     implements:
-      - "examples.host_integration.host_protocols.EmailServiceProtocol"
+      - "host_protocols.EmailServiceProtocol"
     config:
       smtp_host: "localhost"
       smtp_port: 587
 
   notification_service:
-    class_path: "examples.host_integration.host_services.NotificationService"
+    class_path: "host_services.NotificationService"
     implements:
-      - "examples.host_integration.host_protocols.NotificationServiceProtocol"
+      - "host_protocols.NotificationServiceProtocol"
     config: {}
 
   file_service:
-    class_path: "examples.host_integration.host_services.FileService"
+    class_path: "host_services.FileService"
     implements:
-      - "examples.host_integration.host_protocols.FileServiceProtocol"
+      - "host_protocols.FileServiceProtocol"
     config:
       storage_path: "/tmp/agentmap_host_files"

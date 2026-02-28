@@ -1,4 +1,4 @@
-agent_name,agent_type,predecessor,context
-user_data,database_agent,,"operation=get_users"
-process_data,multi_service_agent,user_data,"operation=process_user_request,user_id=1"
-notify_completion,notification_agent,process_data,"operation=send_agent_notification,operation_name=Host Integration Demo,operation_result=Successfully demonstrated host service integration"
+GraphName,Node,AgentType,Edge,Input_Fields,Output_Field,Context
+HostIntegrationDemo,user_data,database_agent,process_data,,database_result,"{""operation"": ""get_users""}"
+HostIntegrationDemo,process_data,multi_service_agent,notify_completion,database_result,multi_service_result,"{""operation"": ""process_user_request"", ""user_id"": 1}"
+HostIntegrationDemo,notify_completion,notification_agent,,multi_service_result,notification_result,"{""operation"": ""send_agent_notification"", ""operation_name"": ""Host Integration Demo"", ""operation_result"": ""Successfully demonstrated host service integration""}"
