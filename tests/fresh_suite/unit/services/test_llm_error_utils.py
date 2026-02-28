@@ -139,11 +139,14 @@ class TestIsRetryable(unittest.TestCase):
     def test_generic_provider_error_is_not_retryable(self):
         self.assertFalse(is_retryable(LLMProviderError("generic")))
 
-    def test_unclassified_timeout_string_is_retryable(self):
-        self.assertTrue(is_retryable(RuntimeError("connection timeout")))
+    def test_unclassified_timeout_string_is_not_retryable(self):
+        # After simplification, is_retryable relies on type only;
+        # unclassified RuntimeErrors are not retryable.
+        self.assertFalse(is_retryable(RuntimeError("connection timeout")))
 
-    def test_unclassified_rate_limit_string_is_retryable(self):
-        self.assertTrue(is_retryable(RuntimeError("429 Too Many Requests")))
+    def test_unclassified_rate_limit_string_is_not_retryable(self):
+        # After simplification, is_retryable relies on type only.
+        self.assertFalse(is_retryable(RuntimeError("429 Too Many Requests")))
 
     def test_unclassified_generic_is_not_retryable(self):
         self.assertFalse(is_retryable(RuntimeError("something else")))

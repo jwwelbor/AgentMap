@@ -1,10 +1,14 @@
 """LLM configuration manager."""
 
+import re
 from typing import Any, Dict
 
 from agentmap.services.config.config_managers.base_config_manager import (
     BaseConfigManager,
 )
+
+# Only allow simple alphanumeric provider names (no dots, slashes, etc.)
+_VALID_PROVIDER_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 class LLMConfigManager(BaseConfigManager):
@@ -25,7 +29,15 @@ class LLMConfigManager(BaseConfigManager):
 
         Returns:
             Dictionary containing provider-specific configuration.
+
+        Raises:
+            ValueError: If provider name contains invalid characters.
         """
+        if not _VALID_PROVIDER_RE.match(provider):
+            raise ValueError(
+                f"Invalid provider name: {provider!r}. "
+                "Provider names must be alphanumeric (with hyphens/underscores)."
+            )
         return self.get_value(f"llm.{provider}", {})
 
     def get_resilience_config(self) -> Dict[str, Any]:
