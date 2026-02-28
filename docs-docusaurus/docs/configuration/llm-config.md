@@ -19,17 +19,17 @@ Configure one or more LLM providers. Each provider needs an API key and a defaul
 llm:
   anthropic:
     api_key: "${ANTHROPIC_API_KEY}"
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-sonnet-4-6"
     temperature: 0.7
 
   openai:
     api_key: "${OPENAI_API_KEY}"
-    model: "gpt-4o"
+    model: "gpt-4.1-mini"
     temperature: 0.7
 
   google:
     api_key: "${GOOGLE_API_KEY}"
-    model: "gemini-1.5-pro"
+    model: "gemini-2.5-flash"
     temperature: 0.5
 ```
 
@@ -75,7 +75,7 @@ When a transient error occurs (rate limit, timeout, server error), the call is r
 
 ### How the circuit breaker works
 
-The circuit breaker tracks failures per provider:model pair (e.g., `anthropic:claude-3-opus`):
+The circuit breaker tracks failures per provider:model pair (e.g., `anthropic:claude-sonnet-4-6`):
 
 1. **Closed** (normal) — calls go through normally
 2. **Open** — after `failure_threshold` consecutive failures, the circuit opens. Subsequent calls fail immediately without contacting the provider, returning a `LLMProviderError`
@@ -102,22 +102,22 @@ routing:
 
   routing_matrix:
     anthropic:
-      low: "claude-3-5-haiku-20241022"
-      medium: "claude-3-5-sonnet-20241022"
-      high: "claude-sonnet-4-20250514"
-      critical: "claude-opus-4-20250514"
+      low: "claude-haiku-4-5-20251001"
+      medium: "claude-sonnet-4-6"
+      high: "claude-sonnet-4-6"
+      critical: "claude-opus-4-6"
 
     openai:
-      low: "gpt-4o-mini-2024-07-18"
-      medium: "gpt-4o-2024-11-20"
-      high: "gpt-4o-2024-11-20"
-      critical: "o3-mini-2025-01-31"
+      low: "gpt-4o-mini"
+      medium: "gpt-4.1-mini"
+      high: "gpt-4.1"
+      critical: "o3"
 
     google:
-      low: "gemini-1.5-flash"
-      medium: "gemini-1.5-pro"
-      high: "gemini-1.5-pro"
-      critical: "gemini-1.5-pro"
+      low: "gemini-2.5-flash-lite"
+      medium: "gemini-2.5-flash"
+      high: "gemini-2.5-pro"
+      critical: "gemini-2.5-pro"
 ```
 
 The matrix serves two purposes:
@@ -130,9 +130,9 @@ When a call fails after all retries are exhausted, the fallback system tries the
 
 | Tier | Strategy | Example |
 |---|---|---|
-| 1 | Same provider, `low` complexity model from the matrix | `anthropic:claude-3-opus` → `anthropic:claude-3-haiku` |
+| 1 | Same provider, `low` complexity model from the matrix | `anthropic:claude-opus-4-6` → `anthropic:claude-haiku-4-5` |
 | 2 | Configured fallback provider (`routing.fallback.default_provider`) | Switch to `openai:gpt-4o-mini` |
-| 3 | Emergency — first available provider not yet tried | Try `google:gemini-1.5-flash` |
+| 3 | Emergency — first available provider not yet tried | Try `google:gemini-2.5-flash-lite` |
 | 4 | All fallbacks exhausted — raises `LLMServiceError` | — |
 
 Configure the default fallback provider:
@@ -141,7 +141,7 @@ Configure the default fallback provider:
 routing:
   fallback:
     default_provider: "anthropic"
-    default_model: "claude-3-5-haiku-20241022"
+    default_model: "claude-haiku-4-5-20251001"
     retry_with_lower_complexity: true
 ```
 
@@ -213,7 +213,7 @@ response = llm_service.call_llm(
     routing_context={"task_type": "code_generation"},
 )
 # → detects "debug" keyword → medium complexity
-# → prefers anthropic → picks claude-3-5-sonnet from routing_matrix
+# → prefers anthropic → picks claude-sonnet-4-6 from routing_matrix
 ```
 
 ```csv
@@ -237,40 +237,40 @@ routing:
       low:
         primary:
           provider: "anthropic"
-          model: "claude-3-5-haiku-20241022"
+          model: "claude-haiku-4-5-20251001"
         fallbacks:
           - provider: "openai"
-            model: "gpt-4o-mini-2024-07-18"
+            model: "gpt-4o-mini"
       medium:
         primary:
           provider: "anthropic"
-          model: "claude-3-5-sonnet-20241022"
+          model: "claude-sonnet-4-6"
         fallbacks:
           - provider: "openai"
-            model: "gpt-4o-2024-11-20"
+            model: "gpt-4.1-mini"
       high:
         primary:
           provider: "anthropic"
-          model: "claude-sonnet-4-20250514"
+          model: "claude-sonnet-4-6"
         fallbacks:
           - provider: "openai"
-            model: "gpt-4o-2024-11-20"
+            model: "gpt-4.1"
       critical:
         primary:
           provider: "openai"
-          model: "o3-mini-2025-01-31"
+          model: "o3"
         fallbacks:
           - provider: "anthropic"
-            model: "claude-opus-4-20250514"
+            model: "claude-opus-4-6"
 
     customer_support:
       any:
         primary:
           provider: "anthropic"
-          model: "claude-3-5-haiku-20241022"
+          model: "claude-haiku-4-5-20251001"
         fallbacks:
           - provider: "openai"
-            model: "gpt-4o-mini-2024-07-18"
+            model: "gpt-4o-mini"
 ```
 
 - Each activity maps complexity tiers to explicit primary + fallback provider:model pairs
@@ -287,7 +287,7 @@ response = llm_service.call_llm(
     routing_context={"task_type": "code_generation"},
 )
 # "debug" in the prompt → medium complexity → anthropic preferred
-# → picks claude-3-5-sonnet from routing_matrix
+# → picks claude-sonnet-4-6 from routing_matrix
 
 # Approach 2: Activity — you pick the model
 response = llm_service.call_llm(
@@ -297,8 +297,8 @@ response = llm_service.call_llm(
         "complexity_override": "high",
     },
 )
-# → uses exactly anthropic:claude-sonnet-4 (the primary for code_generation:high)
-# → if it fails, tries openai:gpt-4o (the configured fallback)
+# → uses exactly anthropic:claude-sonnet-4-6 (the primary for code_generation:high)
+# → if it fails, tries openai:gpt-4.1 (the configured fallback)
 ```
 
 ### Choosing between task types and activities
@@ -325,17 +325,17 @@ A production-ready LLM configuration with all options:
 llm:
   anthropic:
     api_key: "${ANTHROPIC_API_KEY}"
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-sonnet-4-6"
     temperature: 0.7
 
   openai:
     api_key: "${OPENAI_API_KEY}"
-    model: "gpt-4o"
+    model: "gpt-4.1-mini"
     temperature: 0.7
 
   google:
     api_key: "${GOOGLE_API_KEY}"
-    model: "gemini-1.5-pro"
+    model: "gemini-2.5-flash"
     temperature: 0.5
 
   resilience:
@@ -353,24 +353,24 @@ routing:
 
   routing_matrix:
     anthropic:
-      low: "claude-3-5-haiku-20241022"
-      medium: "claude-3-5-sonnet-20241022"
-      high: "claude-sonnet-4-20250514"
-      critical: "claude-opus-4-20250514"
+      low: "claude-haiku-4-5-20251001"
+      medium: "claude-sonnet-4-6"
+      high: "claude-sonnet-4-6"
+      critical: "claude-opus-4-6"
     openai:
-      low: "gpt-4o-mini-2024-07-18"
-      medium: "gpt-4o-2024-11-20"
-      high: "gpt-4o-2024-11-20"
-      critical: "o3-mini-2025-01-31"
+      low: "gpt-4o-mini"
+      medium: "gpt-4.1-mini"
+      high: "gpt-4.1"
+      critical: "o3"
     google:
-      low: "gemini-1.5-flash"
-      medium: "gemini-1.5-pro"
-      high: "gemini-1.5-pro"
-      critical: "gemini-1.5-pro"
+      low: "gemini-2.5-flash-lite"
+      medium: "gemini-2.5-flash"
+      high: "gemini-2.5-pro"
+      critical: "gemini-2.5-pro"
 
   fallback:
     default_provider: "anthropic"
-    default_model: "claude-3-5-haiku-20241022"
+    default_model: "claude-haiku-4-5-20251001"
     retry_with_lower_complexity: true
 ```
 

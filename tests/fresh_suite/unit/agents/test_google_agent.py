@@ -43,7 +43,7 @@ class TestGoogleAgent(unittest.TestCase):
             "input_fields": ["prompt", "context"],
             "output_field": "response",
             "description": "Test Google agent",
-            "model": "gemini-1.0-pro",
+            "model": "gemini-2.5-flash",
             "temperature": 0.3,
             "max_tokens": 1500,
         }
@@ -169,11 +169,11 @@ class TestGoogleAgent(unittest.TestCase):
     def test_google_agent_initialization_with_gemini_model_variants(self):
         """Test GoogleAgent with various Gemini model configurations."""
         gemini_models = [
-            "gemini-1.0-pro",
+            "gemini-2.5-flash",
             "gemini-pro",
             "gemini-pro-vision",
-            "gemini-1.5-pro",
-            "gemini-1.5-flash",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
         ]
 
         for model in gemini_models:
@@ -230,7 +230,7 @@ class TestGoogleAgent(unittest.TestCase):
         # Verify call parameters include Google provider
         kwargs = call_args.kwargs
         self.assertEqual(kwargs["provider"], "google")
-        self.assertEqual(kwargs["model"], "gemini-1.0-pro")
+        self.assertEqual(kwargs["model"], "gemini-2.5-flash")
         self.assertEqual(kwargs["temperature"], 0.3)
         self.assertEqual(kwargs["max_tokens"], 1500)
 
@@ -366,7 +366,7 @@ class TestGoogleAgent(unittest.TestCase):
         if "llm_configuration" in service_info:
             llm_config = service_info["llm_configuration"]
             self.assertEqual(llm_config["provider_name"], "google")
-            self.assertEqual(llm_config["model"], "gemini-1.0-pro")
+            self.assertEqual(llm_config["model"], "gemini-2.5-flash")
 
     def test_google_agent_get_service_info_without_llm_service(self):
         """Test service information when LLM service is not configured."""
@@ -473,7 +473,7 @@ class TestGoogleAgent(unittest.TestCase):
         """Test how GoogleAgent handles context field overrides."""
         original_context = {
             "provider": "anthropic",  # Should be overridden
-            "model": "claude-3-5-sonnet-20241022",  # Should be preserved
+            "model": "claude-sonnet-4-6",  # Should be preserved
             "temperature": 0.1,  # Should be preserved
             "custom_field": "preserved",  # Should be preserved
             "routing_enabled": False,
@@ -489,7 +489,7 @@ class TestGoogleAgent(unittest.TestCase):
         # Verify provider override but other fields preserved
         self.assertEqual(agent.provider, "google")
         self.assertEqual(
-            agent.model, "claude-3-5-sonnet-20241022"
+            agent.model, "claude-sonnet-4-6"
         )  # Non-Google model preserved
         self.assertEqual(agent.temperature, 0.1)
         self.assertEqual(agent.context.get("custom_field"), "preserved")
@@ -559,7 +559,7 @@ class TestGoogleAgent(unittest.TestCase):
     def test_google_agent_with_gemini_specific_parameters(self):
         """Test GoogleAgent with Gemini-specific model parameters."""
         context = {
-            "model": "gemini-1.5-pro",
+            "model": "gemini-2.5-pro",
             "temperature": 0.4,
             "max_tokens": 8192,
             "top_p": 0.8,
@@ -570,7 +570,7 @@ class TestGoogleAgent(unittest.TestCase):
 
         # Verify Google provider and Gemini model
         self.assertEqual(agent.provider, "google")
-        self.assertEqual(agent.model, "gemini-1.5-pro")
+        self.assertEqual(agent.model, "gemini-2.5-pro")
         self.assertEqual(agent.temperature, 0.4)
         self.assertEqual(agent.max_tokens, 8192)
 

@@ -112,12 +112,12 @@ class BaseIntegrationTest(unittest.TestCase):
             "llm": {
                 "anthropic": {
                     "api_key": "test_key_anthropic",
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "claude-sonnet-4-6",
                     "temperature": 0.7,
                 },
                 "openai": {
                     "api_key": "test_key_openai",
-                    "model": "gpt-3.5-turbo",
+                    "model": "gpt-4o-mini",
                     "temperature": 0.7,
                 },
             },
@@ -156,12 +156,12 @@ class BaseIntegrationTest(unittest.TestCase):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-5-sonnet-20241022",
-                        "high": "claude-3-opus-20240229",
-                        "critical": "claude-3-opus-20240229",
+                        "medium": "claude-sonnet-4-6",
+                        "high": "claude-opus-4-6",
+                        "critical": "claude-opus-4-6",
                     },
                     "openai": {
-                        "low": "gpt-3.5-turbo",
+                        "low": "gpt-4o-mini",
                         "medium": "gpt-4",
                         "high": "gpt-4",
                         "critical": "gpt-4",

@@ -96,7 +96,7 @@ autocompile: true
 llm:
   openai:
     api_key: "env:OPENAI_API_KEY"
-    model: "gpt-3.5-turbo"
+    model: "gpt-4o-mini"
 ```
 
 ### Production Deployment
@@ -133,10 +133,10 @@ routing:
   routing_matrix:
     anthropic:
       low: "claude-3-haiku-20240307"
-      medium: "claude-3-5-sonnet-20241022"
-      high: "claude-3-opus-20240229"
+      medium: "claude-sonnet-4-6"
+      high: "claude-opus-4-6"
     openai:
-      low: "gpt-3.5-turbo"
+      low: "gpt-4o-mini"
       medium: "gpt-4-turbo"
       high: "gpt-4"
 ```

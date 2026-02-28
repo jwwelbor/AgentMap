@@ -23,7 +23,7 @@ API keys, default model, and temperature per provider:
 llm:
   anthropic:
     api_key: "${ANTHROPIC_API_KEY}"
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-sonnet-4-6"
     temperature: 0.7
   openai:
     api_key: "${OPENAI_API_KEY}"
@@ -31,7 +31,7 @@ llm:
     temperature: 0.7
   google:
     api_key: "${GOOGLE_API_KEY}"
-    model: "gemini-1.5-pro"
+    model: "gemini-2.5-flash"
     temperature: 0.5
 ```
 
@@ -71,7 +71,7 @@ Specify the provider directly, optionally overriding model and temperature. `pro
 response = llm_service.call_llm(
     provider="anthropic",
     messages=[{"role": "user", "content": "Explain quantum entanglement"}],
-    model="claude-3-5-sonnet-20241022",  # optional override
+    model="claude-sonnet-4-6",  # optional override
     temperature=0.2,                      # optional override
 )
 ```
@@ -112,7 +112,7 @@ response = llm_service.call_llm(
 # Force a specific model through routing
 response = llm_service.call_llm(
     messages=messages,
-    routing_context={"task_type": "code_generation", "model_override": "claude-3-5-sonnet-20241022"}
+    routing_context={"task_type": "code_generation", "model_override": "claude-sonnet-4-6"}
 )
 
 # Set a fallback if routing fails
@@ -165,9 +165,9 @@ When a call fails after all retries are exhausted, a tiered fallback strategy ki
 
 | Tier | Strategy | Example |
 |------|----------|---------|
-| 1 | Same provider, lower-complexity model from routing matrix | `anthropic:claude-3-opus` → `anthropic:claude-3-haiku` |
-| 2 | Configured fallback provider (`routing.fallback.default_provider`) | Switch to `openai:gpt-3.5-turbo` |
-| 3 | Emergency — first available provider not yet tried | Try `google:gemini-1.5-flash` |
+| 1 | Same provider, lower-complexity model from routing matrix | `anthropic:claude-opus-4-6` → `anthropic:claude-haiku-4-5` |
+| 2 | Configured fallback provider (`routing.fallback.default_provider`) | Switch to `openai:gpt-4o-mini` |
+| 3 | Emergency — first available provider not yet tried | Try `google:gemini-2.5-flash-lite` |
 | 4 | All fallbacks exhausted — raises `LLMServiceError` with full context | — |
 
 Dependency errors (missing packages) and configuration errors (bad API key) skip fallback entirely. Only transient provider errors trigger the fallback chain.
@@ -199,7 +199,7 @@ response = llm_service.call_llm(
     messages=messages,
     routing_context={"task_type": "code_generation"},
 )
-# "debug" in prompt → medium complexity → anthropic preferred → claude-3-5-sonnet
+# "debug" in prompt → medium complexity → anthropic preferred → claude-sonnet-4-6
 ```
 
 #### Activity example
@@ -213,8 +213,8 @@ response = llm_service.call_llm(
         "complexity_override": "high",
     },
 )
-# → anthropic:claude-sonnet-4 (primary for code_generation:high)
-# → falls back to openai:gpt-4o if primary fails
+# → anthropic:claude-sonnet-4-6 (primary for code_generation:high)
+# → falls back to openai:gpt-4.1 if primary fails
 ```
 
 See [LLM Configuration](../../configuration/llm-config) for the full task type and activity configuration reference.
@@ -268,6 +268,7 @@ Import from `agentmap.exceptions`.
 ### Error handling in a host application
 
 ```python
+import logging
 from agentmap.exceptions import (
     LLMServiceError,
     LLMConfigurationError,
@@ -275,6 +276,12 @@ from agentmap.exceptions import (
     LLMRateLimitError,
     LLMTimeoutError,
 )
+
+logger = logging.getLogger(__name__)
+
+def fallback_response():
+    """Placeholder for your application's fallback logic."""
+    return "Service is temporarily unavailable. Please try again later."
 
 try:
     response = llm_service.call_llm(
@@ -373,7 +380,7 @@ Direct provider call:
 
 ```csv
 workflow,node,description,type,next_node,error_node,input_fields,output_field,prompt,context
-ChatBot,Chat,Chat with AI,llm,Chat,Error,message,response,You are a helpful assistant,"{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.7}"
+ChatBot,Chat,Chat with AI,llm,Chat,Error,message,response,You are a helpful assistant,"{""provider"": ""anthropic"", ""model"": ""claude-sonnet-4-6"", ""temperature"": 0.7}"
 ```
 
 With routing context — routing selects the provider and model; `provider` and `model` are omitted:
@@ -425,8 +432,8 @@ stats = llm_service.get_routing_stats()
 # Returns:
 # {
 #     "circuit_breaker": {
-#         "open_circuits": ["anthropic:claude-3-opus"],
-#         "failure_counts": {"anthropic:claude-3-opus": 5}
+#         "open_circuits": ["anthropic:claude-opus-4-6"],
+#         "failure_counts": {"anthropic:claude-opus-4-6": 5}
 #     },
 #     ...routing stats...
 # }

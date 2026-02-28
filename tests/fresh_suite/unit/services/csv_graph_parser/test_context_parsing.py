@@ -60,14 +60,14 @@ class TestNodeSpecConverterContextParsing(unittest.TestCase):
 
     def test_json_context_is_parsed_to_dict(self):
         """JSON context string is parsed so keys are top-level in Node.context."""
-        context_str = '{"provider": "anthropic", "model": "claude-3-5-sonnet-20241022", "temperature": 0.7}'
+        context_str = '{"provider": "anthropic", "model": "claude-sonnet-4-6", "temperature": 0.7}'
         node_spec = _make_node_spec(context=context_str)
 
         nodes = self.converter.convert_node_specs_to_nodes([node_spec])
         ctx = nodes["TestNode"].context
 
         self.assertEqual(ctx.get("provider"), "anthropic")
-        self.assertEqual(ctx.get("model"), "claude-3-5-sonnet-20241022")
+        self.assertEqual(ctx.get("model"), "claude-sonnet-4-6")
         self.assertAlmostEqual(ctx.get("temperature"), 0.7)
 
     def test_json_routing_context_keys_are_accessible(self):

@@ -86,7 +86,7 @@ logging:
 llm:
   openai:
     api_key: ""  # Or use env: OPENAI_API_KEY
-    model: "gpt-4o-mini-2024-07-18"  # Default model (can be any valid OpenAI model)
+    model: "gpt-4.1-mini"  # Default model (can be any valid OpenAI model)
     temperature: 0.7
     max_tokens: null  # Optional: limit response length
     top_p: 1.0  # Optional: nucleus sampling parameter
@@ -95,7 +95,7 @@ llm:
 
   anthropic:
     api_key: ""  # Or use env: ANTHROPIC_API_KEY
-    model: "claude-3-5-sonnet-20241022"  # Default model (can be any valid Anthropic model)
+    model: "claude-sonnet-4-6"  # Default model (can be any valid Anthropic model)
     temperature: 0.7
     max_tokens: 4096  # Optional: Claude default is 4096
     top_p: 1.0  # Optional: nucleus sampling
@@ -103,7 +103,7 @@ llm:
 
   google:
     api_key: ""  # Or use env: GOOGLE_API_KEY
-    model: "gemini-1.5-flash"  # Default model (can be any valid Google model)
+    model: "gemini-2.5-flash"  # Default model (can be any valid Google model)
     temperature: 0.7
     max_tokens: null  # Optional: limit response length
     top_p: 1.0  # Optional: nucleus sampling
@@ -129,22 +129,22 @@ routing:
   # Used by tiered fallback system when primary model fails
   routing_matrix:
     anthropic:
-      low: "claude-3-5-haiku-20241022"        # Fast, cost-effective (128k context)
-      medium: "claude-3-5-sonnet-20241022"    # Balanced performance (200k context)
-      high: "claude-sonnet-4-20250514"        # High capability (200k context)
-      critical: "claude-opus-4-20250514"      # Maximum capability (200k context)
+      low: "claude-haiku-4-5-20251001"        # Fast, cost-effective (200k context)
+      medium: "claude-sonnet-4-6"             # Balanced performance (200k context)
+      high: "claude-sonnet-4-6"               # High capability (200k context)
+      critical: "claude-opus-4-6"             # Maximum capability (200k context)
 
     openai:
-      low: "gpt-4o-mini-2024-07-18"           # Fast, cost-effective (128k context)
-      medium: "gpt-4o-2024-11-20"             # Balanced performance (128k context)
-      high: "gpt-4o-2024-11-20"               # High capability (128k context)
-      critical: "o3-mini-2025-01-31"          # Reasoning-focused (128k context)
+      low: "gpt-4o-mini"                      # Fast, cost-effective (128k context)
+      medium: "gpt-4.1-mini"                  # Balanced performance (1M context)
+      high: "gpt-4.1"                         # High capability (1M context)
+      critical: "o3"                          # Reasoning-focused (200k context)
 
     google:
-      low: "gemini-1.5-flash"                 # Fast, cost-effective (1M context)
-      medium: "gemini-1.5-pro"                # Balanced performance (2M context)
-      high: "gemini-1.5-pro"                  # High capability (2M context)
-      critical: "gemini-1.5-pro"              # Maximum capability (2M context)
+      low: "gemini-2.5-flash-lite"            # Fast, cost-effective (1M context)
+      medium: "gemini-2.5-flash"              # Balanced performance (1M context)
+      high: "gemini-2.5-pro"                  # High capability (1M context)
+      critical: "gemini-2.5-pro"              # Maximum capability (1M context)
 
   # Complexity Analysis Configuration
   complexity_analysis:
@@ -191,7 +191,7 @@ routing:
     # Tier 4: Raise error with full context
 
     # Default model when routing fails (overrides routing_matrix)
-    default_model: "claude-3-5-haiku-20241022"
+    default_model: "claude-haiku-4-5-20251001"
 
     # Retry with lower complexity if high-tier model unavailable
     retry_with_lower_complexity: true
@@ -204,92 +204,92 @@ routing:
       low:
         primary:
           provider: "anthropic"
-          model: "claude-3-5-haiku-20241022"
+          model: "claude-haiku-4-5-20251001"
         fallbacks:
           - provider: "openai"
-            model: "gpt-4o-mini-2024-07-18"
+            model: "gpt-4o-mini"
       medium:
         primary:
           provider: "anthropic"
-          model: "claude-3-5-sonnet-20241022"
+          model: "claude-sonnet-4-6"
         fallbacks:
           - provider: "openai"
-            model: "gpt-4o-2024-11-20"
+            model: "gpt-4.1-mini"
       high:
         primary:
           provider: "anthropic"
-          model: "claude-sonnet-4-20250514"
+          model: "claude-sonnet-4-6"
         fallbacks:
           - provider: "openai"
-            model: "gpt-4o-2024-11-20"
+            model: "gpt-4.1"
       critical:
         primary:
           provider: "openai"
-          model: "o3-mini-2025-01-31"
+          model: "o3"
         fallbacks:
           - provider: "anthropic"
-            model: "claude-opus-4-20250514"
+            model: "claude-opus-4-6"
 
     data_analysis:
       low:
         primary:
           provider: "openai"
-          model: "gpt-4o-mini-2024-07-18"
+          model: "gpt-4o-mini"
         fallbacks:
           - provider: "google"
-            model: "gemini-1.5-flash"
+            model: "gemini-2.5-flash-lite"
       medium:
         primary:
           provider: "openai"
-          model: "gpt-4o-2024-11-20"
+          model: "gpt-4.1-mini"
         fallbacks:
           - provider: "anthropic"
-            model: "claude-3-5-sonnet-20241022"
+            model: "claude-sonnet-4-6"
       high:
         primary:
           provider: "openai"
-          model: "gpt-4o-2024-11-20"
+          model: "gpt-4.1"
         fallbacks:
           - provider: "anthropic"
-            model: "claude-sonnet-4-20250514"
+            model: "claude-sonnet-4-6"
 
     research:
       # Use 'any' for complexity-agnostic routing
       any:
         primary:
           provider: "google"
-          model: "gemini-1.5-pro"  # 2M context window
+          model: "gemini-2.5-pro"  # 1M context window
         fallbacks:
           - provider: "anthropic"
-            model: "claude-3-5-sonnet-20241022"
+            model: "claude-sonnet-4-6"
           - provider: "openai"
-            model: "gpt-4o-2024-11-20"
+            model: "gpt-4.1"
 
     creative_writing:
       low:
         primary:
           provider: "anthropic"
-          model: "claude-3-5-haiku-20241022"
+          model: "claude-haiku-4-5-20251001"
       medium:
         primary:
           provider: "anthropic"
-          model: "claude-3-5-sonnet-20241022"
+          model: "claude-sonnet-4-6"
         fallbacks:
           - provider: "openai"
-            model: "gpt-4o-2024-11-20"
+            model: "gpt-4.1-mini"
       high:
         primary:
           provider: "anthropic"
-          model: "claude-sonnet-4-20250514"
+          model: "claude-sonnet-4-6"
 
     customer_support:
       any:
         primary:
           provider: "anthropic"
-          model: "claude-3-5-haiku-20241022"  # Fast and cheap
+          model: "claude-haiku-4-5-20251001"  # Fast and cheap
         fallbacks:
           - provider: "openai"
-            model: "gpt-4o-mini-2024-07-18"
+            model: "gpt-4o-mini"
 
   # Task Type Definitions (for complexity analysis and provider preferences)
   # Used when activity is NOT specified in routing_context

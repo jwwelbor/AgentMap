@@ -93,7 +93,7 @@ class TestLLMService(unittest.TestCase):
         """Test call_llm() with direct provider call (no routing)."""
         # Configure mock config for OpenAI
         self.mock_app_config_service.get_llm_config.return_value = {
-            "model": "gpt-3.5-turbo",
+            "model": "gpt-4o-mini",
             "temperature": 0.7,
             "api_key": "test_key",
         }
@@ -350,7 +350,7 @@ class TestLLMService(unittest.TestCase):
     def test_client_caching(self):
         """Test that LangChain clients are properly cached."""
         # Configure mock config
-        config = {"model": "gpt-3.5-turbo", "api_key": "test_key", "temperature": 0.7}
+        config = {"model": "gpt-4o-mini", "api_key": "test_key", "temperature": 0.7}
 
         with patch.object(self.service, "_create_langchain_client") as mock_create:
             mock_client = Mock()
@@ -473,7 +473,7 @@ class TestLLMService(unittest.TestCase):
 
         # Configure config without API key
         config_no_key = {
-            "model": "gpt-3.5-turbo",
+            "model": "gpt-4o-mini",
             "temperature": 0.7,
             # Missing api_key
         }
@@ -495,7 +495,7 @@ class TestLLMService(unittest.TestCase):
         from agentmap.exceptions import LLMDependencyError
 
         # Configure valid config
-        config = {"api_key": "test_key", "model": "gpt-3.5-turbo", "temperature": 0.7}
+        config = {"api_key": "test_key", "model": "gpt-4o-mini", "temperature": 0.7}
         self.mock_app_config_service.get_llm_config.return_value = config
 
         # Mock import failure
@@ -541,7 +541,7 @@ class TestLLMService(unittest.TestCase):
         # Configure valid config
         config = {
             "api_key": "invalid_key",
-            "model": "gpt-3.5-turbo",
+            "model": "gpt-4o-mini",
             "temperature": 0.7,
         }
         self.mock_app_config_service.get_llm_config.return_value = config

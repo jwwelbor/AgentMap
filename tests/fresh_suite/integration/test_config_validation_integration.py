@@ -64,7 +64,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "valid_key",
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "claude-sonnet-4-6",
                     "temperature": 0.7,
                 },
                 "openai": {
@@ -81,12 +81,12 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-5-sonnet-20241022",
-                        "high": "claude-3-opus-20240229",
-                        "critical": "claude-3-opus-20240229",
+                        "medium": "claude-sonnet-4-6",
+                        "high": "claude-opus-4-6",
+                        "critical": "claude-opus-4-6",
                     },
                     "openai": {
-                        "low": "gpt-3.5-turbo",
+                        "low": "gpt-4o-mini",
                         "medium": "gpt-4",
                         "high": "gpt-4",
                         "critical": "gpt-4",
@@ -227,7 +227,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "test_key",
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "claude-sonnet-4-6",
                 },
                 "openai": {"api_key": "test_openai_key", "model": "gpt-4"},
             },
@@ -236,12 +236,12 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-5-sonnet-20241022",
-                        "high": "claude-3-opus-20240229",
-                        "critical": "claude-3-opus-20240229",
+                        "medium": "claude-sonnet-4-6",
+                        "high": "claude-opus-4-6",
+                        "critical": "claude-opus-4-6",
                     },
                     "openai": {
-                        "low": "gpt-3.5-turbo",
+                        "low": "gpt-4o-mini",
                         "medium": "gpt-4",
                         "high": "gpt-4",
                         "critical": "gpt-4",
@@ -425,7 +425,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "test_key",
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "claude-sonnet-4-6",
                 }
             },
             "routing": {"enabled": True},
@@ -466,7 +466,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "test_key",
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "claude-sonnet-4-6",
                 }
             },
             "routing": {
@@ -549,7 +549,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "test_key",
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "claude-sonnet-4-6",
                 }
             },
             # Missing routing config - LlmRoutingConfigService should use defaults
@@ -595,7 +595,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
 
         # But other services should continue to work
         llm_config = app_config.get_llm_config("anthropic")
-        self.assertEqual(llm_config["model"], "claude-3-5-sonnet-20241022")
+        self.assertEqual(llm_config["model"], "claude-sonnet-4-6")
 
     # =============================================================================
     # 3. Error Propagation Integration Tests
@@ -751,7 +751,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
             "llm": {
                 "anthropic": {
                     "api_key": "test_key",
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "claude-sonnet-4-6",
                 },
                 "openai": {"api_key": "test_openai_key", "model": "gpt-4"},
             },
@@ -760,9 +760,9 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
                 "routing_matrix": {
                     "anthropic": {
                         "low": "claude-3-haiku-20240307",
-                        "medium": "claude-3-5-sonnet-20241022",
-                        "high": "claude-3-opus-20240229",
-                        "critical": "claude-3-opus-20240229",
+                        "medium": "claude-sonnet-4-6",
+                        "high": "claude-opus-4-6",
+                        "critical": "claude-opus-4-6",
                     }
                 },
             },

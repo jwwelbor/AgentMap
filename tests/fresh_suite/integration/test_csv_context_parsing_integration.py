@@ -69,14 +69,14 @@ class TestCSVContextParsingIntegration(BaseIntegrationTest):
         """provider and model specified as JSON in CSV context are top-level keys."""
         csv_row = (
             "MyWorkflow,ChatNode,llm,"
-            '"{""provider"": ""anthropic"", ""model"": ""claude-3-5-sonnet-20241022"", ""temperature"": 0.3}",'
+            '"{""provider"": ""anthropic"", ""model"": ""claude-sonnet-4-6"", ""temperature"": 0.3}",'
             "query,response,End,,You are a helpful assistant\n"
             "MyWorkflow,End,success,,,,,,Done\n"
         )
         ctx = self._parse_and_convert(csv_row, "MyWorkflow", "ChatNode")
 
         self.assertEqual(ctx.get("provider"), "anthropic")
-        self.assertEqual(ctx.get("model"), "claude-3-5-sonnet-20241022")
+        self.assertEqual(ctx.get("model"), "claude-sonnet-4-6")
         self.assertAlmostEqual(ctx.get("temperature"), 0.3)
 
     def test_json_context_routing_fields_accessible(self):
@@ -196,14 +196,14 @@ class TestCSVContextParsingIntegration(BaseIntegrationTest):
         """SummaryAgent context keys (llm, format, separator) are top-level after parsing."""
         csv_row = (
             "SummaryFlow,SumNode,summary,"
-            '"{""llm"": ""anthropic"", ""model"": ""claude-3-5-haiku-20241022"", ""format"": ""{key}: {value}"", ""separator"": ""\\n""}",'
+            '"{""llm"": ""anthropic"", ""model"": ""claude-haiku-4-5-20251001"", ""format"": ""{key}: {value}"", ""separator"": ""\\n""}",'
             "data,summary,End,,Summarize\n"
             "SummaryFlow,End,success,,,,,,Done\n"
         )
         ctx = self._parse_and_convert(csv_row, "SummaryFlow", "SumNode")
 
         self.assertEqual(ctx.get("llm"), "anthropic")
-        self.assertEqual(ctx.get("model"), "claude-3-5-haiku-20241022")
+        self.assertEqual(ctx.get("model"), "claude-haiku-4-5-20251001")
         self.assertEqual(ctx.get("format"), "{key}: {value}")
         self.assertEqual(ctx.get("separator"), "\n")
 

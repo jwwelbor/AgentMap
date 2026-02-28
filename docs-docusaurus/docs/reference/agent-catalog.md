@@ -142,8 +142,8 @@ VectorSearch,DisplayResults,,Display final results,echo,ProcessQuery,End,analysi
 ```csv
 Comparison,GetPrompt,,Get prompt to compare,input,RunOpenAI|RunAnthropic|RunGoogle,End,message,prompt,Enter prompt to compare across providers:
 Comparison,RunOpenAI,{"provider":"openai","model":"gpt-4"},Run with OpenAI,llm,CollectResults,Error,prompt,openai_result,{prompt}
-Comparison,RunAnthropic,{"provider":"anthropic","model":"claude-3-5-sonnet-20241022"},Run with Anthropic,llm,CollectResults,Error,prompt,anthropic_result,{prompt}
-Comparison,RunGoogle,{"provider":"google","model":"gemini-1.0-pro"},Run with Google,llm,CollectResults,Error,prompt,google_result,{prompt}
+Comparison,RunAnthropic,{"provider":"anthropic","model":"claude-sonnet-4-6"},Run with Anthropic,llm,CollectResults,Error,prompt,anthropic_result,{prompt}
+Comparison,RunGoogle,{"provider":"google","model":"gemini-2.5-flash"},Run with Google,llm,CollectResults,Error,prompt,google_result,{prompt}
 Comparison,CollectResults,{"format":"**{key}**:\n{value}\n\n"},Collect all results,summary,AnalyzeComparison,Error,openai_result|anthropic_result|google_result,all_results,
 Comparison,AnalyzeComparison,{"routing_enabled":true},Analyze differences,llm,DisplayComparison,Error,prompt|all_results,comparison_analysis,Compare and analyze the differences between these LLM responses to "{prompt}": {all_results}
 Comparison,DisplayComparison,,Show final comparison,echo,GetPrompt,End,comparison_analysis,final_comparison,

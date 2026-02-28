@@ -71,15 +71,15 @@ paths:
 llm:
   openai:
     api_key: "env:OPENAI_API_KEY"
-    model: "gpt-3.5-turbo"
+    model: "gpt-4o-mini"
     temperature: 0.7
   anthropic:
     api_key: "env:ANTHROPIC_API_KEY"
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-sonnet-4-6"
     temperature: 0.7
   google:
     api_key: "env:GOOGLE_API_KEY"
-    model: "gemini-1.0-pro"
+    model: "gemini-2.5-flash"
     temperature: 0.7
 
 # Intelligent routing system
@@ -257,17 +257,17 @@ For complete LLM provider setup, resilience configuration, and routing matrix de
 llm:
   openai:
     api_key: "env:OPENAI_API_KEY"    # Environment variable reference
-    model: "gpt-3.5-turbo"           # Default model
+    model: "gpt-4o-mini"           # Default model
     temperature: 0.7                 # Creativity parameter (0.0-2.0)
 
   anthropic:
     api_key: "env:ANTHROPIC_API_KEY"
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-sonnet-4-6"
     temperature: 0.7
 
   google:
     api_key: "env:GOOGLE_API_KEY"
-    model: "gemini-1.0-pro"
+    model: "gemini-2.5-flash"
     temperature: 0.7
 ```
 
@@ -285,21 +285,21 @@ routing:
   routing_matrix:
     anthropic:
       low: "claude-3-haiku-20240307"
-      medium: "claude-3-5-sonnet-20241022"
-      high: "claude-3-opus-20240229"
-      critical: "claude-3-opus-20240229"
+      medium: "claude-sonnet-4-6"
+      high: "claude-opus-4-6"
+      critical: "claude-opus-4-6"
     
     openai:
-      low: "gpt-3.5-turbo"
+      low: "gpt-4o-mini"
       medium: "gpt-4-turbo"
       high: "gpt-4"
       critical: "gpt-4"
     
     google:
-      low: "gemini-1.0-pro"
-      medium: "gemini-1.0-pro"
-      high: "gemini-1.5-pro"
-      critical: "gemini-1.5-pro"
+      low: "gemini-2.5-flash"
+      medium: "gemini-2.5-flash"
+      high: "gemini-2.5-pro"
+      critical: "gemini-2.5-pro"
 ```
 
 ### Task Types

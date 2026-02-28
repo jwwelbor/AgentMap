@@ -55,11 +55,11 @@ class TestDIContainerCore(unittest.TestCase):
 llm:
   anthropic:
     api_key: "test_key"
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-sonnet-4-6"
     temperature: 0.7
   openai:
     api_key: "test_key"  
-    model: "gpt-3.5-turbo"
+    model: "gpt-4o-mini"
     temperature: 0.7
 
 routing:
@@ -349,7 +349,7 @@ kv:
 llm:
   anthropic:
     api_key: "test_key"
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-sonnet-4-6"
 """
             )
 
