@@ -23,6 +23,7 @@ AgentMap uses a **hierarchical configuration system** with multiple layers:
 ### Basic Setup (5 minutes)
 - [ ] Set up [environment variables](./environment-variables) for API keys
 - [ ] Create basic [main configuration](./main-config) file
+- [ ] Configure [LLM providers and resilience](./llm-config) settings
 - [ ] Configure [storage providers](./storage-config) if using external storage
 
 ### Production Setup (30 minutes)
@@ -63,6 +64,9 @@ AgentMap uses a **hierarchical configuration system** with multiple layers:
 
 ### [Main Configuration](./main-config)
 Complete YAML structure covering all core AgentMap settings including LLM providers, routing, memory, execution, and performance optimization.
+
+### [LLM Configuration](./llm-config)
+LLM provider setup, resilience settings (retry and circuit breaker), and routing matrix configuration.
 
 ### [Authentication Configuration](./auth-config)
 Complete guide to authentication setup including API keys, JWT tokens, permissions, security policies, and CLI commands for managing authentication.

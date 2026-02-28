@@ -249,6 +249,8 @@ agentmap run --config /etc/agentmap/prod_config.yaml
 
 ## 🤖 LLM Provider Configuration
 
+For complete LLM provider setup, resilience configuration, and routing matrix details, see [LLM Configuration](./llm-config).
+
 ### Multi-Provider Setup
 
 ```yaml
@@ -257,41 +259,16 @@ llm:
     api_key: "env:OPENAI_API_KEY"    # Environment variable reference
     model: "gpt-3.5-turbo"           # Default model
     temperature: 0.7                 # Creativity parameter (0.0-2.0)
-    
+
   anthropic:
     api_key: "env:ANTHROPIC_API_KEY"
     model: "claude-3-5-sonnet-20241022"
     temperature: 0.7
-    
+
   google:
     api_key: "env:GOOGLE_API_KEY"
     model: "gemini-1.0-pro"
     temperature: 0.7
-```
-
-### Provider-Specific Models
-
-**OpenAI Models:**
-- `gpt-3.5-turbo` - Fast, cost-effective for simple tasks
-- `gpt-4-turbo` - Balanced performance and capabilities
-- `gpt-4` - Highest capability for complex reasoning
-
-**Anthropic Models:**
-- `claude-3-haiku-20240307` - Ultra-fast, cost-effective
-- `claude-3-5-sonnet-20241022` - Balanced performance
-- `claude-3-opus-20240229` - Highest capability
-
-**Google Models:**
-- `gemini-1.0-pro` - General purpose model
-- `gemini-1.5-pro` - Enhanced capabilities
-
-### Temperature Settings
-
-```yaml
-temperature: 0.0    # Deterministic, focused responses
-temperature: 0.7    # Balanced creativity and coherence (recommended)
-temperature: 1.0    # More creative, varied responses
-temperature: 2.0    # Maximum creativity (use carefully)
 ```
 
 ## 🎯 LLM Routing Configuration

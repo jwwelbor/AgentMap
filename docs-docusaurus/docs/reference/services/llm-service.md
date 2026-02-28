@@ -124,14 +124,100 @@ response = llm_service.call_llm(
 
 ---
 
+## Resilience & Retries
+
+Every LLM call is automatically protected by retry with exponential backoff and a circuit breaker. No additional configuration is required to get these protections — they are on by default.
+
+### Configuration
+
+Configure resilience behavior in `agentmap_config.yaml` under `llm.resilience`:
+
+```yaml
+llm:
+  resilience:
+    retry:
+      max_attempts: 3        # retries per provider:model
+      backoff_base: 2.0      # exponential backoff base (seconds): 1s, 2s, 4s...
+      backoff_max: 30.0      # cap on backoff delay
+      jitter: true           # randomize delay to avoid thundering herd
+    circuit_breaker:
+      failure_threshold: 5   # failures before opening circuit for a provider:model
+      reset_timeout: 60      # seconds before half-open (allows one retry)
+```
+
+### Retry behavior
+
+Transient errors — rate limits, timeouts, and 5xx server errors — are retried automatically up to `max_attempts` times with exponential backoff. Non-transient errors (bad API key, missing model, missing package) fail immediately without retrying.
+
+### Circuit breaker behavior
+
+After `failure_threshold` consecutive failures for a given provider:model pair, the circuit opens. While open, calls to that provider:model fail fast without making an API request. After `reset_timeout` seconds, the circuit enters a half-open state and allows one request through. A success closes the circuit; another failure re-opens it.
+
+These protections apply to all LLM calls — direct provider calls, routed calls, and fallback attempts.
+
+See [LLM Configuration](../../configuration/llm-config) for the full configuration reference.
+
+---
+
+## Tiered Fallback
+
+When a call fails after all retries are exhausted, a tiered fallback strategy kicks in. Fallback requires routing to be configured.
+
+| Tier | Strategy | Example |
+|------|----------|---------|
+| 1 | Same provider, lower-complexity model from routing matrix | `anthropic:claude-3-opus` → `anthropic:claude-3-haiku` |
+| 2 | Configured fallback provider (`routing.fallback.default_provider`) | Switch to `openai:gpt-3.5-turbo` |
+| 3 | Emergency — first available provider not yet tried | Try `google:gemini-1.5-flash` |
+| 4 | All fallbacks exhausted — raises `LLMServiceError` with full context | — |
+
+Dependency errors (missing packages) and configuration errors (bad API key) skip fallback entirely. Only transient provider errors trigger the fallback chain.
+
+---
+
 ## Routing System
 
-### Activity vs Task Type
+### Task Types vs Activities
 
-| Concept | Config key | Evaluated | Purpose |
-|---|---|---|---|
-| `activity` | `routing.activities` | **First** | Explicit per-activity routing plan: primary provider/model + fallbacks per complexity tier |
-| `task_type` | `routing.task_types` | Fallback | General classification; drives provider preference and complexity keyword detection |
+These are two alternative approaches to controlling model selection:
+
+| Approach | What you configure | How the model is chosen |
+|---|---|---|
+| **Task type** | Provider preferences + complexity keywords | Routing matrix lookup (provider + complexity → model) |
+| **Activity** | Exact provider:model pairs per complexity tier | Direct — bypasses the routing matrix |
+
+**Task types** provide soft guidance. You list preferred providers and keywords that detect complexity from the prompt. The system looks up the final model from the routing matrix. Good for most use cases.
+
+**Activities** provide hard control. You pin exact models for each complexity tier with explicit fallback chains. The routing matrix is bypassed. Use when you need a specific model every time.
+
+Most users need only one. If you set both with the same name (e.g., `"code_generation"`), the activity controls model selection and the task type only contributes complexity keyword detection.
+
+#### Task type example
+
+```python
+# System picks the model based on prompt analysis and provider preferences
+response = llm_service.call_llm(
+    messages=messages,
+    routing_context={"task_type": "code_generation"},
+)
+# "debug" in prompt → medium complexity → anthropic preferred → claude-3-5-sonnet
+```
+
+#### Activity example
+
+```python
+# You control exactly which model is used
+response = llm_service.call_llm(
+    messages=messages,
+    routing_context={
+        "activity": "code_generation",
+        "complexity_override": "high",
+    },
+)
+# → anthropic:claude-sonnet-4 (primary for code_generation:high)
+# → falls back to openai:gpt-4o if primary fails
+```
+
+See [LLM Configuration](../../configuration/llm-config) for the full task type and activity configuration reference.
 
 ### How routing selects a model
 
@@ -168,25 +254,72 @@ All fields are optional. Routing is activated by passing a `routing_context` dic
 
 Import from `agentmap.exceptions`.
 
-| Exception | When raised |
-|---|---|
-| `LLMConfigurationError` | Bad API key, auth failure, model config error |
-| `LLMDependencyError` | Missing provider package (e.g. `anthropic` not installed) |
-| `LLMProviderError` | Provider-level errors |
-| `LLMServiceError` | General service errors, routing failure |
+| Exception | When raised | Retryable? |
+|---|---|---|
+| `LLMConfigurationError` | Bad API key, auth failure, invalid model | No |
+| `LLMDependencyError` | Missing provider package (e.g. `anthropic` not installed) | No |
+| `LLMProviderError` | Generic provider-level errors | No |
+| `LLMTimeoutError` | Timeout, connection errors, 5xx server errors | Yes (automatic) |
+| `LLMRateLimitError` | 429 / rate limit / quota exceeded | Yes (automatic) |
+| `LLMServiceError` | General service errors, all fallbacks exhausted | No |
+
+`LLMTimeoutError` and `LLMRateLimitError` are subclasses of `LLMProviderError`, which is a subclass of `LLMServiceError`.
+
+### Error handling in a host application
 
 ```python
-from agentmap.exceptions import LLMServiceError, LLMConfigurationError
+from agentmap.exceptions import (
+    LLMServiceError,
+    LLMConfigurationError,
+    LLMDependencyError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+)
 
 try:
-    response = llm_service.call_llm(provider="anthropic", messages=messages)
-except LLMConfigurationError:
-    # Bad API key, invalid config
+    response = llm_service.call_llm(
+        provider="anthropic",
+        messages=[{"role": "user", "content": "Summarize this report"}],
+    )
+except LLMConfigurationError as e:
+    # Bad API key or invalid model — fix your configuration
+    logger.error(f"Configuration error: {e}")
     raise
+except LLMDependencyError as e:
+    # Missing provider package — install it (e.g. pip install anthropic)
+    logger.error(f"Missing dependency: {e}")
+    raise
+except LLMRateLimitError as e:
+    # Rate limited even after automatic retries — back off at application level
+    logger.warning(f"Rate limited after retries: {e}")
+    return fallback_response()
+except LLMTimeoutError as e:
+    # Timeout/connection error after retries — provider may be down
+    logger.warning(f"Provider unreachable after retries: {e}")
+    return fallback_response()
 except LLMServiceError as e:
-    # Routing failure, general service error
-    self.log_error(f"LLM call failed: {e}")
+    # All fallback tiers exhausted
+    logger.error(f"LLM call failed completely: {e}")
     raise
+```
+
+### Error handling in a custom agent
+
+```python
+class MyAgent(BaseAgent, LLMCapableAgent):
+    def process(self, inputs):
+        try:
+            return self.llm_service.call_llm(
+                provider="anthropic",
+                messages=[{"role": "user", "content": inputs["query"]}],
+            )
+        except LLMConfigurationError:
+            # Surface config errors — the workflow operator needs to fix this
+            raise
+        except LLMServiceError:
+            # Transient errors were already retried; fallback was attempted.
+            # Return a graceful degradation or let the error_node handle it.
+            return "I'm sorry, I couldn't process your request right now."
 ```
 
 ---
@@ -257,6 +390,13 @@ workflow,node,description,type,next_node,error_node,input_fields,output_field,pr
 Analyst,Analyze,Analyze data,llm,Output,Error,data,analysis,You are a data analyst,"{""routing_context"": {""task_type"": ""data_analysis"", ""max_cost_tier"": ""medium""}, ""temperature"": 0.5}"
 ```
 
+With an activity for pinned model selection:
+
+```csv
+workflow,node,description,type,next_node,error_node,input_fields,output_field,prompt,context
+CodeBot,Review,Review code,llm,Done,Error,code,feedback,You are a code reviewer,"{""routing_context"": {""activity"": ""code_generation"", ""complexity_override"": ""high""}, ""temperature"": 0.2}"
+```
+
 ---
 
 ## External Usage
@@ -276,6 +416,26 @@ response = llm_service.call_llm(
 
 ---
 
+## Monitoring
+
+Use `get_routing_stats()` to inspect circuit breaker state and identify providers experiencing issues:
+
+```python
+stats = llm_service.get_routing_stats()
+# Returns:
+# {
+#     "circuit_breaker": {
+#         "open_circuits": ["anthropic:claude-3-opus"],
+#         "failure_counts": {"anthropic:claude-3-opus": 5}
+#     },
+#     ...routing stats...
+# }
+```
+
+Open circuits indicate a provider:model pair that has hit the failure threshold and is currently being bypassed. Monitor this in production to detect persistent provider outages or configuration issues early.
+
+---
+
 ## Best Practices
 
 1. **Store API keys in environment variables** — never hardcode them.
@@ -283,11 +443,15 @@ response = llm_service.call_llm(
 3. **Use `ask()` for quick one-off prompts** — only reach for `call_llm()` when you need messages, routing, or model overrides.
 4. **Cap complexity tier with `max_cost_tier`** — prevents accidentally routing simple tasks to expensive models.
 5. **Keep conversation history reasonable** — 10–20 messages is a good ceiling; trim older messages when memory grows.
+6. **Let retries handle transient failures** — don't add your own retry loop around `call_llm()`; the service already retries rate limits and timeouts automatically.
+7. **Catch specific exceptions** — handle `LLMConfigurationError` (fix your config) differently from `LLMServiceError` (transient, may resolve later).
+8. **Monitor circuit breaker state** — use `get_routing_stats()` to detect providers that are consistently failing.
 
 ---
 
 ## Next Steps
 
+- **[LLM Configuration](../../configuration/llm-config)** — Provider setup, resilience tuning, and routing matrix
 - **[Storage Services](./storage-services-overview)** — Data persistence options
 - **[Capability Protocols](../capabilities/)** — Agent protocol reference
 - **[Agent Development](../agents/custom-agents)** — Build custom LLM agents
