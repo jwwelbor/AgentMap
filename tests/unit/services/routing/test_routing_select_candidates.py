@@ -30,22 +30,18 @@ class DummyCfg:
     def get_provider_preference(self):
         return ["anthropic", "openai"]
 
-    def get_config(self):
+    def get_activities_config(self):
         return {
-            "routing": {
-                "activities": {
-                    "narrative": {
-                        "medium": {
-                            "primary": {
-                                "provider": "anthropic",
-                                "model": "claude-sonnet-4-6",
-                            },
-                            "fallbacks": [
-                                {"provider": "openai", "model": "gpt-4o"},
-                                {"provider": "google", "model": "gemini-2.5-pro"},
-                            ],
-                        }
-                    }
+            "narrative": {
+                "medium": {
+                    "primary": {
+                        "provider": "anthropic",
+                        "model": "claude-sonnet-4-6",
+                    },
+                    "fallbacks": [
+                        {"provider": "openai", "model": "gpt-4o"},
+                        {"provider": "google", "model": "gemini-2.5-pro"},
+                    ],
                 }
             }
         }
