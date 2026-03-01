@@ -29,8 +29,8 @@ class TestActivityRoutingTableInterface(unittest.TestCase):
         """
         mock_config = create_autospec(LLMRoutingConfigService, instance=True)
         mock_config.get_activities_config.return_value = activities or {}
-        mock_logger = Mock(spec=LoggingService)
-        mock_logger.get_class_logger = Mock(return_value=Mock())
+        mock_logger = create_autospec(LoggingService, instance=True)
+        mock_logger.get_class_logger.return_value = Mock()
         return ActivityRoutingTable(mock_config, mock_logger), mock_config
 
     def test_plan_calls_get_activities_config(self):
