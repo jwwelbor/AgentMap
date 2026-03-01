@@ -1,0 +1,25 @@
+# Example: Using env: prefix to resolve API keys from environment variables
+#
+# AgentMap resolves any YAML string value starting with "env:" at config load time.
+# Syntax:
+#   env:VAR_NAME          — resolve from os.environ, empty string if missing
+#   env:VAR_NAME:default  — resolve from os.environ, use "default" if missing
+
+llm:
+  openai:
+    api_key: "env:OPENAI_API_KEY"
+    model: "env:OPENAI_MODEL:gpt-4.1-mini"
+    temperature: 0.7
+
+  anthropic:
+    api_key: "env:ANTHROPIC_API_KEY"
+    model: "env:ANTHROPIC_MODEL:claude-sonnet-4-6"
+    temperature: 0.7
+
+  google:
+    api_key: "env:GOOGLE_API_KEY"
+    model: "env:GOOGLE_MODEL:gemini-2.5-flash"
+    temperature: 0.7
+
+paths:
+  csv_repository: "agentmap_data/workflows"

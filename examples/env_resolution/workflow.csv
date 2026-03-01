@@ -1,0 +1,2 @@
+GraphName,Node,Edge,AgentType,Description,Context,Input_Fields,Output_Fields
+EnvResolutionTest,start,end,echo,Echo the input to verify config loaded,Echoes input back to confirm the workflow runs with env-resolved config,message,message

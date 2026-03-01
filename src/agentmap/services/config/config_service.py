@@ -108,6 +108,7 @@ class ConfigService:
                     f"Loaded configuration sections: {sections}"
                 )
 
+                user_config = self._resolve_env_vars(user_config)
                 return user_config
 
             except Exception as e:
@@ -119,6 +120,39 @@ class ConfigService:
                 f"Config file not found at {config_file}. Returning empty config."
             )
             return {}
+
+    def _resolve_env_vars(self, data: Any) -> Any:
+        """
+        Recursively resolve env: prefixed strings in config data.
+
+        Supports:
+        - env:VAR_NAME — resolves from os.environ, returns "" if not found
+        - env:VAR_NAME:default — resolves from os.environ, returns default if not found
+
+        Args:
+            data: Configuration data (dict, list, or scalar)
+
+        Returns:
+            Data with all env: prefixed strings resolved
+        """
+        if isinstance(data, dict):
+            return {k: self._resolve_env_vars(v) for k, v in data.items()}
+        if isinstance(data, list):
+            return [self._resolve_env_vars(item) for item in data]
+        if isinstance(data, str) and data.startswith("env:"):
+            remainder = data[4:]
+            # Support env:VAR:default syntax (split on first colon only)
+            if ":" in remainder:
+                env_var, default = remainder.split(":", 1)
+            else:
+                env_var, default = remainder, ""
+            value = os.environ.get(env_var, default)
+            if not value and not default:
+                self._bootstrap_logger.warning(
+                    f"Environment variable not found: {env_var}"
+                )
+            return value
+        return data
 
     def get_value_from_config(
         self, config_data: Dict[str, Any], path: str, default: Any = None

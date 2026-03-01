@@ -424,20 +424,31 @@ port: "env:PORT:8080"
 timeout: "env:REQUEST_TIMEOUT:30"
 ```
 
-### Advanced Environment Variable Usage
+### How It Works
+
+AgentMap resolves `env:` prefixed strings at configuration load time. Any string value
+in `agentmap_config.yaml` that starts with `env:` is replaced with the corresponding
+environment variable value from `os.environ`.
+
+Your host application is responsible for loading `.env` files into `os.environ` before
+AgentMap initializes (e.g., using `python-dotenv`):
+
+```python
+from dotenv import load_dotenv
+load_dotenv()  # Load .env into os.environ
+
+import agentmap  # Now AgentMap will resolve env: references
+```
 
 ```yaml
-# Complex interpolation (using environment_overrides section)
-environment_overrides:
-  routing_enabled: ${AGENTMAP_ROUTING_ENABLED:true}
-  max_concurrent: ${AGENTMAP_MAX_CONCURRENT:10}
-  debug_mode: ${DEBUG_MODE:false}
+# Simple reference — resolved from os.environ
+api_key: "env:OPENAI_API_KEY"
 
-# List values from environment
-task_types: ${AGENTMAP_TASK_TYPES:general,code_analysis,creative_writing}
+# With default — uses "gpt-4o-mini" if OPENAI_DEFAULT_MODEL is not set
+model: "env:OPENAI_DEFAULT_MODEL:gpt-4o-mini"
 
-# JSON values from environment (parsed automatically)
-routing_matrix: ${AGENTMAP_ROUTING_MATRIX:{}}
+# Default can contain colons (e.g., URLs)
+endpoint: "env:CUSTOM_ENDPOINT:http://localhost:8080"
 ```
 
 ## 📄 Environment File Management

@@ -203,6 +203,10 @@ class BlobStorageConnector(ABC):
         """
         Resolve environment variable references in config values.
 
+        Supports:
+        - env:VAR_NAME — resolves from os.environ, returns "" if not found
+        - env:VAR_NAME:default — resolves from os.environ, returns default if not found
+
         Args:
             value: Config value, possibly containing env: prefix
 
@@ -213,9 +217,14 @@ class BlobStorageConnector(ABC):
             return value
 
         if value.startswith("env:"):
-            env_var = value[4:]
-            env_value = os.environ.get(env_var, "")
-            if not env_value:
+            remainder = value[4:]
+            # Support env:VAR:default syntax (split on first colon only)
+            if ":" in remainder:
+                env_var, default = remainder.split(":", 1)
+            else:
+                env_var, default = remainder, ""
+            env_value = os.environ.get(env_var, default)
+            if not env_value and not default:
                 self.log_warning(f"Environment variable not found: {env_var}")
             return env_value
 

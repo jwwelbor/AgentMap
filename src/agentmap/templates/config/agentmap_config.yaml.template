@@ -85,7 +85,7 @@ logging:
 # Note: Model validation is delegated to provider APIs - any model name is accepted
 llm:
   openai:
-    api_key: ""  # Or use env: OPENAI_API_KEY
+    api_key: "env:OPENAI_API_KEY"  # Resolved from environment at load time
     model: "gpt-4.1-mini"  # Default model (can be any valid OpenAI model)
     temperature: 0.7
     max_tokens: null  # Optional: limit response length
@@ -94,7 +94,7 @@ llm:
     presence_penalty: 0.0  # Optional: encourage topic diversity
 
   anthropic:
-    api_key: ""  # Or use env: ANTHROPIC_API_KEY
+    api_key: "env:ANTHROPIC_API_KEY"  # Resolved from environment at load time
     model: "claude-sonnet-4-6"  # Default model (can be any valid Anthropic model)
     temperature: 0.7
     max_tokens: 4096  # Optional: Claude default is 4096
@@ -102,7 +102,7 @@ llm:
     top_k: null  # Optional: top-k sampling (Claude-specific)
 
   google:
-    api_key: ""  # Or use env: GOOGLE_API_KEY
+    api_key: "env:GOOGLE_API_KEY"  # Resolved from environment at load time
     model: "gemini-2.5-flash"  # Default model (can be any valid Google model)
     temperature: 0.7
     max_tokens: null  # Optional: limit response length
@@ -374,17 +374,6 @@ routing:
     max_cache_size: 1000
     # Timeout for LLM API calls (seconds)
     request_timeout: 60
-
-# Environment Variable Overrides
-# These allow runtime configuration without changing the file
-environment_overrides:
-  routing_enabled: ${AGENTMAP_ROUTING_ENABLED:true}
-  default_task_type: ${AGENTMAP_DEFAULT_TASK_TYPE:general}
-  cost_optimization: ${AGENTMAP_COST_OPTIMIZATION:true}
-  routing_cache_enabled: ${AGENTMAP_ROUTING_CACHE:true}
-  llm_openai_api_key: ${OPENAI_API_KEY:}
-  llm_anthropic_api_key: ${ANTHROPIC_API_KEY:}
-  llm_google_api_key: ${GOOGLE_API_KEY:}
 
 # Messaging Configuration
 # Configure message publishing for workflow events, graph triggers, and auto-resume
