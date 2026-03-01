@@ -79,7 +79,35 @@ with patch('agentmap.services.graph_builder_service.Path',
 
 ---
 
-## 5&nbsp;. Mock vs MagicMock  
+## 5&nbsp;. Mock vs MagicMock vs `create_autospec`
+
+### `create_autospec` — REQUIRED for service dependencies
+
+**Always use `create_autospec(ServiceClass, instance=True)` when mocking service dependencies.** This is the single most important mocking rule in this codebase.
+
+`create_autospec` creates a mock that enforces the real class's interface — any call to a method that doesn't exist on the real class raises `AttributeError` immediately. This catches interface mismatches at test time instead of letting them reach production.
+
+```python
+from unittest.mock import create_autospec
+from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
+
+# ✅ Correct — enforces real interface
+mock_config = create_autospec(LLMRoutingConfigService, instance=True)
+mock_config.get_config.return_value = {"routing": {"activities": {}}}
+
+# ❌ WRONG — allows calls to ANY method, even nonexistent ones
+mock_config = Mock()
+mock_config.get_config.return_value = {...}  # passes even if get_config() doesn't exist
+
+# ❌ WRONG — hand-rolled fakes hide interface drift
+class DummyCfg:
+    def get_config(self):  # might not exist on real service
+        return {...}
+```
+
+**Why this matters:** A bare `Mock()` or hand-rolled dummy silently accepts calls to methods that don't exist on the real service. Tests pass, but production code fails. This pattern caused the v0.9.203 activity routing bug — `ActivityRoutingTable` called `get_config()` which didn't exist on `LLMRoutingConfigService`, but tests passed because the dummy had the method.
+
+### Mock vs MagicMock
 Use bare **Mock** for services; reserve **MagicMock** for objects needing dunder support (e.g., dict‑like containers). The factory returns `Mock` by default.
 
 ---
@@ -133,11 +161,12 @@ Cover success, error, and end‑to‑end workflows; assert no stack traces leak 
 
 ---
 
-## 11&nbsp;. Anti‑Patterns to Avoid  
-* Direct attribute assignment on `Path` objects.  
-* Mixed `@patch` plus container swapping.  
-* Adding business logic to **ConfigService**.  
-* Writing tests that validate *insecure* behaviour.  
+## 11&nbsp;. Anti‑Patterns to Avoid
+* **Using bare `Mock()` or hand-rolled dummy classes for service dependencies** — use `create_autospec` instead (see §5).
+* Direct attribute assignment on `Path` objects.
+* Mixed `@patch` plus container swapping.
+* Adding business logic to **ConfigService**.
+* Writing tests that validate *insecure* behaviour.
 
 ---
 
@@ -208,7 +237,8 @@ entry.get('node')     # node_executions contains NodeExecution objects, not dict
 
 ## 15&nbsp;. Summary Checklist  
 
-- [ ] Use `MockServiceFactory` for every dependency.  
+- [ ] Use `create_autospec` for all service dependency mocks (enforces real interface).
+- [ ] Use `MockServiceFactory` for every dependency.
 - [ ] Prefer `Path` utilities; patch service‑level `Path` only when unavoidable.  
 - [ ] No security bypass tests; configuration decides auth.  
 - [ ] Leverage `BaseCLITest` for CLI, realistic temp files, and service mocks.  

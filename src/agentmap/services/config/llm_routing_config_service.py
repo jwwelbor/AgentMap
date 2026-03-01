@@ -123,6 +123,16 @@ class LLMRoutingConfigService:
             self.routing_matrix, self.task_types, self.complexity_analysis
         )
 
+    def get_activities_config(self) -> Dict[str, Any]:
+        """
+        Get the activities routing configuration.
+
+        Returns:
+            Activities configuration dictionary mapping activity names
+            to their complexity tier routing plans
+        """
+        return self.config_dict.get("activities", {})
+
     def get_model_for_complexity(self, provider: str, complexity: str) -> Optional[str]:
         """
         Get the model for a given provider and complexity.

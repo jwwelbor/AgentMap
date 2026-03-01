@@ -99,6 +99,10 @@ Tests are organized into three directories:
 - **`tests/integration/`** — Integration tests for workflows, suspend/resume, HTTP, etc.
 - **`tests/utils/`** — Test utilities including `PathOperationsMocker` for mocking `pathlib.Path` operations (see `tests/PATH_MOCKING_GUIDE.md`)
 
+## Testing Rules
+
+- **Always use `create_autospec` when mocking service dependencies.** Never use bare `Mock()` or hand-rolled dummy classes to stand in for services. `create_autospec(ServiceClass, instance=True)` enforces that only methods actually defined on the real class can be called — catching interface mismatches at test time instead of production. See `tests/testing-patterns.md` for details.
+
 ## Configuration Change Checklist
 
 When modifying `src/agentmap/services/config/app_config_service.py` or adding new `get_*_config()` / `get_value()` accessors:

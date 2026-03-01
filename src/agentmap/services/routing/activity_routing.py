@@ -29,27 +29,6 @@ class ActivityRoutingTable:
         self._config_service = routing_config
         self._logger = logger
 
-    def _get_config_dict(self) -> Dict[str, Any]:
-        """
-        Get the configuration dictionary from the config service.
-
-        Returns:
-            Configuration dictionary
-        """
-        return self._config_service.get_config()
-
-    def _get_activities(self) -> Dict[str, Any]:
-        """
-        Get activities configuration from the config.
-
-        Returns:
-            Activities configuration dictionary
-        """
-        config = self._get_config_dict() or {}
-        if "routing" in config and isinstance(config["routing"], dict):
-            return config["routing"].get("activities", {})
-        return config.get("activities", {})
-
     def plan(
         self, activity: Optional[str], complexity_key: str
     ) -> List[Dict[str, str]]:
@@ -69,7 +48,7 @@ class ActivityRoutingTable:
         if not activity:
             return []
 
-        activities = self._get_activities()
+        activities = self._config_service.get_activities_config()
         if not activities:
             return []
 
