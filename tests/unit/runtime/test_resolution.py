@@ -169,3 +169,33 @@ def test_empty_identifier_raises(container):
 def test_whitespace_identifier_raises(container):
     with pytest.raises(GraphNotFound):
         _resolve_csv_path("   \t  ", container)
+
+
+# ---------- Subfolder support ----------
+
+
+def test_doublecolon_with_subfolder_resolves_csv(container, repo):
+    """subfolder/testgraph::graph_name finds repo/subfolder/testgraph.csv"""
+    subfolder = repo / "subfolder"
+    subfolder.mkdir()
+    (subfolder / "testgraph.csv").write_text("")
+    csv_path, graph = _resolve_csv_path("subfolder/testgraph::graph_name", container)
+    assert csv_path == repo / "subfolder" / "testgraph.csv"
+    assert graph == "graph_name"
+
+
+def test_doublecolon_with_nested_subfolder(container, repo):
+    """deep/nested/workflow::G resolves correctly."""
+    nested = repo / "deep" / "nested"
+    nested.mkdir(parents=True)
+    (nested / "workflow.csv").write_text("")
+    csv_path, graph = _resolve_csv_path("deep/nested/workflow::G", container)
+    assert csv_path == repo / "deep" / "nested" / "workflow.csv"
+    assert graph == "G"
+
+
+def test_doublecolon_subfolder_fallback_when_missing(container, repo):
+    """Subfolder path falls back when CSV doesn't exist in repo."""
+    csv_path, graph = _resolve_csv_path("missing/sub::G", container)
+    assert csv_path == Path("missing/sub")
+    assert graph == "G"

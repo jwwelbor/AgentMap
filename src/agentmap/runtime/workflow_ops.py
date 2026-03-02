@@ -223,14 +223,17 @@ def list_graphs(
         graphs = []
 
         if csv_repository.exists():
-            # Find all CSV files (workflows)
-            csv_files = list(csv_repository.glob("*.csv"))
+            # Find all CSV files (workflows), including subfolders
+            csv_files = list(csv_repository.glob("**/*.csv"))
 
             for csv_file in csv_files:
                 try:
                     # Get basic file info
                     file_stat = csv_file.stat()
-                    workflow_name = csv_file.stem
+                    # Compute workflow name as relative path without .csv extension
+                    # e.g. "testgraph" for top-level, "subfolder/testgraph" for nested
+                    relative = csv_file.relative_to(csv_repository)
+                    workflow_name = str(relative.with_suffix("")).replace("\\", "/")
 
                     # Try to get graph count using pandas for performance
                     graph_count = 0
