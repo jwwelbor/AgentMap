@@ -10,7 +10,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentmap"
-version = "0.9.205"
+version = "0.9.206"
 source = { editable = "." }
 dependencies = [
     { name = "autoflake" },
