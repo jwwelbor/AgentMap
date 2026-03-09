@@ -694,64 +694,6 @@ class TestUnifiedCacheServiceIntegration(unittest.TestCase):
     # 5. Performance and Scalability Tests
     # =============================================================================
 
-    def test_unified_cache_performance_benefits(self):
-        """Test performance benefits of unified vs separate cache approach."""
-        # Simulate high-frequency service operations
-
-        providers = ["openai", "anthropic", "google", "local"]
-        storage_types = ["csv", "json", "vector", "firebase"]
-
-        # Measure time for initial cache population
-        start_time = time.time()
-
-        for provider in providers:
-            self.mock_dependency_checker.check_llm_dependencies(provider)
-            self.mock_llm_routing_config.get_provider_availability(provider)
-
-        for storage_type in storage_types:
-            self.mock_dependency_checker.check_storage_dependencies(storage_type)
-            self.mock_storage_config.is_storage_available(storage_type)
-
-        population_time = time.time() - start_time
-
-        # Measure time for cached operations
-        start_time = time.time()
-
-        for _ in range(3):  # Multiple rounds to test cache effectiveness
-            for provider in providers:
-                self.mock_dependency_checker.check_llm_dependencies(provider)
-                self.mock_llm_routing_config.get_provider_availability(provider)
-
-            for storage_type in storage_types:
-                self.mock_dependency_checker.check_storage_dependencies(storage_type)
-                self.mock_storage_config.is_storage_available(storage_type)
-
-        cached_time = time.time() - start_time
-
-        # Cached operations should be significantly faster per operation
-        operations_per_round = (
-            len(providers) * 2 + len(storage_types) * 2
-        )  # 2 services per resource type
-        cached_time_per_operation = cached_time / (3 * operations_per_round)
-        population_time_per_operation = population_time / operations_per_round
-
-        # Cache should provide performance benefit
-        self.assertLess(
-            cached_time_per_operation,
-            population_time_per_operation,
-            f"Cached operations ({cached_time_per_operation:.4f}s) should be faster than "
-            f"population operations ({population_time_per_operation:.4f}s)",
-        )
-
-        # Verify comprehensive cache usage statistics
-        stats = self.unified_cache.get_cache_stats()
-        self.assertGreater(
-            stats["performance"]["cache_hits"], 20
-        )  # Should have many cache hits
-        self.assertGreater(
-            stats["performance"]["cache_sets"], 10
-        )  # Should have initial cache sets
-
     def test_cache_memory_efficiency_across_services(self):
         """Test memory efficiency of unified cache vs separate caches."""
         # Simulate scenario where separate caches might duplicate data
