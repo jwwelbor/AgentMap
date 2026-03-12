@@ -613,5 +613,280 @@ class TestStateAdapterService(unittest.TestCase):
         self.assertEqual(partial_inputs["task_type"], "analysis")
 
 
+class TestStateAdapterServiceModeDetection(unittest.TestCase):
+    """Unit tests for get_inputs() mode detection decision tree (T-E01-F06-003).
+
+    Tests cover all three binding modes (mapped, positional, direct) and the
+    decision tree that selects between them based on colon presence and
+    expected_params availability.
+    """
+
+    def setUp(self):
+        """Set up common test state."""
+        self.state = {
+            "damage_roll": 10,
+            "bonus": 5,
+            "a": 1,
+            "b": 2,
+            "c": 3,
+            "ns": "namespace_value",
+            "field_0": 0,
+            "field_1": 1,
+            "field_2": 2,
+            "field_3": 3,
+            "field_4": 4,
+            "field_5": 5,
+            "field_6": 6,
+            "field_7": 7,
+            "field_8": 8,
+            "field_9": 9,
+            "field_10": 10,
+            "field_11": 11,
+            "field_12": 12,
+            "field_13": 13,
+            "field_14": 14,
+            "field_15": 15,
+            "field_16": 16,
+            "field_17": 17,
+            "field_18": 18,
+            "field_19": 19,
+        }
+
+    # AC-1, E1: Pure direct mode
+    def test_direct_mode_no_colon_no_expected_params(self):
+        """Default direct mode when no colon syntax and no expected_params."""
+        result = StateAdapterService.get_inputs(self.state, ["damage_roll", "bonus"])
+        self.assertEqual(result, {"damage_roll": 10, "bonus": 5})
+
+    # AC-2, E2: Pure positional mode
+    def test_positional_mode_with_expected_params(self):
+        """Positional zip resolution when expected_params provided."""
+        result = StateAdapterService.get_inputs(
+            self.state,
+            ["damage_roll", "bonus"],
+            expected_params=["addend_a", "addend_b"],
+        )
+        self.assertEqual(result, {"addend_a": 10, "addend_b": 5})
+
+    # AC-3, E3: Pure mapped mode
+    def test_mapped_mode_colon_syntax(self):
+        """Colon split into state_key/param_name for mapped mode."""
+        result = StateAdapterService.get_inputs(
+            self.state, ["damage_roll:addend_a", "bonus:addend_b"]
+        )
+        self.assertEqual(result, {"addend_a": 10, "addend_b": 5})
+
+    # AC-4, E4: Mixed mapped + direct disables positional
+    def test_mixed_mapped_direct_disables_positional(self):
+        """Colon presence disables positional; non-mapped field uses direct."""
+        result = StateAdapterService.get_inputs(
+            self.state,
+            ["damage_roll:addend_a", "bonus"],
+            expected_params=["x", "y"],
+        )
+        self.assertEqual(result, {"addend_a": 10, "bonus": 5})
+        self.assertNotIn("y", result)
+
+    # AC-5, E5: Positional overflow to direct
+    def test_positional_overflow_to_direct(self):
+        """Fields beyond expected_params length use direct mode."""
+        result = StateAdapterService.get_inputs(
+            self.state,
+            ["a", "b", "c"],
+            expected_params=["x", "y"],
+        )
+        self.assertEqual(result, {"x": 1, "y": 2, "c": 3})
+
+    # AC-6, E6: Positional underflow
+    def test_positional_underflow_absent_params(self):
+        """Unmatched params are absent, not None."""
+        result = StateAdapterService.get_inputs(
+            self.state,
+            ["a"],
+            expected_params=["x", "y"],
+        )
+        self.assertEqual(result, {"x": 1})
+        self.assertNotIn("y", result)
+
+    # AC-7: Backward compatibility
+    def test_backward_compat_omit_expected_params(self):
+        """Omitting expected_params matches pre-change behavior exactly."""
+        result = StateAdapterService.get_inputs(self.state, ["a", "b"])
+        self.assertEqual(result, {"a": 1, "b": 2})
+
+    # AC-8, E7: Empty input fields
+    def test_empty_input_fields(self):
+        """Empty input_fields returns empty dict regardless of expected_params."""
+        result = StateAdapterService.get_inputs(self.state, [], expected_params=["x"])
+        self.assertEqual(result, {})
+
+    # AC-9, E10: First-colon-only split
+    def test_first_colon_only_split(self):
+        """Only first colon is split separator."""
+        result = StateAdapterService.get_inputs(self.state, ["ns:key:param"])
+        self.assertEqual(result, {"key:param": self.state["ns"]})
+
+    # AC-10: Performance
+    def test_performance_under_1ms(self):
+        """Verify mode detection adds less than 1ms overhead per call with 20 fields."""
+        state = {f"field_{i}": i for i in range(20)}
+        # Mix of 10 mapped and 10 direct fields
+        fields = [f"field_{i}:param_{i}" for i in range(10)] + [
+            f"field_{i}" for i in range(10, 20)
+        ]
+        import time
+
+        start = time.perf_counter()
+        for _ in range(1000):
+            StateAdapterService.get_inputs(state, fields)
+        elapsed = (time.perf_counter() - start) / 1000  # average per call
+        self.assertLess(
+            elapsed, 0.001, f"Average call time {elapsed:.6f}s exceeds 1ms budget"
+        )
+
+    # E8: Single mapped field
+    def test_single_mapped_field(self):
+        """Single mapped field works in isolation."""
+        result = StateAdapterService.get_inputs(
+            self.state, ["damage_roll:addend_a"], expected_params=None
+        )
+        self.assertEqual(result, {"addend_a": 10})
+
+    # E9: Missing state key returns None
+    def test_missing_state_key_returns_none(self):
+        """Missing state key returns None via get_value default."""
+        result = StateAdapterService.get_inputs({}, ["missing_key:param"])
+        self.assertEqual(result, {"param": None})
+
+    # E1 from T-E01-F06-002: Empty expected_params treated as None
+    def test_empty_expected_params_uses_direct(self):
+        """Empty list treated same as None -- direct mode."""
+        result = StateAdapterService.get_inputs(
+            self.state, ["a", "b"], expected_params=[]
+        )
+        self.assertEqual(result, {"a": 1, "b": 2})
+
+    # AC-3 variant: Mapped mode ignores expected_params
+    def test_mapped_mode_ignores_expected_params(self):
+        """Mapped mode takes precedence; expected_params ignored when all fields have colons."""
+        result = StateAdapterService.get_inputs(
+            self.state,
+            ["damage_roll:addend_a", "bonus:addend_b"],
+            expected_params=["p", "q"],
+        )
+        self.assertEqual(result, {"addend_a": 10, "addend_b": 5})
+
+
+class TestStateAdapterServicePositionalBinding(unittest.TestCase):
+    """Tests for positional binding mode in get_inputs()."""
+
+    def setUp(self):
+        self.service = StateAdapterService()
+
+    def test_positional_binding_resolves_by_index(self):
+        state = {"damage_roll": 10, "strength_bonus": 5}
+        result = StateAdapterService.get_inputs(
+            state,
+            ["damage_roll", "strength_bonus"],
+            expected_params=["addend_a", "addend_b"],
+        )
+        self.assertEqual(result, {"addend_a": 10, "addend_b": 5})
+
+    def test_overflow_inputs_use_direct_mode(self):
+        state = {"x": 1, "y": 2, "z": 3}
+        result = StateAdapterService.get_inputs(
+            state, ["x", "y", "z"], expected_params=["alpha", "beta"]
+        )
+        self.assertEqual(result, {"alpha": 1, "beta": 2, "z": 3})
+
+    def test_underflow_inputs_produce_absent_params(self):
+        state = {"x": 1}
+        result = StateAdapterService.get_inputs(
+            state, ["x"], expected_params=["alpha", "beta", "gamma"]
+        )
+        self.assertEqual(result, {"alpha": 1})
+        self.assertNotIn("beta", result)
+        self.assertNotIn("gamma", result)
+
+    def test_no_expected_params_uses_direct_mode(self):
+        state = {"damage_roll": 10}
+        result = StateAdapterService.get_inputs(state, ["damage_roll"])
+        self.assertEqual(result, {"damage_roll": 10})
+
+    def test_none_expected_params_uses_direct_mode(self):
+        state = {"damage_roll": 10}
+        result = StateAdapterService.get_inputs(
+            state, ["damage_roll"], expected_params=None
+        )
+        self.assertEqual(result, {"damage_roll": 10})
+
+    def test_mapped_syntax_disables_positional_binding(self):
+        """When colon fields are present, positional is disabled."""
+        state = {"damage_roll": 10, "strength_bonus": 5}
+        result = StateAdapterService.get_inputs(
+            state,
+            ["damage_roll:addend_a", "strength_bonus"],
+            expected_params=["addend_a", "addend_b"],
+        )
+        # Mapped field splits on colon, non-colon field uses direct mode
+        self.assertEqual(result["addend_a"], 10)
+        self.assertEqual(result["strength_bonus"], 5)
+        # Positional keys should NOT be present
+        self.assertNotIn("addend_b", result)
+
+    def test_empty_expected_params_uses_direct_mode(self):
+        state = {"x": 1}
+        result = StateAdapterService.get_inputs(state, ["x"], expected_params=[])
+        self.assertEqual(result, {"x": 1})
+
+    def test_no_input_fields_with_expected_params(self):
+        state = {"x": 1}
+        result = StateAdapterService.get_inputs(state, [], expected_params=["a"])
+        self.assertEqual(result, {})
+
+    def test_single_field_single_expected_param(self):
+        state = {"x": 42}
+        result = StateAdapterService.get_inputs(state, ["x"], expected_params=["a"])
+        self.assertEqual(result, {"a": 42})
+
+    def test_state_value_none_positional(self):
+        state = {"x": None}
+        result = StateAdapterService.get_inputs(state, ["x"], expected_params=["param"])
+        self.assertEqual(result, {"param": None})
+
+    def test_state_key_missing_positional(self):
+        state = {}
+        result = StateAdapterService.get_inputs(
+            state, ["missing_key"], expected_params=["param"]
+        )
+        self.assertEqual(result, {"param": None})
+
+    def test_duplicate_field_names_positional(self):
+        state = {"x": 1}
+        result = StateAdapterService.get_inputs(
+            state, ["x", "x"], expected_params=["a", "b"]
+        )
+        self.assertEqual(result, {"a": 1, "b": 1})
+
+    def test_duplicate_expected_params(self):
+        state = {"x": 1, "y": 2}
+        result = StateAdapterService.get_inputs(
+            state, ["x", "y"], expected_params=["a", "a"]
+        )
+        self.assertEqual(result, {"a": 2})
+
+    def test_protocol_get_inputs_accepts_expected_params(self):
+        import inspect
+
+        from agentmap.services.protocols.service_protocols import (
+            StateAdapterServiceProtocol,
+        )
+
+        sig = inspect.signature(StateAdapterServiceProtocol.get_inputs)
+        params = sig.parameters
+        self.assertIn("expected_params", params)
+        self.assertEqual(params["expected_params"].default, None)
+
+
 if __name__ == "__main__":
     unittest.main()

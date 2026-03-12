@@ -378,7 +378,7 @@ class TestInputAgent(unittest.TestCase):
         test_state = {"user_data": "initial_data", "other_field": "should be preserved"}
 
         # Configure state adapter to return proper inputs
-        def mock_get_inputs(state, input_fields):
+        def mock_get_inputs(state, input_fields, **kwargs):
             return {field: state.get(field) for field in input_fields if field in state}
 
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs

@@ -6,7 +6,7 @@ Following YAGNI principle, this service only wraps the set_value method that is
 actually used in the codebase. Additional methods can be added as needed.
 """
 
-from typing import Any, Dict, List, TypeVar
+from typing import Any, Dict, List, Optional, TypeVar
 
 # Type variable for state objects
 StateType = TypeVar("StateType", Dict[str, Any], object)
@@ -139,11 +139,58 @@ class StateAdapterService:
             # return state
 
     @staticmethod
-    def get_inputs(state: Any, input_fields: List[str]) -> Dict[str, Any]:
-        """Extract all input fields from state."""
-        inputs = {}
-        for field in input_fields:
-            inputs[field] = StateAdapterService.get_value(state, field)
+    def get_inputs(
+        state: Any,
+        input_fields: List[str],
+        expected_params: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Extract input fields from state with mode detection.
+
+        Per-field mode detection decision tree:
+        1. Field contains ":" -> MAPPED mode: split on first ":",
+           left=state_key, right=param_name
+        2. Any field in input_fields contains ":" -> non-mapped fields
+           use DIRECT mode (positional disabled)
+        3. expected_params is non-empty and field index < len(expected_params)
+           -> POSITIONAL mode
+        4. Otherwise -> DIRECT mode (key = key)
+
+        Args:
+            state: State object (dict, Pydantic model, etc.)
+            input_fields: List of field specifiers from CSV Input_Fields column.
+            expected_params: Optional list of agent parameter names for
+                positional binding.
+
+        Returns:
+            Dictionary mapping parameter names to state values.
+        """
+        if not input_fields:
+            return {}
+
+        # Pre-scan: determine if any field uses mapped (colon) syntax.
+        # If so, positional binding is disabled for the entire node.
+        has_mapped = any(":" in f for f in input_fields)
+
+        # Normalize expected_params: treat None and empty list identically
+        use_positional = (
+            not has_mapped and expected_params is not None and len(expected_params) > 0
+        )
+
+        inputs: Dict[str, Any] = {}
+        for idx, field in enumerate(input_fields):
+            if ":" in field:
+                # MAPPED mode: split on first colon only
+                state_key, param_name = field.split(":", 1)
+                inputs[param_name] = StateAdapterService.get_value(state, state_key)
+            elif use_positional and idx < len(expected_params):  # type: ignore[arg-type]
+                # POSITIONAL mode: use expected_params name at this index
+                inputs[expected_params[idx]] = StateAdapterService.get_value(  # type: ignore[index]
+                    state, field
+                )
+            else:
+                # DIRECT mode: key = key (current/default behavior)
+                inputs[field] = StateAdapterService.get_value(state, field)
+
         return inputs
 
     def get_service_info(self) -> Dict[str, Any]:

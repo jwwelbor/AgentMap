@@ -8,7 +8,7 @@ Infrastructure services are injected via constructor, business services via post
 import logging
 import time
 import uuid
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from langgraph.errors import GraphInterrupt
 
@@ -30,6 +30,10 @@ class BaseAgent:
     Infrastructure services are injected via constructor, business services
     are configured post-construction via configure_*_service() methods.
     """
+
+    # Positional binding: subclasses declare expected parameter names so the
+    # framework can map CSV input fields to agent parameters by position.
+    expected_params: Optional[List[str]] = None
 
     def __init__(
         self,
@@ -240,7 +244,11 @@ class BaseAgent:
             )
 
         # Extract inputs using state adapter
-        inputs = self.state_adapter_service.get_inputs(state, self.input_fields)
+        inputs = self.state_adapter_service.get_inputs(
+            state,
+            self.input_fields,
+            expected_params=getattr(self, "expected_params", None),
+        )
 
         # Record node start using service
         tracking_service.record_node_start(tracker, self.name, inputs)

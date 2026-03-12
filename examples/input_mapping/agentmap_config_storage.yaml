@@ -1,0 +1,10 @@
+base_directory: "agentmap_data"
+
+csv:
+  default_path: "workflows"
+
+json:
+  default_path: "agentmap_data/json"
+
+file:
+  default_path: "agentmap_data/files"
