@@ -180,7 +180,7 @@ class StateAdapterService:
         for idx, field in enumerate(input_fields):
             if ":" in field:
                 # MAPPED mode: split on first colon only
-                state_key, param_name = field.split(":", 1)
+                state_key, param_name = map(str.strip, field.split(":", 1))
                 inputs[param_name] = StateAdapterService.get_value(state, state_key)
             elif use_positional and idx < len(expected_params):  # type: ignore[arg-type]
                 # POSITIONAL mode: use expected_params name at this index

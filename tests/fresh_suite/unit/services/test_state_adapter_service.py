@@ -624,7 +624,7 @@ class TestStateAdapterServiceModeDetection(unittest.TestCase):
     def setUp(self):
         """Set up common test state."""
         self.state = {
-            "damage_roll": 10,
+            "random_value": 10,
             "bonus": 5,
             "a": 1,
             "b": 2,
@@ -655,15 +655,15 @@ class TestStateAdapterServiceModeDetection(unittest.TestCase):
     # AC-1, E1: Pure direct mode
     def test_direct_mode_no_colon_no_expected_params(self):
         """Default direct mode when no colon syntax and no expected_params."""
-        result = StateAdapterService.get_inputs(self.state, ["damage_roll", "bonus"])
-        self.assertEqual(result, {"damage_roll": 10, "bonus": 5})
+        result = StateAdapterService.get_inputs(self.state, ["random_value", "bonus"])
+        self.assertEqual(result, {"random_value": 10, "bonus": 5})
 
     # AC-2, E2: Pure positional mode
     def test_positional_mode_with_expected_params(self):
         """Positional zip resolution when expected_params provided."""
         result = StateAdapterService.get_inputs(
             self.state,
-            ["damage_roll", "bonus"],
+            ["random_value", "bonus"],
             expected_params=["addend_a", "addend_b"],
         )
         self.assertEqual(result, {"addend_a": 10, "addend_b": 5})
@@ -672,7 +672,7 @@ class TestStateAdapterServiceModeDetection(unittest.TestCase):
     def test_mapped_mode_colon_syntax(self):
         """Colon split into state_key/param_name for mapped mode."""
         result = StateAdapterService.get_inputs(
-            self.state, ["damage_roll:addend_a", "bonus:addend_b"]
+            self.state, ["random_value:addend_a", "bonus:addend_b"]
         )
         self.assertEqual(result, {"addend_a": 10, "addend_b": 5})
 
@@ -681,7 +681,7 @@ class TestStateAdapterServiceModeDetection(unittest.TestCase):
         """Colon presence disables positional; non-mapped field uses direct."""
         result = StateAdapterService.get_inputs(
             self.state,
-            ["damage_roll:addend_a", "bonus"],
+            ["random_value:addend_a", "bonus"],
             expected_params=["x", "y"],
         )
         self.assertEqual(result, {"addend_a": 10, "bonus": 5})
@@ -748,7 +748,7 @@ class TestStateAdapterServiceModeDetection(unittest.TestCase):
     def test_single_mapped_field(self):
         """Single mapped field works in isolation."""
         result = StateAdapterService.get_inputs(
-            self.state, ["damage_roll:addend_a"], expected_params=None
+            self.state, ["random_value:addend_a"], expected_params=None
         )
         self.assertEqual(result, {"addend_a": 10})
 
@@ -771,8 +771,15 @@ class TestStateAdapterServiceModeDetection(unittest.TestCase):
         """Mapped mode takes precedence; expected_params ignored when all fields have colons."""
         result = StateAdapterService.get_inputs(
             self.state,
-            ["damage_roll:addend_a", "bonus:addend_b"],
+            ["random_value:addend_a", "bonus:addend_b"],
             expected_params=["p", "q"],
+        )
+        self.assertEqual(result, {"addend_a": 10, "addend_b": 5})
+
+    def test_mapped_mode_with_whitespace(self):
+        """Mapped mode should strip whitespace around keys and params."""
+        result = StateAdapterService.get_inputs(
+            self.state, [" random_value : addend_a ", " bonus : addend_b "]
         )
         self.assertEqual(result, {"addend_a": 10, "addend_b": 5})
 
@@ -784,10 +791,10 @@ class TestStateAdapterServicePositionalBinding(unittest.TestCase):
         self.service = StateAdapterService()
 
     def test_positional_binding_resolves_by_index(self):
-        state = {"damage_roll": 10, "strength_bonus": 5}
+        state = {"random_value": 10, "strength_bonus": 5}
         result = StateAdapterService.get_inputs(
             state,
-            ["damage_roll", "strength_bonus"],
+            ["random_value", "strength_bonus"],
             expected_params=["addend_a", "addend_b"],
         )
         self.assertEqual(result, {"addend_a": 10, "addend_b": 5})
@@ -809,23 +816,23 @@ class TestStateAdapterServicePositionalBinding(unittest.TestCase):
         self.assertNotIn("gamma", result)
 
     def test_no_expected_params_uses_direct_mode(self):
-        state = {"damage_roll": 10}
-        result = StateAdapterService.get_inputs(state, ["damage_roll"])
-        self.assertEqual(result, {"damage_roll": 10})
+        state = {"random_value": 10}
+        result = StateAdapterService.get_inputs(state, ["random_value"])
+        self.assertEqual(result, {"random_value": 10})
 
     def test_none_expected_params_uses_direct_mode(self):
-        state = {"damage_roll": 10}
+        state = {"random_value": 10}
         result = StateAdapterService.get_inputs(
-            state, ["damage_roll"], expected_params=None
+            state, ["random_value"], expected_params=None
         )
-        self.assertEqual(result, {"damage_roll": 10})
+        self.assertEqual(result, {"random_value": 10})
 
     def test_mapped_syntax_disables_positional_binding(self):
         """When colon fields are present, positional is disabled."""
-        state = {"damage_roll": 10, "strength_bonus": 5}
+        state = {"random_value": 10, "strength_bonus": 5}
         result = StateAdapterService.get_inputs(
             state,
-            ["damage_roll:addend_a", "strength_bonus"],
+            ["random_value:addend_a", "strength_bonus"],
             expected_params=["addend_a", "addend_b"],
         )
         # Mapped field splits on colon, non-colon field uses direct mode
