@@ -1,0 +1,4 @@
+GraphName,Node,AgentType,Prompt,Input_Fields,Output_Field,Edge,Success_Next,Failure_Next
+AddTwice,FirstAdd,adder,Add the first pair,first_a|first_b,first_sum,SecondAdd,,
+AddTwice,SecondAdd,adder,Add the first result to another number,first_sum|second_b,final_sum,Done,,
+AddTwice,Done,echo,Done,final_sum,result,,,

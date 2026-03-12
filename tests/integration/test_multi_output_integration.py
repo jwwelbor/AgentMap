@@ -128,7 +128,7 @@ class TestMultiOutputIntegration:
         """Create state adapter service."""
         service = MagicMock(spec=StateAdapterService)
 
-        def mock_get_inputs(state, input_fields):
+        def mock_get_inputs(state, input_fields, **kwargs):
             """Mock state adapter get_inputs."""
             result = {}
             for field in input_fields:

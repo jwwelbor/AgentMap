@@ -87,13 +87,20 @@ class StorageServiceProtocol(Protocol):
 class StateAdapterServiceProtocol(Protocol):
     """Protocol for state adapter service interface used by agents."""
 
-    def get_inputs(self, state: Any, input_fields: List[str]) -> Dict[str, Any]:
+    def get_inputs(
+        self,
+        state: Any,
+        input_fields: List[str],
+        expected_params: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         """
-        Extract input values from state.
+        Extract input values from state with mode detection.
 
         Args:
             state: Current state object
             input_fields: List of field names to extract
+            expected_params: Optional list of agent parameter names for
+                positional binding.
 
         Returns:
             Dictionary of extracted input values

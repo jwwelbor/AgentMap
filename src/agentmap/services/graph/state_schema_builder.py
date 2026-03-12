@@ -63,9 +63,10 @@ class StateSchemaBuilder:
                 field_names.add(node.output)
             if node.inputs:
                 if isinstance(node.inputs, list):
-                    field_names.update(node.inputs)
+                    for field in node.inputs:
+                        field_names.add(self._extract_state_key(field, node.name))
                 elif isinstance(node.inputs, str):
-                    field_names.add(node.inputs)
+                    field_names.add(self._extract_state_key(node.inputs, node.name))
 
         field_names.update(self._SYSTEM_FIELDS)
 
@@ -74,6 +75,43 @@ class StateSchemaBuilder:
 
         state_fields = {name: Any for name in field_names}
         return TypedDict(f"{graph.name}State", state_fields, total=False)
+
+    def _extract_state_key(self, field: str, node_name: str) -> str:
+        """Extract the state-side key from a field string, validating mapped syntax.
+
+        For direct fields (no colon), returns the field unchanged.
+        For mapped fields (contains colon), returns the left side (state key)
+        and validates that neither side is empty.
+
+        Args:
+            field: Raw field string from Input_Fields column.
+            node_name: Node name for error messages.
+
+        Returns:
+            The state key to register in the schema.
+
+        Raises:
+            ValueError: If a mapped field has an empty state_key or param_name.
+        """
+        if ":" not in field:
+            return field
+
+        state_key, param_name = field.split(":", 1)
+        state_key = state_key.strip()
+        param_name = param_name.strip()
+
+        if not state_key:
+            raise ValueError(
+                f"Malformed mapped field '{field}' in node '{node_name}': "
+                f"state_key (left of colon) is empty"
+            )
+        if not param_name:
+            raise ValueError(
+                f"Malformed mapped field '{field}' in node '{node_name}': "
+                f"param_name (right of colon) is empty"
+            )
+
+        return state_key
 
     def get_schema_for_graph(self, graph: Optional[Graph] = None) -> type:
         """Get the appropriate state schema for a graph."""

@@ -193,6 +193,7 @@ dev-artifacts/
 .vectorstore/
 .pycharm_env/
 .swarm/
+.sharkconfig.json
 shark-tasks.*
 shark-templates/
 

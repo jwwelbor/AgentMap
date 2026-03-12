@@ -526,7 +526,7 @@ class TestBaseAgent(unittest.TestCase):
         )
 
         # Configure state adapter behavior
-        def mock_get_inputs(state, input_fields):
+        def mock_get_inputs(state, input_fields, **kwargs):
             return {field: state.get(field) for field in input_fields if field in state}
 
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
@@ -726,7 +726,7 @@ class TestBaseAgent(unittest.TestCase):
         )
 
         # Configure mocks for run() method
-        def mock_get_inputs(state, input_fields):
+        def mock_get_inputs(state, input_fields, **kwargs):
             return {field: state.get(field) for field in input_fields if field in state}
 
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
@@ -774,7 +774,7 @@ class TestBaseAgent(unittest.TestCase):
         )
 
         # Configure mocks for run() method
-        def mock_get_inputs(state, input_fields):
+        def mock_get_inputs(state, input_fields, **kwargs):
             return {field: state.get(field) for field in input_fields if field in state}
 
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
@@ -987,6 +987,59 @@ class TestBaseAgent(unittest.TestCase):
         # Verify output_fields list is also in configuration
         self.assertIn("output_fields", config)
         self.assertEqual(config["output_fields"], ["result1", "result2"])
+
+    # =============================================================================
+    # 11. Positional Binding - expected_params Tests
+    # =============================================================================
+
+    # AC-1: BaseAgent declares expected_params with default None
+    def test_expected_params_default_none(self):
+        """Test that BaseAgent has expected_params defaulting to None."""
+        agent = ConcreteAgent(name="test", prompt="test")
+        self.assertIsNone(agent.expected_params)
+        # Verify via getattr to confirm attribute exists (not MISSING)
+        self.assertIsNone(getattr(agent, "expected_params", "MISSING"))
+
+    # AC-2: Subclass can declare expected_params
+    def test_subclass_declares_expected_params(self):
+        """Test that a subclass can declare expected_params."""
+
+        class AddAgent(BaseAgent):
+            expected_params = ["addend_a", "addend_b"]
+
+            def process(self, inputs):
+                return inputs
+
+        agent = AddAgent(name="add", prompt="add")
+        self.assertEqual(agent.expected_params, ["addend_a", "addend_b"])
+
+    # AC-8: BaseAgent.run() passes expected_params to get_inputs()
+    def test_run_passes_expected_params_to_get_inputs(self):
+        """Test that run() passes expected_params to get_inputs()."""
+
+        class ParamAgent(BaseAgent):
+            expected_params = ["a", "b"]
+
+            def process(self, inputs):
+                return "ok"
+
+        agent = ParamAgent(
+            name="param_test",
+            prompt="test",
+            context={"input_fields": ["x", "y"], "output_field": "out"},
+            logger=self.mock_logger,
+            execution_tracking_service=self.mock_execution_tracking_service,
+            state_adapter_service=self.mock_state_adapter_service,
+        )
+        self.mock_state_adapter_service.get_inputs.return_value = {"a": 1, "b": 2}
+        agent.set_execution_tracker(self.mock_tracker)
+
+        agent.run({"x": 1, "y": 2})
+
+        # Verify get_inputs was called with expected_params keyword
+        self.mock_state_adapter_service.get_inputs.assert_called_once()
+        call_args, call_kwargs = self.mock_state_adapter_service.get_inputs.call_args
+        self.assertEqual(call_kwargs.get("expected_params"), ["a", "b"])
 
 
 if __name__ == "__main__":

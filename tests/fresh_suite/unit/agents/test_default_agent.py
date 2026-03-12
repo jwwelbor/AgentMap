@@ -495,7 +495,7 @@ class TestDefaultAgent(unittest.TestCase):
         test_state = {"input": "test message", "other_field": "should be preserved"}
 
         # Configure state adapter to return proper inputs
-        def mock_get_inputs(state, input_fields):
+        def mock_get_inputs(state, input_fields, **kwargs):
             return {field: state.get(field) for field in input_fields if field in state}
 
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
@@ -534,7 +534,7 @@ class TestDefaultAgent(unittest.TestCase):
         test_state = {"input": "test"}
 
         # Configure state adapter
-        def mock_get_inputs(state, input_fields):
+        def mock_get_inputs(state, input_fields, **kwargs):
             return {field: state.get(field) for field in input_fields if field in state}
 
         self.mock_state_adapter_service.get_inputs.side_effect = mock_get_inputs
@@ -558,7 +558,7 @@ class TestDefaultAgent(unittest.TestCase):
         test_state = {"input": "test message"}
 
         # Configure state adapter
-        def mock_get_inputs(state, input_fields):
+        def mock_get_inputs(state, input_fields, **kwargs):
             return {field: state.get(field) for field in input_fields if field in state}
 
         def mock_set_value(state, field, value):

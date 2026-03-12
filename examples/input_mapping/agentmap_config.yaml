@@ -1,0 +1,12 @@
+storage_config_path: "agentmap_config_storage.yaml"
+
+paths:
+  custom_agents: "custom_agents"
+  csv_repository: "workflows"
+
+execution:
+  state_schema: "dynamic"
+  enable_validation: true
+
+logging:
+  level: "INFO"
