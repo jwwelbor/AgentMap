@@ -1,5 +1,5 @@
 GraphName,Node,AgentType,Prompt,Input_Fields,Output_Field,Edge,Success_Next,Failure_Next
 AddBindingModes,DirectAdd,adder,Direct mode — field names match agent params,addend_a|addend_b,direct_sum,MappedAdd,,
-AddBindingModes,MappedAdd,adder,Mapped mode — remap state keys to agent params,direct_sum:addend_a|second_b:addend_b,mapped_sum,MixedAdd,,
+AddBindingModes,MappedAdd,adder,Mapped mode — remap state keys to agent params,direct_sum:addend_a|extra:addend_b,mapped_sum,MixedAdd,,
 AddBindingModes,MixedAdd,adder,Mixed — one mapped and one direct passthrough,mapped_sum:addend_a|addend_b,mixed_sum,Done,,
 AddBindingModes,Done,echo,Done,direct_sum|mapped_sum|mixed_sum,result,,,

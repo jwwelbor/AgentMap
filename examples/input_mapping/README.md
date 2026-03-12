@@ -1,14 +1,13 @@
 # Add Two Numbers — AgentMap Example
 
-A minimal example showing all three input binding modes:
- **positional**, **direct**, and **mapped**.
-
-Demonstrates input
+A minimal example showing how to build a custom agent and chain its output
+into subsequent invocations using AgentMap's CSV workflow format. Demonstrates
+all three input binding modes: **positional**, **direct**, and **mapped**.
 
 ## Files
 
 ```
-add_two_numbers/
+input_mapping/
 ├── agentmap_config.yaml          # Points to custom_agents/ and workflows/
 ├── agentmap_config_storage.yaml  # Storage config (required by agentmap)
 ├── custom_agents/
@@ -93,6 +92,6 @@ is disabled for the entire node — unmapped fields use direct mode instead.
 ## Running
 
 ```bash
-cd examples/add_two_numbers
+cd examples/input_mapping
 python run_example.py
 ```
