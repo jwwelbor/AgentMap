@@ -73,8 +73,12 @@ def _make_mock_telemetry_with_span():
     return svc, mock_span
 
 
-def _make_runnable_agent(telemetry_service=None, agent_class=ConcreteTestAgent,
-                         context=None, name="test_agent"):
+def _make_runnable_agent(
+    telemetry_service=None,
+    agent_class=ConcreteTestAgent,
+    context=None,
+    name="test_agent",
+):
     """Create an agent wired up with mocked services ready for run().
 
     Returns:
@@ -558,7 +562,11 @@ class TestSpanCreation:
         agent.run({"input1": "val"})
 
         args, kwargs = mock_svc.start_span.call_args
-        attrs = kwargs.get("attributes") or args[1] if len(args) > 1 else kwargs.get("attributes")
+        attrs = (
+            kwargs.get("attributes") or args[1]
+            if len(args) > 1
+            else kwargs.get("attributes")
+        )
         assert attrs[AGENT_NAME] == "my_agent"
 
     def test_span_attributes_contain_agent_type(self):
@@ -569,20 +577,26 @@ class TestSpanCreation:
         agent.run({"input1": "val"})
 
         args, kwargs = mock_svc.start_span.call_args
-        attrs = kwargs.get("attributes") or args[1] if len(args) > 1 else kwargs.get("attributes")
+        attrs = (
+            kwargs.get("attributes") or args[1]
+            if len(args) > 1
+            else kwargs.get("attributes")
+        )
         assert attrs[AGENT_TYPE] == "ConcreteTestAgent"
 
     def test_span_attributes_contain_node_name(self):
         """TC-112: Attributes include NODE_NAME."""
         mock_svc, mock_span = _make_mock_telemetry_with_span()
-        agent, _, _, _ = _make_runnable_agent(
-            telemetry_service=mock_svc, name="node_1"
-        )
+        agent, _, _, _ = _make_runnable_agent(telemetry_service=mock_svc, name="node_1")
 
         agent.run({"input1": "val"})
 
         args, kwargs = mock_svc.start_span.call_args
-        attrs = kwargs.get("attributes") or args[1] if len(args) > 1 else kwargs.get("attributes")
+        attrs = (
+            kwargs.get("attributes") or args[1]
+            if len(args) > 1
+            else kwargs.get("attributes")
+        )
         assert attrs[NODE_NAME] == "node_1"
 
     def test_span_attributes_contain_graph_name(self):
@@ -600,7 +614,11 @@ class TestSpanCreation:
         agent.run({"input1": "val"})
 
         args, kwargs = mock_svc.start_span.call_args
-        attrs = kwargs.get("attributes") or args[1] if len(args) > 1 else kwargs.get("attributes")
+        attrs = (
+            kwargs.get("attributes") or args[1]
+            if len(args) > 1
+            else kwargs.get("attributes")
+        )
         assert attrs[GRAPH_NAME] == "my_graph"
 
     def test_graph_name_defaults_to_unknown(self):
@@ -617,7 +635,11 @@ class TestSpanCreation:
         agent.run({"input1": "val"})
 
         args, kwargs = mock_svc.start_span.call_args
-        attrs = kwargs.get("attributes") or args[1] if len(args) > 1 else kwargs.get("attributes")
+        attrs = (
+            kwargs.get("attributes") or args[1]
+            if len(args) > 1
+            else kwargs.get("attributes")
+        )
         assert attrs[GRAPH_NAME] == "unknown"
 
     def test_start_span_called_exactly_once(self):
@@ -799,7 +821,10 @@ class TestTelemetryFailureIsolation:
         # Check that log_warning was called (via the logger mock)
         warning_calls = agent._logger.warning.call_args_list
         warning_text = " ".join(str(c) for c in warning_calls)
-        assert "telemetry" in warning_text.lower() or "instrumentation" in warning_text.lower()
+        assert (
+            "telemetry" in warning_text.lower()
+            or "instrumentation" in warning_text.lower()
+        )
 
 
 class TestMidExecutionEventFailure:
@@ -1057,21 +1082,21 @@ class TestAttributeKeysAreConstants:
         source = inspect.getsource(BaseAgent._run_with_telemetry)
 
         # The attributes dict should use the imported constant names
-        assert "AGENT_NAME" in source, (
-            "_run_with_telemetry must use AGENT_NAME constant, not hardcoded string"
-        )
-        assert "AGENT_TYPE" in source, (
-            "_run_with_telemetry must use AGENT_TYPE constant, not hardcoded string"
-        )
-        assert "NODE_NAME" in source, (
-            "_run_with_telemetry must use NODE_NAME constant, not hardcoded string"
-        )
-        assert "GRAPH_NAME" in source, (
-            "_run_with_telemetry must use GRAPH_NAME constant, not hardcoded string"
-        )
-        assert "AGENT_RUN_SPAN" in source, (
-            "_run_with_telemetry must use AGENT_RUN_SPAN constant, not hardcoded string"
-        )
+        assert (
+            "AGENT_NAME" in source
+        ), "_run_with_telemetry must use AGENT_NAME constant, not hardcoded string"
+        assert (
+            "AGENT_TYPE" in source
+        ), "_run_with_telemetry must use AGENT_TYPE constant, not hardcoded string"
+        assert (
+            "NODE_NAME" in source
+        ), "_run_with_telemetry must use NODE_NAME constant, not hardcoded string"
+        assert (
+            "GRAPH_NAME" in source
+        ), "_run_with_telemetry must use GRAPH_NAME constant, not hardcoded string"
+        assert (
+            "AGENT_RUN_SPAN" in source
+        ), "_run_with_telemetry must use AGENT_RUN_SPAN constant, not hardcoded string"
 
     def test_no_hardcoded_attribute_strings_in_span_call(self):
         """TC-114: No hardcoded 'agentmap.agent.*' strings in _run_with_telemetry."""
@@ -1080,18 +1105,18 @@ class TestAttributeKeysAreConstants:
         source = inspect.getsource(BaseAgent._run_with_telemetry)
 
         # These hardcoded strings should NOT appear -- constants should be used
-        assert '"agentmap.agent.name"' not in source, (
-            "Found hardcoded 'agentmap.agent.name' -- use AGENT_NAME constant"
-        )
-        assert '"agentmap.agent.type"' not in source, (
-            "Found hardcoded 'agentmap.agent.type' -- use AGENT_TYPE constant"
-        )
-        assert '"agentmap.node.name"' not in source, (
-            "Found hardcoded 'agentmap.node.name' -- use NODE_NAME constant"
-        )
-        assert '"agentmap.graph.name"' not in source, (
-            "Found hardcoded 'agentmap.graph.name' -- use GRAPH_NAME constant"
-        )
+        assert (
+            '"agentmap.agent.name"' not in source
+        ), "Found hardcoded 'agentmap.agent.name' -- use AGENT_NAME constant"
+        assert (
+            '"agentmap.agent.type"' not in source
+        ), "Found hardcoded 'agentmap.agent.type' -- use AGENT_TYPE constant"
+        assert (
+            '"agentmap.node.name"' not in source
+        ), "Found hardcoded 'agentmap.node.name' -- use NODE_NAME constant"
+        assert (
+            '"agentmap.graph.name"' not in source
+        ), "Found hardcoded 'agentmap.graph.name' -- use GRAPH_NAME constant"
 
 
 class TestSpanStatusErrorOnException:
@@ -1266,7 +1291,9 @@ class TestFileWriterAgentTelemetry:
 
     def test_file_writer_produces_span(self):
         """TC-160: FileWriterAgent produces a span via super().run()."""
-        agent, mock_svc, mock_span = self._make_file_writer_agent(telemetry_service=True)
+        agent, mock_svc, mock_span = self._make_file_writer_agent(
+            telemetry_service=True
+        )
 
         agent.run({"data": "test content"})
 
@@ -1274,12 +1301,18 @@ class TestFileWriterAgentTelemetry:
 
     def test_file_writer_agent_type_attribute(self):
         """TC-161: AGENT_TYPE attribute is 'FileWriterAgent'."""
-        agent, mock_svc, mock_span = self._make_file_writer_agent(telemetry_service=True)
+        agent, mock_svc, mock_span = self._make_file_writer_agent(
+            telemetry_service=True
+        )
 
         agent.run({"data": "test content"})
 
         args, kwargs = mock_svc.start_span.call_args
-        attrs = kwargs.get("attributes") or args[1] if len(args) > 1 else kwargs.get("attributes")
+        attrs = (
+            kwargs.get("attributes") or args[1]
+            if len(args) > 1
+            else kwargs.get("attributes")
+        )
         assert attrs[AGENT_TYPE] == "FileWriterAgent"
 
     def test_file_writer_contains_no_telemetry_code(self):
@@ -1302,9 +1335,9 @@ class TestFileWriterAgentTelemetry:
             "FileWriterAgent should not call start_span -- "
             "instrumentation is inherited from BaseAgent"
         )
-        assert "_record_lifecycle_event" not in source, (
-            "FileWriterAgent should not call _record_lifecycle_event directly"
-        )
+        assert (
+            "_record_lifecycle_event" not in source
+        ), "FileWriterAgent should not call _record_lifecycle_event directly"
 
     def test_file_writer_calls_super_run(self):
         """TC-162: FileWriterAgent.run() calls super().run()."""
@@ -1313,9 +1346,9 @@ class TestFileWriterAgentTelemetry:
         from agentmap.agents.builtins.storage.file.writer import FileWriterAgent
 
         source = inspect.getsource(FileWriterAgent.run)
-        assert "super().run(state)" in source, (
-            "FileWriterAgent.run() must delegate to super().run()"
-        )
+        assert (
+            "super().run(state)" in source
+        ), "FileWriterAgent.run() must delegate to super().run()"
 
 
 class TestMultipleAgentsMixedTelemetryFailures:

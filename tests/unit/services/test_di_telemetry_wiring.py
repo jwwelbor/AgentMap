@@ -23,7 +23,6 @@ from agentmap.services.agent.agent_constructor_builder import AgentConstructorBu
 from agentmap.services.agent.agent_factory_service import AgentFactoryService
 from agentmap.services.logging_service import LoggingService
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -73,9 +72,7 @@ class TestGraphAgentContainerTelemetryDependency:
 
         assert hasattr(GraphAgentContainer, "telemetry_service")
         # It should be a Dependency provider
-        assert isinstance(
-            GraphAgentContainer.telemetry_service, providers.Dependency
-        )
+        assert isinstance(GraphAgentContainer.telemetry_service, providers.Dependency)
 
     def test_create_graph_agent_instantiation_service_accepts_telemetry(self):
         """_create_graph_agent_instantiation_service accepts telemetry_service param."""
@@ -271,7 +268,9 @@ class TestAgentFactoryServiceTelemetryForwarding:
         mock_instance.name = "test"
         mock_agent_class.return_value = mock_instance
 
-        with patch.object(factory, "resolve_agent_class", return_value=mock_agent_class):
+        with patch.object(
+            factory, "resolve_agent_class", return_value=mock_agent_class
+        ):
             mock_node = MagicMock()
             mock_node.name = "test"
             mock_node.agent_type = "default"
@@ -407,7 +406,9 @@ class TestBackwardCompatibility:
         mock_instance.name = "test"
         mock_agent_class.return_value = mock_instance
 
-        with patch.object(factory, "resolve_agent_class", return_value=mock_agent_class):
+        with patch.object(
+            factory, "resolve_agent_class", return_value=mock_agent_class
+        ):
             # Call WITHOUT telemetry_service -- should not raise
             result = factory.create_agent_instance(
                 node=mock_node,
@@ -508,9 +509,9 @@ class TestConstructorBuilderKwargsAgent:
             telemetry_service=mock_telemetry,
         )
 
-        assert "telemetry_service" in args, (
-            "Agent with **kwargs should receive telemetry_service"
-        )
+        assert (
+            "telemetry_service" in args
+        ), "Agent with **kwargs should receive telemetry_service"
         assert args["telemetry_service"] is mock_telemetry
 
     def test_kwargs_agent_without_telemetry_omits_it(self):

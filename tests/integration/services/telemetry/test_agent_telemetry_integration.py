@@ -40,7 +40,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 from agentmap.agents.base_agent import BaseAgent  # noqa: E402
-from agentmap.services.execution_tracking_service import ExecutionTrackingService  # noqa: E402
+from agentmap.services.execution_tracking_service import (  # noqa: E402
+    ExecutionTrackingService,
+)
 from agentmap.services.state_adapter_service import StateAdapterService  # noqa: E402
 from agentmap.services.telemetry.constants import (  # noqa: E402
     AGENT_NAME,
@@ -49,8 +51,12 @@ from agentmap.services.telemetry.constants import (  # noqa: E402
     GRAPH_NAME,
     NODE_NAME,
 )
-from agentmap.services.telemetry.noop_telemetry_service import NoOpTelemetryService  # noqa: E402
-from agentmap.services.telemetry.otel_telemetry_service import OTELTelemetryService  # noqa: E402
+from agentmap.services.telemetry.noop_telemetry_service import (  # noqa: E402
+    NoOpTelemetryService,
+)
+from agentmap.services.telemetry.otel_telemetry_service import (  # noqa: E402
+    OTELTelemetryService,
+)
 from agentmap.services.telemetry.protocol import TelemetryServiceProtocol  # noqa: E402
 
 # ---------------------------------------------------------------------------
