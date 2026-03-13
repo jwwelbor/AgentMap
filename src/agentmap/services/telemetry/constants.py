@@ -80,6 +80,12 @@ GEN_AI_USAGE_INPUT_TOKENS: str = "gen_ai.usage.input_tokens"
 GEN_AI_USAGE_OUTPUT_TOKENS: str = "gen_ai.usage.output_tokens"
 """Number of output (completion) tokens produced."""
 
+GEN_AI_PROMPT_CONTENT: str = "gen_ai.prompt.content"
+"""Captured LLM prompt content (privacy-controlled, opt-in)."""
+
+GEN_AI_RESPONSE_CONTENT: str = "gen_ai.response.content"
+"""Captured LLM response content (privacy-controlled, opt-in)."""
+
 # ---------------------------------------------------------------------------
 # Routing span attributes
 # ---------------------------------------------------------------------------

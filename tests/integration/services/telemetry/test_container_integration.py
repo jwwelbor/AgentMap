@@ -60,6 +60,10 @@ class TestContainerIntegration:
             # in _set_span_status_ok and _record_phase_event helpers
             # (same pattern as base_agent.py -- E02-F03).
             "services/graph/graph_runner_service.py",
+            # llm_service.py uses function-level OTEL imports in
+            # _set_span_status_ok and _record_llm_response_attributes
+            # (same pattern as base_agent.py, ADR-E02F02-005).
+            "services/llm_service.py",
         }
 
         violations = []

@@ -29,6 +29,16 @@ from agentmap.services.logging_service import LoggingService
 from agentmap.services.routing.circuit_breaker import CircuitBreaker
 from agentmap.services.routing.routing_service import LLMRoutingService
 from agentmap.services.routing.types import RoutingContext
+from agentmap.services.telemetry.constants import (
+    GEN_AI_PROMPT_CONTENT,
+    GEN_AI_REQUEST_MODEL,
+    GEN_AI_RESPONSE_CONTENT,
+    GEN_AI_RESPONSE_MODEL,
+    GEN_AI_SYSTEM,
+    GEN_AI_USAGE_INPUT_TOKENS,
+    GEN_AI_USAGE_OUTPUT_TOKENS,
+    LLM_CALL_SPAN,
+)
 
 
 class LLMService:
@@ -47,6 +57,7 @@ class LLMService:
         llm_models_config_service: LLMModelsConfigService,
         features_registry_service: Optional[FeaturesRegistryService] = None,
         routing_config_service: Optional[LLMRoutingConfigService] = None,
+        telemetry_service: Optional[Any] = None,
     ):
         """
         Initialize the LLM service.
@@ -58,6 +69,8 @@ class LLMService:
             llm_models_config_service: LLM models configuration service
             features_registry_service: Optional features registry service
             routing_config_service: Optional routing configuration service
+            telemetry_service: Optional telemetry service for span management.
+                When None, all telemetry helpers silently no-op.
         """
         self.configuration = configuration
         self._logger = logging_service.get_class_logger("agentmap.llm")
@@ -65,6 +78,7 @@ class LLMService:
         self.llm_models_config = llm_models_config_service
         self.features_registry = features_registry_service
         self.routing_config = routing_config_service
+        self._telemetry_service = telemetry_service
 
         # Initialize helper components
         self._client_factory = LLMClientFactory(logging_service)
@@ -138,7 +152,7 @@ class LLMService:
         Make an LLM call with standardized interface.
 
         When routing_context is provided, routing owns all provider and model selection.
-        The provider and model parameters are ignored in that case — use
+        The provider and model parameters are ignored in that case -- use
         routing_context['provider_preference'] / routing_context['fallback_provider'] and
         routing_context['model_override'] instead. Warnings are logged if provider or model
         are passed alongside routing_context.
@@ -159,17 +173,113 @@ class LLMService:
         Raises:
             LLMServiceError: On various error conditions
         """
+        if self._telemetry_service is not None:
+            return self._call_llm_with_telemetry(
+                messages, provider, model, temperature, routing_context, **kwargs
+            )
+        return self._call_llm_core(
+            messages, provider, model, temperature, routing_context, **kwargs
+        )
+
+    def _call_llm_with_telemetry(
+        self,
+        messages: List[Dict[str, str]],
+        provider: Optional[str],
+        model: Optional[str],
+        temperature: Optional[float],
+        routing_context: Optional[Dict[str, Any]],
+        **kwargs,
+    ) -> str:
+        """Execute call_llm wrapped in a gen_ai.chat telemetry span.
+
+        Falls back to ``_call_llm_core`` if span creation fails (Layer 1
+        isolation).  LLM errors are re-raised directly -- only telemetry
+        infrastructure failures trigger the fallback.
+        """
+        # Build initial attributes from known values
+        initial_attributes: Dict[str, Any] = {}
+        if provider:
+            initial_attributes[GEN_AI_SYSTEM] = self._provider_utils.normalize_provider(
+                provider
+            )
+        if model:
+            initial_attributes[GEN_AI_REQUEST_MODEL] = model
+
+        try:
+            with self._telemetry_service.start_span(
+                LLM_CALL_SPAN,
+                attributes=initial_attributes,
+            ) as span:
+                try:
+                    result = self._call_llm_core(
+                        messages,
+                        provider,
+                        model,
+                        temperature,
+                        routing_context,
+                        **kwargs,
+                    )
+
+                    # Capture optional content on the span
+                    self._capture_llm_content(span, messages, result)
+
+                    # Set span status to OK on success
+                    self._set_span_status_ok(span)
+
+                    return result
+
+                except Exception as e:
+                    # Record exception and set ERROR status on span
+                    self._record_span_exception_safe(span, e)
+                    raise
+
+        except Exception as outer_error:
+            # Distinguish LLM errors (re-raise) from telemetry errors (fallback)
+            if isinstance(
+                outer_error,
+                (
+                    LLMServiceError,
+                    LLMProviderError,
+                    LLMConfigurationError,
+                    LLMDependencyError,
+                ),
+            ):
+                raise
+            # Telemetry setup failure -- fall back to uninstrumented path
+            self._logger.warning(
+                f"Telemetry error, executing without instrumentation: " f"{outer_error}"
+            )
+            return self._call_llm_core(
+                messages, provider, model, temperature, routing_context, **kwargs
+            )
+
+    def _call_llm_core(
+        self,
+        messages: List[Dict[str, str]],
+        provider: Optional[str],
+        model: Optional[str],
+        temperature: Optional[float],
+        routing_context: Optional[Dict[str, Any]],
+        **kwargs,
+    ) -> str:
+        """Execute the actual LLM call logic (routing or direct).
+
+        This is the original ``call_llm()`` body, extracted so that the
+        guard-and-dispatch pattern can wrap it with telemetry.
+        """
         if routing_context is not None and self.routing_service:
             if model is not None:
                 self._logger.warning(
-                    "[LLMService] 'model' parameter is ignored when routing_context is provided. "
-                    "Use routing_context['model_override'] to force a specific model."
+                    "[LLMService] 'model' parameter is ignored when routing_context "
+                    "is provided. Use routing_context['model_override'] to force a "
+                    "specific model."
                 )
             if provider is not None:
                 self._logger.warning(
-                    "[LLMService] 'provider' parameter is ignored when routing_context is provided. "
-                    "Use routing_context['provider_preference'] to influence provider selection "
-                    "or routing_context['fallback_provider'] to set the fallback."
+                    "[LLMService] 'provider' parameter is ignored when routing_context "
+                    "is provided. Use routing_context['provider_preference'] to "
+                    "influence provider selection or "
+                    "routing_context['fallback_provider'] to set the fallback."
                 )
             return self._call_llm_with_routing(messages, routing_context, **kwargs)
         if not provider:
@@ -227,7 +337,8 @@ class LLMService:
 
             self._logger.info(
                 f"Routing decision: {decision.provider}:{decision.model} "
-                f"(complexity: {decision.complexity}, confidence: {decision.confidence:.2f})"
+                f"(complexity: {decision.complexity}, "
+                f"confidence: {decision.confidence:.2f})"
             )
 
             # Make the actual LLM call with the selected provider/model
@@ -364,7 +475,7 @@ class LLMService:
         # Circuit breaker check
         if self._circuit_breaker.is_open(provider, model):
             raise LLMProviderError(
-                f"Circuit breaker open for {provider}:{model} — "
+                f"Circuit breaker open for {provider}:{model} -- "
                 f"skipping call (resets after "
                 f"{self._circuit_breaker.reset}s)"
             )
@@ -380,7 +491,8 @@ class LLMService:
         for attempt in range(1, max_attempts + 1):
             try:
                 self._logger.debug(
-                    f"LLM call to {provider}:{model} (attempt {attempt}/{max_attempts})"
+                    f"LLM call to {provider}:{model} "
+                    f"(attempt {attempt}/{max_attempts})"
                 )
                 response = client.invoke(langchain_messages)
 
@@ -390,6 +502,10 @@ class LLMService:
                 )
 
                 self._circuit_breaker.record_success(provider, model)
+
+                # Record token counts and response model on span (E02-F03)
+                self._record_llm_response_attributes(response, provider)
+
                 self._logger.debug(
                     f"LLM call successful, response length: {len(result)}"
                 )
@@ -399,12 +515,12 @@ class LLMService:
                 typed_error = classify_llm_error(e, provider)
                 last_error = typed_error
 
-                # Non-retryable → fail immediately
+                # Non-retryable -> fail immediately
                 if not is_retryable(typed_error):
                     self._circuit_breaker.record_failure(provider, model)
                     raise typed_error
 
-                # Last attempt → no more retries
+                # Last attempt -> no more retries
                 if attempt == max_attempts:
                     break
 
@@ -452,7 +568,7 @@ class LLMService:
             max_cost_tier=routing_context.get("max_cost_tier"),
             prompt=prompt,
             input_context=routing_context.get("input_context", {}),
-            memory_size=len(messages) - 1 if messages else 0,  # Exclude system message
+            memory_size=len(messages) - 1 if messages else 0,
             input_field_count=routing_context.get("input_field_count", 1),
             cost_optimization=routing_context.get("cost_optimization", True),
             prefer_speed=routing_context.get("prefer_speed", False),
@@ -525,3 +641,110 @@ class LLMService:
             List of available provider names
         """
         return self._provider_utils.get_available_providers()
+
+    # ------------------------------------------------------------------
+    # Telemetry helpers (error-isolated, silent no-op when disabled)
+    # ------------------------------------------------------------------
+
+    def _set_span_status_ok(self, span: Any) -> None:
+        """Set span status to OK using a function-level OTEL import.
+
+        Guards: short-circuits if span is None.
+        Error isolation: catches all exceptions (including ImportError).
+        """
+        if span is None:
+            return
+        try:
+            from opentelemetry.trace import StatusCode
+
+            span.set_status(StatusCode.OK)
+        except Exception:
+            pass
+
+    def _record_span_exception_safe(self, span: Any, exception: Exception) -> None:
+        """Record exception on span safely. No-op on failure."""
+        if span is None or self._telemetry_service is None:
+            return
+        try:
+            self._telemetry_service.record_exception(span, exception)
+        except Exception:
+            pass
+
+    def _record_llm_response_attributes(self, response: Any, provider: str) -> None:
+        """Extract and record token counts and response model from LLM response.
+
+        Uses function-level OTEL import to access the current span.
+        Guards: short-circuits if telemetry_service is None.
+        Error isolation: catches all exceptions silently.
+        """
+        if self._telemetry_service is None:
+            return
+        try:
+            import opentelemetry.trace as trace_api
+
+            current_span = trace_api.get_current_span()
+            if not current_span or not current_span.is_recording():
+                return
+
+            attributes: Dict[str, Any] = {}
+
+            # Extract token usage from LangChain response metadata
+            usage_metadata = getattr(response, "usage_metadata", None)
+            if usage_metadata:
+                if isinstance(usage_metadata, dict):
+                    input_tokens = usage_metadata.get("input_tokens")
+                    output_tokens = usage_metadata.get("output_tokens")
+                else:
+                    input_tokens = getattr(usage_metadata, "input_tokens", None)
+                    output_tokens = getattr(usage_metadata, "output_tokens", None)
+
+                if input_tokens is not None:
+                    attributes[GEN_AI_USAGE_INPUT_TOKENS] = int(input_tokens)
+                if output_tokens is not None:
+                    attributes[GEN_AI_USAGE_OUTPUT_TOKENS] = int(output_tokens)
+
+            # Extract response model if available
+            response_metadata = getattr(response, "response_metadata", None)
+            if response_metadata and isinstance(response_metadata, dict):
+                response_model = response_metadata.get(
+                    "model_name"
+                ) or response_metadata.get("model")
+                if response_model:
+                    attributes[GEN_AI_RESPONSE_MODEL] = response_model
+
+            if attributes:
+                self._telemetry_service.set_span_attributes(current_span, attributes)
+        except Exception:
+            pass
+
+    def _capture_llm_content(
+        self,
+        span: Any,
+        messages: List[Dict[str, str]],
+        result: str,
+    ) -> None:
+        """Optionally capture prompt/response content on the span.
+
+        Flags ``_capture_llm_prompts`` and ``_capture_llm_responses``
+        default to False (privacy-safe).  Content is truncated to 4096
+        characters.
+
+        Guards: short-circuits if telemetry_service is None.
+        Error isolation: catches all exceptions silently.
+        """
+        if self._telemetry_service is None:
+            return
+        try:
+            if getattr(self, "_capture_llm_prompts", False) and messages:
+                prompt_text = self._message_utils.extract_prompt_from_messages(messages)
+                value = prompt_text[:4096]
+                self._telemetry_service.set_span_attributes(
+                    span, {GEN_AI_PROMPT_CONTENT: value}
+                )
+            if getattr(self, "_capture_llm_responses", False) and result:
+                value = str(result)[:4096]
+                self._telemetry_service.set_span_attributes(
+                    span, {GEN_AI_RESPONSE_CONTENT: value}
+                )
+        except Exception:
+            pass
