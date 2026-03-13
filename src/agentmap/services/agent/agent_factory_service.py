@@ -97,6 +97,7 @@ class AgentFactoryService:
         prompt_manager_service: Optional[Any] = None,
         node_registry: Optional[Dict[str, Any]] = None,
         bundle_tools: Optional[Dict[str, Any]] = None,
+        telemetry_service: Optional[Any] = None,
     ) -> Any:
         """Create agent instance with full instantiation and context."""
         from agentmap.exceptions import AgentInitializationError
@@ -166,6 +167,7 @@ class AgentFactoryService:
             prompt_manager_service,
             tools=node_tools,
             logger=self.logger,
+            telemetry_service=telemetry_service,
         )
 
         try:

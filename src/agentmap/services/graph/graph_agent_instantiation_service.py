@@ -51,6 +51,7 @@ class GraphAgentInstantiationService:
         prompt_manager_service: PromptManagerService,
         graph_bundle_service: GraphBundleService,
         declaration_registry_service: Optional[DeclarationRegistryService] = None,
+        telemetry_service: Optional[Any] = None,
     ):
         """
         Initialize with required services for agent instantiation.
@@ -65,6 +66,7 @@ class GraphAgentInstantiationService:
             graph_bundle_service: Service for managing graph bundles
             declaration_registry_service: Optional service for looking up agent declarations
                                          to enable bundle-aware service injection optimization
+            telemetry_service: Optional telemetry service for agent instrumentation
         """
         self.agent_factory = agent_factory_service
         self.agent_injection = agent_service_injection_service
@@ -73,6 +75,7 @@ class GraphAgentInstantiationService:
         self.prompt_manager = prompt_manager_service
         self.graph_bundle_service = graph_bundle_service
         self.declaration_registry = declaration_registry_service
+        self.telemetry_service = telemetry_service
         self.logger = logging_service.get_class_logger(self)
         self._graph_runner_service = None  # Late-bound to avoid circular dependency
 
@@ -294,6 +297,7 @@ class GraphAgentInstantiationService:
             prompt_manager_service=self.prompt_manager,
             node_registry=node_definitions_registry,
             bundle_tools=bundle.tools if bundle.tools else None,
+            telemetry_service=self.telemetry_service,
         )
 
         # Step 2: Inject services using injection service (with agent_type for optimization)
