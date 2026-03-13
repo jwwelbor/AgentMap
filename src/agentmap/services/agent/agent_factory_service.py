@@ -97,6 +97,7 @@ class AgentFactoryService:
         prompt_manager_service: Optional[Any] = None,
         node_registry: Optional[Dict[str, Any]] = None,
         bundle_tools: Optional[Dict[str, Any]] = None,
+        telemetry_service: Optional[Any] = None,
     ) -> Any:
         """Create agent instance with full instantiation and context."""
         from agentmap.exceptions import AgentInitializationError
@@ -120,6 +121,7 @@ class AgentFactoryService:
             "output_field": getattr(node, "output", None),
             "description": getattr(node, "description", ""),
             "is_custom": custom_agents and agent_type in custom_agents,
+            "graph_name": graph_name,
         }
 
         # Add output validation mode from AppConfigService
@@ -165,6 +167,7 @@ class AgentFactoryService:
             prompt_manager_service,
             tools=node_tools,
             logger=self.logger,
+            telemetry_service=telemetry_service,
         )
 
         try:

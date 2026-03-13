@@ -11,6 +11,7 @@ from .container_parts.graph_core import GraphCoreContainer
 from .container_parts.host_registry import HostRegistryContainer
 from .container_parts.llm import LLMContainer
 from .container_parts.storage import StorageContainer
+from .container_parts.telemetry import TelemetryContainer
 from .utils import create_optional_service, safe_get_service
 
 
@@ -32,6 +33,11 @@ class ApplicationContainer(containers.DeclarativeContainer):
     # --- Container parts -------------------------------------------------------
 
     _core = providers.Container(CoreContainer, config=config)
+
+    _telemetry = providers.Container(
+        TelemetryContainer,
+        logging_service=_expose(_core, "logging_service"),
+    )
 
     _storage = providers.Container(
         StorageContainer,
@@ -135,6 +141,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         declaration_registry_service=_expose(
             _bootstrap, "declaration_registry_service"
         ),
+        telemetry_service=_expose(_telemetry, "telemetry_service"),
     )
 
     # --- Core re-exports --------------------------------------------------------
@@ -151,6 +158,10 @@ class ApplicationContainer(containers.DeclarativeContainer):
     file_path_service = _expose(_core, "file_path_service")
     prompt_manager_service = _expose(_core, "prompt_manager_service")
     llm_models_config_service = _expose(_core, "llm_models_config_service")
+
+    # --- Telemetry re-exports ---------------------------------------------------
+
+    telemetry_service = _expose(_telemetry, "telemetry_service")
 
     # --- Storage re-exports -----------------------------------------------------
 

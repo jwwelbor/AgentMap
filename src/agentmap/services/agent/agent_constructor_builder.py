@@ -32,6 +32,7 @@ class AgentConstructorBuilder:
         prompt_manager_service: Optional[Any],
         tools: Optional[Any] = None,
         logger: Optional[Any] = None,
+        telemetry_service: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Build constructor arguments based on agent signature inspection.
@@ -45,6 +46,7 @@ class AgentConstructorBuilder:
             prompt_manager_service: Optional prompt manager service
             tools: Optional list of LangChain tools for ToolAgent
             logger: Optional logger to use for agent instance (defaults to builder's logger)
+            telemetry_service: Optional telemetry service for agent instrumentation
 
         Returns:
             Dictionary of constructor arguments
@@ -52,6 +54,15 @@ class AgentConstructorBuilder:
         # Get the agent class constructor signature
         agent_signature = inspect.signature(agent_class.__init__)
         agent_params = list(agent_signature.parameters.keys())
+        try:
+            has_var_keyword = any(
+                p.kind == inspect.Parameter.VAR_KEYWORD
+                for p in agent_signature.parameters.values()
+            )
+        except (TypeError, AttributeError):
+            # Gracefully handle mocked or non-standard signatures where
+            # parameters.values() is not iterable or items lack .kind
+            has_var_keyword = False
 
         # Build base constructor arguments
         constructor_args = {
@@ -98,6 +109,16 @@ class AgentConstructorBuilder:
             tool_count = len(tools) if tools else 0
             self.logger.debug(
                 f"[AgentConstructorBuilder] Adding {tool_count} tools to {node.name}"
+            )
+
+        # Telemetry service injection (follows execution_tracking_service pattern)
+        # Also inject when agent accepts **kwargs (VAR_KEYWORD parameter)
+        if (
+            "telemetry_service" in agent_params or has_var_keyword
+        ) and telemetry_service is not None:
+            constructor_args["telemetry_service"] = telemetry_service
+            self.logger.trace(
+                f"[AgentConstructorBuilder] Adding telemetry_service to {node.name}"
             )
 
         return constructor_args

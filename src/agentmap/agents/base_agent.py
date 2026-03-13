@@ -20,6 +20,15 @@ from agentmap.services.protocols import (
     StorageServiceProtocol,
 )
 from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.services.telemetry.constants import (
+    AGENT_INPUTS,
+    AGENT_NAME,
+    AGENT_OUTPUTS,
+    AGENT_RUN_SPAN,
+    AGENT_TYPE,
+    GRAPH_NAME,
+    NODE_NAME,
+)
 
 
 class BaseAgent:
@@ -46,6 +55,8 @@ class BaseAgent:
         state_adapter_service: Optional[StateAdapterService] = None,
         # BACKWARD COMPATIBILITY: Support old parameter name from auto-generated agents
         execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        # Telemetry instrumentation (optional -- silent degradation when absent)
+        telemetry_service: Optional[Any] = None,
     ):
         """
         Initialize the agent with infrastructure dependency injection.
@@ -62,6 +73,8 @@ class BaseAgent:
             state_adapter_service: StateAdapterService instance
             execution_tracker_service: DEPRECATED - Use execution_tracking_service instead
                 (kept for backward compatibility with auto-generated agents)
+            telemetry_service: Optional telemetry service for span management.
+                When None, all telemetry helpers silently no-op.
         """
         # Core agent configuration
         self.name = name
@@ -105,6 +118,7 @@ class BaseAgent:
         )
 
         self._state_adapter_service = state_adapter_service
+        self._telemetry_service = telemetry_service
         self._log_prefix = f"[{self.__class__.__name__}:{self.name}]"
 
         # Business services (configured post-construction)
@@ -218,7 +232,8 @@ class BaseAgent:
         """
         Run the agent and return the updated state.
 
-        Uses dependency-injected services for clean execution flow.
+        Dispatches to the instrumented or uninstrumented path based on
+        whether a telemetry service is available (ADR-E02F02-001).
 
         Args:
             state: Current state object
@@ -226,12 +241,78 @@ class BaseAgent:
         Returns:
             Updated state dictionary
         """
-        # Generate execution ID for tracking
         execution_id = str(uuid.uuid4())[:8]
         start_time = time.time()
-
         self.log_trace(f"\n*** AGENT {self.name} RUN START [{execution_id}] ***")
 
+        if self._telemetry_service is not None:
+            return self._run_with_telemetry(state, execution_id, start_time)
+        return self._run_core(state, execution_id, start_time)
+
+    def _run_with_telemetry(
+        self, state: Any, execution_id: str, start_time: float
+    ) -> Dict[str, Any]:
+        """Run agent lifecycle wrapped in a telemetry span.
+
+        Falls back to ``_run_core`` if span creation fails (Layer 1 isolation).
+        Exceptions from the agent lifecycle (including GraphInterrupt) are
+        re-raised directly -- only telemetry infrastructure failures trigger
+        the fallback.
+        """
+        _graph_interrupt: Optional[GraphInterrupt] = None
+        try:
+            with self._telemetry_service.start_span(
+                AGENT_RUN_SPAN,
+                attributes={
+                    AGENT_NAME: self.name,
+                    AGENT_TYPE: self.__class__.__name__,
+                    NODE_NAME: self.name,
+                    GRAPH_NAME: self.context.get("graph_name", "unknown"),
+                },
+            ) as span:
+                try:
+                    return self._execute_agent_lifecycle(
+                        state, execution_id, start_time, span
+                    )
+                except GraphInterrupt as gi:
+                    # Catch GraphInterrupt INSIDE the span context manager so
+                    # that OTEL does not auto-record it as an error.  The span
+                    # status stays UNSET (ADR-E02F02-004) and the interrupt is
+                    # re-raised after the context manager closes cleanly.
+                    _graph_interrupt = gi
+            # Re-raise after the span context manager has closed cleanly
+            if _graph_interrupt is not None:
+                raise _graph_interrupt
+        except GraphInterrupt:
+            # Agent lifecycle exceptions must propagate, not trigger fallback
+            raise
+        except Exception as telemetry_error:
+            # Telemetry failure must never crash the agent (REQ-NF02-004)
+            self.log_warning(
+                f"Telemetry error, executing without instrumentation: "
+                f"{telemetry_error}"
+            )
+            return self._run_core(state, execution_id, start_time)
+
+    def _run_core(
+        self, state: Any, execution_id: str, start_time: float
+    ) -> Dict[str, Any]:
+        """Run agent lifecycle without telemetry instrumentation."""
+        return self._execute_agent_lifecycle(state, execution_id, start_time, span=None)
+
+    def _execute_agent_lifecycle(
+        self,
+        state: Any,
+        execution_id: str,
+        start_time: float,
+        span: Any = None,
+    ) -> Dict[str, Any]:
+        """Execute the full agent lifecycle with optional span instrumentation.
+
+        Contains the core run() logic: input extraction, pre-process, process,
+        post-process, state update construction, and error handling.  When
+        *span* is not None, lifecycle events are recorded on it.
+        """
         # Get required services (will raise if not available)
         tracking_service = self.execution_tracking_service
 
@@ -255,11 +336,13 @@ class BaseAgent:
 
         try:
             # Pre-processing hook for subclasses
+            self._record_lifecycle_event(span, "pre_process.start")
             self.log_trace(
                 f"\n*** AGENT {self.name} PRE-PROCESS START [{execution_id}] ***"
             )
             state, inputs = self._pre_process(state, inputs)
 
+            self._record_lifecycle_event(span, "process.start")
             self.log_trace(
                 f"\n*** AGENT {self.name} PROCESS START [{execution_id}] ***"
             )
@@ -267,12 +350,15 @@ class BaseAgent:
             output = self.process(inputs)
 
             # Post-processing hook for subclasses
+            self._record_lifecycle_event(span, "post_process.start")
             self.log_trace(
                 f"\n*** AGENT {self.name} POST-PROCESS START [{execution_id}] ***"
             )
             state, output = self._post_process(state, inputs, output)
 
-            # Record success using service
+            # Record success
+            self._record_lifecycle_event(span, "agent.complete")
+            self._set_span_status_ok(span)
             tracking_service.record_node_result(tracker, self.name, True, result=output)
 
             # Return partial state update (supports multiple fields for parallel execution)
@@ -329,6 +415,7 @@ class BaseAgent:
 
         except GraphInterrupt:
             # LangGraph interrupt pattern - re-raise to let LangGraph handle checkpoint
+            self._record_lifecycle_event(span, "agent.suspended")
             tracking_service.record_node_result(
                 tracker, self.name, True, result={"status": "suspended"}
             )
@@ -336,6 +423,9 @@ class BaseAgent:
             raise
 
         except Exception as e:
+            # Record exception on span
+            self._record_span_exception(span, e)
+
             # Handle errors
             error_msg = f"Error in {self.name}: {str(e)}"
             self.log_error(error_msg)
@@ -431,6 +521,91 @@ class BaseAgent:
         """
         return state, output
 
+    # ------------------------------------------------------------------
+    # Telemetry helpers (error-isolated, silent no-op when disabled)
+    # ------------------------------------------------------------------
+
+    def _record_lifecycle_event(self, span: Any, event_name: str) -> None:
+        """Add a lifecycle event to *span* via the telemetry service.
+
+        Guards: short-circuits if span or telemetry_service is None.
+        Error isolation: catches all exceptions silently.
+        """
+        if span is None or self._telemetry_service is None:
+            return
+        try:
+            self._telemetry_service.add_span_event(span, event_name)
+        except Exception:
+            pass
+
+    def _set_span_status_ok(self, span: Any) -> None:
+        """Set span status to OK using a function-level OTEL import.
+
+        The ``from opentelemetry.trace import StatusCode`` import is
+        deliberately function-level (ADR-E02F02-005) so that base_agent.py
+        has zero module-level OTEL dependencies.
+
+        Guards: short-circuits if span is None.
+        Error isolation: catches all exceptions (including ImportError).
+        """
+        if span is None:
+            return
+        try:
+            from opentelemetry.trace import StatusCode
+
+            span.set_status(StatusCode.OK)
+        except Exception:
+            pass
+
+    def _record_span_exception(self, span: Any, exception: Exception) -> None:
+        """Record an exception on *span* via the telemetry service.
+
+        Guards: short-circuits if span or telemetry_service is None.
+        Error isolation: catches all exceptions silently.
+        """
+        if span is None or self._telemetry_service is None:
+            return
+        try:
+            self._telemetry_service.record_exception(span, exception)
+        except Exception:
+            pass
+
+    def _capture_io_attributes(
+        self, span: Any, inputs: Any = None, output: Any = None
+    ) -> None:
+        """Optionally capture agent inputs/outputs as span attributes.
+
+        Reads ``capture_agent_inputs`` and ``capture_agent_outputs`` from
+        ``self.context`` (default ``False``).  When enabled, values are
+        serialised via ``str()`` and truncated to 1024 characters.
+
+        Guards: short-circuits if span or telemetry_service is None.
+        Error isolation: catches all exceptions silently.
+        """
+        if span is None or self._telemetry_service is None:
+            return
+        try:
+            capture_inputs = self.context.get("capture_agent_inputs", False)
+            capture_outputs = self.context.get("capture_agent_outputs", False)
+
+            if not capture_inputs and not capture_outputs:
+                return
+
+            attrs: Dict[str, Any] = {}
+            if capture_inputs and inputs is not None:
+                val = str(inputs)[:1024]
+                attrs[AGENT_INPUTS] = val
+            if capture_outputs and output is not None:
+                val = str(output)[:1024]
+                attrs[AGENT_OUTPUTS] = val
+            # Edge case 4: empty string "" is a valid value — captured as-is
+            # because str("") == "" which is <= 1024
+
+            if attrs:
+                self._telemetry_service.set_span_attributes(span, attrs)
+        except Exception:
+            pass
+
     def invoke(self, state: Any) -> Dict[str, Any]:
         """
         LangGraph compatibility method.
@@ -462,6 +637,7 @@ class BaseAgent:
                 "state_adapter_available": self._state_adapter_service is not None,
                 "llm_service_configured": self._llm_service is not None,
                 "storage_service_configured": self._storage_service is not None,
+                "telemetry_service_available": self._telemetry_service is not None,
             },
             "protocols": {
                 "implements_llm_capable": isinstance(self, LLMCapableAgent),
