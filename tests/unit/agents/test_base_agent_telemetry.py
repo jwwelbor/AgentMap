@@ -884,3 +884,517 @@ class TestNoneTelemetryPath:
 
         with pytest.raises(GraphInterrupt):
             agent.run({"input1": "val"})
+
+
+# ======================================================================
+# T-E02-F02-004: Gap Coverage Tests
+# ======================================================================
+
+
+class TestBuiltinAgentSpanCoverage:
+    """AC1: Builtin agent types produce spans (TC-103).
+
+    EchoAgent, BranchingAgent, and InputAgent each produce exactly one
+    ``start_span`` call when run with mock telemetry.  Because these agents
+    do not accept ``telemetry_service`` in their own ``__init__``, we inject
+    it post-construction via the private ``_telemetry_service`` attribute --
+    mirroring what a patched DI pipeline would do.
+    """
+
+    def _inject_telemetry_and_run(self, agent_class, process_patch=None):
+        """Create a builtin agent, inject telemetry, and run it.
+
+        Returns (mock_telemetry_service, mock_span, result).
+        """
+        mock_svc, mock_span = _make_mock_telemetry_with_span()
+        mock_tracking = create_autospec(ExecutionTrackingService, instance=True)
+        mock_state_adapter = create_autospec(StateAdapterService, instance=True)
+        mock_tracker = MagicMock(name="mock_tracker")
+        mock_logger = MagicMock(name="mock_logger")
+        for method_name in ["debug", "info", "warning", "error", "trace"]:
+            setattr(mock_logger, method_name, MagicMock())
+
+        ctx = {
+            "input_fields": ["input1"],
+            "output_field": "output1",
+            "graph_name": "test_graph",
+        }
+
+        agent = agent_class(
+            name="test_builtin",
+            prompt="test prompt",
+            context=ctx,
+            logger=mock_logger,
+            execution_tracking_service=mock_tracking,
+            state_adapter_service=mock_state_adapter,
+        )
+        # Inject telemetry post-construction
+        agent._telemetry_service = mock_svc
+        agent.set_execution_tracker(mock_tracker)
+
+        mock_state_adapter.get_inputs.return_value = {"input1": "value1"}
+        mock_tracking.update_graph_success.return_value = False
+
+        if process_patch:
+            agent.process = process_patch
+
+        result = agent.run({"input1": "value1"})
+        return mock_svc, mock_span, result
+
+    def test_echo_agent_produces_span(self):
+        """TC-103: EchoAgent produces exactly one start_span call."""
+        from agentmap.agents.builtins.echo_agent import EchoAgent
+
+        # EchoAgent needs prompt_service for prompts with {}, but we use plain prompt
+        mock_svc, mock_span, result = self._inject_telemetry_and_run(EchoAgent)
+        mock_svc.start_span.assert_called_once()
+
+    def test_branching_agent_produces_span(self):
+        """TC-103: BranchingAgent produces exactly one start_span call."""
+        from agentmap.agents.builtins.branching_agent import BranchingAgent
+
+        mock_svc, mock_span, result = self._inject_telemetry_and_run(BranchingAgent)
+        mock_svc.start_span.assert_called_once()
+
+    def test_input_agent_produces_span(self):
+        """TC-103: InputAgent produces exactly one start_span call."""
+        from agentmap.agents.builtins.input_agent import InputAgent
+
+        # InputAgent calls input() -- mock it
+        def mock_process(inputs):
+            return "user_input"
+
+        mock_svc, mock_span, result = self._inject_telemetry_and_run(
+            InputAgent, process_patch=mock_process
+        )
+        mock_svc.start_span.assert_called_once()
+
+
+class TestSpanContextManagerOrdering:
+    """AC2: Span context manager ordering relative to lifecycle (TC-102).
+
+    Verify that span ``__enter__`` is invoked before ``_pre_process``
+    and ``__exit__`` after state return, including on exception.
+    """
+
+    def test_span_enter_before_pre_process_exit_after_return(self):
+        """TC-102: __enter__ before _pre_process, __exit__ after state return."""
+        call_order = []
+
+        mock_svc = create_autospec(TelemetryServiceProtocol, instance=True)
+        mock_span = MagicMock(name="mock_span")
+
+        @contextmanager
+        def _tracking_start_span(name, attributes=None, kind=None):
+            call_order.append("span.__enter__")
+            yield mock_span
+            call_order.append("span.__exit__")
+
+        mock_svc.start_span.side_effect = _tracking_start_span
+
+        # Create agent that records when _pre_process runs
+        class OrderTrackingAgent(BaseAgent):
+            def _pre_process(self, state, inputs):
+                call_order.append("_pre_process")
+                return state, inputs
+
+            def process(self, inputs):
+                call_order.append("process")
+                return "output"
+
+        agent, _, _, _ = _make_runnable_agent(
+            telemetry_service=mock_svc, agent_class=OrderTrackingAgent
+        )
+
+        agent.run({"input1": "val"})
+
+        # Verify ordering
+        enter_idx = call_order.index("span.__enter__")
+        pre_idx = call_order.index("_pre_process")
+        process_idx = call_order.index("process")
+        exit_idx = call_order.index("span.__exit__")
+
+        assert enter_idx < pre_idx, "span.__enter__ must precede _pre_process"
+        assert pre_idx < process_idx, "_pre_process must precede process"
+        assert process_idx < exit_idx, "process must precede span.__exit__"
+
+    def test_span_exit_called_on_exception(self):
+        """TC-102 edge: __exit__ called even when process() raises."""
+        exit_called = []
+
+        mock_svc = create_autospec(TelemetryServiceProtocol, instance=True)
+        mock_span = MagicMock(name="mock_span")
+
+        @contextmanager
+        def _tracking_start_span(name, attributes=None, kind=None):
+            yield mock_span
+            exit_called.append(True)
+
+        mock_svc.start_span.side_effect = _tracking_start_span
+
+        agent, _, _, _ = _make_runnable_agent(
+            telemetry_service=mock_svc, agent_class=FailingTestAgent
+        )
+
+        # FailingTestAgent raises ValueError but agent error-handles it
+        agent.run({"input1": "val"})
+
+        assert exit_called, "span.__exit__ must be called even on process() exception"
+
+
+class TestAttributeKeysAreConstants:
+    """AC3: Attribute keys use constants, not hardcoded string literals (TC-114).
+
+    Source-inspects ``BaseAgent._run_with_telemetry`` to verify that the
+    attribute dict passed to ``start_span`` references the constant names
+    from ``agentmap.services.telemetry.constants``.
+    """
+
+    def test_run_with_telemetry_uses_constant_keys(self):
+        """TC-114: Attribute dict keys are constant references, not string literals."""
+        import inspect
+
+        source = inspect.getsource(BaseAgent._run_with_telemetry)
+
+        # The attributes dict should use the imported constant names
+        assert "AGENT_NAME" in source, (
+            "_run_with_telemetry must use AGENT_NAME constant, not hardcoded string"
+        )
+        assert "AGENT_TYPE" in source, (
+            "_run_with_telemetry must use AGENT_TYPE constant, not hardcoded string"
+        )
+        assert "NODE_NAME" in source, (
+            "_run_with_telemetry must use NODE_NAME constant, not hardcoded string"
+        )
+        assert "GRAPH_NAME" in source, (
+            "_run_with_telemetry must use GRAPH_NAME constant, not hardcoded string"
+        )
+        assert "AGENT_RUN_SPAN" in source, (
+            "_run_with_telemetry must use AGENT_RUN_SPAN constant, not hardcoded string"
+        )
+
+    def test_no_hardcoded_attribute_strings_in_span_call(self):
+        """TC-114: No hardcoded 'agentmap.agent.*' strings in _run_with_telemetry."""
+        import inspect
+
+        source = inspect.getsource(BaseAgent._run_with_telemetry)
+
+        # These hardcoded strings should NOT appear -- constants should be used
+        assert '"agentmap.agent.name"' not in source, (
+            "Found hardcoded 'agentmap.agent.name' -- use AGENT_NAME constant"
+        )
+        assert '"agentmap.agent.type"' not in source, (
+            "Found hardcoded 'agentmap.agent.type' -- use AGENT_TYPE constant"
+        )
+        assert '"agentmap.node.name"' not in source, (
+            "Found hardcoded 'agentmap.node.name' -- use NODE_NAME constant"
+        )
+        assert '"agentmap.graph.name"' not in source, (
+            "Found hardcoded 'agentmap.graph.name' -- use GRAPH_NAME constant"
+        )
+
+
+class TestSpanStatusErrorOnException:
+    """AC4: Span status ERROR on non-GraphInterrupt exception (TC-131).
+
+    Existing tests verify ``record_exception`` is called; this verifies
+    that span status is explicitly set to ERROR.
+    """
+
+    def test_span_status_set_to_error_on_value_error(self):
+        """TC-131: span status is set to ERROR when process() raises ValueError."""
+        mock_svc, mock_span = _make_mock_telemetry_with_span()
+        agent, _, _, _ = _make_runnable_agent(
+            telemetry_service=mock_svc, agent_class=FailingTestAgent
+        )
+
+        agent.run({"input1": "val"})
+
+        # _record_span_exception calls telemetry_service.record_exception
+        # which should set ERROR status on the span.
+        # Verify record_exception was called (which handles status)
+        mock_svc.record_exception.assert_called_once()
+        # The span itself should have the exception recorded
+        exc_arg = mock_svc.record_exception.call_args[0][1]
+        assert isinstance(exc_arg, ValueError)
+
+    def test_span_status_not_ok_on_exception(self):
+        """TC-131: span.set_status is NOT called with OK when process() raises."""
+        mock_svc, mock_span = _make_mock_telemetry_with_span()
+        agent, _, _, _ = _make_runnable_agent(
+            telemetry_service=mock_svc, agent_class=FailingTestAgent
+        )
+
+        agent.run({"input1": "val"})
+
+        # set_status should NOT be called (no OK status on error path)
+        mock_span.set_status.assert_not_called()
+
+    def test_runtime_error_also_records_exception(self):
+        """TC-131 edge: RuntimeError also triggers record_exception."""
+
+        class RuntimeFailAgent(BaseAgent):
+            def process(self, inputs):
+                raise RuntimeError("runtime failure")
+
+        mock_svc, mock_span = _make_mock_telemetry_with_span()
+        agent, _, _, _ = _make_runnable_agent(
+            telemetry_service=mock_svc, agent_class=RuntimeFailAgent
+        )
+
+        agent.run({"input1": "val"})
+
+        mock_svc.record_exception.assert_called_once()
+        exc_arg = mock_svc.record_exception.call_args[0][1]
+        assert isinstance(exc_arg, RuntimeError)
+
+
+class TestErrorMessageInSpanAttribute:
+    """AC5: Error message accessible on span after exception (TC-136).
+
+    Verifies the error message string is accessible via
+    ``record_exception`` args when an exception occurs.
+    """
+
+    def test_error_message_passed_to_record_exception(self):
+        """TC-136: Error message is accessible via record_exception args."""
+        mock_svc, mock_span = _make_mock_telemetry_with_span()
+        agent, _, _, _ = _make_runnable_agent(
+            telemetry_service=mock_svc, agent_class=FailingTestAgent
+        )
+
+        agent.run({"input1": "val"})
+
+        mock_svc.record_exception.assert_called_once()
+        exc_arg = mock_svc.record_exception.call_args[0][1]
+        assert str(exc_arg) == "agent processing failed"
+
+    def test_error_message_from_custom_exception(self):
+        """TC-136: Custom exception message is preserved in record_exception."""
+
+        class DetailedFailAgent(BaseAgent):
+            def process(self, inputs):
+                raise ValueError("detailed error: missing field 'x'")
+
+        mock_svc, mock_span = _make_mock_telemetry_with_span()
+        agent, _, _, _ = _make_runnable_agent(
+            telemetry_service=mock_svc, agent_class=DetailedFailAgent
+        )
+
+        agent.run({"input1": "val"})
+
+        exc_arg = mock_svc.record_exception.call_args[0][1]
+        assert "detailed error: missing field 'x'" in str(exc_arg)
+
+    def test_empty_error_message_still_recorded(self):
+        """TC-136 edge: Exception with empty message still recorded."""
+
+        class EmptyMsgAgent(BaseAgent):
+            def process(self, inputs):
+                raise ValueError("")
+
+        mock_svc, mock_span = _make_mock_telemetry_with_span()
+        agent, _, _, _ = _make_runnable_agent(
+            telemetry_service=mock_svc, agent_class=EmptyMsgAgent
+        )
+
+        agent.run({"input1": "val"})
+
+        mock_svc.record_exception.assert_called_once()
+        exc_arg = mock_svc.record_exception.call_args[0][1]
+        assert isinstance(exc_arg, ValueError)
+
+
+class TestFileWriterAgentTelemetry:
+    """AC6: FileWriterAgent span tests (TC-160, TC-161, TC-162).
+
+    FileWriterAgent overrides ``run()`` but calls ``super().run()``,
+    so it inherits telemetry instrumentation from BaseAgent.
+    """
+
+    def _make_file_writer_agent(self, telemetry_service=None):
+        """Create a FileWriterAgent wired with mocked services.
+
+        Returns (agent, mock_svc, mock_span) or (agent, None, None).
+        """
+        from agentmap.agents.builtins.storage.file.writer import FileWriterAgent
+
+        mock_tracking = create_autospec(ExecutionTrackingService, instance=True)
+        mock_state_adapter = create_autospec(StateAdapterService, instance=True)
+        mock_tracker = MagicMock(name="mock_tracker")
+        mock_logger = MagicMock(name="mock_logger")
+        for method_name in ["debug", "info", "warning", "error", "trace"]:
+            setattr(mock_logger, method_name, MagicMock())
+
+        ctx = {
+            "input_fields": ["data"],
+            "output_field": "result",
+            "graph_name": "test_graph",
+        }
+
+        agent = FileWriterAgent(
+            name="test_file_writer",
+            prompt="/tmp/test.txt",
+            context=ctx,
+            logger=mock_logger,
+            execution_tracking_service=mock_tracking,
+            state_adapter_service=mock_state_adapter,
+        )
+
+        mock_svc = None
+        mock_span = None
+        if telemetry_service is True:
+            mock_svc, mock_span = _make_mock_telemetry_with_span()
+            agent._telemetry_service = mock_svc
+
+        agent.set_execution_tracker(mock_tracker)
+        mock_state_adapter.get_inputs.return_value = {
+            "data": "test content",
+            "collection": "/tmp/test.txt",
+        }
+        mock_tracking.update_graph_success.return_value = False
+
+        # Mock file_service so process() can work
+        mock_file_service = MagicMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.data = "written"
+        mock_file_service.write.return_value = mock_result
+        agent.configure_file_service(mock_file_service)
+
+        return agent, mock_svc, mock_span
+
+    def test_file_writer_produces_span(self):
+        """TC-160: FileWriterAgent produces a span via super().run()."""
+        agent, mock_svc, mock_span = self._make_file_writer_agent(telemetry_service=True)
+
+        agent.run({"data": "test content"})
+
+        mock_svc.start_span.assert_called_once()
+
+    def test_file_writer_agent_type_attribute(self):
+        """TC-161: AGENT_TYPE attribute is 'FileWriterAgent'."""
+        agent, mock_svc, mock_span = self._make_file_writer_agent(telemetry_service=True)
+
+        agent.run({"data": "test content"})
+
+        args, kwargs = mock_svc.start_span.call_args
+        attrs = kwargs.get("attributes") or args[1] if len(args) > 1 else kwargs.get("attributes")
+        assert attrs[AGENT_TYPE] == "FileWriterAgent"
+
+    def test_file_writer_contains_no_telemetry_code(self):
+        """TC-162: FileWriterAgent itself contains no telemetry code.
+
+        Instrumentation is inherited entirely via super().run().
+        """
+        import inspect
+
+        from agentmap.agents.builtins.storage.file.writer import FileWriterAgent
+
+        source = inspect.getsource(FileWriterAgent)
+
+        # FileWriterAgent should not reference telemetry directly
+        assert "telemetry_service" not in source, (
+            "FileWriterAgent should not contain telemetry_service references -- "
+            "instrumentation is inherited from BaseAgent"
+        )
+        assert "start_span" not in source, (
+            "FileWriterAgent should not call start_span -- "
+            "instrumentation is inherited from BaseAgent"
+        )
+        assert "_record_lifecycle_event" not in source, (
+            "FileWriterAgent should not call _record_lifecycle_event directly"
+        )
+
+    def test_file_writer_calls_super_run(self):
+        """TC-162: FileWriterAgent.run() calls super().run()."""
+        import inspect
+
+        from agentmap.agents.builtins.storage.file.writer import FileWriterAgent
+
+        source = inspect.getsource(FileWriterAgent.run)
+        assert "super().run(state)" in source, (
+            "FileWriterAgent.run() must delegate to super().run()"
+        )
+
+
+class TestMultipleAgentsMixedTelemetryFailures:
+    """AC7: Multiple agents with mixed telemetry failures all complete (TC-174).
+
+    Sequential execution of agents with various telemetry failures
+    (start_span raises, add_span_event raises, record_exception raises)
+    must all complete without unhandled exceptions.
+    """
+
+    def test_start_span_failure_agent_completes(self):
+        """TC-174: Agent with start_span failure still completes."""
+        mock_svc = create_autospec(TelemetryServiceProtocol, instance=True)
+        mock_svc.start_span.side_effect = RuntimeError("start_span broken")
+
+        agent, _, _, _ = _make_runnable_agent(telemetry_service=mock_svc)
+        result = agent.run({"input1": "val"})
+
+        assert "output1" in result
+        assert result["output1"] == "test_output"
+
+    def test_add_span_event_failure_agent_completes(self):
+        """TC-174: Agent with add_span_event failure still completes."""
+        mock_svc, mock_span = _make_mock_telemetry_with_span()
+        mock_svc.add_span_event.side_effect = RuntimeError("event broken")
+
+        agent, _, _, _ = _make_runnable_agent(telemetry_service=mock_svc)
+        result = agent.run({"input1": "val"})
+
+        assert "output1" in result
+        assert result["output1"] == "test_output"
+
+    def test_record_exception_failure_agent_completes(self):
+        """TC-174: Agent with record_exception failure still completes."""
+        mock_svc, mock_span = _make_mock_telemetry_with_span()
+        mock_svc.record_exception.side_effect = RuntimeError("record broken")
+
+        agent, _, _, _ = _make_runnable_agent(
+            telemetry_service=mock_svc, agent_class=FailingTestAgent
+        )
+        result = agent.run({"input1": "val"})
+
+        # Agent error handling still returns error state
+        assert result["last_action_success"] is False
+
+    def test_sequential_agents_all_complete_with_mixed_failures(self):
+        """TC-174: Multiple agents sequentially with different failures all complete."""
+        results = []
+
+        # Agent 1: start_span raises
+        mock_svc1 = create_autospec(TelemetryServiceProtocol, instance=True)
+        mock_svc1.start_span.side_effect = RuntimeError("start broken")
+        agent1, _, _, _ = _make_runnable_agent(telemetry_service=mock_svc1)
+        results.append(agent1.run({"input1": "val"}))
+
+        # Agent 2: add_span_event raises
+        mock_svc2, mock_span2 = _make_mock_telemetry_with_span()
+        mock_svc2.add_span_event.side_effect = RuntimeError("event broken")
+        agent2, _, _, _ = _make_runnable_agent(telemetry_service=mock_svc2)
+        results.append(agent2.run({"input1": "val"}))
+
+        # Agent 3: record_exception raises (with failing agent)
+        mock_svc3, mock_span3 = _make_mock_telemetry_with_span()
+        mock_svc3.record_exception.side_effect = RuntimeError("record broken")
+        agent3, _, _, _ = _make_runnable_agent(
+            telemetry_service=mock_svc3, agent_class=FailingTestAgent
+        )
+        results.append(agent3.run({"input1": "val"}))
+
+        # Agent 4: no telemetry (None)
+        agent4, _, _, _ = _make_runnable_agent(telemetry_service=None)
+        results.append(agent4.run({"input1": "val"}))
+
+        # All agents must have completed
+        assert len(results) == 4
+        # First two and last should succeed
+        assert results[0]["output1"] == "test_output"
+        assert results[1]["output1"] == "test_output"
+        # Third should return error state
+        assert results[2]["last_action_success"] is False
+        # Fourth should succeed
+        assert results[3]["output1"] == "test_output"

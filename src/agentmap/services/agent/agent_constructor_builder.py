@@ -54,6 +54,10 @@ class AgentConstructorBuilder:
         # Get the agent class constructor signature
         agent_signature = inspect.signature(agent_class.__init__)
         agent_params = list(agent_signature.parameters.keys())
+        has_var_keyword = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD
+            for p in agent_signature.parameters.values()
+        )
 
         # Build base constructor arguments
         constructor_args = {
@@ -103,7 +107,10 @@ class AgentConstructorBuilder:
             )
 
         # Telemetry service injection (follows execution_tracking_service pattern)
-        if "telemetry_service" in agent_params and telemetry_service is not None:
+        # Also inject when agent accepts **kwargs (VAR_KEYWORD parameter)
+        if (
+            "telemetry_service" in agent_params or has_var_keyword
+        ) and telemetry_service is not None:
             constructor_args["telemetry_service"] = telemetry_service
             self.logger.trace(
                 f"[AgentConstructorBuilder] Adding telemetry_service to {node.name}"

@@ -460,3 +460,102 @@ class TestBackwardCompatibility:
         )
 
         assert svc.telemetry_service is None
+
+
+# ===========================================================================
+# AC8 (T-E02-F02-004): Constructor builder **kwargs agent receives telemetry
+# ===========================================================================
+
+
+class TestConstructorBuilderKwargsAgent:
+    """AC8: Agent with **kwargs in __init__ receives telemetry_service.
+
+    The AgentConstructorBuilder should detect ``**kwargs`` in an agent's
+    ``__init__`` and inject ``telemetry_service`` through it.
+    """
+
+    def setup_method(self):
+        self.mock_ls = _mock_logging_service()
+        self.builder = AgentConstructorBuilder(self.mock_ls)
+
+    def _make_node(self, name="test_node"):
+        node = MagicMock()
+        node.name = name
+        node.prompt = "test prompt"
+        return node
+
+    def test_kwargs_agent_receives_telemetry_service(self):
+        """Agent with **kwargs in __init__ receives telemetry_service through kwargs."""
+
+        class KwargsAgent(BaseAgent):
+            """Agent that accepts **kwargs in __init__."""
+
+            def __init__(self, name, prompt, context=None, **kwargs):
+                super().__init__(name=name, prompt=prompt, context=context, **kwargs)
+
+            def process(self, inputs):
+                return "ok"
+
+        mock_telemetry = MagicMock(name="telemetry_service")
+
+        args = self.builder.build_constructor_args(
+            agent_class=KwargsAgent,
+            node=self._make_node(),
+            context={},
+            execution_tracking_service=None,
+            state_adapter_service=None,
+            prompt_manager_service=None,
+            telemetry_service=mock_telemetry,
+        )
+
+        assert "telemetry_service" in args, (
+            "Agent with **kwargs should receive telemetry_service"
+        )
+        assert args["telemetry_service"] is mock_telemetry
+
+    def test_kwargs_agent_without_telemetry_omits_it(self):
+        """Agent with **kwargs but telemetry_service=None omits the key."""
+
+        class KwargsAgent(BaseAgent):
+            def __init__(self, name, prompt, context=None, **kwargs):
+                super().__init__(name=name, prompt=prompt, context=context, **kwargs)
+
+            def process(self, inputs):
+                return "ok"
+
+        args = self.builder.build_constructor_args(
+            agent_class=KwargsAgent,
+            node=self._make_node(),
+            context={},
+            execution_tracking_service=None,
+            state_adapter_service=None,
+            prompt_manager_service=None,
+            telemetry_service=None,
+        )
+
+        assert "telemetry_service" not in args
+
+    def test_kwargs_agent_actually_receives_telemetry_at_runtime(self):
+        """End-to-end: KwargsAgent constructed with builder args receives telemetry."""
+
+        class KwargsAgent(BaseAgent):
+            def __init__(self, name, prompt, context=None, **kwargs):
+                super().__init__(name=name, prompt=prompt, context=context, **kwargs)
+
+            def process(self, inputs):
+                return "ok"
+
+        mock_telemetry = MagicMock(name="telemetry_service")
+
+        args = self.builder.build_constructor_args(
+            agent_class=KwargsAgent,
+            node=self._make_node(),
+            context={},
+            execution_tracking_service=None,
+            state_adapter_service=None,
+            prompt_manager_service=None,
+            telemetry_service=mock_telemetry,
+        )
+
+        agent = KwargsAgent(**args)
+        assert agent._telemetry_service is mock_telemetry
