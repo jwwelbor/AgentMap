@@ -54,10 +54,15 @@ class AgentConstructorBuilder:
         # Get the agent class constructor signature
         agent_signature = inspect.signature(agent_class.__init__)
         agent_params = list(agent_signature.parameters.keys())
-        has_var_keyword = any(
-            p.kind == inspect.Parameter.VAR_KEYWORD
-            for p in agent_signature.parameters.values()
-        )
+        try:
+            has_var_keyword = any(
+                p.kind == inspect.Parameter.VAR_KEYWORD
+                for p in agent_signature.parameters.values()
+            )
+        except (TypeError, AttributeError):
+            # Gracefully handle mocked or non-standard signatures where
+            # parameters.values() is not iterable or items lack .kind
+            has_var_keyword = False
 
         # Build base constructor arguments
         constructor_args = {

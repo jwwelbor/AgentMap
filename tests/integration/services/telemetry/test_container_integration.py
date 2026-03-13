@@ -56,6 +56,10 @@ class TestContainerIntegration:
         allowed_files = {
             "services/telemetry/otel_telemetry_service.py",
             "di/container_parts/telemetry.py",
+            # base_agent.py uses a function-level import of StatusCode
+            # inside _set_span_status_ok (ADR-E02F02-005: no module-level
+            # OTEL dependency, but function-level is permitted).
+            "agents/base_agent.py",
         }
 
         violations = []
