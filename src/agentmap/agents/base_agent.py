@@ -20,6 +20,13 @@ from agentmap.services.protocols import (
     StorageServiceProtocol,
 )
 from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.services.telemetry.constants import (
+    AGENT_NAME,
+    AGENT_RUN_SPAN,
+    AGENT_TYPE,
+    GRAPH_NAME,
+    NODE_NAME,
+)
 
 
 class BaseAgent:
@@ -223,7 +230,8 @@ class BaseAgent:
         """
         Run the agent and return the updated state.
 
-        Uses dependency-injected services for clean execution flow.
+        Dispatches to the instrumented or uninstrumented path based on
+        whether a telemetry service is available (ADR-E02F02-001).
 
         Args:
             state: Current state object
@@ -231,12 +239,67 @@ class BaseAgent:
         Returns:
             Updated state dictionary
         """
-        # Generate execution ID for tracking
         execution_id = str(uuid.uuid4())[:8]
         start_time = time.time()
-
         self.log_trace(f"\n*** AGENT {self.name} RUN START [{execution_id}] ***")
 
+        if self._telemetry_service is not None:
+            return self._run_with_telemetry(state, execution_id, start_time)
+        return self._run_core(state, execution_id, start_time)
+
+    def _run_with_telemetry(
+        self, state: Any, execution_id: str, start_time: float
+    ) -> Dict[str, Any]:
+        """Run agent lifecycle wrapped in a telemetry span.
+
+        Falls back to ``_run_core`` if span creation fails (Layer 1 isolation).
+        Exceptions from the agent lifecycle (including GraphInterrupt) are
+        re-raised directly -- only telemetry infrastructure failures trigger
+        the fallback.
+        """
+        try:
+            with self._telemetry_service.start_span(
+                AGENT_RUN_SPAN,
+                attributes={
+                    AGENT_NAME: self.name,
+                    AGENT_TYPE: self.__class__.__name__,
+                    NODE_NAME: self.name,
+                    GRAPH_NAME: self.context.get("graph_name", "unknown"),
+                },
+            ) as span:
+                return self._execute_agent_lifecycle(
+                    state, execution_id, start_time, span
+                )
+        except GraphInterrupt:
+            # Agent lifecycle exceptions must propagate, not trigger fallback
+            raise
+        except Exception as telemetry_error:
+            # Telemetry failure must never crash the agent (REQ-NF02-004)
+            self.log_warning(
+                f"Telemetry error, executing without instrumentation: "
+                f"{telemetry_error}"
+            )
+            return self._run_core(state, execution_id, start_time)
+
+    def _run_core(
+        self, state: Any, execution_id: str, start_time: float
+    ) -> Dict[str, Any]:
+        """Run agent lifecycle without telemetry instrumentation."""
+        return self._execute_agent_lifecycle(state, execution_id, start_time, span=None)
+
+    def _execute_agent_lifecycle(
+        self,
+        state: Any,
+        execution_id: str,
+        start_time: float,
+        span: Any = None,
+    ) -> Dict[str, Any]:
+        """Execute the full agent lifecycle with optional span instrumentation.
+
+        Contains the core run() logic: input extraction, pre-process, process,
+        post-process, state update construction, and error handling.  When
+        *span* is not None, lifecycle events are recorded on it.
+        """
         # Get required services (will raise if not available)
         tracking_service = self.execution_tracking_service
 
@@ -260,11 +323,13 @@ class BaseAgent:
 
         try:
             # Pre-processing hook for subclasses
+            self._record_lifecycle_event(span, "pre_process.start")
             self.log_trace(
                 f"\n*** AGENT {self.name} PRE-PROCESS START [{execution_id}] ***"
             )
             state, inputs = self._pre_process(state, inputs)
 
+            self._record_lifecycle_event(span, "process.start")
             self.log_trace(
                 f"\n*** AGENT {self.name} PROCESS START [{execution_id}] ***"
             )
@@ -272,12 +337,15 @@ class BaseAgent:
             output = self.process(inputs)
 
             # Post-processing hook for subclasses
+            self._record_lifecycle_event(span, "post_process.start")
             self.log_trace(
                 f"\n*** AGENT {self.name} POST-PROCESS START [{execution_id}] ***"
             )
             state, output = self._post_process(state, inputs, output)
 
-            # Record success using service
+            # Record success
+            self._record_lifecycle_event(span, "agent.complete")
+            self._set_span_status_ok(span)
             tracking_service.record_node_result(tracker, self.name, True, result=output)
 
             # Return partial state update (supports multiple fields for parallel execution)
@@ -334,6 +402,7 @@ class BaseAgent:
 
         except GraphInterrupt:
             # LangGraph interrupt pattern - re-raise to let LangGraph handle checkpoint
+            self._record_lifecycle_event(span, "agent.suspended")
             tracking_service.record_node_result(
                 tracker, self.name, True, result={"status": "suspended"}
             )
@@ -341,6 +410,9 @@ class BaseAgent:
             raise
 
         except Exception as e:
+            # Record exception on span
+            self._record_span_exception(span, e)
+
             # Handle errors
             error_msg = f"Error in {self.name}: {str(e)}"
             self.log_error(error_msg)

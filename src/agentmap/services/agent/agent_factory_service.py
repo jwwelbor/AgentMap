@@ -120,6 +120,7 @@ class AgentFactoryService:
             "output_field": getattr(node, "output", None),
             "description": getattr(node, "description", ""),
             "is_custom": custom_agents and agent_type in custom_agents,
+            "graph_name": graph_name,
         }
 
         # Add output validation mode from AppConfigService
