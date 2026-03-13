@@ -21,7 +21,9 @@ from agentmap.services.protocols import (
 )
 from agentmap.services.state_adapter_service import StateAdapterService
 from agentmap.services.telemetry.constants import (
+    AGENT_INPUTS,
     AGENT_NAME,
+    AGENT_OUTPUTS,
     AGENT_RUN_SPAN,
     AGENT_TYPE,
     GRAPH_NAME,
@@ -592,10 +594,10 @@ class BaseAgent:
             attrs: Dict[str, Any] = {}
             if capture_inputs and inputs is not None:
                 val = str(inputs)[:1024]
-                attrs["agentmap.agent.inputs"] = val
+                attrs[AGENT_INPUTS] = val
             if capture_outputs and output is not None:
                 val = str(output)[:1024]
-                attrs["agentmap.agent.outputs"] = val
+                attrs[AGENT_OUTPUTS] = val
             # Edge case 4: empty string "" is a valid value — captured as-is
             # because str("") == "" which is <= 1024
 

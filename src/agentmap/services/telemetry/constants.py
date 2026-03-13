@@ -42,6 +42,12 @@ NODE_NAME: str = "agentmap.node.name"
 GRAPH_NAME: str = "agentmap.graph.name"
 """Parent graph name."""
 
+AGENT_INPUTS: str = "agentmap.agent.inputs"
+"""Captured agent input state (privacy-controlled)."""
+
+AGENT_OUTPUTS: str = "agentmap.agent.outputs"
+"""Captured agent output (privacy-controlled)."""
+
 # ---------------------------------------------------------------------------
 # Workflow span attributes
 # ---------------------------------------------------------------------------
