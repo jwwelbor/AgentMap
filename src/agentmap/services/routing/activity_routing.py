@@ -5,7 +5,7 @@ This module provides the ActivityRoutingTable class for resolving
 ordered provider/model candidates based on activity configuration.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.logging_service import LoggingService

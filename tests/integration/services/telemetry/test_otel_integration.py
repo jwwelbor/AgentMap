@@ -10,10 +10,7 @@ import pytest
 
 # Skip the entire module if opentelemetry-sdk is not installed.
 try:
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
-        InMemorySpanExporter,
-    )
+    from opentelemetry.sdk.trace import TracerProvider as _TracerProvider  # noqa: F401
 
     _sdk_available = True
 except ImportError:
@@ -59,7 +56,7 @@ class TestOTELIntegration:
         )
 
         svc = OTELTelemetryService()
-        with svc.start_span("test.span", attributes={"key": "value"}) as span:
+        with svc.start_span("test.span", attributes={"key": "value"}):
             pass
 
         spans = otel_exporter.get_finished_spans()

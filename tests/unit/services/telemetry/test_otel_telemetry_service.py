@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from agentmap.services.telemetry.protocol import TelemetryServiceProtocol
 
 
@@ -40,7 +38,7 @@ class TestOTELTelemetryService:
                 OTELTelemetryService,
             )
 
-            svc = OTELTelemetryService()
+            OTELTelemetryService()
             mock_trace.get_tracer.assert_called_once()
             call_args = mock_trace.get_tracer.call_args
             assert call_args[0][0] == "agentmap"

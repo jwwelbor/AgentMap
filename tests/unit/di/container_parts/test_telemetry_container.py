@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from dependency_injector import containers
 
 from agentmap.di.container_parts.telemetry import TelemetryContainer

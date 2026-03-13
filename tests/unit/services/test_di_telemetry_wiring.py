@@ -14,9 +14,7 @@ Tests verify:
 """
 
 import inspect
-from unittest.mock import MagicMock, Mock, create_autospec, patch
-
-import pytest
+from unittest.mock import MagicMock, create_autospec, patch
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.agent.agent_constructor_builder import AgentConstructorBuilder

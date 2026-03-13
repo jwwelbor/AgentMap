@@ -5,8 +5,6 @@ from __future__ import annotations
 import inspect
 import typing
 
-import pytest
-
 from agentmap.services.telemetry.protocol import TelemetryServiceProtocol
 
 

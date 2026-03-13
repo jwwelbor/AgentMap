@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import contextlib
 import inspect
-
-import pytest
 
 from agentmap.services.telemetry.noop_telemetry_service import (
     _NOOP_SPAN,

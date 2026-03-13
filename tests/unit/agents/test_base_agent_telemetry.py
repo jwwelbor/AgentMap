@@ -6,7 +6,7 @@ Test cases TC-100 through TC-182.
 """
 
 from contextlib import contextmanager
-from unittest.mock import MagicMock, call, create_autospec, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 from langgraph.errors import GraphInterrupt
@@ -511,7 +511,7 @@ class TestRunDispatchGuard:
         mock_svc, mock_span = _make_mock_telemetry_with_span()
         agent, _, _, _ = _make_runnable_agent(telemetry_service=mock_svc)
 
-        result = agent.run({"input1": "val"})
+        agent.run({"input1": "val"})
 
         mock_svc.start_span.assert_called_once()
 
@@ -709,7 +709,7 @@ class TestSpanStatusException:
             telemetry_service=mock_svc, agent_class=FailingTestAgent
         )
 
-        result = agent.run({"input1": "val"})
+        agent.run({"input1": "val"})
 
         mock_svc.record_exception.assert_called_once()
         exc_arg = mock_svc.record_exception.call_args[0][1]
@@ -835,7 +835,7 @@ class TestMidExecutionEventFailure:
         mock_svc, mock_span = _make_mock_telemetry_with_span()
         # Make second add_span_event call fail
         call_count = [0]
-        original_side_effect = None
+        # original_side_effect intentionally unused; kept for clarity
 
         def side_effect_fn(*args, **kwargs):
             call_count[0] += 1

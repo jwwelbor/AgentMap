@@ -56,7 +56,7 @@ llm:
     model: "claude-sonnet-4-6"
     temperature: 0.7
   openai:
-    api_key: "test_key"  
+    api_key: "test_key"
     model: "gpt-4o-mini"
     temperature: 0.7
 

@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from agentmap.services.telemetry.protocol import TelemetryServiceProtocol
 
@@ -25,7 +21,7 @@ class TestContainerIntegration:
         svc = container.telemetry_service()
         assert isinstance(svc, TelemetryServiceProtocol)
         # All protocol methods should be callable
-        with svc.start_span("integration.test") as span:
+        with svc.start_span("integration.test"):
             pass
 
     def test_noop_fallback_with_patched_import(self) -> None:
@@ -80,7 +76,7 @@ class TestContainerIntegration:
 
         assert (
             violations == []
-        ), f"opentelemetry imports found outside designated files:\n" + "\n".join(
+        ), "opentelemetry imports found outside designated files:\n" + "\n".join(
             violations
         )
 
