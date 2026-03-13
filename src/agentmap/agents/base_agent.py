@@ -257,6 +257,7 @@ class BaseAgent:
         re-raised directly -- only telemetry infrastructure failures trigger
         the fallback.
         """
+        _graph_interrupt: Optional[GraphInterrupt] = None
         try:
             with self._telemetry_service.start_span(
                 AGENT_RUN_SPAN,
@@ -267,9 +268,19 @@ class BaseAgent:
                     GRAPH_NAME: self.context.get("graph_name", "unknown"),
                 },
             ) as span:
-                return self._execute_agent_lifecycle(
-                    state, execution_id, start_time, span
-                )
+                try:
+                    return self._execute_agent_lifecycle(
+                        state, execution_id, start_time, span
+                    )
+                except GraphInterrupt as gi:
+                    # Catch GraphInterrupt INSIDE the span context manager so
+                    # that OTEL does not auto-record it as an error.  The span
+                    # status stays UNSET (ADR-E02F02-004) and the interrupt is
+                    # re-raised after the context manager closes cleanly.
+                    _graph_interrupt = gi
+            # Re-raise after the span context manager has closed cleanly
+            if _graph_interrupt is not None:
+                raise _graph_interrupt
         except GraphInterrupt:
             # Agent lifecycle exceptions must propagate, not trigger fallback
             raise
