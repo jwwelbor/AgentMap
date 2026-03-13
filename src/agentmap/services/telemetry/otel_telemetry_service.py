@@ -13,7 +13,6 @@ this module and ``di/container_parts/telemetry.py``.
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
 from typing import Any, ContextManager, Dict, Optional
 
 from opentelemetry import trace

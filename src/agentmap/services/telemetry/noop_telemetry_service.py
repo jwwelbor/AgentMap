@@ -11,7 +11,6 @@ as a fallback when the OTEL API package is not installed.
 from __future__ import annotations
 
 import contextlib
-from contextlib import contextmanager
 from typing import Any, ContextManager, Dict, Optional
 
 
