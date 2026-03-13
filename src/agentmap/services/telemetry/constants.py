@@ -58,6 +58,9 @@ GRAPH_NODE_COUNT: str = "agentmap.graph.node_count"
 GRAPH_AGENT_COUNT: str = "agentmap.graph.agent_count"
 """Number of agents in the compiled graph."""
 
+GRAPH_PARENT_NAME: str = "agentmap.graph.parent_name"
+"""Parent graph name for subgraph executions."""
+
 # ---------------------------------------------------------------------------
 # LLM span attributes (GenAI semantic conventions)
 # ---------------------------------------------------------------------------

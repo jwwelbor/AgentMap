@@ -56,6 +56,10 @@ class TestContainerIntegration:
             # inside _set_span_status_ok (ADR-E02F02-005: no module-level
             # OTEL dependency, but function-level is permitted).
             "agents/base_agent.py",
+            # graph_runner_service.py uses function-level OTEL imports
+            # in _set_span_status_ok and _record_phase_event helpers
+            # (same pattern as base_agent.py -- E02-F03).
+            "services/graph/graph_runner_service.py",
         }
 
         violations = []
