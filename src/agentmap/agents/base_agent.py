@@ -46,6 +46,8 @@ class BaseAgent:
         state_adapter_service: Optional[StateAdapterService] = None,
         # BACKWARD COMPATIBILITY: Support old parameter name from auto-generated agents
         execution_tracker_service: Optional[ExecutionTrackingService] = None,
+        # Telemetry instrumentation (optional -- silent degradation when absent)
+        telemetry_service: Optional[Any] = None,
     ):
         """
         Initialize the agent with infrastructure dependency injection.
@@ -62,6 +64,8 @@ class BaseAgent:
             state_adapter_service: StateAdapterService instance
             execution_tracker_service: DEPRECATED - Use execution_tracking_service instead
                 (kept for backward compatibility with auto-generated agents)
+            telemetry_service: Optional telemetry service for span management.
+                When None, all telemetry helpers silently no-op.
         """
         # Core agent configuration
         self.name = name
@@ -105,6 +109,7 @@ class BaseAgent:
         )
 
         self._state_adapter_service = state_adapter_service
+        self._telemetry_service = telemetry_service
         self._log_prefix = f"[{self.__class__.__name__}:{self.name}]"
 
         # Business services (configured post-construction)
@@ -431,6 +436,91 @@ class BaseAgent:
         """
         return state, output
 
+    # ------------------------------------------------------------------
+    # Telemetry helpers (error-isolated, silent no-op when disabled)
+    # ------------------------------------------------------------------
+
+    def _record_lifecycle_event(self, span: Any, event_name: str) -> None:
+        """Add a lifecycle event to *span* via the telemetry service.
+
+        Guards: short-circuits if span or telemetry_service is None.
+        Error isolation: catches all exceptions silently.
+        """
+        if span is None or self._telemetry_service is None:
+            return
+        try:
+            self._telemetry_service.add_span_event(span, event_name)
+        except Exception:
+            pass
+
+    def _set_span_status_ok(self, span: Any) -> None:
+        """Set span status to OK using a function-level OTEL import.
+
+        The ``from opentelemetry.trace import StatusCode`` import is
+        deliberately function-level (ADR-E02F02-005) so that base_agent.py
+        has zero module-level OTEL dependencies.
+
+        Guards: short-circuits if span is None.
+        Error isolation: catches all exceptions (including ImportError).
+        """
+        if span is None:
+            return
+        try:
+            from opentelemetry.trace import StatusCode
+
+            span.set_status(StatusCode.OK)
+        except Exception:
+            pass
+
+    def _record_span_exception(self, span: Any, exception: Exception) -> None:
+        """Record an exception on *span* via the telemetry service.
+
+        Guards: short-circuits if span or telemetry_service is None.
+        Error isolation: catches all exceptions silently.
+        """
+        if span is None or self._telemetry_service is None:
+            return
+        try:
+            self._telemetry_service.record_exception(span, exception)
+        except Exception:
+            pass
+
+    def _capture_io_attributes(
+        self, span: Any, inputs: Any = None, output: Any = None
+    ) -> None:
+        """Optionally capture agent inputs/outputs as span attributes.
+
+        Reads ``capture_agent_inputs`` and ``capture_agent_outputs`` from
+        ``self.context`` (default ``False``).  When enabled, values are
+        serialised via ``str()`` and truncated to 1024 characters.
+
+        Guards: short-circuits if span or telemetry_service is None.
+        Error isolation: catches all exceptions silently.
+        """
+        if span is None or self._telemetry_service is None:
+            return
+        try:
+            capture_inputs = self.context.get("capture_agent_inputs", False)
+            capture_outputs = self.context.get("capture_agent_outputs", False)
+
+            if not capture_inputs and not capture_outputs:
+                return
+
+            attrs: Dict[str, Any] = {}
+            if capture_inputs and inputs is not None:
+                val = str(inputs)[:1024]
+                attrs["agentmap.agent.inputs"] = val
+            if capture_outputs and output is not None:
+                val = str(output)[:1024]
+                attrs["agentmap.agent.outputs"] = val
+            # Edge case 4: empty string "" is a valid value — captured as-is
+            # because str("") == "" which is <= 1024
+
+            if attrs:
+                self._telemetry_service.set_span_attributes(span, attrs)
+        except Exception:
+            pass
+
     def invoke(self, state: Any) -> Dict[str, Any]:
         """
         LangGraph compatibility method.
@@ -462,6 +552,7 @@ class BaseAgent:
                 "state_adapter_available": self._state_adapter_service is not None,
                 "llm_service_configured": self._llm_service is not None,
                 "storage_service_configured": self._storage_service is not None,
+                "telemetry_service_available": self._telemetry_service is not None,
             },
             "protocols": {
                 "implements_llm_capable": isinstance(self, LLMCapableAgent),
