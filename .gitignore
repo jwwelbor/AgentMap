@@ -196,7 +196,7 @@ dev-artifacts/
 .sharkconfig.json
 shark-tasks.*
 shark-templates/
-
+CLAUDE.md
 
 .idea
 # Code Index MCP cache directory
