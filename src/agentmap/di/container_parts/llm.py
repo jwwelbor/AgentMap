@@ -13,6 +13,7 @@ class LLMContainer(containers.DeclarativeContainer):
     availability_cache_service = providers.Dependency()
     features_registry_service = providers.Dependency()
     llm_models_config_service = providers.Dependency()
+    telemetry_service = providers.Dependency()
 
     @staticmethod
     def _create_llm_routing_config_service(
@@ -97,6 +98,7 @@ class LLMContainer(containers.DeclarativeContainer):
         llm_models_config_service,
         features_registry_service,
         llm_routing_config_service,
+        telemetry_service,
     ):
         from agentmap.services.llm_service import LLMService
 
@@ -107,6 +109,7 @@ class LLMContainer(containers.DeclarativeContainer):
             llm_models_config_service,
             features_registry_service,
             llm_routing_config_service,
+            telemetry_service,
         )
 
     llm_service = providers.Singleton(
@@ -117,4 +120,5 @@ class LLMContainer(containers.DeclarativeContainer):
         llm_models_config_service,
         features_registry_service,
         llm_routing_config_service,
+        telemetry_service,
     )

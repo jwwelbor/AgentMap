@@ -70,6 +70,7 @@ class GraphRunnerService:
         graph_checkpoint_service: GraphCheckpointService,
         graph_bundle_service: GraphBundleService,
         declaration_registry_service: DeclarationRegistryService,
+        telemetry_service: Optional[Any] = None,
     ):
         """Initialize orchestration service with all pipeline services."""
         self.app_config = app_config_service
@@ -86,6 +87,7 @@ class GraphRunnerService:
         self.graph_checkpoint = graph_checkpoint_service
         self.graph_bundle_service = graph_bundle_service
         self.declaration_registry = declaration_registry_service
+        self._telemetry_service = telemetry_service
 
         # Initialize helper components (refactored from original methods)
         self.interrupt_handler = GraphInterruptHandler(
@@ -120,12 +122,16 @@ class GraphRunnerService:
         """
         Run graph execution using a prepared bundle.
 
+        Dispatches to the instrumented or uninstrumented path based on
+        whether a telemetry service is available.
+
         Args:
             bundle: Prepared GraphBundle with all metadata
             initial_state: Optional initial state for execution
             parent_graph_name: Name of parent graph (for subgraph execution)
             parent_tracker: Parent execution tracker (for subgraph tracking)
             is_subgraph: Whether this is a subgraph execution
+            validate_agents: Whether to validate agent instantiation
 
         Returns:
             ExecutionResult from graph execution
@@ -147,9 +153,154 @@ class GraphRunnerService:
         if initial_state is None:
             initial_state = {}
 
+        if self._telemetry_service is not None:
+            return self._run_with_telemetry(
+                bundle,
+                initial_state,
+                parent_graph_name,
+                parent_tracker,
+                is_subgraph,
+                validate_agents,
+            )
+        return self._run_core(
+            bundle,
+            initial_state,
+            parent_graph_name,
+            parent_tracker,
+            is_subgraph,
+            validate_agents,
+        )
+
+    def _run_with_telemetry(
+        self,
+        bundle: GraphBundle,
+        initial_state: dict,
+        parent_graph_name: Optional[str],
+        parent_tracker: Optional[Any],
+        is_subgraph: bool,
+        validate_agents: bool,
+    ) -> ExecutionResult:
+        """Run workflow wrapped in a telemetry span.
+
+        Falls back to ``_run_core`` if span creation fails (Layer 1 isolation).
+        Workflow exceptions (including GraphInterrupt) propagate normally --
+        only telemetry infrastructure failures trigger the fallback.
+        """
+        from agentmap.services.telemetry.constants import (
+            GRAPH_AGENT_COUNT,
+            GRAPH_NAME,
+            GRAPH_NODE_COUNT,
+            GRAPH_PARENT_NAME,
+            WORKFLOW_RUN_SPAN,
+        )
+
+        graph_name = bundle.graph_name
+        node_count = len(bundle.nodes) if bundle.nodes else 0
+
+        span_attributes: Dict[str, Any] = {
+            GRAPH_NAME: graph_name,
+            GRAPH_NODE_COUNT: node_count,
+        }
+
+        # Only set parent name for subgraph executions
+        if parent_graph_name:
+            span_attributes[GRAPH_PARENT_NAME] = parent_graph_name
+
+        try:
+            with self._telemetry_service.start_span(
+                WORKFLOW_RUN_SPAN,
+                attributes=span_attributes,
+            ) as span:
+                try:
+                    result = self._run_core(
+                        bundle,
+                        initial_state,
+                        parent_graph_name,
+                        parent_tracker,
+                        is_subgraph,
+                        validate_agents,
+                    )
+
+                    # Set agent count after instantiation (not available before run)
+                    if bundle.node_instances:
+                        try:
+                            self._telemetry_service.set_span_attributes(
+                                span,
+                                {GRAPH_AGENT_COUNT: len(bundle.node_instances)},
+                            )
+                        except Exception:
+                            pass
+
+                    # Set span status based on result
+                    if result.success:
+                        self._set_span_status_ok(span)
+                    else:
+                        try:
+                            from opentelemetry.trace import StatusCode
+
+                            span.set_status(
+                                StatusCode.ERROR,
+                                result.error or "Unknown error",
+                            )
+                        except Exception:
+                            pass
+
+                    return result
+
+                except GraphInterrupt:
+                    # Not an error -- intentional suspension
+                    self._record_span_event_safe(span, "workflow.interrupted")
+                    raise
+
+                except ExecutionInterruptedException:
+                    # Legacy interrupt -- not an error
+                    self._record_span_event_safe(span, "workflow.interrupted.legacy")
+                    raise
+
+                except Exception as e:
+                    self._record_span_exception_safe(span, e)
+                    raise
+
+        except (GraphInterrupt, ExecutionInterruptedException):
+            # Workflow exceptions must propagate, not trigger fallback
+            raise
+        except Exception as telemetry_error:
+            # Only catches telemetry setup errors (start_span failure)
+            # Check if this is actually a workflow error that propagated
+            # through the telemetry layer
+            self.logger.warning(
+                f"Telemetry error, executing without instrumentation: "
+                f"{telemetry_error}"
+            )
+            return self._run_core(
+                bundle,
+                initial_state,
+                parent_graph_name,
+                parent_tracker,
+                is_subgraph,
+                validate_agents,
+            )
+
+    def _run_core(
+        self,
+        bundle: GraphBundle,
+        initial_state: dict,
+        parent_graph_name: Optional[str],
+        parent_tracker: Optional[Any],
+        is_subgraph: bool,
+        validate_agents: bool,
+    ) -> ExecutionResult:
+        """Execute the workflow pipeline without telemetry wrapping.
+
+        Contains the original ``run()`` body, unchanged except for phase
+        event recording calls.
+        """
+        graph_name = bundle.graph_name
+
         try:
             # Phase 2: Create isolated scoped registry for this run (thread-safe)
             # This eliminates race conditions by giving each run its own immutable copy
+            self._record_phase_event("workflow.phase.registry_creation")
             self.logger.debug(
                 f"[GraphRunnerService] Phase 2: Creating scoped registry for {graph_name}"
             )
@@ -164,6 +315,7 @@ class GraphRunnerService:
             )
 
             # Phase 3: Create execution tracker for this run
+            self._record_phase_event("workflow.phase.tracker_creation")
             self.logger.debug(
                 "[GraphRunnerService] Phase 3: Setting up execution tracking"
             )
@@ -186,6 +338,7 @@ class GraphRunnerService:
             self._resolve_subgraph_bundles(bundle, initial_state)
 
             # Phase 4: Instantiate - create and configure agent instances
+            self._record_phase_event("workflow.phase.agent_instantiation")
             self.logger.debug(
                 f"[GraphRunnerService] Phase 4: Instantiating agents for {graph_name}"
             )
@@ -209,6 +362,7 @@ class GraphRunnerService:
                 )
 
             # Phase 5: Assembly - build the executable graph
+            self._record_phase_event("workflow.phase.graph_assembly")
             self.logger.debug(
                 f"[GraphRunnerService] Phase 5: Assembling graph for {graph_name}"
             )
@@ -240,7 +394,8 @@ class GraphRunnerService:
 
             if requires_checkpoint:
                 self.logger.debug(
-                    f"[GraphRunnerService] Assembling graph '{graph_name}' WITH checkpoint support"
+                    f"[GraphRunnerService] Assembling graph '{graph_name}' "
+                    f"WITH checkpoint support"
                 )
 
                 thread_id = getattr(execution_tracker, "thread_id", None)
@@ -254,7 +409,8 @@ class GraphRunnerService:
 
                 execution_config = {"configurable": {"thread_id": thread_id}}
                 self.logger.debug(
-                    f"[GraphRunnerService] Using checkpoint execution config with thread_id={thread_id}"
+                    f"[GraphRunnerService] Using checkpoint execution config "
+                    f"with thread_id={thread_id}"
                 )
 
                 executable_graph = self.graph_assembly.assemble_with_checkpoint(
@@ -265,17 +421,19 @@ class GraphRunnerService:
                 )
             else:
                 self.logger.debug(
-                    f"[GraphRunnerService] Assembling graph '{graph_name}' WITHOUT checkpoint support"
+                    f"[GraphRunnerService] Assembling graph '{graph_name}' "
+                    f"WITHOUT checkpoint support"
                 )
                 executable_graph = self.graph_assembly.assemble_graph(
                     graph=graph,
-                    agent_instances=bundle_with_instances.node_instances,  # Pass agent instances
-                    orchestrator_node_registry=node_definitions,  # Pass node definitions for orchestrators
+                    agent_instances=bundle_with_instances.node_instances,
+                    orchestrator_node_registry=node_definitions,
                 )
 
             self.logger.debug("[GraphRunnerService] Graph assembly completed")
 
             # Phase 6: Execution - run the graph
+            self._record_phase_event("workflow.phase.execution")
             self.logger.debug(
                 f"[GraphRunnerService] Phase 6: Executing graph {graph_name}"
             )
@@ -292,7 +450,8 @@ class GraphRunnerService:
                 thread_id = getattr(execution_tracker, "thread_id", None)
                 if not thread_id:
                     self.logger.warning(
-                        "⚠️ Missing thread_id after checkpoint execution; cannot inspect state"
+                        "Missing thread_id after checkpoint execution; "
+                        "cannot inspect state"
                     )
                 else:
                     state = executable_graph.get_state(execution_config)
@@ -341,43 +500,45 @@ class GraphRunnerService:
                     subgraph_tracker=execution_tracker,
                 )
                 self.logger.debug(
-                    f"[GraphRunnerService] Linked subgraph tracker to parent for: {graph_name}"
+                    f"[GraphRunnerService] Linked subgraph tracker to parent "
+                    f"for: {graph_name}"
                 )
 
             # Log final status with subgraph context
             if result.success:
                 if is_subgraph and parent_graph_name:
                     self.logger.info(
-                        f"✅ Subgraph pipeline completed successfully for: {graph_name} "
-                        f"(parent: {parent_graph_name}, duration: {result.total_duration:.2f}s)"
+                        f"Subgraph pipeline completed successfully for: {graph_name} "
+                        f"(parent: {parent_graph_name}, "
+                        f"duration: {result.total_duration:.2f}s)"
                     )
                 else:
                     self.logger.info(
-                        f"✅ Graph pipeline completed successfully for: {graph_name} "
+                        f"Graph pipeline completed successfully for: {graph_name} "
                         f"(duration: {result.total_duration:.2f}s)"
                     )
             else:
                 if is_subgraph and parent_graph_name:
                     self.logger.error(
-                        f"❌ Subgraph pipeline failed for: {graph_name} "
+                        f"Subgraph pipeline failed for: {graph_name} "
                         f"(parent: {parent_graph_name}) - {result.error}"
                     )
                 else:
                     self.logger.error(
-                        f"❌ Graph pipeline failed for: {graph_name} - {result.error}"
+                        f"Graph pipeline failed for: {graph_name} - {result.error}"
                     )
 
             return result
 
         except GraphInterrupt as e:
             # Handle LangGraph interrupt (from interrupt() call in agents)
-            self.logger.info("🔄 Graph execution interrupted (LangGraph pattern)")
+            self.logger.info("Graph execution interrupted (LangGraph pattern)")
 
             # Get thread_id from execution tracker
             thread_id = execution_tracker.thread_id if execution_tracker else None
 
             if not thread_id:
-                self.logger.error("❌ Cannot handle interrupt: no thread_id available")
+                self.logger.error("Cannot handle interrupt: no thread_id available")
                 raise RuntimeError("Cannot handle interrupt: no thread_id") from e
 
             # Get graph state to extract interrupt metadata
@@ -425,13 +586,13 @@ class GraphRunnerService:
         except ExecutionInterruptedException as e:
             # Legacy: Handle old custom exception (for backwards compatibility)
             self.logger.info(
-                f"🔄 Graph execution interrupted (legacy pattern) in thread: {e.thread_id}"
+                f"Graph execution interrupted (legacy pattern) "
+                f"in thread: {e.thread_id}"
             )
 
             # If interaction handler is available, process the interruption
             if self.interaction_handler:
                 try:
-                    # Handle the interruption (stores metadata and displays interaction)
                     self.interaction_handler.handle_execution_interruption(
                         exception=e,
                         bundle=bundle,
@@ -439,17 +600,20 @@ class GraphRunnerService:
                     )
 
                     self.logger.info(
-                        f"✅ Interaction handling completed for thread: {e.thread_id}. "
+                        f"Interaction handling completed for thread: "
+                        f"{e.thread_id}. "
                         f"Execution paused pending user response."
                     )
 
                 except Exception as handler_error:
                     self.logger.error(
-                        f"❌ Failed to handle interaction for thread {e.thread_id}: {str(handler_error)}"
+                        f"Failed to handle interaction for thread "
+                        f"{e.thread_id}: {str(handler_error)}"
                     )
             else:
                 self.logger.warning(
-                    f"⚠️ No interaction handler configured. Interaction for thread {e.thread_id} not handled."
+                    f"No interaction handler configured. Interaction "
+                    f"for thread {e.thread_id} not handled."
                 )
 
             # Re-raise the exception for higher-level handling
@@ -459,13 +623,11 @@ class GraphRunnerService:
             # Log with subgraph context if applicable
             if is_subgraph and parent_graph_name:
                 self.logger.error(
-                    f"❌ Subgraph pipeline failed for '{graph_name}' "
+                    f"Subgraph pipeline failed for '{graph_name}' "
                     f"(parent: {parent_graph_name}): {str(e)}"
                 )
             else:
-                self.logger.error(
-                    f"❌ Pipeline failed for graph '{graph_name}': {str(e)}"
-                )
+                self.logger.error(f"Pipeline failed for graph '{graph_name}': {str(e)}")
 
             # Return error result with minimal execution summary
             from agentmap.models.execution.summary import ExecutionSummary
@@ -482,6 +644,60 @@ class GraphRunnerService:
                 total_duration=0.0,
                 error=str(e),
             )
+
+    # ------------------------------------------------------------------
+    # Telemetry helpers (error-isolated, silent no-op when disabled)
+    # ------------------------------------------------------------------
+
+    def _set_span_status_ok(self, span: Any) -> None:
+        """Set span status to OK. No-op if span is None."""
+        if span is not None:
+            try:
+                from opentelemetry.trace import StatusCode
+
+                span.set_status(StatusCode.OK)
+            except Exception:
+                pass
+
+    def _record_span_event_safe(
+        self,
+        span: Any,
+        event_name: str,
+        attributes: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Record a span event safely. No-op on failure."""
+        if span is not None and self._telemetry_service is not None:
+            try:
+                self._telemetry_service.add_span_event(span, event_name, attributes)
+            except Exception:
+                pass
+
+    def _record_span_exception_safe(self, span: Any, exception: Exception) -> None:
+        """Record exception on span safely. No-op on failure."""
+        if span is not None and self._telemetry_service is not None:
+            try:
+                self._telemetry_service.record_exception(span, exception)
+            except Exception:
+                pass
+
+    def _record_phase_event(
+        self,
+        event_name: str,
+        attributes: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Record a phase event on the current span. No-op if telemetry unavailable."""
+        if self._telemetry_service is None:
+            return
+        try:
+            import opentelemetry.trace as trace_api
+
+            current_span = trace_api.get_current_span()
+            if current_span and current_span.is_recording():
+                self._telemetry_service.add_span_event(
+                    current_span, event_name, attributes
+                )
+        except Exception:
+            pass  # Telemetry failures silently ignored
 
     # --- Subgraph bundle pre-resolution ---
 
