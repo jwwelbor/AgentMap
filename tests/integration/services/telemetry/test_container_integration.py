@@ -68,6 +68,9 @@ class TestContainerIntegration:
             # _set_span_status_ok and _record_llm_response_attributes
             # (same pattern as base_agent.py, ADR-E02F02-005).
             "services/llm_service.py",
+            # base storage service uses function-level OTEL import in
+            # _set_span_status_ok (same pattern as base_agent.py, E02-F06).
+            "services/storage/base.py",
         }
 
         violations = []
