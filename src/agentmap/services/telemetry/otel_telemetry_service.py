@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Any, ContextManager, Dict, Optional
 
-from opentelemetry import trace
+from opentelemetry import metrics, trace
 from opentelemetry.trace import StatusCode
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,7 @@ class OTELTelemetryService:
         self._tracer = trace.get_tracer(
             "agentmap", instrumenting_library_version=_agentmap_version
         )
+        self._meter = metrics.get_meter("agentmap", version=_agentmap_version)
 
     # -- Protocol methods ---------------------------------------------------
 
@@ -106,3 +107,55 @@ class OTELTelemetryService:
     def get_tracer(self) -> Any:
         """Return the underlying OTEL tracer."""
         return self._tracer
+
+    # -- Metrics methods ----------------------------------------------------
+
+    def get_meter(self, name: str = "agentmap", version: Optional[str] = None) -> Any:
+        """Return an OTEL Meter via ``metrics.get_meter()``."""
+        try:
+            return metrics.get_meter(name, version=version)
+        except Exception as exc:
+            logger.warning("Failed to get meter %r: %s", name, exc)
+            return None
+
+    def create_counter(self, name: str, unit: str = "", description: str = "") -> Any:
+        """Create an OTEL Counter instrument via the stored meter."""
+        try:
+            return self._meter.create_counter(name, unit=unit, description=description)
+        except Exception as exc:
+            logger.warning("Failed to create counter %r: %s", name, exc)
+            from agentmap.services.telemetry.noop_telemetry_service import (
+                _NOOP_COUNTER,
+            )
+
+            return _NOOP_COUNTER
+
+    def create_histogram(self, name: str, unit: str = "", description: str = "") -> Any:
+        """Create an OTEL Histogram instrument via the stored meter."""
+        try:
+            return self._meter.create_histogram(
+                name, unit=unit, description=description
+            )
+        except Exception as exc:
+            logger.warning("Failed to create histogram %r: %s", name, exc)
+            from agentmap.services.telemetry.noop_telemetry_service import (
+                _NOOP_HISTOGRAM,
+            )
+
+            return _NOOP_HISTOGRAM
+
+    def create_up_down_counter(
+        self, name: str, unit: str = "", description: str = ""
+    ) -> Any:
+        """Create an OTEL UpDownCounter instrument via the stored meter."""
+        try:
+            return self._meter.create_up_down_counter(
+                name, unit=unit, description=description
+            )
+        except Exception as exc:
+            logger.warning("Failed to create up_down_counter %r: %s", name, exc)
+            from agentmap.services.telemetry.noop_telemetry_service import (
+                _NOOP_UP_DOWN_COUNTER,
+            )
+
+            return _NOOP_UP_DOWN_COUNTER

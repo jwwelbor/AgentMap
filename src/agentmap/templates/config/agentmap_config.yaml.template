@@ -375,6 +375,34 @@ routing:
     # Timeout for LLM API calls (seconds)
     request_timeout: 60
 
+# Telemetry Configuration
+# Configure OpenTelemetry distributed tracing for observability
+# Requires: pip install agentmap[telemetry] for OTLP export
+telemetry:
+  enabled: false                           # Enable telemetry (default: false)
+
+  # Standalone bootstrap settings
+  # Only used when AgentMap owns the process (CLI, serve, serverless)
+  # Ignored when a host application provides its own TracerProvider
+  exporter: "none"                         # otlp | console | none
+  endpoint: "http://localhost:4317"        # OTLP collector endpoint
+  protocol: "grpc"                         # grpc | http/protobuf
+
+  # Trace content capture (privacy controls)
+  # All default to false for privacy-safe operation
+  # Enable selectively based on data sensitivity requirements
+  traces:
+    agent_inputs: false                    # Include agent input values in spans
+    agent_outputs: false                   # Include agent output values in spans
+    llm_prompts: false                     # Include LLM prompt text in spans
+    llm_responses: false                   # Include LLM response text in spans
+
+  # Resource attributes added to all spans
+  # service.name defaults to "agentmap"; agentmap.version is always included
+  resource:
+    service.name: "agentmap"
+    # deployment.environment: "production"
+
 # Messaging Configuration
 # Configure message publishing for workflow events, graph triggers, and auto-resume
 messaging:

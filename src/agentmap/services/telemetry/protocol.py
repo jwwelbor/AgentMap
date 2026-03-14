@@ -95,3 +95,75 @@ class TelemetryServiceProtocol(Protocol):
             The tracer instance (or ``None`` for the no-op implementation).
         """
         ...
+
+    # -- Metrics methods ----------------------------------------------------
+
+    def get_meter(
+        self,
+        name: str = "agentmap",
+        version: Optional[str] = None,
+    ) -> Any:
+        """Return a meter object for creating metric instruments.
+
+        Args:
+            name: Meter name (typically the instrumentation scope).
+            version: Optional version string for the meter.
+
+        Returns:
+            A meter instance (or ``None`` for the no-op implementation).
+        """
+        ...
+
+    def create_counter(
+        self,
+        name: str,
+        unit: str = "",
+        description: str = "",
+    ) -> Any:
+        """Create a counter instrument.
+
+        Args:
+            name: Counter metric name (use constants from ``constants.py``).
+            unit: Unit of measurement.
+            description: Human-readable description.
+
+        Returns:
+            A counter instrument supporting ``add(amount, attributes)``.
+        """
+        ...
+
+    def create_histogram(
+        self,
+        name: str,
+        unit: str = "",
+        description: str = "",
+    ) -> Any:
+        """Create a histogram instrument.
+
+        Args:
+            name: Histogram metric name (use constants from ``constants.py``).
+            unit: Unit of measurement.
+            description: Human-readable description.
+
+        Returns:
+            A histogram instrument supporting ``record(value, attributes)``.
+        """
+        ...
+
+    def create_up_down_counter(
+        self,
+        name: str,
+        unit: str = "",
+        description: str = "",
+    ) -> Any:
+        """Create an up-down counter instrument.
+
+        Args:
+            name: UpDownCounter metric name.
+            unit: Unit of measurement.
+            description: Human-readable description.
+
+        Returns:
+            An up-down counter supporting ``add(amount, attributes)``.
+        """
+        ...

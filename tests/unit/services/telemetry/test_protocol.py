@@ -74,3 +74,40 @@ class TestProtocolDefinition:
 
         source = inspect.getsource(mod)
         assert "opentelemetry" not in source
+
+    # -- Metrics protocol methods (T-E02-F07-001) ---------------------------
+
+    def test_protocol_defines_get_meter(self) -> None:
+        """Protocol defines get_meter method with name and version params."""
+        assert hasattr(TelemetryServiceProtocol, "get_meter")
+        sig = inspect.signature(TelemetryServiceProtocol.get_meter)
+        params = list(sig.parameters.keys())
+        assert "name" in params
+        assert "version" in params
+
+    def test_protocol_defines_create_counter(self) -> None:
+        """Protocol defines create_counter method."""
+        assert hasattr(TelemetryServiceProtocol, "create_counter")
+        sig = inspect.signature(TelemetryServiceProtocol.create_counter)
+        params = list(sig.parameters.keys())
+        assert "name" in params
+        assert "unit" in params
+        assert "description" in params
+
+    def test_protocol_defines_create_histogram(self) -> None:
+        """Protocol defines create_histogram method."""
+        assert hasattr(TelemetryServiceProtocol, "create_histogram")
+        sig = inspect.signature(TelemetryServiceProtocol.create_histogram)
+        params = list(sig.parameters.keys())
+        assert "name" in params
+        assert "unit" in params
+        assert "description" in params
+
+    def test_protocol_defines_create_up_down_counter(self) -> None:
+        """Protocol defines create_up_down_counter method."""
+        assert hasattr(TelemetryServiceProtocol, "create_up_down_counter")
+        sig = inspect.signature(TelemetryServiceProtocol.create_up_down_counter)
+        params = list(sig.parameters.keys())
+        assert "name" in params
+        assert "unit" in params
+        assert "description" in params

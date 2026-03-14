@@ -52,6 +52,10 @@ class TestContainerIntegration:
         allowed_files = {
             "services/telemetry/otel_telemetry_service.py",
             "di/container_parts/telemetry.py",
+            # bootstrap.py uses deferred OTEL SDK imports inside
+            # _load_otel_imports() for standalone TracerProvider setup
+            # (E02-F04, Architecture Section 5.6).
+            "services/telemetry/bootstrap.py",
             # base_agent.py uses a function-level import of StatusCode
             # inside _set_span_status_ok (ADR-E02F02-005: no module-level
             # OTEL dependency, but function-level is permitted).
@@ -64,6 +68,9 @@ class TestContainerIntegration:
             # _set_span_status_ok and _record_llm_response_attributes
             # (same pattern as base_agent.py, ADR-E02F02-005).
             "services/llm_service.py",
+            # base storage service uses function-level OTEL import in
+            # _set_span_status_ok (same pattern as base_agent.py, E02-F06).
+            "services/storage/base.py",
         }
 
         violations = []

@@ -300,6 +300,11 @@ class GraphAgentInstantiationService:
             telemetry_service=self.telemetry_service,
         )
 
+        # Step 1b: Wire content capture flags into agent context (T-E02-F04-003).
+        # Flags are stored on the telemetry_service singleton by T-E02-F04-004
+        # as ``_content_capture_flags``.  Default to False (privacy-safe).
+        self._wire_content_capture_flags(agent_instance)
+
         # Step 2: Inject services using injection service (with agent_type for optimization)
         # Pass bundle to enable thread-safe scoped registry access
         self._inject_services(
@@ -360,6 +365,30 @@ class GraphAgentInstantiationService:
             return None
 
         return set(all_services)
+
+    def _wire_content_capture_flags(self, agent_instance: Any) -> None:
+        """Wire content capture flags from telemetry config into agent context.
+
+        Reads ``_content_capture_flags`` from the telemetry service singleton
+        (set by T-E02-F04-004) and adds ``capture_agent_inputs`` and
+        ``capture_agent_outputs`` to the agent's context dict.  These are read
+        by ``BaseAgent._capture_io_attributes()`` (E02-F02).
+
+        Defaults to False for all flags (privacy-safe).  Errors are silently
+        ignored so that telemetry wiring never crashes agent instantiation.
+        """
+        try:
+            flags = (
+                getattr(self.telemetry_service, "_content_capture_flags", None) or {}
+            )
+            context = getattr(agent_instance, "context", None)
+            if context is not None and isinstance(context, dict):
+                context["capture_agent_inputs"] = bool(flags.get("agent_inputs", False))
+                context["capture_agent_outputs"] = bool(
+                    flags.get("agent_outputs", False)
+                )
+        except Exception:
+            pass  # Telemetry wiring must never crash agent instantiation
 
     def _inject_services(
         self,

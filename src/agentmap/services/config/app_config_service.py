@@ -19,6 +19,7 @@ from agentmap.services.config.config_managers import (
     LLMConfigManager,
     PathConfigManager,
     RoutingConfigManager,
+    TelemetryConfigManager,
 )
 from agentmap.services.config.config_service import ConfigService
 
@@ -80,6 +81,9 @@ class AppConfigService:
         self._llm_manager = LLMConfigManager(
             self._config_service, self._config_data, self._logger
         )
+        self._telemetry_manager = TelemetryConfigManager(
+            self._config_service, self._config_data, self._logger
+        )
 
         # Group managers for easier iteration
         self._managers = [
@@ -89,6 +93,7 @@ class AppConfigService:
             self._declaration_manager,
             self._routing_manager,
             self._llm_manager,
+            self._telemetry_manager,
         ]
 
     def _setup_bootstrap_logging(self):
@@ -244,6 +249,11 @@ class AppConfigService:
 
         # Merge with defaults
         return self._merge_with_defaults(routing_config, defaults)
+
+    # Telemetry accessors
+    def get_telemetry_config(self) -> Dict[str, Any]:
+        """Get the telemetry configuration with default values."""
+        return self._telemetry_manager.get_telemetry_config()
 
     # Prompts accessors
     def get_prompts_config(self) -> Dict[str, Any]:

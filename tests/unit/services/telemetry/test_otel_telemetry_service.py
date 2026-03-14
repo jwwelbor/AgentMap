@@ -4,36 +4,59 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from agentmap.services.telemetry.noop_telemetry_service import (
+    _NOOP_COUNTER,
+    _NOOP_HISTOGRAM,
+    _NOOP_UP_DOWN_COUNTER,
+)
 from agentmap.services.telemetry.protocol import TelemetryServiceProtocol
 
 
 class TestOTELTelemetryService:
     """TC-010 through TC-016, TC-070, TC-072."""
 
-    def _make_service(self, mock_tracer: MagicMock | None = None) -> object:
-        """Create an OTELTelemetryService with a mocked tracer."""
+    def _make_service(
+        self,
+        mock_tracer: MagicMock | None = None,
+        mock_meter: MagicMock | None = None,
+    ) -> object:
+        """Create an OTELTelemetryService with mocked tracer and meter."""
         if mock_tracer is None:
             mock_tracer = MagicMock()
-        with patch(
-            "agentmap.services.telemetry.otel_telemetry_service.trace"
-        ) as mock_trace:
+        if mock_meter is None:
+            mock_meter = MagicMock()
+        with (
+            patch(
+                "agentmap.services.telemetry.otel_telemetry_service.trace"
+            ) as mock_trace,
+            patch(
+                "agentmap.services.telemetry.otel_telemetry_service.metrics"
+            ) as mock_metrics,
+        ):
             mock_trace.get_tracer.return_value = mock_tracer
-            # Re-import to get fresh instance
+            mock_metrics.get_meter.return_value = mock_meter
             from agentmap.services.telemetry.otel_telemetry_service import (
                 OTELTelemetryService,
             )
 
             svc = OTELTelemetryService()
-        # Patch the tracer to use our mock
+        # Patch to use our mocks
         svc._tracer = mock_tracer
+        svc._meter = mock_meter
         return svc
 
     def test_constructor_calls_get_tracer(self) -> None:
         """TC-010: Constructor calls get_tracer with correct args."""
-        with patch(
-            "agentmap.services.telemetry.otel_telemetry_service.trace"
-        ) as mock_trace:
+        with (
+            patch(
+                "agentmap.services.telemetry.otel_telemetry_service.trace"
+            ) as mock_trace,
+            patch(
+                "agentmap.services.telemetry.otel_telemetry_service.metrics"
+            ) as mock_metrics,
+        ):
             mock_trace.get_tracer.return_value = MagicMock()
+            mock_metrics.get_meter.return_value = MagicMock()
             from agentmap.services.telemetry.otel_telemetry_service import (
                 OTELTelemetryService,
             )
@@ -46,6 +69,28 @@ class TestOTELTelemetryService:
             assert isinstance(
                 call_args[1].get("instrumenting_library_version", ""), str
             )
+
+    def test_constructor_calls_get_meter(self) -> None:
+        """Constructor calls metrics.get_meter with correct args."""
+        with (
+            patch(
+                "agentmap.services.telemetry.otel_telemetry_service.trace"
+            ) as mock_trace,
+            patch(
+                "agentmap.services.telemetry.otel_telemetry_service.metrics"
+            ) as mock_metrics,
+        ):
+            mock_trace.get_tracer.return_value = MagicMock()
+            mock_metrics.get_meter.return_value = MagicMock()
+            from agentmap.services.telemetry.otel_telemetry_service import (
+                OTELTelemetryService,
+            )
+
+            svc = OTELTelemetryService()
+            mock_metrics.get_meter.assert_called_once()
+            call_args = mock_metrics.get_meter.call_args
+            assert call_args[0][0] == "agentmap"
+            assert svc._meter is not None
 
     def test_isinstance_protocol(self) -> None:
         """TC-011: OTELTelemetryService satisfies TelemetryServiceProtocol."""
@@ -133,3 +178,116 @@ class TestOTELTelemetryService:
         mock_span.add_event.side_effect = RuntimeError("otel fail")
         # Should NOT raise
         svc.add_span_event(mock_span, "ev")
+
+    # -- Metrics methods (T-E02-F07-001) ------------------------------------
+
+    def test_get_meter_returns_meter(self) -> None:
+        """get_meter returns an OTEL Meter object."""
+        svc = self._make_service()
+        with patch(
+            "agentmap.services.telemetry.otel_telemetry_service.metrics"
+        ) as mock_metrics:
+            mock_meter = MagicMock()
+            mock_metrics.get_meter.return_value = mock_meter
+            result = svc.get_meter("test.meter", version="1.0")
+            mock_metrics.get_meter.assert_called_once_with("test.meter", version="1.0")
+            assert result is mock_meter
+
+    def test_get_meter_default_version(self) -> None:
+        """get_meter uses None as default version."""
+        svc = self._make_service()
+        with patch(
+            "agentmap.services.telemetry.otel_telemetry_service.metrics"
+        ) as mock_metrics:
+            mock_meter = MagicMock()
+            mock_metrics.get_meter.return_value = mock_meter
+            svc.get_meter("test.meter")
+            mock_metrics.get_meter.assert_called_once_with("test.meter", version=None)
+
+    def test_create_counter_delegates_to_meter(self) -> None:
+        """create_counter creates a counter via the stored meter."""
+        mock_meter = MagicMock()
+        mock_counter = MagicMock()
+        mock_meter.create_counter.return_value = mock_counter
+        svc = self._make_service(mock_meter=mock_meter)
+        result = svc.create_counter(
+            "test.counter", unit="1", description="A test counter"
+        )
+        mock_meter.create_counter.assert_called_once_with(
+            "test.counter", unit="1", description="A test counter"
+        )
+        assert result is mock_counter
+
+    def test_create_histogram_delegates_to_meter(self) -> None:
+        """create_histogram creates a histogram via the stored meter."""
+        mock_meter = MagicMock()
+        mock_histogram = MagicMock()
+        mock_meter.create_histogram.return_value = mock_histogram
+        svc = self._make_service(mock_meter=mock_meter)
+        result = svc.create_histogram(
+            "test.histogram", unit="ms", description="A test histogram"
+        )
+        mock_meter.create_histogram.assert_called_once_with(
+            "test.histogram", unit="ms", description="A test histogram"
+        )
+        assert result is mock_histogram
+
+    def test_create_up_down_counter_delegates_to_meter(self) -> None:
+        """create_up_down_counter creates via the stored meter."""
+        mock_meter = MagicMock()
+        mock_udc = MagicMock()
+        mock_meter.create_up_down_counter.return_value = mock_udc
+        svc = self._make_service(mock_meter=mock_meter)
+        result = svc.create_up_down_counter(
+            "test.gauge", unit="1", description="A test gauge"
+        )
+        mock_meter.create_up_down_counter.assert_called_once_with(
+            "test.gauge", unit="1", description="A test gauge"
+        )
+        assert result is mock_udc
+
+    def test_create_counter_default_params(self) -> None:
+        """create_counter uses empty string defaults for unit and description."""
+        mock_meter = MagicMock()
+        svc = self._make_service(mock_meter=mock_meter)
+        svc.create_counter("test.counter")
+        mock_meter.create_counter.assert_called_once_with(
+            "test.counter", unit="", description=""
+        )
+
+    def test_metrics_methods_handle_errors_gracefully(self) -> None:
+        """Metrics creation methods should not propagate exceptions."""
+        svc = self._make_service()
+        with patch(
+            "agentmap.services.telemetry.otel_telemetry_service.metrics"
+        ) as mock_metrics:
+            mock_metrics.get_meter.side_effect = RuntimeError("otel fail")
+            # get_meter should handle errors and return None
+            result = svc.get_meter("bad")
+            assert result is None
+
+    # -- ISSUE-6: Error fallback to NoOp instruments -------------------------
+
+    def test_create_counter_error_returns_noop_counter(self) -> None:
+        """create_counter returns NoOp counter when OTEL raises."""
+        mock_meter = MagicMock()
+        mock_meter.create_counter.side_effect = RuntimeError("otel fail")
+        svc = self._make_service(mock_meter=mock_meter)
+        result = svc.create_counter("bad.counter")
+        assert result is _NOOP_COUNTER
+
+    def test_create_histogram_error_returns_noop_histogram(self) -> None:
+        """create_histogram returns NoOp histogram when OTEL raises."""
+        mock_meter = MagicMock()
+        mock_meter.create_histogram.side_effect = RuntimeError("otel fail")
+        svc = self._make_service(mock_meter=mock_meter)
+        result = svc.create_histogram("bad.histogram")
+        assert result is _NOOP_HISTOGRAM
+
+    def test_create_up_down_counter_error_returns_noop_udc(self) -> None:
+        """create_up_down_counter returns NoOp UDC when OTEL raises."""
+        mock_meter = MagicMock()
+        mock_meter.create_up_down_counter.side_effect = RuntimeError("otel fail")
+        svc = self._make_service(mock_meter=mock_meter)
+        result = svc.create_up_down_counter("bad.gauge")
+        assert result is _NOOP_UP_DOWN_COUNTER

@@ -46,6 +46,7 @@ class JSONStorageService(BaseStorageService):
         logging_service: LoggingService,  # LoggingService (avoid circular import)
         file_path_service: Optional[FilePathService] = None,
         base_directory: Optional[str] = None,
+        telemetry_service=None,
     ):
         """
         Initialize JSONStorageService.
@@ -56,6 +57,7 @@ class JSONStorageService(BaseStorageService):
             logging_service: Logging service for creating loggers
             file_path_service: Optional file path service for path validation
             base_directory: Optional base directory for system storage operations
+            telemetry_service: Optional telemetry service for span instrumentation
         """
         # Call parent's __init__ with all parameters for injection support
         super().__init__(
@@ -64,6 +66,7 @@ class JSONStorageService(BaseStorageService):
             logging_service,
             file_path_service,
             base_directory,
+            telemetry_service=telemetry_service,
         )
 
     # NOTE: This method is included for backward compatibility
@@ -805,7 +808,7 @@ class JSONStorageService(BaseStorageService):
         # Other data types can't be filtered
         return {"data": data, "count": 0, "is_collection": False}
 
-    def read(
+    def _perform_read(
         self,
         collection: str,
         document_id: Optional[str] = None,
@@ -875,7 +878,7 @@ class JSONStorageService(BaseStorageService):
                 "read", e, collection=collection, document_id=document_id
             )
 
-    def write(
+    def _perform_write(
         self,
         collection: str,
         data: Any,

@@ -34,6 +34,7 @@ class MockStorageService(BaseStorageService):
         logging_service: Any,
         file_path_service: Any = None,
         base_directory: Any = None,
+        telemetry_service: Any = None,
     ):
         super().__init__(
             provider_name,
@@ -41,6 +42,7 @@ class MockStorageService(BaseStorageService):
             logging_service,
             file_path_service,
             base_directory,
+            telemetry_service=telemetry_service,
         )
         self.is_healthy = True
         self.initialization_error = None
@@ -53,12 +55,12 @@ class MockStorageService(BaseStorageService):
     def _perform_health_check(self) -> bool:
         return self.is_healthy
 
-    def read(
+    def _perform_read(
         self, collection: str, document_id=None, query=None, path=None, **kwargs
     ) -> Any:
         return {"mock": "read_result", "collection": collection}
 
-    def write(
+    def _perform_write(
         self,
         collection: str,
         data: Any,
@@ -82,12 +84,12 @@ class FailingStorageService(BaseStorageService):
     def _perform_health_check(self) -> bool:
         return False
 
-    def read(
+    def _perform_read(
         self, collection: str, document_id=None, query=None, path=None, **kwargs
     ) -> Any:
         raise Exception("Read failed")
 
-    def write(
+    def _perform_write(
         self,
         collection: str,
         data: Any,

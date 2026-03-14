@@ -37,6 +37,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     _telemetry = providers.Container(
         TelemetryContainer,
         logging_service=_expose(_core, "logging_service"),
+        app_config_service=_expose(_core, "app_config_service"),
     )
 
     _storage = providers.Container(
@@ -46,6 +47,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         availability_cache_service=_expose(_core, "availability_cache_service"),
         logging_service=_expose(_core, "logging_service"),
         file_path_service=_expose(_core, "file_path_service"),
+        telemetry_service=_expose(_telemetry, "telemetry_service"),
     )
 
     _bootstrap = providers.Container(

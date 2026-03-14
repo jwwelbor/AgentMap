@@ -102,7 +102,7 @@ class LLMContainer(containers.DeclarativeContainer):
     ):
         from agentmap.services.llm_service import LLMService
 
-        return LLMService(
+        svc = LLMService(
             app_config_service,
             logging_service,
             llm_routing_service,
@@ -111,6 +111,15 @@ class LLMContainer(containers.DeclarativeContainer):
             llm_routing_config_service,
             telemetry_service,
         )
+
+        # Wire content capture flags from telemetry config (T-E02-F04-003).
+        # Flags are stored on the telemetry_service singleton by T-E02-F04-004
+        # as ``_content_capture_flags``.  Default to False (privacy-safe).
+        flags = getattr(telemetry_service, "_content_capture_flags", None) or {}
+        svc._capture_llm_prompts = bool(flags.get("llm_prompts", False))
+        svc._capture_llm_responses = bool(flags.get("llm_responses", False))
+
+        return svc
 
     llm_service = providers.Singleton(
         _create_llm_service,

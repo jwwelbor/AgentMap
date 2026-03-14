@@ -21,6 +21,9 @@ from agentmap.services.config.config_managers.path_config_manager import (
 from agentmap.services.config.config_managers.routing_config_manager import (
     RoutingConfigManager,
 )
+from agentmap.services.config.config_managers.telemetry_config_manager import (
+    TelemetryConfigManager,
+)
 
 __all__ = [
     "BaseConfigManager",
@@ -30,4 +33,5 @@ __all__ = [
     "DeclarationConfigManager",
     "RoutingConfigManager",
     "LLMConfigManager",
+    "TelemetryConfigManager",
 ]

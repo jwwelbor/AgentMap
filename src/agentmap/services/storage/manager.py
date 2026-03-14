@@ -32,6 +32,7 @@ class StorageServiceManager:
         logging_service: LoggingService,
         file_path_service: FilePathService,
         blob_storage_service: Optional[Any] = None,
+        telemetry_service: Optional[Any] = None,
     ):
         """
         Initialize the storage service manager.
@@ -41,12 +42,14 @@ class StorageServiceManager:
             logging_service: Logging service for creating loggers
             file_path_service: File path service for path validation and operations
             blob_storage_service: Optional blob storage service for cloud storage operations
+            telemetry_service: Optional telemetry service for span instrumentation
         """
         self.configuration = configuration
         self.logging_service = logging_service
         self.file_path_service = file_path_service
         self._logger = logging_service.get_class_logger(self)
         self.blob_storage_service = blob_storage_service
+        self._telemetry_service = telemetry_service
 
         # Storage for services and service classes
         self._services: Dict[str, StorageService] = {}
@@ -196,6 +199,7 @@ class StorageServiceManager:
                 self.logging_service,
                 base_directory=base_directory,
                 file_path_service=self.file_path_service,
+                telemetry_service=self._telemetry_service,
             )
 
             # Cache the service

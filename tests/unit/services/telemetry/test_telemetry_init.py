@@ -87,3 +87,45 @@ class TestTelemetryPackageInit:
             from agentmap.services import telemetry
 
             _ = telemetry.NonExistentThing  # type: ignore[attr-defined]
+
+    # -- Metric constant re-exports (T-E02-F07-001) -------------------------
+
+    def test_metric_name_constants_importable_from_package(self) -> None:
+        """Metric name constants are importable from package root."""
+        from agentmap.services.telemetry import (
+            METRIC_LLM_CIRCUIT_BREAKER,
+            METRIC_LLM_DURATION,
+            METRIC_LLM_ERRORS,
+            METRIC_LLM_FALLBACK,
+            METRIC_LLM_ROUTING_CACHE_HIT,
+            METRIC_LLM_TOKENS_INPUT,
+            METRIC_LLM_TOKENS_OUTPUT,
+        )
+
+        for val in [
+            METRIC_LLM_DURATION,
+            METRIC_LLM_TOKENS_INPUT,
+            METRIC_LLM_TOKENS_OUTPUT,
+            METRIC_LLM_ERRORS,
+            METRIC_LLM_ROUTING_CACHE_HIT,
+            METRIC_LLM_CIRCUIT_BREAKER,
+            METRIC_LLM_FALLBACK,
+        ]:
+            assert isinstance(val, str) and len(val) > 0
+
+    def test_metric_dimension_constants_importable_from_package(self) -> None:
+        """Metric dimension constants are importable from package root."""
+        from agentmap.services.telemetry import (
+            METRIC_DIM_ERROR_TYPE,
+            METRIC_DIM_TIER,
+            METRIC_DIM_MODEL,
+            METRIC_DIM_PROVIDER,
+        )
+
+        for val in [
+            METRIC_DIM_PROVIDER,
+            METRIC_DIM_MODEL,
+            METRIC_DIM_ERROR_TYPE,
+            METRIC_DIM_TIER,
+        ]:
+            assert isinstance(val, str) and len(val) > 0
