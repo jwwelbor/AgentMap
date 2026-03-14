@@ -117,7 +117,7 @@ class TestTelemetryPackageInit:
         """Metric dimension constants are importable from package root."""
         from agentmap.services.telemetry import (
             METRIC_DIM_ERROR_TYPE,
-            METRIC_DIM_FALLBACK_REASON,
+            METRIC_DIM_TIER,
             METRIC_DIM_MODEL,
             METRIC_DIM_PROVIDER,
         )
@@ -126,6 +126,6 @@ class TestTelemetryPackageInit:
             METRIC_DIM_PROVIDER,
             METRIC_DIM_MODEL,
             METRIC_DIM_ERROR_TYPE,
-            METRIC_DIM_FALLBACK_REASON,
+            METRIC_DIM_TIER,
         ]:
             assert isinstance(val, str) and len(val) > 0

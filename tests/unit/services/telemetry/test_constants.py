@@ -126,7 +126,7 @@ class TestConstants:
         "METRIC_DIM_PROVIDER",
         "METRIC_DIM_MODEL",
         "METRIC_DIM_ERROR_TYPE",
-        "METRIC_DIM_FALLBACK_REASON",
+        "METRIC_DIM_TIER",
     ]
 
     def test_metric_name_constants_exist_and_are_strings(self) -> None:

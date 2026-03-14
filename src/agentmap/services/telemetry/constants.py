@@ -149,5 +149,5 @@ METRIC_DIM_MODEL: str = "model"
 METRIC_DIM_ERROR_TYPE: str = "error_type"
 """Error type dimension for metric attributes."""
 
-METRIC_DIM_FALLBACK_REASON: str = "source"
-"""Fallback reason dimension for metric attributes."""
+METRIC_DIM_TIER: str = "tier"
+"""Tier dimension for metric attributes."""
