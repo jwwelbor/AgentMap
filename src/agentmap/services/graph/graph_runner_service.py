@@ -445,6 +445,9 @@ class GraphRunnerService:
                 config=execution_config,
             )
 
+            # Phase 7: Finalization - post-execution checks and cleanup
+            self._record_phase_event("workflow.phase.finalization")
+
             # Check for suspended state even when invocation returns normally
             if requires_checkpoint and execution_config:
                 thread_id = getattr(execution_tracker, "thread_id", None)
