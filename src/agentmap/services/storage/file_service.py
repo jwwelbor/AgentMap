@@ -56,6 +56,7 @@ class FileStorageService(BaseStorageService):
         logging_service: LoggingService,
         file_path_service: FilePathService,
         base_directory: Optional[str] = None,
+        telemetry_service=None,
     ):
         """
         Initialize FileStorageService.
@@ -66,6 +67,7 @@ class FileStorageService(BaseStorageService):
             logging_service: Logging service for creating loggers
             file_path_service: Optional file path service for path validation
             base_directory: Optional base directory for system storage operations
+            telemetry_service: Optional telemetry service for span instrumentation
         """
         # Call parent's __init__ with all parameters for injection support
         super().__init__(
@@ -74,6 +76,7 @@ class FileStorageService(BaseStorageService):
             logging_service,
             file_path_service,
             base_directory,
+            telemetry_service=telemetry_service,
         )
 
         # Initialize specialized handlers (lazy initialization after client setup)
@@ -313,7 +316,7 @@ class FileStorageService(BaseStorageService):
             self._create_success_result,
         )
 
-    def read(
+    def _perform_read(
         self,
         collection: str,
         document_id: Optional[str] = None,
@@ -533,7 +536,7 @@ class FileStorageService(BaseStorageService):
                 "read", e, collection=collection, document_id=document_id
             )
 
-    def write(
+    def _perform_write(
         self,
         collection: str,
         data: Any,

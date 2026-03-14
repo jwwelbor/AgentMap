@@ -112,6 +112,28 @@ ROUTING_FALLBACK_TIER: str = "agentmap.routing.fallback_tier"
 """Fallback tier used when primary routing failed."""
 
 # ---------------------------------------------------------------------------
+# Storage span names and attributes
+# ---------------------------------------------------------------------------
+
+STORAGE_READ_SPAN: str = "agentmap.storage.read"
+"""Span wrapping a storage read operation."""
+
+STORAGE_WRITE_SPAN: str = "agentmap.storage.write"
+"""Span wrapping a storage write operation."""
+
+STORAGE_BACKEND: str = "agentmap.storage.backend"
+"""Storage provider name (e.g. 'csv', 'json', 'firebase', 'chroma')."""
+
+STORAGE_OPERATION: str = "agentmap.storage.operation"
+"""Storage operation type ('read' or 'write')."""
+
+STORAGE_RECORD_COUNT: str = "agentmap.storage.record_count"
+"""Number of records involved in the storage operation."""
+
+STORAGE_RESOURCE: str = "agentmap.storage.resource"
+"""Opt-in resource identifier (file path or collection name). Controlled by config flag."""
+
+# ---------------------------------------------------------------------------
 # Metric name constants (LLM operations)
 # ---------------------------------------------------------------------------
 

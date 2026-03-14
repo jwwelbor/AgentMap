@@ -57,6 +57,7 @@ class CSVStorageService(BaseStorageService):
         logging_service,  # LoggingService (avoid circular import)
         file_path_service=None,  # FilePathService (optional for path validation)
         base_directory: str = None,  # Optional base directory for injection
+        telemetry_service=None,  # Optional telemetry service for span instrumentation
     ):
         """
         Initialize CSVStorageService.
@@ -67,6 +68,7 @@ class CSVStorageService(BaseStorageService):
             logging_service: Logging service for creating loggers
             file_path_service: Optional file path service for path validation and security
             base_directory: Optional base directory for storage operations (for system storage)
+            telemetry_service: Optional telemetry service for span instrumentation
         """
         # Call parent's __init__ with all parameters including new injection parameters
         super().__init__(
@@ -75,6 +77,7 @@ class CSVStorageService(BaseStorageService):
             logging_service,
             file_path_service,
             base_directory,
+            telemetry_service=telemetry_service,
         )
 
         # Initialize component instances (will be set up after client initialization)
@@ -313,7 +316,7 @@ class CSVStorageService(BaseStorageService):
             _ = self.client
         return self._query_processor.apply_query_filter(df, query)
 
-    def read(
+    def _perform_read(
         self,
         collection: str,
         document_id: Optional[str] = None,
@@ -429,7 +432,7 @@ class CSVStorageService(BaseStorageService):
             self._logger.debug(f"Error reading CSV: {e}")
             return None
 
-    def write(
+    def _perform_write(
         self,
         collection: str,
         data: Any,

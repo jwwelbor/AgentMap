@@ -40,6 +40,7 @@ class MemoryStorageService(BaseStorageService):
         logging_service: Any,
         file_path_service: Any = None,
         base_directory: str = None,
+        telemetry_service=None,
     ):
         """Initialize memory storage service."""
         super().__init__(
@@ -48,6 +49,7 @@ class MemoryStorageService(BaseStorageService):
             logging_service,
             file_path_service,
             base_directory,
+            telemetry_service=telemetry_service,
         )
         # In-memory storage structure: {collection_name: {document_id: data}}
         self._storage: Dict[str, Dict[str, Any]] = {}
@@ -158,7 +160,7 @@ class MemoryStorageService(BaseStorageService):
             self._logger.debug(f"Memory health check failed: {e}")
             return False
 
-    def read(
+    def _perform_read(
         self,
         collection: str,
         document_id: Optional[str] = None,
@@ -239,7 +241,7 @@ class MemoryStorageService(BaseStorageService):
                 "read", e, collection=collection, document_id=document_id
             )
 
-    def write(
+    def _perform_write(
         self,
         collection: str,
         data: Any,

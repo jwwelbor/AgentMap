@@ -47,6 +47,7 @@ class BaseStorageService(
         logging_service: LoggingService,
         file_path_service: Optional[FilePathService] = None,
         base_directory: Optional[str] = None,
+        telemetry_service: Optional[Any] = None,
     ):
         """
         Initialize the base storage service.
@@ -57,12 +58,14 @@ class BaseStorageService(
             logging_service: Logging service for creating loggers
             file_path_service: Optional file path service for path validation and security
             base_directory: Optional base directory for storage operations (for system storage)
+            telemetry_service: Optional telemetry service for span instrumentation
         """
         self.provider_name = provider_name
         self.configuration = configuration
         self._logger = logging_service.get_class_logger(self)
         self._file_path_service = file_path_service
         self._base_directory = base_directory
+        self._telemetry_service = telemetry_service
         self._client = None
         self._config = self._load_provider_config()
         self._is_initialized = False
@@ -210,7 +213,7 @@ class BaseStorageService(
         """
 
     @abstractmethod
-    def read(
+    def _perform_read(
         self,
         collection: str,
         document_id: Optional[str] = None,
@@ -219,10 +222,10 @@ class BaseStorageService(
         **kwargs,
     ) -> Any:
         """
-        Read data from storage.
+        Provider-specific read implementation.
 
-        Subclasses must implement this method to retrieve data from their
-        storage backend.
+        Subclasses must implement this method. Called by the concrete
+        read() method which handles telemetry instrumentation.
 
         Args:
             collection: Name of the collection to read from
@@ -239,7 +242,7 @@ class BaseStorageService(
         """
 
     @abstractmethod
-    def write(
+    def _perform_write(
         self,
         collection: str,
         data: Any,
@@ -249,10 +252,10 @@ class BaseStorageService(
         **kwargs,
     ) -> StorageResult:
         """
-        Write data to storage.
+        Provider-specific write implementation.
 
-        Subclasses must implement this method to persist data to their
-        storage backend.
+        Subclasses must implement this method. Called by the concrete
+        write() method which handles telemetry instrumentation.
 
         Args:
             collection: Name of the collection to write to
@@ -268,6 +271,176 @@ class BaseStorageService(
         Raises:
             Exception: Provider-specific exceptions for write failures
         """
+
+    def read(
+        self,
+        collection: str,
+        document_id: Optional[str] = None,
+        query: Optional[Dict[str, Any]] = None,
+        path: Optional[str] = None,
+        **kwargs,
+    ) -> Any:
+        """
+        Read data from storage with optional telemetry instrumentation.
+
+        Delegates to _perform_read() for the actual implementation.
+        Wraps the call in a telemetry span when telemetry_service is available.
+        """
+        if self._telemetry_service is None:
+            return self._perform_read(collection, document_id, query, path, **kwargs)
+        return self._read_with_telemetry(collection, document_id, query, path, **kwargs)
+
+    def write(
+        self,
+        collection: str,
+        data: Any,
+        document_id: Optional[str] = None,
+        mode: WriteMode = WriteMode.WRITE,
+        path: Optional[str] = None,
+        **kwargs,
+    ) -> StorageResult:
+        """
+        Write data to storage with optional telemetry instrumentation.
+
+        Delegates to _perform_write() for the actual implementation.
+        Wraps the call in a telemetry span when telemetry_service is available.
+        """
+        if self._telemetry_service is None:
+            return self._perform_write(
+                collection, data, document_id, mode, path, **kwargs
+            )
+        return self._write_with_telemetry(
+            collection, data, document_id, mode, path, **kwargs
+        )
+
+    def _read_with_telemetry(
+        self,
+        collection: str,
+        document_id: Optional[str] = None,
+        query: Optional[Dict[str, Any]] = None,
+        path: Optional[str] = None,
+        **kwargs,
+    ) -> Any:
+        """Execute read with telemetry span."""
+        from agentmap.services.telemetry.constants import (
+            STORAGE_BACKEND,
+            STORAGE_OPERATION,
+            STORAGE_READ_SPAN,
+        )
+
+        try:
+            cm = self._telemetry_service.start_span(
+                STORAGE_READ_SPAN,
+                attributes={
+                    STORAGE_BACKEND: self.provider_name,
+                    STORAGE_OPERATION: "read",
+                },
+            )
+        except Exception:
+            # Telemetry setup failed, fall back to uninstrumented path
+            return self._perform_read(collection, document_id, query, path, **kwargs)
+
+        with cm as span:
+            try:
+                result = self._perform_read(
+                    collection, document_id, query, path, **kwargs
+                )
+                self._record_result_count(span, result)
+                self._set_span_status_ok(span)
+                return result
+            except Exception as e:
+                self._record_span_exception(span, e)
+                raise  # Always propagate storage errors
+
+    def _write_with_telemetry(
+        self,
+        collection: str,
+        data: Any,
+        document_id: Optional[str] = None,
+        mode: WriteMode = WriteMode.WRITE,
+        path: Optional[str] = None,
+        **kwargs,
+    ) -> StorageResult:
+        """Execute write with telemetry span."""
+        from agentmap.services.telemetry.constants import (
+            STORAGE_BACKEND,
+            STORAGE_OPERATION,
+            STORAGE_RECORD_COUNT,
+            STORAGE_WRITE_SPAN,
+        )
+
+        try:
+            cm = self._telemetry_service.start_span(
+                STORAGE_WRITE_SPAN,
+                attributes={
+                    STORAGE_BACKEND: self.provider_name,
+                    STORAGE_OPERATION: "write",
+                },
+            )
+        except Exception:
+            # Telemetry setup failed, fall back to uninstrumented path
+            return self._perform_write(
+                collection, data, document_id, mode, path, **kwargs
+            )
+
+        with cm as span:
+            try:
+                result = self._perform_write(
+                    collection, data, document_id, mode, path, **kwargs
+                )
+                # Record count from data if determinable
+                if isinstance(data, (list, tuple)):
+                    try:
+                        self._telemetry_service.set_span_attributes(
+                            span, {STORAGE_RECORD_COUNT: len(data)}
+                        )
+                    except Exception:
+                        pass
+                self._set_span_status_ok(span)
+                return result
+            except Exception as e:
+                self._record_span_exception(span, e)
+                raise  # Always propagate storage errors
+
+    def _record_result_count(self, span: Any, result: Any) -> None:
+        """Record the result count as a span attribute when determinable."""
+        if span is None or self._telemetry_service is None:
+            return
+        try:
+            from agentmap.services.telemetry.constants import STORAGE_RECORD_COUNT
+
+            count = None
+            if isinstance(result, (list, tuple)):
+                count = len(result)
+            elif hasattr(result, "__len__") and not isinstance(
+                result, (str, bytes, dict)
+            ):
+                count = len(result)
+
+            if count is not None:
+                self._telemetry_service.set_span_attributes(
+                    span, {STORAGE_RECORD_COUNT: count}
+                )
+        except Exception:
+            pass  # Telemetry failures silently ignored
+
+    def _set_span_status_ok(self, span: Any) -> None:
+        """Set span status to OK. No-op if span is None."""
+        if span is not None:
+            try:
+                from opentelemetry.trace import StatusCode
+
+                span.set_status(StatusCode.OK)
+            except Exception:
+                pass
+
+    def _record_span_exception(self, span: Any, exception: Exception) -> None:
+        """Record exception on span and set ERROR status. No-op if span is None."""
+        if span is not None and self._telemetry_service is not None:
+            try:
+                self._telemetry_service.record_exception(span, exception)
+            except Exception:
+                pass
 
     @abstractmethod
     def delete(
