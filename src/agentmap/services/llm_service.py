@@ -38,6 +38,13 @@ from agentmap.services.telemetry.constants import (
     GEN_AI_USAGE_INPUT_TOKENS,
     GEN_AI_USAGE_OUTPUT_TOKENS,
     LLM_CALL_SPAN,
+    ROUTING_CACHE_HIT,
+    ROUTING_CIRCUIT_BREAKER_STATE,
+    ROUTING_COMPLEXITY,
+    ROUTING_CONFIDENCE,
+    ROUTING_FALLBACK_TIER,
+    ROUTING_MODEL,
+    ROUTING_PROVIDER,
 )
 
 
@@ -341,6 +348,9 @@ class LLMService:
                 f"confidence: {decision.confidence:.2f})"
             )
 
+            # Record routing attributes on the current span (E02-F03)
+            self._record_routing_attributes(decision)
+
             # Make the actual LLM call with the selected provider/model
             return self._call_llm_direct(
                 provider=decision.provider,
@@ -472,6 +482,9 @@ class LLMService:
             LLMProviderError (or subclass): After retries exhausted or
                 circuit open or non-retryable error.
         """
+        # Record circuit breaker state on current span (E02-F03)
+        self._record_circuit_breaker_state(provider, model)
+
         # Circuit breaker check
         if self._circuit_breaker.is_open(provider, model):
             raise LLMProviderError(
@@ -539,6 +552,70 @@ class LLMService:
         # All retries exhausted
         self._circuit_breaker.record_failure(provider, model)
         raise last_error  # type: ignore[misc]
+
+    # ------------------------------------------------------------------
+    # Routing telemetry helpers (error-isolated, silent no-op when disabled)
+    # ------------------------------------------------------------------
+
+    def _record_routing_attributes(self, decision: Any) -> None:
+        """Record routing decision attributes on the current LLM span.
+
+        Uses ``opentelemetry.trace.get_current_span()`` (function-level import)
+        to access the span without parameter threading (ADR-E02F03-002).
+
+        Guards: short-circuits if ``_telemetry_service`` is None.
+        Error isolation: catches all exceptions silently (3-layer isolation).
+        """
+        if self._telemetry_service is None:
+            return
+        try:
+            import opentelemetry.trace as trace_api
+
+            current_span = trace_api.get_current_span()
+            if current_span and current_span.is_recording():
+                attributes: Dict[str, Any] = {
+                    ROUTING_COMPLEXITY: str(decision.complexity),
+                    ROUTING_CONFIDENCE: decision.confidence,
+                    ROUTING_PROVIDER: decision.provider,
+                    ROUTING_MODEL: decision.model,
+                    ROUTING_CACHE_HIT: decision.cache_hit,
+                    # Update GenAI attributes with routed values
+                    GEN_AI_SYSTEM: decision.provider,
+                    GEN_AI_REQUEST_MODEL: decision.model,
+                }
+
+                if decision.fallback_used:
+                    attributes[ROUTING_FALLBACK_TIER] = "fallback"
+
+                self._telemetry_service.set_span_attributes(current_span, attributes)
+        except Exception:
+            pass  # Telemetry failures silently ignored
+
+    def _record_circuit_breaker_state(self, provider: str, model: str) -> None:
+        """Record circuit breaker state on the current span.
+
+        Uses ``opentelemetry.trace.get_current_span()`` (function-level import)
+        to access the span without parameter threading (ADR-E02F03-002).
+
+        Guards: short-circuits if ``_telemetry_service`` is None.
+        Error isolation: catches all exceptions silently (3-layer isolation).
+        """
+        if self._telemetry_service is None:
+            return
+        try:
+            import opentelemetry.trace as trace_api
+
+            current_span = trace_api.get_current_span()
+            if current_span and current_span.is_recording():
+                state = "closed"  # Default healthy state
+                if self._circuit_breaker.is_open(provider, model):
+                    state = "open"
+                self._telemetry_service.set_span_attributes(
+                    current_span,
+                    {ROUTING_CIRCUIT_BREAKER_STATE: state},
+                )
+        except Exception:
+            pass  # Telemetry failures silently ignored
 
     def _create_routing_context(
         self, routing_context: Dict[str, Any], messages: List[Dict[str, str]]

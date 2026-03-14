@@ -1,8 +1,10 @@
 """
-Tests for DI wiring of telemetry_service through the agent construction chain.
+Tests for DI wiring of telemetry_service through the agent construction chain
+and service-level DI injection.
 
-Covers task T-E02-F02-003: DI Wiring for Telemetry Service Injection.
-Test cases: TC-142, TC-143, INT-130.
+Covers:
+- T-E02-F02-003: DI Wiring for Telemetry Service Injection (TC-142, TC-143, INT-130)
+- T-E02-F03-004: DI Container Wiring for Telemetry Injection (TC-250 through TC-254)
 
 Tests verify:
 - GraphAgentContainer declares telemetry_service dependency
@@ -11,6 +13,9 @@ Tests verify:
 - AgentFactoryService forwards telemetry to constructor builder
 - AgentConstructorBuilder conditionally injects telemetry
 - Backward compatibility when telemetry_service is None
+- LLMContainer declares telemetry_service dependency (E02-F03)
+- ApplicationContainer wires telemetry to LLMService and GraphRunnerService (E02-F03)
+- Singleton telemetry instance shared across services (E02-F03)
 """
 
 import inspect
@@ -558,3 +563,156 @@ class TestConstructorBuilderKwargsAgent:
 
         agent = KwargsAgent(**args)
         assert agent._telemetry_service is mock_telemetry
+
+
+# ===========================================================================
+# E02-F03: DI Wiring for GraphRunnerService and LLMService (TC-250..TC-254)
+# ===========================================================================
+
+
+class TestLLMContainerTelemetryDependency:
+    """TC-253/AC1: LLMContainer declares telemetry_service Dependency provider."""
+
+    def test_llm_container_has_telemetry_service_dependency(self):
+        from dependency_injector import providers
+
+        from agentmap.di.container_parts.llm import LLMContainer
+
+        assert hasattr(LLMContainer, "telemetry_service")
+        assert isinstance(LLMContainer.telemetry_service, providers.Dependency)
+
+    def test_create_llm_service_factory_accepts_telemetry(self):
+        from agentmap.di.container_parts.llm import LLMContainer
+
+        sig = inspect.signature(LLMContainer._create_llm_service)
+        param_names = list(sig.parameters.keys())
+        assert "telemetry_service" in param_names
+
+
+class TestApplicationContainerLLMTelemetryWiring:
+    """TC-253/AC2: ApplicationContainer wires telemetry to LLM container."""
+
+    def test_llm_container_receives_telemetry_kwarg(self):
+        import inspect as _inspect
+
+        from agentmap.di import containers as containers_module
+
+        source = _inspect.getsource(containers_module)
+        assert 'telemetry_service=_expose(_telemetry, "telemetry_service")' in source
+
+
+class TestApplicationContainerGraphRunnerTelemetryWiring:
+    """TC-253/AC3: ApplicationContainer wires telemetry to GraphRunnerService."""
+
+    def test_create_graph_runner_service_accepts_telemetry(self):
+        from agentmap.di.containers import ApplicationContainer
+
+        sig = inspect.signature(ApplicationContainer._create_graph_runner_service)
+        param_names = list(sig.parameters.keys())
+        assert "telemetry_service" in param_names
+
+
+class TestGraphRunnerServiceTelemetryNone:
+    """TC-250: GraphRunnerService works with telemetry_service=None."""
+
+    def test_graph_runner_service_constructor_accepts_telemetry_none(self):
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
+
+        sig = inspect.signature(GraphRunnerService.__init__)
+        param = sig.parameters["telemetry_service"]
+        assert param.default is None
+
+    def test_graph_runner_service_constructs_without_telemetry(self):
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
+
+        mock_ls = _mock_logging_service()
+        svc = GraphRunnerService(
+            app_config_service=MagicMock(),
+            graph_bootstrap_service=MagicMock(),
+            graph_agent_instantiation_service=MagicMock(),
+            graph_assembly_service=MagicMock(),
+            graph_execution_service=MagicMock(),
+            execution_tracking_service=MagicMock(),
+            logging_service=mock_ls,
+            interaction_handler_service=MagicMock(),
+            graph_checkpoint_service=MagicMock(),
+            graph_bundle_service=MagicMock(),
+            declaration_registry_service=MagicMock(),
+        )
+        assert svc is not None
+
+
+class TestLLMServiceTelemetryNone:
+    """TC-251: LLMService works with telemetry_service=None."""
+
+    def test_llm_service_constructor_accepts_telemetry_none(self):
+        from agentmap.services.llm_service import LLMService
+
+        sig = inspect.signature(LLMService.__init__)
+        param = sig.parameters["telemetry_service"]
+        assert param.default is None
+
+    def test_llm_service_constructs_without_telemetry(self):
+        from agentmap.services.llm_service import LLMService
+
+        mock_ls = _mock_logging_service()
+        svc = LLMService(
+            configuration=MagicMock(),
+            logging_service=mock_ls,
+            routing_service=MagicMock(),
+            llm_models_config_service=MagicMock(),
+        )
+        assert svc is not None
+
+
+class TestSingletonTelemetryShared:
+    """TC-254: Singleton telemetry instance shared across services."""
+
+    def test_both_factories_receive_same_telemetry_source(self):
+        import inspect as _inspect
+
+        from agentmap.di import containers as containers_module
+
+        source = _inspect.getsource(containers_module)
+        wiring_pattern = '_expose(_telemetry, "telemetry_service")'
+        occurrences = source.count(wiring_pattern)
+        assert (
+            occurrences >= 3
+        ), f"Expected telemetry wiring at least 3 times, found {occurrences}"
+
+
+class TestE02F03BackwardCompatibility:
+    """TC-253/AC5: Backward compat -- no errors when telemetry absent."""
+
+    def test_llm_service_backward_compat(self):
+        from agentmap.services.llm_service import LLMService
+
+        mock_ls = _mock_logging_service()
+        svc = LLMService(
+            configuration=MagicMock(),
+            logging_service=mock_ls,
+            routing_service=MagicMock(),
+            llm_models_config_service=MagicMock(),
+            features_registry_service=None,
+            routing_config_service=None,
+        )
+        assert svc is not None
+
+    def test_graph_runner_service_backward_compat(self):
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
+
+        mock_ls = _mock_logging_service()
+        svc = GraphRunnerService(
+            app_config_service=MagicMock(),
+            graph_bootstrap_service=MagicMock(),
+            graph_agent_instantiation_service=MagicMock(),
+            graph_assembly_service=MagicMock(),
+            graph_execution_service=MagicMock(),
+            execution_tracking_service=MagicMock(),
+            logging_service=mock_ls,
+            interaction_handler_service=MagicMock(),
+            graph_checkpoint_service=MagicMock(),
+            graph_bundle_service=MagicMock(),
+            declaration_registry_service=MagicMock(),
+        )
+        assert svc is not None

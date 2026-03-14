@@ -3,6 +3,9 @@ Tests for LLMService telemetry instrumentation.
 
 Covers task T-E02-F03-002: LLMService GenAI Semantic Convention Span Instrumentation.
 Test cases TC-220 through TC-225, TC-251, TC-261-262, TC-270-275.
+
+Also covers T-E02-F03-003: Routing Decision Attribute Recording.
+Test cases TC-230 through TC-235.
 """
 
 from contextlib import contextmanager
@@ -20,6 +23,13 @@ from agentmap.services.telemetry.constants import (
     GEN_AI_USAGE_INPUT_TOKENS,
     GEN_AI_USAGE_OUTPUT_TOKENS,
     LLM_CALL_SPAN,
+    ROUTING_CACHE_HIT,
+    ROUTING_CIRCUIT_BREAKER_STATE,
+    ROUTING_COMPLEXITY,
+    ROUTING_CONFIDENCE,
+    ROUTING_FALLBACK_TIER,
+    ROUTING_MODEL,
+    ROUTING_PROVIDER,
 )
 from agentmap.services.telemetry.protocol import TelemetryServiceProtocol
 
@@ -758,3 +768,253 @@ class TestResponseModel:
 
         assert GEN_AI_RESPONSE_MODEL in all_attrs
         assert all_attrs[GEN_AI_RESPONSE_MODEL] == "claude-3-sonnet-20240229"
+
+
+# ====================================================================
+# T-E02-F03-003: Routing Decision Attribute Recording (TC-230 -- TC-235)
+# ====================================================================
+
+
+def _routing_decision():
+    """Create a standard routing decision for tests."""
+    from agentmap.services.routing.types import RoutingDecision, TaskComplexity
+
+    return RoutingDecision(
+        provider="anthropic",
+        model="claude-3-sonnet",
+        complexity=TaskComplexity.MEDIUM,
+        confidence=0.85,
+        reasoning="Selected from preferred providers",
+        fallback_used=False,
+        cache_hit=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# TC-230: Routing attributes recorded on gen_ai.chat span
+# ---------------------------------------------------------------------------
+
+
+class TestRoutingAttributesRecorded:
+    """TC-230: After routed LLM call, span has complexity, confidence,
+    provider, model attributes."""
+
+    def test_record_routing_attributes_sets_all_routing_constants(self):
+        """All 7 routing attribute constants are set on span when routing is used."""
+        decision = _routing_decision()
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        svc = _make_llm_service(telemetry_service=mock_telemetry)
+
+        with patch("opentelemetry.trace.get_current_span", return_value=mock_span):
+            svc._record_routing_attributes(decision)
+
+        mock_telemetry.set_span_attributes.assert_called_once()
+        attrs = mock_telemetry.set_span_attributes.call_args[0][1]
+
+        assert ROUTING_COMPLEXITY in attrs
+        assert ROUTING_CONFIDENCE in attrs
+        assert ROUTING_PROVIDER in attrs
+        assert ROUTING_MODEL in attrs
+        assert ROUTING_CACHE_HIT in attrs
+
+        assert attrs[ROUTING_COMPLEXITY] == str(decision.complexity)
+        assert attrs[ROUTING_CONFIDENCE] == decision.confidence
+        assert attrs[ROUTING_PROVIDER] == decision.provider
+        assert attrs[ROUTING_MODEL] == decision.model
+        assert attrs[ROUTING_CACHE_HIT] == decision.cache_hit
+
+    def test_record_routing_attributes_updates_genai_attributes(self):
+        """Routing also updates GEN_AI_SYSTEM and GEN_AI_REQUEST_MODEL."""
+        decision = _routing_decision()
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        svc = _make_llm_service(telemetry_service=mock_telemetry)
+
+        with patch("opentelemetry.trace.get_current_span", return_value=mock_span):
+            svc._record_routing_attributes(decision)
+
+        attrs = mock_telemetry.set_span_attributes.call_args[0][1]
+        assert attrs[GEN_AI_SYSTEM] == "anthropic"
+        assert attrs[GEN_AI_REQUEST_MODEL] == "claude-3-sonnet"
+
+
+# ---------------------------------------------------------------------------
+# TC-231: Cache hit attribute recorded
+# ---------------------------------------------------------------------------
+
+
+class TestCacheHitRecorded:
+    """TC-231: ROUTING_CACHE_HIT set from routing decision."""
+
+    def test_cache_hit_true(self):
+        decision = _routing_decision()
+        decision.cache_hit = True
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        svc = _make_llm_service(telemetry_service=mock_telemetry)
+
+        with patch("opentelemetry.trace.get_current_span", return_value=mock_span):
+            svc._record_routing_attributes(decision)
+
+        attrs = mock_telemetry.set_span_attributes.call_args[0][1]
+        assert attrs[ROUTING_CACHE_HIT] is True
+
+    def test_cache_hit_false(self):
+        decision = _routing_decision()
+        decision.cache_hit = False
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        svc = _make_llm_service(telemetry_service=mock_telemetry)
+
+        with patch("opentelemetry.trace.get_current_span", return_value=mock_span):
+            svc._record_routing_attributes(decision)
+
+        attrs = mock_telemetry.set_span_attributes.call_args[0][1]
+        assert attrs[ROUTING_CACHE_HIT] is False
+
+
+# ---------------------------------------------------------------------------
+# TC-232: Circuit breaker state recorded
+# ---------------------------------------------------------------------------
+
+
+class TestCircuitBreakerStateRecorded:
+    """TC-232: ROUTING_CIRCUIT_BREAKER_STATE set with 'open' or 'closed'."""
+
+    def test_circuit_breaker_closed(self):
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        svc = _make_llm_service(telemetry_service=mock_telemetry)
+        svc._circuit_breaker.is_open = MagicMock(return_value=False)
+
+        with patch("opentelemetry.trace.get_current_span", return_value=mock_span):
+            svc._record_circuit_breaker_state("anthropic", "claude-3-sonnet")
+
+        attrs = mock_telemetry.set_span_attributes.call_args[0][1]
+        assert attrs[ROUTING_CIRCUIT_BREAKER_STATE] == "closed"
+
+    def test_circuit_breaker_open(self):
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        svc = _make_llm_service(telemetry_service=mock_telemetry)
+        svc._circuit_breaker.is_open = MagicMock(return_value=True)
+
+        with patch("opentelemetry.trace.get_current_span", return_value=mock_span):
+            svc._record_circuit_breaker_state("anthropic", "claude-3-sonnet")
+
+        attrs = mock_telemetry.set_span_attributes.call_args[0][1]
+        assert attrs[ROUTING_CIRCUIT_BREAKER_STATE] == "open"
+
+
+# ---------------------------------------------------------------------------
+# TC-233: Fallback tier recorded
+# ---------------------------------------------------------------------------
+
+
+class TestFallbackTierRecorded:
+    """TC-233: ROUTING_FALLBACK_TIER set when fallback triggered."""
+
+    def test_fallback_tier_present_when_fallback_used(self):
+        decision = _routing_decision()
+        decision.fallback_used = True
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        svc = _make_llm_service(telemetry_service=mock_telemetry)
+
+        with patch("opentelemetry.trace.get_current_span", return_value=mock_span):
+            svc._record_routing_attributes(decision)
+
+        attrs = mock_telemetry.set_span_attributes.call_args[0][1]
+        assert ROUTING_FALLBACK_TIER in attrs
+        assert attrs[ROUTING_FALLBACK_TIER] == "fallback"
+
+    def test_fallback_tier_absent_when_no_fallback(self):
+        decision = _routing_decision()
+        decision.fallback_used = False
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        svc = _make_llm_service(telemetry_service=mock_telemetry)
+
+        with patch("opentelemetry.trace.get_current_span", return_value=mock_span):
+            svc._record_routing_attributes(decision)
+
+        attrs = mock_telemetry.set_span_attributes.call_args[0][1]
+        assert ROUTING_FALLBACK_TIER not in attrs
+
+
+# ---------------------------------------------------------------------------
+# TC-234: Routing attributes omitted for direct calls
+# ---------------------------------------------------------------------------
+
+
+class TestRoutingAttributesOmittedForDirectCalls:
+    """TC-234: No routing attributes for direct provider/model calls."""
+
+    def test_record_routing_attributes_noop_when_no_telemetry(self):
+        decision = _routing_decision()
+        svc = _make_llm_service(telemetry_service=None)
+        svc._record_routing_attributes(decision)  # Should not raise
+
+    def test_record_circuit_breaker_noop_when_no_telemetry(self):
+        svc = _make_llm_service(telemetry_service=None)
+        svc._record_circuit_breaker_state("anthropic", "claude-3-sonnet")
+
+
+# ---------------------------------------------------------------------------
+# TC-235: Single span per LLM call -- routing as attributes, not child spans
+# ---------------------------------------------------------------------------
+
+
+class TestSingleSpanPerLLMCall:
+    """TC-235: start_span not called; routing as attributes on existing span."""
+
+    def test_record_routing_attributes_does_not_create_spans(self):
+        decision = _routing_decision()
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        svc = _make_llm_service(telemetry_service=mock_telemetry)
+
+        with patch("opentelemetry.trace.get_current_span", return_value=mock_span):
+            svc._record_routing_attributes(decision)
+
+        mock_telemetry.start_span.assert_not_called()
+
+    def test_record_circuit_breaker_does_not_create_spans(self):
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        svc = _make_llm_service(telemetry_service=mock_telemetry)
+        svc._circuit_breaker.is_open = MagicMock(return_value=False)
+
+        with patch("opentelemetry.trace.get_current_span", return_value=mock_span):
+            svc._record_circuit_breaker_state("anthropic", "claude-3-sonnet")
+
+        mock_telemetry.start_span.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Routing telemetry failure isolation
+# ---------------------------------------------------------------------------
+
+
+class TestRoutingTelemetryFailureIsolation:
+    """Routing attribute recording failures must not crash LLM calls."""
+
+    def test_record_routing_attributes_swallows_exceptions(self):
+        decision = _routing_decision()
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        mock_telemetry.set_span_attributes.side_effect = RuntimeError("broke")
+        svc = _make_llm_service(telemetry_service=mock_telemetry)
+
+        with patch("opentelemetry.trace.get_current_span", return_value=mock_span):
+            svc._record_routing_attributes(decision)  # Should NOT raise
+
+    def test_record_circuit_breaker_swallows_exceptions(self):
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        mock_telemetry.set_span_attributes.side_effect = RuntimeError("broke")
+        svc = _make_llm_service(telemetry_service=mock_telemetry)
+        svc._circuit_breaker.is_open = MagicMock(return_value=False)
+
+        with patch("opentelemetry.trace.get_current_span", return_value=mock_span):
+            svc._record_circuit_breaker_state("anthropic", "claude-3-sonnet")
+
+    def test_non_recording_span_skips_attributes(self):
+        decision = _routing_decision()
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        mock_span.is_recording.return_value = False
+        svc = _make_llm_service(telemetry_service=mock_telemetry)
+
+        with patch("opentelemetry.trace.get_current_span", return_value=mock_span):
+            svc._record_routing_attributes(decision)
+
+        mock_telemetry.set_span_attributes.assert_not_called()

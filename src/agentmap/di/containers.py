@@ -64,6 +64,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         availability_cache_service=_expose(_core, "availability_cache_service"),
         features_registry_service=_expose(_bootstrap, "features_registry_service"),
         llm_models_config_service=_expose(_core, "llm_models_config_service"),
+        telemetry_service=_expose(_telemetry, "telemetry_service"),
     )
 
     _host_registry = providers.Container(
@@ -253,6 +254,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         graph_checkpoint_service,
         graph_bundle_service,
         declaration_registry_service,
+        telemetry_service,
     ):
         from agentmap.services.graph.graph_runner_service import GraphRunnerService
 
@@ -268,6 +270,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
             graph_checkpoint_service,
             graph_bundle_service,
             declaration_registry_service,
+            telemetry_service,
         )
 
     graph_runner_service = providers.Singleton(
@@ -283,6 +286,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         graph_checkpoint_service,
         graph_bundle_service,
         declaration_registry_service,
+        _expose(_telemetry, "telemetry_service"),
     )
 
     # --- Delegated helper methods ----------------------------------------------
