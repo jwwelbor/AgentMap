@@ -609,9 +609,7 @@ class TestAC6CircuitBreakerTracking:
         # 3rd call (_record_circuit_breaker_metric_on_close): False (now closed)
         # Note: _record_circuit_breaker_state may not call is_open when span
         # context is unavailable
-        svc._circuit_breaker.is_open = MagicMock(
-            side_effect=[False, True, False]
-        )
+        svc._circuit_breaker.is_open = MagicMock(side_effect=[False, True, False])
         svc._circuit_breaker.record_success = MagicMock()
 
         svc.call_llm(
@@ -705,17 +703,17 @@ class TestAC7FallbackAndCacheHit:
 class TestAC8NoneTelemetryPath:
     """AC8 / TC-703: No metrics when telemetry_service is None."""
 
-    def test_no_metric_attributes_when_none(self):
-        """No _metric_* attributes exist when telemetry is None."""
+    def test_metric_attributes_are_none_when_no_telemetry(self):
+        """All _metric_* attributes are None when telemetry is None."""
         svc = _make_llm_service(telemetry_service=None)
 
-        assert not hasattr(svc, "_metric_duration")
-        assert not hasattr(svc, "_metric_tokens_input")
-        assert not hasattr(svc, "_metric_tokens_output")
-        assert not hasattr(svc, "_metric_errors")
-        assert not hasattr(svc, "_metric_cache_hit")
-        assert not hasattr(svc, "_metric_circuit_breaker")
-        assert not hasattr(svc, "_metric_fallback")
+        assert svc._metric_duration is None
+        assert svc._metric_tokens_input is None
+        assert svc._metric_tokens_output is None
+        assert svc._metric_errors is None
+        assert svc._metric_cache_hit is None
+        assert svc._metric_circuit_breaker is None
+        assert svc._metric_fallback is None
 
     def test_call_llm_works_without_telemetry(self):
         """call_llm completes without error when telemetry is None."""
