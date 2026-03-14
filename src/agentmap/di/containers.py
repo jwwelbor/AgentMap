@@ -37,6 +37,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     _telemetry = providers.Container(
         TelemetryContainer,
         logging_service=_expose(_core, "logging_service"),
+        app_config_service=_expose(_core, "app_config_service"),
     )
 
     _storage = providers.Container(
