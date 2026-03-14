@@ -54,6 +54,7 @@ from agentmap.services.telemetry.constants import (  # noqa: E402
     GRAPH_AGENT_COUNT,
     GRAPH_NAME,
     GRAPH_NODE_COUNT,
+    GRAPH_PARENT_NAME,
     LLM_CALL_SPAN,
     NODE_NAME,
     ROUTING_CACHE_HIT,
@@ -334,7 +335,7 @@ class TestSubgraphNesting:
                     # Set parent_name attribute on subgraph span
                     telemetry_service.set_span_attributes(
                         subgraph_span,
-                        {"agentmap.graph.parent_name": "parent_workflow"},
+                        {GRAPH_PARENT_NAME: "parent_workflow"},
                     )
                     # Child agent in subgraph
                     with telemetry_service.start_span(
@@ -381,14 +382,14 @@ class TestSubgraphNesting:
         ), "Subgraph workflow should be child of GraphAgent span"
 
         # Subgraph should have parent_name attribute
-        assert child_wf.attributes.get("agentmap.graph.parent_name") == (
+        assert child_wf.attributes.get(GRAPH_PARENT_NAME) == (
             "parent_workflow"
-        ), "Subgraph workflow should have agentmap.graph.parent_name attribute"
+        ), "Subgraph workflow should have GRAPH_PARENT_NAME attribute"
 
         # Parent workflow should not have parent_name attribute
-        assert "agentmap.graph.parent_name" not in (
+        assert GRAPH_PARENT_NAME not in (
             parent_wf.attributes or {}
-        ), "Parent workflow should NOT have agentmap.graph.parent_name"
+        ), "Parent workflow should NOT have GRAPH_PARENT_NAME"
 
 
 # ---------------------------------------------------------------------------
