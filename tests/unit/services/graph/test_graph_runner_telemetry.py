@@ -606,6 +606,7 @@ class TestPhaseEvents:
             "workflow.phase.agent_instantiation",
             "workflow.phase.graph_assembly",
             "workflow.phase.execution",
+            "workflow.phase.finalization",
         ]
         for phase in expected_phases:
             assert (
