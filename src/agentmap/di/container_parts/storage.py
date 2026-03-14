@@ -13,6 +13,7 @@ class StorageContainer(containers.DeclarativeContainer):
     availability_cache_service = providers.Dependency()
     logging_service = providers.Dependency()
     file_path_service = providers.Dependency()
+    telemetry_service = providers.Dependency()
 
     @staticmethod
     def _create_storage_config_service(
@@ -114,6 +115,7 @@ class StorageContainer(containers.DeclarativeContainer):
         logging_service,
         file_path_service,
         blob_storage_service,
+        telemetry_service,
     ):
         from agentmap.exceptions.service_exceptions import (
             StorageConfigurationNotAvailableException,
@@ -131,6 +133,7 @@ class StorageContainer(containers.DeclarativeContainer):
                 logging_service,
                 file_path_service,
                 blob_storage_service,
+                telemetry_service,
             )
         except StorageConfigurationNotAvailableException as exc:
             logging_service.get_logger("agentmap.storage").warning(
@@ -144,6 +147,7 @@ class StorageContainer(containers.DeclarativeContainer):
         logging_service,
         file_path_service,
         blob_storage_service,
+        telemetry_service,
     )
 
     @staticmethod

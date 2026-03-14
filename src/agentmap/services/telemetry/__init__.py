@@ -36,6 +36,12 @@ from .constants import (
     ROUTING_FALLBACK_TIER,
     ROUTING_MODEL,
     ROUTING_PROVIDER,
+    STORAGE_BACKEND,
+    STORAGE_OPERATION,
+    STORAGE_READ_SPAN,
+    STORAGE_RECORD_COUNT,
+    STORAGE_RESOURCE,
+    STORAGE_WRITE_SPAN,
     WORKFLOW_RUN_SPAN,
 )
 from .noop_telemetry_service import NoOpTelemetryService
@@ -82,4 +88,11 @@ __all__ = [
     "ROUTING_CACHE_HIT",
     "ROUTING_CIRCUIT_BREAKER_STATE",
     "ROUTING_FALLBACK_TIER",
+    # Storage span and attribute constants
+    "STORAGE_READ_SPAN",
+    "STORAGE_WRITE_SPAN",
+    "STORAGE_BACKEND",
+    "STORAGE_OPERATION",
+    "STORAGE_RECORD_COUNT",
+    "STORAGE_RESOURCE",
 ]

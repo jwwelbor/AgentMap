@@ -45,6 +45,7 @@ class VectorStorageService(BaseStorageService):
         logging_service: LoggingService,
         file_path_service: Any = None,
         base_directory: str = None,
+        telemetry_service=None,
     ):
         """Initialize VectorStorageService with configuration service."""
         super().__init__(
@@ -53,6 +54,7 @@ class VectorStorageService(BaseStorageService):
             logging_service,
             file_path_service,
             base_directory,
+            telemetry_service=telemetry_service,
         )
 
     def _initialize_client(self) -> Dict[str, Any]:
@@ -218,7 +220,7 @@ class VectorStorageService(BaseStorageService):
             self._logger.error(f"Failed to create FAISS store: {e}")
             return None
 
-    def read(
+    def _perform_read(
         self,
         collection: str,
         document_id: Optional[str] = None,
@@ -270,7 +272,7 @@ class VectorStorageService(BaseStorageService):
             self._handle_error("read", e, collection=collection)
             return None
 
-    def write(
+    def _perform_write(
         self,
         collection: str,
         data: Any,
