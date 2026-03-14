@@ -8,7 +8,7 @@ and resilience (retry with backoff + circuit breaker).
 
 import random
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from agentmap.exceptions import (
     LLMConfigurationError,
@@ -123,6 +123,13 @@ class LLMService:
         self._routing_enabled = routing_service is not None
 
         # Metrics instruments (created once, reused per call) -- ADR-E02F07-003
+        self._metric_duration = None
+        self._metric_tokens_input = None
+        self._metric_tokens_output = None
+        self._metric_errors = None
+        self._metric_cache_hit = None
+        self._metric_circuit_breaker = None
+        self._metric_fallback = None
         if telemetry_service is not None:
             try:
                 self._metric_duration = telemetry_service.create_histogram(
@@ -150,12 +157,10 @@ class LLMService:
                     unit="1",
                     description="Routing cache hits",
                 )
-                self._metric_circuit_breaker = (
-                    telemetry_service.create_up_down_counter(
-                        METRIC_LLM_CIRCUIT_BREAKER,
-                        unit="1",
-                        description="Open circuit breakers",
-                    )
+                self._metric_circuit_breaker = telemetry_service.create_up_down_counter(
+                    METRIC_LLM_CIRCUIT_BREAKER,
+                    unit="1",
+                    description="Open circuit breakers",
                 )
                 self._metric_fallback = telemetry_service.create_counter(
                     METRIC_LLM_FALLBACK,
@@ -575,20 +580,13 @@ class LLMService:
                 # Track circuit breaker close transition (was open -> now success)
                 was_open = self._circuit_breaker.is_open(provider, model)
                 self._circuit_breaker.record_success(provider, model)
-                self._record_circuit_breaker_metric_on_close(
-                    was_open, provider, model
-                )
+                self._record_circuit_breaker_metric_on_close(was_open, provider, model)
 
                 # Record duration metric
                 self._record_duration_metric(duration, provider, model)
 
-                # Record token counts and response model on span (E02-F03)
+                # Record token counts, response model on span, and token metrics
                 self._record_llm_response_attributes(response, provider, model)
-
-                # Record token metrics (independent of span context)
-                self._record_token_metrics_from_response(
-                    response, provider, model
-                )
 
                 self._logger.debug(
                     f"LLM call successful, response length: {len(result)}"
@@ -603,9 +601,7 @@ class LLMService:
                 if not is_retryable(typed_error):
                     self._circuit_breaker.record_failure(provider, model)
                     self._record_error_metric(typed_error, provider, model)
-                    self._record_circuit_breaker_metric_on_open(
-                        provider, model
-                    )
+                    self._record_circuit_breaker_metric_on_open(provider, model)
                     raise typed_error
 
                 # Last attempt -> no more retries
@@ -667,10 +663,9 @@ class LLMService:
                 self._telemetry_service.set_span_attributes(current_span, attributes)
 
             # Record cache hit metric
-            if decision.cache_hit:
+            if decision.cache_hit and self._metric_cache_hit is not None:
                 try:
-                    if hasattr(self, "_metric_cache_hit"):
-                        self._metric_cache_hit.add(1)
+                    self._metric_cache_hit.add(1)
                 except Exception:
                     pass  # Metric failure silently ignored
         except Exception:
@@ -832,6 +827,25 @@ class LLMService:
         except Exception:
             pass
 
+    @staticmethod
+    def _extract_token_counts(response: Any) -> Tuple[Optional[int], Optional[int]]:
+        """Extract (input_tokens, output_tokens) from an LLM response.
+
+        Returns (None, None) when token data is unavailable.
+        """
+        usage_metadata = getattr(response, "usage_metadata", None)
+        if not usage_metadata:
+            return None, None
+        if isinstance(usage_metadata, dict):
+            return (
+                usage_metadata.get("input_tokens"),
+                usage_metadata.get("output_tokens"),
+            )
+        return (
+            getattr(usage_metadata, "input_tokens", None),
+            getattr(usage_metadata, "output_tokens", None),
+        )
+
     def _record_llm_response_attributes(
         self, response: Any, provider: str, model: str = "unknown"
     ) -> None:
@@ -845,42 +859,34 @@ class LLMService:
         if self._telemetry_service is None:
             return
         try:
+            input_tokens, output_tokens = self._extract_token_counts(response)
+
+            # Record span attributes only when a span is active
             import opentelemetry.trace as trace_api
 
             current_span = trace_api.get_current_span()
-            if not current_span or not current_span.is_recording():
-                return
-
-            attributes: Dict[str, Any] = {}
-
-            # Extract token usage from LangChain response metadata
-            usage_metadata = getattr(response, "usage_metadata", None)
-            input_tokens = None
-            output_tokens = None
-            if usage_metadata:
-                if isinstance(usage_metadata, dict):
-                    input_tokens = usage_metadata.get("input_tokens")
-                    output_tokens = usage_metadata.get("output_tokens")
-                else:
-                    input_tokens = getattr(usage_metadata, "input_tokens", None)
-                    output_tokens = getattr(usage_metadata, "output_tokens", None)
-
+            if current_span and current_span.is_recording():
+                attributes: Dict[str, Any] = {}
                 if input_tokens is not None:
                     attributes[GEN_AI_USAGE_INPUT_TOKENS] = int(input_tokens)
                 if output_tokens is not None:
                     attributes[GEN_AI_USAGE_OUTPUT_TOKENS] = int(output_tokens)
 
-            # Extract response model if available
-            response_metadata = getattr(response, "response_metadata", None)
-            if response_metadata and isinstance(response_metadata, dict):
-                response_model = response_metadata.get(
-                    "model_name"
-                ) or response_metadata.get("model")
-                if response_model:
-                    attributes[GEN_AI_RESPONSE_MODEL] = response_model
+                response_metadata = getattr(response, "response_metadata", None)
+                if response_metadata and isinstance(response_metadata, dict):
+                    response_model = response_metadata.get(
+                        "model_name"
+                    ) or response_metadata.get("model")
+                    if response_model:
+                        attributes[GEN_AI_RESPONSE_MODEL] = response_model
 
-            if attributes:
-                self._telemetry_service.set_span_attributes(current_span, attributes)
+                if attributes:
+                    self._telemetry_service.set_span_attributes(
+                        current_span, attributes
+                    )
+
+            # Record token metrics regardless of span context
+            self._record_token_metrics(input_tokens, output_tokens, provider, model)
         except Exception:
             pass
 
@@ -920,32 +926,6 @@ class LLMService:
     # Metrics recording helpers (error-isolated, silent no-op when disabled)
     # ------------------------------------------------------------------
 
-    def _record_token_metrics_from_response(
-        self, response: Any, provider: str, model: str
-    ) -> None:
-        """Extract token counts from LLM response and record metrics.
-
-        Guards: short-circuits if telemetry_service is None.
-        Error isolation: catches all exceptions silently.
-        """
-        if self._telemetry_service is None:
-            return
-        try:
-            usage_metadata = getattr(response, "usage_metadata", None)
-            if not usage_metadata:
-                return
-            if isinstance(usage_metadata, dict):
-                input_tokens = usage_metadata.get("input_tokens")
-                output_tokens = usage_metadata.get("output_tokens")
-            else:
-                input_tokens = getattr(usage_metadata, "input_tokens", None)
-                output_tokens = getattr(usage_metadata, "output_tokens", None)
-            self._record_token_metrics(
-                input_tokens, output_tokens, provider, model
-            )
-        except Exception:
-            pass
-
     def _record_duration_metric(
         self, duration: float, provider: str, model: str
     ) -> None:
@@ -954,7 +934,7 @@ class LLMService:
         Guards: short-circuits if telemetry_service is None.
         Error isolation: catches all exceptions silently.
         """
-        if self._telemetry_service is None:
+        if self._telemetry_service is None or self._metric_duration is None:
             return
         try:
             self._metric_duration.record(
@@ -980,16 +960,14 @@ class LLMService:
             return
         try:
             dims = {METRIC_DIM_PROVIDER: provider, METRIC_DIM_MODEL: model}
-            if input_tokens is not None:
+            if input_tokens is not None and self._metric_tokens_input is not None:
                 self._metric_tokens_input.add(int(input_tokens), dims)
-            if output_tokens is not None:
+            if output_tokens is not None and self._metric_tokens_output is not None:
                 self._metric_tokens_output.add(int(output_tokens), dims)
         except Exception:
             pass
 
-    def _record_error_metric(
-        self, error: Any, provider: str, model: str
-    ) -> None:
+    def _record_error_metric(self, error: Any, provider: str, model: str) -> None:
         """Record LLM error on the error counter.
 
         The error_type dimension is derived from the classified exception
@@ -998,7 +976,7 @@ class LLMService:
         Guards: short-circuits if telemetry_service is None.
         Error isolation: catches all exceptions silently.
         """
-        if self._telemetry_service is None:
+        if self._telemetry_service is None or self._metric_errors is None:
             return
         try:
             error_type = type(error).__name__
@@ -1019,23 +997,21 @@ class LLMService:
         Guards: short-circuits if telemetry_service is None.
         Error isolation: catches all exceptions silently.
         """
-        if self._telemetry_service is None:
+        if self._telemetry_service is None or self._metric_fallback is None:
             return
         try:
             self._metric_fallback.add(1, {METRIC_DIM_TIER: tier})
         except Exception:
             pass
 
-    def _record_circuit_breaker_metric_on_open(
-        self, provider: str, model: str
-    ) -> None:
+    def _record_circuit_breaker_metric_on_open(self, provider: str, model: str) -> None:
         """Increment circuit breaker gauge when a circuit opens.
 
         Checks whether the circuit is now open after a failure was recorded.
         Guards: short-circuits if telemetry_service is None.
         Error isolation: catches all exceptions silently.
         """
-        if self._telemetry_service is None:
+        if self._telemetry_service is None or self._metric_circuit_breaker is None:
             return
         try:
             if self._circuit_breaker.is_open(provider, model):
@@ -1054,7 +1030,7 @@ class LLMService:
         Guards: short-circuits if telemetry_service is None.
         Error isolation: catches all exceptions silently.
         """
-        if self._telemetry_service is None:
+        if self._telemetry_service is None or self._metric_circuit_breaker is None:
             return
         try:
             if was_open and not self._circuit_breaker.is_open(provider, model):
