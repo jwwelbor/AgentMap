@@ -205,7 +205,9 @@ class TestFullContainerConsoleExporter:
             WORKFLOW_RUN_SPAN,
             attributes={GRAPH_NAME: "int400_test"},
         ):
-            with svc.start_span(AGENT_RUN_SPAN, attributes={"agentmap.agent.name": "a1"}):
+            with svc.start_span(
+                AGENT_RUN_SPAN, attributes={"agentmap.agent.name": "a1"}
+            ):
                 pass
 
         spans = exporter.get_finished_spans()
@@ -369,9 +371,7 @@ class TestPrivacyControls:
             attributes={"agentmap.agent.name": "test"},
         ) as span:
             # Only input is captured (agent_inputs=True)
-            telemetry_service.set_span_attributes(
-                span, {AGENT_INPUTS: "input data"}
-            )
+            telemetry_service.set_span_attributes(span, {AGENT_INPUTS: "input data"})
             # Output NOT captured (agent_outputs=False)
 
         spans = otel_exporter.get_finished_spans()
@@ -427,16 +427,12 @@ class TestGracefulDegradation:
 
         # Warning should have been logged about missing SDK
         mock_logger = mock_logging_service.get_logger.return_value
-        warning_calls = [
-            str(c) for c in mock_logger.warning.call_args_list
-        ]
+        warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
         sdk_warning = any(
             "agentmap[telemetry]" in w or "opentelemetry-sdk" in w
             for w in warning_calls
         )
-        assert sdk_warning, (
-            f"Expected warning about missing SDK, got: {warning_calls}"
-        )
+        assert sdk_warning, f"Expected warning about missing SDK, got: {warning_calls}"
 
     def test_service_still_functional_after_sdk_missing(
         self,
@@ -764,8 +760,8 @@ class TestBackwardCompatibility:
         from agentmap.di.container_parts.telemetry import TelemetryContainer
 
         # Simulate config service that has no telemetry config
-        mock_app_config_service.get_telemetry_config.side_effect = (
-            AttributeError("no such method")
+        mock_app_config_service.get_telemetry_config.side_effect = AttributeError(
+            "no such method"
         )
 
         container = TelemetryContainer(
@@ -805,9 +801,7 @@ class TestBackwardCompatibility:
         # Config data with no telemetry section
         mock_config_service = MagicMock()
         mock_logger = MagicMock()
-        manager = TelemetryConfigManager(
-            mock_config_service, {}, mock_logger
-        )
+        manager = TelemetryConfigManager(mock_config_service, {}, mock_logger)
 
         config = manager.get_telemetry_config()
 
@@ -855,7 +849,10 @@ class TestBackwardCompatibility:
 
         svc = OTELTelemetryService()
         # No _content_capture_flags set -- should still work
-        assert not hasattr(svc, "_content_capture_flags") or svc._content_capture_flags is None
+        assert (
+            not hasattr(svc, "_content_capture_flags")
+            or svc._content_capture_flags is None
+        )
 
         with svc.start_span("test.span"):
             pass
