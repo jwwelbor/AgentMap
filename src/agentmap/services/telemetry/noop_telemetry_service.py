@@ -14,6 +14,33 @@ import contextlib
 from typing import Any, ContextManager, Dict, Optional
 
 
+class _NoOpCounter:
+    """Counter-like object that silently accepts all add calls."""
+
+    def add(self, amount: Any = 0, attributes: Any = None, **kwargs: Any) -> None:
+        """No-op."""
+
+
+class _NoOpHistogram:
+    """Histogram-like object that silently accepts all record calls."""
+
+    def record(self, value: Any = 0, attributes: Any = None, **kwargs: Any) -> None:
+        """No-op."""
+
+
+class _NoOpUpDownCounter:
+    """UpDownCounter-like object that silently accepts all add calls."""
+
+    def add(self, amount: Any = 0, attributes: Any = None, **kwargs: Any) -> None:
+        """No-op."""
+
+
+# Pre-allocated singletons for no-op metric instruments.
+_NOOP_COUNTER = _NoOpCounter()
+_NOOP_HISTOGRAM = _NoOpHistogram()
+_NOOP_UP_DOWN_COUNTER = _NoOpUpDownCounter()
+
+
 class _NoOpSpan:
     """Span-like object that silently accepts all method calls."""
 
@@ -67,3 +94,23 @@ class NoOpTelemetryService:
     def get_tracer(self) -> Any:
         """Return ``None`` -- no tracer available."""
         return None
+
+    # -- Metrics methods ----------------------------------------------------
+
+    def get_meter(self, name: str = "agentmap", version: Optional[str] = None) -> Any:
+        """Return ``None`` -- no meter available."""
+        return None
+
+    def create_counter(self, name: str, unit: str = "", description: str = "") -> Any:
+        """Return the pre-allocated no-op counter singleton."""
+        return _NOOP_COUNTER
+
+    def create_histogram(self, name: str, unit: str = "", description: str = "") -> Any:
+        """Return the pre-allocated no-op histogram singleton."""
+        return _NOOP_HISTOGRAM
+
+    def create_up_down_counter(
+        self, name: str, unit: str = "", description: str = ""
+    ) -> Any:
+        """Return the pre-allocated no-op up-down counter singleton."""
+        return _NOOP_UP_DOWN_COUNTER

@@ -110,3 +110,44 @@ ROUTING_CIRCUIT_BREAKER_STATE: str = "agentmap.routing.circuit_breaker_state"
 
 ROUTING_FALLBACK_TIER: str = "agentmap.routing.fallback_tier"
 """Fallback tier used when primary routing failed."""
+
+# ---------------------------------------------------------------------------
+# Metric name constants (LLM operations)
+# ---------------------------------------------------------------------------
+
+METRIC_LLM_DURATION: str = "agentmap.llm.duration"
+"""Histogram recording LLM call duration in seconds."""
+
+METRIC_LLM_TOKENS_INPUT: str = "agentmap.llm.tokens.input"
+"""Counter for input (prompt) tokens consumed by LLM calls."""
+
+METRIC_LLM_TOKENS_OUTPUT: str = "agentmap.llm.tokens.output"
+"""Counter for output (completion) tokens produced by LLM calls."""
+
+METRIC_LLM_ERRORS: str = "agentmap.llm.errors"
+"""Counter for LLM call errors."""
+
+METRIC_LLM_ROUTING_CACHE_HIT: str = "agentmap.llm.routing.cache_hit"
+"""Counter for routing cache hits."""
+
+METRIC_LLM_CIRCUIT_BREAKER: str = "agentmap.llm.circuit_breaker"
+"""UpDownCounter (gauge) for circuit breaker state."""
+
+METRIC_LLM_FALLBACK: str = "agentmap.llm.fallback"
+"""Counter for LLM fallback events."""
+
+# ---------------------------------------------------------------------------
+# Metric dimension (attribute key) constants
+# ---------------------------------------------------------------------------
+
+METRIC_DIM_PROVIDER: str = "provider"
+"""LLM provider dimension for metric attributes."""
+
+METRIC_DIM_MODEL: str = "model"
+"""LLM model dimension for metric attributes."""
+
+METRIC_DIM_ERROR_TYPE: str = "error_type"
+"""Error type dimension for metric attributes."""
+
+METRIC_DIM_FALLBACK_REASON: str = "source"
+"""Fallback reason dimension for metric attributes."""

@@ -84,3 +84,129 @@ class TestNoOpTelemetryService:
         svc.set_span_attributes(None, {"key": object(), 123: "value"})
         with svc.start_span("s") as span:
             span.set_attribute("key", object())
+
+    # -- Metrics methods (T-E02-F07-001) ------------------------------------
+
+    def test_get_meter_returns_none(self) -> None:
+        """get_meter returns None for NoOp implementation."""
+        svc = NoOpTelemetryService()
+        result = svc.get_meter("test.meter")
+        assert result is None
+
+    def test_create_counter_returns_noop_counter(self) -> None:
+        """create_counter returns a no-op counter with add method."""
+        svc = NoOpTelemetryService()
+        counter = svc.create_counter("test.counter")
+        assert counter is not None
+        # Should have an add method that does nothing
+        counter.add(1)
+        counter.add(5, {"key": "value"})
+
+    def test_create_histogram_returns_noop_histogram(self) -> None:
+        """create_histogram returns a no-op histogram with record method."""
+        svc = NoOpTelemetryService()
+        histogram = svc.create_histogram("test.histogram")
+        assert histogram is not None
+        # Should have a record method that does nothing
+        histogram.record(1.5)
+        histogram.record(42.0, {"key": "value"})
+
+    def test_create_up_down_counter_returns_noop_up_down_counter(self) -> None:
+        """create_up_down_counter returns a no-op up-down counter with add method."""
+        svc = NoOpTelemetryService()
+        udc = svc.create_up_down_counter("test.gauge")
+        assert udc is not None
+        # Should have an add method that does nothing
+        udc.add(1)
+        udc.add(-1, {"key": "value"})
+
+    def test_noop_counter_is_singleton(self) -> None:
+        """NoOp counter instances are reused (singleton pattern)."""
+        svc = NoOpTelemetryService()
+        c1 = svc.create_counter("counter.a")
+        c2 = svc.create_counter("counter.b")
+        assert c1 is c2
+
+    def test_noop_histogram_is_singleton(self) -> None:
+        """NoOp histogram instances are reused (singleton pattern)."""
+        svc = NoOpTelemetryService()
+        h1 = svc.create_histogram("hist.a")
+        h2 = svc.create_histogram("hist.b")
+        assert h1 is h2
+
+    def test_noop_up_down_counter_is_singleton(self) -> None:
+        """NoOp up-down counter instances are reused (singleton pattern)."""
+        svc = NoOpTelemetryService()
+        u1 = svc.create_up_down_counter("udc.a")
+        u2 = svc.create_up_down_counter("udc.b")
+        assert u1 is u2
+
+    def test_noop_instruments_satisfy_protocol_after_metrics_extension(self) -> None:
+        """NoOpTelemetryService still satisfies the protocol with metrics methods."""
+        svc = NoOpTelemetryService()
+        assert isinstance(svc, TelemetryServiceProtocol)
+
+    # -- ISSUE-7: Edge case tests for NoOp instruments -----------------------
+
+    def test_noop_counter_accepts_zero_amount(self) -> None:
+        """NoOp counter silently accepts zero amount."""
+        svc = NoOpTelemetryService()
+        counter = svc.create_counter("test.counter")
+        counter.add(0)
+        counter.add(0, {"key": "value"})
+
+    def test_noop_counter_accepts_negative_amount(self) -> None:
+        """NoOp counter silently accepts negative amount."""
+        svc = NoOpTelemetryService()
+        counter = svc.create_counter("test.counter")
+        counter.add(-5)
+        counter.add(-1, {"key": "value"})
+
+    def test_noop_counter_accepts_float_amount(self) -> None:
+        """NoOp counter silently accepts float amount."""
+        svc = NoOpTelemetryService()
+        counter = svc.create_counter("test.counter")
+        counter.add(1.5)
+        counter.add(0.001, {"key": "value"})
+
+    def test_noop_histogram_accepts_zero_value(self) -> None:
+        """NoOp histogram silently accepts zero value."""
+        svc = NoOpTelemetryService()
+        histogram = svc.create_histogram("test.histogram")
+        histogram.record(0)
+        histogram.record(0, {"key": "value"})
+
+    def test_noop_histogram_accepts_negative_value(self) -> None:
+        """NoOp histogram silently accepts negative value."""
+        svc = NoOpTelemetryService()
+        histogram = svc.create_histogram("test.histogram")
+        histogram.record(-1.5)
+        histogram.record(-100, {"key": "value"})
+
+    def test_noop_histogram_accepts_float_value(self) -> None:
+        """NoOp histogram silently accepts float value."""
+        svc = NoOpTelemetryService()
+        histogram = svc.create_histogram("test.histogram")
+        histogram.record(3.14159)
+        histogram.record(0.0001, {"key": "value"})
+
+    def test_noop_up_down_counter_accepts_zero_amount(self) -> None:
+        """NoOp up-down counter silently accepts zero amount."""
+        svc = NoOpTelemetryService()
+        udc = svc.create_up_down_counter("test.gauge")
+        udc.add(0)
+        udc.add(0, {"key": "value"})
+
+    def test_noop_up_down_counter_accepts_negative_amount(self) -> None:
+        """NoOp up-down counter silently accepts negative amount."""
+        svc = NoOpTelemetryService()
+        udc = svc.create_up_down_counter("test.gauge")
+        udc.add(-10)
+        udc.add(-1, {"key": "value"})
+
+    def test_noop_up_down_counter_accepts_float_amount(self) -> None:
+        """NoOp up-down counter silently accepts float amount."""
+        svc = NoOpTelemetryService()
+        udc = svc.create_up_down_counter("test.gauge")
+        udc.add(2.5)
+        udc.add(0.1, {"key": "value"})
