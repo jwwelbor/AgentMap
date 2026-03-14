@@ -168,7 +168,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
                 initial_state=subgraph_state,
                 is_subgraph=True,
                 parent_tracker=parent_tracker,
-                parent_graph_name=getattr(self, "parent_graph_name", None),
+                parent_graph_name=self.context.get("graph_name"),
             )
 
             # Extract final_state from ExecutionResult
