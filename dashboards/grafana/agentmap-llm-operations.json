@@ -1,0 +1,754 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus datasource for AgentMap metrics",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    }
+  ],
+  "annotations": { "list": [] },
+  "description": "Comprehensive LLM operations monitoring for AgentMap. Tracks latency, token usage, errors, routing intelligence, and cost estimation across all LLM providers and models.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Overview",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Total number of LLM API calls made during the selected time range. Use this to understand overall LLM usage volume.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 2,
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(increase(agentmap_llm_duration_seconds_count{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval]))",
+          "legendFormat": "Total Calls",
+          "refId": "A"
+        }
+      ],
+      "title": "Total LLM Calls",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Combined total of input and output tokens consumed during the selected time range. Indicates overall LLM throughput and helps forecast costs.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 3,
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(increase(agentmap_llm_tokens_input_total{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval])) + sum(increase(agentmap_llm_tokens_output_total{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval]))",
+          "legendFormat": "Total Tokens",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Tokens",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Ratio of LLM errors to total LLM calls. A rising error rate may indicate provider issues, rate limiting, or configuration problems.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 4,
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(agentmap_llm_errors_total{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval])) / sum(rate(agentmap_llm_duration_seconds_count{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval]))",
+          "legendFormat": "Error Rate",
+          "refId": "A"
+        }
+      ],
+      "title": "Error Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Average LLM call duration across all selected providers and models. High latency may indicate provider degradation or complex prompts.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "id": 5,
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(agentmap_llm_duration_seconds_sum{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval])) / sum(rate(agentmap_llm_duration_seconds_count{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval]))",
+          "legendFormat": "Avg Latency",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Latency",
+      "type": "stat"
+    },
+    {
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 6,
+      "title": "Latency",
+      "type": "row",
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "description": "LLM call latency percentiles (p50, p95, p99) over time. Helps identify latency spikes and tail latency issues across providers.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "fillOpacity": 10,
+                "pointSize": 5,
+                "showPoints": "auto"
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+          "id": 7,
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "histogram_quantile(0.50, sum by (le) (rate(agentmap_llm_duration_seconds_bucket{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval])))",
+              "legendFormat": "p50",
+              "refId": "A"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(agentmap_llm_duration_seconds_bucket{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval])))",
+              "legendFormat": "p95",
+              "refId": "B"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(agentmap_llm_duration_seconds_bucket{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval])))",
+              "legendFormat": "p99",
+              "refId": "C"
+            }
+          ],
+          "title": "p50/p95/p99 Latency",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "description": "Heatmap showing the distribution of LLM call durations over time. Reveals patterns in latency clustering and outliers.",
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+          "id": 8,
+          "options": {
+            "calculate": false,
+            "yAxis": {
+              "unit": "s"
+            }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "sum by (le) (rate(agentmap_llm_duration_seconds_bucket{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval]))",
+              "legendFormat": "{{le}}",
+              "refId": "A",
+              "format": "heatmap"
+            }
+          ],
+          "title": "Duration Distribution",
+          "type": "heatmap"
+        }
+      ]
+    },
+    {
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 9,
+      "title": "Token Usage",
+      "type": "row",
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "description": "Rate of input (prompt) and output (completion) tokens over time. Tracks token consumption trends by provider and model.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+          "id": 10,
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "sum(rate(agentmap_llm_tokens_input_total{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval]))",
+              "legendFormat": "Input Tokens",
+              "refId": "A"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "sum(rate(agentmap_llm_tokens_output_total{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval]))",
+              "legendFormat": "Output Tokens",
+              "refId": "B"
+            }
+          ],
+          "title": "Input vs Output Tokens",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "description": "Ratio of output tokens to input tokens. A high ratio may indicate verbose completions; a low ratio suggests short responses relative to prompt size.",
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "0",
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 15 },
+          "id": 11,
+          "options": {
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "sum(rate(agentmap_llm_tokens_output_total{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval])) / sum(rate(agentmap_llm_tokens_input_total{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval]))",
+              "legendFormat": "Output/Input Ratio",
+              "refId": "A"
+            }
+          ],
+          "title": "Output/Input Token Ratio",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "description": "Top 10 models ranked by total token consumption (input + output). Identifies which models drive the most token usage.",
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 6, "x": 18, "y": 15 },
+          "id": 12,
+          "options": {},
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "topk(10, sum by (model) (increase(agentmap_llm_tokens_input_total{provider=~\"$provider\"}[$__rate_interval])) + sum by (model) (increase(agentmap_llm_tokens_output_total{provider=~\"$provider\"}[$__rate_interval])))",
+              "legendFormat": "{{model}}",
+              "refId": "A",
+              "format": "table",
+              "instant": true
+            }
+          ],
+          "title": "Top Models by Tokens",
+          "type": "table",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "indexByName": {
+                  "model": 0,
+                  "Value": 1
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 13,
+      "title": "Errors & Reliability",
+      "type": "row",
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "description": "Error rate broken down by provider and error type (timeout, rate_limit, api_error, configuration). Helps isolate which providers are experiencing issues.",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
+          "id": 14,
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "sum by (provider, error_type) (rate(agentmap_llm_errors_total{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval]))",
+              "legendFormat": "{{provider}} - {{error_type}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Error Rate by Provider",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "description": "Current number of open circuit breakers. A value greater than zero indicates one or more LLM providers are experiencing failures and have been temporarily disabled.",
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "0",
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
+          "id": 15,
+          "options": {
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "agentmap_llm_circuit_breaker",
+              "legendFormat": "Open Circuits",
+              "refId": "A"
+            }
+          ],
+          "title": "Circuit Breaker State",
+          "type": "gauge"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "description": "Rate of LLM fallback activations by tier. Higher tiers indicate the routing system escalated to backup providers due to primary provider failures.",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
+          "id": 16,
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "sum by (tier) (rate(agentmap_llm_fallback_total[$__rate_interval]))",
+              "legendFormat": "Tier {{tier}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Fallback Rate by Tier",
+          "type": "timeseries"
+        }
+      ]
+    },
+    {
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "id": 17,
+      "title": "Routing Intelligence",
+      "type": "row",
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "description": "Rate of routing cache hits over time. High cache hit rates indicate effective reuse of prior routing decisions, reducing redundant provider selection overhead.",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+          "id": 18,
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "sum(rate(agentmap_llm_routing_cache_hit_total[$__rate_interval]))",
+              "legendFormat": "Cache Hits/s",
+              "refId": "A"
+            }
+          ],
+          "title": "Cache Hit Rate",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "description": "Proportion of LLM routing decisions served from cache versus total calls. A higher ratio means fewer routing computations and faster request handling.",
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "0",
+              "unit": "percentunit",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "yellow", "value": 0.5 },
+                  { "color": "green", "value": 0.8 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 12, "x": 12, "y": 33 },
+          "id": 19,
+          "options": {
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "sum(rate(agentmap_llm_routing_cache_hit_total[$__rate_interval])) / sum(rate(agentmap_llm_duration_seconds_count[$__rate_interval]))",
+              "legendFormat": "Cache Hit Ratio",
+              "refId": "A"
+            }
+          ],
+          "title": "Cache Hit Ratio",
+          "type": "stat"
+        }
+      ]
+    },
+    {
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
+      "id": 20,
+      "title": "Cost Estimation",
+      "type": "row",
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "description": "Estimated LLM cost per provider based on token consumption and configurable cost-per-token rates. Adjust the cost_per_input_token and cost_per_output_token variables to match your pricing.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 42 },
+          "id": 21,
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "sum by (provider) (rate(agentmap_llm_tokens_input_total{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval])) * $cost_per_input_token + sum by (provider) (rate(agentmap_llm_tokens_output_total{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval])) * $cost_per_output_token",
+              "legendFormat": "{{provider}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Estimated Cost by Provider",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "description": "Total estimated LLM spend over the selected time range. Uses cumulative token increase multiplied by configured cost-per-token rates. Set your actual rates in the dashboard variables.",
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "$0.00",
+              "unit": "currencyUSD",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 12, "x": 12, "y": 42 },
+          "id": 22,
+          "options": {
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+              "expr": "sum(increase(agentmap_llm_tokens_input_total{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval])) * $cost_per_input_token + sum(increase(agentmap_llm_tokens_output_total{provider=~\"$provider\", model=~\"$model\"}[$__rate_interval])) * $cost_per_output_token",
+              "legendFormat": "Total Cost",
+              "refId": "A"
+            }
+          ],
+          "title": "Total Estimated Cost",
+          "type": "stat"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["agentmap", "llm", "observability"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(agentmap_llm_duration_seconds_bucket, provider)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Provider",
+        "multi": true,
+        "name": "provider",
+        "options": [],
+        "query": { "qryType": 1, "query": "label_values(agentmap_llm_duration_seconds_bucket, provider)", "refId": "ProviderVariable" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(agentmap_llm_duration_seconds_bucket{provider=~\"$provider\"}, model)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Model",
+        "multi": true,
+        "name": "model",
+        "options": [],
+        "query": { "qryType": 1, "query": "label_values(agentmap_llm_duration_seconds_bucket{provider=~\"$provider\"}, model)", "refId": "ModelVariable" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "auto": true,
+        "auto_count": 30,
+        "auto_min": "1m",
+        "current": { "selected": false, "text": "auto", "value": "$__auto_interval_interval" },
+        "hide": 0,
+        "label": "Interval",
+        "name": "interval",
+        "options": [
+          { "selected": true, "text": "auto", "value": "$__auto_interval_interval" },
+          { "selected": false, "text": "1m", "value": "1m" },
+          { "selected": false, "text": "5m", "value": "5m" },
+          { "selected": false, "text": "15m", "value": "15m" },
+          { "selected": false, "text": "1h", "value": "1h" }
+        ],
+        "query": "1m,5m,15m,1h",
+        "queryValue": "",
+        "refresh": 2,
+        "skipUrlSync": false,
+        "type": "interval"
+      },
+      {
+        "current": { "selected": false, "text": "0.000003", "value": "0.000003" },
+        "hide": 0,
+        "label": "Cost per Input Token ($)",
+        "name": "cost_per_input_token",
+        "options": [{ "selected": true, "text": "0.000003", "value": "0.000003" }],
+        "query": "0.000003",
+        "skipUrlSync": false,
+        "type": "textbox"
+      },
+      {
+        "current": { "selected": false, "text": "0.000015", "value": "0.000015" },
+        "hide": 0,
+        "label": "Cost per Output Token ($)",
+        "name": "cost_per_output_token",
+        "options": [{ "selected": true, "text": "0.000015", "value": "0.000015" }],
+        "query": "0.000015",
+        "skipUrlSync": false,
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "AgentMap LLM Operations",
+  "uid": "",
+  "version": 0
+}

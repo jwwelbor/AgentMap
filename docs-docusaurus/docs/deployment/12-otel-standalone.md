@@ -122,6 +122,8 @@ AgentMap emits the following metrics when the SDK is configured:
 | `agentmap.llm.tokens.output` | Counter | provider, model | Output token count |
 | `agentmap.llm.errors` | Counter | provider, model, error_type | LLM call errors |
 | `agentmap.llm.fallback` | Counter | tier | Fallback triggers |
+| `agentmap.llm.routing.cache_hit` | Counter | — | Routing cache hits |
+| `agentmap.llm.circuit_breaker` | UpDownCounter | — | Open circuit breaker gauge |
 
 ## Backend Integration Examples
 
@@ -375,5 +377,6 @@ AgentMap's telemetry is designed to never break your application:
 ## Next Steps
 
 - **[OpenTelemetry - Embedded Integration](./otel-embedded)**: Use AgentMap's tracing within a host application's existing OTEL setup
+- **[Grafana Dashboards](./grafana-dashboards)**: Import pre-built Grafana dashboards for AgentMap LLM metrics and workflow traces
 - **[FastAPI Standalone Guide](./fastapi-standalone)**: Deploy AgentMap as a standalone HTTP service
 - **[CLI Commands Reference](./cli-commands)**: Run workflows from the command line
