@@ -86,6 +86,12 @@ GEN_AI_PROMPT_CONTENT: str = "gen_ai.prompt.content"
 GEN_AI_RESPONSE_CONTENT: str = "gen_ai.response.content"
 """Captured LLM response content (privacy-controlled, opt-in)."""
 
+GEN_AI_PROVIDER_REQUEST_ID: str = "gen_ai.provider.request_id"
+"""Request ID returned by the LLM provider (for support/debugging)."""
+
+GEN_AI_SYSTEM_FINGERPRINT: str = "gen_ai.system.fingerprint"
+"""System fingerprint returned by the LLM provider (OpenAI-specific)."""
+
 # ---------------------------------------------------------------------------
 # Routing span attributes
 # ---------------------------------------------------------------------------

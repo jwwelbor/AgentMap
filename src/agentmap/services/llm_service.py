@@ -31,10 +31,12 @@ from agentmap.services.routing.routing_service import LLMRoutingService
 from agentmap.services.routing.types import RoutingContext
 from agentmap.services.telemetry.constants import (
     GEN_AI_PROMPT_CONTENT,
+    GEN_AI_PROVIDER_REQUEST_ID,
     GEN_AI_REQUEST_MODEL,
     GEN_AI_RESPONSE_CONTENT,
     GEN_AI_RESPONSE_MODEL,
     GEN_AI_SYSTEM,
+    GEN_AI_SYSTEM_FINGERPRINT,
     GEN_AI_USAGE_INPUT_TOKENS,
     GEN_AI_USAGE_OUTPUT_TOKENS,
     LLM_CALL_SPAN,
@@ -588,8 +590,16 @@ class LLMService:
                 # Record token counts, response model on span, and token metrics
                 self._record_llm_response_attributes(response, provider, model)
 
+                # Log request ID for debugging
+                resp_meta = getattr(response, "response_metadata", None)
+                req_id = (
+                    self._extract_provider_request_id(resp_meta, provider)
+                    if isinstance(resp_meta, dict)
+                    else None
+                )
                 self._logger.debug(
                     f"LLM call successful, response length: {len(result)}"
+                    + (f", request_id: {req_id}" if req_id else "")
                 )
                 return result
 
@@ -846,6 +856,43 @@ class LLMService:
             getattr(usage_metadata, "output_tokens", None),
         )
 
+    @staticmethod
+    def _extract_provider_request_id(
+        response_metadata: Dict[str, Any], provider: str
+    ) -> Optional[str]:
+        """Extract the provider-specific request ID from response metadata.
+
+        Each LLM provider returns request IDs in different locations:
+        - Anthropic: response_metadata["id"] (e.g. "msg_01XFDUDYJgAACzvnptvVoYEL")
+        - OpenAI: response_metadata["headers"]["x-request-id"]
+        - Google: response_metadata["request_id"] (when available)
+
+        Returns None when the ID is not found.
+        """
+        if not response_metadata:
+            return None
+
+        if provider == "anthropic":
+            # Anthropic puts message ID directly in metadata
+            return response_metadata.get("id")
+
+        if provider == "openai":
+            # OpenAI puts request ID in response headers
+            headers = response_metadata.get("headers", {})
+            if isinstance(headers, dict):
+                return headers.get("x-request-id")
+
+        if provider == "google":
+            return response_metadata.get("request_id")
+
+        # Generic fallback: try common keys
+        for key in ("id", "request_id", "x-request-id"):
+            val = response_metadata.get(key)
+            if val and isinstance(val, str):
+                return val
+
+        return None
+
     def _record_llm_response_attributes(
         self, response: Any, provider: str, model: str = "unknown"
     ) -> None:
@@ -879,6 +926,18 @@ class LLMService:
                     ) or response_metadata.get("model")
                     if response_model:
                         attributes[GEN_AI_RESPONSE_MODEL] = response_model
+
+                    # Extract provider request ID for debugging/support
+                    request_id = self._extract_provider_request_id(
+                        response_metadata, provider
+                    )
+                    if request_id:
+                        attributes[GEN_AI_PROVIDER_REQUEST_ID] = request_id
+
+                    # Extract system fingerprint (OpenAI)
+                    fingerprint = response_metadata.get("system_fingerprint")
+                    if fingerprint:
+                        attributes[GEN_AI_SYSTEM_FINGERPRINT] = fingerprint
 
                 if attributes:
                     self._telemetry_service.set_span_attributes(

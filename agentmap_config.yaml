@@ -69,6 +69,22 @@ logging:
     - console
     - file
 
+# Telemetry / OpenTelemetry configuration
+telemetry:
+  enabled: false                          # Set to true to enable OTEL export
+  exporter: "none"                        # "otlp", "console", or "none"
+  endpoint: "http://localhost:4317"        # OTLP collector endpoint
+  protocol: "grpc"                        # "grpc" or "http"
+  resource:
+    service.name: "agentmap"
+
+  # Content capture flags (all default to false for privacy)
+  traces:
+    agent_inputs: false                   # Capture agent input state on spans
+    agent_outputs: false                  # Capture agent output on spans
+    llm_prompts: false                    # Capture LLM prompt text on spans
+    llm_responses: false                  # Capture LLM response text on spans
+
 # Storage-specific configurations
 # storage: look in separate file storage_config.yaml
 
