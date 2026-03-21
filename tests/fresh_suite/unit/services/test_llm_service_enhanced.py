@@ -292,6 +292,7 @@ class TestLLMServiceEnhanced(unittest.TestCase):
         mock_decision.model = "claude-opus-4-6"
         mock_decision.complexity = "high"
         mock_decision.confidence = 0.9
+        mock_decision.max_tokens = None
 
         self.mock_routing_service.route_request.return_value = mock_decision
 

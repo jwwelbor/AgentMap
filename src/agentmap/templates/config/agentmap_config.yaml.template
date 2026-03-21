@@ -199,9 +199,17 @@ routing:
   # Activity-Based Routing Configuration
   # Define specific activities with explicit provider/model pairs per complexity tier
   # Activities are evaluated FIRST, before task_types and routing_matrix
+  #
+  # max_tokens: Optional per-tier or per-candidate token limit for responses.
+  #   - Set at the tier level to apply to all candidates in that tier
+  #   - Set on individual candidates to override the tier-level value
+  #   - 0 means "no limit" (use provider's built-in default)
+  #   - null or omitted means "inherit from provider-level config"
+  #   - Priority: node context > activity config > provider default
   activities:
     code_generation:
       low:
+        max_tokens: 2048  # Short code snippets
         primary:
           provider: "anthropic"
           model: "claude-haiku-4-5-20251001"
@@ -209,6 +217,7 @@ routing:
           - provider: "openai"
             model: "gpt-4o-mini"
       medium:
+        max_tokens: 4096
         primary:
           provider: "anthropic"
           model: "claude-sonnet-4-6"
@@ -216,6 +225,7 @@ routing:
           - provider: "openai"
             model: "gpt-4.1-mini"
       high:
+        max_tokens: 8192  # Full file generation
         primary:
           provider: "anthropic"
           model: "claude-sonnet-4-6"
@@ -223,6 +233,7 @@ routing:
           - provider: "openai"
             model: "gpt-4.1"
       critical:
+        max_tokens: 0  # No limit for critical tasks
         primary:
           provider: "openai"
           model: "o3"

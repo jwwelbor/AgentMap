@@ -274,7 +274,7 @@ class LLMRoutingService:
         *,
         available_providers: Optional[List[str]] = None,
         complexity: Optional[TaskComplexity] = None,
-    ) -> List[Dict[str, str]]:
+    ) -> List[Dict[str, Any]]:
         """
         Build an ordered list of candidate provider/model pairs.
 
@@ -287,7 +287,7 @@ class LLMRoutingService:
             complexity: Task complexity level
 
         Returns:
-            Ordered list of candidate provider/model pairs
+            Ordered list of candidate provider/model pairs (may include max_tokens)
         """
         ctx = (
             routing_context
@@ -317,7 +317,7 @@ class LLMRoutingService:
 
         complexity_key = str(complexity).lower()
         activity_table = ActivityRoutingTable(self.routing_config, self._logger)
-        ordered: List[Dict[str, str]] = []
+        ordered: List[Dict[str, Any]] = []
         seen_pairs: Set[Tuple[str, str]] = set()
 
         # 1) Activity-driven plan (primary + fallbacks)
@@ -332,7 +332,10 @@ class LLMRoutingService:
             pair = (provider_lower, model)
             if pair in seen_pairs:
                 continue
-            ordered.append({"provider": provider, "model": model})
+            candidate: Dict[str, Any] = {"provider": provider, "model": model}
+            if "max_tokens" in entry:
+                candidate["max_tokens"] = entry["max_tokens"]
+            ordered.append(candidate)
             seen_pairs.add(pair)
 
         # 2) Matrix-based backstops for remaining providers
@@ -366,7 +369,7 @@ class LLMRoutingService:
 
     def _choose_candidate_decision(
         self,
-        candidates: List[Dict[str, str]],
+        candidates: List[Dict[str, Any]],
         available_providers: List[str],
         routing_context: RoutingContext,
         complexity: TaskComplexity,
@@ -401,6 +404,7 @@ class LLMRoutingService:
                 confidence=confidence,
                 reasoning=reasoning,
                 fallback_used=index > 0,
+                max_tokens=candidate.get("max_tokens"),
             )
 
         return None

@@ -110,6 +110,8 @@ class RoutingContext:
     fallback_model: Optional[str] = None
     retry_with_lower_complexity: bool = True
 
+    max_tokens: Optional[int] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert routing context to dictionary."""
         return {
@@ -132,6 +134,7 @@ class RoutingContext:
             "fallback_provider": self.fallback_provider,
             "fallback_model": self.fallback_model,
             "retry_with_lower_complexity": self.retry_with_lower_complexity,
+            "max_tokens": self.max_tokens,
         }
 
     @classmethod
@@ -157,6 +160,7 @@ class RoutingContext:
             fallback_provider=data.get("fallback_provider"),
             fallback_model=data.get("fallback_model"),
             retry_with_lower_complexity=data.get("retry_with_lower_complexity", True),
+            max_tokens=data.get("max_tokens"),
         )
 
 
@@ -175,6 +179,7 @@ class RoutingDecision:
     reasoning: str = ""  # Human-readable explanation of the decision
     fallback_used: bool = False
     cache_hit: bool = False
+    max_tokens: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert routing decision to dictionary."""
@@ -186,6 +191,7 @@ class RoutingDecision:
             "reasoning": self.reasoning,
             "fallback_used": self.fallback_used,
             "cache_hit": self.cache_hit,
+            "max_tokens": self.max_tokens,
         }
 
 

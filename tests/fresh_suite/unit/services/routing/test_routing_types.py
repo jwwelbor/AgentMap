@@ -228,6 +228,7 @@ class TestRoutingContext(unittest.TestCase):
             "fallback_provider",
             "fallback_model",
             "retry_with_lower_complexity",
+            "max_tokens",
         }
         self.assertEqual(set(result.keys()), expected_keys)
 
@@ -349,6 +350,7 @@ class TestRoutingDecision(unittest.TestCase):
             "reasoning": "Good for medium complexity",
             "fallback_used": False,
             "cache_hit": True,
+            "max_tokens": None,
         }
 
         self.assertEqual(result, expected)

@@ -275,6 +275,7 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
                 "memory_size": len(inputs.get(self.memory_key, [])),
                 **self.context.get("input_context", {}),
             },
+            "max_tokens": self.max_tokens,
         }
         return routing_context
 
