@@ -472,13 +472,17 @@ class LLMService:
             # Get provider configuration
             config = self._provider_utils.get_provider_config(provider)
 
-            # Override model and temperature if provided
+            # Override model, temperature, and max_tokens if provided
+            max_tokens = kwargs.pop("max_tokens", None)
             if model:
                 config = config.copy()
                 config["model"] = model
             if temperature is not None:
                 config = config.copy()
                 config["temperature"] = temperature
+            if max_tokens is not None:
+                config = config.copy()
+                config["max_tokens"] = max_tokens
 
             # Get or create LangChain client
             client = self._client_factory.get_or_create_client(provider, config)

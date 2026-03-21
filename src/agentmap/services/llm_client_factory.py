@@ -36,7 +36,8 @@ class LLMClientFactory:
             LangChain client instance
         """
         # Create cache key based on provider and critical config
-        cache_key = f"{provider}_{config.get('model')}_{config.get('api_key', '')[:8]}"
+        max_tok = config.get("max_tokens", "")
+        cache_key = f"{provider}_{config.get('model')}_{config.get('api_key', '')[:8]}_{max_tok}"
 
         if cache_key in self._clients:
             return self._clients[cache_key]
@@ -70,14 +71,21 @@ class LLMClientFactory:
 
         model = config.get("model")
         temperature = config.get("temperature", 0.7)
+        max_tokens = config.get("max_tokens")
 
         try:
             if provider == "openai":
-                return self._create_openai_client(api_key, model, temperature)
+                return self._create_openai_client(
+                    api_key, model, temperature, max_tokens
+                )
             elif provider == "anthropic":
-                return self._create_anthropic_client(api_key, model, temperature)
+                return self._create_anthropic_client(
+                    api_key, model, temperature, max_tokens
+                )
             elif provider == "google":
-                return self._create_google_client(api_key, model, temperature)
+                return self._create_google_client(
+                    api_key, model, temperature, max_tokens
+                )
             else:
                 raise LLMConfigurationError(f"Unsupported provider: {provider}")
 
@@ -88,7 +96,11 @@ class LLMClientFactory:
             ) from e
 
     def _create_openai_client(
-        self, api_key: str, model: str, temperature: float
+        self,
+        api_key: str,
+        model: str,
+        temperature: float,
+        max_tokens: int | None = None,
     ) -> Any:
         """
         Create OpenAI LangChain client.
@@ -97,6 +109,7 @@ class LLMClientFactory:
             api_key: OpenAI API key
             model: Model name
             temperature: Temperature setting
+            max_tokens: Optional max response tokens
 
         Returns:
             ChatOpenAI client instance
@@ -117,12 +130,21 @@ class LLMClientFactory:
                     "OpenAI dependencies not found. Install with: pip install langchain-openai"
                 )
 
-        return ChatOpenAI(
-            model_name=model, temperature=temperature, openai_api_key=api_key
-        )
+        kwargs: Dict[str, Any] = {
+            "model_name": model,
+            "temperature": temperature,
+            "openai_api_key": api_key,
+        }
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        return ChatOpenAI(**kwargs)
 
     def _create_anthropic_client(
-        self, api_key: str, model: str, temperature: float
+        self,
+        api_key: str,
+        model: str,
+        temperature: float,
+        max_tokens: int | None = None,
     ) -> Any:
         """
         Create Anthropic LangChain client.
@@ -131,6 +153,7 @@ class LLMClientFactory:
             api_key: Anthropic API key
             model: Model name
             temperature: Temperature setting
+            max_tokens: Optional max response tokens
 
         Returns:
             ChatAnthropic client instance
@@ -159,12 +182,21 @@ class LLMClientFactory:
                         "Anthropic dependencies not found. Install with: pip install langchain-anthropic"
                     )
 
-        return ChatAnthropic(
-            model=model, temperature=temperature, anthropic_api_key=api_key
-        )
+        kwargs: Dict[str, Any] = {
+            "model": model,
+            "temperature": temperature,
+            "anthropic_api_key": api_key,
+        }
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        return ChatAnthropic(**kwargs)
 
     def _create_google_client(
-        self, api_key: str, model: str, temperature: float
+        self,
+        api_key: str,
+        model: str,
+        temperature: float,
+        max_tokens: int | None = None,
     ) -> Any:
         """
         Create Google LangChain client.
@@ -173,6 +205,7 @@ class LLMClientFactory:
             api_key: Google API key
             model: Model name
             temperature: Temperature setting
+            max_tokens: Optional max response tokens
 
         Returns:
             ChatGoogleGenerativeAI client instance
@@ -193,9 +226,14 @@ class LLMClientFactory:
                     "Google dependencies not found. Install with: pip install langchain-google-genai"
                 )
 
-        return ChatGoogleGenerativeAI(
-            model=model, temperature=temperature, google_api_key=api_key
-        )
+        kwargs: Dict[str, Any] = {
+            "model": model,
+            "temperature": temperature,
+            "google_api_key": api_key,
+        }
+        if max_tokens is not None:
+            kwargs["max_output_tokens"] = max_tokens
+        return ChatGoogleGenerativeAI(**kwargs)
 
     def clear_cache(self) -> None:
         """Clear the client cache."""
