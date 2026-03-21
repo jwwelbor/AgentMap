@@ -116,7 +116,7 @@ class TestMaxTokensInActivityRouting(unittest.TestCase):
         self.assertEqual(candidates[1]["max_tokens"], 2048)
 
     def test_plan_candidate_max_tokens_overrides_tier(self):
-        """Candidate-level max_tokens overrides tier-level; fallback inherits primary."""
+        """Candidate-level max_tokens overrides tier-level; fallback inherits tier."""
         table = self._make_table(
             {
                 "code_gen": {
@@ -134,8 +134,8 @@ class TestMaxTokensInActivityRouting(unittest.TestCase):
         )
         candidates = table.plan("code_gen", "high")
         self.assertEqual(candidates[0]["max_tokens"], 8192)  # candidate override
-        # Fallback inherits from primary (8192), not tier (4096)
-        self.assertEqual(candidates[1]["max_tokens"], 8192)
+        # Fallback inherits from tier (4096), not primary (8192)
+        self.assertEqual(candidates[1]["max_tokens"], 4096)
 
     def test_plan_no_max_tokens_when_absent(self):
         """When max_tokens is absent, entries don't include the key."""

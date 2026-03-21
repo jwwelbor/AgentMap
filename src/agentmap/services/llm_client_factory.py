@@ -36,7 +36,7 @@ class LLMClientFactory:
             LangChain client instance
         """
         # Create cache key based on provider and critical config
-        max_tok = config.get("max_tokens", "")
+        max_tok = config.get("max_tokens")
         cache_key = f"{provider}_{config.get('model')}_{config.get('api_key', '')[:8]}_{max_tok}"
 
         if cache_key in self._clients:

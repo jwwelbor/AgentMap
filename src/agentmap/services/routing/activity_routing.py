@@ -66,12 +66,9 @@ class ActivityRoutingTable:
 
         ordered: List[Dict[str, Any]] = []
 
-        # Resolution chain: candidate > primary > tier
+        # Resolution chain: candidate > tier
         tier_max_tokens = plan.get("max_tokens")
         primary = plan.get("primary")
-        primary_max_tokens = (
-            primary.get("max_tokens") if isinstance(primary, dict) else None
-        )
 
         # Combine primary and fallbacks into a single list for processing
         all_candidates = []
@@ -79,7 +76,7 @@ class ActivityRoutingTable:
             all_candidates.append(primary)
         all_candidates.extend(plan.get("fallbacks", []))
 
-        for idx, candidate in enumerate(all_candidates):
+        for candidate in all_candidates:
             if not isinstance(candidate, dict):
                 continue
             provider = candidate.get("provider")
@@ -87,12 +84,8 @@ class ActivityRoutingTable:
             if provider and model:
                 entry: Dict[str, Any] = {"provider": provider, "model": model}
                 candidate_max_tokens = candidate.get("max_tokens")
-                # Primary uses: candidate > tier
-                # Fallbacks use: candidate > primary > tier
                 if candidate_max_tokens is not None:
                     resolved_max_tokens = candidate_max_tokens
-                elif idx > 0 and primary_max_tokens is not None:
-                    resolved_max_tokens = primary_max_tokens
                 else:
                     resolved_max_tokens = tier_max_tokens
                 if resolved_max_tokens is not None:

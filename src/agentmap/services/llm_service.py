@@ -509,19 +509,17 @@ class LLMService:
 
             # Override model, temperature, and max_tokens if provided
             max_tokens = kwargs.pop("max_tokens", None)
-            if model:
+            if model or temperature is not None or max_tokens is not None:
                 config = config.copy()
-                config["model"] = model
-            if temperature is not None:
-                config = config.copy()
-                config["temperature"] = temperature
-            if max_tokens == 0:
-                # 0 means "no limit" — suppress any provider-level default
-                config = config.copy()
-                config.pop("max_tokens", None)
-            elif max_tokens is not None:
-                config = config.copy()
-                config["max_tokens"] = max_tokens
+                if model:
+                    config["model"] = model
+                if temperature is not None:
+                    config["temperature"] = temperature
+                if max_tokens == 0:
+                    # 0 means "no limit" — suppress any provider-level default
+                    config.pop("max_tokens", None)
+                elif max_tokens is not None:
+                    config["max_tokens"] = max_tokens
 
             # Get or create LangChain client
             client = self._client_factory.get_or_create_client(provider, config)
