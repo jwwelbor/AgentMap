@@ -21,6 +21,7 @@ llm:
     api_key: "${ANTHROPIC_API_KEY}"
     model: "claude-sonnet-4-6"
     temperature: 0.7
+    max_tokens: 4096
 
   openai:
     api_key: "${OPENAI_API_KEY}"
@@ -36,6 +37,7 @@ llm:
 - `api_key` — use `${ENV_VAR}` syntax to reference environment variables (recommended) or set directly
 - `model` — default model used when no override is specified in `call_llm()`, CSV context, or matrix configuration
 - `temperature` — default creativity (0.0 = deterministic, 1.0 = creative)
+- `max_tokens` — (optional) maximum number of tokens in the LLM response. Set to `null` or omit to use the provider's built-in default. Set to `0` to explicitly mean "no limit" (uses the provider's maximum). Anthropic defaults to 4096 if not set
 - Only providers with a valid API key are available at runtime. Check with `llm_service.get_available_providers()`
 
 Note: Store API keys in environment variables, never in the config file. See [Environment Variables](./environment-variables) for setup instructions.
@@ -235,6 +237,7 @@ routing:
   activities:
     code_generation:
       low:
+        max_tokens: 2048
         primary:
           provider: "anthropic"
           model: "claude-haiku-4-5-20251001"
@@ -242,6 +245,7 @@ routing:
           - provider: "openai"
             model: "gpt-4o-mini"
       medium:
+        max_tokens: 4096
         primary:
           provider: "anthropic"
           model: "claude-sonnet-4-6"
@@ -249,6 +253,7 @@ routing:
           - provider: "openai"
             model: "gpt-4.1-mini"
       high:
+        max_tokens: 8192
         primary:
           provider: "anthropic"
           model: "claude-sonnet-4-6"
@@ -256,6 +261,7 @@ routing:
           - provider: "openai"
             model: "gpt-4.1"
       critical:
+        max_tokens: 0  # no limit
         primary:
           provider: "openai"
           model: "o3"
@@ -276,6 +282,7 @@ routing:
 - Each activity maps complexity tiers to explicit primary + fallback provider:model pairs
 - Use `any` instead of individual tiers when you want the same model regardless of complexity
 - `fallbacks` is optional — if the primary fails, these are tried in order
+- `max_tokens` can be set at the tier level to apply to all candidates, or on individual candidates to override the tier value. Set to `0` for "no limit"
 - Activities take priority over task types. When both `activity` and `task_type` are set, `activity` is evaluated first
 
 Activities use the same complexity tiers (`low`, `medium`, `high`, `critical`) as the routing matrix, but instead of looking up a model from the matrix, they specify exact provider:model pairs. Use the `any` tier when the same model should handle all complexity levels.
@@ -327,6 +334,7 @@ llm:
     api_key: "${ANTHROPIC_API_KEY}"
     model: "claude-sonnet-4-6"
     temperature: 0.7
+    max_tokens: 4096
 
   openai:
     api_key: "${OPENAI_API_KEY}"

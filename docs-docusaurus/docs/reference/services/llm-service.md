@@ -25,6 +25,7 @@ llm:
     api_key: "${ANTHROPIC_API_KEY}"
     model: "claude-sonnet-4-6"
     temperature: 0.7
+    max_tokens: 4096
   openai:
     api_key: "${OPENAI_API_KEY}"
     model: "gpt-4o"
@@ -34,6 +35,8 @@ llm:
     model: "gemini-2.5-flash"
     temperature: 0.5
 ```
+
+- `max_tokens` — (optional) maximum number of tokens in the LLM response. Omit or set to `null` to use the provider's default. Set to `0` to explicitly mean "no limit". Can be overridden per-call via `call_llm(max_tokens=...)` or via `routing_context`.
 
 ### Routing config (`routing:`)
 
@@ -73,6 +76,7 @@ response = llm_service.call_llm(
     messages=[{"role": "user", "content": "Explain quantum entanglement"}],
     model="claude-sonnet-4-6",  # optional override
     temperature=0.2,                      # optional override
+    max_tokens=2048,                      # optional override
 )
 ```
 
@@ -247,6 +251,21 @@ All fields are optional. Routing is activated by passing a `routing_context` dic
 | `fallback_provider` | `None` | Override fallback provider for this call |
 | `fallback_model` | `None` | Override fallback model for this call |
 | `retry_with_lower_complexity` | `True` | On failure, retry with lower complexity tier |
+| `max_tokens` | `None` | Max response tokens for this call. Overrides provider and activity defaults. `0` = no limit |
+
+---
+
+## `max_tokens` Priority
+
+When using routing, `max_tokens` is resolved from multiple sources in this priority order:
+
+1. **Node context** — `routing_context["max_tokens"]` or `max_tokens` in the CSV `context` field
+2. **Activity config** — `max_tokens` set at the tier or candidate level in the activity definition
+3. **Provider default** — `max_tokens` in the provider's `llm:` config section
+
+If no source sets `max_tokens`, the provider's built-in default is used. Setting `max_tokens` to `0` at any level means "no limit" — it actively suppresses any provider default.
+
+For direct calls (no routing), `max_tokens` passed to `call_llm()` overrides the provider config default.
 
 ---
 
@@ -380,7 +399,7 @@ Direct provider call:
 
 ```csv
 workflow,node,description,type,next_node,error_node,input_fields,output_field,prompt,context
-ChatBot,Chat,Chat with AI,llm,Chat,Error,message,response,You are a helpful assistant,"{""provider"": ""anthropic"", ""model"": ""claude-sonnet-4-6"", ""temperature"": 0.7}"
+ChatBot,Chat,Chat with AI,llm,Chat,Error,message,response,You are a helpful assistant,"{""provider"": ""anthropic"", ""model"": ""claude-sonnet-4-6"", ""temperature"": 0.7, ""max_tokens"": 2048}"
 ```
 
 With routing context — routing selects the provider and model; `provider` and `model` are omitted:
