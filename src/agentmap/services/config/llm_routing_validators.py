@@ -77,6 +77,78 @@ def validate_routing_config(
     return errors
 
 
+def _validate_max_tokens_value(value: Any, location: str, errors: List[str]) -> None:
+    """Validate a single max_tokens value."""
+    if value is None:
+        return
+    if not isinstance(value, int) or isinstance(value, bool):
+        errors.append(
+            f"{location}: max_tokens must be a non-negative integer or null, "
+            f"got {type(value).__name__}: {value}"
+        )
+    elif value < 0:
+        errors.append(f"{location}: max_tokens must be non-negative, got {value}")
+
+
+def validate_activities_config(
+    activities: Dict[str, Any],
+) -> List[str]:
+    """
+    Validate activities routing configuration, including max_tokens values.
+
+    Args:
+        activities: Activities configuration dictionary
+
+    Returns:
+        List of validation error messages (empty if valid)
+    """
+    errors: List[str] = []
+    if not activities or not isinstance(activities, dict):
+        return errors
+
+    valid_tiers = set(get_valid_complexity_levels()) | {"any"}
+
+    for activity_name, tier_map in activities.items():
+        if not isinstance(tier_map, dict):
+            errors.append(
+                f"Activity '{activity_name}': must be a dictionary of complexity tiers"
+            )
+            continue
+
+        for tier_key, plan in tier_map.items():
+            if tier_key not in valid_tiers:
+                errors.append(
+                    f"Activity '{activity_name}': invalid complexity tier '{tier_key}'"
+                )
+                continue
+
+            if not isinstance(plan, dict):
+                continue
+
+            location = f"Activity '{activity_name}'.{tier_key}"
+
+            # Validate tier-level max_tokens
+            _validate_max_tokens_value(plan.get("max_tokens"), location, errors)
+
+            # Validate primary candidate max_tokens
+            primary = plan.get("primary")
+            if isinstance(primary, dict):
+                _validate_max_tokens_value(
+                    primary.get("max_tokens"), f"{location}.primary", errors
+                )
+
+            # Validate fallback candidates max_tokens
+            for i, fallback in enumerate(plan.get("fallbacks", [])):
+                if isinstance(fallback, dict):
+                    _validate_max_tokens_value(
+                        fallback.get("max_tokens"),
+                        f"{location}.fallbacks[{i}]",
+                        errors,
+                    )
+
+    return errors
+
+
 def validate_provider_routing(
     routing_matrix: Dict[str, Dict[str, str]], app_config_service, logger
 ) -> List[str]:

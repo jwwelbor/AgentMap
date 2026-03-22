@@ -32,6 +32,7 @@ from agentmap.services.routing.types import RoutingContext
 from agentmap.services.telemetry.constants import (
     GEN_AI_PROMPT_CONTENT,
     GEN_AI_PROVIDER_REQUEST_ID,
+    GEN_AI_REQUEST_MAX_TOKENS,
     GEN_AI_REQUEST_MODEL,
     GEN_AI_RESPONSE_CONTENT,
     GEN_AI_RESPONSE_MODEL,
@@ -412,6 +413,36 @@ class LLMService:
             # Record routing attributes on the current span (E02-F03)
             self._record_routing_attributes(decision)
 
+            # Resolve max_tokens priority: node context > activity config > provider default
+            node_max_tokens = routing_context.get("max_tokens")
+            if node_max_tokens is None:
+                node_max_tokens = kwargs.pop("max_tokens", None)
+
+            resolved_max_tokens = (
+                node_max_tokens if node_max_tokens is not None else decision.max_tokens
+            )
+            # 0 means "no limit" — actively suppress any provider default
+            if resolved_max_tokens == 0:
+                self._logger.debug(
+                    "max_tokens=0 resolved to no limit (provider default)"
+                )
+                kwargs["max_tokens"] = 0  # sentinel: _call_llm_direct strips it
+                resolved_max_tokens = None
+            elif resolved_max_tokens is not None:
+                source = (
+                    "node context" if node_max_tokens is not None else "activity config"
+                )
+                self._logger.debug(
+                    f"max_tokens={resolved_max_tokens} (source: {source})"
+                )
+                kwargs["max_tokens"] = resolved_max_tokens
+
+            # Record resolved max_tokens on telemetry span (post-priority)
+            if resolved_max_tokens is not None:
+                self._set_current_span_attributes(
+                    {GEN_AI_REQUEST_MAX_TOKENS: resolved_max_tokens}
+                )
+
             # Make the actual LLM call with the selected provider/model
             return self._call_llm_direct(
                 provider=decision.provider,
@@ -430,6 +461,10 @@ class LLMService:
             )
             # Record fallback metric
             self._record_fallback_metric("routing_fallback")
+            # Preserve node-level max_tokens in fallback path
+            fallback_max_tokens = routing_context.get("max_tokens")
+            if fallback_max_tokens is not None and "max_tokens" not in kwargs:
+                kwargs["max_tokens"] = fallback_max_tokens
             return self._call_llm_direct(
                 provider=fallback_provider,
                 messages=messages,
@@ -472,13 +507,19 @@ class LLMService:
             # Get provider configuration
             config = self._provider_utils.get_provider_config(provider)
 
-            # Override model and temperature if provided
-            if model:
+            # Override model, temperature, and max_tokens if provided
+            max_tokens = kwargs.pop("max_tokens", None)
+            if model or temperature is not None or max_tokens is not None:
                 config = config.copy()
-                config["model"] = model
-            if temperature is not None:
-                config = config.copy()
-                config["temperature"] = temperature
+                if model:
+                    config["model"] = model
+                if temperature is not None:
+                    config["temperature"] = temperature
+                if max_tokens == 0:
+                    # 0 means "no limit" — suppress any provider-level default
+                    config.pop("max_tokens", None)
+                elif max_tokens is not None:
+                    config["max_tokens"] = max_tokens
 
             # Get or create LangChain client
             client = self._client_factory.get_or_create_client(provider, config)
@@ -641,71 +682,42 @@ class LLMService:
     # ------------------------------------------------------------------
 
     def _record_routing_attributes(self, decision: Any) -> None:
-        """Record routing decision attributes on the current LLM span.
-
-        Uses ``opentelemetry.trace.get_current_span()`` (function-level import)
-        to access the span without parameter threading (ADR-E02F03-002).
-
-        Guards: short-circuits if ``_telemetry_service`` is None.
-        Error isolation: catches all exceptions silently (3-layer isolation).
-        """
+        """Record routing decision attributes on the current LLM span."""
         if self._telemetry_service is None:
             return
         try:
-            import opentelemetry.trace as trace_api
+            attributes: Dict[str, Any] = {
+                ROUTING_COMPLEXITY: str(decision.complexity),
+                ROUTING_CONFIDENCE: decision.confidence,
+                ROUTING_PROVIDER: decision.provider,
+                ROUTING_MODEL: decision.model,
+                ROUTING_CACHE_HIT: decision.cache_hit,
+                GEN_AI_SYSTEM: decision.provider,
+                GEN_AI_REQUEST_MODEL: decision.model,
+            }
+            if decision.fallback_used:
+                attributes[ROUTING_FALLBACK_TIER] = "fallback"
+            self._set_current_span_attributes(attributes)
 
-            current_span = trace_api.get_current_span()
-            if current_span and current_span.is_recording():
-                attributes: Dict[str, Any] = {
-                    ROUTING_COMPLEXITY: str(decision.complexity),
-                    ROUTING_CONFIDENCE: decision.confidence,
-                    ROUTING_PROVIDER: decision.provider,
-                    ROUTING_MODEL: decision.model,
-                    ROUTING_CACHE_HIT: decision.cache_hit,
-                    # Update GenAI attributes with routed values
-                    GEN_AI_SYSTEM: decision.provider,
-                    GEN_AI_REQUEST_MODEL: decision.model,
-                }
-
-                if decision.fallback_used:
-                    attributes[ROUTING_FALLBACK_TIER] = "fallback"
-
-                self._telemetry_service.set_span_attributes(current_span, attributes)
-
-            # Record cache hit metric
             if decision.cache_hit and self._metric_cache_hit is not None:
                 try:
                     self._metric_cache_hit.add(1)
                 except Exception:
-                    pass  # Metric failure silently ignored
+                    pass
         except Exception:
-            pass  # Telemetry failures silently ignored
+            pass
 
     def _record_circuit_breaker_state(self, provider: str, model: str) -> None:
-        """Record circuit breaker state on the current span.
-
-        Uses ``opentelemetry.trace.get_current_span()`` (function-level import)
-        to access the span without parameter threading (ADR-E02F03-002).
-
-        Guards: short-circuits if ``_telemetry_service`` is None.
-        Error isolation: catches all exceptions silently (3-layer isolation).
-        """
+        """Record circuit breaker state on the current span."""
         if self._telemetry_service is None:
             return
         try:
-            import opentelemetry.trace as trace_api
-
-            current_span = trace_api.get_current_span()
-            if current_span and current_span.is_recording():
-                state = "closed"  # Default healthy state
-                if self._circuit_breaker.is_open(provider, model):
-                    state = "open"
-                self._telemetry_service.set_span_attributes(
-                    current_span,
-                    {ROUTING_CIRCUIT_BREAKER_STATE: state},
-                )
+            state = (
+                "open" if self._circuit_breaker.is_open(provider, model) else "closed"
+            )
+            self._set_current_span_attributes({ROUTING_CIRCUIT_BREAKER_STATE: state})
         except Exception:
-            pass  # Telemetry failures silently ignored
+            pass
 
     def _create_routing_context(
         self, routing_context: Dict[str, Any], messages: List[Dict[str, str]]
@@ -745,6 +757,7 @@ class LLMService:
             retry_with_lower_complexity=routing_context.get(
                 "retry_with_lower_complexity", True
             ),
+            max_tokens=routing_context.get("max_tokens"),
         )
 
     def clear_cache(self) -> None:
@@ -828,6 +841,23 @@ class LLMService:
         except Exception:
             pass
 
+    def _set_current_span_attributes(self, attributes: Dict[str, Any]) -> None:
+        """Set attributes on the current recording span (silent no-op on failure).
+
+        Encapsulates the function-level OTEL import + span access pattern
+        (ADR-E02F03-002). Guards: short-circuits if _telemetry_service is None.
+        """
+        if self._telemetry_service is None:
+            return
+        try:
+            import opentelemetry.trace as trace_api
+
+            current_span = trace_api.get_current_span()
+            if current_span and current_span.is_recording():
+                self._telemetry_service.set_span_attributes(current_span, attributes)
+        except Exception:
+            pass
+
     def _record_span_exception_safe(self, span: Any, exception: Exception) -> None:
         """Record exception on span safely. No-op on failure."""
         if span is None or self._telemetry_service is None:
@@ -898,7 +928,6 @@ class LLMService:
     ) -> None:
         """Extract and record token counts and response model from LLM response.
 
-        Uses function-level OTEL import to access the current span.
         Also records token count metrics when instruments are available.
         Guards: short-circuits if telemetry_service is None.
         Error isolation: catches all exceptions silently.
@@ -908,43 +937,33 @@ class LLMService:
         try:
             input_tokens, output_tokens = self._extract_token_counts(response)
 
-            # Record span attributes only when a span is active
-            import opentelemetry.trace as trace_api
+            attributes: Dict[str, Any] = {}
+            if input_tokens is not None:
+                attributes[GEN_AI_USAGE_INPUT_TOKENS] = int(input_tokens)
+            if output_tokens is not None:
+                attributes[GEN_AI_USAGE_OUTPUT_TOKENS] = int(output_tokens)
 
-            current_span = trace_api.get_current_span()
-            if current_span and current_span.is_recording():
-                attributes: Dict[str, Any] = {}
-                if input_tokens is not None:
-                    attributes[GEN_AI_USAGE_INPUT_TOKENS] = int(input_tokens)
-                if output_tokens is not None:
-                    attributes[GEN_AI_USAGE_OUTPUT_TOKENS] = int(output_tokens)
+            response_metadata = getattr(response, "response_metadata", None)
+            if response_metadata and isinstance(response_metadata, dict):
+                response_model = response_metadata.get(
+                    "model_name"
+                ) or response_metadata.get("model")
+                if response_model:
+                    attributes[GEN_AI_RESPONSE_MODEL] = response_model
 
-                response_metadata = getattr(response, "response_metadata", None)
-                if response_metadata and isinstance(response_metadata, dict):
-                    response_model = response_metadata.get(
-                        "model_name"
-                    ) or response_metadata.get("model")
-                    if response_model:
-                        attributes[GEN_AI_RESPONSE_MODEL] = response_model
+                request_id = self._extract_provider_request_id(
+                    response_metadata, provider
+                )
+                if request_id:
+                    attributes[GEN_AI_PROVIDER_REQUEST_ID] = request_id
 
-                    # Extract provider request ID for debugging/support
-                    request_id = self._extract_provider_request_id(
-                        response_metadata, provider
-                    )
-                    if request_id:
-                        attributes[GEN_AI_PROVIDER_REQUEST_ID] = request_id
+                fingerprint = response_metadata.get("system_fingerprint")
+                if fingerprint:
+                    attributes[GEN_AI_SYSTEM_FINGERPRINT] = fingerprint
 
-                    # Extract system fingerprint (OpenAI)
-                    fingerprint = response_metadata.get("system_fingerprint")
-                    if fingerprint:
-                        attributes[GEN_AI_SYSTEM_FINGERPRINT] = fingerprint
+            if attributes:
+                self._set_current_span_attributes(attributes)
 
-                if attributes:
-                    self._telemetry_service.set_span_attributes(
-                        current_span, attributes
-                    )
-
-            # Record token metrics regardless of span context
             self._record_token_metrics(input_tokens, output_tokens, provider, model)
         except Exception:
             pass

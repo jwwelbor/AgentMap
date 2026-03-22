@@ -604,12 +604,13 @@ class TestAC6CircuitBreakerTracking:
         _mock_successful_llm_call(svc)
 
         # Mock is_open to return:
-        # 1st call (guard check in _invoke_with_resilience): False
-        # 2nd call (was_open check before record_success): True
-        # 3rd call (_record_circuit_breaker_metric_on_close): False (now closed)
-        # Note: _record_circuit_breaker_state may not call is_open when span
-        # context is unavailable
-        svc._circuit_breaker.is_open = MagicMock(side_effect=[False, True, False])
+        # 1st call (_record_circuit_breaker_state span attribute): False
+        # 2nd call (guard check in _invoke_with_resilience): False
+        # 3rd call (was_open check before record_success): True
+        # 4th call (_record_circuit_breaker_metric_on_close): False (now closed)
+        svc._circuit_breaker.is_open = MagicMock(
+            side_effect=[False, False, True, False]
+        )
         svc._circuit_breaker.record_success = MagicMock()
 
         svc.call_llm(

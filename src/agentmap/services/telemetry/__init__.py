@@ -19,6 +19,7 @@ from .constants import (
     AGENT_NAME,
     AGENT_RUN_SPAN,
     AGENT_TYPE,
+    GEN_AI_REQUEST_MAX_TOKENS,
     GEN_AI_REQUEST_MODEL,
     GEN_AI_RESPONSE_MODEL,
     GEN_AI_SYSTEM,
@@ -87,6 +88,7 @@ __all__ = [
     "GRAPH_AGENT_COUNT",
     # GenAI attribute constants
     "GEN_AI_SYSTEM",
+    "GEN_AI_REQUEST_MAX_TOKENS",
     "GEN_AI_REQUEST_MODEL",
     "GEN_AI_RESPONSE_MODEL",
     "GEN_AI_USAGE_INPUT_TOKENS",

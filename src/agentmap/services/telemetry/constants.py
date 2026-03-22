@@ -71,6 +71,9 @@ GEN_AI_SYSTEM: str = "gen_ai.system"
 GEN_AI_REQUEST_MODEL: str = "gen_ai.request.model"
 """Model name requested by the caller."""
 
+GEN_AI_REQUEST_MAX_TOKENS: str = "gen_ai.request.max_tokens"
+"""Maximum number of tokens the model should generate."""
+
 GEN_AI_RESPONSE_MODEL: str = "gen_ai.response.model"
 """Model name returned in the LLM response."""
 

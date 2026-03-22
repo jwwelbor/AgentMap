@@ -62,6 +62,7 @@ from agentmap.services.config.llm_routing_task_types import (
     load_task_types,
 )
 from agentmap.services.config.llm_routing_validators import (
+    validate_activities_config,
     validate_provider_routing,
     validate_routing_config,
 )
@@ -106,10 +107,20 @@ class LLMRoutingConfigService:
         self.performance = self.config_dict.get("performance", {})
 
         # Validate configuration on load
-        validation_errors = self.validate_AppConfigService()
-        if validation_errors:
+        all_errors = self.validate_AppConfigService()
+        # Partition: routing errors are warnings, activities errors are hard failures
+        activities_errors = [e for e in all_errors if e.startswith("Activity ")]
+        routing_errors = [e for e in all_errors if not e.startswith("Activity ")]
+        if routing_errors:
             self._logger.warning(
-                f"Routing configuration validation errors: {validation_errors}"
+                f"Routing configuration validation errors: {routing_errors}"
+            )
+        if activities_errors:
+            for err in activities_errors:
+                self._logger.error(f"Activities config validation: {err}")
+            raise ValueError(
+                f"Activities configuration has {len(activities_errors)} error(s): "
+                + "; ".join(activities_errors)
             )
 
     def validate_AppConfigService(self) -> List[str]:
@@ -119,9 +130,11 @@ class LLMRoutingConfigService:
         Returns:
             List of validation error messages (empty if valid)
         """
-        return validate_routing_config(
+        errors = validate_routing_config(
             self.routing_matrix, self.task_types, self.complexity_analysis
         )
+        errors.extend(validate_activities_config(self.get_activities_config()))
+        return errors
 
     def get_activities_config(self) -> Dict[str, Any]:
         """

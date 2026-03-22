@@ -5,7 +5,7 @@ This module provides the ActivityRoutingTable class for resolving
 ordered provider/model candidates based on activity configuration.
 """
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.logging_service import LoggingService
@@ -31,7 +31,7 @@ class ActivityRoutingTable:
 
     def plan(
         self, activity: Optional[str], complexity_key: str
-    ) -> List[Dict[str, str]]:
+    ) -> List[Dict[str, Any]]:
         """
         Return ordered candidates for a given activity/complexity tier.
 
@@ -64,21 +64,32 @@ class ActivityRoutingTable:
         if not isinstance(plan, dict):
             return []
 
-        ordered: List[Dict[str, str]] = []
+        ordered: List[Dict[str, Any]] = []
+
+        # Resolution chain: candidate > tier
+        tier_max_tokens = plan.get("max_tokens")
+        primary = plan.get("primary")
 
         # Combine primary and fallbacks into a single list for processing
         all_candidates = []
-        if plan.get("primary"):
-            all_candidates.append(plan.get("primary"))
+        if primary:
+            all_candidates.append(primary)
         all_candidates.extend(plan.get("fallbacks", []))
 
-        # Process all candidates with the same logic
         for candidate in all_candidates:
             if not isinstance(candidate, dict):
                 continue
             provider = candidate.get("provider")
             model = candidate.get("model")
             if provider and model:
-                ordered.append({"provider": provider, "model": model})
+                entry: Dict[str, Any] = {"provider": provider, "model": model}
+                candidate_max_tokens = candidate.get("max_tokens")
+                if candidate_max_tokens is not None:
+                    resolved_max_tokens = candidate_max_tokens
+                else:
+                    resolved_max_tokens = tier_max_tokens
+                if resolved_max_tokens is not None:
+                    entry["max_tokens"] = resolved_max_tokens
+                ordered.append(entry)
 
         return ordered
