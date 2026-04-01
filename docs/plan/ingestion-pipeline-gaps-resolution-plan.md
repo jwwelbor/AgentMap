@@ -96,7 +96,36 @@ CSV File → CSVGraphParserService → GraphSpec → NodeSpecConverter → Node
 
 ## Out of Scope
 
-- Non-CSV ingestion sources (JSON, YAML) - future enhancement
-- Workflow versioning/repository features - separate initiative
-- Remote URL ingestion - separate initiative
-- Vision agent type support - upcoming release, will be added to known agent types when available
+The following gaps were identified during analysis but are outside the scope of
+this resolution plan. They are documented here for future planning.
+
+### Ingestion Source Diversity
+- **Non-CSV ingestion sources** (JSON, YAML, Python dict) - pipeline is tightly coupled to CSV
+- **Remote URL ingestion** - cannot ingest from HTTP URLs or cloud storage directly
+- **Multi-sheet / batched workflow support** - each execution requires a separate CSV file
+
+### Pipeline Features
+- **Incremental ingestion** - must re-ingest entire CSV for any change; no patch/merge operations
+- **Workflow versioning** - no version control, tagging, or dependency tracking across workflows
+- **Custom column support** - columns outside the predefined set are logged as warnings and ignored
+- **Metadata preservation** - no way to attach workflow metadata (version, author, created_date) in CSV
+- **Schema inference** - cannot auto-detect workflow structure from data
+
+### Architectural Gaps Found During Exploration
+- **ApplicationBootstrapService missing** - referenced in docs/comments but no concrete implementation; functionality split between GraphBootstrapService and DI container bootstrap
+- **Blob storage agents incomplete** - class files exist but not fully registered in BuiltinDefinitionConstants
+- **ProtocolBasedRequirementsAnalyzer not centralized** - functionality embedded in DeclarationRegistryService rather than a dedicated analyzer
+- **Bundle update service partial** - updates agent mappings from declarations but doesn't re-resolve services
+- **Service dependency topological sort** - `calculate_load_order()` returns sorted list but doesn't do actual topological sort based on dependencies
+- **Telemetry adoption inconsistent** - optional telemetry service with silent degradation, but not uniformly checked across all agents
+- **Host service YAML integration incomplete** - source exists but usage pattern unclear
+- **Memory service lifecycle ambiguous** - service exists in constants but automatic configuration unclear
+
+### Code-Level TODOs Found in Existing Code
+- `graph_bundle_service.py:238` - "FIX this... it doesn't seem to be picking up all the protocols"
+- `graph_bundle_service.py:247` - "Check if this is still needed"
+- `graph_bundle_service.py:249` - "Extract function_mappings if needed"
+- `graph_bootstrap_service.py:182` - "Should this be FeatureRegistryService?" (provider discovery logic placement)
+
+### Vision / Multimodal Support
+- PR #110 adds `ask_vision()` to LLMService - no new agent type needed; existing LLM agents gain vision capability through the service layer
