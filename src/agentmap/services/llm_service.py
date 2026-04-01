@@ -881,6 +881,10 @@ class LLMService:
             routing_context = dict(routing_context)  # copy to avoid mutation
             routing_context["requires_vision"] = True
 
+        # Default provider when routing is not active (mirrors ask() behavior)
+        if provider is None and routing_context is None:
+            provider = "anthropic"
+
         return self.call_llm(
             messages=messages,
             provider=provider,

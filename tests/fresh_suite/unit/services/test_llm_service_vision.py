@@ -149,6 +149,28 @@ class TestAskVision(unittest.TestCase):
             os.unlink(path)
 
     @patch.object(LLMService, "call_llm", return_value="result")
+    def test_ask_vision_default_provider(self, mock_call_llm):
+        """Defaults to 'anthropic' when no provider or routing_context given."""
+        raw = b"img"
+        self.service.ask_vision(prompt="Describe.", image=raw)
+
+        actual_kwargs = mock_call_llm.call_args[1]
+        self.assertEqual(actual_kwargs["provider"], "anthropic")
+
+    @patch.object(LLMService, "call_llm", return_value="result")
+    def test_ask_vision_no_default_provider_with_routing(self, mock_call_llm):
+        """Provider stays None when routing_context is provided."""
+        raw = b"img"
+        self.service.ask_vision(
+            prompt="Describe.",
+            image=raw,
+            routing_context={"activity": "image_extraction"},
+        )
+
+        actual_kwargs = mock_call_llm.call_args[1]
+        self.assertIsNone(actual_kwargs["provider"])
+
+    @patch.object(LLMService, "call_llm", return_value="result")
     def test_ask_vision_with_routing_context(self, mock_call_llm):
         """Verifies routing_context flows through with requires_vision=True."""
         raw = b"img"
