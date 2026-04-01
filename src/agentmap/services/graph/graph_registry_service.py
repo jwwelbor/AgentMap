@@ -78,6 +78,29 @@ class GraphRegistryService:
             FileNotFoundError: If CSV file doesn't exist
             IOError: If file cannot be read
         """
+        csv_hash, _ = GraphRegistryService.compute_hash_with_content(
+            csv_path, logging_service
+        )
+        return csv_hash
+
+    @staticmethod
+    def compute_hash_with_content(
+        csv_path: Path, logging_service: Optional[LoggingService] = None
+    ) -> tuple:
+        """
+        Compute SHA-256 hash and return the CSV file content to avoid double-reads.
+
+        Args:
+            :param csv_path: Path to CSV file
+            :param logging_service: Logging service
+
+        Returns:
+            Tuple of (hash_string, file_content_bytes)
+
+        Raises:
+            FileNotFoundError: If CSV file doesn't exist
+            IOError: If file cannot be read
+        """
         import hashlib
 
         if not csv_path.exists():
@@ -95,8 +118,7 @@ class GraphRegistryService:
                     f"Computed hash: {csv_hash[:8]}... for {csv_path.name}"
                 )
 
-            # TODO return CSV content to avoid multiple reads.
-            return csv_hash
+            return csv_hash, content
 
         except Exception as e:
             if logging_service:

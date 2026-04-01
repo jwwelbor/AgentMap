@@ -77,17 +77,24 @@ class CSVRowModel(BaseModel):
     @field_validator("Output_Field")
     @classmethod
     def validate_output_field(cls, v: Optional[str]) -> Optional[str]:
-        """Validate output field name."""
+        """Validate output field name(s). Supports pipe-separated multi-output fields."""
         if v is None:
             return v
 
-        v = v.strip()
-        if v and not v.replace("_", "").replace("-", "").isalnum():
-            raise ValueError(
-                f"Invalid output field name: '{v}'. Use alphanumeric characters, underscore, or dash only."
-            )
+        # Split by pipe to support multi-output (e.g., "summary|analysis|score")
+        fields = [f.strip() for f in v.split("|") if f.strip()]
 
-        return v
+        if not fields:
+            return None
+
+        # Validate each field name
+        for field_name in fields:
+            if not field_name.replace("_", "").replace("-", "").isalnum():
+                raise ValueError(
+                    f"Invalid output field name: '{field_name}'. Use alphanumeric characters, underscore, or dash only."
+                )
+
+        return "|".join(fields)
 
     @field_validator("Available_Tools")
     @classmethod

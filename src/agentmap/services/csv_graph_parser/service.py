@@ -147,6 +147,9 @@ class CSVGraphParserService:
             # Validate row content
             self._validate_dataframe_rows(df, result)
 
+            # Validate graph-level semantics (edge targets, duplicates, orphans, agent types)
+            self._validate_graph_semantics(df, result)
+
         except pd.errors.EmptyDataError:
             result.add_error("CSV file is empty")
         except pd.errors.ParserError as e:
@@ -189,6 +192,12 @@ class CSVGraphParserService:
     ) -> None:
         """Delegate to validator component."""
         self.validator.validate_dataframe_rows(df, result)
+
+    def _validate_graph_semantics(
+        self, df: pd.DataFrame, result: ValidationResult
+    ) -> None:
+        """Delegate to validator component."""
+        self.validator.validate_graph_semantics(df, result)
 
     def _normalize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Delegate to parser component."""
