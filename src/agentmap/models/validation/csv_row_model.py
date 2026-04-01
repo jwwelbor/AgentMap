@@ -55,39 +55,32 @@ class CSVRowModel(BaseModel):
             raise ValueError("Field cannot be empty or just whitespace")
         return v.strip()
 
+    @staticmethod
+    def _validate_pipe_separated_names(v: str, label: str = "field") -> str:
+        """Validate and normalize pipe-separated field names (alphanumeric, underscore, dash)."""
+        fields = [f.strip() for f in v.split("|") if f.strip()]
+        for name in fields:
+            if not name.replace("_", "").replace("-", "").isalnum():
+                raise ValueError(
+                    f"Invalid {label} name: '{name}'. Use alphanumeric characters, underscore, or dash only."
+                )
+        return "|".join(fields) if fields else ""
+
     @field_validator("Input_Fields")
     @classmethod
     def validate_input_fields(cls, v: Optional[str]) -> Optional[str]:
         """Validate input fields format (pipe-separated)."""
         if v is None:
             return v
-
-        # Split by pipe and validate each field name
-        fields = [f.strip() for f in v.split("|") if f.strip()]
-
-        # Check for valid field names (basic validation)
-        for field in fields:
-            if not field.replace("_", "").replace("-", "").isalnum():
-                raise ValueError(
-                    f"Invalid field name: '{field}'. Use alphanumeric characters, underscore, or dash only."
-                )
-
-        return "|".join(fields)
+        return cls._validate_pipe_separated_names(v, "field") or None
 
     @field_validator("Output_Field")
     @classmethod
     def validate_output_field(cls, v: Optional[str]) -> Optional[str]:
-        """Validate output field name."""
+        """Validate output field name(s). Supports pipe-separated multi-output fields."""
         if v is None:
             return v
-
-        v = v.strip()
-        if v and not v.replace("_", "").replace("-", "").isalnum():
-            raise ValueError(
-                f"Invalid output field name: '{v}'. Use alphanumeric characters, underscore, or dash only."
-            )
-
-        return v
+        return cls._validate_pipe_separated_names(v, "output field") or None
 
     @field_validator("Available_Tools")
     @classmethod

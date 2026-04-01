@@ -45,17 +45,6 @@ class BootstrapContainer(containers.DeclarativeContainer):
     validation_cache_service = providers.Singleton(_create_validation_cache_service)
 
     @staticmethod
-    def _create_csv_graph_parser_service(logging_service):
-        from agentmap.services.csv_graph_parser_service import CSVGraphParserService
-
-        return CSVGraphParserService(logging_service)
-
-    csv_graph_parser_service = providers.Singleton(
-        _create_csv_graph_parser_service,
-        logging_service,
-    )
-
-    @staticmethod
     def _create_function_resolution_service(functions_path):
         from agentmap.services.function_resolution_service import (
             FunctionResolutionService,
@@ -109,6 +98,18 @@ class BootstrapContainer(containers.DeclarativeContainer):
         _create_declaration_registry_service,
         app_config_service,
         logging_service,
+    )
+
+    @staticmethod
+    def _create_csv_graph_parser_service(logging_service, declaration_registry_service):
+        from agentmap.services.csv_graph_parser_service import CSVGraphParserService
+
+        return CSVGraphParserService(logging_service, declaration_registry_service)
+
+    csv_graph_parser_service = providers.Singleton(
+        _create_csv_graph_parser_service,
+        logging_service,
+        declaration_registry_service,
     )
 
     @staticmethod

@@ -705,6 +705,10 @@ class TestAvailabilityCacheService(unittest.TestCase):
         if os.name == "nt":  # Windows
             # Use invalid drive letter or system path
             truly_invalid_path = Path("Z:/invalid/system/path/cache.json")
+        elif hasattr(os, "getuid") and os.getuid() == 0:
+            # Running as root — use /proc which is a pseudo-filesystem that
+            # doesn't allow arbitrary directory creation
+            truly_invalid_path = Path("/proc/invalid/cache.json")
         else:  # Unix-like systems
             # Use path that cannot be created due to permissions
             truly_invalid_path = Path("/root/system/invalid/cache.json")
