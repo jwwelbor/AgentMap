@@ -821,8 +821,6 @@ class LLMService:
             return image, image_type
 
         # Treat as a file path
-        import os
-
         if not os.path.isfile(image):
             raise LLMServiceError(f"Image file not found: {image}")
 
