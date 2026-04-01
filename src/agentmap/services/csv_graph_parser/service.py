@@ -8,7 +8,7 @@ CSVValidationService.
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional, Set
 
 import pandas as pd
 
@@ -21,6 +21,11 @@ from agentmap.services.csv_graph_parser.parsers import CSVRowParser
 from agentmap.services.csv_graph_parser.validators import CSVStructureValidator
 from agentmap.services.logging_service import LoggingService
 
+if TYPE_CHECKING:
+    from agentmap.services.declaration_registry_service import (
+        DeclarationRegistryService,
+    )
+
 
 class CSVGraphParserService:
     """
@@ -31,9 +36,21 @@ class CSVGraphParserService:
     Returns clean GraphSpec domain models as intermediate format.
     """
 
-    def __init__(self, logging_service: LoggingService):
-        """Initialize service with dependency injection."""
+    def __init__(
+        self,
+        logging_service: LoggingService,
+        declaration_registry_service: Optional["DeclarationRegistryService"] = None,
+    ):
+        """Initialize service with dependency injection.
+
+        Args:
+            logging_service: Logging service for structured logging.
+            declaration_registry_service: Declaration registry providing all
+                known agent types (builtin + custom). Used during validation
+                to recognize custom agent types.
+        """
         self.logger = logging_service.get_class_logger(self)
+        self._declaration_registry = declaration_registry_service
 
         # Initialize components
         self.column_config = CSVColumnConfig()
@@ -107,17 +124,32 @@ class CSVGraphParserService:
             self.logger.error(f"[CSVGraphParserService] {error_msg}")
             raise ValueError(error_msg)
 
-    def validate_csv_structure(
-        self, csv_path: Path, known_agent_types: Optional[set] = None
-    ) -> ValidationResult:
+    def _resolve_known_agent_types(self) -> Optional[Set[str]]:
+        """Resolve all known agent types from the declaration registry.
+
+        Returns builtin + custom agent types when the registry is available,
+        or None to fall back to builtin-only constants.
+        """
+        if self._declaration_registry is None:
+            return None
+        try:
+            self._declaration_registry.load_all()
+            return set(self._declaration_registry.get_all_agent_types())
+        except Exception as e:
+            self.logger.debug(
+                f"[CSVGraphParserService] Could not load declaration registry: {e}"
+            )
+            return None
+
+    def validate_csv_structure(self, csv_path: Path) -> ValidationResult:
         """
         Pre-validate CSV structure and return detailed validation result.
 
+        When a DeclarationRegistryService was provided at init, agent type
+        validation recognizes both builtin and custom-registered agents.
+
         Args:
             csv_path: Path to CSV file to validate
-            known_agent_types: Optional set of recognized agent type names
-                (builtin + custom). When provided, custom agents won't be
-                flagged as unrecognized. Falls back to builtin-only if None.
 
         Returns:
             ValidationResult with validation details
@@ -153,7 +185,8 @@ class CSVGraphParserService:
             self._validate_dataframe_rows(df, result)
 
             # Validate graph-level semantics (edge targets, duplicates, orphans, agent types)
-            self._validate_graph_semantics(df, result, known_agent_types)
+            known_types = self._resolve_known_agent_types()
+            self._validate_graph_semantics(df, result, known_types)
 
         except pd.errors.EmptyDataError:
             result.add_error("CSV file is empty")
@@ -202,7 +235,7 @@ class CSVGraphParserService:
         self,
         df: pd.DataFrame,
         result: ValidationResult,
-        known_agent_types: Optional[set] = None,
+        known_agent_types: Optional[Set[str]] = None,
     ) -> None:
         """Delegate to validator component."""
         self.validator.validate_graph_semantics(df, result, known_agent_types)
