@@ -8,6 +8,7 @@ and resilience (retry with backoff + circuit breaker).
 
 import base64
 import mimetypes
+import os
 import random
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
