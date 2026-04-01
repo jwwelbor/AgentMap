@@ -12,6 +12,7 @@ from typing import (
     List,
     Optional,
     Protocol,
+    Union,
     runtime_checkable,
 )
 
@@ -40,6 +41,35 @@ class LLMServiceProtocol(Protocol):
         Args:
             provider: LLM provider ("openai", "anthropic", "google", etc.)
             messages: List of message dictionaries with role and content
+            model: Optional model override
+            temperature: Optional temperature override
+            routing_context: Optional routing context for intelligent routing
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            LLM response as string
+        """
+        ...
+
+    def ask_vision(
+        self,
+        prompt: str,
+        image: Union[str, bytes],
+        image_type: str = "image/png",
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        routing_context: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> str:
+        """
+        Ask the LLM a question about an image.
+
+        Args:
+            prompt: The prompt text describing what to analyze
+            image: Image as file path (str) or raw bytes
+            image_type: MIME type when image is bytes (default: image/png)
+            provider: Optional provider name
             model: Optional model override
             temperature: Optional temperature override
             routing_context: Optional routing context for intelligent routing

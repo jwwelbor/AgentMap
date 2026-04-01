@@ -112,6 +112,9 @@ class RoutingContext:
 
     max_tokens: Optional[int] = None
 
+    # Vision / multimodal support
+    requires_vision: bool = False
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert routing context to dictionary."""
         return {
@@ -135,6 +138,7 @@ class RoutingContext:
             "fallback_model": self.fallback_model,
             "retry_with_lower_complexity": self.retry_with_lower_complexity,
             "max_tokens": self.max_tokens,
+            "requires_vision": self.requires_vision,
         }
 
     @classmethod
@@ -161,6 +165,7 @@ class RoutingContext:
             fallback_model=data.get("fallback_model"),
             retry_with_lower_complexity=data.get("retry_with_lower_complexity", True),
             max_tokens=data.get("max_tokens"),
+            requires_vision=data.get("requires_vision", False),
         )
 
 

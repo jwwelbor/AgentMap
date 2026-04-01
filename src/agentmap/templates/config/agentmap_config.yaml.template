@@ -302,6 +302,62 @@ routing:
           - provider: "openai"
             model: "gpt-4o-mini"
 
+    # Vision / Multimodal Activities
+    # Used by ask_vision() — all models below must support multimodal input.
+    # Callers pass routing_context={"activity": "image_extraction", ...}
+
+    image_extraction:
+      low:
+        max_tokens: 2048
+        primary:
+          provider: "anthropic"
+          model: "claude-haiku-4-5-20251001"
+        fallbacks:
+          - provider: "openai"
+            model: "gpt-4o-mini"
+          - provider: "google"
+            model: "gemini-2.5-flash-lite"
+      medium:
+        max_tokens: 4096
+        primary:
+          provider: "anthropic"
+          model: "claude-sonnet-4-6"
+        fallbacks:
+          - provider: "openai"
+            model: "gpt-4.1-mini"
+          - provider: "google"
+            model: "gemini-2.5-flash"
+      high:
+        max_tokens: 8192
+        primary:
+          provider: "anthropic"
+          model: "claude-sonnet-4-6"
+        fallbacks:
+          - provider: "openai"
+            model: "gpt-4.1"
+          - provider: "google"
+            model: "gemini-2.5-pro"
+      critical:
+        max_tokens: 0
+        primary:
+          provider: "anthropic"
+          model: "claude-opus-4-6"
+        fallbacks:
+          - provider: "openai"
+            model: "o3"
+
+    image_classification:
+      any:
+        max_tokens: 1024
+        primary:
+          provider: "anthropic"
+          model: "claude-haiku-4-5-20251001"
+        fallbacks:
+          - provider: "openai"
+            model: "gpt-4o-mini"
+          - provider: "google"
+            model: "gemini-2.5-flash-lite"
+
   # Task Type Definitions (for complexity analysis and provider preferences)
   # Used when activity is NOT specified in routing_context
   task_types:
