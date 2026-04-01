@@ -35,6 +35,9 @@ class CSVColumnConfig:
         }
         self.all_columns: Set[str] = self.required_columns | self.optional_columns
 
+        # Edge/routing columns used for graph connectivity validation
+        self.edge_columns: List[str] = ["Edge", "Success_Next", "Failure_Next"]
+
         # Column alias mapping for flexible column naming
         self.column_aliases: Dict[str, List[str]] = {
             # Primary name -> acceptable aliases

@@ -8,7 +8,7 @@ to their corresponding preprocessed bundle locations.
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
@@ -86,7 +86,7 @@ class GraphRegistryService:
     @staticmethod
     def compute_hash_with_content(
         csv_path: Path, logging_service: Optional[LoggingService] = None
-    ) -> tuple:
+    ) -> Tuple[str, bytes]:
         """
         Compute SHA-256 hash and return the CSV file content to avoid double-reads.
 
