@@ -380,6 +380,61 @@ class TestAgentTypeValidation(unittest.TestCase):
         self.assertEqual(len(agent_warnings), 0)
 
 
+class TestCustomAgentTypeRecognition(unittest.TestCase):
+    """Test that custom agent types are recognized when known_agent_types is provided."""
+
+    def setUp(self):
+        self.validator = _make_validator()
+
+    def test_custom_agent_recognized_via_known_types(self):
+        """Custom agents in known_agent_types should not produce warnings."""
+        df = _make_df(
+            "GraphName,Node,AgentType\n"
+            "test,start,my_custom_agent\n"
+            "test,process,another_custom\n"
+        )
+        # Include custom types alongside builtins
+        known = {"echo", "openai", "my_custom_agent", "another_custom"}
+        result = ValidationResult(file_path="test.csv", file_type="csv", is_valid=True)
+        self.validator.validate_graph_semantics(df, result, known_agent_types=known)
+
+        agent_warnings = [
+            w for w in result.warnings if "Unrecognized agent type" in w.message
+        ]
+        self.assertEqual(len(agent_warnings), 0)
+
+    def test_unknown_agent_still_warned_with_custom_types(self):
+        """Agents not in known_agent_types should still produce warnings."""
+        df = _make_df(
+            "GraphName,Node,AgentType\n"
+            "test,start,totally_unknown\n"
+        )
+        known = {"echo", "openai", "my_custom_agent"}
+        result = ValidationResult(file_path="test.csv", file_type="csv", is_valid=True)
+        self.validator.validate_graph_semantics(df, result, known_agent_types=known)
+
+        agent_warnings = [
+            w for w in result.warnings if "Unrecognized agent type" in w.message
+        ]
+        self.assertEqual(len(agent_warnings), 1)
+        self.assertIn("totally_unknown", agent_warnings[0].message)
+
+    def test_builtin_fallback_when_no_known_types(self):
+        """Without known_agent_types, should fall back to builtin constants."""
+        df = _make_df(
+            "GraphName,Node,AgentType\n"
+            "test,start,echo\n"
+        )
+        result = ValidationResult(file_path="test.csv", file_type="csv", is_valid=True)
+        # No known_agent_types passed - falls back to _KNOWN_AGENT_TYPES module constant
+        self.validator.validate_graph_semantics(df, result)
+
+        agent_warnings = [
+            w for w in result.warnings if "Unrecognized agent type" in w.message
+        ]
+        self.assertEqual(len(agent_warnings), 0)
+
+
 class TestComputeHashWithContent(unittest.TestCase):
     """Test the compute_hash_with_content method."""
 

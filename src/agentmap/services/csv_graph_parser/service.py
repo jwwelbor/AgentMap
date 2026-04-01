@@ -8,7 +8,7 @@ CSVValidationService.
 """
 
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -107,12 +107,17 @@ class CSVGraphParserService:
             self.logger.error(f"[CSVGraphParserService] {error_msg}")
             raise ValueError(error_msg)
 
-    def validate_csv_structure(self, csv_path: Path) -> ValidationResult:
+    def validate_csv_structure(
+        self, csv_path: Path, known_agent_types: Optional[set] = None
+    ) -> ValidationResult:
         """
         Pre-validate CSV structure and return detailed validation result.
 
         Args:
             csv_path: Path to CSV file to validate
+            known_agent_types: Optional set of recognized agent type names
+                (builtin + custom). When provided, custom agents won't be
+                flagged as unrecognized. Falls back to builtin-only if None.
 
         Returns:
             ValidationResult with validation details
@@ -148,7 +153,7 @@ class CSVGraphParserService:
             self._validate_dataframe_rows(df, result)
 
             # Validate graph-level semantics (edge targets, duplicates, orphans, agent types)
-            self._validate_graph_semantics(df, result)
+            self._validate_graph_semantics(df, result, known_agent_types)
 
         except pd.errors.EmptyDataError:
             result.add_error("CSV file is empty")
@@ -194,10 +199,13 @@ class CSVGraphParserService:
         self.validator.validate_dataframe_rows(df, result)
 
     def _validate_graph_semantics(
-        self, df: pd.DataFrame, result: ValidationResult
+        self,
+        df: pd.DataFrame,
+        result: ValidationResult,
+        known_agent_types: Optional[set] = None,
     ) -> None:
         """Delegate to validator component."""
-        self.validator.validate_graph_semantics(df, result)
+        self.validator.validate_graph_semantics(df, result, known_agent_types)
 
     def _normalize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Delegate to parser component."""

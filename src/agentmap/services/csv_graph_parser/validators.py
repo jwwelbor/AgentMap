@@ -176,7 +176,10 @@ class CSVStructureValidator:
                 )
 
     def validate_graph_semantics(
-        self, df: pd.DataFrame, result: ValidationResult
+        self,
+        df: pd.DataFrame,
+        result: ValidationResult,
+        known_agent_types: Optional[Set[str]] = None,
     ) -> None:
         """
         Validate graph-level semantics after all rows are parsed.
@@ -188,6 +191,9 @@ class CSVStructureValidator:
         Args:
             df: DataFrame to validate
             result: ValidationResult to populate with findings
+            known_agent_types: Optional set of recognized agent type names
+                (builtin + custom). Falls back to builtin-only constants
+                if not provided.
         """
         edge_columns = self.column_config.edge_columns
 
@@ -234,7 +240,7 @@ class CSVStructureValidator:
         self._check_edge_targets(edge_refs, graph_nodes, result)
         self._check_duplicate_nodes(graph_node_lines, result)
         self._check_orphan_nodes(graph_nodes, graph_targets, graph_sources, result)
-        self._check_agent_types(agent_type_refs, result)
+        self._check_agent_types(agent_type_refs, result, known_agent_types)
 
     @staticmethod
     def _parse_pipe_field(row, col: str) -> List[str]:
@@ -310,15 +316,24 @@ class CSVStructureValidator:
     def _check_agent_types(
         agent_type_refs: List[tuple],
         result: ValidationResult,
+        known_agent_types: Optional[Set[str]] = None,
     ) -> None:
-        """Warn about unrecognized agent types with suggestions for likely typos."""
-        if _KNOWN_AGENT_TYPES is None:
+        """Warn about unrecognized agent types with suggestions for likely typos.
+
+        Args:
+            agent_type_refs: List of (line_number, agent_type_str) tuples.
+            result: ValidationResult to populate.
+            known_agent_types: Combined set of builtin + custom agent types.
+                Falls back to builtin-only module constant if not provided.
+        """
+        effective_types = known_agent_types if known_agent_types is not None else _KNOWN_AGENT_TYPES
+        if effective_types is None:
             return
 
         for line_number, agent_type_str in agent_type_refs:
-            if agent_type_str not in _KNOWN_AGENT_TYPES:
+            if agent_type_str not in effective_types:
                 suggestion = CSVStructureValidator._suggest_typo(
-                    agent_type_str, _KNOWN_AGENT_TYPES
+                    agent_type_str, effective_types
                 )
                 if not suggestion:
                     suggestion = "This may be a custom agent type. Ensure it is properly registered."
