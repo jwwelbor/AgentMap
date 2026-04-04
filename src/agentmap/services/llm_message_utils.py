@@ -12,7 +12,7 @@ class LLMMessageUtils:
     """Utilities for handling LLM messages."""
 
     @staticmethod
-    def extract_prompt_from_messages(messages: List[Dict[str, str]]) -> str:
+    def extract_prompt_from_messages(messages: List[Dict[str, Any]]) -> str:
         """
         Extract the main prompt content from messages for complexity analysis.
 
@@ -31,14 +31,27 @@ class LLMMessageUtils:
             role = msg.get("role", "")
             content = msg.get("content", "")
             if role in ["user", "system"] and content:
-                prompt_parts.append(content)
+                if isinstance(content, list):
+                    # Multimodal content blocks — extract text parts only
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text = block.get("text", "")
+                            if text:
+                                prompt_parts.append(text)
+                elif isinstance(content, str):
+                    prompt_parts.append(content)
 
         return " ".join(prompt_parts)
 
     @staticmethod
-    def convert_messages_to_langchain(messages: List[Dict[str, str]]) -> List[Any]:
+    def convert_messages_to_langchain(messages: List[Dict[str, Any]]) -> List[Any]:
         """
         Convert messages to LangChain message format.
+
+        Supports both plain text content (str) and multimodal content blocks
+        (list of dicts). When content is a list, it is passed directly to the
+        LangChain message constructor — LangChain chat models handle multimodal
+        content blocks natively.
 
         Args:
             messages: List of message dictionaries

@@ -25,6 +25,12 @@ from agentmap.services.routing.types import (
 __all__ = ["LLMRoutingService", "ActivityRoutingTable"]
 
 
+# Models known to NOT support vision/multimodal input.
+# All current routing-matrix models (Claude 3+, GPT-4o+, Gemini) support vision.
+# Populate this set with text-only model identifiers as needed.
+_NON_VISION_MODELS: frozenset = frozenset()
+
+
 class LLMRoutingService:
     """
     Core LLM routing service that orchestrates all routing components.
@@ -354,7 +360,11 @@ class LLMRoutingService:
             ordered.append({"provider": provider, "model": model})
             seen_pairs.add(pair)
 
-        # 3) Apply provider preference ordering when supplied
+        # 3) Filter out non-vision-capable models when vision is required
+        if ctx.requires_vision and _NON_VISION_MODELS:
+            ordered = [c for c in ordered if c.get("model") not in _NON_VISION_MODELS]
+
+        # 4) Apply provider preference ordering when supplied
         if ctx.provider_preference:
             preference_index = {
                 p.lower(): i for i, p in enumerate(ctx.provider_preference)

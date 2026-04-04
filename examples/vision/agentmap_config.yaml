@@ -1,0 +1,256 @@
+# AgentMap configuration for the vision/multimodal example
+# Copied from wormwoodGM backend config (minus activities section)
+
+# Core configuration
+storage_config_path: "agentmap_config_storage.yaml"
+
+# Directory paths — overridden for this example
+paths:
+  custom_agents: "."
+  functions: "agentmap_data/custom_functions"
+  custom_tools: "agentmap_data/custom_tools"
+  csv_repository: "."
+
+# Prompts configuration
+prompts:
+  directory: "agentmap_data/prompts"
+  registry_file: "agentmap_data/prompts/registry.yaml"
+  enable_cache: false
+
+# Memory configuration
+memory:
+  enabled: false
+  default_type: "buffer"
+  buffer_window_size: 5
+  max_token_limit: 2000
+  memory_key: "conversation_memory"
+
+# Execution tracking configuration
+execution:
+  tracking:
+    enabled: true
+    track_outputs: true
+    track_inputs: true
+
+  success_policy:
+    type: "all_nodes"
+    critical_nodes: []
+    custom_function: ""
+
+  validation:
+    multi_output_mode: "warn"
+    require_all_outputs: true
+    allow_extra_outputs: true
+
+# Logging configuration
+logging:
+  version: 1
+  disable_existing_loggers: False
+  file_path: null
+  formatters:
+    default:
+      format: "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"
+  handlers:
+    console:
+      class: logging.StreamHandler
+      formatter: default
+      level: DEBUG
+  root:
+    level: INFO
+    handlers: [console]
+
+# LLM Provider Configuration
+# API keys are loaded from environment variables via env: prefix.
+# Set OPENAI_API_KEY, ANTHROPIC_API_KEY, and GOOGLE_API_KEY in your .env file.
+
+llm:
+  openai:
+    api_key: "env:OPENAI_API_KEY"
+    model: "gpt-5-nano"
+    temperature: 0.7
+    max_tokens: null
+    top_p: 1.0
+    frequency_penalty: 0.0
+    presence_penalty: 0.0
+
+  anthropic:
+    api_key: "env:ANTHROPIC_API_KEY"
+    model: "claude-haiku-4-5-20251001"
+    temperature: 0.7
+    max_tokens: 4096
+    top_p: 1.0
+    top_k: null
+
+  google:
+    api_key: "env:GOOGLE_API_KEY"
+    model: "gemini-2.5-flash"
+    temperature: 0.7
+    max_tokens: null
+    top_p: 1.0
+    top_k: null
+
+  resilience:
+    retry:
+      max_attempts: 2
+      backoff_base: 2.0
+      backoff_max: 30.0
+      jitter: true
+    circuit_breaker:
+      failure_threshold: 5
+      reset_timeout: 60
+
+routing:
+  enabled: true
+
+  routing_matrix:
+    anthropic:
+      low: "claude-haiku-4-5-20251001"
+      medium: "claude-sonnet-4-6"
+      high: "claude-sonnet-4-6"
+      critical: "claude-opus-4-6"
+
+    openai:
+      low: "gpt-5-nano"
+      medium: "gpt-4.1-mini"
+      high: "gpt-4.1"
+      critical: "o4-mini"
+
+    google:
+      low: "gemini-2.5-flash-lite"
+      medium: "gemini-2.5-flash"
+      high: "gemini-2.5-pro"
+      critical: "gemini-2.5-pro"
+
+  complexity_analysis:
+    prompt_length_thresholds:
+      low: 200
+      medium: 500
+      high: 1000
+
+    methods:
+      prompt_length: true
+      keyword_analysis: true
+      context_analysis: true
+      memory_analysis: true
+
+    keyword_weights:
+      complexity_keywords: 0.4
+      task_specific_keywords: 0.3
+      prompt_structure: 0.3
+
+    context_analysis:
+      memory_size_threshold: 10
+      input_field_count_threshold: 5
+
+  cost_optimization:
+    enabled: true
+    prefer_cost_effective: true
+    max_cost_tier: "medium"
+
+  fallback:
+    default_provider: "openai"
+    default_model: "gpt-5-nano"
+    retry_with_lower_complexity: true
+    log_fallback_attempts: true
+
+  # Activities section omitted — add your own here if needed
+
+  task_types:
+    general:
+      description: "General purpose tasks and queries"
+      provider_preference: ["anthropic", "openai", "google"]
+      default_complexity: "medium"
+      complexity_keywords:
+        low: ["simple", "basic", "quick", "summarize"]
+        medium: ["analyze", "process", "standard", "explain"]
+        high: ["complex", "detailed", "comprehensive", "advanced"]
+        critical: ["urgent", "critical", "important", "emergency"]
+
+    reasoning:
+      description: "Logic, problem solving, step-by-step reasoning"
+      provider_preference: ["openai", "anthropic"]
+      default_complexity: "high"
+      complexity_keywords:
+        low: ["basic logic", "simple calculation"]
+        medium: ["multi-step problem", "reasoning chain"]
+        high: ["complex reasoning", "proof", "theorem"]
+        critical: ["advanced mathematics", "research level"]
+
+  performance:
+    enable_routing_cache: true
+    cache_ttl: 300
+    max_cache_size: 1000
+    request_timeout: 60
+    max_retries: 3
+    retry_backoff_factor: 2
+
+# Telemetry / OpenTelemetry Configuration
+telemetry:
+  enabled: true
+  exporter: "oltp"
+  endpoint: "http://localhost:4317"
+  protocol: "grpc"
+  resource:
+    service.name: "agentmap-vision-example"
+
+  traces:
+    agent_inputs: false
+    agent_outputs: false
+    llm_prompts: true
+    llm_responses: true
+
+# Environment Variable Overrides
+environment_overrides:
+  routing_enabled: "env:AGENTMAP_ROUTING_ENABLED:true"
+  default_task_type: "env:AGENTMAP_DEFAULT_TASK_TYPE:general"
+  cost_optimization: "env:AGENTMAP_COST_OPTIMIZATION:true"
+  routing_cache_enabled: "env:AGENTMAP_ROUTING_CACHE:true"
+  llm_openai_api_key: "env:OPENAI_API_KEY"
+  llm_anthropic_api_key: "env:ANTHROPIC_API_KEY"
+  llm_google_api_key: "env:GOOGLE_API_KEY"
+
+# Messaging Configuration
+messaging:
+  default_provider: "local"
+
+  providers:
+    local:
+      enabled: true
+      storage_path: "agentmap_data/messages"
+
+  retry_policy:
+    max_retries: 3
+    backoff_seconds: [1, 2, 4]
+
+  message_templates:
+    default_graph_trigger:
+      event_type: "$event_type"
+      graph: "$graph"
+      state: "$inputs"
+      thread_id: "$thread_id"
+      node_name: "$node_name"
+      workflow: "$workflow"
+      timestamp: "$timestamp"
+      context: "$context"
+
+    default_node_suspend:
+      event_type: "$event_type"
+      thread_id: "$thread_id"
+      node_name: "$node_name"
+      workflow: "$workflow"
+      graph: "$graph"
+      timestamp: "$timestamp"
+      inputs: "$inputs"
+      context: "$context"
+
+    default_auto_resume:
+      event_type: "$event_type"
+      action: "resume"
+      thread_id: "$thread_id"
+      resume_value: "$resume_value"
+      node_name: "$node_name"
+      workflow: "$workflow"
+      graph: "$graph"
+      timestamp: "$timestamp"
+      suspension_duration_seconds: "$suspension_duration_seconds"
+      context: "$context"

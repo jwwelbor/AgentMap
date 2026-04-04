@@ -1,0 +1,4 @@
+GraphName,Node,AgentType,Input_Fields,Output_Field,Edge,Success_Next,Failure_Next,Description,Prompt,Context
+ImageExtract,AnalyzeImage,vision_agent,"image_path","extraction",ShowResult,,,Sends the image to an LLM for table extraction,"Extract all the data from this table image. Return the result as a markdown table with the same columns and rows.","{""provider"": ""anthropic""}"
+ImageExtract,ShowResult,echo,"extraction","data",End,,,Echoes the extracted data,,
+ImageExtract,End,,,,,,,End node,,

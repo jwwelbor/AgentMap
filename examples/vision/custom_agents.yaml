@@ -1,0 +1,6 @@
+# Custom agent declaration for the VisionAgent
+# AgentMap discovers this file via the custom_agents path in agentmap_config.yaml
+
+agents:
+  vision_agent:
+    class: "vision_agent.VisionAgent"

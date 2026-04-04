@@ -229,6 +229,7 @@ class TestRoutingContext(unittest.TestCase):
             "fallback_model",
             "retry_with_lower_complexity",
             "max_tokens",
+            "requires_vision",
         }
         self.assertEqual(set(result.keys()), expected_keys)
 

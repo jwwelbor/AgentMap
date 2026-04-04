@@ -6,9 +6,11 @@ handling configuration, error handling, provider abstraction, tiered fallback,
 and resilience (retry with backoff + circuit breaker).
 """
 
+import base64
+import mimetypes
 import random
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agentmap.exceptions import (
     LLMConfigurationError,
@@ -758,6 +760,7 @@ class LLMService:
                 "retry_with_lower_complexity", True
             ),
             max_tokens=routing_context.get("max_tokens"),
+            requires_vision=routing_context.get("requires_vision", False),
         )
 
     def clear_cache(self) -> None:
@@ -793,6 +796,104 @@ class LLMService:
             True if routing service is available
         """
         return self._routing_enabled
+
+    # ------------------------------------------------------------------
+    # Vision / multimodal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_image(
+        image: Union[str, bytes], image_type: str = "image/png"
+    ) -> Tuple[bytes, str]:
+        """Resolve an image input to (bytes, mime_type).
+
+        Args:
+            image: File path (str) or raw image bytes.
+            image_type: MIME type to use when *image* is bytes.
+
+        Returns:
+            Tuple of (image_bytes, mime_type).
+
+        Raises:
+            LLMServiceError: If the file path does not exist or cannot be read.
+        """
+        if isinstance(image, bytes):
+            return image, image_type
+
+        # Treat as a file path — open directly (EAFP) instead of pre-checking
+        mime, _ = mimetypes.guess_type(image)
+        if mime is None:
+            mime = image_type  # fall back to caller-provided default
+
+        try:
+            with open(image, "rb") as fh:
+                return fh.read(), mime
+        except FileNotFoundError:
+            raise LLMServiceError(f"Image file not found: {image}")
+        except OSError as exc:
+            raise LLMServiceError(f"Cannot read image file: {image}") from exc
+
+    def ask_vision(
+        self,
+        prompt: str,
+        image: Union[str, bytes],
+        image_type: str = "image/png",
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        routing_context: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> str:
+        """Ask the LLM a question about an image.
+
+        Convenience wrapper around ``call_llm()`` that constructs the
+        multimodal messages list expected by LangChain chat models.
+
+        Args:
+            prompt: Text prompt describing what to analyze.
+            image: Image as a file path (str) or raw bytes.
+            image_type: MIME type when *image* is bytes (default ``image/png``).
+            provider: Optional provider name (defaults to ``'anthropic'``).
+            model: Optional model override.
+            temperature: Optional temperature override.
+            routing_context: Optional routing context for intelligent routing.
+            **kwargs: Additional provider-specific parameters.
+
+        Returns:
+            LLM response as string.
+        """
+        image_bytes, mime = self._resolve_image(image, image_type)
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+
+        messages: List[Dict[str, Any]] = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{b64}"},
+                    },
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ]
+
+        if routing_context is not None:
+            routing_context = dict(routing_context)  # copy to avoid mutation
+            routing_context["requires_vision"] = True
+
+        # Default provider when routing is not active (mirrors ask() behavior)
+        if provider is None and routing_context is None:
+            provider = "anthropic"
+
+        return self.call_llm(
+            messages=messages,
+            provider=provider,
+            model=model,
+            temperature=temperature,
+            routing_context=routing_context,
+            **kwargs,
+        )
 
     def ask(self, prompt: str, provider: Optional[str] = None, **kwargs) -> str:
         """

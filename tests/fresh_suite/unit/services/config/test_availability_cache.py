@@ -32,7 +32,7 @@ from agentmap.services.config.availability_cache import (
 def _psutil_available():
     """Check if psutil is available for optional memory testing."""
     try:
-        pass
+        import psutil  # noqa: F401
 
         return True
     except ImportError:

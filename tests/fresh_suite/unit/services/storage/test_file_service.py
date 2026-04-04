@@ -199,6 +199,10 @@ class TestFileStorageService(unittest.TestCase):
         if platform.system() == "Windows":
             # Windows doesn't allow these characters in paths
             invalid_path = "C:\\invalid<>|path"
+        elif hasattr(os, "getuid") and os.getuid() == 0:
+            # Running as root — use /proc which is a pseudo-filesystem that
+            # doesn't allow arbitrary directory creation
+            invalid_path = "/proc/invalid_test_directory"
         else:
             # Unix-like systems - use a path we can't write to
             invalid_path = "/root/readonly_test_directory"
@@ -812,8 +816,10 @@ class TestFileStorageService(unittest.TestCase):
     # Alternative coverage provided by test_cross_platform_security_validation()
     # which tests security measures that work reliably across all platforms.
     @pytest.mark.skipif(
-        platform.system() == "Windows" or os.environ.get("CI") == "true",
-        reason="Permission tests not reliable on Windows or CI environments. Alternative security validation performed through path validation tests.",
+        platform.system() == "Windows"
+        or os.environ.get("CI") == "true"
+        or (hasattr(os, "getuid") and os.getuid() == 0),
+        reason="Permission tests not reliable on Windows, CI environments, or when running as root. Alternative security validation performed through path validation tests.",
     )
     def test_file_permission_errors(self):
         """Test handling of file permission errors with cross-platform compatibility.
