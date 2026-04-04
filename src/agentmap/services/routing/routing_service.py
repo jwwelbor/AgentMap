@@ -362,9 +362,7 @@ class LLMRoutingService:
 
         # 3) Filter out non-vision-capable models when vision is required
         if ctx.requires_vision and _NON_VISION_MODELS:
-            ordered = [
-                c for c in ordered if c.get("model") not in _NON_VISION_MODELS
-            ]
+            ordered = [c for c in ordered if c.get("model") not in _NON_VISION_MODELS]
 
         # 4) Apply provider preference ordering when supplied
         if ctx.provider_preference:

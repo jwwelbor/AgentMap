@@ -8,7 +8,6 @@ and resilience (retry with backoff + circuit breaker).
 
 import base64
 import mimetypes
-import os
 import random
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -821,16 +820,18 @@ class LLMService:
         if isinstance(image, bytes):
             return image, image_type
 
-        # Treat as a file path
-        if not os.path.isfile(image):
-            raise LLMServiceError(f"Image file not found: {image}")
-
+        # Treat as a file path — open directly (EAFP) instead of pre-checking
         mime, _ = mimetypes.guess_type(image)
         if mime is None:
             mime = image_type  # fall back to caller-provided default
 
-        with open(image, "rb") as fh:
-            return fh.read(), mime
+        try:
+            with open(image, "rb") as fh:
+                return fh.read(), mime
+        except FileNotFoundError:
+            raise LLMServiceError(f"Image file not found: {image}")
+        except OSError as exc:
+            raise LLMServiceError(f"Cannot read image file: {image}") from exc
 
     def ask_vision(
         self,
@@ -877,7 +878,6 @@ class LLMService:
             }
         ]
 
-        # Inject requires_vision into routing context
         if routing_context is not None:
             routing_context = dict(routing_context)  # copy to avoid mutation
             routing_context["requires_vision"] = True

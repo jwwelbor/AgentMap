@@ -1001,36 +1001,25 @@ class TestBlobStorageService(unittest.TestCase):
         mock_s3.return_value = False
         mock_gcs.return_value = False
 
-        # Test service initialization with import errors
-        with patch(
-            "agentmap.services.storage.azure_blob_connector", side_effect=ImportError
-        ):
-            with patch(
-                "agentmap.services.storage.aws_s3_connector", side_effect=ImportError
-            ):
-                with patch(
-                    "agentmap.services.storage.gcp_storage_connector",
-                    side_effect=ImportError,
-                ):
-                    # Create mock availability cache
-                    mock_cache = Mock()
-                    mock_cache.get_availability.return_value = None
-                    mock_cache.set_availability.return_value = True
+        # Create mock availability cache
+        mock_cache = Mock()
+        mock_cache.get_availability.return_value = None
+        mock_cache.set_availability.return_value = True
 
-                    # Service should still initialize successfully
-                    service = BlobStorageService(
-                        configuration=self.mock_storage_config_service,
-                        logging_service=self.mock_logging_service,
-                        availability_cache=mock_cache,
-                    )
+        # Service should still initialize successfully
+        service = BlobStorageService(
+            configuration=self.mock_storage_config_service,
+            logging_service=self.mock_logging_service,
+            availability_cache=mock_cache,
+        )
 
-                    # Cloud providers should not be available
-                    self.assertFalse(service._available_providers.get("azure", True))
-                    self.assertFalse(service._available_providers.get("s3", True))
-                    self.assertFalse(service._available_providers.get("gs", True))
+        # Cloud providers should not be available
+        self.assertFalse(service._available_providers.get("azure", True))
+        self.assertFalse(service._available_providers.get("s3", True))
+        self.assertFalse(service._available_providers.get("gs", True))
 
-                    # Local file provider should still be available
-                    self.assertTrue(service._available_providers.get("file", False))
+        # Local file provider should still be available
+        self.assertTrue(service._available_providers.get("file", False))
 
     def test_configuration_loading_edge_cases(self):
         """Test configuration loading with various edge cases."""

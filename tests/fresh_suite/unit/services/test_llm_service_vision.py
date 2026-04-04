@@ -10,7 +10,7 @@ import base64
 import os
 import tempfile
 import unittest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 from agentmap.services.llm_message_utils import LLMMessageUtils
 from agentmap.services.llm_service import LLMService
@@ -37,27 +37,23 @@ class TestResolveImage(unittest.TestCase):
     def test_resolve_image_file_path(self):
         """File path reads contents and infers MIME from extension."""
         content = b"fake-png-data"
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-            f.write(content)
-            path = f.name
-        try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "test.png")
+            with open(path, "wb") as f:
+                f.write(content)
             img_bytes, mime = LLMService._resolve_image(path)
             self.assertEqual(img_bytes, content)
             self.assertEqual(mime, "image/png")
-        finally:
-            os.unlink(path)
 
     def test_resolve_image_jpeg_extension(self):
         """JPEG extension infers correct MIME type."""
         content = b"fake-jpeg-data"
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-            f.write(content)
-            path = f.name
-        try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "test.jpg")
+            with open(path, "wb") as f:
+                f.write(content)
             _, mime = LLMService._resolve_image(path)
             self.assertEqual(mime, "image/jpeg")
-        finally:
-            os.unlink(path)
 
     def test_resolve_image_invalid_path(self):
         """Non-existent file path raises LLMServiceError."""
@@ -103,15 +99,7 @@ class TestAskVision(unittest.TestCase):
         self.assertEqual(result, "A cat sitting on a mat.")
         mock_call_llm.assert_called_once()
 
-        call_kwargs = mock_call_llm.call_args
-        messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages")
-        if messages is None:
-            # positional
-            messages = call_kwargs[0][0] if call_kwargs[0] else None
-
-        # Find the messages kwarg
-        actual_kwargs = mock_call_llm.call_args[1]
-        messages = actual_kwargs["messages"]
+        messages = mock_call_llm.call_args[1]["messages"]
 
         self.assertEqual(len(messages), 1)
         self.assertEqual(messages[0]["role"], "user")
@@ -124,16 +112,18 @@ class TestAskVision(unittest.TestCase):
         # Verify base64 encoding in data URL
         expected_b64 = base64.b64encode(raw).decode("ascii")
         self.assertIn(expected_b64, content[0]["image_url"]["url"])
-        self.assertTrue(content[0]["image_url"]["url"].startswith("data:image/png;base64,"))
+        self.assertTrue(
+            content[0]["image_url"]["url"].startswith("data:image/png;base64,")
+        )
 
     @patch.object(LLMService, "call_llm", return_value="Extracted text.")
     def test_ask_vision_with_file_path(self, mock_call_llm):
         """Passes file path, verifies file reading and MIME inference."""
         content_bytes = b"fake-image-content"
-        with tempfile.NamedTemporaryFile(suffix=".jpeg", delete=False) as f:
-            f.write(content_bytes)
-            path = f.name
-        try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "test.jpeg")
+            with open(path, "wb") as f:
+                f.write(content_bytes)
             result = self.service.ask_vision(
                 prompt="Extract text.",
                 image=path,
@@ -141,12 +131,9 @@ class TestAskVision(unittest.TestCase):
             )
             self.assertEqual(result, "Extracted text.")
 
-            actual_kwargs = mock_call_llm.call_args[1]
-            messages = actual_kwargs["messages"]
+            messages = mock_call_llm.call_args[1]["messages"]
             url = messages[0]["content"][0]["image_url"]["url"]
             self.assertTrue(url.startswith("data:image/jpeg;base64,"))
-        finally:
-            os.unlink(path)
 
     @patch.object(LLMService, "call_llm", return_value="result")
     def test_ask_vision_default_provider(self, mock_call_llm):
@@ -233,7 +220,10 @@ class TestLLMMessageUtilsMultimodal(unittest.TestCase):
             {
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/png;base64,abc"},
+                    },
                     {"type": "text", "text": "What is in this image?"},
                 ],
             }
@@ -248,7 +238,10 @@ class TestLLMMessageUtilsMultimodal(unittest.TestCase):
                 "role": "user",
                 "content": [
                     {"type": "text", "text": "First part."},
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/png;base64,abc"},
+                    },
                     {"type": "text", "text": "Second part."},
                 ],
             }
@@ -291,8 +284,10 @@ class TestRoutingContextVision(unittest.TestCase):
 class TestSelectCandidatesVisionFiltering(unittest.TestCase):
     """Tests for non-vision model filtering in select_candidates()."""
 
-    @patch("agentmap.services.routing.routing_service._NON_VISION_MODELS",
-           frozenset({"text-only-model"}))
+    @patch(
+        "agentmap.services.routing.routing_service._NON_VISION_MODELS",
+        frozenset({"text-only-model"}),
+    )
     def test_select_candidates_filters_non_vision_models(self):
         """Non-vision models are filtered when requires_vision=True."""
         from agentmap.services.routing.routing_service import LLMRoutingService
@@ -310,7 +305,10 @@ class TestSelectCandidatesVisionFiltering(unittest.TestCase):
         mock_routing_config.get_activities_config.return_value = {
             "image_extraction": {
                 "low": {
-                    "primary": {"provider": "anthropic", "model": "claude-haiku-4-5-20251001"},
+                    "primary": {
+                        "provider": "anthropic",
+                        "model": "claude-haiku-4-5-20251001",
+                    },
                     "fallbacks": [
                         {"provider": "openai", "model": "text-only-model"},
                     ],
