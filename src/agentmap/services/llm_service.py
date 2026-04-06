@@ -816,6 +816,11 @@ class LLMService:
 
         Raises:
             LLMServiceError: If the file path does not exist or cannot be read.
+
+        Note:
+            In distributed or containerized environments the service may not
+            share the caller's filesystem.  Prefer passing *image* as ``bytes``
+            and let the caller handle file I/O.
         """
         if isinstance(image, bytes):
             return image, image_type
@@ -849,9 +854,16 @@ class LLMService:
         Convenience wrapper around ``call_llm()`` that constructs the
         multimodal messages list expected by LangChain chat models.
 
+        This method is **synchronous**, consistent with the rest of
+        ``LLMService`` (``ask()``, ``call_llm()``, etc.).  Converting to
+        async would require migrating the entire call chain; see the
+        WormwoodGM spec PR (#143) for discussion.
+
         Args:
             prompt: Text prompt describing what to analyze.
-            image: Image as a file path (str) or raw bytes.
+            image: Image as a file path (str) or raw bytes.  In distributed
+                or containerized environments, prefer passing ``bytes`` — the
+                service may not share the caller's filesystem.
             image_type: MIME type when *image* is bytes (default ``image/png``).
             provider: Optional provider name (defaults to ``'anthropic'``).
             model: Optional model override.
@@ -860,7 +872,11 @@ class LLMService:
             **kwargs: Additional provider-specific parameters.
 
         Returns:
-            LLM response as string.
+            LLM response as string.  Per-call token usage (input/output
+            counts) is recorded on the active OpenTelemetry span as
+            ``gen_ai.usage.input_tokens`` and ``gen_ai.usage.output_tokens``
+            and emitted as OTel counter metrics — use your telemetry backend
+            for cost tracking rather than the return value.
         """
         image_bytes, mime = self._resolve_image(image, image_type)
         b64 = base64.b64encode(image_bytes).decode("ascii")
