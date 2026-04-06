@@ -64,31 +64,42 @@ def load_tools_from_module(module_path: str) -> List[Any]:
         tools_by_name: dict = {}
         py_files = sorted(p for p in path.glob("*.py") if p.is_file())
         for py_file in py_files:
-            # Files without @tool functions are silently skipped in directory mode
-            for tool in _load_tools_from_file(str(py_file), allow_empty=True):
+            for tool in _load_tools_from_file(str(py_file)):
                 tools_by_name.setdefault(tool.name, tool)
 
         if not tools_by_name:
-            raise ValueError(
-                f"No @tool decorated functions found in: {module_path}\n"
-                f"Suggestions:\n"
-                f"  • Ensure functions are decorated with @tool\n"
-                f"  • Import the @tool decorator: from langchain_core.tools import tool\n"
-                f"  • Verify the directory contains .py files with tool functions"
+            raise _no_tools_found_error(
+                module_path,
+                "Verify the directory contains .py files with tool functions",
             )
         return list(tools_by_name.values())
 
     # Single file
-    return _load_tools_from_file(module_path)
+    tools = _load_tools_from_file(module_path)
+    if not tools:
+        raise _no_tools_found_error(
+            module_path, "Verify the module contains callable tool functions"
+        )
+    return tools
 
 
-def _load_tools_from_file(module_path: str, allow_empty: bool = False) -> List[Any]:
-    """Load @tool decorated functions from a single .py file.
+def _no_tools_found_error(source: str, hint: str) -> ValueError:
+    """Build the standard 'no tools found' error with a source-specific hint."""
+    return ValueError(
+        f"No @tool decorated functions found in: {source}\n"
+        f"Suggestions:\n"
+        f"  • Ensure functions are decorated with @tool\n"
+        f"  • Import the @tool decorator: from langchain_core.tools import tool\n"
+        f"  • {hint}"
+    )
 
-    Args:
-        module_path: Path to the .py file.
-        allow_empty: If True, return [] when no tools are found instead of raising.
-            Used when scanning a directory where some files may not contain tools.
+
+def _load_tools_from_file(module_path: str) -> List[Any]:
+    """Import a .py file and return all @tool decorated functions found.
+
+    Returns an empty list if the file imports cleanly but defines no tools;
+    callers decide whether an empty result is an error. Raises ImportError
+    if the file cannot be imported at all.
     """
     # Import module dynamically. Using the file's stem as the synthetic
     # module name keeps each loaded file distinct in sys.modules-style
@@ -124,15 +135,5 @@ def _load_tools_from_file(module_path: str, allow_empty: bool = False) -> List[A
             and (hasattr(obj, "invoke") or hasattr(obj, "run"))
         ):
             tools.append(obj)
-
-    # Fail fast if no tools found (unless caller is scanning a directory)
-    if not tools and not allow_empty:
-        raise ValueError(
-            f"No @tool decorated functions found in: {module_path}\n"
-            f"Suggestions:\n"
-            f"  • Ensure functions are decorated with @tool\n"
-            f"  • Import the @tool decorator: from langchain_core.tools import tool\n"
-            f"  • Verify the module contains callable tool functions"
-        )
 
     return tools
