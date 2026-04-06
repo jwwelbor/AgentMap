@@ -307,16 +307,25 @@ def regular_function():
         )
         assert csv_row_toolnode.Tool_Source == "toolnode"
 
-        # Invalid format
+        # Valid directory path (no extension)
+        csv_row_dir = CSVRowModel(
+            GraphName="Test",
+            Node="Tool3",
+            Tool_Source="examples/tools/",
+            Available_Tools="tool1",
+        )
+        assert csv_row_dir.Tool_Source == "examples/tools/"
+
+        # Invalid format: wrong file extension
         with pytest.raises(ValueError) as exc_info:
             CSVRowModel(
                 GraphName="Test",
-                Node="Tool3",
-                Tool_Source="invalid_format",
+                Node="Tool4",
+                Tool_Source="my_tools.txt",
                 Available_Tools="tool1",
             )
         assert (
-            "must be either 'toolnode' or a .py file path"
+            "must be 'toolnode', a .py file path, or a directory path"
             in str(exc_info.value).lower()
         )
 

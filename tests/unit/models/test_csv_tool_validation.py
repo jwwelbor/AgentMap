@@ -163,18 +163,29 @@ class TestCSVToolValidation(unittest.TestCase):
             )
 
         self.assertIn(
-            "must be either 'toolnode' or a .py file path", str(context.exception)
+            "must be 'toolnode', a .py file path, or a directory path",
+            str(context.exception),
         )
 
-    def test_tool_source_validator_no_extension(self):
-        """Test Tool_Source validator rejects paths without .py extension."""
-        # Arrange & Act & Assert
-        with self.assertRaises(ValidationError) as context:
-            CSVRowModel(
-                GraphName="test_graph", Node="test_node", Tool_Source="tools/my_tools"
-            )
+    def test_tool_source_validator_directory_path(self):
+        """Test Tool_Source validator accepts directory paths (no extension)."""
+        # Arrange & Act
+        row = CSVRowModel(
+            GraphName="test_graph", Node="test_node", Tool_Source="tools/my_tools"
+        )
 
-        self.assertIn(".py file path", str(context.exception))
+        # Assert: directories pass validation; existence is checked at load time
+        self.assertEqual(row.Tool_Source, "tools/my_tools")
+
+    def test_tool_source_validator_directory_path_trailing_slash(self):
+        """Test Tool_Source validator accepts directory paths with trailing slash."""
+        # Arrange & Act
+        row = CSVRowModel(
+            GraphName="test_graph", Node="test_node", Tool_Source="examples/tools/"
+        )
+
+        # Assert
+        self.assertEqual(row.Tool_Source, "examples/tools/")
 
     def test_tool_source_validator_none_is_valid(self):
         """Test Tool_Source accepts None (optional field)."""

@@ -114,7 +114,13 @@ class CSVRowModel(BaseModel):
     @field_validator("Tool_Source")
     @classmethod
     def validate_tool_source(cls, v: Optional[str]) -> Optional[str]:
-        """Validate tool source is either a .py file path or 'toolnode' keyword."""
+        """Validate tool source is a .py file, a directory, or 'toolnode' keyword.
+
+        Directory paths (no file extension, optionally with a trailing slash)
+        are accepted; their contents are scanned at load time. File paths must
+        end in `.py`. Existence is not checked here — that happens during
+        tool loading so the error includes loader context.
+        """
         if v is None:
             return v
 
@@ -124,13 +130,23 @@ class CSVRowModel(BaseModel):
         if v.lower() == "toolnode":
             return "toolnode"
 
-        # Must be a .py file path
-        if not v.endswith(".py"):
-            raise ValueError(
-                f"Tool_Source must be either 'toolnode' or a .py file path. Got: '{v}'"
-            )
+        # Accept .py file paths
+        if v.endswith(".py"):
+            return v
 
-        return v
+        # Accept directory paths: no file extension on the final path component
+        # (e.g. "tools/my_tools" or "examples/tools/")
+        from pathlib import PurePosixPath
+
+        # Strip trailing slash for suffix check, but preserve it in the stored value
+        basename = PurePosixPath(v.rstrip("/\\")).name
+        if "." not in basename:
+            return v
+
+        raise ValueError(
+            f"Tool_Source must be 'toolnode', a .py file path, or a directory path. "
+            f"Got: '{v}'"
+        )
 
     @model_validator(mode="after")
     def validate_routing_logic(self) -> "CSVRowModel":

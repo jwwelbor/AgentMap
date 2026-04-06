@@ -278,5 +278,234 @@ def complex_tool(
         self.assertIn("complex signature", tool.description.lower())
 
 
+class TestLoadToolsFromDirectory(unittest.TestCase):
+    """Test load_tools_from_module() with directory paths."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.test_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        """Clean up test files."""
+        import shutil
+
+        if os.path.exists(self.test_dir):
+            shutil.rmtree(self.test_dir)
+
+    def _write_module(self, filename: str, content: str) -> Path:
+        """Write a Python file in the test directory."""
+        path = Path(self.test_dir) / filename
+        path.write_text(content)
+        return path
+
+    def test_load_tools_from_directory_aggregates_all_py_files(self):
+        """Test loading tools from a directory loads tools from every .py file."""
+        from agentmap.services.tool_loader import load_tools_from_module
+
+        # Arrange: Two .py files, each defining one tool
+        self._write_module(
+            "math_tools.py",
+            '''
+from langchain_core.tools import tool
+
+@tool
+def add(a: int, b: int) -> int:
+    """Add two numbers."""
+    return a + b
+''',
+        )
+        self._write_module(
+            "string_tools.py",
+            '''
+from langchain_core.tools import tool
+
+@tool
+def upper(text: str) -> str:
+    """Uppercase a string."""
+    return text.upper()
+''',
+        )
+
+        # Act
+        tools = load_tools_from_module(self.test_dir)
+
+        # Assert
+        tool_names = sorted(t.name for t in tools)
+        self.assertEqual(tool_names, ["add", "upper"])
+
+    def test_load_tools_from_directory_multiple_tools_per_file(self):
+        """Test loading tools from a directory where files contain multiple tools."""
+        from agentmap.services.tool_loader import load_tools_from_module
+
+        # Arrange
+        self._write_module(
+            "file_a.py",
+            '''
+from langchain_core.tools import tool
+
+@tool
+def alpha() -> str:
+    """Alpha tool."""
+    return "a"
+
+@tool
+def beta() -> str:
+    """Beta tool."""
+    return "b"
+''',
+        )
+        self._write_module(
+            "file_b.py",
+            '''
+from langchain_core.tools import tool
+
+@tool
+def gamma() -> str:
+    """Gamma tool."""
+    return "g"
+''',
+        )
+
+        # Act
+        tools = load_tools_from_module(self.test_dir)
+
+        # Assert
+        self.assertEqual(len(tools), 3)
+        self.assertEqual(sorted(t.name for t in tools), ["alpha", "beta", "gamma"])
+
+    def test_load_tools_from_directory_skips_files_without_tools(self):
+        """Test that .py files with no @tool functions are silently skipped."""
+        from agentmap.services.tool_loader import load_tools_from_module
+
+        # Arrange: One file with tools, one without
+        self._write_module(
+            "real_tools.py",
+            '''
+from langchain_core.tools import tool
+
+@tool
+def my_tool() -> str:
+    """A tool."""
+    return "x"
+''',
+        )
+        self._write_module(
+            "helpers.py",
+            '''
+def helper():
+    """Just a helper, not a tool."""
+    return 1
+''',
+        )
+
+        # Act
+        tools = load_tools_from_module(self.test_dir)
+
+        # Assert
+        self.assertEqual(len(tools), 1)
+        self.assertEqual(tools[0].name, "my_tool")
+
+    def test_load_tools_from_directory_empty_directory_raises(self):
+        """Test ValueError when directory contains no .py files."""
+        from agentmap.services.tool_loader import load_tools_from_module
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            load_tools_from_module(self.test_dir)
+
+        self.assertIn("No @tool decorated functions found", str(context.exception))
+
+    def test_load_tools_from_directory_no_tools_anywhere_raises(self):
+        """Test ValueError when no .py file in directory contains tools."""
+        from agentmap.services.tool_loader import load_tools_from_module
+
+        # Arrange
+        self._write_module(
+            "a.py",
+            """
+def not_a_tool():
+    return 1
+""",
+        )
+        self._write_module(
+            "b.py",
+            """
+class Helper:
+    pass
+""",
+        )
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            load_tools_from_module(self.test_dir)
+
+        self.assertIn("No @tool decorated functions found", str(context.exception))
+
+    def test_load_tools_from_directory_does_not_recurse_into_subdirs(self):
+        """Test directory loading is non-recursive (top-level only)."""
+        from agentmap.services.tool_loader import load_tools_from_module
+
+        # Arrange: tool in top level
+        self._write_module(
+            "top.py",
+            '''
+from langchain_core.tools import tool
+
+@tool
+def top_tool() -> str:
+    """Top level tool."""
+    return "top"
+''',
+        )
+        # And tool in a subdirectory (should NOT be picked up)
+        sub = Path(self.test_dir) / "nested"
+        sub.mkdir()
+        (sub / "nested_tools.py").write_text(
+            '''
+from langchain_core.tools import tool
+
+@tool
+def nested_tool() -> str:
+    """Nested tool."""
+    return "nested"
+'''
+        )
+
+        # Act
+        tools = load_tools_from_module(self.test_dir)
+
+        # Assert
+        tool_names = [t.name for t in tools]
+        self.assertEqual(tool_names, ["top_tool"])
+        self.assertNotIn("nested_tool", tool_names)
+
+    def test_load_tools_from_directory_propagates_import_errors(self):
+        """Test that a broken .py file in the directory raises ImportError."""
+        from agentmap.services.tool_loader import load_tools_from_module
+
+        # Arrange: One good file, one with a syntax error
+        self._write_module(
+            "good.py",
+            '''
+from langchain_core.tools import tool
+
+@tool
+def good_tool() -> str:
+    """Good tool."""
+    return "ok"
+''',
+        )
+        self._write_module(
+            "broken.py",
+            "def broken(  # syntax error\n",
+        )
+
+        # Act & Assert
+        with self.assertRaises(ImportError) as context:
+            load_tools_from_module(self.test_dir)
+
+        self.assertIn("broken.py", str(context.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

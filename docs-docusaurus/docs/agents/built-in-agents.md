@@ -242,8 +242,10 @@ The Tool Agent requires two extra columns beyond the standard set:
 
 | Column | Purpose | Example |
 |--------|---------|---------|
-| **Tool_Source** | Path to the Python file containing `@tool` functions | `tools/math_tools.py` |
-| **Available_Tools** | Pipe-separated list of tool names to make available | `add\|multiply` |
+| **Tool_Source** | Path to a Python file *or* a directory containing `@tool` functions | `tools/math_tools.py` or `tools/` |
+| **Available_Tools** | Pipe-separated list of tool names to make available (optional when `Tool_Source` is a directory — omit to expose every tool found) | `add\|multiply` |
+
+When **Tool_Source** points to a directory, every top-level `.py` file in that directory is scanned for `@tool` decorated functions and the tools are aggregated. Subdirectories are not searched. `Available_Tools` still works as a filter on top of the aggregated set.
 
 #### Single tool
 
@@ -262,6 +264,18 @@ List several tools and the agent picks the best match based on the prompt and in
 GraphName,Node,AgentType,Tool_Source,Available_Tools,Prompt,Input_Fields,Output_Field,Success_Next,Context
 MathNode,Compute,tool_agent,tools/math_tools.py,add|multiply,Calculate the result,a|b,answer,Next,"{""matching_strategy"": ""algorithm""}"
 ```
+
+#### Loading tools from a directory
+
+Point `Tool_Source` at a folder to expose every tool from every `.py` file in that folder. Omit `Available_Tools` to expose all of them, or list names to filter:
+
+```csv
+GraphName,Node,AgentType,Tool_Source,Available_Tools,Prompt,Input_Fields,Output_Field,Success_Next
+AllTools,Run,tool_agent,examples/tools/,,Pick the right tool,query,result,Done
+Filtered,Calc,tool_agent,examples/tools/,add|multiply,Do the math,a|b,result,Done
+```
+
+Files in the directory that contain no `@tool` functions are silently skipped, so you can keep helper modules alongside tool modules.
 
 #### Inline tool descriptions
 
