@@ -479,6 +479,58 @@ def nested_tool() -> str:
         self.assertEqual(tool_names, ["top_tool"])
         self.assertNotIn("nested_tool", tool_names)
 
+    def test_load_tools_from_directory_deduplicates_by_name(self):
+        """Tools re-exported across files are deduplicated by name.
+
+        If module B does ``from a import shared_tool``, ``inspect.getmembers``
+        will surface ``shared_tool`` in both modules. LangGraph's ``ToolNode``
+        rejects duplicate tool names, so the loader must collapse them.
+        """
+        from agentmap.services.tool_loader import load_tools_from_module
+
+        # Arrange: file_a defines `shared`; file_b imports it (re-exporting it)
+        # and adds its own tool `extra`.
+        self._write_module(
+            "file_a.py",
+            '''
+from langchain_core.tools import tool
+
+@tool
+def shared() -> str:
+    """Shared tool."""
+    return "shared"
+''',
+        )
+        self._write_module(
+            "file_b.py",
+            '''
+import importlib.util
+from pathlib import Path
+
+# Import file_a so `shared` becomes a module-level attribute of file_b too
+_spec = importlib.util.spec_from_file_location(
+    "file_a", str(Path(__file__).parent / "file_a.py")
+)
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+shared = _mod.shared
+
+from langchain_core.tools import tool
+
+@tool
+def extra() -> str:
+    """Extra tool."""
+    return "extra"
+''',
+        )
+
+        # Act
+        tools = load_tools_from_module(self.test_dir)
+
+        # Assert: `shared` appears once, not twice
+        names = sorted(t.name for t in tools)
+        self.assertEqual(names, ["extra", "shared"])
+
     def test_load_tools_from_directory_propagates_import_errors(self):
         """Test that a broken .py file in the directory raises ImportError."""
         from agentmap.services.tool_loader import load_tools_from_module

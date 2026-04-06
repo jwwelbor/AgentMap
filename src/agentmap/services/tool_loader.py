@@ -56,15 +56,19 @@ def load_tools_from_module(module_path: str) -> List[Any]:
             f"  • Use absolute or relative path from workflow directory"
         )
 
-    # Directory: load tools from every top-level .py file
+    # Directory: load tools from every top-level .py file.
+    # Tools are deduplicated by name because a module that re-exports a tool
+    # from a sibling (e.g. `from .a import shared`) would otherwise surface
+    # the same tool twice, and LangGraph's ToolNode rejects duplicate names.
     if path.is_dir():
-        tools: List[Any] = []
+        tools_by_name: dict = {}
         py_files = sorted(p for p in path.glob("*.py") if p.is_file())
         for py_file in py_files:
             # Files without @tool functions are silently skipped in directory mode
-            tools.extend(_load_tools_from_file(str(py_file), allow_empty=True))
+            for tool in _load_tools_from_file(str(py_file), allow_empty=True):
+                tools_by_name.setdefault(tool.name, tool)
 
-        if not tools:
+        if not tools_by_name:
             raise ValueError(
                 f"No @tool decorated functions found in: {module_path}\n"
                 f"Suggestions:\n"
@@ -72,7 +76,7 @@ def load_tools_from_module(module_path: str) -> List[Any]:
                 f"  • Import the @tool decorator: from langchain_core.tools import tool\n"
                 f"  • Verify the directory contains .py files with tool functions"
             )
-        return tools
+        return list(tools_by_name.values())
 
     # Single file
     return _load_tools_from_file(module_path)
@@ -86,9 +90,13 @@ def _load_tools_from_file(module_path: str, allow_empty: bool = False) -> List[A
         allow_empty: If True, return [] when no tools are found instead of raising.
             Used when scanning a directory where some files may not contain tools.
     """
-    # Import module dynamically
+    # Import module dynamically. Using the file's stem as the synthetic
+    # module name keeps each loaded file distinct in sys.modules-style
+    # bookkeeping and avoids `__name__` collisions when many files are
+    # loaded back-to-back from a directory.
     try:
-        spec = importlib.util.spec_from_file_location("tools", module_path)
+        module_name = Path(module_path).stem or "tools"
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
         if spec is None or spec.loader is None:
             raise ImportError(f"Cannot load module spec from: {module_path}")
 

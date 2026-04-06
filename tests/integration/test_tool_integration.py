@@ -316,18 +316,15 @@ def regular_function():
         )
         assert csv_row_dir.Tool_Source == "examples/tools/"
 
-        # Invalid format: wrong file extension
-        with pytest.raises(ValueError) as exc_info:
-            CSVRowModel(
-                GraphName="Test",
-                Node="Tool4",
-                Tool_Source="my_tools.txt",
-                Available_Tools="tool1",
-            )
-        assert (
-            "must be 'toolnode', a .py file path, or a directory path"
-            in str(exc_info.value).lower()
+        # Directory name containing a dot is also valid — path-shape
+        # inference is the loader's job, not the validator's
+        csv_row_dotted = CSVRowModel(
+            GraphName="Test",
+            Node="Tool4",
+            Tool_Source="my.tools/",
+            Available_Tools="tool1",
         )
+        assert csv_row_dotted.Tool_Source == "my.tools/"
 
     def test_csv_validation_available_tools_format(self):
         """Test CSV validation for Available_Tools format."""
