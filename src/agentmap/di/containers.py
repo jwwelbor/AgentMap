@@ -145,6 +145,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
             _bootstrap, "declaration_registry_service"
         ),
         telemetry_service=_expose(_telemetry, "telemetry_service"),
+        file_path_service=_expose(_core, "file_path_service"),
     )
 
     # --- Core re-exports --------------------------------------------------------

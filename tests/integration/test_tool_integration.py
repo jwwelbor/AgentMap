@@ -11,6 +11,7 @@ Tests end-to-end functionality of:
 - Backward compatibility
 """
 
+import logging
 import os
 import tempfile
 
@@ -18,7 +19,21 @@ import pytest
 
 from agentmap.models.validation.csv_row_model import CSVRowModel
 from agentmap.runtime_api import ensure_initialized
-from agentmap.services.tool_loader import load_tools_from_module
+from agentmap.services.graph.graph_tool_loading_service import (
+    GraphToolLoadingService,
+)
+
+
+class _StubLoggingService:
+    def get_class_logger(self, _instance):
+        logger = logging.getLogger(f"test.tool_integration.{id(_instance)}")
+        logger.addHandler(logging.NullHandler())
+        return logger
+
+
+def load_tools_from_module(path: str):
+    """Convenience wrapper preserving the old free-function entry point."""
+    return GraphToolLoadingService(_StubLoggingService()).load_tools_from_module(path)
 
 
 class TestToolIntegration:
