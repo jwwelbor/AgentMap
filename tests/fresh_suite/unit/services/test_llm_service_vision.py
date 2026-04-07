@@ -299,7 +299,6 @@ class TestSelectCandidatesVisionFiltering(unittest.TestCase):
         mock_routing_config.get_model_for_complexity.return_value = None
 
         mock_logging_service = MockServiceFactory.create_mock_logging_service()
-        mock_logger = mock_logging_service.get_class_logger(None)
 
         # Mock the activities config to return candidates including a text-only model
         mock_routing_config.get_activities_config.return_value = {

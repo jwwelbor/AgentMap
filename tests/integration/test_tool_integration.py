@@ -11,6 +11,7 @@ Tests end-to-end functionality of:
 - Backward compatibility
 """
 
+import logging
 import os
 import tempfile
 
@@ -18,7 +19,21 @@ import pytest
 
 from agentmap.models.validation.csv_row_model import CSVRowModel
 from agentmap.runtime_api import ensure_initialized
-from agentmap.services.tool_loader import load_tools_from_module
+from agentmap.services.graph.graph_tool_loading_service import (
+    GraphToolLoadingService,
+)
+
+
+class _StubLoggingService:
+    def get_class_logger(self, _instance):
+        logger = logging.getLogger(f"test.tool_integration.{id(_instance)}")
+        logger.addHandler(logging.NullHandler())
+        return logger
+
+
+def load_tools_from_module(path: str):
+    """Convenience wrapper preserving the old free-function entry point."""
+    return GraphToolLoadingService(_StubLoggingService()).load_tools_from_module(path)
 
 
 class TestToolIntegration:
@@ -307,18 +322,24 @@ def regular_function():
         )
         assert csv_row_toolnode.Tool_Source == "toolnode"
 
-        # Invalid format
-        with pytest.raises(ValueError) as exc_info:
-            CSVRowModel(
-                GraphName="Test",
-                Node="Tool3",
-                Tool_Source="invalid_format",
-                Available_Tools="tool1",
-            )
-        assert (
-            "must be either 'toolnode' or a .py file path"
-            in str(exc_info.value).lower()
+        # Valid directory path (no extension)
+        csv_row_dir = CSVRowModel(
+            GraphName="Test",
+            Node="Tool3",
+            Tool_Source="examples/tools/",
+            Available_Tools="tool1",
         )
+        assert csv_row_dir.Tool_Source == "examples/tools/"
+
+        # Directory name containing a dot is also valid — path-shape
+        # inference is the loader's job, not the validator's
+        csv_row_dotted = CSVRowModel(
+            GraphName="Test",
+            Node="Tool4",
+            Tool_Source="my.tools/",
+            Available_Tools="tool1",
+        )
+        assert csv_row_dotted.Tool_Source == "my.tools/"
 
     def test_csv_validation_available_tools_format(self):
         """Test CSV validation for Available_Tools format."""

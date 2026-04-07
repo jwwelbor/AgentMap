@@ -16,6 +16,7 @@ from agentmap.services.agent.agent_service_injection_service import (
 )
 from agentmap.services.declaration_registry_service import DeclarationRegistryService
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
+from agentmap.services.file_path_service import FilePathService
 from agentmap.services.graph.graph_agent_validation_service import (
     GraphAgentValidationService,
 )
@@ -52,6 +53,7 @@ class GraphAgentInstantiationService:
         graph_bundle_service: GraphBundleService,
         declaration_registry_service: Optional[DeclarationRegistryService] = None,
         telemetry_service: Optional[Any] = None,
+        file_path_service: Optional[FilePathService] = None,
     ):
         """
         Initialize with required services for agent instantiation.
@@ -67,6 +69,8 @@ class GraphAgentInstantiationService:
             declaration_registry_service: Optional service for looking up agent declarations
                                          to enable bundle-aware service injection optimization
             telemetry_service: Optional telemetry service for agent instrumentation
+            file_path_service: Optional path validation service. Forwarded to
+                GraphToolLoadingService to enforce path security on tool sources.
         """
         self.agent_factory = agent_factory_service
         self.agent_injection = agent_service_injection_service
@@ -80,7 +84,9 @@ class GraphAgentInstantiationService:
         self._graph_runner_service = None  # Late-bound to avoid circular dependency
 
         # Initialize helper services
-        self._tool_loading_service = GraphToolLoadingService(logging_service)
+        self._tool_loading_service = GraphToolLoadingService(
+            logging_service, file_path_service=file_path_service
+        )
         self._validation_service = GraphAgentValidationService(
             agent_service_injection_service, logging_service
         )

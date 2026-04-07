@@ -24,6 +24,7 @@ class GraphAgentContainer(containers.DeclarativeContainer):
     orchestrator_service = providers.Dependency()
     declaration_registry_service = providers.Dependency()
     telemetry_service = providers.Dependency()
+    file_path_service = providers.Dependency()
 
     @staticmethod
     def _create_agent_factory_service(
@@ -98,6 +99,7 @@ class GraphAgentContainer(containers.DeclarativeContainer):
         graph_bundle_service,
         declaration_registry_service,
         telemetry_service,
+        file_path_service,
     ):
         from agentmap.services.graph.graph_agent_instantiation_service import (
             GraphAgentInstantiationService,
@@ -113,6 +115,7 @@ class GraphAgentContainer(containers.DeclarativeContainer):
             graph_bundle_service,
             declaration_registry_service,
             telemetry_service,
+            file_path_service=file_path_service,
         )
 
     graph_agent_instantiation_service = providers.Singleton(
@@ -126,4 +129,5 @@ class GraphAgentContainer(containers.DeclarativeContainer):
         graph_bundle_service,
         declaration_registry_service,
         telemetry_service,
+        file_path_service,
     )

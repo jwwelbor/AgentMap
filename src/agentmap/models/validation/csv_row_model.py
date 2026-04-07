@@ -107,21 +107,23 @@ class CSVRowModel(BaseModel):
     @field_validator("Tool_Source")
     @classmethod
     def validate_tool_source(cls, v: Optional[str]) -> Optional[str]:
-        """Validate tool source is either a .py file path or 'toolnode' keyword."""
+        """Normalize Tool_Source.
+
+        Tool_Source may be a .py file path, a directory path, or the special
+        ``toolnode`` keyword. Path interpretation (file vs directory, exists
+        vs missing) is the loader's job — the loader produces actionable
+        errors with platform-correct path handling, so we deliberately do
+        not duplicate that logic here. This validator only normalizes the
+        ``toolnode`` keyword to lowercase.
+        """
         if v is None:
             return v
 
         v = v.strip()
 
-        # Accept 'toolnode' keyword (case-insensitive)
+        # Normalize the 'toolnode' keyword (case-insensitive)
         if v.lower() == "toolnode":
             return "toolnode"
-
-        # Must be a .py file path
-        if not v.endswith(".py"):
-            raise ValueError(
-                f"Tool_Source must be either 'toolnode' or a .py file path. Got: '{v}'"
-            )
 
         return v
 

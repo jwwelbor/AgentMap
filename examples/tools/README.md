@@ -80,11 +80,14 @@ Specifies where tools are defined:
 | Value | Meaning | Example |
 |-------|---------|---------|
 | `{path}.py` | Python module with @tool functions | `examples/tools/calculator_tools.py` |
+| `{path}/` | **Directory** of Python modules — every top-level `.py` file is scanned and all `@tool` functions are aggregated (non-recursive) | `examples/tools/` |
 | `toolnode` | Special keyword (advanced usage) | `toolnode` |
+
+When pointed at a directory, files containing no `@tool` functions are silently skipped, so helper modules can live alongside tool modules.
 
 ### AvailableTools Column
 
-Specifies which tools the agent can use:
+Specifies which tools the agent can use. **Optional when `ToolSource` is a directory** — leave it blank to expose every tool found in the folder.
 
 **Format 1: Simple (Auto-extraction)**
 ```csv
@@ -92,6 +95,7 @@ AvailableTools: add|subtract|multiply
 ```
 - Tool names separated by pipe `|`
 - Descriptions extracted from tool definitions
+- When omitted with a directory `ToolSource`, every discovered tool is exposed
 
 **Format 2: Inline Descriptions (CSV Override)**
 ```csv
@@ -236,7 +240,23 @@ Process,tool_agent,my_tools.py,"add(""adds numbers"")|mult(""multiplies"")"
 
 **Behavior:** Uses your descriptions instead of tool docstrings
 
-### Pattern 4: Tool Chain Pipeline
+### Pattern 4: Folder of Tools (Multiple Modules)
+
+Point `ToolSource` at a directory to expose tools defined across many `.py` files in one node — useful when a single agent needs the full library:
+
+```csv
+Node,AgentType,ToolSource,AvailableTools
+DoAnything,tool_agent,examples/tools/,
+```
+
+**Behavior:** Loads every `@tool` function from every `.py` file in `examples/tools/` (non-recursive). Set `AvailableTools` to a pipe-separated list to filter the discovered set.
+
+```csv
+Node,AgentType,ToolSource,AvailableTools
+MathOnly,tool_agent,examples/tools/,add|subtract|multiply|divide
+```
+
+### Pattern 5: Tool Chain Pipeline
 
 Chain multiple tools together:
 
@@ -297,6 +317,14 @@ def read_file(path: str) -> str:
 - Ensure functions use `@tool` decorator
 - Import decorator: `from langchain_core.tools import tool`
 - Check module loads without errors: `python my_tools.py`
+
+### No Tools Found in Directory
+**Error:** `No @tool decorated functions found in: my_tools/`
+
+**Solution:**
+- Verify the directory contains `.py` files at the top level (subdirectories are *not* searched)
+- Ensure at least one file uses `@tool` decorated functions
+- Helper-only files are silently skipped — that's fine, but at least one file must define tools
 
 ### Tool Not Selected
 **Issue:** Wrong tool being selected or no tool selected

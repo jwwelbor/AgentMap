@@ -152,29 +152,69 @@ class TestCSVToolValidation(unittest.TestCase):
         # Assert
         self.assertEqual(row.Tool_Source, "toolnode")
 
-    def test_tool_source_validator_invalid_extension(self):
-        """Test Tool_Source validator rejects non-.py file paths."""
-        # Arrange & Act & Assert
-        with self.assertRaises(ValidationError) as context:
-            CSVRowModel(
-                GraphName="test_graph",
-                Node="test_node",
-                Tool_Source="tools/my_tools.txt",
-            )
+    def test_tool_source_validator_passes_through_unrecognized_extensions(self):
+        """Test Tool_Source does not gate on file extension.
 
-        self.assertIn(
-            "must be either 'toolnode' or a .py file path", str(context.exception)
+        Path-shape inference (file vs directory, .py vs other) belongs at
+        load time, not in the CSV row validator. The validator accepts the
+        value as-is so the loader can produce a path-aware error.
+        """
+        # Arrange & Act
+        row = CSVRowModel(
+            GraphName="test_graph",
+            Node="test_node",
+            Tool_Source="tools/my_tools.txt",
         )
 
-    def test_tool_source_validator_no_extension(self):
-        """Test Tool_Source validator rejects paths without .py extension."""
-        # Arrange & Act & Assert
-        with self.assertRaises(ValidationError) as context:
-            CSVRowModel(
-                GraphName="test_graph", Node="test_node", Tool_Source="tools/my_tools"
-            )
+        # Assert: validator does not reject; loader will produce the real error
+        self.assertEqual(row.Tool_Source, "tools/my_tools.txt")
 
-        self.assertIn(".py file path", str(context.exception))
+    def test_tool_source_validator_directory_path(self):
+        """Test Tool_Source validator accepts directory paths (no extension)."""
+        # Arrange & Act
+        row = CSVRowModel(
+            GraphName="test_graph", Node="test_node", Tool_Source="tools/my_tools"
+        )
+
+        # Assert: directories pass validation; existence is checked at load time
+        self.assertEqual(row.Tool_Source, "tools/my_tools")
+
+    def test_tool_source_validator_directory_with_dot_in_name(self):
+        """Test Tool_Source accepts directories whose name contains a dot.
+
+        Reviewer flagged that `my.tools/` is a legal directory name and the
+        validator should not reject it. Path-shape inference belongs at load
+        time, not in the CSV row validator.
+        """
+        # Arrange & Act
+        row = CSVRowModel(
+            GraphName="test_graph", Node="test_node", Tool_Source="my.tools/"
+        )
+
+        # Assert
+        self.assertEqual(row.Tool_Source, "my.tools/")
+
+    def test_tool_source_validator_windows_style_path(self):
+        """Test Tool_Source accepts Windows-style backslash directory paths."""
+        # Arrange & Act
+        row = CSVRowModel(
+            GraphName="test_graph",
+            Node="test_node",
+            Tool_Source="tools\\my_tools",
+        )
+
+        # Assert
+        self.assertEqual(row.Tool_Source, "tools\\my_tools")
+
+    def test_tool_source_validator_directory_path_trailing_slash(self):
+        """Test Tool_Source validator accepts directory paths with trailing slash."""
+        # Arrange & Act
+        row = CSVRowModel(
+            GraphName="test_graph", Node="test_node", Tool_Source="examples/tools/"
+        )
+
+        # Assert
+        self.assertEqual(row.Tool_Source, "examples/tools/")
 
     def test_tool_source_validator_none_is_valid(self):
         """Test Tool_Source accepts None (optional field)."""
