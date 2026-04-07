@@ -981,6 +981,7 @@ class TestDIWiringPatterns:
             orchestrator_service=MagicMock(),
             declaration_registry_service=MagicMock(),
             telemetry_service=telemetry_svc,
+            file_path_service=MagicMock(),
         )
 
         instantiation_svc = graph_agent_container.graph_agent_instantiation_service()
