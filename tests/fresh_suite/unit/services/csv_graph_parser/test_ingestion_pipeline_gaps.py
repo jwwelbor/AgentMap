@@ -78,9 +78,7 @@ class TestOutputFieldMultiOutput(unittest.TestCase):
         from pydantic import ValidationError
 
         with self.assertRaises(ValidationError):
-            CSVRowModel(
-                GraphName="test", Node="node1", Output_Field="summary|an@lysis"
-            )
+            CSVRowModel(GraphName="test", Node="node1", Output_Field="summary|an@lysis")
 
     def test_none_output_field(self):
         """None output field should pass validation."""
@@ -208,12 +206,7 @@ class TestDuplicateNodeValidation(unittest.TestCase):
 
     def test_unique_nodes_pass(self):
         """Unique node names should not trigger errors."""
-        df = _make_df(
-            "GraphName,Node\n"
-            "test,start\n"
-            "test,process\n"
-            "test,end\n"
-        )
+        df = _make_df("GraphName,Node\n" "test,start\n" "test,process\n" "test,end\n")
         result = ValidationResult(file_path="test.csv", file_type="csv", is_valid=True)
         self.validator.validate_graph_semantics(df, result)
 
@@ -222,12 +215,7 @@ class TestDuplicateNodeValidation(unittest.TestCase):
 
     def test_duplicate_nodes_detected(self):
         """Duplicate node names within same graph should produce errors."""
-        df = _make_df(
-            "GraphName,Node\n"
-            "test,start\n"
-            "test,start\n"
-            "test,end\n"
-        )
+        df = _make_df("GraphName,Node\n" "test,start\n" "test,start\n" "test,end\n")
         result = ValidationResult(file_path="test.csv", file_type="csv", is_valid=True)
         self.validator.validate_graph_semantics(df, result)
 
@@ -237,11 +225,7 @@ class TestDuplicateNodeValidation(unittest.TestCase):
 
     def test_same_name_different_graphs_ok(self):
         """Same node name in different graphs should not trigger errors."""
-        df = _make_df(
-            "GraphName,Node\n"
-            "graph1,start\n"
-            "graph2,start\n"
-        )
+        df = _make_df("GraphName,Node\n" "graph1,start\n" "graph2,start\n")
         result = ValidationResult(file_path="test.csv", file_type="csv", is_valid=True)
         self.validator.validate_graph_semantics(df, result)
 
@@ -272,10 +256,7 @@ class TestOrphanNodeValidation(unittest.TestCase):
     def test_isolated_node_warned(self):
         """A node with no incoming or outgoing edges should generate a warning."""
         df = _make_df(
-            "GraphName,Node,Edge\n"
-            "test,start,end\n"
-            "test,orphan,\n"
-            "test,end,\n"
+            "GraphName,Node,Edge\n" "test,start,end\n" "test,orphan,\n" "test,end,\n"
         )
         result = ValidationResult(file_path="test.csv", file_type="csv", is_valid=True)
         self.validator.validate_graph_semantics(df, result)
@@ -286,10 +267,7 @@ class TestOrphanNodeValidation(unittest.TestCase):
 
     def test_single_node_graph_not_orphan(self):
         """A graph with only one node should not be flagged as orphan."""
-        df = _make_df(
-            "GraphName,Node\n"
-            "test,only_node\n"
-        )
+        df = _make_df("GraphName,Node\n" "test,only_node\n")
         result = ValidationResult(file_path="test.csv", file_type="csv", is_valid=True)
         self.validator.validate_graph_semantics(df, result)
 
@@ -321,10 +299,7 @@ class TestAgentTypeValidation(unittest.TestCase):
 
     def test_unknown_agent_type_warned(self):
         """Unknown agent types should produce a warning."""
-        df = _make_df(
-            "GraphName,Node,AgentType\n"
-            "test,start,my_custom_agent\n"
-        )
+        df = _make_df("GraphName,Node,AgentType\n" "test,start,my_custom_agent\n")
         result = ValidationResult(file_path="test.csv", file_type="csv", is_valid=True)
         self.validator.validate_graph_semantics(df, result)
 
@@ -335,10 +310,7 @@ class TestAgentTypeValidation(unittest.TestCase):
 
     def test_typo_suggestion_for_agent_type(self):
         """Close match agent type should get a 'Did you mean' suggestion."""
-        df = _make_df(
-            "GraphName,Node,AgentType\n"
-            "test,start,opanai\n"
-        )
+        df = _make_df("GraphName,Node,AgentType\n" "test,start,opanai\n")
         result = ValidationResult(file_path="test.csv", file_type="csv", is_valid=True)
         self.validator.validate_graph_semantics(df, result)
 
@@ -350,10 +322,7 @@ class TestAgentTypeValidation(unittest.TestCase):
 
     def test_none_agent_type_no_warning(self):
         """Missing/None agent type should not produce a warning."""
-        df = _make_df(
-            "GraphName,Node,AgentType\n"
-            "test,start,\n"
-        )
+        df = _make_df("GraphName,Node,AgentType\n" "test,start,\n")
         result = ValidationResult(file_path="test.csv", file_type="csv", is_valid=True)
         self.validator.validate_graph_semantics(df, result)
 
@@ -405,10 +374,7 @@ class TestCustomAgentTypeRecognition(unittest.TestCase):
 
     def test_unknown_agent_still_warned_with_custom_types(self):
         """Agents not in known_agent_types should still produce warnings."""
-        df = _make_df(
-            "GraphName,Node,AgentType\n"
-            "test,start,totally_unknown\n"
-        )
+        df = _make_df("GraphName,Node,AgentType\n" "test,start,totally_unknown\n")
         known = {"echo", "openai", "my_custom_agent"}
         result = ValidationResult(file_path="test.csv", file_type="csv", is_valid=True)
         self.validator.validate_graph_semantics(df, result, known_agent_types=known)
@@ -421,10 +387,7 @@ class TestCustomAgentTypeRecognition(unittest.TestCase):
 
     def test_builtin_fallback_when_no_known_types(self):
         """Without known_agent_types, should fall back to builtin constants."""
-        df = _make_df(
-            "GraphName,Node,AgentType\n"
-            "test,start,echo\n"
-        )
+        df = _make_df("GraphName,Node,AgentType\n" "test,start,echo\n")
         result = ValidationResult(file_path="test.csv", file_type="csv", is_valid=True)
         # No known_agent_types passed - falls back to _KNOWN_AGENT_TYPES module constant
         self.validator.validate_graph_semantics(df, result)
@@ -442,17 +405,13 @@ class TestComputeHashWithContent(unittest.TestCase):
         """Should return both hash string and file content bytes."""
         from agentmap.services.graph.graph_registry_service import GraphRegistryService
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
             f.write("GraphName,Node\ntest,start\n")
             f.flush()
             csv_path = Path(f.name)
 
         try:
-            csv_hash, content = GraphRegistryService.compute_hash_with_content(
-                csv_path
-            )
+            csv_hash, content = GraphRegistryService.compute_hash_with_content(csv_path)
             self.assertIsInstance(csv_hash, str)
             self.assertEqual(len(csv_hash), 64)  # SHA-256 hex digest length
             self.assertIsInstance(content, bytes)
@@ -464,9 +423,7 @@ class TestComputeHashWithContent(unittest.TestCase):
         """Hash from compute_hash_with_content should match compute_hash."""
         from agentmap.services.graph.graph_registry_service import GraphRegistryService
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
             f.write("GraphName,Node\ntest,start\n")
             f.flush()
             csv_path = Path(f.name)

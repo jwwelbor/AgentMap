@@ -18,7 +18,9 @@ from agentmap.services.csv_graph_parser.column_config import CSVColumnConfig
 try:
     from agentmap.builtin_definition_constants import BuiltinDefinitionConstants
 
-    _KNOWN_AGENT_TYPES: Optional[Set[str]] = set(BuiltinDefinitionConstants.AGENTS.keys())
+    _KNOWN_AGENT_TYPES: Optional[Set[str]] = set(
+        BuiltinDefinitionConstants.AGENTS.keys()
+    )
 except ImportError:
     _KNOWN_AGENT_TYPES = None
 
@@ -285,7 +287,7 @@ class CSVStructureValidator:
             for node_name, lines in nodes.items():
                 if len(lines) > 1:
                     result.add_error(
-                        message=f"Duplicate node name '{node_name}' in graph '{graph_name}' (lines {', '.join(str(l) for l in lines)})",
+                        message=f"Duplicate node name '{node_name}' in graph '{graph_name}' (lines {', '.join(str(ln) for ln in lines)})",
                         line_number=lines[1],
                         field_name="Node",
                         value=node_name,
@@ -326,7 +328,9 @@ class CSVStructureValidator:
             known_agent_types: Combined set of builtin + custom agent types.
                 Falls back to builtin-only module constant if not provided.
         """
-        effective_types = known_agent_types if known_agent_types is not None else _KNOWN_AGENT_TYPES
+        effective_types = (
+            known_agent_types if known_agent_types is not None else _KNOWN_AGENT_TYPES
+        )
         if effective_types is None:
             return
 
