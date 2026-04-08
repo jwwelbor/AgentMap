@@ -196,17 +196,31 @@ class GraphInterruptHandler:
         }
 
         if interrupt_type == "human_interaction":
-            if not interrupt_value:
-                self.logger.warning(
-                    "Missing human interaction metadata for node '%s'; skipping interaction storage",
-                    node_name,
-                )
-                return summary_info
-
             from agentmap.models.human_interaction import (
                 HumanInteractionRequest,
                 InteractionType,
             )
+
+            if not interrupt_value:
+                # Fallback path: no 'raw' key available (execution-tracker was used).
+                # Build a minimal interaction request from the fallback metadata so
+                # _store_thread_metadata is still called; without this the thread
+                # pickle is never written and resume_workflow raises
+                # 'Thread not found in storage' (B001).
+                self.logger.warning(
+                    "Missing 'raw' interrupt metadata for node '%s'; "
+                    "building minimal interaction request from fallback data",
+                    node_name,
+                )
+                agent_context = interrupt_metadata.get("agent_context", {}) or {}
+                prompt = agent_context.get("prompt", "")
+                interrupt_value = {
+                    "interaction_type": "text_input",
+                    "prompt": prompt,
+                    "context": interrupt_metadata.get("inputs", {}),
+                    "options": [],
+                    "timeout_seconds": None,
+                }
 
             interaction_request = HumanInteractionRequest(
                 thread_id=thread_id,
