@@ -202,11 +202,10 @@ class GraphInterruptHandler:
             )
 
             if not interrupt_value:
-                # Fallback path: no 'raw' key available (execution-tracker was used).
-                # Build a minimal interaction request from the fallback metadata so
-                # _store_thread_metadata is still called; without this the thread
-                # pickle is never written and resume_workflow raises
-                # 'Thread not found in storage' (B001).
+                # No 'raw' key — execution-tracker fallback was used. Build a minimal
+                # dict so _store_thread_metadata is always called; without it the thread
+                # pickle is never written and resume_workflow raises 'Thread not found
+                # in storage' (B001).
                 self.logger.warning(
                     "Missing 'raw' interrupt metadata for node '%s'; "
                     "building minimal interaction request from fallback data",
@@ -215,7 +214,9 @@ class GraphInterruptHandler:
                 agent_context = interrupt_metadata.get("agent_context", {}) or {}
                 prompt = agent_context.get("prompt", "")
                 interrupt_value = {
-                    "interaction_type": "text_input",
+                    "interaction_type": agent_context.get(
+                        "interaction_type", InteractionType.TEXT_INPUT.value
+                    ),
                     "prompt": prompt,
                     "context": interrupt_metadata.get("inputs", {}),
                     "options": [],

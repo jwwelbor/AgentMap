@@ -9,12 +9,14 @@ resume_workflow() then raises 'Thread not found in storage'.
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.node import Node
 from agentmap.services.graph.runner.interrupt_handler import GraphInterruptHandler
 from tests.utils.mock_service_factory import MockServiceFactory
+
+_DISPLAY_PATCH = "agentmap.deployment.cli.display_utils.display_interaction_request"
 
 
 def _make_handler(interaction_handler=None):
@@ -45,11 +47,27 @@ def _make_execution_tracker(node_name="human_node", success=None):
     """Return a minimal execution-tracker with one pending node."""
     node_exec = SimpleNamespace(
         node_name=node_name,
-        success=success,  # None means pending
+        success=success,
         inputs={"document": "some content"},
     )
-    tracker = SimpleNamespace(node_executions=[node_exec])
-    return tracker
+    return SimpleNamespace(node_executions=[node_exec])
+
+
+def _run_handler(state):
+    """Run handle_langgraph_interrupt with the given state; return (result, mock handler)."""
+    interaction_handler = Mock()
+    handler = _make_handler(interaction_handler)
+    bundle = _make_bundle(node_name="human_node", agent_type="HumanAgent")
+    tracker = _make_execution_tracker(node_name="human_node", success=None)
+
+    with patch(_DISPLAY_PATCH, return_value=None):
+        result = handler.handle_langgraph_interrupt(
+            state=state,
+            bundle=bundle,
+            thread_id="thread-b001",
+            execution_tracker=tracker,
+        )
+    return result, interaction_handler
 
 
 class TestInterruptHandlerB001(unittest.TestCase):
@@ -65,93 +83,34 @@ class TestInterruptHandlerB001(unittest.TestCase):
         handle_langgraph_interrupt must still call _store_thread_metadata so that
         resume_workflow can load the thread pickle.
         """
-        interaction_handler = Mock()
-        interaction_handler._store_interaction_request = Mock()
-        interaction_handler._store_thread_metadata = Mock()
-
-        handler = _make_handler(interaction_handler)
-
-        bundle = _make_bundle(node_name="human_node", agent_type="HumanAgent")
-        tracker = _make_execution_tracker(node_name="human_node", success=None)
-
         # No LangGraph state tasks — forces the execution-tracker fallback
         state = SimpleNamespace(tasks=[])
+        result, interaction_handler = _run_handler(state)
 
-        thread_id = "thread-b001-test"
+        # _store_thread_metadata MUST have been called — this was the B001 bug
+        interaction_handler._store_thread_metadata.assert_called_once()
+        interaction_handler._store_interaction_request.assert_called_once()
 
-        import unittest.mock as mock_module
-
-        with mock_module.patch(
-            "agentmap.deployment.cli.display_utils.display_interaction_request",
-            return_value=None,
-        ):
-            result = handler.handle_langgraph_interrupt(
-                state=state,
-                bundle=bundle,
-                thread_id=thread_id,
-                execution_tracker=tracker,
-            )
-
-        # _store_thread_metadata MUST have been called — this was the bug
-        self.assertTrue(
-            interaction_handler._store_thread_metadata.called,
-            "_store_thread_metadata was not called for human_interaction via fallback "
-            "path; resume_workflow would raise 'Thread not found in storage'",
-        )
-
-        # _store_interaction_request should also have been called
-        self.assertTrue(
-            interaction_handler._store_interaction_request.called,
-            "_store_interaction_request was not called",
-        )
-
-        # Result should be a summary dict, not None
         self.assertIsNotNone(result)
         self.assertEqual(result.get("type"), "human_interaction")
-        self.assertEqual(result.get("thread_id"), thread_id)
+        self.assertEqual(result.get("thread_id"), "thread-b001")
 
-    def test_store_thread_metadata_called_when_interrupt_value_empty(self):
+    def test_store_thread_metadata_called_when_langgraph_provides_minimal_interrupt(
+        self,
+    ):
         """
-        When LangGraph state has interrupt tasks but interrupt_value is an empty dict,
-        handle_langgraph_interrupt must still call _store_thread_metadata.
+        When LangGraph state has a task with a minimal interrupt value (type present
+        but no interaction_type/prompt/options fields), handle_langgraph_interrupt must
+        still reach _store_thread_metadata using .get() defaults.
         """
-        interaction_handler = Mock()
-        interaction_handler._store_interaction_request = Mock()
-        interaction_handler._store_thread_metadata = Mock()
-
-        handler = _make_handler(interaction_handler)
-
-        bundle = _make_bundle(node_name="human_node", agent_type="HumanAgent")
-        tracker = _make_execution_tracker(node_name="human_node", success=None)
-
-        # LangGraph state has a task with interrupt, but value is empty dict
         interrupt_obj = SimpleNamespace(
             value={"type": "human_interaction", "node_name": "human_node"}
         )
         task = SimpleNamespace(interrupts=[interrupt_obj])
         state = SimpleNamespace(tasks=[task])
+        result, interaction_handler = _run_handler(state)
 
-        thread_id = "thread-b001-empty-value"
-
-        import unittest.mock as mock_module
-
-        with mock_module.patch(
-            "agentmap.deployment.cli.display_utils.display_interaction_request",
-            return_value=None,
-        ):
-            result = handler.handle_langgraph_interrupt(
-                state=state,
-                bundle=bundle,
-                thread_id=thread_id,
-                execution_tracker=tracker,
-            )
-
-        # _store_thread_metadata MUST have been called
-        self.assertTrue(
-            interaction_handler._store_thread_metadata.called,
-            "_store_thread_metadata was not called when interrupt_value has type "
-            "but lacks detailed metadata; resume_workflow would fail",
-        )
+        interaction_handler._store_thread_metadata.assert_called_once()
 
         self.assertIsNotNone(result)
         self.assertEqual(result.get("type"), "human_interaction")
