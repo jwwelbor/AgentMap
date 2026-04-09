@@ -88,7 +88,13 @@ class GraphBundleService:
             )
             return False
 
-        interrupt_capable_types = {"human", "suspend"}
+        # "human" / "suspend" are AgentMap's own built-in interrupt-capable
+        # types. Downstream projects that register their own primitive under a
+        # different agent type also need the
+        # checkpoint saver — without it, ``langgraph.types.interrupt()``
+        # silently captures into the ``__interrupt__`` state key instead of
+        # raising ``GraphInterrupt``, and the round-trip is broken.
+        interrupt_capable_types = {"human", "human_agent", "suspend"}
 
         required_agents = getattr(bundle, "required_agents", None)
         if required_agents:

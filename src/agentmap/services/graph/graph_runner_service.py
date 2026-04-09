@@ -593,26 +593,21 @@ class GraphRunnerService:
                 f"in thread: {e.thread_id}"
             )
 
-            # If interaction handler is available, process the interruption
+            # If interaction handler is available, process the interruption.
+            # Do NOT catch exceptions here — if metadata storage fails the caller
+            # must know; swallowing the error causes resume_workflow to raise a
+            # misleading "Thread not found in storage" instead of the real cause.
             if self.interaction_handler:
-                try:
-                    self.interaction_handler.handle_execution_interruption(
-                        exception=e,
-                        bundle=bundle,
-                        bundle_context=create_bundle_context(bundle),
-                    )
-
-                    self.logger.info(
-                        f"Interaction handling completed for thread: "
-                        f"{e.thread_id}. "
-                        f"Execution paused pending user response."
-                    )
-
-                except Exception as handler_error:
-                    self.logger.error(
-                        f"Failed to handle interaction for thread "
-                        f"{e.thread_id}: {str(handler_error)}"
-                    )
+                self.interaction_handler.handle_execution_interruption(
+                    exception=e,
+                    bundle=bundle,
+                    bundle_context=create_bundle_context(bundle),
+                )
+                self.logger.info(
+                    f"Interaction handling completed for thread: "
+                    f"{e.thread_id}. "
+                    f"Execution paused pending user response."
+                )
             else:
                 self.logger.warning(
                     f"No interaction handler configured. Interaction "

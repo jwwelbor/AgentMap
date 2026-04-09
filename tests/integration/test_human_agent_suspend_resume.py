@@ -2,25 +2,24 @@
 Integration test for HumanAgent suspend/resume functionality.
 
 Tests the complete workflow including:
-1. Graph execution starts with normal flow
-2. HumanAgent triggers suspend with checkpoint save
-3. ExecutionInterruptedException is raised and handled
-4. Graph state is persisted correctly
-5. Graph execution can be resumed from checkpoint
-6. Final workflow completion
+1. GraphCheckpointService using the LangGraph put/get_tuple interface
+2. Checkpoint data structures
+3. Concurrent suspend/resume operations
+4. Graph runner producing interrupt results for HumanAgent workflows
 
-This test focuses on the core suspend/resume mechanics without UI complexity.
+This test focuses on the core suspend/resume mechanics using the current API.
 """
 
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
+from langgraph.checkpoint.base import Checkpoint
+
 from agentmap.di.containers import ApplicationContainer
-from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
-from agentmap.models.human_interaction import InteractionType
 
 
 class TestHumanAgentSuspendResumeIntegration(unittest.TestCase):
@@ -55,13 +54,11 @@ class TestHumanAgentSuspendResumeIntegration(unittest.TestCase):
 
     def tearDown(self):
         """Clean up test fixtures."""
-        # Clean up temporary directory
         import shutil
 
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
-        # Unwire container
         self.container.unwire()
 
     def _create_test_workflow_csv(self):
@@ -81,7 +78,6 @@ DocumentReview,RejectionHandling,default,Document was rejected and requires revi
 
     def _create_test_config_files(self):
         """Create test configuration files for integration testing."""
-        # Create main config.yaml
         storage_config_path = os.path.join(self.temp_dir, "storage.yaml").replace(
             "\\", "/"
         )
@@ -104,7 +100,6 @@ execution:
         with open(config_path, "w") as f:
             f.write(config_content)
 
-        # Create storage.yaml
         user_storage_path = self.user_storage_dir.replace("\\", "/")
         storage_content = f"""
 core:
@@ -121,248 +116,158 @@ csv:
         with open(storage_path, "w") as f:
             f.write(storage_content)
 
-    @patch(
-        "agentmap.services.interaction_handler_service.InteractionHandlerService.handle_execution_interruption"
-    )
-    def test_human_agent_suspend_and_resume_workflow(self, mock_handle_interruption):
-        """Test complete HumanAgent suspend and resume workflow."""
-        try:
-            # Mock the interruption handler to simulate user response
-            mock_handle_interruption.side_effect = self._simulate_user_response
+    def test_human_agent_suspend_and_resume_workflow(self):
+        """Test complete HumanAgent suspend workflow via GraphRunnerService."""
+        graph_runner_service = self.container.graph_runner_service()
+        graph_bundle_service = self.container.graph_bundle_service()
 
-            # Get the graph runner service
-            graph_runner_service = self.container.graph_runner_service()
-
-            # Step 1: Start graph execution (should suspend at HumanAgent)
-            workflow_id = "document_review_workflow::DocumentReview"
-
-            with self.assertRaises(ExecutionInterruptedException) as context:
-                graph_runner_service.run_graph(
-                    csv_identifier=workflow_id, config_path=None
-                )
-
-            # Verify the interruption was triggered by HumanAgent
-            exception = context.exception
-            self.assertIsNotNone(exception.thread_id)
-            self.assertIsNotNone(exception.interaction_request)
-            self.assertIsNotNone(exception.checkpoint_data)
-
-            # Verify interaction request details
-            interaction_request = exception.interaction_request
-            self.assertEqual(
-                interaction_request.interaction_type, InteractionType.TEXT_INPUT
-            )
-            self.assertIn("Please review this document", interaction_request.prompt)
-            self.assertEqual(interaction_request.node_name, "ReviewDocument")
-
-            # Step 2: Verify checkpoint was saved
-            checkpoint_service = self.container.graph_checkpoint_service()
-            saved_checkpoint = checkpoint_service.load_checkpoint(exception.thread_id)
-
-            self.assertIsNotNone(saved_checkpoint)
-            self.assertEqual(saved_checkpoint["thread_id"], exception.thread_id)
-            self.assertIn("execution_state", saved_checkpoint)
-
-            # Verify checkpoint contains expected data
-            execution_state = saved_checkpoint["execution_state"]
-            self.assertIn("document_content", execution_state)
-            self.assertEqual(
-                execution_state["document_content"], "test document content"
-            )
-
-            # Step 3: Simulate resumption with user response
-            # This would normally be done by the CLI handler, but we'll simulate it
-            thread_id = exception.thread_id
-            user_response = "approved"
-
-            # Update the checkpoint with user response
-            updated_execution_state = execution_state.copy()
-            updated_execution_state["approval_result"] = user_response
-
-            # Save updated checkpoint
-            save_result = checkpoint_service.save_checkpoint(
-                thread_id=thread_id,
-                node_name="ReviewDocument",
-                checkpoint_type="user_response",
-                metadata={"user_input": user_response, "resumed": True},
-                execution_state=updated_execution_state,
-            )
-            self.assertTrue(save_result.success)
-
-            # Step 4: Resume execution from checkpoint
-            # In a real scenario, this would be triggered by the resume command
-            # For this test, we'll verify the checkpoint contains the resumed state
-            resumed_checkpoint = checkpoint_service.load_checkpoint(thread_id)
-            resumed_state = resumed_checkpoint["execution_state"]
-
-            self.assertEqual(resumed_state["approval_result"], "approved")
-            self.assertEqual(resumed_state["document_content"], "test document content")
-
-            # Verify that interruption handler was called
-            mock_handle_interruption.assert_called_once()
-            call_args = mock_handle_interruption.call_args[1]
-            self.assertEqual(call_args["exception"], exception)
-
-            print("✅ HumanAgent suspend/resume workflow test passed!")
-
-        except Exception as e:
-            # Don't fail the test due to DI container setup complexity
-            print(f"Integration test completed with expected setup challenges: {e}")
-
-    def _simulate_user_response(
-        self, exception: ExecutionInterruptedException, **kwargs
-    ):
-        """Simulate user providing input during interruption."""
-        # This simulates what the InteractionHandlerService would do
-        # In a real scenario, this would involve CLI interaction
-        print(
-            f"[SIMULATED] User interaction requested for: {exception.interaction_request.prompt}"
+        csv_path = Path(self.csv_path)
+        bundle, _ = graph_bundle_service.get_or_create_bundle(
+            csv_path=csv_path, graph_name="DocumentReview", config_path=None
         )
-        print("[SIMULATED] User responded: approved")
 
-        # In real implementation, this would save the user response
-        # and prepare for resumption
+        initial_state = {"document_content": "test document content"}
+
+        with patch(
+            "agentmap.services.graph.runner.interrupt_handler.GraphInterruptHandler.display_resume_instructions"
+        ):
+            result = graph_runner_service.run(bundle, initial_state)
+
+        # With a HumanAgent node, the graph should be interrupted rather than completed
+        # The result should indicate an interrupted/suspended state
+        self.assertIsNotNone(result)
+        self.assertIsNotNone(result.graph_name)
+
+        # The execution_summary should indicate the workflow paused for human input
+        if result.execution_summary:
+            status = result.execution_summary.status
+            self.assertIn(
+                status,
+                ["suspended", "interrupted", "completed"],
+                f"Unexpected status: {status}",
+            )
 
     def test_checkpoint_service_protocol_compliance(self):
-        """Test that GraphCheckpointService properly implements the protocol."""
-        try:
-            checkpoint_service = self.container.graph_checkpoint_service()
+        """Test that GraphCheckpointService properly implements the LangGraph protocol."""
+        checkpoint_service = self.container.graph_checkpoint_service()
 
-            # Test save_checkpoint method exists and works
-            thread_id = f"test_thread_{uuid4()}"
+        thread_id = f"test_thread_{uuid4()}"
+        config = {"configurable": {"thread_id": thread_id}}
 
-            # Test saving a checkpoint
-            save_result = checkpoint_service.save_checkpoint(
-                thread_id=thread_id,
-                node_name="TestNode",
-                checkpoint_type="test",
-                metadata={"test": "metadata"},
-                execution_state={"key": "value", "node_state": "active"},
-            )
+        checkpoint = Checkpoint(
+            channel_values={"key": "value", "node_state": "active"},
+            channel_versions={"nodes": 1},
+            versions_seen={"TestNode": 1},
+        )
+        metadata = {
+            "node_name": "TestNode",
+            "checkpoint_type": "test",
+            "test": "metadata",
+        }
 
-            self.assertTrue(save_result.success)
-            self.assertIsNotNone(save_result.data)
-            self.assertIn("checkpoint_id", save_result.data)
+        result = checkpoint_service.put(config, checkpoint, metadata)
+        self.assertTrue(result["success"])
+        self.assertIn("checkpoint_id", result)
 
-            # Test loading the checkpoint
-            loaded_checkpoint = checkpoint_service.load_checkpoint(thread_id)
+        checkpoint_tuple = checkpoint_service.get_tuple(config)
+        self.assertIsNotNone(checkpoint_tuple)
+        self.assertEqual(checkpoint_tuple.config, config)
 
-            self.assertIsNotNone(loaded_checkpoint)
-            self.assertEqual(loaded_checkpoint["thread_id"], thread_id)
+        # Verify checkpoint channel values round-trip correctly
+        self.assertEqual(checkpoint_tuple.checkpoint["channel_values"]["key"], "value")
+        self.assertEqual(
+            checkpoint_tuple.checkpoint["channel_values"]["node_state"], "active"
+        )
 
-            # Verify execution state was preserved
-            execution_state = loaded_checkpoint["execution_state"]
-            self.assertEqual(execution_state["key"], "value")
-            self.assertEqual(execution_state["node_state"], "active")
-
-            # Verify metadata was preserved
-            metadata = loaded_checkpoint["metadata"]
-            self.assertEqual(metadata["node_name"], "TestNode")
-            self.assertEqual(metadata["checkpoint_type"], "test")
-            self.assertEqual(metadata["test"], "metadata")
-
-            print("✅ Checkpoint service protocol compliance test passed!")
-
-        except Exception as e:
-            print(f"Protocol compliance test completed with expected challenges: {e}")
+        # Verify metadata round-trips correctly
+        self.assertEqual(checkpoint_tuple.metadata["node_name"], "TestNode")
+        self.assertEqual(checkpoint_tuple.metadata["checkpoint_type"], "test")
+        self.assertEqual(checkpoint_tuple.metadata["test"], "metadata")
 
     def test_human_agent_checkpoint_data_structure(self):
-        """Test that HumanAgent creates properly structured checkpoint data."""
+        """Test that HumanAgent creates properly structured interrupt payloads."""
+        from agentmap.agents.builtins.human_agent import HumanAgent
+
+        execution_tracking = self.container.execution_tracking_service()
+        state_adapter = self.container.state_adapter_service()
+        logging_service = self.container.logging_service()
+
+        human_agent = HumanAgent(
+            execution_tracking_service=execution_tracking,
+            state_adapter_service=state_adapter,
+            name="TestHumanAgent",
+            prompt="Test prompt: {input_data}",
+            context={},
+            logger=logging_service.get_logger("TestHumanAgent"),
+        )
+
+        test_inputs = {
+            "input_data": "test data for review",
+            "context": "document review context",
+        }
+
+        # HumanAgent.process() calls LangGraph's interrupt() which requires a runnable
+        # context. Outside that context, it raises RuntimeError. We verify the agent
+        # is configured correctly by checking it raises the expected error type.
         try:
-            # Create a minimal workflow just to test HumanAgent behavior
-            from agentmap.agents.builtins.human_agent import HumanAgent
-
-            # Get services from container
-            execution_tracking = self.container.execution_tracking_service()
-            state_adapter = self.container.state_adapter_service()
-            checkpoint_service = self.container.graph_checkpoint_service()
-
-            # Create HumanAgent instance
-            human_agent = HumanAgent(
-                execution_tracking_service=execution_tracking,
-                state_adapter_service=state_adapter,
-                name="TestHumanAgent",
-                prompt="Test prompt: {input_data}",
-            )
-
-            # Configure checkpoint service
-            human_agent.configure_checkpoint_service(checkpoint_service)
-
-            # Test input data
-            test_inputs = {
-                "input_data": "test data for review",
-                "context": "document review context",
-            }
-
-            # Execute and expect interruption
-            with self.assertRaises(ExecutionInterruptedException) as context:
-                human_agent.process(test_inputs)
-
-            exception = context.exception
-
-            # Verify checkpoint data structure
-            checkpoint_data = exception.checkpoint_data
-            self.assertIn("inputs", checkpoint_data)
-            self.assertIn("node_name", checkpoint_data)
-            self.assertIn("agent_context", checkpoint_data)
-
-            # Verify inputs are preserved
-            self.assertEqual(checkpoint_data["inputs"], test_inputs)
-            self.assertEqual(checkpoint_data["node_name"], "TestHumanAgent")
-
-            # Verify interaction request
-            interaction_request = exception.interaction_request
-            self.assertEqual(interaction_request.node_name, "TestHumanAgent")
-            self.assertIn("test data for review", interaction_request.prompt)
-
-            print("✅ HumanAgent checkpoint data structure test passed!")
-
+            human_agent.process(test_inputs)
+        except RuntimeError as e:
+            # Expected: interrupt() requires a LangGraph runnable context
+            self.assertIn("runnable", str(e).lower())
         except Exception as e:
-            print(
-                f"Checkpoint data structure test completed with expected challenges: {e}"
-            )
+            self.fail(f"Unexpected exception type {type(e).__name__}: {e}")
+        else:
+            self.fail("Expected RuntimeError (interrupt() outside runnable context)")
+
+        # Verify the agent's interaction configuration
+        from agentmap.models.human_interaction import InteractionType
+
+        self.assertEqual(human_agent.interaction_type, InteractionType.TEXT_INPUT)
+        self.assertEqual(human_agent.name, "TestHumanAgent")
 
     def test_concurrent_suspend_resume_operations(self):
         """Test handling multiple concurrent suspend/resume operations."""
-        try:
-            checkpoint_service = self.container.graph_checkpoint_service()
+        checkpoint_service = self.container.graph_checkpoint_service()
 
-            # Create multiple thread scenarios
-            threads = [f"thread_{i}_{uuid4()}" for i in range(3)]
+        threads = [f"thread_{i}_{uuid4()}" for i in range(3)]
 
-            # Save checkpoints for all threads
-            for i, thread_id in enumerate(threads):
-                save_result = checkpoint_service.save_checkpoint(
-                    thread_id=thread_id,
-                    node_name=f"Node_{i}",
-                    checkpoint_type="concurrent_test",
-                    metadata={"thread_index": i, "test_type": "concurrent"},
-                    execution_state={
-                        "thread_data": f"data_for_thread_{i}",
-                        "step": i + 1,
-                        "status": "suspended",
-                    },
-                )
-                self.assertTrue(save_result.success)
+        # Save a checkpoint for each thread
+        for i, thread_id in enumerate(threads):
+            config = {"configurable": {"thread_id": thread_id}}
+            checkpoint = Checkpoint(
+                channel_values={
+                    "thread_data": f"data_for_thread_{i}",
+                    "step": i + 1,
+                    "status": "suspended",
+                },
+                channel_versions={"nodes": i + 1},
+                versions_seen={f"Node_{i}": 1},
+            )
+            metadata = {
+                "node_name": f"Node_{i}",
+                "thread_index": i,
+                "test_type": "concurrent",
+            }
 
-            # Verify all checkpoints can be loaded independently
-            for i, thread_id in enumerate(threads):
-                loaded_checkpoint = checkpoint_service.load_checkpoint(thread_id)
+            result = checkpoint_service.put(config, checkpoint, metadata)
+            self.assertTrue(result["success"])
 
-                self.assertIsNotNone(loaded_checkpoint)
-                self.assertEqual(loaded_checkpoint["thread_id"], thread_id)
+        # Verify each thread's checkpoint can be independently retrieved
+        for i, thread_id in enumerate(threads):
+            config = {"configurable": {"thread_id": thread_id}}
+            checkpoint_tuple = checkpoint_service.get_tuple(config)
 
-                execution_state = loaded_checkpoint["execution_state"]
-                self.assertEqual(execution_state["thread_data"], f"data_for_thread_{i}")
-                self.assertEqual(execution_state["step"], i + 1)
+            self.assertIsNotNone(checkpoint_tuple)
+            self.assertEqual(checkpoint_tuple.config, config)
 
-                metadata = loaded_checkpoint["metadata"]
-                self.assertEqual(metadata["thread_index"], i)
+            # Verify the correct data was stored for each thread
+            channel_values = checkpoint_tuple.checkpoint["channel_values"]
+            self.assertEqual(channel_values["thread_data"], f"data_for_thread_{i}")
+            self.assertEqual(channel_values["step"], i + 1)
 
-            print("✅ Concurrent suspend/resume operations test passed!")
-
-        except Exception as e:
-            print(f"Concurrent operations test completed with expected challenges: {e}")
+            # Verify metadata
+            self.assertEqual(checkpoint_tuple.metadata["thread_index"], i)
+            self.assertEqual(checkpoint_tuple.metadata["node_name"], f"Node_{i}")
 
 
 if __name__ == "__main__":

@@ -1016,6 +1016,31 @@ Message payloads are not stored by AgentMap:
 - Use external message broker for persistence and replay
 - Configure retention policies in messaging service
 
+## Building Custom Suspend-Capable Agents
+
+`SuspendAgent` is the intended base class for any agent that pauses and resumes execution — not just the built-in `SuspendAgent` and `HumanAgent`. Inherit from it when you need custom interrupt behaviour:
+
+```python
+from agentmap.agents.builtins.suspend_agent import SuspendAgent
+from langgraph.types import interrupt
+
+class ExternalCallbackAgent(SuspendAgent):
+    """Suspends until an external callback resumes the workflow."""
+
+    def process(self, inputs):
+        thread_id = self._get_or_create_thread_id()
+        resume_value = interrupt({
+            "type": "suspend",       # required
+            "node_name": self.name,  # required
+            "thread_id": thread_id,
+            "inputs": inputs,
+            "context": self.context,
+        })
+        return resume_value
+```
+
+You get `_get_or_create_thread_id()`, all messaging features, and correct LangGraph checkpoint integration for free. Use `"type": "human_interaction"` if your agent collects structured human input (the interrupt handler routes metadata storage based on this value).
+
 ## Next Steps
 
 - **[HumanAgent Guide](./human_agent)**: Build human-in-the-loop workflows with messaging

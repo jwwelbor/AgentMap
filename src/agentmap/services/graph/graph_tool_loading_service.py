@@ -330,6 +330,8 @@ class GraphToolLoadingService:
             file_str = str(py_file)
             for tool in self._load_tools_from_file(file_str):
                 if tool.name in tools_by_name:
+                    if tools_by_name[tool.name] is tool:
+                        continue
                     raise ValueError(
                         f"Tool name collision in directory {original_path}: "
                         f"'{tool.name}' is defined by two different files\n"
@@ -388,7 +390,8 @@ class GraphToolLoadingService:
         tools = []
         for _name, obj in inspect.getmembers(module):
             if (
-                hasattr(obj, "name")
+                not inspect.isclass(obj)
+                and hasattr(obj, "name")
                 and hasattr(obj, "description")
                 and (hasattr(obj, "invoke") or hasattr(obj, "run"))
             ):

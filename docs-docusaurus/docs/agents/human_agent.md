@@ -49,10 +49,12 @@ flowchart TD
 
 The HumanAgent operates by:
 
-1. **Interrupting Execution**: When reached, the agent raises an `ExecutionInterruptedException`
-2. **Saving State**: Creates a checkpoint with current workflow state and interaction request
+1. **Interrupting Execution**: When reached, the agent calls LangGraph's `interrupt()` function, which raises a `GraphInterrupt` and causes LangGraph to save a checkpoint automatically
+2. **Saving State**: The framework stores an interaction request and thread metadata (including the interrupt type and prompt) so the workflow can be resumed
 3. **Waiting for Response**: Workflow pauses until human provides response via CLI
-4. **Resuming Execution**: CLI resume command loads checkpoint and continues workflow with human input
+4. **Resuming Execution**: CLI resume command loads the stored metadata, rehydrates the bundle, and continues workflow with the human input as the resume value
+
+`HumanAgent` extends `SuspendAgent`, which provides the core interrupt/resume mechanism. If you need a custom human-in-the-loop agent, inherit from `SuspendAgent` rather than `BaseAgent` — see [Custom Agents](./custom-agents) for details.
 
 ## Basic Usage
 
@@ -370,7 +372,7 @@ review_flow,comprehensive_review,human,Review request {request_id}: {request_det
 ```bash
 ❌ Error: Thread 'invalid-thread-id' not found in storage
 ```
-**Solution:** Verify the thread ID from the interruption message and ensure checkpoints are properly saved.
+**Solution:** Verify the thread ID from the interruption message. If the thread ID is correct but still not found, the most likely cause is a storage write failure during the interrupt — check your logs for a line like `"Interaction handling failed: ..."` which will contain the underlying cause (e.g., a permissions error or misconfigured storage path). Fix the storage issue and re-run the workflow.
 
 **2. Invalid JSON Data**
 ```bash
