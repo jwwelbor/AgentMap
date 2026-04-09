@@ -306,6 +306,73 @@ context = {
 }
 ```
 
+---
+
+### MessagingCapableAgent Protocol
+
+**Purpose**: Enables agents to publish messages on suspension, resume, and graph-trigger events. Used by `SuspendAgent` and `HumanAgent` for event-driven observability.
+
+**Service Interface**: `MessagingServiceProtocol`
+
+```python
+class MessagingCapableAgent(Protocol):
+    """Protocol for agents that publish workflow lifecycle messages"""
+    
+    def configure_messaging_service(self, messaging_service: MessagingServiceProtocol) -> None:
+        """Configure messaging service for this agent"""
+        ...
+```
+
+**Implementation Pattern**:
+```python
+from agentmap.services.protocols import MessagingCapableAgent
+
+class MyNotifyingAgent(BaseAgent, MessagingCapableAgent):
+    def __init__(self, name, prompt, context=None, **kwargs):
+        super().__init__(name, prompt, context, **kwargs)
+        self._messaging_service = None
+
+    def configure_messaging_service(self, messaging_service) -> None:
+        self._messaging_service = messaging_service
+
+    def process(self, inputs):
+        # ... do work ...
+        if self._messaging_service:
+            self._messaging_service.publish_message(
+                topic="workflow_events",
+                message_type="work_complete",
+                payload={"result": result},
+            )
+        return result
+```
+
+**Note:** Most agents that need messaging are better served by inheriting from `SuspendAgent`, which already implements this protocol and provides built-in suspension/resume/graph message publishing. Only implement `MessagingCapableAgent` directly if you need messaging but do NOT need the interrupt/resume pattern.
+
+---
+
+### Interrupt-Capable Agents (Not a Protocol)
+
+Pause/resume capability is **not** a protocol — it is a base class. If your agent needs to suspend execution and wait for an external event or human input, inherit from `SuspendAgent` instead of `BaseAgent`:
+
+```python
+from agentmap.agents.builtins.suspend_agent import SuspendAgent
+from langgraph.types import interrupt
+
+class MyWaitAgent(SuspendAgent):
+    def process(self, inputs):
+        result = interrupt({
+            "type": "suspend",          # required — routes handler storage
+            "node_name": self.name,     # required
+            "inputs": inputs,
+            "context": self.context,
+        })
+        return result  # returned when Command(resume=value) is sent
+```
+
+`SuspendAgent` provides `_get_or_create_thread_id()`, optional `MessagingCapableAgent` support, and the correct LangGraph integration. `HumanAgent` is the canonical example of a `SuspendAgent` subclass.
+
+---
+
 ## Multi-Capability Agents
 
 ### Combining Multiple Protocols

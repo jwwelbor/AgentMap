@@ -49,6 +49,16 @@ flowchart TB
     end
 ```
 
+## Choosing the Right Base Class
+
+| Your agent needs to... | Inherit from |
+|---|---|
+| Process inputs and return a result | `BaseAgent` |
+| Pause mid-workflow and wait for an external event or human input | `SuspendAgent` |
+| Collect structured human input (approval, choice, text, edit) | `HumanAgent` |
+
+`SuspendAgent` is the base for any agent that calls LangGraph's `interrupt()` function — it handles the thread ID, checkpoint coordination, and optional messaging. `BaseAgent` has no interrupt mechanism. See [SuspendAgent Messaging Features](./suspend-agent-features) for full details.
+
 ## Modern BaseAgent Architecture
 
 ### Class Definition
