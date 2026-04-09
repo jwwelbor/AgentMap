@@ -8,7 +8,7 @@ and bundle rehydration with real service dependencies.
 import os
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from agentmap.di.containers import ApplicationContainer
@@ -100,6 +100,7 @@ providers:
     def _create_test_bundle(self) -> Mock:
         """Create a test GraphBundle."""
         mock_bundle = Mock()
+        mock_bundle.graph_name = "test_graph"
         mock_bundle.csv_hash = "test_hash_456"
         mock_bundle.bundle_path = "/test/bundle/path.json"
         mock_bundle.csv_path = "/test/csv/workflow.csv"
@@ -110,10 +111,8 @@ providers:
         logging_service = self.container.logging_service()
         system_storage = self.container.system_storage_manager()
 
-        json_service = system_storage.get_json_storage("langgraph_checkpoints")
-
         checkpoint_service = GraphCheckpointService(
-            json_storage_service=json_service, logging_service=logging_service
+            system_storage_manager=system_storage, logging_service=logging_service
         )
 
         thread_id = "integration_test_thread"
@@ -136,7 +135,7 @@ providers:
         self.assertIsNotNone(retrieved_tuple)
         self.assertEqual(retrieved_tuple.config, config)
         self.assertEqual(
-            retrieved_tuple.checkpoint.channel_values, checkpoint.channel_values
+            retrieved_tuple.checkpoint["channel_values"], checkpoint["channel_values"]
         )
         self.assertEqual(retrieved_tuple.metadata, metadata)
 
@@ -147,26 +146,10 @@ providers:
     def test_interaction_service_with_real_storage(self):
         """Test InteractionHandlerService with real storage backend."""
         logging_service = self.container.logging_service()
-        self.container.app_config_service()
-        storage_config = self.container.storage_config_service()
-        file_path_service = self.container.file_path_service()
-
-        if storage_config is None:
-            self.skipTest("storage_config_service not available")
-
-        from agentmap.services.storage.manager import StorageServiceManager
-
-        storage_manager = StorageServiceManager(
-            storage_config, logging_service, file_path_service
-        )
-
-        json_service = storage_manager.get_service("json")
-
-        mock_cli_handler = Mock()
+        system_storage = self.container.system_storage_manager()
 
         interaction_service = InteractionHandlerService(
-            storage_service=json_service,
-            cli_handler=mock_cli_handler,
+            system_storage_manager=system_storage,
             logging_service=logging_service,
         )
 
@@ -187,13 +170,13 @@ providers:
             checkpoint_data=checkpoint_data,
         )
 
-        interaction_service.handle_execution_interruption(
-            exception=exception, bundle=bundle
-        )
-
-        mock_cli_handler.display_interaction_request.assert_called_once_with(
-            interaction_request
-        )
+        with patch(
+            "agentmap.deployment.cli.display_utils.display_interaction_request"
+        ) as mock_display:
+            interaction_service.handle_execution_interruption(
+                exception=exception, bundle=bundle
+            )
+            mock_display.assert_called_once_with(interaction_request)
 
         metadata = interaction_service.get_thread_metadata(thread_id)
         self.assertIsNotNone(metadata)
@@ -207,28 +190,20 @@ providers:
         self.assertTrue(success)
 
         info = interaction_service.get_service_info()
-        self.assertTrue(info["storage_service_available"])
-        self.assertTrue(info["cli_handler_available"])
+        self.assertTrue(info["file_storage_available"])
 
     def test_complete_interrupt_resume_workflow(self):
         """Test the complete interrupt and resume workflow."""
         logging_service = self.container.logging_service()
         system_storage = self.container.system_storage_manager()
 
-        checkpoint_json_service = system_storage.get_json_storage(
-            "langgraph_checkpoints"
-        )
         checkpoint_service = GraphCheckpointService(
-            json_storage_service=checkpoint_json_service,
+            system_storage_manager=system_storage,
             logging_service=logging_service,
         )
 
-        interaction_json_service = system_storage.get_json_storage("interactions")
-        mock_cli_handler = Mock()
-
         interaction_service = InteractionHandlerService(
-            storage_service=interaction_json_service,
-            cli_handler=mock_cli_handler,
+            system_storage_manager=system_storage,
             logging_service=logging_service,
         )
 
@@ -264,11 +239,13 @@ providers:
             checkpoint_data=checkpoint_data,
         )
 
-        interaction_service.handle_execution_interruption(
-            exception=exception, bundle=bundle
-        )
-
-        mock_cli_handler.display_interaction_request.assert_called_once()
+        with patch(
+            "agentmap.deployment.cli.display_utils.display_interaction_request"
+        ) as mock_display:
+            interaction_service.handle_execution_interruption(
+                exception=exception, bundle=bundle
+            )
+            mock_display.assert_called_once()
 
         thread_metadata = interaction_service.get_thread_metadata(thread_id)
         self.assertIsNotNone(thread_metadata)
@@ -298,7 +275,7 @@ providers:
         final_tuple = checkpoint_service.get_tuple(config)
         self.assertIsNotNone(final_tuple)
         self.assertEqual(
-            final_tuple.checkpoint.channel_values["nodes"]["test_node"], "processed"
+            final_tuple.checkpoint["channel_values"]["nodes"]["test_node"], "processed"
         )
 
     def test_bundle_context_preservation(self):
@@ -306,12 +283,8 @@ providers:
         logging_service = self.container.logging_service()
         system_storage = self.container.system_storage_manager()
 
-        json_service = system_storage.get_json_storage("bundle_context_test")
-        mock_cli_handler = Mock()
-
         interaction_service = InteractionHandlerService(
-            storage_service=json_service,
-            cli_handler=mock_cli_handler,
+            system_storage_manager=system_storage,
             logging_service=logging_service,
         )
 
@@ -319,6 +292,7 @@ providers:
         interaction_request = self._create_test_interaction_request(thread_id)
 
         bundle = Mock()
+        bundle.graph_name = "complex_test_graph"
         bundle.csv_hash = "complex_hash_789"
         bundle.bundle_path = "/complex/bundle/path.json"
         bundle.csv_path = "/complex/csv/workflow.csv"
@@ -344,9 +318,10 @@ providers:
             checkpoint_data=checkpoint_data,
         )
 
-        interaction_service.handle_execution_interruption(
-            exception=exception, bundle=bundle, bundle_context=bundle_context
-        )
+        with patch("agentmap.deployment.cli.display_utils.display_interaction_request"):
+            interaction_service.handle_execution_interruption(
+                exception=exception, bundle=bundle, bundle_context=bundle_context
+            )
 
         metadata = interaction_service.get_thread_metadata(thread_id)
         self.assertIsNotNone(metadata)
@@ -371,12 +346,8 @@ providers:
         logging_service = self.container.logging_service()
         system_storage = self.container.system_storage_manager()
 
-        json_service = system_storage.get_json_storage("error_recovery_test")
-        mock_cli_handler = Mock()
-
         interaction_service = InteractionHandlerService(
-            storage_service=json_service,
-            cli_handler=mock_cli_handler,
+            system_storage_manager=system_storage,
             logging_service=logging_service,
         )
 
@@ -388,22 +359,21 @@ providers:
         thread_id = "cli_failure_test"
         interaction_request = self._create_test_interaction_request(thread_id)
 
-        mock_cli_handler.display_interaction_request.side_effect = Exception(
-            "CLI failure"
-        )
-
         exception = ExecutionInterruptedException(
             thread_id=thread_id,
             interaction_request=interaction_request,
             checkpoint_data={"test": "data"},
         )
 
-        with self.assertRaises(RuntimeError):
-            interaction_service.handle_execution_interruption(exception)
+        with patch(
+            "agentmap.deployment.cli.display_utils.display_interaction_request",
+            side_effect=Exception("CLI failure"),
+        ):
+            with self.assertRaises(RuntimeError):
+                interaction_service.handle_execution_interruption(exception)
 
-        checkpoint_json_service = system_storage.get_json_storage("error_checkpoints")
         checkpoint_service = GraphCheckpointService(
-            json_storage_service=checkpoint_json_service,
+            system_storage_manager=system_storage,
             logging_service=logging_service,
         )
 
@@ -421,15 +391,12 @@ providers:
         system_storage = self.container.system_storage_manager()
 
         checkpoint_service = GraphCheckpointService(
-            json_storage_service=system_storage.get_json_storage(
-                "concurrent_checkpoints"
-            ),
+            system_storage_manager=system_storage,
             logging_service=logging_service,
         )
 
         interaction_service = InteractionHandlerService(
-            storage_service=system_storage.get_json_storage("concurrent_interactions"),
-            cli_handler=Mock(),
+            system_storage_manager=system_storage,
             logging_service=logging_service,
         )
 
@@ -452,15 +419,16 @@ providers:
             )
             self.assertTrue(result["success"])
 
-        for thread_id in threads:
-            interaction_request = self._create_test_interaction_request(thread_id)
-            exception = ExecutionInterruptedException(
-                thread_id=thread_id,
-                interaction_request=interaction_request,
-                checkpoint_data={"thread": thread_id, "status": "concurrent"},
-            )
+        with patch("agentmap.deployment.cli.display_utils.display_interaction_request"):
+            for thread_id in threads:
+                interaction_request = self._create_test_interaction_request(thread_id)
+                exception = ExecutionInterruptedException(
+                    thread_id=thread_id,
+                    interaction_request=interaction_request,
+                    checkpoint_data={"thread": thread_id, "status": "concurrent"},
+                )
 
-            interaction_service.handle_execution_interruption(exception)
+                interaction_service.handle_execution_interruption(exception)
 
         for thread_id in threads:
             config = {"configurable": {"thread_id": thread_id}}

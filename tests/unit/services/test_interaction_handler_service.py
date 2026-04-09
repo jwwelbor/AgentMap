@@ -536,12 +536,10 @@ class TestInteractionHandlerService(unittest.TestCase):
         self.assertTrue(capabilities["binary_storage"])
 
     def test_get_service_info_missing_services(self):
-        """Test service info with missing services."""
-        # Arrange - Create service with mock that returns unhealthy storage
+        """Test service info with missing (None) storage."""
+        # Arrange - Create service with mock that returns None for file storage
         mock_system_storage = Mock()
-        mock_unhealthy_storage = Mock()
-        mock_unhealthy_storage.is_healthy.return_value = False
-        mock_system_storage.get_file_storage.return_value = mock_unhealthy_storage
+        mock_system_storage.get_file_storage.return_value = None
 
         service = InteractionHandlerService(
             system_storage_manager=mock_system_storage,

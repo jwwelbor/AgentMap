@@ -70,7 +70,7 @@ class InteractionHandlerService(
             "service": "InteractionHandlerService",
             "storage_type": "pickle",
             "storage_namespace": "interactions",
-            "file_storage_available": self.file_storage.is_healthy(),
+            "file_storage_available": self.file_storage is not None,
             "collections": {
                 "requests": self.requests_collection,
                 "threads": self.threads_collection,
