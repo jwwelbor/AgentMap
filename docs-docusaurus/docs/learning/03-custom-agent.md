@@ -293,6 +293,44 @@ Our agent identified several issues:
 
 ## Step 7: Advanced Custom Agent Patterns
 
+### Building Interrupt-Capable Agents
+
+If your agent needs to **pause mid-workflow** and wait for an external event or human input, inherit from `SuspendAgent` instead of `BaseAgent`. `SuspendAgent` wraps LangGraph's `interrupt()` mechanism so that AgentMap can checkpoint state, store resume metadata, and route the workflow correctly when execution continues.
+
+`HumanAgent` is the built-in example of this pattern. For a custom interrupt-capable agent:
+
+```python
+from agentmap.agents.builtins.suspend_agent import SuspendAgent
+from langgraph.types import interrupt
+from typing import Dict, Any
+
+class ExternalApprovalAgent(SuspendAgent):
+    """Pauses workflow until an external approval system responds."""
+
+    def process(self, inputs: Dict[str, Any]) -> Any:
+        thread_id = self._get_or_create_thread_id()
+
+        # Suspend and wait — LangGraph checkpoints state automatically.
+        # 'type' is required; the interrupt handler uses it to route metadata.
+        decision = interrupt({
+            "type": "suspend",
+            "node_name": self.name,
+            "thread_id": thread_id,
+            "inputs": inputs,
+            "context": self.context,
+        })
+
+        # Everything below here runs only after resume.
+        return {"approved": decision == "approve", "decision": decision}
+```
+
+Key points:
+- **Always inherit from `SuspendAgent`**, not `BaseAgent`, for pause/resume agents.
+- The payload dict passed to `interrupt()` must include `'type'` and `'node_name'`; the framework uses these to store the thread metadata needed by `resume_workflow`.
+- Use `'type': 'human_interaction'` if your agent is collecting human input (the handler will store an interaction request). Use `'type': 'suspend'` for generic external pauses.
+- `self._get_or_create_thread_id()` is provided by `SuspendAgent` and resolves the thread ID from the execution tracker.
+- Optional messaging (notify external systems on suspend/resume) is available via the `MessagingCapableAgent` protocol already mixed into `SuspendAgent`.
+
 ### Using CapableAgent Protocols
 
 For agents that need external services, implement capability protocols:

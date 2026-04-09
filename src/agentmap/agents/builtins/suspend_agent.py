@@ -1,10 +1,18 @@
 """
-SuspendAgent: generic pause/suspend node for long-running or out-of-band work.
+SuspendAgent: base class for any agent that needs to pause and resume execution.
 
 Uses LangGraph's interrupt() function to properly suspend execution.
 - On first call: Raises GraphInterrupt, LangGraph saves checkpoint
 - On resume: Returns the resume value, allowing node to complete
-- HumanAgent should subclass this and use interrupt() with interaction metadata.
+
+Inherit from SuspendAgent (not BaseAgent) when your custom agent needs to:
+- Pause mid-workflow and wait for an external event or human input
+- Resume execution with a value supplied via Command(resume=...)
+- Optionally publish suspension/resume/graph messages via messaging service
+
+HumanAgent is the canonical example: it subclasses SuspendAgent and passes
+structured human-interaction metadata to interrupt(), which the framework
+uses to route the resume correctly.
 
 Enhanced with optional messaging capabilities:
 - Publishes suspension messages when workflow suspends
@@ -32,15 +40,39 @@ if TYPE_CHECKING:
 
 class SuspendAgent(BaseAgent, MessagingCapableAgent):
     """
-    Base agent that suspends workflow execution using LangGraph's interrupt() pattern.
+    Base agent for any workflow node that needs to pause and later resume.
+
+    Inherit from this class — not BaseAgent — when your custom agent must
+    suspend mid-execution and wait for an external signal or human input.
+
+    Mechanism:
+      - Calls langgraph.types.interrupt(payload) inside process()
+      - On first call: LangGraph raises GraphInterrupt and saves a checkpoint
+      - On resume: interrupt() returns the value from Command(resume=value)
 
     Use cases:
-      - hand-off to an external process/service
-      - long-running batch or subgraph
-      - wait-until-some-state-is-mutated externally
+      - Hand-off to an external process/service
+      - Wait for human approval, input, or decision (see HumanAgent)
+      - Long-running batch work that runs out-of-band
+      - Wait until external state is mutated
 
-    On first call: Raises GraphInterrupt, LangGraph saves checkpoint automatically
-    On resume: interrupt() returns the resume value, node completes
+    The payload dict passed to interrupt() must include at minimum:
+      - 'type': str  — used by the interrupt handler to route metadata storage
+        (use 'suspend' for generic pauses, 'human_interaction' for human input)
+      - 'node_name': str  — identifies which node suspended
+
+    Example custom subclass::
+
+        class ApprovalAgent(SuspendAgent):
+            def process(self, inputs):
+                from langgraph.types import interrupt
+                decision = interrupt({
+                    "type": "suspend",
+                    "node_name": self.name,
+                    "inputs": inputs,
+                    "context": self.context,
+                })
+                return {"approved": decision == "approve"}
     """
 
     def __init__(
