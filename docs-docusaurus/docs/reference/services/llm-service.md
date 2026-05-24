@@ -515,10 +515,10 @@ for result in results:
 |---|---|---|
 | `spec_id` | `str` | The `spec_id` from the originating `LLMCallSpec`. Always present, including on failure. |
 | `status` | `str` | `"succeeded"` or `"failed"`. |
-| `provider` | `Optional[str]` | Provider used for this item. `None` when routing failure prevented provider resolution. |
-| `model` | `Optional[str]` | Model used for this item. `None` when routing failure prevented model resolution. |
+| `provider` | `Optional[str]` | The provider that **actually handled** this item (after routing or fallback tier selection). `None` only when a routing failure occurred before provider resolution. |
+| `model` | `Optional[str]` | The model that **actually handled** this item (after routing or fallback tier selection). `None` only when a routing failure occurred before model resolution. |
 | `content` | `Optional[str]` | Response text. Present only on success. |
-| `usage` | `Optional[LLMUsage]` | Normalized usage envelope. Present when the provider returned usage metadata. |
+| `usage` | `Optional[LLMUsage]` | Normalized usage envelope. Present when the provider returned usage metadata. This includes routed and fallback items — the resolved provider's raw response is used to extract usage, so cache-aware fields such as `cache_read_input_tokens` are available on routed cache-aware requests. |
 | `error` | `Optional[LLMExecutionError]` | Structured error payload. Present only on failure. |
 
 **`LLMUsage` fields** (all `Optional[int]`)
@@ -578,6 +578,20 @@ LLMCallSpec(
     provider="anthropic",
     request_options={"requires_prompt_caching": True},
 )
+```
+
+When a cache-aware item succeeds, the resolved provider and cache usage are both visible on the result — even when routing selected a different model than the spec's nominal provider:
+
+```python
+result = results[0]  # spec_id="cached-system"
+assert result.status == "succeeded"
+assert result.provider == "anthropic"           # resolved provider (after any routing)
+assert result.model == "claude-haiku-3"         # resolved model (after any routing)
+assert result.usage.cache_creation_input_tokens == 1024  # tokens written to cache
+assert result.usage.cache_read_input_tokens == 0         # first request — nothing cached yet
+# On a subsequent identical request:
+# result.usage.cache_read_input_tokens == 1024  # served from cache
+# result.usage.cache_creation_input_tokens == 0
 ```
 
 An unsupported cache mode (e.g. requesting prompt caching from a provider that does not support it) fails the item with the same `LLMServiceError` family as the single-call path, without affecting sibling items.
