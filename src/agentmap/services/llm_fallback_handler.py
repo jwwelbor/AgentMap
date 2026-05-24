@@ -11,6 +11,7 @@ Handles multi-tier fallback logic when LLM calls fail, including:
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from agentmap.exceptions import LLMServiceError
+from agentmap.exceptions.service_exceptions import LLMResolvedCallError
 from agentmap.models.llm_execution import LLMResponse
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
@@ -227,12 +228,18 @@ class LLMFallbackHandler:
 
         Returns ``LLMResponse`` carrying the resolved provider, model, and usage
         from the winning fallback tier.
+
+        On exhaustion, raises ``LLMResolvedCallError`` carrying the last-attempted
+        tier's identity (policy: last tier wins — the most recent concrete provider
+        invoked is the most relevant for observability and debugging).
         """
         self._logger.error(
             f"Model '{original_model}' failed for provider '{original_provider}': {error}"
         )
 
         attempted_fallbacks = []
+        # One-element mutable cell: [provider, model] of the last tier attempted.
+        last_attempted = [original_provider, original_model]
 
         if self.features_registry and self.features_registry.is_provider_available(
             "llm", original_provider
@@ -245,6 +252,7 @@ class LLMFallbackHandler:
                 get_provider_config_fn,
                 get_or_create_client_fn,
                 convert_messages_fn,
+                last_attempted=last_attempted,
             )
             if result is not None:
                 return result
@@ -266,6 +274,7 @@ class LLMFallbackHandler:
                     get_provider_config_fn,
                     get_or_create_client_fn,
                     convert_messages_fn,
+                    last_attempted=last_attempted,
                 )
                 if result is not None:
                     return result
@@ -283,6 +292,7 @@ class LLMFallbackHandler:
                 get_provider_config_fn,
                 get_or_create_client_fn,
                 convert_messages_fn,
+                last_attempted=last_attempted,
             )
             if result is not None:
                 return result
@@ -294,7 +304,13 @@ class LLMFallbackHandler:
             f"Original error: {error}"
         )
         self._logger.error(error_msg)
-        raise LLMServiceError(error_msg)
+        # Raise with the last-attempted tier identity so the caller can record
+        # which provider was actually invoked before exhaustion.
+        raise LLMResolvedCallError(
+            resolved_provider=last_attempted[0],
+            resolved_model=last_attempted[1],
+            cause=LLMServiceError(error_msg),
+        )
 
     def _try_tier1_fallback(
         self,
@@ -354,6 +370,7 @@ class LLMFallbackHandler:
         get_provider_config_fn: Any,
         get_or_create_client_fn: Any,
         convert_messages_fn: Any,
+        last_attempted: Optional[List[str]] = None,
     ) -> Optional[LLMResponse]:
         """Async Tier 1 fallback using the async resilience layer."""
         try:
@@ -364,6 +381,9 @@ class LLMFallbackHandler:
                     f"for provider '{original_provider}'"
                 )
                 attempted_fallbacks.append(f"{original_provider}:{fallback_model}")
+                if last_attempted is not None:
+                    last_attempted[0] = original_provider
+                    last_attempted[1] = fallback_model
 
                 config = get_provider_config_fn(original_provider)
                 config["model"] = fallback_model
@@ -435,6 +455,7 @@ class LLMFallbackHandler:
         get_provider_config_fn: Any,
         get_or_create_client_fn: Any,
         convert_messages_fn: Any,
+        last_attempted: Optional[List[str]] = None,
     ) -> Optional[LLMResponse]:
         """Async Tier 2 fallback using the async resilience layer."""
         try:
@@ -445,6 +466,9 @@ class LLMFallbackHandler:
                     f"'{fallback_provider}' and model '{fallback_model}'"
                 )
                 attempted_fallbacks.append(f"{fallback_provider}:{fallback_model}")
+                if last_attempted is not None:
+                    last_attempted[0] = fallback_provider
+                    last_attempted[1] = fallback_model
 
                 config = get_provider_config_fn(fallback_provider)
                 config["model"] = fallback_model
@@ -524,6 +548,7 @@ class LLMFallbackHandler:
         get_provider_config_fn: Any,
         get_or_create_client_fn: Any,
         convert_messages_fn: Any,
+        last_attempted: Optional[List[str]] = None,
     ) -> Optional[LLMResponse]:
         """Async Tier 3 fallback using the async resilience layer."""
         available_providers = self.features_registry.get_available_providers("llm")
@@ -539,6 +564,9 @@ class LLMFallbackHandler:
                         f"with model '{fallback_model}'"
                     )
                     attempted_fallbacks.append(f"{provider}:{fallback_model}")
+                    if last_attempted is not None:
+                        last_attempted[0] = provider
+                        last_attempted[1] = fallback_model
 
                     config = get_provider_config_fn(provider)
                     config["model"] = fallback_model

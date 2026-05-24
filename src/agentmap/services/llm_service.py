@@ -18,6 +18,7 @@ from agentmap.exceptions import (
     LLMConfigurationError,
     LLMDependencyError,
     LLMProviderError,
+    LLMResolvedCallError,
     LLMServiceError,
 )
 from agentmap.models.llm_execution import (
@@ -838,11 +839,16 @@ class LLMService:
             return await self._invoke_with_resilience_async(
                 client, langchain_messages, provider, current_model
             )
+        except LLMResolvedCallError:
+            # Already wrapped by the fallback handler — preserve its tier identity.
+            raise
         except Exception as e:
             typed_error = classify_llm_error(e, provider)
 
             if isinstance(typed_error, (LLMDependencyError, LLMConfigurationError)):
-                raise typed_error
+                raise LLMResolvedCallError(
+                    provider, current_model, typed_error
+                ) from typed_error
 
             if self.features_registry and self.routing_config:
                 try:
@@ -856,10 +862,19 @@ class LLMService:
                         self._message_utils.convert_messages_to_langchain,
                         **kwargs,
                     )
-                except LLMServiceError:
-                    pass
+                except LLMResolvedCallError:
+                    # Fallback handler already wrapped the error with tier identity.
+                    raise
+                except LLMServiceError as fallback_err:
+                    # Tier exhaustion without LLMResolvedCallError — wrap with
+                    # the original provider/model (the last known resolved identity).
+                    raise LLMResolvedCallError(
+                        provider, current_model, fallback_err
+                    ) from fallback_err
 
-            raise typed_error
+            raise LLMResolvedCallError(
+                provider, current_model, typed_error
+            ) from typed_error
 
     def _invoke_with_resilience(
         self,
@@ -1339,7 +1354,9 @@ class LLMService:
         """Async convenience wrapper mirroring ``ask()`` behavior."""
         provider = provider or "anthropic"
         messages = [{"role": "user", "content": prompt}]
-        response = await self.call_llm_async(provider=provider, messages=messages, **kwargs)
+        response = await self.call_llm_async(
+            provider=provider, messages=messages, **kwargs
+        )
         return response.text
 
     async def call_llm_many_async(
@@ -1380,7 +1397,11 @@ class LLMService:
                 "call_specs must not be empty — at least one LLMCallSpec is required."
             )
         # Reject bool explicitly: isinstance(True, int) is True in Python.
-        if isinstance(max_concurrency, bool) or not isinstance(max_concurrency, int) or max_concurrency < 1:
+        if (
+            isinstance(max_concurrency, bool)
+            or not isinstance(max_concurrency, int)
+            or max_concurrency < 1
+        ):
             raise LLMServiceError(
                 f"max_concurrency must be an integer >= 1, got {max_concurrency!r}."
             )
@@ -1430,7 +1451,26 @@ class LLMService:
                     content=llm_response.text,
                     usage=llm_response.usage,
                 )
+            except LLMResolvedCallError as exc:
+                # Failure occurred after routing/fallback resolved a concrete
+                # provider/model — preserve that identity in the result record.
+                return LLMCallResult(
+                    spec_id=spec.spec_id,
+                    status="failed",
+                    provider=exc.resolved_provider,
+                    model=exc.resolved_model,
+                    content=None,
+                    usage=None,
+                    error=LLMExecutionError(
+                        error_type=type(exc.cause).__name__,
+                        message=_sanitize_error_message(exc.cause),
+                        retryable=is_retryable(exc.cause),
+                    ),
+                )
             except Exception as exc:
+                # Failure occurred before any provider/model was resolved
+                # (e.g., validation error, routing service unavailable).
+                # Echo spec values — may be None. Do not fabricate.
                 return LLMCallResult(
                     spec_id=spec.spec_id,
                     status="failed",

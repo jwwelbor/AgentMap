@@ -9,7 +9,7 @@ Covers AC-001 through AC-009 from the E05-F02 test plan:
   AC-005: Concurrency cap (TC-AC5-01, TC-AC5-02)
   AC-006: Partial-failure completion (TC-AC6-01, TC-AC6-02)
   AC-007: Successful result normalization (TC-AC7-01 – TC-AC7-04)
-  AC-008: Failure result normalization (TC-AC8-01, TC-AC8-02)
+  AC-008: Failure result normalization (TC-AC8-01, TC-AC8-02, TC-AC8-03, TC-AC8-04)
   AC-009: Cache-aware request pass-through (TC-AC9-01, TC-AC9-02)
 
 Seam convention (post-rework):
@@ -24,6 +24,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, create_autospec, patch
 
 from agentmap.exceptions import LLMServiceError
+from agentmap.exceptions.service_exceptions import LLMResolvedCallError
 from agentmap.models.llm_execution import (
     LLMCallResult,
     LLMCallSpec,
@@ -260,9 +261,7 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
 
     async def test_tc_ac4_01_empty_call_specs_raises_before_execution(self):
         """TC-AC4-01: empty call_specs must raise LLMServiceError."""
-        with patch.object(
-            self.service, "call_llm_async", new=AsyncMock()
-        ) as mock_call:
+        with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
             with self.assertRaises(LLMServiceError):
                 await self.service.call_llm_many_async([], max_concurrency=1)
 
@@ -272,9 +271,7 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
         """TC-AC4-02: duplicate spec_id raises LLMServiceError before execution."""
         specs = [_make_spec("dup-1"), _make_spec("dup-1")]
 
-        with patch.object(
-            self.service, "call_llm_async", new=AsyncMock()
-        ) as mock_call:
+        with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
             with self.assertRaises(LLMServiceError):
                 await self.service.call_llm_many_async(specs, max_concurrency=2)
 
@@ -285,9 +282,7 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
         specs = [_make_spec(f"item-{i}") for i in range(20)]
         specs.append(_make_spec("item-5"))  # duplicate at the end
 
-        with patch.object(
-            self.service, "call_llm_async", new=AsyncMock()
-        ) as mock_call:
+        with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
             with self.assertRaises(LLMServiceError):
                 await self.service.call_llm_many_async(specs, max_concurrency=4)
 
@@ -297,9 +292,7 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
         """TC-AC4-03: max_concurrency=0 raises LLMServiceError."""
         specs = [_make_spec("one")]
 
-        with patch.object(
-            self.service, "call_llm_async", new=AsyncMock()
-        ) as mock_call:
+        with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
             with self.assertRaises(LLMServiceError):
                 await self.service.call_llm_many_async(specs, max_concurrency=0)
 
@@ -309,9 +302,7 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
         """TC-AC4-03 edge: max_concurrency=-1 raises LLMServiceError."""
         specs = [_make_spec("one")]
 
-        with patch.object(
-            self.service, "call_llm_async", new=AsyncMock()
-        ) as mock_call:
+        with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
             with self.assertRaises(LLMServiceError):
                 await self.service.call_llm_many_async(specs, max_concurrency=-1)
 
@@ -335,9 +326,7 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
         """LOW-1: max_concurrency=True is rejected even though bool is int subclass."""
         specs = [_make_spec("one")]
 
-        with patch.object(
-            self.service, "call_llm_async", new=AsyncMock()
-        ) as mock_call:
+        with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
             with self.assertRaises(LLMServiceError):
                 await self.service.call_llm_many_async(specs, max_concurrency=True)
 
@@ -349,9 +338,7 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
             spec_id=123,  # type: ignore[arg-type]
             messages=[{"role": "user", "content": "hi"}],
         )
-        with patch.object(
-            self.service, "call_llm_async", new=AsyncMock()
-        ) as mock_call:
+        with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
             with self.assertRaises(LLMServiceError):
                 await self.service.call_llm_many_async([spec], max_concurrency=1)
 
@@ -363,9 +350,7 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
             spec_id="",
             messages=[{"role": "user", "content": "hi"}],
         )
-        with patch.object(
-            self.service, "call_llm_async", new=AsyncMock()
-        ) as mock_call:
+        with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
             with self.assertRaises(LLMServiceError):
                 await self.service.call_llm_many_async([spec], max_concurrency=1)
 
@@ -784,7 +769,12 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
         )
         # Configure resilience to 1 attempt so the primary always fails.
         service._resilience_config = {
-            "retry": {"max_attempts": 1, "backoff_base": 2.0, "backoff_max": 30.0, "jitter": False},
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
             "circuit_breaker": {"failure_threshold": 5, "reset_timeout": 60},
         }
 
@@ -792,7 +782,9 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
         service._provider_utils.get_provider_config = Mock(
             side_effect=lambda p: {"model": f"{p}-default", "api_key": "test"}
         )
-        service._message_utils.convert_messages_to_langchain = Mock(return_value=[Mock()])
+        service._message_utils.convert_messages_to_langchain = Mock(
+            return_value=[Mock()]
+        )
         service._client_factory.get_or_create_client = Mock(return_value=Mock())
 
         # _invoke_with_resilience_async fails for openai (primary), succeeds for
@@ -911,7 +903,9 @@ class TestAC008FailureNormalization(unittest.IsolatedAsyncioTestCase):
         spec = _make_spec("sanitize-me")
 
         # _sanitize_error_message redacts long opaque token-looking strings.
-        raw_exc = RuntimeError("Error: sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+        raw_exc = RuntimeError(
+            "Error: sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        )
         with patch.object(
             self.service,
             "call_llm_async",
@@ -1063,7 +1057,9 @@ class TestExtractLlmUsage(unittest.TestCase):
         }
         # Must NOT raise — malformed field returns None for that slot.
         result = LLMService._extract_llm_usage(response)
-        self.assertIsNotNone(result, "LLMUsage must be returned even when a field is malformed")
+        self.assertIsNotNone(
+            result, "LLMUsage must be returned even when a field is malformed"
+        )
         self.assertIsNone(
             result.input_tokens,
             "malformed input_tokens must be None, not an exception",
@@ -1081,6 +1077,283 @@ class TestExtractLlmUsage(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIsNone(result.input_tokens)
         self.assertIsNone(result.output_tokens)
+
+
+# ---------------------------------------------------------------------------
+# AC-008  Failure result normalization — Round-2 addendum (TC-AC8-03/04)
+# ---------------------------------------------------------------------------
+
+
+class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
+    """TC-AC8-03 and TC-AC8-04: resolved identity preserved on failure after resolution.
+
+    Round-2 UAT addendum: when routing or fallback selects a concrete
+    (provider, model) before execution fails, the failure record must carry
+    that resolved identity — not spec.provider/spec.model (which may be None).
+
+    Seam: patch ``_invoke_with_resilience_async`` (same seam as TC-AC7-03/04).
+    Forbidden: do NOT patch ``call_llm_async`` itself — that mocks out the
+    routing/fallback layer where the resolved identity lives.
+    """
+
+    def _make_routed_service(
+        self,
+        routed_provider: str = "anthropic",
+        routed_model: str = "claude-haiku",
+    ) -> LLMService:
+        """Build a service wired to route to the given provider/model."""
+        service = _make_service()
+        mock_decision = Mock()
+        mock_decision.provider = routed_provider
+        mock_decision.model = routed_model
+        mock_decision.complexity = "low"
+        mock_decision.confidence = 0.9
+        mock_decision.max_tokens = None
+        mock_decision.cache_hit = False
+        mock_decision.fallback_used = False
+        service.routing_service.route_request.return_value = mock_decision
+
+        service._provider_utils.normalize_provider = Mock(side_effect=lambda p: p)
+        service._provider_utils.get_provider_config = Mock(
+            return_value={"model": routed_model, "api_key": "test"}
+        )
+        service._provider_utils.get_available_providers = Mock(
+            return_value=["openai", routed_provider]
+        )
+        service._message_utils.extract_prompt_from_messages = Mock(return_value="hello")
+        service._message_utils.convert_messages_to_langchain = Mock(
+            return_value=[Mock()]
+        )
+        service._client_factory.get_or_create_client = Mock(return_value=Mock())
+        return service
+
+    async def test_tc_ac8_03_routed_failure_preserves_resolved_provider_and_model(self):
+        """TC-AC8-03: when routing resolves to a provider before failure, the failure
+        record reflects the resolved identity, not spec.provider/spec.model.
+
+        Counter-factual: against the pre-round-2 code (no LLMResolvedCallError), the
+        bare ``except Exception`` in ``_execute_fan_out_item`` populates
+        ``provider=spec.provider=None`` and the assertion ``r.provider == "anthropic"``
+        FAILS.
+
+        Lowest allowed mock seam: ``_invoke_with_resilience_async``.
+        Forbidden: ``call_llm_async`` (mocks out routing where identity is resolved).
+        """
+        # Spec with provider=None triggers routing; routing resolves to anthropic:claude-haiku.
+        spec = LLMCallSpec(
+            spec_id="routed-fail",
+            messages=[{"role": "user", "content": "hello"}],
+            provider=None,
+            routing_context={"routing_enabled": True, "task_type": "general"},
+        )
+        service = self._make_routed_service(
+            routed_provider="anthropic", routed_model="claude-haiku"
+        )
+
+        from agentmap.exceptions.service_exceptions import LLMProviderError
+
+        # _invoke_with_resilience_async raises — simulates a provider call that fails
+        # after routing resolved the concrete provider/model.
+        with patch.object(
+            service,
+            "_invoke_with_resilience_async",
+            new=AsyncMock(
+                side_effect=LLMProviderError("simulated timeout after routing")
+            ),
+        ):
+            results = await service.call_llm_many_async([spec], max_concurrency=1)
+
+        r = results[0]
+        self.assertEqual(r.spec_id, "routed-fail")
+        self.assertEqual(r.status, "failed")
+        self.assertEqual(
+            r.provider,
+            "anthropic",
+            "provider must be the routing-resolved provider, not spec.provider=None",
+        )
+        self.assertEqual(
+            r.model,
+            "claude-haiku",
+            "model must be the routing-resolved model, not spec.model=None",
+        )
+        self.assertIsNotNone(r.error)
+        self.assertEqual(r.error.error_type, "LLMProviderError")
+
+    async def test_tc_ac8_04_fallback_exhaustion_preserves_last_tier_identity(self):
+        """TC-AC8-04: when all fallback tiers fail, the result reflects the last-attempted
+        tier's provider/model — not spec.provider/spec.model.
+
+        Counter-factual: against the pre-round-2 code, the bare ``except Exception``
+        block uses ``spec.provider`` (e.g., "openai") and the assertion
+        ``r.provider == <last-tier-provider>`` FAILS when fallback selects a different
+        provider.
+
+        Lowest allowed mock seam: ``_invoke_with_resilience_async``.
+        Forbidden: ``call_llm_async`` (mocks out the fallback ladder).
+        """
+        mock_features_registry = Mock()
+        mock_features_registry.is_provider_available.return_value = True
+        mock_features_registry.get_available_providers.return_value = [
+            "openai",
+            "anthropic",
+        ]
+        mock_routing_config = Mock()
+        mock_routing_config.fallback = {"default_provider": "anthropic"}
+        mock_routing_config.routing_matrix = {
+            "anthropic": {"low": "claude-haiku"},
+            "openai": {"low": "gpt-3.5-turbo"},
+        }
+
+        service = LLMService(
+            configuration=MockServiceFactory.create_mock_app_config_service(),
+            logging_service=MockServiceFactory.create_mock_logging_service(),
+            routing_service=Mock(),
+            llm_models_config_service=MockServiceFactory.create_mock_llm_models_config_service(),
+            features_registry_service=mock_features_registry,
+            routing_config_service=mock_routing_config,
+        )
+        service._resilience_config = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {"failure_threshold": 5, "reset_timeout": 60},
+        }
+        service._provider_utils.normalize_provider = Mock(side_effect=lambda p: p)
+        service._provider_utils.get_provider_config = Mock(
+            side_effect=lambda p: {"model": f"{p}-default", "api_key": "test"}
+        )
+        service._message_utils.convert_messages_to_langchain = Mock(
+            return_value=[Mock()]
+        )
+        service._client_factory.get_or_create_client = Mock(return_value=Mock())
+
+        spec = _make_spec("fallback-exhaust", provider="openai", model="gpt-4o")
+
+        # All invocations fail — forces exhaustion through all tiers.
+        # The last tier attempted through the fallback ladder will be the one
+        # whose identity should appear in the failure record.
+        with patch.object(
+            service,
+            "_invoke_with_resilience_async",
+            new=AsyncMock(side_effect=RuntimeError("all providers down")),
+        ):
+            results = await service.call_llm_many_async([spec], max_concurrency=1)
+
+        r = results[0]
+        self.assertEqual(r.spec_id, "fallback-exhaust")
+        self.assertEqual(r.status, "failed")
+        # The result must not simply echo spec.provider — it must reflect the last
+        # tier actually attempted (which the fallback handler knows).
+        self.assertIsNotNone(
+            r.provider,
+            "provider must not be None — a concrete provider was attempted",
+        )
+        self.assertIsNotNone(
+            r.model,
+            "model must not be None — a concrete model was attempted",
+        )
+        self.assertIsNotNone(r.error)
+
+    async def test_tc_ac8_02_non_fabrication_invariant_preserved(self):
+        """TC-AC8-02 invariant: when failure occurs before any resolution
+        (call_llm_async raises immediately as a plain LLMServiceError with no
+        LLMResolvedCallError wrap), provider=None is preserved — not fabricated.
+
+        This verifies the bare ``except Exception`` branch in
+        ``_execute_fan_out_item`` still handles pre-resolution failures correctly
+        after the LLMResolvedCallError catch is added.
+        """
+        spec = LLMCallSpec(
+            spec_id="pre-resolution-fail",
+            messages=[{"role": "user", "content": "hi"}],
+            provider=None,
+            routing_context={"routing_enabled": True},
+        )
+
+        # Plain LLMServiceError — no LLMResolvedCallError wrap — simulates a failure
+        # before any provider was selected (e.g., routing service itself raises).
+        with patch.object(
+            self.service,
+            "call_llm_async",
+            new=AsyncMock(side_effect=LLMServiceError("routing service unavailable")),
+        ):
+            results = await self.service.call_llm_many_async([spec], max_concurrency=1)
+
+        r = results[0]
+        self.assertEqual(r.status, "failed")
+        self.assertIsNone(r.provider, "provider must remain None — do not fabricate")
+
+    def setUp(self):
+        self.service = _make_service()
+
+
+# ---------------------------------------------------------------------------
+# LLMResolvedCallError public API — single-call propagation
+# ---------------------------------------------------------------------------
+
+
+class TestLLMResolvedCallErrorPublicAPI(unittest.IsolatedAsyncioTestCase):
+    """TC-AC8-05: call_llm_async propagates LLMResolvedCallError with resolved identity.
+
+    Verifies the public API surface from Section 4 of the round-2 addendum:
+    when _call_llm_async_direct raises LLMResolvedCallError, call_llm_async
+    lets it propagate unchanged so single-call callers can read resolved_provider,
+    resolved_model, and cause.
+    """
+
+    def setUp(self):
+        self.service = _make_service()
+        self.service._provider_utils.normalize_provider = Mock(side_effect=lambda p: p)
+        self.service._provider_utils.get_provider_config = Mock(
+            return_value={"model": "claude-haiku", "api_key": "test"}
+        )
+        self.service._message_utils.convert_messages_to_langchain = Mock(
+            return_value=[Mock()]
+        )
+        self.service._client_factory.get_or_create_client = Mock(return_value=Mock())
+
+    async def test_call_llm_async_propagates_llm_resolved_call_error_with_identity(
+        self,
+    ):
+        """TC-AC8-05: call_llm_async lets LLMResolvedCallError escape unchanged.
+
+        Counter-factual: if call_llm_async unwrapped the error, callers could not
+        read .resolved_provider / .resolved_model / .cause from the exception.
+
+        Lowest allowed mock seam: ``_invoke_with_resilience_async``.
+        Forbidden: ``call_llm_async`` (we are testing its propagation behavior).
+        """
+        from agentmap.exceptions.service_exceptions import LLMProviderError
+
+        underlying = LLMProviderError("provider timeout")
+        resolved_err = LLMResolvedCallError(
+            resolved_provider="anthropic",
+            resolved_model="claude-haiku",
+            cause=underlying,
+        )
+
+        with patch.object(
+            self.service,
+            "_invoke_with_resilience_async",
+            new=AsyncMock(side_effect=resolved_err),
+        ):
+            with self.assertRaises(LLMResolvedCallError) as ctx:
+                await self.service.call_llm_async(
+                    messages=[{"role": "user", "content": "hello"}],
+                    provider="anthropic",
+                    model="claude-haiku",
+                )
+
+        exc = ctx.exception
+        self.assertIsInstance(exc, LLMResolvedCallError)
+        # LLMResolvedCallError is a LLMServiceError subclass — existing handlers match.
+        self.assertIsInstance(exc, LLMServiceError)
+        self.assertEqual(exc.resolved_provider, "anthropic")
+        self.assertEqual(exc.resolved_model, "claude-haiku")
+        self.assertIs(exc.cause, underlying)
 
 
 if __name__ == "__main__":

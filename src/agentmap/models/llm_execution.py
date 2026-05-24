@@ -15,8 +15,11 @@ class LLMResponse:
     """
     Internal seam result carrying the resolved provider identity and usage.
 
-    Returned by ``_call_llm_async_core`` and every private async method below
-    it. The public ``call_llm_async() -> str`` returns only ``.text``.
+    Returned by ``call_llm_async`` and every private async method below it
+    (``_call_llm_async_core``, ``_call_llm_async_direct``,
+    ``_call_llm_async_with_routing``, ``_invoke_with_resilience_async``).
+    The high-level ``ask_async()`` extracts ``.text`` and returns a plain
+    ``str`` to preserve its public contract.
 
     ``resolved_provider`` and ``resolved_model`` reflect the provider and model
     that **actually handled** the request — after routing rewrites or fallback

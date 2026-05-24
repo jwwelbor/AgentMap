@@ -429,7 +429,7 @@ CodeBot,Review,Review code,llm,Done,Error,code,feedback,You are a code reviewer,
 
 `call_llm_many_async()` submits many LLM call specs in a single async call and returns one terminal result record per submitted spec. It reuses the existing async realtime path — routing, retries, timeouts, fallback, circuit-breaker, and E05-F01 cache-aware request support all apply per item.
 
-Existing single-call methods (`call_llm()`, `call_llm_async()`, `ask()`, `ask_async()`, `ask_vision()`) are unchanged. Fan-out is additive.
+Fan-out is additive. The synchronous `call_llm() -> str` and the high-level `ask()`, `ask_async()`, `ask_vision()` interfaces are unchanged. The internal `call_llm_async()` method now returns `LLMResponse` (carrying resolved provider, model, and usage) rather than a plain `str`; the public `ask_async()` method continues to return `str` by extracting `.text` from the response.
 
 ### Request shape
 
@@ -547,6 +547,39 @@ A single failing item does not cancel, abort, or modify sibling items. Each item
 - Pre-execution validation failures (empty submission, duplicate `spec_id`, invalid `max_concurrency`) raise `LLMServiceError` before any provider call begins.
 - Once execution starts, per-item errors are captured as `LLMCallResult` records with `status="failed"`. The submission-level `call_llm_many_async()` call does not re-raise item exceptions.
 - Sibling items continue to completion regardless of another item's failure.
+
+**Failure-path resolved identity**
+
+When a fan-out item fails *after* routing or fallback selected a concrete provider and model, the failure record carries that resolved identity:
+
+```python
+# Spec requests no specific provider — routing selects anthropic:claude-haiku.
+# The call then times out. The failure record still names the provider tried.
+spec = LLMCallSpec(
+    spec_id="routed-item",
+    messages=[{"role": "user", "content": "hello"}],
+    provider=None,  # routing chooses the provider
+    routing_context={"routing_enabled": True},
+)
+results = await llm_service.call_llm_many_async([spec], max_concurrency=1)
+r = results[0]
+assert r.status == "failed"
+assert r.provider == "anthropic"    # resolved before the failure
+assert r.model == "claude-haiku"    # resolved before the failure
+assert r.error.error_type == "LLMProviderError"
+```
+
+When failure occurs before any provider was selected (e.g., the routing service itself raises), `result.provider` and `result.model` remain `None` — they are never fabricated.
+
+This behaviour is implemented via the `LLMResolvedCallError` exception (subclass of `LLMServiceError`). The fan-out layer catches it and extracts the resolved identity. Single-call callers using `call_llm_async()` directly receive `LLMResolvedCallError` propagated unchanged; existing `except LLMServiceError` handlers continue to match.
+
+**`LLMResolvedCallError` attributes**
+
+| Attribute | Type | Description |
+|---|---|---|
+| `resolved_provider` | `Optional[str]` | The concrete provider that was attempted before the failure. |
+| `resolved_model` | `Optional[str]` | The concrete model that was attempted before the failure. |
+| `cause` | `BaseException` | The underlying typed exception (e.g. `LLMProviderError`, `LLMTimeoutError`) that triggered the failure. |
 
 ```python
 specs = [

@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, create_autospec, patch
 
 from agentmap.exceptions import LLMConfigurationError, LLMTimeoutError
+from agentmap.exceptions.service_exceptions import LLMResolvedCallError
 from agentmap.models.llm_execution import LLMResponse
 from agentmap.services.llm_service import LLMService
 from agentmap.services.protocols import LLMServiceProtocol
@@ -46,6 +47,7 @@ class TestMockLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
 
         # call_llm_async returns LLMResponse; .text carries the response string.
         from agentmap.models.llm_execution import LLMResponse
+
         self.assertIsInstance(response, LLMResponse)
         self.assertEqual(response.text, "Mock LLM response")
         self.assertTrue(hasattr(mock_service, "ask"))
@@ -329,14 +331,16 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(),
             ) as mock_sleep,
         ):
-            with self.assertRaisesRegex(
-                LLMConfigurationError, "Invalid api_key|api_key"
-            ):
+            # Non-retryable errors are wrapped in LLMResolvedCallError so
+            # callers get both the resolved identity and the underlying cause.
+            with self.assertRaises(LLMResolvedCallError) as ctx:
                 await self.service.call_llm_async(
                     messages=[{"role": "user", "content": "hello"}],
                     provider="openai",
                     model="gpt-4o-mini",
                 )
+            self.assertIsInstance(ctx.exception.cause, LLMConfigurationError)
+            self.assertRegex(str(ctx.exception.cause), "Invalid api_key|api_key")
 
         self.assertEqual(mock_client.ainvoke.await_count, 1)
         mock_sleep.assert_not_awaited()
@@ -415,12 +419,18 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(),
             ) as mock_sleep,
         ):
-            with self.assertRaises(LLMTimeoutError):
+            # call_llm_async propagates LLMResolvedCallError (which is a
+            # LLMServiceError subclass) carrying the resolved identity and the
+            # underlying LLMTimeoutError as .cause.
+            with self.assertRaises(LLMResolvedCallError) as ctx:
                 await self.service.call_llm_async(
                     messages=[{"role": "user", "content": "hello"}],
                     provider="openai",
                     model="gpt-4o-mini",
                 )
+            self.assertIsInstance(ctx.exception.cause, LLMTimeoutError)
+            self.assertEqual(ctx.exception.resolved_provider, "openai")
+            self.assertEqual(ctx.exception.resolved_model, "gpt-4o-mini")
 
         self.assertEqual(mock_client.ainvoke.await_count, 3)
         self.assertEqual(mock_sleep.await_count, 2)
