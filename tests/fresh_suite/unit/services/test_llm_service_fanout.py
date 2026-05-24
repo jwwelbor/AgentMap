@@ -122,8 +122,8 @@ class TestAC002OneResultPerSpec(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(
             self.service,
-            "call_llm_async",
-            new=AsyncMock(return_value="response"),
+            "_call_llm_async_with_response",
+            new=AsyncMock(return_value=("response", None)),
         ):
             results = await self.service.call_llm_many_async(specs, max_concurrency=2)
 
@@ -138,8 +138,8 @@ class TestAC002OneResultPerSpec(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(
             self.service,
-            "call_llm_async",
-            new=AsyncMock(return_value="hello"),
+            "_call_llm_async_with_response",
+            new=AsyncMock(return_value=("hello", None)),
         ):
             results = await self.service.call_llm_many_async(specs, max_concurrency=1)
 
@@ -155,8 +155,8 @@ class TestAC002OneResultPerSpec(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(
             self.service,
-            "call_llm_async",
-            new=AsyncMock(return_value="ok"),
+            "_call_llm_async_with_response",
+            new=AsyncMock(return_value=("ok", None)),
         ):
             results = await self.service.call_llm_many_async(specs, max_concurrency=8)
 
@@ -190,13 +190,13 @@ class TestAC003StableOrdering(unittest.IsolatedAsyncioTestCase):
             # Simulate: spec_b finishes quickly, spec_c next, spec_a last
             delays = [0.02, 0.00, 0.01]
             await asyncio.sleep(delays[idx])
-            return f"response-{idx}"
+            return f"response-{idx}", None
 
         specs = [_make_spec("spec-a"), _make_spec("spec-b"), _make_spec("spec-c")]
 
         with patch.object(
             self.service,
-            "call_llm_async",
+            "_call_llm_async_with_response",
             new=AsyncMock(side_effect=ordered_response),
         ):
             results = await self.service.call_llm_many_async(specs, max_concurrency=3)
@@ -212,8 +212,8 @@ class TestAC003StableOrdering(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(
             self.service,
-            "call_llm_async",
-            new=AsyncMock(return_value="content"),
+            "_call_llm_async_with_response",
+            new=AsyncMock(return_value=("content", None)),
         ):
             results = await self.service.call_llm_many_async(specs, max_concurrency=2)
 
@@ -234,7 +234,9 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
 
     async def test_tc_ac4_01_empty_call_specs_raises_before_execution(self):
         """TC-AC4-01: empty call_specs must raise LLMServiceError."""
-        with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
+        with patch.object(
+            self.service, "_call_llm_async_with_response", new=AsyncMock()
+        ) as mock_call:
             with self.assertRaises(LLMServiceError):
                 await self.service.call_llm_many_async([], max_concurrency=1)
 
@@ -244,7 +246,9 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
         """TC-AC4-02: duplicate spec_id raises LLMServiceError before execution."""
         specs = [_make_spec("dup-1"), _make_spec("dup-1")]
 
-        with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
+        with patch.object(
+            self.service, "_call_llm_async_with_response", new=AsyncMock()
+        ) as mock_call:
             with self.assertRaises(LLMServiceError):
                 await self.service.call_llm_many_async(specs, max_concurrency=2)
 
@@ -255,7 +259,9 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
         specs = [_make_spec(f"item-{i}") for i in range(20)]
         specs.append(_make_spec("item-5"))  # duplicate at the end
 
-        with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
+        with patch.object(
+            self.service, "_call_llm_async_with_response", new=AsyncMock()
+        ) as mock_call:
             with self.assertRaises(LLMServiceError):
                 await self.service.call_llm_many_async(specs, max_concurrency=4)
 
@@ -265,7 +271,9 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
         """TC-AC4-03: max_concurrency=0 raises LLMServiceError."""
         specs = [_make_spec("one")]
 
-        with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
+        with patch.object(
+            self.service, "_call_llm_async_with_response", new=AsyncMock()
+        ) as mock_call:
             with self.assertRaises(LLMServiceError):
                 await self.service.call_llm_many_async(specs, max_concurrency=0)
 
@@ -275,7 +283,9 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
         """TC-AC4-03 edge: max_concurrency=-1 raises LLMServiceError."""
         specs = [_make_spec("one")]
 
-        with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
+        with patch.object(
+            self.service, "_call_llm_async_with_response", new=AsyncMock()
+        ) as mock_call:
             with self.assertRaises(LLMServiceError):
                 await self.service.call_llm_many_async(specs, max_concurrency=-1)
 
@@ -287,8 +297,8 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(
             self.service,
-            "call_llm_async",
-            new=AsyncMock(return_value="ok"),
+            "_call_llm_async_with_response",
+            new=AsyncMock(return_value=("ok", None)),
         ):
             results = await self.service.call_llm_many_async(specs, max_concurrency=1)
 
@@ -318,12 +328,14 @@ class TestAC005ConcurrencyCap(unittest.IsolatedAsyncioTestCase):
             max_observed[0] = max(max_observed[0], in_flight[0])
             await asyncio.sleep(0.01)
             in_flight[0] -= 1
-            return "ok"
+            return "ok", None
 
         specs = [_make_spec(f"s{i}") for i in range(5)]
 
         with patch.object(
-            self.service, "call_llm_async", new=AsyncMock(side_effect=probe)
+            self.service,
+            "_call_llm_async_with_response",
+            new=AsyncMock(side_effect=probe),
         ):
             results = await self.service.call_llm_many_async(specs, max_concurrency=cap)
 
@@ -337,12 +349,14 @@ class TestAC005ConcurrencyCap(unittest.IsolatedAsyncioTestCase):
         async def record_call(*args, **kwargs):
             spec_id = kwargs.get("messages", [{}])[0].get("content", "?")
             call_order.append(spec_id)
-            return "ok"
+            return "ok", None
 
         specs = [_make_spec(f"seq-{i}") for i in range(3)]
 
         with patch.object(
-            self.service, "call_llm_async", new=AsyncMock(side_effect=record_call)
+            self.service,
+            "_call_llm_async_with_response",
+            new=AsyncMock(side_effect=record_call),
         ):
             await self.service.call_llm_many_async(specs, max_concurrency=1)
 
@@ -355,15 +369,20 @@ class TestAC005ConcurrencyCap(unittest.IsolatedAsyncioTestCase):
 
         async def echo(*args, **kwargs):
             messages = kwargs.get("messages", [])
-            return messages[0]["content"] if messages else "?"
+            text = messages[0]["content"] if messages else "?"
+            return text, None
 
         with patch.object(
-            self.service, "call_llm_async", new=AsyncMock(side_effect=echo)
+            self.service,
+            "_call_llm_async_with_response",
+            new=AsyncMock(side_effect=echo),
         ):
             results_1 = await self.service.call_llm_many_async(specs, max_concurrency=1)
 
         with patch.object(
-            self.service, "call_llm_async", new=AsyncMock(side_effect=echo)
+            self.service,
+            "_call_llm_async_with_response",
+            new=AsyncMock(side_effect=echo),
         ):
             results_3 = await self.service.call_llm_many_async(specs, max_concurrency=3)
 
@@ -392,10 +411,12 @@ class TestAC006PartialFailure(unittest.IsolatedAsyncioTestCase):
             content = messages[0]["content"] if messages else ""
             if "fail-b" in content:
                 raise RuntimeError("provider error")
-            return "success"
+            return "success", None
 
         with patch.object(
-            self.service, "call_llm_async", new=AsyncMock(side_effect=mixed_response)
+            self.service,
+            "_call_llm_async_with_response",
+            new=AsyncMock(side_effect=mixed_response),
         ):
             results = await self.service.call_llm_many_async(specs, max_concurrency=3)
 
@@ -411,7 +432,7 @@ class TestAC006PartialFailure(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(
             self.service,
-            "call_llm_async",
+            "_call_llm_async_with_response",
             new=AsyncMock(side_effect=RuntimeError("boom")),
         ):
             # Must not raise — returns a failure result instead
@@ -430,10 +451,12 @@ class TestAC006PartialFailure(unittest.IsolatedAsyncioTestCase):
             if "fast-fail" in content:
                 raise RuntimeError("fast error")
             await asyncio.sleep(0.02)
-            return "slow result"
+            return "slow result", None
 
         with patch.object(
-            self.service, "call_llm_async", new=AsyncMock(side_effect=behavior)
+            self.service,
+            "_call_llm_async_with_response",
+            new=AsyncMock(side_effect=behavior),
         ):
             results = await self.service.call_llm_many_async(specs, max_concurrency=2)
 
@@ -459,10 +482,12 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
         """TC-AC7-01: successful result carries spec_id, status=succeeded, content."""
         spec = _make_spec("result-check", provider="openai", model="gpt-4o-mini")
 
+        # _execute_fan_out_item calls _call_llm_async_with_response (the lower seam)
+        # rather than call_llm_async so that raw response usage is accessible.
         with patch.object(
             self.service,
-            "call_llm_async",
-            new=AsyncMock(return_value="great answer"),
+            "_call_llm_async_with_response",
+            new=AsyncMock(return_value=("great answer", None)),
         ):
             results = await self.service.call_llm_many_async([spec], max_concurrency=1)
 
@@ -477,14 +502,96 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(
             self.service,
-            "call_llm_async",
-            new=AsyncMock(return_value="reply"),
+            "_call_llm_async_with_response",
+            new=AsyncMock(return_value=("reply", None)),
         ):
             results = await self.service.call_llm_many_async([spec], max_concurrency=1)
 
         r = results[0]
         self.assertEqual(r.provider, "anthropic")
         self.assertEqual(r.model, "claude-3-haiku")
+
+    async def test_tc_ac7_01_full_usage_metadata_is_normalized_onto_result(self):
+        """TC-AC7-01 end-to-end: result.usage carries all token fields from raw response.
+
+        Counter-factual: with usage=None hardcoded, result.usage would be None and
+        the assertions below would fail.  This test MUST fail before the B-1 fix.
+        """
+        spec = _make_spec("usage-full", provider="anthropic", model="claude-3-haiku")
+
+        # Construct a fake raw response object that carries usage_metadata with all
+        # four token fields — the same shape a real Anthropic response returns.
+        fake_response = Mock()
+        fake_response.content = "answer with usage"
+        fake_response.usage_metadata = {
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cache_creation_input_tokens": 20,
+            "cache_read_input_tokens": 10,
+        }
+
+        # Drive via the new _call_llm_async_with_response seam that returns
+        # (text, raw_response).  _execute_fan_out_item calls this seam rather
+        # than call_llm_async so that it can extract usage from the raw response.
+        async def fake_with_response(**kwargs):
+            return ("answer with usage", fake_response)
+
+        with patch.object(
+            self.service,
+            "_call_llm_async_with_response",
+            new=AsyncMock(side_effect=fake_with_response),
+        ):
+            results = await self.service.call_llm_many_async([spec], max_concurrency=1)
+
+        r = results[0]
+        self.assertEqual(r.status, "succeeded")
+        self.assertEqual(r.content, "answer with usage")
+        self.assertIsNotNone(
+            r.usage, "result.usage must not be None when usage_metadata is present"
+        )
+        self.assertIsInstance(r.usage, LLMUsage)
+        self.assertEqual(r.usage.input_tokens, 100)
+        self.assertEqual(r.usage.output_tokens, 50)
+        self.assertEqual(r.usage.cache_creation_input_tokens, 20)
+        self.assertEqual(r.usage.cache_read_input_tokens, 10)
+
+    async def test_tc_ac7_02_partial_usage_metadata_leaves_absent_fields_as_none(self):
+        """TC-AC7-02 end-to-end: absent cache fields remain None; available fields are set.
+
+        Counter-factual: with usage=None hardcoded, result.usage would be None
+        and this test would fail.  It MUST fail before the B-1 fix.
+        """
+        spec = _make_spec("usage-partial", provider="openai", model="gpt-4o")
+
+        fake_response = Mock()
+        fake_response.content = "partial usage answer"
+        # Only the base token counts present; cache fields absent.
+        fake_response.usage_metadata = {
+            "input_tokens": 80,
+            "output_tokens": 30,
+        }
+
+        async def fake_with_response(**kwargs):
+            return ("partial usage answer", fake_response)
+
+        with patch.object(
+            self.service,
+            "_call_llm_async_with_response",
+            new=AsyncMock(side_effect=fake_with_response),
+        ):
+            results = await self.service.call_llm_many_async([spec], max_concurrency=1)
+
+        r = results[0]
+        self.assertEqual(r.status, "succeeded")
+        self.assertIsNotNone(
+            r.usage, "result.usage must not be None when usage_metadata is present"
+        )
+        self.assertIsInstance(r.usage, LLMUsage)
+        self.assertEqual(r.usage.input_tokens, 80)
+        self.assertEqual(r.usage.output_tokens, 30)
+        # Absent fields must remain None rather than being fabricated.
+        self.assertIsNone(r.usage.cache_creation_input_tokens)
+        self.assertIsNone(r.usage.cache_read_input_tokens)
 
 
 # ---------------------------------------------------------------------------
@@ -504,7 +611,7 @@ class TestAC008FailureNormalization(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(
             self.service,
-            "call_llm_async",
+            "_call_llm_async_with_response",
             new=AsyncMock(side_effect=RuntimeError("Connection timeout")),
         ):
             results = await self.service.call_llm_many_async([spec], max_concurrency=1)
@@ -523,7 +630,7 @@ class TestAC008FailureNormalization(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(
             self.service,
-            "call_llm_async",
+            "_call_llm_async_with_response",
             new=AsyncMock(side_effect=ValueError("routing failed")),
         ):
             results = await self.service.call_llm_many_async([spec], max_concurrency=1)
@@ -541,7 +648,7 @@ class TestAC008FailureNormalization(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(
             self.service,
-            "call_llm_async",
+            "_call_llm_async_with_response",
             new=AsyncMock(side_effect=RuntimeError("routing error")),
         ):
             results = await self.service.call_llm_many_async([spec], max_concurrency=1)
@@ -579,11 +686,11 @@ class TestAC009CacheAwarePassThrough(unittest.IsolatedAsyncioTestCase):
 
         async def capture_call(**kwargs):
             captured_kwargs.update(kwargs)
-            return "cached response"
+            return "cached response", None
 
         with patch.object(
             self.service,
-            "call_llm_async",
+            "_call_llm_async_with_response",
             new=AsyncMock(side_effect=capture_call),
         ):
             results = await self.service.call_llm_many_async([spec], max_concurrency=1)
@@ -609,11 +716,11 @@ class TestAC009CacheAwarePassThrough(unittest.IsolatedAsyncioTestCase):
         async def raise_for_cache(**kwargs):
             if kwargs.get("requires_prompt_caching"):
                 raise LLMServiceError("Provider does not support prompt caching")
-            return "ok"
+            return "ok", None
 
         with patch.object(
             self.service,
-            "call_llm_async",
+            "_call_llm_async_with_response",
             new=AsyncMock(side_effect=raise_for_cache),
         ):
             results = await self.service.call_llm_many_async(specs, max_concurrency=2)
