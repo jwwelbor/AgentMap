@@ -1133,13 +1133,21 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
 
         Counter-factual: against the pre-round-2 code (no LLMResolvedCallError), the
         bare ``except Exception`` in ``_execute_fan_out_item`` populates
-        ``provider=spec.provider=None`` and the assertion ``r.provider == "anthropic"``
+        ``provider=spec.provider=None`` and the assertion ``r.provider == "google"``
         FAILS.
+
+        Discrimination fix (round-3 UAT): routed_provider="google" is deliberately
+        DIFFERENT from the routing fallback default ("anthropic"). If the routing
+        handler swallows LLMResolvedCallError and retries via fallback_provider, the
+        assertion ``r.provider == "google"`` fails (it would be "anthropic" instead),
+        exposing the bug. With routed_provider="anthropic" (the old value), the test
+        passed coincidentally because both paths produce the same identity.
 
         Lowest allowed mock seam: ``_invoke_with_resilience_async``.
         Forbidden: ``call_llm_async`` (mocks out routing where identity is resolved).
         """
-        # Spec with provider=None triggers routing; routing resolves to anthropic:claude-haiku.
+        # Spec with provider=None triggers routing; routing resolves to google:gemini-pro.
+        # "google" is intentionally different from the routing fallback default "anthropic".
         spec = LLMCallSpec(
             spec_id="routed-fail",
             messages=[{"role": "user", "content": "hello"}],
@@ -1147,7 +1155,7 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
             routing_context={"routing_enabled": True, "task_type": "general"},
         )
         service = self._make_routed_service(
-            routed_provider="anthropic", routed_model="claude-haiku"
+            routed_provider="google", routed_model="gemini-pro"
         )
 
         from agentmap.exceptions.service_exceptions import LLMProviderError
@@ -1168,12 +1176,14 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.status, "failed")
         self.assertEqual(
             r.provider,
-            "anthropic",
-            "provider must be the routing-resolved provider, not spec.provider=None",
+            "google",
+            "provider must be the routing-resolved provider 'google', not the "
+            "fallback default 'anthropic' — if this is 'anthropic', the routing "
+            "handler is swallowing LLMResolvedCallError and re-routing",
         )
         self.assertEqual(
             r.model,
-            "claude-haiku",
+            "gemini-pro",
             "model must be the routing-resolved model, not spec.model=None",
         )
         self.assertIsNotNone(r.error)
@@ -1185,23 +1195,31 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
 
         Counter-factual: against the pre-round-2 code, the bare ``except Exception``
         block uses ``spec.provider`` (e.g., "openai") and the assertion
-        ``r.provider == <last-tier-provider>`` FAILS when fallback selects a different
-        provider.
+        ``r.provider == "google"`` FAILS (would be "openai" instead).
+
+        Three-tier exhaustion (round-3 UAT fix): wires three providers so
+        _try_tier3_fallback_async actually runs. The tier-3 helper skips
+        original_provider ("openai") and configured_fallback_provider ("anthropic"),
+        so "google" is the only provider tier-3 can select. Asserting
+        r.provider == "google" proves tier 3 actually executed.
 
         Lowest allowed mock seam: ``_invoke_with_resilience_async``.
         Forbidden: ``call_llm_async`` (mocks out the fallback ladder).
         """
         mock_features_registry = Mock()
         mock_features_registry.is_provider_available.return_value = True
+        # Three providers: openai (original), anthropic (tier-2 fallback), google (tier-3).
         mock_features_registry.get_available_providers.return_value = [
             "openai",
             "anthropic",
+            "google",
         ]
         mock_routing_config = Mock()
         mock_routing_config.fallback = {"default_provider": "anthropic"}
         mock_routing_config.routing_matrix = {
             "anthropic": {"low": "claude-haiku"},
             "openai": {"low": "gpt-3.5-turbo"},
+            "google": {"low": "gemini-flash"},
         }
 
         service = LLMService(
@@ -1245,17 +1263,165 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
         r = results[0]
         self.assertEqual(r.spec_id, "fallback-exhaust")
         self.assertEqual(r.status, "failed")
-        # The result must not simply echo spec.provider — it must reflect the last
-        # tier actually attempted (which the fallback handler knows).
-        self.assertIsNotNone(
+        # Tier 3 is the last tier — it selects "google" (skipping "openai" and
+        # "anthropic"). r.provider must be "google", not spec.provider="openai".
+        # If this is "openai", the fallback ladder identity is not propagating.
+        # If this is "anthropic", tier-3 isn't running (only 2-provider test issue).
+        self.assertEqual(
             r.provider,
-            "provider must not be None — a concrete provider was attempted",
+            "google",
+            "provider must be 'google' (tier-3 provider) — not 'openai' (spec.provider) "
+            "and not 'anthropic' (tier-2 provider). 'openai' means last_attempted is "
+            "not propagating. 'anthropic' means tier-3 never executed.",
         )
-        self.assertIsNotNone(
+        self.assertEqual(
             r.model,
-            "model must not be None — a concrete model was attempted",
+            "gemini-flash",
+            "model must be 'gemini-flash' (tier-3 google's fallback model from routing_matrix)",
         )
         self.assertIsNotNone(r.error)
+
+    async def test_tc_ac8_06_routed_failure_must_not_rewrite_identity(self):
+        """TC-AC8-06 (NEW — round-3): routed post-resolution failure MUST NOT be
+        swallowed by routing's broad except-Exception and rewritten with the
+        fallback-provider identity.
+
+        Counter-factual: against pre-fix code, _call_llm_async_with_routing catches
+        LLMResolvedCallError from the routed call (line 786 'except Exception'), logs
+        it as "Routing failed", then re-attempts via fallback_provider="anthropic".
+        That second attempt also raises (same mock), producing a NEW
+        LLMResolvedCallError("anthropic", ...). The fan-out result would have
+        r.provider == "anthropic" instead of the originally-routed "google", and
+        this assertion FAILS.
+
+        After fix (except LLMResolvedCallError: raise inserted before except Exception):
+        the routed LLMResolvedCallError propagates intact with provider="google".
+
+        Lowest allowed mock seam: ``_invoke_with_resilience_async``.
+        Forbidden: ``call_llm_async`` (mocks out routing where identity is resolved).
+        """
+        # Spec with provider=None triggers routing; routing resolves to google:gemini-pro.
+        # Crucially, "google" != routing fallback default "anthropic" — so the swallow-
+        # and-retry path would produce a DIFFERENT provider identity.
+        spec = LLMCallSpec(
+            spec_id="routed-fail-no-rewrite",
+            messages=[{"role": "user", "content": "hello"}],
+            provider=None,
+            routing_context={"routing_enabled": True, "task_type": "general"},
+        )
+        service = self._make_routed_service(
+            routed_provider="google", routed_model="gemini-pro"
+        )
+
+        from agentmap.exceptions.service_exceptions import LLMProviderError
+
+        with patch.object(
+            service,
+            "_invoke_with_resilience_async",
+            new=AsyncMock(
+                side_effect=LLMProviderError("provider failure after routing resolved")
+            ),
+        ):
+            results = await service.call_llm_many_async([spec], max_concurrency=1)
+
+        r = results[0]
+        self.assertEqual(r.spec_id, "routed-fail-no-rewrite")
+        self.assertEqual(r.status, "failed")
+        self.assertEqual(
+            r.provider,
+            "google",
+            "provider must be 'google' (the routing-resolved provider). "
+            "If 'anthropic', the routing handler swallowed LLMResolvedCallError "
+            "and re-routed to the fallback provider — fix #1 is not in place.",
+        )
+        self.assertEqual(
+            r.model,
+            "gemini-pro",
+            "model must be the routing-resolved model 'gemini-pro'",
+        )
+        self.assertIsNotNone(r.error)
+        self.assertEqual(
+            r.error.error_type,
+            "LLMProviderError",
+            "error_type must preserve the original typed error discriminator",
+        )
+
+    async def test_tc_ac8_07_fallback_exhaustion_typed_cause_preserved(self):
+        """TC-AC8-07 (new — codex MEDIUM-1 regression guard): when all fallback tiers
+        fail with a typed error (e.g., LLMTimeoutError), the fan-out result's
+        error_type must reflect the last tier's typed error, NOT a synthetic
+        LLMServiceError wrapper.
+
+        Counter-factual: against pre-fix code (exhaustion wraps with
+        LLMServiceError(error_msg)), r.error.error_type == "LLMServiceError".
+        After fix (.cause = last_error from the last tier's typed exception),
+        r.error.error_type reflects the actual error class.
+
+        Lowest allowed mock seam: ``_invoke_with_resilience_async``.
+        """
+        from agentmap.exceptions.service_exceptions import LLMTimeoutError
+
+        mock_features_registry = Mock()
+        mock_features_registry.is_provider_available.return_value = True
+        mock_features_registry.get_available_providers.return_value = [
+            "openai",
+            "anthropic",
+            "google",
+        ]
+        mock_routing_config = Mock()
+        mock_routing_config.fallback = {"default_provider": "anthropic"}
+        mock_routing_config.routing_matrix = {
+            "anthropic": {"low": "claude-haiku"},
+            "openai": {"low": "gpt-3.5-turbo"},
+            "google": {"low": "gemini-flash"},
+        }
+
+        service = LLMService(
+            configuration=MockServiceFactory.create_mock_app_config_service(),
+            logging_service=MockServiceFactory.create_mock_logging_service(),
+            routing_service=Mock(),
+            llm_models_config_service=MockServiceFactory.create_mock_llm_models_config_service(),
+            features_registry_service=mock_features_registry,
+            routing_config_service=mock_routing_config,
+        )
+        service._resilience_config = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {"failure_threshold": 5, "reset_timeout": 60},
+        }
+        service._provider_utils.normalize_provider = Mock(side_effect=lambda p: p)
+        service._provider_utils.get_provider_config = Mock(
+            side_effect=lambda p: {"model": f"{p}-default", "api_key": "test"}
+        )
+        service._message_utils.convert_messages_to_langchain = Mock(
+            return_value=[Mock()]
+        )
+        service._client_factory.get_or_create_client = Mock(return_value=Mock())
+
+        spec = _make_spec("typed-cause-exhaust", provider="openai", model="gpt-4o")
+
+        with patch.object(
+            service,
+            "_invoke_with_resilience_async",
+            new=AsyncMock(side_effect=LLMTimeoutError("request timed out")),
+        ):
+            results = await service.call_llm_many_async([spec], max_concurrency=1)
+
+        r = results[0]
+        self.assertEqual(r.status, "failed")
+        self.assertIsNotNone(r.error)
+        self.assertEqual(
+            r.error.error_type,
+            "LLMTimeoutError",
+            "error_type must be 'LLMTimeoutError' (last tier's typed error). "
+            "If 'LLMServiceError', the fallback exhaustion path wrapped with a "
+            "synthetic LLMServiceError, losing the typed discriminator — "
+            "fix MEDIUM-1 is not in place.",
+        )
 
     async def test_tc_ac8_02_non_fabrication_invariant_preserved(self):
         """TC-AC8-02 invariant: when failure occurs before any resolution
@@ -1288,6 +1454,114 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         self.service = _make_service()
+
+
+# ---------------------------------------------------------------------------
+# TC-AC8-08: LLMResolvedCallError propagation through telemetry wrapper
+# ---------------------------------------------------------------------------
+
+
+class TestLLMResolvedCallErrorTelemetryPropagation(unittest.IsolatedAsyncioTestCase):
+    """TC-AC8-08 (new — codex LOW-2): LLMResolvedCallError propagates unchanged
+    through the telemetry-wrapped call_llm_async path.
+
+    Code review confirmed the telemetry wrapper re-raises LLMServiceError subclasses
+    at llm_service.py:343-352. This test is a regression guard — if the isinstance
+    check is accidentally removed or narrowed, this test will fail.
+
+    Seam: patch ``_invoke_with_resilience_async`` (lowest allowed).
+    Wires a real telemetry service stub so the telemetry path is exercised.
+    """
+
+    def _make_service_with_telemetry(self) -> LLMService:
+        """Build a service with a stub telemetry service wired in."""
+        mock_logging = MockServiceFactory.create_mock_logging_service()
+        mock_config = MockServiceFactory.create_mock_app_config_service()
+        mock_config.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {"failure_threshold": 5, "reset_timeout": 60},
+        }
+        mock_config.get_llm_config.side_effect = lambda provider: {
+            "model": f"{provider}-default-model",
+            "api_key": "test-key",
+        }
+        mock_models = MockServiceFactory.create_mock_llm_models_config_service()
+        mock_routing = Mock()
+
+        # Minimal telemetry stub: start_span returns a context manager; metrics
+        # return Mocks so _record_* helpers don't throw.
+        mock_telemetry = Mock()
+        mock_span = Mock()
+        mock_span.__enter__ = Mock(return_value=mock_span)
+        mock_span.__exit__ = Mock(return_value=False)
+        mock_telemetry.start_span.return_value = mock_span
+        mock_telemetry.create_histogram.return_value = Mock()
+        mock_telemetry.create_counter.return_value = Mock()
+        mock_telemetry.create_up_down_counter.return_value = Mock()
+
+        service = LLMService(
+            configuration=mock_config,
+            logging_service=mock_logging,
+            routing_service=mock_routing,
+            llm_models_config_service=mock_models,
+            telemetry_service=mock_telemetry,
+        )
+        service._provider_utils.normalize_provider = Mock(side_effect=lambda p: p)
+        service._provider_utils.get_provider_config = Mock(
+            return_value={"model": "claude-haiku", "api_key": "test"}
+        )
+        service._message_utils.convert_messages_to_langchain = Mock(
+            return_value=[Mock()]
+        )
+        service._client_factory.get_or_create_client = Mock(return_value=Mock())
+        return service
+
+    async def test_tc_ac8_08_resolved_call_error_propagates_through_telemetry_wrapper(
+        self,
+    ):
+        """TC-AC8-08: call_llm_async (telemetry path) propagates LLMResolvedCallError
+        with all three attributes intact.
+
+        Counter-factual: if the telemetry wrapper's except-clause catches
+        LLMResolvedCallError and re-wraps or swallows it, callers cannot read
+        .resolved_provider / .resolved_model / .cause — this assertion fails.
+
+        Lowest allowed mock seam: ``_invoke_with_resilience_async``.
+        """
+        from agentmap.exceptions.service_exceptions import LLMProviderError
+
+        service = self._make_service_with_telemetry()
+
+        underlying = LLMProviderError("provider timeout")
+        resolved_err = LLMResolvedCallError(
+            resolved_provider="anthropic",
+            resolved_model="claude-haiku",
+            cause=underlying,
+        )
+
+        with patch.object(
+            service,
+            "_invoke_with_resilience_async",
+            new=AsyncMock(side_effect=resolved_err),
+        ):
+            with self.assertRaises(LLMResolvedCallError) as ctx:
+                await service.call_llm_async(
+                    messages=[{"role": "user", "content": "hello"}],
+                    provider="anthropic",
+                    model="claude-haiku",
+                )
+
+        exc = ctx.exception
+        self.assertIsInstance(exc, LLMResolvedCallError)
+        self.assertIsInstance(exc, LLMServiceError)
+        self.assertEqual(exc.resolved_provider, "anthropic")
+        self.assertEqual(exc.resolved_model, "claude-haiku")
+        self.assertIs(exc.cause, underlying)
 
 
 # ---------------------------------------------------------------------------

@@ -238,8 +238,14 @@ class LLMFallbackHandler:
         )
 
         attempted_fallbacks = []
-        # One-element mutable cell: [provider, model] of the last tier attempted.
+        # One-element mutable cell: [provider, model] of the last tier actually invoked.
+        # Updated immediately before _invoke_client_async in each tier helper so it
+        # only reflects providers where an actual network call was attempted.
         last_attempted = [original_provider, original_model]
+        # Mutable cell holding the last tier's typed exception for use as the
+        # cause in LLMResolvedCallError on exhaustion (MEDIUM-1 fix: preserve
+        # the typed error discriminator, not a synthetic LLMServiceError wrapper).
+        last_error = [error]
 
         if self.features_registry and self.features_registry.is_provider_available(
             "llm", original_provider
@@ -253,6 +259,7 @@ class LLMFallbackHandler:
                 get_or_create_client_fn,
                 convert_messages_fn,
                 last_attempted=last_attempted,
+                last_error=last_error,
             )
             if result is not None:
                 return result
@@ -275,6 +282,7 @@ class LLMFallbackHandler:
                     get_or_create_client_fn,
                     convert_messages_fn,
                     last_attempted=last_attempted,
+                    last_error=last_error,
                 )
                 if result is not None:
                     return result
@@ -293,6 +301,7 @@ class LLMFallbackHandler:
                 get_or_create_client_fn,
                 convert_messages_fn,
                 last_attempted=last_attempted,
+                last_error=last_error,
             )
             if result is not None:
                 return result
@@ -304,12 +313,15 @@ class LLMFallbackHandler:
             f"Original error: {error}"
         )
         self._logger.error(error_msg)
-        # Raise with the last-attempted tier identity so the caller can record
-        # which provider was actually invoked before exhaustion.
+        # Raise with the last-attempted tier identity and the last tier's typed
+        # error as cause. Using last_error[0] (the actual typed exception from the
+        # last invocation) rather than a synthetic LLMServiceError wrapper preserves
+        # the error discriminator (LLMTimeoutError, LLMRateLimitError, etc.) for
+        # callers that filter on LLMExecutionError.error_type (MEDIUM-1 fix).
         raise LLMResolvedCallError(
             resolved_provider=last_attempted[0],
             resolved_model=last_attempted[1],
-            cause=LLMServiceError(error_msg),
+            cause=last_error[0],
         )
 
     def _try_tier1_fallback(
@@ -371,6 +383,7 @@ class LLMFallbackHandler:
         get_or_create_client_fn: Any,
         convert_messages_fn: Any,
         last_attempted: Optional[List[str]] = None,
+        last_error: Optional[List[Exception]] = None,
     ) -> Optional[LLMResponse]:
         """Async Tier 1 fallback using the async resilience layer."""
         try:
@@ -381,14 +394,16 @@ class LLMFallbackHandler:
                     f"for provider '{original_provider}'"
                 )
                 attempted_fallbacks.append(f"{original_provider}:{fallback_model}")
-                if last_attempted is not None:
-                    last_attempted[0] = original_provider
-                    last_attempted[1] = fallback_model
 
                 config = get_provider_config_fn(original_provider)
                 config["model"] = fallback_model
                 client = get_or_create_client_fn(original_provider, config)
                 langchain_msgs = convert_messages_fn(messages)
+                # Update last_attempted immediately before the invocation so it
+                # reflects a provider that was actually called (MEDIUM-2 fix).
+                if last_attempted is not None:
+                    last_attempted[0] = original_provider
+                    last_attempted[1] = fallback_model
                 result = await self._invoke_client_async(
                     client, langchain_msgs, original_provider, fallback_model
                 )
@@ -397,6 +412,8 @@ class LLMFallbackHandler:
                 return result
         except Exception as e:
             self._logger.warning(f"Tier 1 fallback failed: {e}")
+            if last_error is not None:
+                last_error[0] = e
 
         return None
 
@@ -456,6 +473,7 @@ class LLMFallbackHandler:
         get_or_create_client_fn: Any,
         convert_messages_fn: Any,
         last_attempted: Optional[List[str]] = None,
+        last_error: Optional[List[Exception]] = None,
     ) -> Optional[LLMResponse]:
         """Async Tier 2 fallback using the async resilience layer."""
         try:
@@ -466,14 +484,16 @@ class LLMFallbackHandler:
                     f"'{fallback_provider}' and model '{fallback_model}'"
                 )
                 attempted_fallbacks.append(f"{fallback_provider}:{fallback_model}")
-                if last_attempted is not None:
-                    last_attempted[0] = fallback_provider
-                    last_attempted[1] = fallback_model
 
                 config = get_provider_config_fn(fallback_provider)
                 config["model"] = fallback_model
                 client = get_or_create_client_fn(fallback_provider, config)
                 langchain_msgs = convert_messages_fn(messages)
+                # Update last_attempted immediately before the invocation so it
+                # reflects a provider that was actually called (MEDIUM-2 fix).
+                if last_attempted is not None:
+                    last_attempted[0] = fallback_provider
+                    last_attempted[1] = fallback_model
                 result = await self._invoke_client_async(
                     client, langchain_msgs, fallback_provider, fallback_model
                 )
@@ -482,6 +502,8 @@ class LLMFallbackHandler:
                 return result
         except Exception as e:
             self._logger.warning(f"Tier 2 fallback failed: {e}")
+            if last_error is not None:
+                last_error[0] = e
 
         return None
 
@@ -549,6 +571,7 @@ class LLMFallbackHandler:
         get_or_create_client_fn: Any,
         convert_messages_fn: Any,
         last_attempted: Optional[List[str]] = None,
+        last_error: Optional[List[Exception]] = None,
     ) -> Optional[LLMResponse]:
         """Async Tier 3 fallback using the async resilience layer."""
         available_providers = self.features_registry.get_available_providers("llm")
@@ -564,14 +587,16 @@ class LLMFallbackHandler:
                         f"with model '{fallback_model}'"
                     )
                     attempted_fallbacks.append(f"{provider}:{fallback_model}")
-                    if last_attempted is not None:
-                        last_attempted[0] = provider
-                        last_attempted[1] = fallback_model
 
                     config = get_provider_config_fn(provider)
                     config["model"] = fallback_model
                     client = get_or_create_client_fn(provider, config)
                     langchain_msgs = convert_messages_fn(messages)
+                    # Update last_attempted immediately before the invocation so it
+                    # reflects a provider that was actually called (MEDIUM-2 fix).
+                    if last_attempted is not None:
+                        last_attempted[0] = provider
+                        last_attempted[1] = fallback_model
                     result = await self._invoke_client_async(
                         client, langchain_msgs, provider, fallback_model
                     )
@@ -580,5 +605,7 @@ class LLMFallbackHandler:
                     return result
             except Exception as e:
                 self._logger.warning(f"Tier 3 fallback failed for {provider}: {e}")
+                if last_error is not None:
+                    last_error[0] = e
 
         return None

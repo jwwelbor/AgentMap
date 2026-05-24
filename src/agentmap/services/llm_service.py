@@ -783,11 +783,18 @@ class LLMService:
                 **kwargs,
             )
 
+        except LLMResolvedCallError:
+            # Post-selection provider failure — routing already resolved a concrete
+            # (provider, model) before the call failed. Preserve that identity
+            # intact; do NOT trigger the routing-fallback retry path, which would
+            # silently rewrite the resolved identity with the fallback provider.
+            # Mirrors the identical guard in _call_llm_async_direct:842.
+            raise
         except Exception as e:
             self._logger.error(f"Routing failed: {e}")
             fallback_provider = routing_context.get("fallback_provider", "anthropic")
             self._logger.warning(
-                f"Falling back to {fallback_provider} due to routing failure"
+                f"Falling back to {fallback_provider} due to pre-selection routing failure"
             )
             self._record_fallback_metric("routing_fallback")
             fallback_max_tokens = routing_context.get("max_tokens")
@@ -829,7 +836,7 @@ class LLMService:
             elif max_tokens is not None:
                 config["max_tokens"] = max_tokens
 
-        current_model = config.get("model", "unknown")
+        current_model = config.get("model")
 
         try:
             client = self._client_factory.get_or_create_client(provider, config)
