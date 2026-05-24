@@ -77,6 +77,13 @@ from agentmap.services.telemetry.constants import (
     ROUTING_PROVIDER,
 )
 
+# Keys that ``call_llm_async`` accepts as explicit parameters.  If any of these
+# appear in ``LLMCallSpec.request_options`` they would collide with the explicit
+# keyword arguments in ``_execute_fan_out_item``, causing a TypeError at runtime.
+_RESERVED_KEYS: frozenset = frozenset(
+    {"messages", "provider", "model", "temperature", "routing_context"}
+)
+
 
 class LLMService:
     """
@@ -821,24 +828,24 @@ class LLMService:
         Returns ``LLMResponse`` carrying the resolved provider, model, and usage
         extracted from the raw provider response.
         """
-        provider = self._provider_utils.normalize_provider(provider)
-        config = self._provider_utils.get_provider_config(provider)
-
-        max_tokens = kwargs.pop("max_tokens", None)
-        if model or temperature is not None or max_tokens is not None:
-            config = config.copy()
-            if model:
-                config["model"] = model
-            if temperature is not None:
-                config["temperature"] = temperature
-            if max_tokens == 0:
-                config.pop("max_tokens", None)
-            elif max_tokens is not None:
-                config["max_tokens"] = max_tokens
-
-        current_model = config.get("model")
-
+        current_model = None
         try:
+            provider = self._provider_utils.normalize_provider(provider)
+            config = self._provider_utils.get_provider_config(provider)
+
+            max_tokens = kwargs.pop("max_tokens", None)
+            if model or temperature is not None or max_tokens is not None:
+                config = config.copy()
+                if model:
+                    config["model"] = model
+                if temperature is not None:
+                    config["temperature"] = temperature
+                if max_tokens == 0:
+                    config.pop("max_tokens", None)
+                elif max_tokens is not None:
+                    config["max_tokens"] = max_tokens
+
+            current_model = config.get("model")
             client = self._client_factory.get_or_create_client(provider, config)
             langchain_messages = self._message_utils.convert_messages_to_langchain(
                 messages
@@ -1102,6 +1109,7 @@ class LLMService:
             response = async_invoke(langchain_messages)
             if inspect.isawaitable(response):
                 return await response
+            return response
         return await asyncio.to_thread(client.invoke, langchain_messages)
 
     # ------------------------------------------------------------------
@@ -1424,6 +1432,13 @@ class LLMService:
                     "Each spec_id must be unique within one submission."
                 )
             seen_ids.add(spec.spec_id)
+            if spec.request_options:
+                collision = _RESERVED_KEYS & spec.request_options.keys()
+                if collision:
+                    raise ValueError(
+                        f"spec_id={spec.spec_id!r}: request_options contains reserved "
+                        f"keys that collide with call_llm_async parameters: {collision}"
+                    )
 
     async def _execute_fan_out_item(
         self,

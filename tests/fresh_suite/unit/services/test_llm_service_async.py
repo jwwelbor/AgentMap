@@ -136,6 +136,7 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
     async def test_call_llm_async_offloads_sync_only_client_to_worker_thread(self):
         """Sync-only clients should be invoked through the thread-offload seam."""
         mock_client = Mock()
+        mock_client.ainvoke = None  # No async surface — forces the to_thread path.
         mock_client.invoke.return_value = Mock(content="compat response")
         langchain_messages = [Mock()]
 
@@ -377,6 +378,7 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
             side_effect=RuntimeError("Connection timeout")
         )
         fallback_client = Mock()
+        fallback_client.ainvoke = None  # Sync-only fallback — forces the to_thread path.
         fallback_client.invoke.return_value = Mock(content="fallback response")
 
         def fake_get_client(provider, config):
