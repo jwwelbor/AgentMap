@@ -172,7 +172,7 @@ class TestTC220SpanCreation:
             )
         )
 
-        assert result == "Hello async!"
+        assert result.text == "Hello async!"
         mock_telemetry.start_span.assert_called_once()
         call_args = mock_telemetry.start_span.call_args
         assert call_args[0][0] == LLM_CALL_SPAN

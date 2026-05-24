@@ -16,7 +16,7 @@ from typing import (
     runtime_checkable,
 )
 
-from agentmap.models.llm_execution import LLMCallResult, LLMCallSpec
+from agentmap.models.llm_execution import LLMCallResult, LLMCallSpec, LLMResponse
 
 # Declaration system imports
 
@@ -90,9 +90,14 @@ class LLMServiceProtocol(Protocol):
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
         **kwargs,
-    ) -> str:
+    ) -> LLMResponse:
         """
-        Call LLM asynchronously with specified provider and messages.
+        Call LLM asynchronously and return a rich ``LLMResponse``.
+
+        ``LLMResponse.text`` carries the response text; ``.resolved_provider``
+        and ``.resolved_model`` reflect the provider and model that actually
+        handled the request (after routing or fallback); ``.usage`` carries
+        normalized token counts when the provider returned usage metadata.
 
         Args:
             messages: List of message dictionaries with role and content
@@ -103,7 +108,7 @@ class LLMServiceProtocol(Protocol):
             **kwargs: Additional provider-specific parameters
 
         Returns:
-            LLM response as string
+            LLMResponse with text, resolved provider/model, and usage
         """
         ...
 

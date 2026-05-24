@@ -11,6 +11,7 @@ Handles multi-tier fallback logic when LLM calls fail, including:
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from agentmap.exceptions import LLMServiceError
+from agentmap.models.llm_execution import LLMResponse
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
@@ -63,13 +64,27 @@ class LLMFallbackHandler:
         langchain_messages: List[Any],
         provider: str,
         model: str,
-    ) -> str:
-        """Invoke client through the async resilience layer when available."""
+    ) -> LLMResponse:
+        """Invoke client through the async resilience layer.
+
+        When ``_invoke_async_fn`` is set (wired to
+        ``LLMService._invoke_with_resilience_async``), returns ``LLMResponse``
+        carrying the resolved provider, model, and usage extracted from the raw
+        response.  When no async fn is set, falls back to a bare sync invoke and
+        wraps the result in a minimal ``LLMResponse`` with no usage.
+        """
         if self._invoke_async_fn is not None:
             return await self._invoke_async_fn(
                 client, langchain_messages, provider, model
             )
-        return self._invoke_client(client, langchain_messages, provider, model)
+        # Bare fallback: no resilience layer available; wrap sync result.
+        text = self._invoke_client(client, langchain_messages, provider, model)
+        return LLMResponse(
+            text=text,
+            resolved_provider=provider,
+            resolved_model=model,
+            usage=None,
+        )
 
     def get_fallback_model(
         self, provider: str, complexity: str = "low"
@@ -207,8 +222,12 @@ class LLMFallbackHandler:
         get_or_create_client_fn: Any,
         convert_messages_fn: Any,
         **kwargs,
-    ) -> str:
-        """Async variant of tiered fallback preserving the sync fallback order."""
+    ) -> LLMResponse:
+        """Async variant of tiered fallback preserving the sync fallback order.
+
+        Returns ``LLMResponse`` carrying the resolved provider, model, and usage
+        from the winning fallback tier.
+        """
         self._logger.error(
             f"Model '{original_model}' failed for provider '{original_provider}': {error}"
         )
@@ -227,7 +246,7 @@ class LLMFallbackHandler:
                 get_or_create_client_fn,
                 convert_messages_fn,
             )
-            if result:
+            if result is not None:
                 return result
 
         if self.routing_config:
@@ -248,7 +267,7 @@ class LLMFallbackHandler:
                     get_or_create_client_fn,
                     convert_messages_fn,
                 )
-                if result:
+                if result is not None:
                     return result
 
         if self.features_registry:
@@ -265,7 +284,7 @@ class LLMFallbackHandler:
                 get_or_create_client_fn,
                 convert_messages_fn,
             )
-            if result:
+            if result is not None:
                 return result
 
         error_msg = (
@@ -335,7 +354,7 @@ class LLMFallbackHandler:
         get_provider_config_fn: Any,
         get_or_create_client_fn: Any,
         convert_messages_fn: Any,
-    ) -> Optional[str]:
+    ) -> Optional[LLMResponse]:
         """Async Tier 1 fallback using the async resilience layer."""
         try:
             fallback_model = self.get_fallback_model(original_provider, "low")
@@ -416,7 +435,7 @@ class LLMFallbackHandler:
         get_provider_config_fn: Any,
         get_or_create_client_fn: Any,
         convert_messages_fn: Any,
-    ) -> Optional[str]:
+    ) -> Optional[LLMResponse]:
         """Async Tier 2 fallback using the async resilience layer."""
         try:
             fallback_model = self.get_fallback_model(fallback_provider, "low")
@@ -505,7 +524,7 @@ class LLMFallbackHandler:
         get_provider_config_fn: Any,
         get_or_create_client_fn: Any,
         convert_messages_fn: Any,
-    ) -> Optional[str]:
+    ) -> Optional[LLMResponse]:
         """Async Tier 3 fallback using the async resilience layer."""
         available_providers = self.features_registry.get_available_providers("llm")
         for provider in available_providers:

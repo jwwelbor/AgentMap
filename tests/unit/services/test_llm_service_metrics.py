@@ -734,7 +734,7 @@ class TestAC7FallbackAndCacheHit:
             )
         )
 
-        assert result == "Hello async!"
+        assert result.text == "Hello async!"
         instruments["fallback"].add.assert_called_once()
         call_args = instruments["fallback"].add.call_args
         assert call_args[0][0] == 1

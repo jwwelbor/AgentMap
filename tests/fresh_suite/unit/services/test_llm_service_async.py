@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, create_autospec, patch
 
 from agentmap.exceptions import LLMConfigurationError, LLMTimeoutError
+from agentmap.models.llm_execution import LLMResponse
 from agentmap.services.llm_service import LLMService
 from agentmap.services.protocols import LLMServiceProtocol
 from tests.utils.mock_service_factory import MockServiceFactory
@@ -43,7 +44,10 @@ class TestMockLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
             provider="anthropic",
         )
 
-        self.assertEqual(response, "Mock LLM response")
+        # call_llm_async returns LLMResponse; .text carries the response string.
+        from agentmap.models.llm_execution import LLMResponse
+        self.assertIsInstance(response, LLMResponse)
+        self.assertEqual(response.text, "Mock LLM response")
         self.assertTrue(hasattr(mock_service, "ask"))
         self.assertTrue(hasattr(mock_service, "call_llm_async"))
         self.assertTrue(hasattr(mock_service, "ask_async"))
@@ -121,7 +125,9 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
                 max_tokens=77,
             )
 
-        self.assertEqual(result, "async response")
+        self.assertIsInstance(result, LLMResponse)
+        self.assertEqual(result.text, "async response")
+        self.assertEqual(result.resolved_provider, "openai")
         mock_client.ainvoke.assert_awaited_once_with(langchain_messages)
         mock_client.invoke.assert_not_called()
 
@@ -155,7 +161,8 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
                 provider="anthropic",
             )
 
-        self.assertEqual(result, "compat response")
+        self.assertIsInstance(result, LLMResponse)
+        self.assertEqual(result.text, "compat response")
         mock_to_thread.assert_awaited_once()
         mock_client.invoke.assert_called_once_with(langchain_messages)
 
@@ -171,10 +178,15 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
         mock_decision.fallback_used = False
         self.mock_routing_service.route_request.return_value = mock_decision
 
+        routed_response = LLMResponse(
+            text="routed response",
+            resolved_provider="anthropic",
+            resolved_model="claude-3-7-sonnet-20250219",
+        )
         with patch.object(
             self.service,
             "_call_llm_async_direct",
-            new=AsyncMock(return_value="routed response"),
+            new=AsyncMock(return_value=routed_response),
         ) as mock_direct:
             result = await self.service.call_llm_async(
                 messages=[{"role": "user", "content": "complex task"}],
@@ -188,7 +200,8 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
                 },
             )
 
-        self.assertEqual(result, "routed response")
+        self.assertIsInstance(result, LLMResponse)
+        self.assertEqual(result.text, "routed response")
         mock_direct.assert_awaited_once_with(
             provider="anthropic",
             messages=[{"role": "user", "content": "complex task"}],
@@ -204,10 +217,15 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
             "routing failed"
         )
 
+        fallback_response = LLMResponse(
+            text="fallback response",
+            resolved_provider="openai",
+            resolved_model="openai-default-model",
+        )
         with patch.object(
             self.service,
             "_call_llm_async_direct",
-            new=AsyncMock(return_value="fallback response"),
+            new=AsyncMock(return_value=fallback_response),
         ) as mock_direct:
             result = await self.service.call_llm_async(
                 messages=[{"role": "user", "content": "test"}],
@@ -219,7 +237,8 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
                 },
             )
 
-        self.assertEqual(result, "fallback response")
+        self.assertIsInstance(result, LLMResponse)
+        self.assertEqual(result.text, "fallback response")
         mock_direct.assert_awaited_once_with(
             provider="openai",
             messages=[{"role": "user", "content": "test"}],
@@ -233,7 +252,13 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             self.service,
             "call_llm_async",
-            new=AsyncMock(return_value="default response"),
+            new=AsyncMock(
+                return_value=LLMResponse(
+                    text="default response",
+                    resolved_provider="anthropic",
+                    resolved_model="anthropic-default-model",
+                )
+            ),
         ) as mock_call_llm_async:
             result = await self.service.ask_async("Hello", temperature=0.8)
 
@@ -277,7 +302,8 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
                 model="gpt-4o-mini",
             )
 
-        self.assertEqual(result, "recovered")
+        self.assertIsInstance(result, LLMResponse)
+        self.assertEqual(result.text, "recovered")
         self.assertEqual(mock_client.ainvoke.await_count, 2)
         mock_sleep.assert_awaited_once()
         self.assertEqual(self.service._circuit_breaker.failures, {})
@@ -360,7 +386,8 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
             model="gpt-4o-mini",
         )
 
-        self.assertEqual(result, "fallback response")
+        self.assertIsInstance(result, LLMResponse)
+        self.assertEqual(result.text, "fallback response")
 
     async def test_call_llm_async_exhausted_retries_open_circuit(self):
         """Retry exhaustion should classify the error and open the circuit like sync."""

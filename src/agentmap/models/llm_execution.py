@@ -10,6 +10,28 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 
+@dataclass(frozen=True)
+class LLMResponse:
+    """
+    Internal seam result carrying the resolved provider identity and usage.
+
+    Returned by ``_call_llm_async_core`` and every private async method below
+    it. The public ``call_llm_async() -> str`` returns only ``.text``.
+
+    ``resolved_provider`` and ``resolved_model`` reflect the provider and model
+    that **actually handled** the request — after routing rewrites or fallback
+    tier selection — not the values the caller specified.
+
+    ``usage`` is ``None`` only when the underlying provider did not return
+    ``usage_metadata`` on the response.
+    """
+
+    text: str
+    resolved_provider: str
+    resolved_model: str
+    usage: Optional["LLMUsage"] = None
+
+
 @dataclass
 class LLMCallSpec:
     """

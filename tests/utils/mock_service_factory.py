@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, Mock
 
+from agentmap.models.llm_execution import LLMResponse
+
 
 class MockServiceFactory:
     """
@@ -1111,7 +1113,14 @@ class MockServiceFactory:
         mock_service.ask = Mock(return_value="Mock LLM response")
         mock_service.ask_vision = Mock(return_value="Mock LLM response")
         mock_service.call_llm.return_value = "Mock LLM response"
-        mock_service.call_llm_async = AsyncMock(return_value="Mock LLM response")
+        mock_service.call_llm_async = AsyncMock(
+            return_value=LLMResponse(
+                text="Mock LLM response",
+                resolved_provider="mock-provider",
+                resolved_model="mock-model",
+                usage=None,
+            )
+        )
         mock_service.ask_async = AsyncMock(return_value="Mock LLM response")
         mock_service.call_llm_many_async = AsyncMock(return_value=[])
         mock_service.get_model_name = Mock(return_value="mock-model")

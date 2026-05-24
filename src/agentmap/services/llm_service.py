@@ -24,6 +24,7 @@ from agentmap.models.llm_execution import (
     LLMCallResult,
     LLMCallSpec,
     LLMExecutionError,
+    LLMResponse,
     LLMUsage,
 )
 from agentmap.services.config import AppConfigService
@@ -31,7 +32,11 @@ from agentmap.services.config.llm_models_config_service import LLMModelsConfigSe
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.llm_client_factory import LLMClientFactory
-from agentmap.services.llm_error_utils import classify_llm_error, is_retryable
+from agentmap.services.llm_error_utils import (
+    _sanitize_error_message,
+    classify_llm_error,
+    is_retryable,
+)
 from agentmap.services.llm_fallback_handler import LLMFallbackHandler
 from agentmap.services.llm_message_utils import LLMMessageUtils
 from agentmap.services.llm_provider_utils import LLMProviderUtils
@@ -116,12 +121,17 @@ class LLMService:
         self._provider_utils = LLMProviderUtils(
             configuration, llm_models_config_service, logging_service
         )
+        # Use lambda so the fallback handler always dispatches through the
+        # current binding of _invoke_with_resilience_async (important for
+        # tests that patch the method after construction).
         self._fallback_handler = LLMFallbackHandler(
             logging_service,
             routing_config_service,
             features_registry_service,
             invoke_fn=self._invoke_with_resilience,
-            invoke_async_fn=self._invoke_with_resilience_async,
+            invoke_async_fn=lambda client, msgs, provider, model: self._invoke_with_resilience_async(
+                client, msgs, provider, model
+            ),
         )
         self._message_utils = LLMMessageUtils()
 
@@ -269,9 +279,14 @@ class LLMService:
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
         **kwargs,
-    ) -> str:
+    ) -> LLMResponse:
         """
-        Make an async LLM call with the same public contract as ``call_llm()``.
+        Make an async LLM call and return a rich ``LLMResponse``.
+
+        ``LLMResponse.text`` carries the response text; ``.resolved_provider``
+        and ``.resolved_model`` reflect the provider and model that **actually
+        handled** the request (after routing or fallback); ``.usage`` carries
+        normalized token counts when the provider returned usage metadata.
 
         When routing_context is provided, routing owns all provider and model
         selection. Explicit provider and model inputs are ignored with the same
@@ -293,7 +308,7 @@ class LLMService:
         temperature: Optional[float],
         routing_context: Optional[Dict[str, Any]],
         **kwargs,
-    ) -> str:
+    ) -> LLMResponse:
         """Async telemetry wrapper mirroring the sync LLM span behavior."""
         initial_attributes: Dict[str, Any] = {}
         if provider:
@@ -317,7 +332,7 @@ class LLMService:
                         routing_context,
                         **kwargs,
                     )
-                    self._capture_llm_content(span, messages, result)
+                    self._capture_llm_content(span, messages, result.text)
                     self._set_span_status_ok(span)
                     return result
                 except Exception as e:
@@ -462,8 +477,13 @@ class LLMService:
         temperature: Optional[float],
         routing_context: Optional[Dict[str, Any]],
         **kwargs,
-    ) -> str:
-        """Async sibling of ``_call_llm_core`` for the staged migration."""
+    ) -> LLMResponse:
+        """Single async seam shared by ``call_llm_async`` and the fan-out path.
+
+        Returns a rich ``LLMResponse`` carrying the resolved provider identity
+        and usage.  Both public entrypoints delegate here; there is exactly one
+        async resilience stack.
+        """
         if routing_context is not None and self.routing_service:
             if model is not None:
                 self._logger.warning(
@@ -695,8 +715,12 @@ class LLMService:
 
     async def _call_llm_async_with_routing(
         self, messages: List[Dict[str, str]], routing_context: Dict[str, Any], **kwargs
-    ) -> str:
-        """Async sibling of ``_call_llm_with_routing`` preserving routing rules."""
+    ) -> LLMResponse:
+        """Async sibling of ``_call_llm_with_routing`` preserving routing rules.
+
+        Delegates to ``_call_llm_async_direct`` which returns ``LLMResponse``
+        carrying the resolved provider, model, and usage from the raw response.
+        """
         if not self.routing_service:
             raise LLMServiceError("Routing requested but no routing service available")
 
@@ -783,8 +807,12 @@ class LLMService:
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         **kwargs,
-    ) -> str:
-        """Async direct provider invocation with resilience and fallback parity."""
+    ) -> LLMResponse:
+        """Async direct provider invocation with resilience and fallback parity.
+
+        Returns ``LLMResponse`` carrying the resolved provider, model, and usage
+        extracted from the raw provider response.
+        """
         provider = self._provider_utils.normalize_provider(provider)
         config = self._provider_utils.get_provider_config(provider)
 
@@ -953,98 +981,13 @@ class LLMService:
         langchain_messages: List[Any],
         provider: str,
         model: str,
-    ) -> str:
-        """Async sibling of ``_invoke_with_resilience`` using awaited backoff."""
-        self._record_circuit_breaker_state(provider, model)
+    ) -> LLMResponse:
+        """Single async resilience seam: retry + circuit breaker + response wrapping.
 
-        if self._circuit_breaker.is_open(provider, model):
-            raise LLMProviderError(
-                f"Circuit breaker open for {provider}:{model} -- "
-                f"skipping call (resets after "
-                f"{self._circuit_breaker.reset}s)"
-            )
-
-        retry_cfg = self._resilience_config.get("retry", {})
-        max_attempts = retry_cfg.get("max_attempts", 3)
-        backoff_base = retry_cfg.get("backoff_base", 2.0)
-        backoff_max = retry_cfg.get("backoff_max", 30.0)
-        jitter = retry_cfg.get("jitter", True)
-
-        last_error: Optional[Exception] = None
-
-        for attempt in range(1, max_attempts + 1):
-            try:
-                self._logger.debug(
-                    f"LLM call to {provider}:{model} "
-                    f"(attempt {attempt}/{max_attempts})"
-                )
-                start_time = time.monotonic()
-                response = await self._invoke_provider_async(client, langchain_messages)
-                duration = time.monotonic() - start_time
-
-                result = (
-                    response.content if hasattr(response, "content") else str(response)
-                )
-
-                was_open = self._circuit_breaker.is_open(provider, model)
-                self._circuit_breaker.record_success(provider, model)
-                self._record_circuit_breaker_metric_on_close(was_open, provider, model)
-                self._record_duration_metric(duration, provider, model)
-                self._record_llm_response_attributes(response, provider, model)
-
-                resp_meta = getattr(response, "response_metadata", None)
-                req_id = (
-                    self._extract_provider_request_id(resp_meta, provider)
-                    if isinstance(resp_meta, dict)
-                    else None
-                )
-                self._logger.debug(
-                    f"LLM call successful, response length: {len(result)}"
-                    + (f", request_id: {req_id}" if req_id else "")
-                )
-                return result
-            except Exception as e:
-                typed_error = classify_llm_error(e, provider)
-                last_error = typed_error
-
-                if not is_retryable(typed_error):
-                    self._circuit_breaker.record_failure(provider, model)
-                    self._record_error_metric(typed_error, provider, model)
-                    self._record_circuit_breaker_metric_on_open(provider, model)
-                    raise typed_error
-
-                if attempt == max_attempts:
-                    break
-
-                delay = min(backoff_base ** (attempt - 1), backoff_max)
-                if jitter:
-                    delay = delay * (0.5 + random.random())
-
-                self._logger.warning(
-                    f"Retryable error on {provider}:{model} "
-                    f"(attempt {attempt}/{max_attempts}): {typed_error}. "
-                    f"Retrying in {delay:.1f}s"
-                )
-                await asyncio.sleep(delay)
-
-        self._circuit_breaker.record_failure(provider, model)
-        self._record_error_metric(last_error, provider, model)
-        self._record_circuit_breaker_metric_on_open(provider, model)
-        raise last_error  # type: ignore[misc]
-
-    async def _invoke_with_resilience_async_with_response(
-        self,
-        client: Any,
-        langchain_messages: List[Any],
-        provider: str,
-        model: str,
-    ) -> Tuple[str, Any]:
-        """Async resilience wrapper that also returns the raw provider response.
-
-        This is the lower seam used by the fan-out path so that per-item usage
-        metadata (``usage_metadata``) is preserved alongside the text result.
-        It mirrors ``_invoke_with_resilience_async`` exactly except it returns
-        ``(text, raw_response)`` instead of just ``text``.
+        Returns ``LLMResponse`` carrying the resolved ``provider``, ``model``,
+        response text, and normalized ``LLMUsage`` extracted from the raw response.
+        This is the **only** async resilience stack — the fan-out path and the
+        public ``call_llm_async`` both funnel through here.
         """
         self._record_circuit_breaker_state(provider, model)
 
@@ -1073,7 +1016,7 @@ class LLMService:
                 response = await self._invoke_provider_async(client, langchain_messages)
                 duration = time.monotonic() - start_time
 
-                result = (
+                text = (
                     response.content if hasattr(response, "content") else str(response)
                 )
 
@@ -1090,10 +1033,15 @@ class LLMService:
                     else None
                 )
                 self._logger.debug(
-                    f"LLM call successful, response length: {len(result)}"
+                    f"LLM call successful, response length: {len(text)}"
                     + (f", request_id: {req_id}" if req_id else "")
                 )
-                return result, response
+                return LLMResponse(
+                    text=text,
+                    resolved_provider=provider,
+                    resolved_model=model,
+                    usage=self._extract_llm_usage(response),
+                )
             except Exception as e:
                 typed_error = classify_llm_error(e, provider)
                 last_error = typed_error
@@ -1122,109 +1070,6 @@ class LLMService:
         self._record_error_metric(last_error, provider, model)
         self._record_circuit_breaker_metric_on_open(provider, model)
         raise last_error  # type: ignore[misc]
-
-    async def _call_llm_async_direct_with_response(
-        self,
-        provider: str,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        **kwargs,
-    ) -> Tuple[str, Any]:
-        """Variant of ``_call_llm_async_direct`` returning ``(text, raw_response)``.
-
-        Used by the fan-out path so that ``usage_metadata`` on the raw response
-        object survives into ``_execute_fan_out_item`` for normalization into
-        ``LLMCallResult.usage``.  The public ``call_llm_async`` contract (returns
-        ``str``) is unchanged.
-        """
-        provider = self._provider_utils.normalize_provider(provider)
-        config = self._provider_utils.get_provider_config(provider)
-
-        max_tokens = kwargs.pop("max_tokens", None)
-        if model or temperature is not None or max_tokens is not None:
-            config = config.copy()
-            if model:
-                config["model"] = model
-            if temperature is not None:
-                config["temperature"] = temperature
-            if max_tokens == 0:
-                config.pop("max_tokens", None)
-            elif max_tokens is not None:
-                config["max_tokens"] = max_tokens
-
-        current_model = config.get("model", "unknown")
-
-        try:
-            client = self._client_factory.get_or_create_client(provider, config)
-            langchain_messages = self._message_utils.convert_messages_to_langchain(
-                messages
-            )
-            return await self._invoke_with_resilience_async_with_response(
-                client, langchain_messages, provider, current_model
-            )
-        except Exception as e:
-            typed_error = classify_llm_error(e, provider)
-
-            if isinstance(typed_error, (LLMDependencyError, LLMConfigurationError)):
-                raise typed_error
-
-            if self.features_registry and self.routing_config:
-                try:
-                    # Fallback path returns str only; return (text, None) since
-                    # the raw response is not accessible through the fallback seam.
-                    fallback_text = (
-                        await self._fallback_handler.try_with_fallback_async(
-                            provider,
-                            current_model,
-                            messages,
-                            typed_error,
-                            self._provider_utils.get_provider_config,
-                            self._client_factory.get_or_create_client,
-                            self._message_utils.convert_messages_to_langchain,
-                            **kwargs,
-                        )
-                    )
-                    return fallback_text, None
-                except LLMServiceError:
-                    pass
-
-            raise typed_error
-
-    async def _call_llm_async_with_response(
-        self,
-        messages: List[Dict[str, str]],
-        provider: Optional[str],
-        model: Optional[str],
-        temperature: Optional[float],
-        routing_context: Optional[Dict[str, Any]],
-        **kwargs,
-    ) -> Tuple[str, Any]:
-        """Internal seam for fan-out: returns ``(text, raw_response)``.
-
-        When ``routing_context`` is active, the raw response is not available
-        through the routing stack so ``raw_response`` will be ``None``.  The
-        fan-out caller must tolerate ``None`` and produce ``usage=None`` in that
-        case, which is consistent with AC-007 ("fields available from the
-        realtime path").
-
-        The public ``call_llm_async`` contract (returns ``str``) is unchanged.
-        """
-        if routing_context is not None and self.routing_service:
-            # Routing path: we cannot expose the raw response without invasive
-            # surgery on the routing stack. Return (text, None); usage will be
-            # absent, which is correct — routing is not the realtime direct path.
-            text = await self._call_llm_async_core(
-                messages, provider, model, temperature, routing_context, **kwargs
-            )
-            return text, None
-        if not provider:
-            raise LLMServiceError(
-                "provider is required when routing_context is not provided."
-            )
-        return await self._call_llm_async_direct_with_response(
-            provider, messages, model, temperature, **kwargs
-        )
 
     async def _invoke_provider_async(
         self, client: Any, langchain_messages: List[Any]
@@ -1494,7 +1339,8 @@ class LLMService:
         """Async convenience wrapper mirroring ``ask()`` behavior."""
         provider = provider or "anthropic"
         messages = [{"role": "user", "content": prompt}]
-        return await self.call_llm_async(provider=provider, messages=messages, **kwargs)
+        response = await self.call_llm_async(provider=provider, messages=messages, **kwargs)
+        return response.text
 
     async def call_llm_many_async(
         self,
@@ -1533,12 +1379,17 @@ class LLMService:
             raise LLMServiceError(
                 "call_specs must not be empty — at least one LLMCallSpec is required."
             )
-        if not isinstance(max_concurrency, int) or max_concurrency < 1:
+        # Reject bool explicitly: isinstance(True, int) is True in Python.
+        if isinstance(max_concurrency, bool) or not isinstance(max_concurrency, int) or max_concurrency < 1:
             raise LLMServiceError(
                 f"max_concurrency must be an integer >= 1, got {max_concurrency!r}."
             )
         seen_ids: set = set()
         for spec in call_specs:
+            if not isinstance(spec.spec_id, str) or not spec.spec_id:
+                raise LLMServiceError(
+                    f"spec_id must be a non-empty string, got {spec.spec_id!r}."
+                )
             if spec.spec_id in seen_ids:
                 raise LLMServiceError(
                     f"Duplicate spec_id detected: {spec.spec_id!r}. "
@@ -1551,11 +1402,19 @@ class LLMService:
         spec: LLMCallSpec,
         semaphore: asyncio.Semaphore,
     ) -> LLMCallResult:
-        """Execute one fan-out item through the existing async realtime path."""
+        """Execute one fan-out item through the public ``call_llm_async`` path.
+
+        Calls ``call_llm_async`` directly so that routing, retry, jitter,
+        circuit-breaker, fallback, telemetry, and cache-aware behavior are all
+        inherited from the single async resilience stack (spec Decision 3).
+        Builds ``LLMCallResult`` from the returned ``LLMResponse`` so that
+        ``provider``, ``model``, and ``usage`` reflect the resolved values, not
+        the requested spec values.
+        """
         async with semaphore:
             kwargs = dict(spec.request_options)
             try:
-                response_text, raw_response = await self._call_llm_async_with_response(
+                llm_response = await self.call_llm_async(
                     messages=spec.messages,
                     provider=spec.provider,
                     model=spec.model,
@@ -1563,18 +1422,13 @@ class LLMService:
                     routing_context=spec.routing_context,
                     **kwargs,
                 )
-                usage = (
-                    self._extract_llm_usage(raw_response)
-                    if raw_response is not None
-                    else None
-                )
                 return LLMCallResult(
                     spec_id=spec.spec_id,
                     status="succeeded",
-                    provider=spec.provider,
-                    model=spec.model,
-                    content=response_text,
-                    usage=usage,
+                    provider=llm_response.resolved_provider,
+                    model=llm_response.resolved_model,
+                    content=llm_response.text,
+                    usage=llm_response.usage,
                 )
             except Exception as exc:
                 return LLMCallResult(
@@ -1586,7 +1440,7 @@ class LLMService:
                     usage=None,
                     error=LLMExecutionError(
                         error_type=type(exc).__name__,
-                        message=str(exc),
+                        message=_sanitize_error_message(exc),
                         retryable=is_retryable(exc),
                     ),
                 )
@@ -1595,9 +1449,11 @@ class LLMService:
     def _extract_llm_usage(response: Any) -> Optional[LLMUsage]:
         """Extract a normalized ``LLMUsage`` from an LLM provider response.
 
-        Returns ``None`` when no usage metadata is available.  This is the
-        richer sibling of ``_extract_token_counts()`` that also captures
-        cache-aware fields introduced by E05-F01.
+        Returns ``None`` when no usage metadata is available or when
+        ``usage_metadata`` is present but all fields fail coercion.  Per-field
+        coercion failures return ``None`` for that field (not for the whole
+        ``LLMUsage``) so that a malformed token count never converts a successful
+        provider response into a failed ``LLMCallResult``.
         """
         usage_metadata = getattr(response, "usage_metadata", None)
         if not usage_metadata:
@@ -1608,7 +1464,12 @@ class LLMService:
                 val = usage_metadata.get(key)
             else:
                 val = getattr(usage_metadata, key, None)
-            return int(val) if val is not None else None
+            if val is None:
+                return None
+            try:
+                return int(val)
+            except (TypeError, ValueError):
+                return None
 
         return LLMUsage(
             input_tokens=_get("input_tokens"),
