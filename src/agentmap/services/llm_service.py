@@ -464,7 +464,9 @@ class LLMService:
                     "influence provider selection or "
                     "routing_context['fallback_provider'] to set the fallback."
                 )
-            return self._call_llm_with_routing(messages, routing_context, **kwargs)
+            return self._call_llm_with_routing(
+                messages, routing_context, temperature=temperature, model=model, **kwargs
+            )
         if not provider:
             raise LLMServiceError(
                 "provider is required when routing_context is not provided."
@@ -507,7 +509,7 @@ class LLMService:
                     "routing_context['fallback_provider'] to set the fallback."
                 )
             return await self._call_llm_async_with_routing(
-                messages, routing_context, **kwargs
+                messages, routing_context, temperature=temperature, model=model, **kwargs
             )
         if not provider:
             raise LLMServiceError(
@@ -522,7 +524,12 @@ class LLMService:
         )
 
     def _call_llm_with_routing(
-        self, messages: List[Dict[str, str]], routing_context: Dict[str, Any], **kwargs
+        self,
+        messages: List[Dict[str, str]],
+        routing_context: Dict[str, Any],
+        temperature: Optional[float] = None,
+        model: Optional[str] = None,
+        **kwargs,
     ) -> str:
         """
         Make an LLM call using intelligent routing to select provider/model.
@@ -530,6 +537,8 @@ class LLMService:
         Args:
             messages: List of message dictionaries
             routing_context: Dictionary containing routing parameters
+            temperature: Optional temperature override from caller
+            model: Optional model hint (used as fallback if routing fails)
             **kwargs: Additional LLM parameters
 
         Returns:
@@ -606,7 +615,7 @@ class LLMService:
                 provider=decision.provider,
                 messages=messages,
                 model=decision.model,
-                temperature=kwargs.get("temperature"),
+                temperature=temperature,
                 **kwargs,
             )
 
@@ -626,8 +635,8 @@ class LLMService:
             return self._call_llm_direct(
                 provider=fallback_provider,
                 messages=messages,
-                model=kwargs.get("model"),
-                temperature=kwargs.get("temperature"),
+                model=model,
+                temperature=temperature,
                 **kwargs,
             )
 
@@ -722,7 +731,12 @@ class LLMService:
             raise typed_error
 
     async def _call_llm_async_with_routing(
-        self, messages: List[Dict[str, str]], routing_context: Dict[str, Any], **kwargs
+        self,
+        messages: List[Dict[str, str]],
+        routing_context: Dict[str, Any],
+        temperature: Optional[float] = None,
+        model: Optional[str] = None,
+        **kwargs,
     ) -> LLMResponse:
         """Async sibling of ``_call_llm_with_routing`` preserving routing rules.
 
@@ -786,7 +800,7 @@ class LLMService:
                 provider=decision.provider,
                 messages=messages,
                 model=decision.model,
-                temperature=kwargs.get("temperature"),
+                temperature=temperature,
                 **kwargs,
             )
 
@@ -810,8 +824,8 @@ class LLMService:
             return await self._call_llm_async_direct(
                 provider=fallback_provider,
                 messages=messages,
-                model=kwargs.get("model"),
-                temperature=kwargs.get("temperature"),
+                model=model,
+                temperature=temperature,
                 **kwargs,
             )
 

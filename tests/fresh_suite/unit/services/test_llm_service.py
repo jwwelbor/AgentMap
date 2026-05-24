@@ -172,23 +172,24 @@ class TestLLMService(unittest.TestCase):
 
             mock_direct_call.return_value = "Routed response"
 
-            # Execute test
+            # Execute test — pass temperature to verify it survives routing (B002)
             messages = [{"role": "user", "content": "Complex task"}]
             result = self.service.call_llm(
                 provider="openai",  # This should be overridden by routing
                 messages=messages,
+                temperature=0.3,
                 routing_context=routing_context,
             )
 
             # Verify routing was used
             self.mock_routing_service.route_request.assert_called_once()
 
-            # Verify direct call was made with routed provider
+            # Verify direct call was made with routed provider and caller's temperature
             mock_direct_call.assert_called_once_with(
                 provider="anthropic",
                 messages=messages,
                 model="claude-3-7-sonnet-20250219",
-                temperature=None,
+                temperature=0.3,
             )
 
             self.assertEqual(result, "Routed response")
@@ -206,18 +207,22 @@ class TestLLMService(unittest.TestCase):
         with patch.object(self.service, "_call_llm_direct") as mock_direct_call:
             mock_direct_call.return_value = "Fallback response"
 
-            # Execute test
+            # Execute test — pass temperature and model to verify they survive fallback (B002)
             messages = [{"role": "user", "content": "Test"}]
             result = self.service.call_llm(
-                provider="anthropic", messages=messages, routing_context=routing_context
+                provider="anthropic",
+                messages=messages,
+                model="custom-model",
+                temperature=0.5,
+                routing_context=routing_context,
             )
 
-            # Verify fallback to direct call
+            # Verify fallback preserves caller's model and temperature
             mock_direct_call.assert_called_with(
                 provider="openai",  # fallback_provider
                 messages=messages,
-                model=None,
-                temperature=None,
+                model="custom-model",
+                temperature=0.5,
             )
 
             self.assertEqual(result, "Fallback response")
