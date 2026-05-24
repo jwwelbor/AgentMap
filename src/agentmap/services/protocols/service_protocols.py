@@ -16,6 +16,8 @@ from typing import (
     runtime_checkable,
 )
 
+from agentmap.models.llm_execution import LLMCallResult, LLMCallSpec
+
 # Declaration system imports
 
 if TYPE_CHECKING:
@@ -77,6 +79,79 @@ class LLMServiceProtocol(Protocol):
 
         Returns:
             LLM response as string
+        """
+        ...
+
+    async def call_llm_async(
+        self,
+        messages: List[Dict[str, str]],
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        routing_context: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> str:
+        """
+        Call LLM asynchronously with specified provider and messages.
+
+        Args:
+            messages: List of message dictionaries with role and content
+            provider: Optional LLM provider ("openai", "anthropic", "google", etc.)
+            model: Optional model override
+            temperature: Optional temperature override
+            routing_context: Optional routing context for intelligent routing
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            LLM response as string
+        """
+        ...
+
+    async def ask_async(
+        self,
+        prompt: str,
+        provider: Optional[str] = None,
+        **kwargs,
+    ) -> str:
+        """
+        Ask the LLM a question asynchronously using the text-only interface.
+
+        Args:
+            prompt: The prompt text to send
+            provider: Optional provider name
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            LLM response as string
+        """
+        ...
+
+    async def call_llm_many_async(
+        self,
+        call_specs: List[LLMCallSpec],
+        max_concurrency: int,
+    ) -> List[LLMCallResult]:
+        """
+        Submit many LLM call specs and receive one terminal result per spec.
+
+        Submission is validated before any provider execution begins:
+        - ``call_specs`` must not be empty.
+        - ``spec_id`` values must be unique within one submission.
+        - ``max_concurrency`` must be an integer >= 1.
+
+        Once execution starts, per-item failures are captured as ``LLMCallResult``
+        records with ``status="failed"`` rather than aborting the whole submission.
+        The returned list preserves the same positional order as ``call_specs``.
+
+        Args:
+            call_specs: Non-empty list of ``LLMCallSpec`` items.
+            max_concurrency: Maximum number of in-flight provider calls at once.
+
+        Returns:
+            List of ``LLMCallResult`` in the same order as ``call_specs``.
+
+        Raises:
+            LLMServiceError: For invalid submissions (before any execution).
         """
         ...
 

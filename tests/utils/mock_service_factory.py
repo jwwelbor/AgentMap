@@ -13,7 +13,7 @@ Pattern established by ExecutionTrackingService test refactoring:
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 
 class MockServiceFactory:
@@ -1107,9 +1107,15 @@ class MockServiceFactory:
         mock_service = Mock()
 
         # Configure basic LLM methods
-        mock_service.ask.return_value = "Mock LLM response"
-        mock_service.get_model_name.return_value = "mock-model"
-        mock_service.is_available.return_value = True
+        mock_service.generate = Mock(return_value="Mock LLM response")
+        mock_service.ask = Mock(return_value="Mock LLM response")
+        mock_service.ask_vision = Mock(return_value="Mock LLM response")
+        mock_service.call_llm.return_value = "Mock LLM response"
+        mock_service.call_llm_async = AsyncMock(return_value="Mock LLM response")
+        mock_service.ask_async = AsyncMock(return_value="Mock LLM response")
+        mock_service.call_llm_many_async = AsyncMock(return_value=[])
+        mock_service.get_model_name = Mock(return_value="mock-model")
+        mock_service.is_available = Mock(return_value=True)
 
         return mock_service
 
