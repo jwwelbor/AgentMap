@@ -425,6 +425,212 @@ CodeBot,Review,Review code,llm,Done,Error,code,feedback,You are a code reviewer,
 
 ---
 
+## Async Fan-Out (`call_llm_many_async`)
+
+`call_llm_many_async()` submits many LLM call specs in a single async call and returns one terminal result record per submitted spec. It reuses the existing async realtime path — routing, retries, timeouts, fallback, circuit-breaker, and E05-F01 cache-aware request support all apply per item.
+
+Fan-out is additive. The synchronous `call_llm() -> str` and the high-level `ask()`, `ask_async()`, `ask_vision()` interfaces are unchanged. The internal `call_llm_async()` method now returns `LLMResponse` (carrying resolved provider, model, and usage) rather than a plain `str`; the public `ask_async()` method continues to return `str` by extracting `.text` from the response.
+
+### Request shape
+
+```python
+from agentmap.models.llm_execution import LLMCallSpec, LLMCallResult, LLMUsage
+
+specs = [
+    # Direct provider item
+    LLMCallSpec(
+        spec_id="item-1",
+        messages=[{"role": "user", "content": "Translate to French: Hello"}],
+        provider="openai",
+        model="gpt-4o-mini",
+        temperature=0.3,
+    ),
+    # Routed item — routing selects provider and model
+    LLMCallSpec(
+        spec_id="item-2",
+        messages=[{"role": "user", "content": "Summarize this report."}],
+        routing_context={"task_type": "summarization"},
+    ),
+    # Cache-aware item (E05-F01 compatible)
+    LLMCallSpec(
+        spec_id="item-3",
+        messages=[
+            {"role": "system", "content": [{"type": "text", "text": "You are helpful."}]},
+            {"role": "user", "content": "What is 2+2?"},
+        ],
+        provider="anthropic",
+        request_options={"requires_prompt_caching": True, "cache_mode": "ephemeral"},
+    ),
+]
+
+results: list[LLMCallResult] = await llm_service.call_llm_many_async(
+    call_specs=specs,
+    max_concurrency=4,
+)
+```
+
+**`LLMCallSpec` fields**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `spec_id` | `str` | Yes | Unique identifier for this item within the submission. Must be unique across all items in a single call. |
+| `messages` | `List[Dict]` | Yes | Messages list in the same shape as `call_llm()`. Supports both plain string content and structured content blocks (E05-F01). |
+| `provider` | `Optional[str]` | No | Target provider for direct execution. Ignored when `routing_context` is provided. |
+| `model` | `Optional[str]` | No | Model override. Ignored when `routing_context` is provided. |
+| `temperature` | `Optional[float]` | No | Temperature override for this item. |
+| `routing_context` | `Optional[Dict]` | No | Routing context. When present, routing selects provider and model — same semantics as `call_llm()`. |
+| `request_options` | `Dict[str, Any]` | No | Additional keyword arguments forwarded to `call_llm_async()` unchanged. Use for cache-aware fields such as `requires_prompt_caching` and `cache_mode`. |
+
+### `spec_id` uniqueness rule
+
+Each `spec_id` must be unique within one `call_llm_many_async()` submission. Duplicate `spec_id` values cause the entire submission to fail before any provider call begins.
+
+### Concurrency limit (`max_concurrency`)
+
+`max_concurrency` caps the number of in-flight provider calls at any time. Must be an integer >= 1.
+
+- `max_concurrency=1` — fully sequential; no two items execute at the same time.
+- `max_concurrency=N` — up to N items execute concurrently.
+- The fan-out enforces this cap via `asyncio.Semaphore`; no item bypasses it.
+
+### Result shape
+
+`call_llm_many_async()` returns a `List[LLMCallResult]` with the same length and positional order as `call_specs`. Order is stable even when provider responses arrive out of order.
+
+```python
+for result in results:
+    if result.status == "succeeded":
+        print(f"{result.spec_id}: {result.content}")
+        if result.usage:
+            print(f"  tokens: {result.usage.input_tokens} in / {result.usage.output_tokens} out")
+            if result.usage.cache_read_input_tokens:
+                print(f"  cache read: {result.usage.cache_read_input_tokens} tokens")
+    else:
+        print(f"{result.spec_id} failed: {result.error.message} ({result.error.error_type})")
+```
+
+**`LLMCallResult` fields**
+
+| Field | Type | Description |
+|---|---|---|
+| `spec_id` | `str` | The `spec_id` from the originating `LLMCallSpec`. Always present, including on failure. |
+| `status` | `str` | `"succeeded"` or `"failed"`. |
+| `provider` | `Optional[str]` | The provider that **actually handled** this item (after routing or fallback tier selection). `None` only when a routing failure occurred before provider resolution. |
+| `model` | `Optional[str]` | The model that **actually handled** this item (after routing or fallback tier selection). `None` only when a routing failure occurred before model resolution. |
+| `content` | `Optional[str]` | Response text. Present only on success. |
+| `usage` | `Optional[LLMUsage]` | Normalized usage envelope. Present when the provider returned usage metadata. This includes routed and fallback items — the resolved provider's raw response is used to extract usage, so cache-aware fields such as `cache_read_input_tokens` are available on routed cache-aware requests. |
+| `error` | `Optional[LLMExecutionError]` | Structured error payload. Present only on failure. |
+
+**`LLMUsage` fields** (all `Optional[int]`)
+
+| Field | Description |
+|---|---|
+| `input_tokens` | Prompt tokens consumed. |
+| `output_tokens` | Completion tokens generated. |
+| `cache_creation_input_tokens` | Tokens written to the prompt cache (Anthropic cache-aware requests). |
+| `cache_read_input_tokens` | Tokens served from the prompt cache (Anthropic cache-aware requests). |
+
+Absent fields remain `None` rather than being filled with a default value.
+
+**`LLMExecutionError` fields**
+
+| Field | Type | Description |
+|---|---|---|
+| `error_type` | `str` | Exception class name (e.g. `"LLMTimeoutError"`, `"RuntimeError"`). |
+| `message` | `str` | Human-readable error message. |
+| `retryable` | `bool` | Whether the error class is retryable per the resilience configuration. |
+
+### Partial-failure semantics
+
+A single failing item does not cancel, abort, or modify sibling items. Each item is independent:
+
+- Pre-execution validation failures (empty submission, duplicate `spec_id`, invalid `max_concurrency`) raise `LLMServiceError` before any provider call begins.
+- Once execution starts, per-item errors are captured as `LLMCallResult` records with `status="failed"`. The submission-level `call_llm_many_async()` call does not re-raise item exceptions.
+- Sibling items continue to completion regardless of another item's failure.
+
+**Failure-path resolved identity**
+
+When a fan-out item fails *after* routing or fallback selected a concrete provider and model, the failure record carries that resolved identity:
+
+```python
+# Spec requests no specific provider — routing selects anthropic:claude-haiku.
+# The call then times out. The failure record still names the provider tried.
+spec = LLMCallSpec(
+    spec_id="routed-item",
+    messages=[{"role": "user", "content": "hello"}],
+    provider=None,  # routing chooses the provider
+    routing_context={"routing_enabled": True},
+)
+results = await llm_service.call_llm_many_async([spec], max_concurrency=1)
+r = results[0]
+assert r.status == "failed"
+assert r.provider == "anthropic"    # resolved before the failure
+assert r.model == "claude-haiku"    # resolved before the failure
+assert r.error.error_type == "LLMTimeoutError"
+```
+
+When failure occurs before any provider was selected (e.g., the routing service itself raises), `result.provider` and `result.model` remain `None` — they are never fabricated.
+
+This behaviour is implemented via the `LLMResolvedCallError` exception (subclass of `LLMServiceError`). The fan-out layer catches it and extracts the resolved identity. Single-call callers using `call_llm_async()` directly receive `LLMResolvedCallError` propagated unchanged; existing `except LLMServiceError` handlers continue to match.
+
+**`LLMResolvedCallError` attributes**
+
+| Attribute | Type | Description |
+|---|---|---|
+| `resolved_provider` | `Optional[str]` | The concrete provider that was attempted before the failure. |
+| `resolved_model` | `Optional[str]` | The concrete model that was attempted before the failure. |
+| `cause` | `BaseException` | The underlying typed exception (e.g. `LLMProviderError`, `LLMTimeoutError`) that triggered the failure. |
+
+```python
+specs = [
+    LLMCallSpec(spec_id="ok", messages=[...], provider="openai"),
+    LLMCallSpec(spec_id="bad-cache", messages=[...], provider="openai",
+                request_options={"requires_prompt_caching": True}),
+]
+results = await llm_service.call_llm_many_async(specs, max_concurrency=2)
+# results[0].status == "succeeded"
+# results[1].status == "failed"  — unsupported cache mode on this provider
+```
+
+### Cache-aware requests (E05-F01 compatibility)
+
+Fan-out items fully support E05-F01 structured message content and cache-aware request options. Pass structured blocks and caching metadata through `request_options` — the fan-out layer forwards them unchanged to `call_llm_async()`:
+
+```python
+LLMCallSpec(
+    spec_id="cached-system",
+    messages=[
+        {
+            "role": "system",
+            "content": [
+                {"type": "text", "text": "Long system prompt...", "cache_control": {"type": "ephemeral"}}
+            ],
+        },
+        {"role": "user", "content": "Question here"},
+    ],
+    provider="anthropic",
+    request_options={"requires_prompt_caching": True},
+)
+```
+
+When a cache-aware item succeeds, the resolved provider and cache usage are both visible on the result — even when routing selected a different model than the spec's nominal provider:
+
+```python
+result = results[0]  # spec_id="cached-system"
+assert result.status == "succeeded"
+assert result.provider == "anthropic"           # resolved provider (after any routing)
+assert result.model == "claude-3-haiku"         # resolved model (after any routing)
+assert result.usage.cache_creation_input_tokens == 1024  # tokens written to cache
+assert result.usage.cache_read_input_tokens == 0         # first request — nothing cached yet
+# On a subsequent identical request:
+# result.usage.cache_read_input_tokens == 1024  # served from cache
+# result.usage.cache_creation_input_tokens == 0
+```
+
+An unsupported cache mode (e.g. requesting prompt caching from a provider that does not support it) fails the item with the same `LLMServiceError` family as the single-call path, without affecting sibling items.
+
+---
+
 ## External Usage
 
 ```python

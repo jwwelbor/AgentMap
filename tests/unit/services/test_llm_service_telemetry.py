@@ -8,8 +8,9 @@ Also covers T-E02-F03-003: Routing Decision Attribute Recording.
 Test cases TC-230 through TC-235.
 """
 
+import asyncio
 from contextlib import contextmanager
-from unittest.mock import MagicMock, create_autospec, patch
+from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
 
 import pytest
 
@@ -134,6 +135,44 @@ class TestTC220SpanCreation:
             model="claude-3-sonnet",
         )
 
+        mock_telemetry.start_span.assert_called_once()
+        call_args = mock_telemetry.start_span.call_args
+        assert call_args[0][0] == LLM_CALL_SPAN
+
+    def test_call_llm_async_creates_gen_ai_chat_span(self):
+        """Async path should reuse the same span name as sync."""
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        svc = _make_llm_service(telemetry_service=mock_telemetry)
+
+        mock_response = MagicMock()
+        mock_response.content = "Hello async!"
+        mock_response.response_metadata = {}
+        del mock_response.usage_metadata
+
+        mock_client = MagicMock()
+        mock_client.ainvoke = AsyncMock(return_value=mock_response)
+
+        svc._provider_utils = MagicMock()
+        svc._provider_utils.normalize_provider.return_value = "anthropic"
+        svc._provider_utils.get_provider_config.return_value = {
+            "model": "claude-3-sonnet",
+            "api_key": "test-key",
+        }
+        svc._client_factory = MagicMock()
+        svc._client_factory.get_or_create_client.return_value = mock_client
+        svc._message_utils = MagicMock()
+        svc._message_utils.convert_messages_to_langchain.return_value = []
+        svc._message_utils.extract_prompt_from_messages.return_value = "hello"
+
+        result = asyncio.run(
+            svc.call_llm_async(
+                messages=[{"role": "user", "content": "hello"}],
+                provider="anthropic",
+                model="claude-3-sonnet",
+            )
+        )
+
+        assert result.text == "Hello async!"
         mock_telemetry.start_span.assert_called_once()
         call_args = mock_telemetry.start_span.call_args
         assert call_args[0][0] == LLM_CALL_SPAN

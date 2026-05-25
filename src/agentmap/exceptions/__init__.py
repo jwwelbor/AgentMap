@@ -31,6 +31,7 @@ from agentmap.exceptions.service_exceptions import (
     LLMDependencyError,
     LLMProviderError,
     LLMRateLimitError,
+    LLMResolvedCallError,
     LLMServiceError,
     LLMTimeoutError,
 )
@@ -74,6 +75,7 @@ __all__ = [
     "LLMDependencyError",
     "LLMTimeoutError",
     "LLMRateLimitError",
+    "LLMResolvedCallError",
     "StorageAuthenticationError",
     "StorageConnectionError",
     "StorageConfigurationError",
