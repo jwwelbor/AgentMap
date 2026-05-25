@@ -359,6 +359,9 @@ class LLMFallbackHandler:
                 attempted_fallbacks.append(f"{original_provider}:{fallback_model}")
 
                 config = get_provider_config_fn(original_provider)
+                config = dict(
+                    config
+                )  # defensive copy — avoid mutating shared provider config
                 config["model"] = fallback_model
                 client = get_or_create_client_fn(original_provider, config)
                 langchain_msgs = convert_messages_fn(messages)
@@ -396,6 +399,9 @@ class LLMFallbackHandler:
                 attempted_fallbacks.append(f"{original_provider}:{fallback_model}")
 
                 config = get_provider_config_fn(original_provider)
+                config = dict(
+                    config
+                )  # defensive copy — avoid mutating shared provider config
                 config["model"] = fallback_model
                 client = get_or_create_client_fn(original_provider, config)
                 langchain_msgs = convert_messages_fn(messages)
@@ -450,6 +456,9 @@ class LLMFallbackHandler:
                 attempted_fallbacks.append(f"{fallback_provider}:{fallback_model}")
 
                 config = get_provider_config_fn(fallback_provider)
+                config = dict(
+                    config
+                )  # defensive copy — avoid mutating shared provider config
                 config["model"] = fallback_model
                 client = get_or_create_client_fn(fallback_provider, config)
                 langchain_msgs = convert_messages_fn(messages)
@@ -486,6 +495,9 @@ class LLMFallbackHandler:
                 attempted_fallbacks.append(f"{fallback_provider}:{fallback_model}")
 
                 config = get_provider_config_fn(fallback_provider)
+                config = dict(
+                    config
+                )  # defensive copy — avoid mutating shared provider config
                 config["model"] = fallback_model
                 client = get_or_create_client_fn(fallback_provider, config)
                 langchain_msgs = convert_messages_fn(messages)
@@ -547,6 +559,9 @@ class LLMFallbackHandler:
                     attempted_fallbacks.append(f"{provider}:{fallback_model}")
 
                     config = get_provider_config_fn(provider)
+                    config = dict(
+                        config
+                    )  # defensive copy — avoid mutating shared provider config
                     config["model"] = fallback_model
                     client = get_or_create_client_fn(provider, config)
                     langchain_msgs = convert_messages_fn(messages)
@@ -589,6 +604,9 @@ class LLMFallbackHandler:
                     attempted_fallbacks.append(f"{provider}:{fallback_model}")
 
                     config = get_provider_config_fn(provider)
+                    config = dict(
+                        config
+                    )  # defensive copy — avoid mutating shared provider config
                     config["model"] = fallback_model
                     client = get_or_create_client_fn(provider, config)
                     langchain_msgs = convert_messages_fn(messages)

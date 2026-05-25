@@ -15,6 +15,18 @@ class CircuitBreaker:
 
     Tracks at most ``_MAX_TRACKED_KEYS`` distinct provider:model
     combinations to prevent memory exhaustion from arbitrary inputs.
+
+    Concurrency note: ``self.failures`` and ``self.opened_at`` are plain dicts
+    mutated without a lock.  Under async fan-out concurrency, concurrent
+    coroutines recording failures for the same key can race, producing
+    approximate (best-effort) trip counts — e.g., the circuit may open one
+    increment late if two coroutines read the count before either writes it
+    back.  This behaviour is intentional and acceptable: the circuit breaker
+    is a best-effort guard, not a hard correctness boundary.  The race window
+    is small (dict read + increment + write), the consequence is at most one
+    extra allowed call, and adding a lock would require making ``is_open``,
+    ``record_failure``, and ``record_success`` all async, rippling through the
+    entire resilience stack.
     """
 
     def __init__(self, failures_threshold: int = 3, reset_seconds: int = 60):
