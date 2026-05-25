@@ -188,3 +188,29 @@ When a field references a state key that does not exist, the value resolves to `
 ### Underflow (Fewer Fields Than expected_params)
 
 If there are fewer input fields than `expected_params` entries, only the available fields are mapped positionally. No error is raised for unmatched `expected_params` entries.
+
+## Agent-Specific Mapping (GraphAgent)
+
+The **GraphAgent** (type `graph`) supports an additional mapping syntax using the `=` character.
+
+### Input Mapping: `sub_field=parent_field`
+
+GraphAgent supports mapping parent state fields to different names in the subgraph's initial state:
+
+```csv
+# Maps parent 'raw_data' to subgraph 'text'
+Input_Fields: text=raw_data
+```
+
+**Note:** This syntax uses `target=source` order, which is the **opposite** of the standard `source:target` syntax used by the rest of the framework. We recommend using the standard colon syntax (`raw_data:text`) where possible for consistency.
+
+### Output Mapping: `parent_field=sub_field`
+
+GraphAgent also supports remapping keys when returning from a subgraph:
+
+```csv
+# Maps subgraph 'result' to parent 'analysis_output'
+Output_Field: analysis_output=result
+```
+
+Standard agents do not support remapping during output; they only support saving to a single field or multiple pipe-delimited fields.

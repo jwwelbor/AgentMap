@@ -165,9 +165,10 @@ By default the Graph Agent passes all parent state fields into the subgraph. You
 
 | Technique | Input_Fields example | Behavior |
 |-----------|---------------------|----------|
-| Pass all state | *(empty)* | Every field in the current state is forwarded |
+| Pass all state | *(empty)* | **Note:** Currently passes only explicitly listed fields. If empty, an empty state is passed to the subgraph. |
 | Select specific fields | `raw_data\|user_id` | Only listed fields are forwarded |
-| Rename fields | `sub_input=raw_data` | Parent field `raw_data` is passed as `sub_input` |
+| Rename (Standard) | `parent_key:sub_key` | **Recommended:** Maps parent `parent_key` to subgraph `sub_key` (source:target). Handled by core framework. |
+| Rename (Legacy) | `sub_key=parent_key` | Maps parent `parent_key` to subgraph `sub_key` (target=source). Handled by Graph Agent. |
 | Function mapping | `func:mymodule.transform_state` | A Python function transforms the state before forwarding |
 
 Output mapping works similarly via the **Output_Field** column:
@@ -175,7 +176,7 @@ Output mapping works similarly via the **Output_Field** column:
 | Output_Field value | Behavior |
 |-------------------|----------|
 | `result` | The entire subgraph result is stored in `result` |
-| `parent_field=sub_field` | Only `sub_field` from the subgraph result is stored as `parent_field` |
+| `parent_field=sub_field` | **Specific to Graph Agent:** Maps subgraph `sub_field` to parent `parent_field` (target=source) |
 
 ### Full Example
 
