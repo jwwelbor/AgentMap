@@ -465,7 +465,11 @@ class LLMService:
                     "routing_context['fallback_provider'] to set the fallback."
                 )
             return self._call_llm_with_routing(
-                messages, routing_context, temperature=temperature, model=model, **kwargs
+                messages,
+                routing_context,
+                temperature=temperature,
+                model=model,
+                **kwargs,
             )
         if not provider:
             raise LLMServiceError(
@@ -509,7 +513,11 @@ class LLMService:
                     "routing_context['fallback_provider'] to set the fallback."
                 )
             return await self._call_llm_async_with_routing(
-                messages, routing_context, temperature=temperature, model=model, **kwargs
+                messages,
+                routing_context,
+                temperature=temperature,
+                model=model,
+                **kwargs,
             )
         if not provider:
             raise LLMServiceError(

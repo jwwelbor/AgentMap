@@ -378,7 +378,9 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
             side_effect=RuntimeError("Connection timeout")
         )
         fallback_client = Mock()
-        fallback_client.ainvoke = None  # Sync-only fallback — forces the to_thread path.
+        fallback_client.ainvoke = (
+            None  # Sync-only fallback — forces the to_thread path.
+        )
         fallback_client.invoke.return_value = Mock(content="fallback response")
 
         def fake_get_client(provider, config):
