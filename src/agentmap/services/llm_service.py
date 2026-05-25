@@ -1437,7 +1437,7 @@ class LLMService:
             if spec.request_options:
                 collision = _RESERVED_KEYS & spec.request_options.keys()
                 if collision:
-                    raise ValueError(
+                    raise LLMServiceError(
                         f"spec_id={spec.spec_id!r}: request_options contains reserved "
                         f"keys that collide with call_llm_async parameters: {collision}"
                     )
