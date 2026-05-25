@@ -25,6 +25,7 @@ from agentmap.models.llm_execution import (
     LLMCallResult,
     LLMCallSpec,
     LLMExecutionError,
+    LLMMessage,
     LLMResponse,
     LLMUsage,
 )
@@ -239,7 +240,7 @@ class LLMService:
 
     def call_llm(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         provider: Optional[str] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
@@ -281,7 +282,7 @@ class LLMService:
 
     async def call_llm_async(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         provider: Optional[str] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,

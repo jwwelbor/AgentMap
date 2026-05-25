@@ -27,7 +27,7 @@ class LLMFallbackHandler:
         routing_config: Optional[LLMRoutingConfigService] = None,
         features_registry: Optional[FeaturesRegistryService] = None,
         invoke_fn: Optional[Callable[..., str]] = None,
-        invoke_async_fn: Optional[Callable[..., Awaitable[str]]] = None,
+        invoke_async_fn: Optional[Callable[..., Awaitable[LLMResponse]]] = None,
     ):
         """
         Initialize fallback handler.
