@@ -364,7 +364,17 @@ class LLMRoutingService:
         if ctx.requires_vision and _NON_VISION_MODELS:
             ordered = [c for c in ordered if c.get("model") not in _NON_VISION_MODELS]
 
-        # 4) Apply provider preference ordering when supplied
+        # 4) Restrict providers to prompt-cache-capable entries when requested
+        if ctx.requires_prompt_caching:
+            ordered = [
+                candidate
+                for candidate in ordered
+                if self.routing_config.supports_prompt_caching(
+                    candidate["provider"].lower()
+                )
+            ]
+
+        # 5) Apply provider preference ordering when supplied
         if ctx.provider_preference:
             preference_index = {
                 p.lower(): i for i, p in enumerate(ctx.provider_preference)

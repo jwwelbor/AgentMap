@@ -5,7 +5,7 @@ Async contract tests for LLM service protocols and test doubles.
 import unittest
 from unittest.mock import AsyncMock, Mock, create_autospec, patch
 
-from agentmap.exceptions import LLMConfigurationError, LLMTimeoutError
+from agentmap.exceptions import LLMConfigurationError, LLMServiceError, LLMTimeoutError
 from agentmap.exceptions.service_exceptions import LLMResolvedCallError
 from agentmap.models.llm_execution import LLMResponse
 from agentmap.services.llm_service import LLMService
@@ -92,12 +92,15 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
             MockServiceFactory.create_mock_llm_models_config_service()
         )
         self.mock_routing_service = Mock()
+        self.mock_routing_config_service = Mock()
+        self.mock_routing_config_service.supports_prompt_caching.return_value = False
 
         self.service = LLMService(
             configuration=self.mock_app_config_service,
             logging_service=self.mock_logging_service,
             routing_service=self.mock_routing_service,
             llm_models_config_service=self.mock_llm_models_config_service,
+            routing_config_service=self.mock_routing_config_service,
         )
 
     async def test_call_llm_async_uses_native_async_provider_surface(self):
@@ -132,6 +135,72 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.resolved_provider, "openai")
         mock_client.ainvoke.assert_awaited_once_with(langchain_messages)
         mock_client.invoke.assert_not_called()
+
+    async def test_call_llm_async_preserves_cache_marked_structured_blocks(self):
+        """Async provider invocation preserves structured cache blocks unchanged."""
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "prefix",
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                    {"type": "text", "text": "question"},
+                ],
+            }
+        ]
+        self.mock_routing_config_service.supports_prompt_caching.side_effect = (
+            lambda provider: provider.lower() == "anthropic"
+        )
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="async cached"))
+
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = await self.service.call_llm_async(
+                messages=messages,
+                provider="anthropic",
+            )
+
+        self.assertEqual(result.text, "async cached")
+        langchain_messages = mock_client.ainvoke.call_args.args[0]
+        self.assertEqual(langchain_messages[0].content, messages[0]["content"])
+
+    async def test_call_llm_async_rejects_prompt_caching_for_unsupported_provider(
+        self,
+    ):
+        """Unsupported async providers fail before client creation."""
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "prefix",
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            }
+        ]
+
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+        ) as mock_get_client:
+            with self.assertRaises(LLMServiceError) as ctx:
+                await self.service.call_llm_async(
+                    messages=messages,
+                    provider="google",
+                )
+
+        self.assertIn("prompt caching", str(ctx.exception).lower())
+        self.assertIn("google", str(ctx.exception).lower())
+        mock_get_client.assert_not_called()
 
     async def test_call_llm_async_offloads_sync_only_client_to_worker_thread(self):
         """Sync-only clients should be invoked through the thread-offload seam."""

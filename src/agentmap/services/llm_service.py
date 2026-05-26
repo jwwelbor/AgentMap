@@ -293,6 +293,47 @@ class LLMService:
         """Backwards compatibility wrapper for extract_prompt_from_messages."""
         return self._message_utils.extract_prompt_from_messages(messages)
 
+    def _is_prompt_caching_requested(
+        self,
+        messages: List[Dict[str, Any]],
+        routing_context: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Return True when caller input requests prompt caching."""
+        if routing_context and routing_context.get("requires_prompt_caching", False):
+            return True
+        return LLMMessageUtils.has_prompt_caching(messages)
+
+    def _validate_prompt_caching_support(
+        self,
+        provider: Optional[str],
+        messages: List[Dict[str, Any]],
+        routing_context: Optional[Dict[str, Any]] = None,
+        *,
+        execution_path: str,
+    ) -> None:
+        """Fail fast when prompt caching is requested on an unsupported path."""
+        if not self._is_prompt_caching_requested(messages, routing_context):
+            return
+
+        if execution_path == "ask_vision":
+            raise LLMServiceError(
+                "Prompt caching is not supported on execution path 'ask_vision'."
+            )
+
+        normalized_provider = (
+            self._provider_utils.normalize_provider(provider) if provider else None
+        )
+        if (
+            normalized_provider is None
+            or self.routing_config is None
+            or not self.routing_config.supports_prompt_caching(normalized_provider)
+        ):
+            provider_name = normalized_provider or "unknown"
+            raise LLMServiceError(
+                "Prompt caching is not supported for provider "
+                f"'{provider_name}' on execution path '{execution_path}'."
+            )
+
     def call_llm(
         self,
         messages: List[LLMMessage],
@@ -637,6 +678,20 @@ class LLMService:
                 routing_context=context,
             )
 
+            self._validate_prompt_caching_support(
+                decision.provider,
+                messages,
+                routing_context,
+                execution_path="call_llm_async",
+            )
+
+            self._validate_prompt_caching_support(
+                decision.provider,
+                messages,
+                routing_context,
+                execution_path="call_llm",
+            )
+
             self._logger.info(
                 f"Routing decision: {decision.provider}:{decision.model} "
                 f"(complexity: {decision.complexity}, "
@@ -737,6 +792,11 @@ class LLMService:
         try:
             # Normalize provider name
             provider = self._provider_utils.normalize_provider(provider)
+            self._validate_prompt_caching_support(
+                provider,
+                messages,
+                execution_path="call_llm",
+            )
 
             # Get provider configuration
             config = self._provider_utils.get_provider_config(provider)
@@ -910,6 +970,11 @@ class LLMService:
         current_model = None
         try:
             provider = self._provider_utils.normalize_provider(provider)
+            self._validate_prompt_caching_support(
+                provider,
+                messages,
+                execution_path="call_llm_async",
+            )
             config = self._provider_utils.get_provider_config(provider)
 
             max_tokens = kwargs.pop("max_tokens", None)
@@ -1272,6 +1337,10 @@ class LLMService:
                 "retry_with_lower_complexity", True
             ),
             max_tokens=routing_context.get("max_tokens"),
+            requires_prompt_caching=(
+                routing_context.get("requires_prompt_caching", False)
+                or LLMMessageUtils.has_prompt_caching(messages)
+            ),
             requires_vision=routing_context.get("requires_vision", False),
         )
 
@@ -1409,6 +1478,13 @@ class LLMService:
         if routing_context is not None:
             routing_context = dict(routing_context)  # copy to avoid mutation
             routing_context["requires_vision"] = True
+
+        self._validate_prompt_caching_support(
+            provider,
+            [],
+            routing_context,
+            execution_path="ask_vision",
+        )
 
         # Default provider when routing is not active (mirrors ask() behavior)
         if provider is None and routing_context is None:

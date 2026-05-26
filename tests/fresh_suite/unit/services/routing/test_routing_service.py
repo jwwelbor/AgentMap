@@ -34,6 +34,7 @@ class TestLLMRoutingService(unittest.TestCase):
             "openai",
             "anthropic",
         ]
+        self.mock_routing_config.supports_prompt_caching.return_value = False
         self.mock_routing_config.is_cost_optimization_enabled.return_value = True
         self.mock_routing_config.get_max_cost_tier.return_value = "high"
         self.mock_routing_config.get_fallback_provider.return_value = "anthropic"
@@ -354,6 +355,58 @@ class TestLLMRoutingService(unittest.TestCase):
         self.assertTrue(result.fallback_used)
         self.assertLess(result.confidence, 0.5)  # Low confidence
         self.assertIn("Analysis failed", result.reasoning)
+
+    def test_select_candidates_filters_non_cache_providers(self):
+        """Cache-aware routing excludes providers without prompt-caching support."""
+        self.mock_routing_config.get_model_for_complexity.side_effect = (
+            lambda provider, complexity: {
+                "openai": "gpt-4",
+                "anthropic": "claude-3-7-sonnet-20250219",
+            }.get(provider)
+        )
+        self.mock_routing_config.supports_prompt_caching.side_effect = (
+            lambda provider: provider.lower() == "anthropic"
+        )
+
+        candidates = self.service.select_candidates(
+            RoutingContext(requires_prompt_caching=True, complexity_override="medium"),
+            available_providers=["openai", "anthropic"],
+            complexity=TaskComplexity.MEDIUM,
+        )
+
+        self.assertEqual(
+            candidates,
+            [{"provider": "anthropic", "model": "claude-3-7-sonnet-20250219"}],
+        )
+
+    def test_select_candidates_preserves_existing_behavior_without_cache_requirement(
+        self,
+    ):
+        """Non-cache callers keep the prior candidate set."""
+        self.mock_routing_config.get_model_for_complexity.side_effect = (
+            lambda provider, complexity: {
+                "openai": "gpt-4",
+                "anthropic": "claude-3-7-sonnet-20250219",
+            }.get(provider)
+        )
+
+        candidates = self.service.select_candidates(
+            RoutingContext(complexity_override="medium"),
+            available_providers=["openai", "anthropic"],
+            complexity=TaskComplexity.MEDIUM,
+        )
+
+        self.assertEqual(
+            candidates,
+            [
+                {"provider": "openai", "model": "gpt-4"},
+                {
+                    "provider": "anthropic",
+                    "model": "claude-3-7-sonnet-20250219",
+                },
+            ],
+        )
+        self.mock_routing_config.supports_prompt_caching.assert_not_called()
 
     # =============================================================================
     # 3. Complexity Determination Tests

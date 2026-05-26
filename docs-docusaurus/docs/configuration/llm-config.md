@@ -126,6 +126,27 @@ The matrix serves two purposes:
 1. **Routing**: When using `routing_context` in `call_llm()`, the router picks the model matching the detected complexity
 2. **Fallback**: When a call fails, the fallback system uses the matrix to find a lower-complexity model to try
 
+### Optional provider capability metadata
+
+Prompt caching is provider-gated and realtime-only in this feature slice. Declare support under `routing.provider_capabilities`:
+
+```yaml
+routing:
+  provider_capabilities:
+    anthropic:
+      prompt_caching: true
+    openai:
+      prompt_caching: false
+    google:
+      prompt_caching: false
+```
+
+- Omit `provider_capabilities` entirely if you do not need prompt caching
+- `prompt_caching: true` means the provider may be selected for cache-aware realtime text requests
+- `prompt_caching: false` means direct cache-mode requests fail before provider invocation, and routed cache-mode requests exclude that provider
+- Current support is limited to realtime text calls: `call_llm()`, `call_llm_async()`, `ask()`, `ask_async()`
+- `ask_vision()` is explicitly unsupported for prompt caching
+
 ### Fallback behavior
 
 When a call fails after all retries are exhausted, the fallback system tries these tiers in order:
@@ -216,6 +237,30 @@ response = llm_service.call_llm(
 )
 # → detects "debug" keyword → medium complexity
 # → prefers anthropic → picks claude-sonnet-4-6 from routing_matrix
+```
+
+Cache-aware routed example:
+
+```python
+response = llm_service.call_llm(
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Long reusable context",
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {"type": "text", "text": "Summarize this change."},
+            ],
+        }
+    ],
+    routing_context={
+        "task_type": "general",
+        "requires_prompt_caching": True,
+    },
+)
 ```
 
 ```csv

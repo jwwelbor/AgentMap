@@ -146,6 +146,17 @@ routing:
       high: "gemini-2.5-pro"                  # High capability (1M context)
       critical: "gemini-2.5-pro"              # Maximum capability (1M context)
 
+  # Optional provider capability metadata for cache-aware routing.
+  # Prompt caching is currently realtime-only and provider-gated.
+  # ask_vision is not supported for prompt caching in this feature slice.
+  provider_capabilities:
+    anthropic:
+      prompt_caching: true
+    openai:
+      prompt_caching: false
+    google:
+      prompt_caching: false
+
   # Complexity Analysis Configuration
   complexity_analysis:
     # Prompt length thresholds (characters)
@@ -560,4 +571,3 @@ messaging:
     #   workflow: "$workflow"
     #   approval_data: "$inputs"
     #   correlation_id: "$context.correlation_id"
-

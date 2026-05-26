@@ -14,6 +14,7 @@ def validate_routing_config(
     routing_matrix: Dict[str, Dict[str, str]],
     task_types: Dict[str, Dict[str, Any]],
     complexity_analysis: Dict[str, Any],
+    provider_capabilities: Dict[str, Any] = None,
 ) -> List[str]:
     """
     Validate the complete routing configuration.
@@ -73,6 +74,35 @@ def validate_routing_config(
             for threshold in required_thresholds:
                 if threshold not in thresholds:
                     errors.append(f"Missing prompt length threshold for '{threshold}'")
+
+    if provider_capabilities is None:
+        provider_capabilities = {}
+
+    if provider_capabilities and not isinstance(provider_capabilities, dict):
+        errors.append("provider_capabilities must be a dictionary")
+        return errors
+
+    for provider, capability_config in provider_capabilities.items():
+        provider_name = provider.lower()
+        if provider_name not in routing_matrix:
+            errors.append(
+                f"provider_capabilities references unknown provider '{provider}'"
+            )
+            continue
+
+        if not isinstance(capability_config, dict):
+            errors.append(
+                f"provider_capabilities.{provider}: must be a dictionary"
+            )
+            continue
+
+        if "prompt_caching" in capability_config and not isinstance(
+            capability_config["prompt_caching"], bool
+        ):
+            errors.append(
+                "provider_capabilities."
+                f"{provider}.prompt_caching must be a boolean"
+            )
 
     return errors
 

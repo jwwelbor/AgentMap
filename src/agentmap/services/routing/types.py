@@ -113,6 +113,7 @@ class RoutingContext:
     max_tokens: Optional[int] = None
 
     # Vision / multimodal support
+    requires_prompt_caching: bool = False
     requires_vision: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
@@ -138,6 +139,7 @@ class RoutingContext:
             "fallback_model": self.fallback_model,
             "retry_with_lower_complexity": self.retry_with_lower_complexity,
             "max_tokens": self.max_tokens,
+            "requires_prompt_caching": self.requires_prompt_caching,
             "requires_vision": self.requires_vision,
         }
 
@@ -165,6 +167,7 @@ class RoutingContext:
             fallback_model=data.get("fallback_model"),
             retry_with_lower_complexity=data.get("retry_with_lower_complexity", True),
             max_tokens=data.get("max_tokens"),
+            requires_prompt_caching=data.get("requires_prompt_caching", False),
             requires_vision=data.get("requires_vision", False),
         )
 
