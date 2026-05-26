@@ -317,12 +317,13 @@ class TestLLMServiceEnhanced(unittest.TestCase):
             # Verify routing was used
             self.mock_routing_service.route_request.assert_called_once()
 
-            # Verify routed provider was used
+            # Verify routed provider was used, with routing_context forwarded
             mock_direct.assert_called_once_with(
                 provider="anthropic",  # From routing decision
                 messages=[{"role": "user", "content": "Analyze this data"}],
                 model="claude-opus-4-6",  # From routing decision
                 temperature=None,
+                routing_context=routing_context,
             )
 
             self.assertEqual(result, "Routed high-quality response")
@@ -345,12 +346,13 @@ class TestLLMServiceEnhanced(unittest.TestCase):
                 routing_context=routing_context,
             )
 
-            # Should fall back to configured fallback provider
+            # Should fall back to configured fallback provider, with routing_context forwarded
             mock_direct.assert_called_with(
                 provider="openai",  # fallback_provider
                 messages=[{"role": "user", "content": "test"}],
                 model=None,
                 temperature=None,
+                routing_context=routing_context,
             )
 
             self.assertEqual(result, "Fallback response")

@@ -205,12 +205,14 @@ class TestLLMService(unittest.TestCase):
             # Verify routing was used
             self.mock_routing_service.route_request.assert_called_once()
 
-            # Verify direct call was made with routed provider and caller's temperature
+            # Verify direct call was made with routed provider, caller's temperature,
+            # and the routing_context forwarded for cache-validation purposes.
             mock_direct_call.assert_called_once_with(
                 provider="anthropic",
                 messages=messages,
                 model="claude-3-7-sonnet-20250219",
                 temperature=0.3,
+                routing_context=routing_context,
             )
 
             self.assertEqual(result, "Routed response")
@@ -298,12 +300,13 @@ class TestLLMService(unittest.TestCase):
                 routing_context=routing_context,
             )
 
-            # Verify fallback preserves caller's model and temperature
+            # Verify fallback preserves caller's model, temperature, and routing_context
             mock_direct_call.assert_called_with(
                 provider="openai",  # fallback_provider
                 messages=messages,
                 model="custom-model",
                 temperature=0.5,
+                routing_context=routing_context,
             )
 
             self.assertEqual(result, "Fallback response")
@@ -681,6 +684,77 @@ class TestLLMService(unittest.TestCase):
             # Verify delegation
             mock_private.assert_called_once()
             self.assertEqual(providers, ["openai", "anthropic"])
+
+
+class TestLLMServiceCachePassthroughRouting(unittest.TestCase):
+    """UAT-02 (sync): routing_context with requires_prompt_caching survives the
+    routing-failure fallback path and triggers cache validation in _call_llm_direct."""
+
+    def setUp(self):
+        self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        self.mock_app_config_service = (
+            MockServiceFactory.create_mock_app_config_service()
+        )
+        self.mock_app_config_service.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {
+                "failure_threshold": 3,
+                "reset_timeout": 60,
+            },
+        }
+        self.mock_app_config_service.get_llm_config.side_effect = lambda provider: {
+            "model": f"{provider}-default-model",
+            "api_key": "test-key",
+            "temperature": 0.7,
+        }
+        self.mock_llm_models_config_service = (
+            MockServiceFactory.create_mock_llm_models_config_service()
+        )
+        self.mock_routing_service = Mock()
+        # routing_config that does NOT support caching for any provider
+        self.mock_routing_config_service = Mock()
+        self.mock_routing_config_service.supports_prompt_caching.return_value = False
+
+        self.service = LLMService(
+            configuration=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            routing_service=self.mock_routing_service,
+            llm_models_config_service=self.mock_llm_models_config_service,
+            routing_config_service=self.mock_routing_config_service,
+        )
+
+    def test_sync_routing_fallback_propagates_requires_prompt_caching_flag(self):
+        """UAT-02 (sync): routing failure fallback passes routing_context to
+        _call_llm_direct so requires_prompt_caching is validated even when
+        messages contain no embedded cache_control blocks."""
+        # Plain-text messages — no cache_control blocks embedded
+        messages = [{"role": "user", "content": "plain text prompt"}]
+
+        # Force routing to fail so the fallback path is exercised
+        self.mock_routing_service.route_request.side_effect = RuntimeError(
+            "routing unavailable"
+        )
+
+        routing_context = {
+            "routing_enabled": True,
+            "requires_prompt_caching": True,
+            "fallback_provider": "openai",
+        }
+
+        # _call_llm_direct should raise LLMServiceError because openai does not
+        # support prompt caching (mock returns False for all providers).
+        with self.assertRaises(LLMServiceError) as ctx:
+            self.service.call_llm(
+                messages=messages,
+                routing_context=routing_context,
+            )
+
+        self.assertIn("prompt caching", str(ctx.exception).lower())
 
 
 if __name__ == "__main__":
