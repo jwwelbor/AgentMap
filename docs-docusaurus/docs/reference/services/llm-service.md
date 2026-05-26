@@ -566,7 +566,7 @@ r = results[0]
 assert r.status == "failed"
 assert r.provider == "anthropic"    # resolved before the failure
 assert r.model == "claude-haiku"    # resolved before the failure
-assert r.error.error_type == "LLMProviderError"
+assert r.error.error_type == "LLMTimeoutError"
 ```
 
 When failure occurs before any provider was selected (e.g., the routing service itself raises), `result.provider` and `result.model` remain `None` — they are never fabricated.
@@ -619,7 +619,7 @@ When a cache-aware item succeeds, the resolved provider and cache usage are both
 result = results[0]  # spec_id="cached-system"
 assert result.status == "succeeded"
 assert result.provider == "anthropic"           # resolved provider (after any routing)
-assert result.model == "claude-haiku-3"         # resolved model (after any routing)
+assert result.model == "claude-3-haiku"         # resolved model (after any routing)
 assert result.usage.cache_creation_input_tokens == 1024  # tokens written to cache
 assert result.usage.cache_read_input_tokens == 0         # first request — nothing cached yet
 # On a subsequent identical request:
