@@ -158,9 +158,7 @@ class LLMFallbackHandler:
                 "llm", configured_fallback_provider
             )
         ):
-            tier2_model = self.get_fallback_model(
-                configured_fallback_provider, "low"
-            )
+            tier2_model = self.get_fallback_model(configured_fallback_provider, "low")
             if tier2_model:
                 _add(configured_fallback_provider, tier2_model)
 
