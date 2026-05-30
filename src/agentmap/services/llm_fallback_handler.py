@@ -27,7 +27,7 @@ class LLMFallbackHandler:
         routing_config: Optional[LLMRoutingConfigService] = None,
         features_registry: Optional[FeaturesRegistryService] = None,
         invoke_fn: Optional[Callable[..., str]] = None,
-        invoke_async_fn: Optional[Callable[..., Awaitable[str]]] = None,
+        invoke_async_fn: Optional[Callable[..., Awaitable[LLMResponse]]] = None,
     ):
         """
         Initialize fallback handler.
@@ -106,6 +106,76 @@ class LLMFallbackHandler:
         provider_matrix = self.routing_config.routing_matrix.get(provider.lower(), {})
         return provider_matrix.get(complexity.lower())
 
+    def _build_tier_plan(
+        self,
+        original_provider: str,
+        original_model: str,
+    ) -> List[tuple]:
+        """Build the ordered list of (provider, model) pairs to attempt as fallbacks.
+
+        Shared by try_with_fallback (sync) and try_with_fallback_async so the
+        tier ordering is defined in one place (DRY — claude.md:101).
+
+        Tier 1: Same provider, low-complexity model (skip if same as original model
+                or provider unavailable).
+        Tier 2: Configured fallback.default_provider (skip if same as original or
+                unavailable).
+        Tier 3: Any remaining available provider not already in the plan.
+
+        Returns:
+            Ordered list of (provider, model) tuples. Entries where no low model
+            is found in the routing matrix are omitted.
+        """
+        plan: List[tuple] = []
+        seen: set = set()
+
+        def _add(provider: str, model: str) -> None:
+            key = (provider, model)
+            if key not in seen:
+                seen.add(key)
+                plan.append(key)
+
+        configured_fallback_provider = (
+            self.routing_config.fallback.get("default_provider")
+            if self.routing_config
+            else None
+        )
+
+        # Tier 1: same provider, low-complexity fallback model
+        if self.features_registry and self.features_registry.is_provider_available(
+            "llm", original_provider
+        ):
+            tier1_model = self.get_fallback_model(original_provider, "low")
+            if tier1_model and tier1_model != original_model:
+                _add(original_provider, tier1_model)
+
+        # Tier 2: configured fallback provider
+        if (
+            configured_fallback_provider
+            and configured_fallback_provider != original_provider
+            and self.features_registry
+            and self.features_registry.is_provider_available(
+                "llm", configured_fallback_provider
+            )
+        ):
+            tier2_model = self.get_fallback_model(configured_fallback_provider, "low")
+            if tier2_model:
+                _add(configured_fallback_provider, tier2_model)
+
+        # Tier 3: emergency — first available provider not already in the plan
+        if self.features_registry:
+            available = self.features_registry.get_available_providers("llm")
+            if not isinstance(available, (list, tuple)):
+                available = []
+            for provider in available:
+                if provider in [original_provider, configured_fallback_provider]:
+                    continue
+                tier3_model = self.get_fallback_model(provider, "low")
+                if tier3_model:
+                    _add(provider, tier3_model)
+
+        return plan
+
     def try_with_fallback(
         self,
         original_provider: str,
@@ -147,63 +217,34 @@ class LLMFallbackHandler:
 
         attempted_fallbacks = []
 
-        # Tier 1: Same provider, low complexity model
-        if self.features_registry and self.features_registry.is_provider_available(
-            "llm", original_provider
+        # Use shared tier plan — keeps sync/async ladders in sync (DRY).
+        for fallback_provider, fallback_model in self._build_tier_plan(
+            original_provider, original_model
         ):
-            result = self._try_tier1_fallback(
-                original_provider,
-                original_model,
-                messages,
-                attempted_fallbacks,
-                get_provider_config_fn,
-                get_or_create_client_fn,
-                convert_messages_fn,
-            )
-            if result:
-                return result
-
-        # Tier 2: Configured fallback provider
-        if self.routing_config:
-            fallback_provider = self.routing_config.fallback.get("default_provider")
-            if (
-                fallback_provider
-                and fallback_provider != original_provider
-                and self.features_registry
-                and self.features_registry.is_provider_available(
-                    "llm", fallback_provider
+            try:
+                self._logger.warning(
+                    f"Fallback tier: trying '{fallback_provider}:{fallback_model}'"
                 )
-            ):
-                result = self._try_tier2_fallback(
-                    fallback_provider,
-                    messages,
-                    attempted_fallbacks,
-                    get_provider_config_fn,
-                    get_or_create_client_fn,
-                    convert_messages_fn,
+                attempted_fallbacks.append(f"{fallback_provider}:{fallback_model}")
+
+                config = get_provider_config_fn(fallback_provider)
+                config = dict(config)  # defensive copy — avoid mutating shared config
+                config["model"] = fallback_model
+                client = get_or_create_client_fn(fallback_provider, config)
+                langchain_msgs = convert_messages_fn(messages)
+                result = self._invoke_client(
+                    client, langchain_msgs, fallback_provider, fallback_model
                 )
-                if result:
-                    return result
-
-        # Tier 3: Emergency fallback - first available provider
-        if self.features_registry:
-            result = self._try_tier3_fallback(
-                original_provider,
-                (
-                    self.routing_config.fallback.get("default_provider")
-                    if self.routing_config
-                    else None
-                ),
-                messages,
-                attempted_fallbacks,
-                get_provider_config_fn,
-                get_or_create_client_fn,
-                convert_messages_fn,
-            )
-            if result:
+                self._logger.info(
+                    f"Fallback tier '{fallback_provider}:{fallback_model}' successful"
+                )
                 return result
+            except Exception as tier_error:
+                self._logger.warning(
+                    f"Fallback tier '{fallback_provider}:{fallback_model}' failed: {tier_error}"
+                )
 
-        # Tier 4: All fallbacks exhausted
+        # All fallback tiers exhausted
         error_msg = (
             f"All fallback strategies exhausted for original request "
             f"(provider: {original_provider}, model: {original_model}). "
@@ -238,73 +279,47 @@ class LLMFallbackHandler:
         )
 
         attempted_fallbacks = []
-        # One-element mutable cell: [provider, model] of the last tier actually invoked.
-        # Updated immediately before _invoke_client_async in each tier helper so it
-        # only reflects providers where an actual network call was attempted.
-        last_attempted = [original_provider, original_model]
-        # Mutable cell holding the last tier's typed exception for use as the
-        # cause in LLMResolvedCallError on exhaustion (MEDIUM-1 fix: preserve
-        # the typed error discriminator, not a synthetic LLMServiceError wrapper).
-        last_error = [error]
+        # Last tier actually invoked.
+        # Updated immediately before _invoke_client_async so it only reflects providers
+        # where an actual network call was attempted (MEDIUM-2 fix).
+        last_attempted_provider = original_provider
+        last_attempted_model = original_model
+        # Last tier's typed exception for use as the cause in LLMResolvedCallError
+        # on exhaustion (MEDIUM-1 fix: preserve the typed error discriminator, not
+        # a synthetic LLMServiceError wrapper).
+        last_error = error
 
-        if self.features_registry and self.features_registry.is_provider_available(
-            "llm", original_provider
+        # Use shared tier plan — keeps sync/async ladders in sync (DRY).
+        for fallback_provider, fallback_model in self._build_tier_plan(
+            original_provider, original_model
         ):
-            result = await self._try_tier1_fallback_async(
-                original_provider,
-                original_model,
-                messages,
-                attempted_fallbacks,
-                get_provider_config_fn,
-                get_or_create_client_fn,
-                convert_messages_fn,
-                last_attempted=last_attempted,
-                last_error=last_error,
-            )
-            if result is not None:
-                return result
-
-        if self.routing_config:
-            fallback_provider = self.routing_config.fallback.get("default_provider")
-            if (
-                fallback_provider
-                and fallback_provider != original_provider
-                and self.features_registry
-                and self.features_registry.is_provider_available(
-                    "llm", fallback_provider
+            try:
+                self._logger.warning(
+                    f"Fallback tier: trying '{fallback_provider}:{fallback_model}'"
                 )
-            ):
-                result = await self._try_tier2_fallback_async(
-                    fallback_provider,
-                    messages,
-                    attempted_fallbacks,
-                    get_provider_config_fn,
-                    get_or_create_client_fn,
-                    convert_messages_fn,
-                    last_attempted=last_attempted,
-                    last_error=last_error,
-                )
-                if result is not None:
-                    return result
+                attempted_fallbacks.append(f"{fallback_provider}:{fallback_model}")
 
-        if self.features_registry:
-            result = await self._try_tier3_fallback_async(
-                original_provider,
-                (
-                    self.routing_config.fallback.get("default_provider")
-                    if self.routing_config
-                    else None
-                ),
-                messages,
-                attempted_fallbacks,
-                get_provider_config_fn,
-                get_or_create_client_fn,
-                convert_messages_fn,
-                last_attempted=last_attempted,
-                last_error=last_error,
-            )
-            if result is not None:
+                config = get_provider_config_fn(fallback_provider)
+                config = dict(config)  # defensive copy — avoid mutating shared config
+                config["model"] = fallback_model
+                client = get_or_create_client_fn(fallback_provider, config)
+                last_attempted_provider = fallback_provider
+                last_attempted_model = fallback_model
+                # Update last_attempted before message conversion so it reflects
+                # a provider that was actually called (MEDIUM-2 fix).
+                langchain_msgs = convert_messages_fn(messages)
+                result = await self._invoke_client_async(
+                    client, langchain_msgs, fallback_provider, fallback_model
+                )
+                self._logger.info(
+                    f"Fallback tier '{fallback_provider}:{fallback_model}' successful"
+                )
                 return result
+            except Exception as tier_error:
+                self._logger.warning(
+                    f"Fallback tier '{fallback_provider}:{fallback_model}' failed: {tier_error}"
+                )
+                last_error = tier_error
 
         error_msg = (
             f"All fallback strategies exhausted for original request "
@@ -314,298 +329,12 @@ class LLMFallbackHandler:
         )
         self._logger.error(error_msg)
         # Raise with the last-attempted tier identity and the last tier's typed
-        # error as cause. Using last_error[0] (the actual typed exception from the
+        # error as cause. Using last_error (the actual typed exception from the
         # last invocation) rather than a synthetic LLMServiceError wrapper preserves
         # the error discriminator (LLMTimeoutError, LLMRateLimitError, etc.) for
         # callers that filter on LLMExecutionError.error_type (MEDIUM-1 fix).
         raise LLMResolvedCallError(
-            resolved_provider=last_attempted[0],
-            resolved_model=last_attempted[1],
-            cause=last_error[0],
+            resolved_provider=last_attempted_provider,
+            resolved_model=last_attempted_model,
+            cause=last_error,
         )
-
-    def _try_tier1_fallback(
-        self,
-        original_provider: str,
-        original_model: str,
-        messages: List[Dict[str, str]],
-        attempted_fallbacks: List[str],
-        get_provider_config_fn: Any,
-        get_or_create_client_fn: Any,
-        convert_messages_fn: Any,
-    ) -> Optional[str]:
-        """
-        Try Tier 1 fallback: Same provider, low complexity model.
-
-        Args:
-            original_provider: Original provider
-            original_model: Original model
-            messages: Messages to send
-            attempted_fallbacks: List to track attempted fallbacks
-            get_provider_config_fn: Function to get provider config
-            get_or_create_client_fn: Function to get or create client
-            convert_messages_fn: Function to convert messages
-
-        Returns:
-            Response string if successful, None otherwise
-        """
-        try:
-            fallback_model = self.get_fallback_model(original_provider, "low")
-            if fallback_model and fallback_model != original_model:
-                self._logger.warning(
-                    f"Tier 1: Retrying with fallback model '{fallback_model}' "
-                    f"for provider '{original_provider}'"
-                )
-                attempted_fallbacks.append(f"{original_provider}:{fallback_model}")
-
-                config = get_provider_config_fn(original_provider)
-                config["model"] = fallback_model
-                client = get_or_create_client_fn(original_provider, config)
-                langchain_msgs = convert_messages_fn(messages)
-                result = self._invoke_client(
-                    client, langchain_msgs, original_provider, fallback_model
-                )
-
-                self._logger.info("Tier 1 fallback successful")
-                return result
-        except Exception as e:
-            self._logger.warning(f"Tier 1 fallback failed: {e}")
-
-        return None
-
-    async def _try_tier1_fallback_async(
-        self,
-        original_provider: str,
-        original_model: str,
-        messages: List[Dict[str, str]],
-        attempted_fallbacks: List[str],
-        get_provider_config_fn: Any,
-        get_or_create_client_fn: Any,
-        convert_messages_fn: Any,
-        last_attempted: Optional[List[str]] = None,
-        last_error: Optional[List[Exception]] = None,
-    ) -> Optional[LLMResponse]:
-        """Async Tier 1 fallback using the async resilience layer."""
-        try:
-            fallback_model = self.get_fallback_model(original_provider, "low")
-            if fallback_model and fallback_model != original_model:
-                self._logger.warning(
-                    f"Tier 1: Retrying with fallback model '{fallback_model}' "
-                    f"for provider '{original_provider}'"
-                )
-                attempted_fallbacks.append(f"{original_provider}:{fallback_model}")
-
-                config = get_provider_config_fn(original_provider)
-                config["model"] = fallback_model
-                client = get_or_create_client_fn(original_provider, config)
-                langchain_msgs = convert_messages_fn(messages)
-                # Update last_attempted immediately before the invocation so it
-                # reflects a provider that was actually called (MEDIUM-2 fix).
-                if last_attempted is not None:
-                    last_attempted[0] = original_provider
-                    last_attempted[1] = fallback_model
-                result = await self._invoke_client_async(
-                    client, langchain_msgs, original_provider, fallback_model
-                )
-
-                self._logger.info("Tier 1 fallback successful")
-                return result
-        except Exception as e:
-            self._logger.warning(f"Tier 1 fallback failed: {e}")
-            if last_error is not None:
-                last_error[0] = e
-
-        return None
-
-    def _try_tier2_fallback(
-        self,
-        fallback_provider: str,
-        messages: List[Dict[str, str]],
-        attempted_fallbacks: List[str],
-        get_provider_config_fn: Any,
-        get_or_create_client_fn: Any,
-        convert_messages_fn: Any,
-    ) -> Optional[str]:
-        """
-        Try Tier 2 fallback: Configured fallback provider.
-
-        Args:
-            fallback_provider: Configured fallback provider
-            messages: Messages to send
-            attempted_fallbacks: List to track attempted fallbacks
-            get_provider_config_fn: Function to get provider config
-            get_or_create_client_fn: Function to get or create client
-            convert_messages_fn: Function to convert messages
-
-        Returns:
-            Response string if successful, None otherwise
-        """
-        try:
-            fallback_model = self.get_fallback_model(fallback_provider, "low")
-            if fallback_model:
-                self._logger.warning(
-                    f"Tier 2: Retrying with configured fallback provider "
-                    f"'{fallback_provider}' and model '{fallback_model}'"
-                )
-                attempted_fallbacks.append(f"{fallback_provider}:{fallback_model}")
-
-                config = get_provider_config_fn(fallback_provider)
-                config["model"] = fallback_model
-                client = get_or_create_client_fn(fallback_provider, config)
-                langchain_msgs = convert_messages_fn(messages)
-                result = self._invoke_client(
-                    client, langchain_msgs, fallback_provider, fallback_model
-                )
-
-                self._logger.info("Tier 2 fallback successful")
-                return result
-        except Exception as e:
-            self._logger.warning(f"Tier 2 fallback failed: {e}")
-
-        return None
-
-    async def _try_tier2_fallback_async(
-        self,
-        fallback_provider: str,
-        messages: List[Dict[str, str]],
-        attempted_fallbacks: List[str],
-        get_provider_config_fn: Any,
-        get_or_create_client_fn: Any,
-        convert_messages_fn: Any,
-        last_attempted: Optional[List[str]] = None,
-        last_error: Optional[List[Exception]] = None,
-    ) -> Optional[LLMResponse]:
-        """Async Tier 2 fallback using the async resilience layer."""
-        try:
-            fallback_model = self.get_fallback_model(fallback_provider, "low")
-            if fallback_model:
-                self._logger.warning(
-                    f"Tier 2: Retrying with configured fallback provider "
-                    f"'{fallback_provider}' and model '{fallback_model}'"
-                )
-                attempted_fallbacks.append(f"{fallback_provider}:{fallback_model}")
-
-                config = get_provider_config_fn(fallback_provider)
-                config["model"] = fallback_model
-                client = get_or_create_client_fn(fallback_provider, config)
-                langchain_msgs = convert_messages_fn(messages)
-                # Update last_attempted immediately before the invocation so it
-                # reflects a provider that was actually called (MEDIUM-2 fix).
-                if last_attempted is not None:
-                    last_attempted[0] = fallback_provider
-                    last_attempted[1] = fallback_model
-                result = await self._invoke_client_async(
-                    client, langchain_msgs, fallback_provider, fallback_model
-                )
-
-                self._logger.info("Tier 2 fallback successful")
-                return result
-        except Exception as e:
-            self._logger.warning(f"Tier 2 fallback failed: {e}")
-            if last_error is not None:
-                last_error[0] = e
-
-        return None
-
-    def _try_tier3_fallback(
-        self,
-        original_provider: str,
-        configured_fallback_provider: Optional[str],
-        messages: List[Dict[str, str]],
-        attempted_fallbacks: List[str],
-        get_provider_config_fn: Any,
-        get_or_create_client_fn: Any,
-        convert_messages_fn: Any,
-    ) -> Optional[str]:
-        """
-        Try Tier 3 fallback: Emergency fallback to first available provider.
-
-        Args:
-            original_provider: Original provider to skip
-            configured_fallback_provider: Configured fallback provider to skip
-            messages: Messages to send
-            attempted_fallbacks: List to track attempted fallbacks
-            get_provider_config_fn: Function to get provider config
-            get_or_create_client_fn: Function to get or create client
-            convert_messages_fn: Function to convert messages
-
-        Returns:
-            Response string if successful, None otherwise
-        """
-        available_providers = self.features_registry.get_available_providers("llm")
-        for provider in available_providers:
-            if provider in [original_provider, configured_fallback_provider]:
-                continue  # Already tried these
-
-            try:
-                fallback_model = self.get_fallback_model(provider, "low")
-                if fallback_model:
-                    self._logger.warning(
-                        f"Tier 3: Emergency fallback to provider '{provider}' "
-                        f"with model '{fallback_model}'"
-                    )
-                    attempted_fallbacks.append(f"{provider}:{fallback_model}")
-
-                    config = get_provider_config_fn(provider)
-                    config["model"] = fallback_model
-                    client = get_or_create_client_fn(provider, config)
-                    langchain_msgs = convert_messages_fn(messages)
-                    result = self._invoke_client(
-                        client, langchain_msgs, provider, fallback_model
-                    )
-
-                    self._logger.info("Tier 3 emergency fallback successful")
-                    return result
-            except Exception as e:
-                self._logger.warning(f"Tier 3 fallback failed for {provider}: {e}")
-
-        return None
-
-    async def _try_tier3_fallback_async(
-        self,
-        original_provider: str,
-        configured_fallback_provider: Optional[str],
-        messages: List[Dict[str, str]],
-        attempted_fallbacks: List[str],
-        get_provider_config_fn: Any,
-        get_or_create_client_fn: Any,
-        convert_messages_fn: Any,
-        last_attempted: Optional[List[str]] = None,
-        last_error: Optional[List[Exception]] = None,
-    ) -> Optional[LLMResponse]:
-        """Async Tier 3 fallback using the async resilience layer."""
-        available_providers = self.features_registry.get_available_providers("llm")
-        for provider in available_providers:
-            if provider in [original_provider, configured_fallback_provider]:
-                continue
-
-            try:
-                fallback_model = self.get_fallback_model(provider, "low")
-                if fallback_model:
-                    self._logger.warning(
-                        f"Tier 3: Emergency fallback to provider '{provider}' "
-                        f"with model '{fallback_model}'"
-                    )
-                    attempted_fallbacks.append(f"{provider}:{fallback_model}")
-
-                    config = get_provider_config_fn(provider)
-                    config["model"] = fallback_model
-                    client = get_or_create_client_fn(provider, config)
-                    langchain_msgs = convert_messages_fn(messages)
-                    # Update last_attempted immediately before the invocation so it
-                    # reflects a provider that was actually called (MEDIUM-2 fix).
-                    if last_attempted is not None:
-                        last_attempted[0] = provider
-                        last_attempted[1] = fallback_model
-                    result = await self._invoke_client_async(
-                        client, langchain_msgs, provider, fallback_model
-                    )
-
-                    self._logger.info("Tier 3 fallback successful")
-                    return result
-            except Exception as e:
-                self._logger.warning(f"Tier 3 fallback failed for {provider}: {e}")
-                if last_error is not None:
-                    last_error[0] = e
-
-        return None

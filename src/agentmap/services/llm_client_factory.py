@@ -45,7 +45,14 @@ class LLMClientFactory:
         # Create new client
         client = self._create_langchain_client(provider, config)
 
-        # Cache the client
+        # Cache the client.
+        # Accepted benign race: concurrent fan-out coroutines can arrive here
+        # simultaneously for the same cache_key, each creating an equivalent
+        # client and storing it.  The last write wins and both clients are
+        # identical (same provider, model, and API key prefix), so the race
+        # produces no incorrect behaviour.  An asyncio.Lock would eliminate
+        # the redundant work but adds complexity not justified by the low
+        # probability of simultaneous first-use of the exact same key.
         self._clients[cache_key] = client
 
         return client

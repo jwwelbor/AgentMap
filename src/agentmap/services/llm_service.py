@@ -25,6 +25,7 @@ from agentmap.models.llm_execution import (
     LLMCallResult,
     LLMCallSpec,
     LLMExecutionError,
+    LLMMessage,
     LLMResponse,
     LLMUsage,
 )
@@ -239,7 +240,7 @@ class LLMService:
 
     def call_llm(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         provider: Optional[str] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
@@ -281,7 +282,7 @@ class LLMService:
 
     async def call_llm_async(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         provider: Optional[str] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
@@ -558,6 +559,8 @@ class LLMService:
         if not self.routing_service:
             raise LLMServiceError("Routing requested but no routing service available")
 
+        # Narrow try to routing decision only — _call_llm_direct errors must propagate
+        # as-is; the broad except was re-labeling downstream errors as routing failures.
         try:
             # Convert routing context dict to RoutingContext object
             context = self._create_routing_context(routing_context, messages)
@@ -618,18 +621,9 @@ class LLMService:
                     {GEN_AI_REQUEST_MAX_TOKENS: resolved_max_tokens}
                 )
 
-            # Make the actual LLM call with the selected provider/model
-            return self._call_llm_direct(
-                provider=decision.provider,
-                messages=messages,
-                model=decision.model,
-                temperature=temperature,
-                **kwargs,
-            )
-
         except Exception as e:
             self._logger.error(f"Routing failed: {e}")
-            # Fall back to direct call if routing fails
+            # Fall back to direct call if routing (pre-selection) fails
             fallback_provider = routing_context.get("fallback_provider", "anthropic")
             self._logger.warning(
                 f"Falling back to {fallback_provider} due to routing failure"
@@ -647,6 +641,16 @@ class LLMService:
                 temperature=temperature,
                 **kwargs,
             )
+
+        # Make the actual LLM call outside the routing try — errors from the
+        # invocation layer propagate as-is (not relabeled as routing failures).
+        return self._call_llm_direct(
+            provider=decision.provider,
+            messages=messages,
+            model=decision.model,
+            temperature=temperature,
+            **kwargs,
+        )
 
     def _call_llm_direct(
         self,
@@ -754,6 +758,9 @@ class LLMService:
         if not self.routing_service:
             raise LLMServiceError("Routing requested but no routing service available")
 
+        # Narrow try to routing decision only — _call_llm_async_direct errors must
+        # propagate as-is; the broad except was re-labeling downstream errors as
+        # routing failures and silently swapping to fallback_provider.
         try:
             context = self._create_routing_context(routing_context, messages)
             available_providers = self._provider_utils.get_available_providers()
@@ -804,21 +811,6 @@ class LLMService:
                     {GEN_AI_REQUEST_MAX_TOKENS: resolved_max_tokens}
                 )
 
-            return await self._call_llm_async_direct(
-                provider=decision.provider,
-                messages=messages,
-                model=decision.model,
-                temperature=temperature,
-                **kwargs,
-            )
-
-        except LLMResolvedCallError:
-            # Post-selection provider failure — routing already resolved a concrete
-            # (provider, model) before the call failed. Preserve that identity
-            # intact; do NOT trigger the routing-fallback retry path, which would
-            # silently rewrite the resolved identity with the fallback provider.
-            # Mirrors the identical guard in _call_llm_async_direct:842.
-            raise
         except Exception as e:
             self._logger.error(f"Routing failed: {e}")
             fallback_provider = routing_context.get("fallback_provider", "anthropic")
@@ -836,6 +828,16 @@ class LLMService:
                 temperature=temperature,
                 **kwargs,
             )
+
+        # Make the actual LLM call outside the routing try — errors from the
+        # invocation layer propagate as-is (not relabeled as routing failures).
+        return await self._call_llm_async_direct(
+            provider=decision.provider,
+            messages=messages,
+            model=decision.model,
+            temperature=temperature,
+            **kwargs,
+        )
 
     async def _call_llm_async_direct(
         self,
@@ -1457,7 +1459,7 @@ class LLMService:
             if spec.request_options:
                 collision = _RESERVED_KEYS & spec.request_options.keys()
                 if collision:
-                    raise ValueError(
+                    raise LLMServiceError(
                         f"spec_id={spec.spec_id!r}: request_options contains reserved "
                         f"keys that collide with call_llm_async parameters: {collision}"
                     )

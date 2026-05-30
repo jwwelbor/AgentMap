@@ -16,7 +16,12 @@ from typing import (
     runtime_checkable,
 )
 
-from agentmap.models.llm_execution import LLMCallResult, LLMCallSpec, LLMResponse
+from agentmap.models.llm_execution import (
+    LLMCallResult,
+    LLMCallSpec,
+    LLMMessage,
+    LLMResponse,
+)
 
 # Declaration system imports
 
@@ -31,7 +36,7 @@ class LLMServiceProtocol(Protocol):
     def call_llm(
         self,
         provider: str,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
@@ -84,7 +89,7 @@ class LLMServiceProtocol(Protocol):
 
     async def call_llm_async(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         provider: Optional[str] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,

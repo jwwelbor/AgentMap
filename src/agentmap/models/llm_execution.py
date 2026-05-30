@@ -9,6 +9,12 @@ no business logic lives here.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+# Structured message block for LLM calls.  Content values may be plain strings
+# (text-only messages) or structured dicts/lists (vision, cache-control blocks,
+# multi-modal content).  Using Any instead of str matches LangChain and the
+# OpenAI / Anthropic SDKs, both of which accept heterogeneous content types.
+LLMMessage = Dict[str, Any]
+
 
 @dataclass(frozen=True)
 class LLMResponse:
