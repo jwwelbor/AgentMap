@@ -274,14 +274,17 @@ class LoggingService:
 
 def _get_logger_from_di(name: Optional[str] = None) -> logging.Logger:
     try:
-        from agentmap.di import application
+        from agentmap.runtime.runtime_manager import RuntimeManager
 
-        logging_service = application.logging_service()
-        return logging_service.get_logger(name or __name__)
+        if RuntimeManager.is_initialized():
+            logging_service = RuntimeManager.get_container().logging_service()
+            return logging_service.get_logger(name or __name__)
     except Exception:
-        import logging
+        pass
 
-        return logging.getLogger(name or __name__)
+    import logging
+
+    return logging.getLogger(name or __name__)
 
 
 def _get_bootstrap_logger(name: Optional[str] = None) -> logging.Logger:

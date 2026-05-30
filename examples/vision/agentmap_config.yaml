@@ -187,7 +187,7 @@ routing:
 # Telemetry / OpenTelemetry Configuration
 telemetry:
   enabled: true
-  exporter: "oltp"
+  exporter: "otlp"
   endpoint: "http://localhost:4317"
   protocol: "grpc"
   resource:

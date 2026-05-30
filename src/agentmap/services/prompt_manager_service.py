@@ -35,6 +35,10 @@ class PromptManagerService:
         self.config = app_config_service
         self.logger = logging_service.get_class_logger(self)
 
+        # Register as global singleton for backward compatibility
+        global _prompt_manager
+        _prompt_manager = self
+
         # Get prompts configuration using specific getter method
         prompts_config = self.config.get_prompts_config()
         self.prompts_config = prompts_config
@@ -337,7 +341,16 @@ def get_prompt_manager(
     """Get global PromptManagerService instance."""
     global _prompt_manager
     if _prompt_manager is None:
-        _prompt_manager = PromptManagerService()
+        try:
+            from agentmap.runtime.runtime_manager import RuntimeManager
+
+            if not RuntimeManager.is_initialized():
+                RuntimeManager.initialize(config_file=config_path)
+            _prompt_manager = RuntimeManager.get_container().prompt_manager_service()
+        except Exception:
+            # Fallback for when DI is unavailable or being initialized
+            if _prompt_manager is None:
+                raise
     return _prompt_manager
 
 
