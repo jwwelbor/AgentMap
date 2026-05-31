@@ -284,10 +284,11 @@ their canonical internal names at injection time:
 
 Normalization is non-destructive: the token you declare is preserved and the
 canonical alias is added alongside it, so **host-registered services are matched
-by the exact name you registered them under** (e.g. `database_service`). Tokens
-that don't correspond to any declared service are simply not injected — declare
-the service (in the built-in registry or via host registration) for it to be
-wired up.
+by the exact name you registered them under** (e.g. `database_service`). A token
+that does not correspond to any declared service is treated as a wiring error:
+the graph **fails fast at execution time** with a `MissingServiceDeclarationError`
+naming the unwired service. Declare the service (in the built-in registry or via
+host registration) for it to be wired up.
 
 ## State Management
 
