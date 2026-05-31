@@ -221,6 +221,45 @@ class TestDeclarationParser(unittest.TestCase):
         result3 = self.parser.parse_agent("test_agent", agent_data3, "test_source")
         self.assertEqual(len(result3.service_requirements), 2)
 
+    def test_parse_agent_preserves_service_tokens_verbatim(self):
+        """The parser preserves declared service tokens as-is.
+
+        Alias normalization is non-destructive and happens at the injection
+        boundary (see service_name_normalization.expand_declared_service_names),
+        not during parsing, so that host-registered service names survive.
+        """
+        agent_data = {
+            "class_path": "test.TestAgent",
+            "services": ["LLMService", "StorageServiceManager", "CSVService"],
+        }
+
+        result = self.parser.parse_agent("test_agent", agent_data, "yaml:test.yaml")
+
+        self.assertEqual(
+            [req.name for req in result.service_requirements],
+            ["LLMService", "StorageServiceManager", "CSVService"],
+        )
+
+    def test_parse_agent_preserves_unknown_service_tokens(self):
+        """Unknown/host service tokens pass through parsing without raising.
+
+        Whether a required service actually exists is validated later, at
+        injection time, where the registered service names are known.
+        """
+        agent_data = {
+            "class_path": "test.TestAgent",
+            "services": ["llm_service", "database_service"],
+        }
+
+        result = self.parser.parse_agent(
+            "test_agent", agent_data, "yaml:/tmp/custom_agents.yaml"
+        )
+
+        self.assertEqual(
+            [req.name for req in result.service_requirements],
+            ["llm_service", "database_service"],
+        )
+
     def test_error_handling_with_none_values(self):
         """Test error handling when required values are None."""
         with self.assertRaises(ValueError):

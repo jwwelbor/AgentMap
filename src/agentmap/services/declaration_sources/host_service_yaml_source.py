@@ -73,7 +73,7 @@ class HostServiceYAMLSource(DeclarationSource):
                 self.logger.trace(f"Loaded host service: {service_name}")
             except Exception as e:
                 self.logger.error(f"Failed to load host service '{service_name}': {e}")
-                continue
+                raise
 
         self.logger.debug(f"Loaded {len(services)} host service declarations")
         return services

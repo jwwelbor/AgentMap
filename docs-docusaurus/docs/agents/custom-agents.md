@@ -253,6 +253,43 @@ class MyPromptAgent(BaseAgent, PromptCapableAgent):
         self.log_debug("Prompt service configured")
 ```
 
+## `custom_agents.yaml` Service Requirements
+
+List the services your agent needs in `requires.services`. Tokens are matched
+against the declared services (the built-in service registry plus any
+host-registered services) when the agent is wired up.
+
+```yaml
+agents:
+  llm_vision:
+    class_path: app.agents.ingestion.llm_vision_agent.LlmVisionAgent
+    requires:
+      services:
+        - llm
+        - storage
+      protocols:
+        - LLMCapableAgent
+        - PromptCapableAgent
+```
+
+For convenience, common aliases for the built-in services are normalized to
+their canonical internal names at injection time:
+
+- `llm`, `LLMService` -> `llm_service`
+- `storage`, `StorageServiceManager` -> `storage_service_manager`
+- `prompt`, `PromptManagerService` -> `prompt_manager_service`
+- `orchestrator` -> `orchestrator_service`
+- `blob` -> `blob_storage_service`
+- `csv`, `json`, `file`, `vector`, `memory` -> the corresponding storage service
+
+Normalization is non-destructive: the token you declare is preserved and the
+canonical alias is added alongside it, so **host-registered services are matched
+by the exact name you registered them under** (e.g. `database_service`). A token
+that does not correspond to any declared service is treated as a wiring error:
+the graph **fails fast at execution time** with a `MissingServiceDeclarationError`
+naming the unwired service. Declare the service (in the built-in registry or via
+host registration) for it to be wired up.
+
 ## State Management
 
 ### Modern State Lifecycle

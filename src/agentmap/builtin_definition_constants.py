@@ -343,6 +343,25 @@ class BuiltinDefinitionConstants:
             "implements": ["OrchestrationCapableAgent"],
             "source": "builtin",
         },
+        # ============ GRAPH SERVICES ============
+        # These are instantiated by the DI container (GraphRunnerService is
+        # late-bound to break a circular dependency); they are declared here so
+        # the declaration registry knows they exist and which agent-capability
+        # protocols they satisfy. The built-in ``graph`` agent requires them.
+        "graph_bundle_service": {
+            "class_path": "agentmap.services.graph.graph_bundle_service.GraphBundleService",
+            "singleton": True,
+            "required_services": ["logging_service"],
+            "implements": ["GraphBundleCapableAgent"],
+            "source": "builtin",
+        },
+        "graph_runner_service": {
+            "class_path": "agentmap.services.graph.graph_runner_service.GraphRunnerService",
+            "singleton": True,
+            "required_services": ["logging_service"],
+            "implements": ["GraphRunnerCapableAgent"],
+            "source": "builtin",
+        },
         # ============ STORAGE SERVICES ============
         "storage_service_manager": {
             "class_path": "agentmap.services.storage.manager.StorageServiceManager",

@@ -71,7 +71,7 @@ class YAMLDeclarationSource(DeclarationSource):
                 self.logger.trace(f"Loaded YAML agent: {full_agent_type}")
             except Exception as e:
                 self.logger.error(f"Failed to load YAML agent '{agent_type}': {e}")
-                continue
+                raise
 
         self.logger.debug(f"Loaded {len(agents)} agent declarations from YAML")
         return agents
@@ -109,7 +109,7 @@ class YAMLDeclarationSource(DeclarationSource):
                 self.logger.trace(f"Loaded YAML service: {full_service_name}")
             except Exception as e:
                 self.logger.error(f"Failed to load YAML service '{service_name}': {e}")
-                continue
+                raise
 
         self.logger.debug(f"Loaded {len(services)} service declarations from YAML")
         return services

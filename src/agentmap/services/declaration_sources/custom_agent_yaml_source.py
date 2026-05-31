@@ -71,7 +71,7 @@ class CustomAgentYAMLSource(DeclarationSource):
                 self.logger.trace(f"Loaded custom agent: {agent_type}")
             except Exception as e:
                 self.logger.error(f"Failed to load custom agent '{agent_type}': {e}")
-                continue
+                raise
 
         self.logger.debug(f"Loaded {len(agents)} custom agent declarations")
         return agents

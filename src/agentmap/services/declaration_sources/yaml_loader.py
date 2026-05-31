@@ -30,9 +30,14 @@ def load_yaml_file(path: Path, logger: logging.Logger) -> Dict[str, Any]:
         with open(path, "r", encoding="utf-8") as file:
             data = yaml.safe_load(file)
 
-        if not isinstance(data, dict):
-            logger.warning(f"YAML file does not contain valid dictionary: {path}")
+        if data is None:
+            logger.debug(f"YAML file is empty: {path}")
             return {}
+
+        if not isinstance(data, dict):
+            message = f"YAML file does not contain a top-level mapping: {path}"
+            logger.error(message)
+            raise ValueError(message)
 
         logger.debug(f"Successfully loaded YAML file: {path}")
         return data
@@ -42,7 +47,11 @@ def load_yaml_file(path: Path, logger: logging.Logger) -> Dict[str, Any]:
         return {}
     except yaml.YAMLError as e:
         logger.error(f"Failed to parse YAML file '{path}': {e}")
-        return {}
+        raise ValueError(f"Failed to parse YAML file '{path}': {e}") from e
+    except ValueError:
+        # Already a well-formed validation error (e.g. non-mapping top level);
+        # propagate it without re-wrapping its message.
+        raise
     except Exception as e:
         logger.error(f"Failed to load YAML file '{path}': {e}")
-        return {}
+        raise ValueError(f"Failed to load YAML file '{path}': {e}") from e

@@ -55,6 +55,8 @@ def _make_mock_bundle(graph_name="test_graph", node_count=3):
     # node_instances is set after agent instantiation
     bundle.node_instances = None
     bundle.scoped_registry = None
+    # No missing services by default -> the run wiring gate passes
+    bundle.missing_services = set()
     return bundle
 
 

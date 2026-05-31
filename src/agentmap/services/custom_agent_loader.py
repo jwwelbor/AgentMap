@@ -102,7 +102,12 @@ class CustomAgentLoader:
             module_file = self.custom_agents_path / f"{module_name}.py"
 
             if not module_file.exists():
-                self.logger.error(f"Module file not found: {module_file}")
+                if "." in module_name:
+                    self.logger.debug(
+                        f"Module file not found for dotted import path: {module_file}"
+                    )
+                else:
+                    self.logger.error(f"Module file not found: {module_file}")
                 return None
 
             # Create module spec

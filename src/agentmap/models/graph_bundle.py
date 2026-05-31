@@ -58,6 +58,9 @@ class GraphBundle:
     missing_declarations: Optional[Set[str]] = (
         None  # NEW: Agent types without declarations
     )
+    missing_services: Optional[Set[str]] = (
+        None  # NEW: Required services with no declaration/registration
+    )
 
     # AGM-TOOLS-001: Tool caching
     tools: Optional[Dict[str, List["Tool"]]] = (
@@ -112,6 +115,8 @@ class GraphBundle:
                 self.created_at = datetime.utcnow().isoformat()
             if self.missing_declarations is None:
                 self.missing_declarations = set()
+            if self.missing_services is None:
+                self.missing_services = set()
             if self.tools is None:
                 self.tools = {}
 
@@ -135,6 +140,7 @@ class GraphBundle:
 
             self.created_at = datetime.utcnow().isoformat()
             self.missing_declarations = set()
+            self.missing_services = set()
             self.tools = {}
 
     @staticmethod
@@ -209,6 +215,7 @@ class GraphBundle:
         # New Phase 3 parameters
         validation_metadata: Optional[Dict[str, Any]] = None,
         missing_declarations: Optional[Set[str]] = None,
+        missing_services: Optional[Set[str]] = None,
     ) -> "GraphBundle":
         """
         Create a new GraphBundle using the enhanced metadata-only format.
@@ -232,6 +239,8 @@ class GraphBundle:
             graph_structure: Optional graph structure analysis for optimization
             protocol_mappings: Optional protocol to implementation mappings
             validation_metadata: Optional validation and integrity data
+            missing_declarations: Optional set of agent types without declarations
+            missing_services: Optional set of required services with no declaration
 
         Returns:
             GraphBundle instance with enhanced metadata-only storage
@@ -258,4 +267,5 @@ class GraphBundle:
             # Phase 3: Validation metadata
             validation_metadata=validation_metadata,
             missing_declarations=missing_declarations,
+            missing_services=missing_services,
         )
