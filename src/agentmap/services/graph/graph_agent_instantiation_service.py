@@ -29,10 +29,10 @@ from agentmap.services.protocols import (
     GraphRunnerCapableAgent,
     ToolCapableAgent,
 )
-from agentmap.services.state_adapter_service import StateAdapterService
 from agentmap.services.service_name_normalization import (
     normalize_declared_service_names,
 )
+from agentmap.services.state_adapter_service import StateAdapterService
 
 
 class GraphAgentInstantiationService:

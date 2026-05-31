@@ -4,7 +4,6 @@ import unittest
 from typing import Any
 from unittest.mock import MagicMock, Mock
 
-from agentmap.models.declaration_models import AgentDeclaration
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.node import Node
 from agentmap.services.agent.agent_factory_service import AgentFactoryService

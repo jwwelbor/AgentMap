@@ -245,7 +245,9 @@ class TestDeclarationParser(unittest.TestCase):
         }
 
         with self.assertRaises(ValueError) as context:
-            self.parser.parse_agent("test_agent", agent_data, "yaml:/tmp/custom_agents.yaml")
+            self.parser.parse_agent(
+                "test_agent", agent_data, "yaml:/tmp/custom_agents.yaml"
+            )
 
         message = str(context.exception)
         self.assertIn("yaml:/tmp/custom_agents.yaml", message)

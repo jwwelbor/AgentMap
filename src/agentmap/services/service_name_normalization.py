@@ -81,9 +81,7 @@ def normalize_declared_service_name(value: str) -> str:
         ValueError: If the token is not a known injectable service name.
     """
     if not isinstance(value, str):
-        raise ValueError(
-            f"Service token must be a string, got {type(value).__name__}"
-        )
+        raise ValueError(f"Service token must be a string, got {type(value).__name__}")
 
     normalized = _normalize_service_token(value)
     canonical = _NORMALIZED_SERVICE_NAME_LOOKUP.get(normalized)
