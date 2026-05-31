@@ -350,13 +350,17 @@ class DeclarationRegistryService:
         """
         self.logger.debug("Loading declarations from all sources")
 
-        # Clear existing declarations
-        self._agents.clear()
-        self._services.clear()
+        new_agents: Dict[str, AgentDeclaration] = {}
+        new_services: Dict[str, ServiceDeclaration] = {}
 
         # Load from each source in order (later sources override)
         for source in self._sources:
-            self._load_from_source(source)
+            agents, services = self._load_from_source(source)
+            new_agents.update(agents)
+            new_services.update(services)
+
+        self._agents = new_agents
+        self._services = new_services
 
         self.logger.info(
             f"Loaded {len(self._agents)} agents and {len(self._services)} services"
@@ -443,7 +447,9 @@ class DeclarationRegistryService:
         # TODO: Implement when app config structure is defined
         self.logger.debug("Configuration-based source loading not yet implemented")
 
-    def _load_from_source(self, source: DeclarationSource) -> None:
+    def _load_from_source(
+        self, source: DeclarationSource
+    ) -> tuple[Dict[str, AgentDeclaration], Dict[str, ServiceDeclaration]]:
         """
         Load declarations from a single source.
 
@@ -453,22 +459,21 @@ class DeclarationRegistryService:
         try:
             # Load agents (later sources override)
             agents = source.load_agents()
-            self._agents.update(agents)
             self.logger.debug(
                 f"Loaded {len(agents)} agents from {type(source).__name__}"
             )
 
             # Load services (later sources override)
             services = source.load_services()
-            self._services.update(services)
             self.logger.debug(
                 f"Loaded {len(services)} services from {type(source).__name__}"
             )
-
+            return agents, services
         except Exception as e:
             self.logger.error(
                 f"Failed to load from source {type(source).__name__}: {e}"
             )
+            raise
 
     def get_services_by_protocols(self, protocols: Set[str]) -> Set[str]:
         """
@@ -553,9 +558,8 @@ class DeclarationRegistryService:
             f"Selective loading: {len(required_agents or [])} agents, {len(required_services or [])} services"
         )
 
-        # Clear existing declarations
-        self._agents.clear()
-        self._services.clear()
+        new_agents: Dict[str, AgentDeclaration] = {}
+        new_services: Dict[str, ServiceDeclaration] = {}
 
         # Load from each source in order (later sources override)
         for source in self._sources:
@@ -563,13 +567,12 @@ class DeclarationRegistryService:
                 # Load only required agents
                 if required_agents is not None:
                     agents = source.load_agents()
-                    # Filter to only required agents
                     filtered_agents = {
                         agent_type: decl
                         for agent_type, decl in agents.items()
                         if agent_type in required_agents
                     }
-                    self._agents.update(filtered_agents)
+                    new_agents.update(filtered_agents)
                     if filtered_agents:
                         self.logger.debug(
                             f"Loaded {len(filtered_agents)} agents from {type(source).__name__}"
@@ -578,22 +581,24 @@ class DeclarationRegistryService:
                 # Load only required services
                 if required_services is not None:
                     services = source.load_services()
-                    # Filter to only required services
                     filtered_services = {
                         service_name: decl
                         for service_name, decl in services.items()
                         if service_name in required_services
                     }
-                    self._services.update(filtered_services)
+                    new_services.update(filtered_services)
                     if filtered_services:
                         self.logger.debug(
                             f"Loaded {len(filtered_services)} services from {type(source).__name__}"
                         )
-
             except Exception as e:
                 self.logger.error(
                     f"Failed to load from source {type(source).__name__}: {e}"
                 )
+                raise
+
+        self._agents = new_agents
+        self._services = new_services
 
         self.logger.info(
             f"Selective load complete: {len(self._agents)} agents, {len(self._services)} services"

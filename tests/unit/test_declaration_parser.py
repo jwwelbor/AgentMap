@@ -210,7 +210,9 @@ class TestDeclarationParser(unittest.TestCase):
         agent_data2 = {"class_path": "test.TestAgent", "services": ["storage_service"]}
         result2 = self.parser.parse_agent("test_agent", agent_data2, "test_source")
         self.assertEqual(len(result2.service_requirements), 1)
-        self.assertEqual(result2.service_requirements[0].name, "storage_service")
+        self.assertEqual(
+            result2.service_requirements[0].name, "storage_service_manager"
+        )
 
         # Test parsing both fields
         agent_data3 = {
@@ -220,6 +222,37 @@ class TestDeclarationParser(unittest.TestCase):
         }
         result3 = self.parser.parse_agent("test_agent", agent_data3, "test_source")
         self.assertEqual(len(result3.service_requirements), 2)
+
+    def test_parse_agent_normalizes_service_aliases(self):
+        """Test service aliases are normalized to canonical injectable names."""
+        agent_data = {
+            "class_path": "test.TestAgent",
+            "services": ["LLMService", "StorageServiceManager", "CSVService"],
+        }
+
+        result = self.parser.parse_agent("test_agent", agent_data, "yaml:test.yaml")
+
+        self.assertEqual(
+            [req.name for req in result.service_requirements],
+            ["llm_service", "storage_service_manager", "csv"],
+        )
+
+    def test_parse_agent_rejects_unknown_service_tokens(self):
+        """Test unknown service tokens fail fast with clear validation context."""
+        agent_data = {
+            "class_path": "test.TestAgent",
+            "services": ["LLMService", "DefinitelyNotAService"],
+        }
+
+        with self.assertRaises(ValueError) as context:
+            self.parser.parse_agent("test_agent", agent_data, "yaml:/tmp/custom_agents.yaml")
+
+        message = str(context.exception)
+        self.assertIn("yaml:/tmp/custom_agents.yaml", message)
+        self.assertIn("test_agent", message)
+        self.assertIn("DefinitelyNotAService", message)
+        self.assertIn("llm_service", message)
+        self.assertIn("storage_service_manager", message)
 
     def test_error_handling_with_none_values(self):
         """Test error handling when required values are None."""

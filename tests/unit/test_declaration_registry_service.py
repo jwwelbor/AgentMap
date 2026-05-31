@@ -223,19 +223,17 @@ class TestDeclarationRegistryService(unittest.TestCase):
         self.assertEqual(loaded_agent.source, "namespace.source")
 
     def test_error_handling_in_source_loading(self):
-        """Test error handling when source loading fails."""
+        """Test source loading failures fail fast instead of being swallowed."""
         # Create source that raises exception
         bad_source = Mock()
         bad_source.load_agents.side_effect = Exception("Loading failed")
         bad_source.load_services.side_effect = Exception("Loading failed")
 
-        # This should not crash the service
         self.registry_service.add_source(bad_source)
-        self.registry_service.load_all()
+        with self.assertRaises(Exception) as context:
+            self.registry_service.load_all()
 
-        # Registry should remain empty
-        self.assertEqual(len(self.registry_service._agents), 0)
-        self.assertEqual(len(self.registry_service._services), 0)
+        self.assertIn("Loading failed", str(context.exception))
 
     def test_get_all_agent_types(self):
         """Test getting all available agent types."""

@@ -253,6 +253,39 @@ class MyPromptAgent(BaseAgent, PromptCapableAgent):
         self.log_debug("Prompt service configured")
 ```
 
+## `custom_agents.yaml` Service Requirements
+
+Use the canonical service tokens in `requires.services`. The loader normalizes
+those tokens to the injector's internal service names before configuration.
+
+```yaml
+agents:
+  llm_vision:
+    class_path: app.agents.ingestion.llm_vision_agent.LlmVisionAgent
+    requires:
+      services:
+        - llm
+        - storage
+      protocols:
+        - LLMCapableAgent
+        - PromptCapableAgent
+```
+
+Canonical service tokens and their internal targets:
+
+- `llm` -> `llm_service`
+- `storage` -> `storage_service_manager`
+- `prompt` -> `prompt_manager_service`
+- `orchestrator` -> `orchestrator_service`
+- `blob` -> `blob_storage_service`
+- `csv`, `json`, `file`, `vector`, `memory` -> remain as-is
+
+Common aliases such as `LLMService`, `StorageServiceManager`, `CSVService`, and
+`PromptManagerService` are accepted, but they are normalized during load. If a
+token is unknown, `custom_agents.yaml` fails fast during bootstrap with an
+error that names the file, the agent type, and the bad token instead of
+silently skipping injection.
+
 ## State Management
 
 ### Modern State Lifecycle

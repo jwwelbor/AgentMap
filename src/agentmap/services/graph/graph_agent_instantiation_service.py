@@ -30,6 +30,9 @@ from agentmap.services.protocols import (
     ToolCapableAgent,
 )
 from agentmap.services.state_adapter_service import StateAdapterService
+from agentmap.services.service_name_normalization import (
+    normalize_declared_service_names,
+)
 
 
 class GraphAgentInstantiationService:
@@ -370,7 +373,7 @@ class GraphAgentInstantiationService:
         if not all_services:
             return None
 
-        return set(all_services)
+        return set(normalize_declared_service_names(all_services))
 
     def _wire_content_capture_flags(self, agent_instance: Any) -> None:
         """Wire content capture flags from telemetry config into agent context.
