@@ -1,7 +1,7 @@
 """Shared service-name normalization helpers for declaration loading."""
 
 import re
-from typing import Iterable, List
+from typing import Iterable, List, Set
 
 DECLARED_SERVICE_NAME_ALIASES = {
     "logging_service": ("logging_service",),
@@ -65,33 +65,31 @@ _NORMALIZED_SERVICE_NAME_LOOKUP = {
 }
 
 
-def format_supported_declared_service_names() -> str:
-    """Return a human-readable list of supported service names and aliases."""
-    return "; ".join(
-        f"{canonical} (aliases: {', '.join(aliases)})"
-        for canonical, aliases in DECLARED_SERVICE_NAME_ALIASES.items()
-    )
+def is_known_declared_service_name(value: str) -> bool:
+    """Return True if the token maps to a known canonical injectable service."""
+    if not isinstance(value, str):
+        return False
+    return _normalize_service_token(value) in _NORMALIZED_SERVICE_NAME_LOOKUP
 
 
 def normalize_declared_service_name(value: str) -> str:
     """
     Normalize a declared service token to its canonical internal service name.
 
+    Known aliases (e.g. ``LLMService`` -> ``llm_service``) are mapped to their
+    canonical name. Unknown tokens are returned unchanged so that
+    host-registered services and any service outside the built-in alias map
+    pass through untouched; whether such a service actually exists is validated
+    later, at injection time, where the registered service names are known.
+
     Raises:
-        ValueError: If the token is not a known injectable service name.
+        ValueError: If the token is not a string (a structural error).
     """
     if not isinstance(value, str):
         raise ValueError(f"Service token must be a string, got {type(value).__name__}")
 
     normalized = _normalize_service_token(value)
-    canonical = _NORMALIZED_SERVICE_NAME_LOOKUP.get(normalized)
-    if canonical:
-        return canonical
-
-    raise ValueError(
-        f"Unknown service token '{value}'. Expected canonical names/aliases: "
-        f"{format_supported_declared_service_names()}"
-    )
+    return _NORMALIZED_SERVICE_NAME_LOOKUP.get(normalized, value)
 
 
 def normalize_declared_service_names(values: Iterable[str]) -> List[str]:
@@ -110,3 +108,34 @@ def normalize_declared_service_names(values: Iterable[str]) -> List[str]:
             seen.add(canonical)
 
     return normalized
+
+
+def expand_declared_service_names(values: Iterable[str]) -> Set[str]:
+    """
+    Expand declared service tokens into every name they may match at injection.
+
+    For each token the result contains the original token **and** its canonical
+    alias (when the token is a known built-in service). This lets the different
+    injection consumers all resolve the same declaration:
+
+    * core-service injection accepts either form (``llm`` or ``llm_service``),
+    * storage injection keys on the bare canonical names (``csv``/``json``/...),
+    * host-protocol injection matches the registered service name verbatim
+      (e.g. a host service literally named ``file_service``).
+
+    Keeping both forms avoids the collision where a host service shares a name
+    with a built-in storage alias (``file_service`` -> ``file``): the canonical
+    ``file`` satisfies storage while the original ``file_service`` still matches
+    the host registration.
+    """
+    expanded: Set[str] = set()
+
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        expanded.add(value)
+        canonical = _NORMALIZED_SERVICE_NAME_LOOKUP.get(_normalize_service_token(value))
+        if canonical:
+            expanded.add(canonical)
+
+    return expanded

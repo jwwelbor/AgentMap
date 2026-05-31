@@ -25,7 +25,7 @@ class TestCustomAgentYAMLSource(unittest.TestCase):
         mock_config.get_custom_agents_path.return_value = custom_agents_path
         return CustomAgentYAMLSource(mock_config, self.parser, self.mock_logging)
 
-    def test_load_agents_normalizes_service_aliases(self) -> None:
+    def test_load_agents_preserves_service_tokens(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             source = self._make_source(Path(tmpdir))
             yaml_data = {
@@ -46,21 +46,28 @@ class TestCustomAgentYAMLSource(unittest.TestCase):
             ):
                 agents = source.load_agents()
 
+        # Tokens are preserved verbatim; alias normalization happens at the
+        # injection boundary, not during loading.
         declaration = agents["llm_vision"]
         self.assertEqual(
-            [req.name for req in declaration.service_requirements], ["llm_service"]
+            [req.name for req in declaration.service_requirements], ["LLMService"]
         )
 
-    def test_load_agents_fails_fast_on_unknown_service_token(self) -> None:
+    def test_load_agents_accepts_host_service_tokens(self) -> None:
+        """Host-registered service tokens load without raising.
+
+        These are not built-in services, so they pass through loading; whether
+        they actually exist is validated later at injection time.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             source = self._make_source(Path(tmpdir))
             yaml_data = {
                 "agents": {
-                    "llm_vision": {
-                        "class_path": "app.agents.llm_vision.LlmVisionAgent",
+                    "db_agent": {
+                        "class_path": "app.agents.db.DbAgent",
                         "requires": {
-                            "services": ["DefinitelyNotAService"],
-                            "protocols": ["LLMCapableAgent"],
+                            "services": ["database_service"],
+                            "protocols": ["DatabaseCapableAgent"],
                         },
                     }
                 }
@@ -70,15 +77,13 @@ class TestCustomAgentYAMLSource(unittest.TestCase):
                 "agentmap.services.declaration_sources.custom_agent_yaml_source.load_yaml_file",
                 return_value=yaml_data,
             ):
-                with self.assertRaises(ValueError) as context:
-                    source.load_agents()
+                agents = source.load_agents()
 
-        message = str(context.exception)
-        self.assertIn("custom_agents.yaml", message)
-        self.assertIn("llm_vision", message)
-        self.assertIn("DefinitelyNotAService", message)
-        self.assertIn("llm_service", message)
-        self.assertIn("storage_service_manager", message)
+        declaration = agents["db_agent"]
+        self.assertEqual(
+            [req.name for req in declaration.service_requirements],
+            ["database_service"],
+        )
 
 
 if __name__ == "__main__":

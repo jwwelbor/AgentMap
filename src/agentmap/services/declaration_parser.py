@@ -15,9 +15,6 @@ from agentmap.models.declaration_models import (
     ServiceRequirement,
 )
 from agentmap.services.logging_service import LoggingService
-from agentmap.services.service_name_normalization import (
-    normalize_declared_service_name,
-)
 
 
 class DeclarationParser:
@@ -68,10 +65,7 @@ class DeclarationParser:
 
                 # Parse service requirements
                 service_requirements = self._parse_service_requirements(
-                    data.get("requires", []),
-                    data.get("services", []),
-                    source,
-                    agent_type,
+                    data.get("requires", []), data.get("services", [])
                 )
 
                 # Parse protocol requirements
@@ -223,10 +217,7 @@ class DeclarationParser:
 
     @staticmethod
     def _parse_service_requirements(
-        requires: List[Any],
-        services: List[Any],
-        source: str,
-        agent_type: str,
+        requires: List[Any], services: List[Any]
     ) -> List[ServiceRequirement]:
         """
         Parse service requirements from different input structures.
@@ -243,19 +234,12 @@ class DeclarationParser:
 
         for req in all_reqs:
             if isinstance(req, str):
-                requirement = ServiceRequirement.from_string(req)
+                requirements.append(ServiceRequirement.from_string(req))
             elif isinstance(req, dict):
-                requirement = ServiceRequirement.from_dict(req)
+                requirements.append(ServiceRequirement.from_dict(req))
             else:
                 # Skip invalid requirements
                 continue
-
-            requirement.name = normalize_declared_service_name(requirement.name)
-            if requirement.fallback:
-                requirement.fallback = normalize_declared_service_name(
-                    requirement.fallback
-                )
-            requirements.append(requirement)
 
         return requirements
 

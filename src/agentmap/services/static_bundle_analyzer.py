@@ -118,6 +118,7 @@ class StaticBundleAnalyzer:
         required_services = requirements.get("services", set())
         required_protocols = requirements.get("protocols", set())
         missing_declarations = requirements.get("missing", set())
+        missing_services = requirements.get("missing_services", set())
 
         self.logger.debug(
             f"Resolved requirements: {len(required_services)} services, "
@@ -171,6 +172,7 @@ class StaticBundleAnalyzer:
             "agent_type_count": len(agent_types),
             "created_via": "static_analysis",
             "has_missing": len(missing_declarations) > 0,
+            "has_missing_services": len(missing_services) > 0,
             "has_parallel_routing": self._has_parallel_routing(nodes),
             "parallel_edge_count": self._count_parallel_edges(nodes),
         }
@@ -190,6 +192,7 @@ class StaticBundleAnalyzer:
             validation_metadata=validation_metadata,
             protocol_mappings=protocol_mappings,
             missing_declarations=missing_declarations,
+            missing_services=missing_services,
             agent_mappings=agent_mappings,
             builtin_agents=builtin_agents,
             custom_agents=custom_agents,

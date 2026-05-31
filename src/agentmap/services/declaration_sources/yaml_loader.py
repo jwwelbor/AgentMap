@@ -48,6 +48,10 @@ def load_yaml_file(path: Path, logger: logging.Logger) -> Dict[str, Any]:
     except yaml.YAMLError as e:
         logger.error(f"Failed to parse YAML file '{path}': {e}")
         raise ValueError(f"Failed to parse YAML file '{path}': {e}") from e
+    except ValueError:
+        # Already a well-formed validation error (e.g. non-mapping top level);
+        # propagate it without re-wrapping its message.
+        raise
     except Exception as e:
         logger.error(f"Failed to load YAML file '{path}': {e}")
         raise ValueError(f"Failed to load YAML file '{path}': {e}") from e

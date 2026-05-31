@@ -30,7 +30,7 @@ from agentmap.services.protocols import (
     ToolCapableAgent,
 )
 from agentmap.services.service_name_normalization import (
-    normalize_declared_service_names,
+    expand_declared_service_names,
 )
 from agentmap.services.state_adapter_service import StateAdapterService
 
@@ -373,7 +373,13 @@ class GraphAgentInstantiationService:
         if not all_services:
             return None
 
-        return set(normalize_declared_service_names(all_services))
+        # Expand each declared token into both its original form and its
+        # canonical alias (when known). This lets every injection consumer
+        # resolve the same declaration: core services accept either form,
+        # storage keys on the bare canonical names, and host-protocol injection
+        # matches the registered service name verbatim. See
+        # service_name_normalization.expand_declared_service_names.
+        return expand_declared_service_names(all_services)
 
     def _wire_content_capture_flags(self, agent_instance: Any) -> None:
         """Wire content capture flags from telemetry config into agent context.

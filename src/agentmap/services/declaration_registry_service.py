@@ -17,6 +17,10 @@ from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.declaration_sources import DeclarationSource
 from agentmap.services.logging_service import LoggingService
+from agentmap.services.service_name_normalization import (
+    is_known_declared_service_name,
+    normalize_declared_service_name,
+)
 
 # =============================================================================
 # Shared Utility Functions
@@ -46,9 +50,14 @@ def resolve_service_dependencies_recursive(
     Returns:
         Set of all required service names including dependencies
     """
-    all_services = set(service_names)
+    all_services: Set[str] = set()
 
-    for service_name in service_names:
+    for raw_name in service_names:
+        # Normalize known aliases (e.g. ``LLMService`` -> ``llm_service``) so the
+        # lookup matches the declaration key; unknown/host tokens pass through.
+        service_name = normalize_declared_service_name(raw_name)
+        all_services.add(service_name)
+
         if service_name in visited:
             if log_warning:
                 log_warning(f"Circular dependency detected for service: {service_name}")
@@ -118,7 +127,8 @@ def resolve_agent_requirements_from_declarations(
         log_debug: Optional callback for debug logging
 
     Returns:
-        Dictionary with 'services', 'protocols', and 'missing' keys
+        Dictionary with 'services', 'protocols', 'missing', and
+        'missing_services' keys
     """
     if log_debug:
         log_debug(f"Resolving requirements for {len(agent_types)} agent types")
@@ -127,14 +137,21 @@ def resolve_agent_requirements_from_declarations(
     required_protocols: Set[str] = set()
     missing_agents: Set[str] = set()
 
-    # Collect requirements from all agents
+    # Collect requirements from all declared agents only. Missing agents
+    # contribute no service requirements (no declaration to read), so they can
+    # never produce a spurious missing-service failure.
     for agent_type in agent_types:
         agent_decl = get_agent_decl(agent_type)
         if not agent_decl:
             missing_agents.add(agent_type)
             continue
 
-        required_services.update(agent_decl.get_required_services())
+        # Normalize known aliases up front so they flow into resolution as their
+        # canonical names; unknown/host tokens pass through unchanged.
+        required_services.update(
+            normalize_declared_service_name(name)
+            for name in agent_decl.get_required_services()
+        )
         required_protocols.update(agent_decl.get_required_protocols())
 
     # Resolve service dependencies recursively
@@ -146,10 +163,24 @@ def resolve_agent_requirements_from_declarations(
     )
     all_services = agent_services | protocol_services
 
+    # Flag any required service that is genuinely unwired: it has no declaration
+    # in the unified (builtin + host) registry AND is not a known built-in alias
+    # that legitimately resolves under a different canonical key. Protocol-derived
+    # names always come from the services map, so only agent/dependency service
+    # names can surface here.
+    missing_services: Set[str] = set()
+    for service_name in all_services:
+        if get_service_decl(service_name):
+            continue
+        if is_known_declared_service_name(service_name):
+            continue
+        missing_services.add(service_name)
+
     return {
         "services": all_services,
         "protocols": required_protocols,
         "missing": missing_agents,
+        "missing_services": missing_services,
     }
 
 
@@ -275,7 +306,8 @@ class RunScopedDeclarationRegistry:
             agent_types: Set of agent types to resolve requirements for
 
         Returns:
-            Dictionary with 'services', 'protocols', and 'missing' keys
+            Dictionary with 'services', 'protocols', 'missing', and
+            'missing_services' keys
         """
         return resolve_agent_requirements_from_declarations(
             agent_types=agent_types,
@@ -400,7 +432,8 @@ class DeclarationRegistryService:
             agent_types: Set of agent types to resolve requirements for
 
         Returns:
-            Dictionary with 'services', 'protocols', and 'missing' keys
+            Dictionary with 'services', 'protocols', 'missing', and
+            'missing_services' keys
         """
         return resolve_agent_requirements_from_declarations(
             agent_types=agent_types,

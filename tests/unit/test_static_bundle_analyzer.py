@@ -277,6 +277,44 @@ class TestStaticBundleAnalyzer(unittest.TestCase):
         # Verify missing declarations are tracked
         self.assertIn("unknown_agent", result.missing_declarations)
 
+    @patch("pathlib.Path.exists")
+    def test_missing_services_populated_on_bundle(self, mock_exists):
+        """Resolver-reported missing_services flow onto the bundle + metadata."""
+        mock_exists.return_value = True
+
+        node_specs = [self._create_mock_node_spec("node1", "echo")]
+        nodes = {"node1": Node("node1", agent_type="echo")}
+        self._setup_mock_graph_spec("test_graph", node_specs, nodes)
+        self._setup_mock_declarations()
+
+        # Resolver flags an undeclared required service.
+        self.mock_declaration_registry.resolve_agent_requirements.return_value = {
+            "services": {"logging_service", "bogus_service"},
+            "protocols": set(),
+            "missing": set(),
+            "missing_services": {"bogus_service"},
+        }
+
+        result = self.analyzer.create_static_bundle(Path("test.csv"))
+
+        self.assertIn("bogus_service", result.missing_services)
+        self.assertTrue(result.validation_metadata["has_missing_services"])
+
+    @patch("pathlib.Path.exists")
+    def test_no_missing_services_when_all_declared(self, mock_exists):
+        """has_missing_services is False and set empty when nothing is missing."""
+        mock_exists.return_value = True
+
+        node_specs = [self._create_mock_node_spec("node1", "echo")]
+        nodes = {"node1": Node("node1", agent_type="echo")}
+        self._setup_mock_graph_spec("test_graph", node_specs, nodes)
+        self._setup_mock_declarations()
+
+        result = self.analyzer.create_static_bundle(Path("test.csv"))
+
+        self.assertEqual(result.missing_services, set())
+        self.assertFalse(result.validation_metadata["has_missing_services"])
+
     def test_compute_csv_hash(self):
         """Test CSV hash computation."""
         # Create temporary CSV content as bytes (since the implementation opens in 'rb' mode)

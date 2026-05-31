@@ -66,8 +66,8 @@ class TestGraphAgentInstantiationService(unittest.TestCase):
             graph_bundle_service=self.graph_bundle_service,
         )
 
-    def test_alias_normalization_reaches_llm_injection(self) -> None:
-        """Custom agent aliases should normalize before required_services filtering."""
+    def test_alias_expansion_reaches_llm_injection(self) -> None:
+        """Declared aliases expand (original + canonical) before filtering."""
         declaration = self.parser.parse_agent(
             "llm_vision",
             {
@@ -96,7 +96,7 @@ class TestGraphAgentInstantiationService(unittest.TestCase):
             self.instantiation_service._get_required_services_for_agent(
                 "llm_vision", bundle
             ),
-            {"llm_service"},
+            {"LLMService", "llm_service"},
         )
 
         result = self.instantiation_service.instantiate_agents(bundle)

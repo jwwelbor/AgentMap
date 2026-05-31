@@ -255,8 +255,9 @@ class MyPromptAgent(BaseAgent, PromptCapableAgent):
 
 ## `custom_agents.yaml` Service Requirements
 
-Use the canonical service tokens in `requires.services`. The loader normalizes
-those tokens to the injector's internal service names before configuration.
+List the services your agent needs in `requires.services`. Tokens are matched
+against the declared services (the built-in service registry plus any
+host-registered services) when the agent is wired up.
 
 ```yaml
 agents:
@@ -271,20 +272,22 @@ agents:
         - PromptCapableAgent
 ```
 
-Canonical service tokens and their internal targets:
+For convenience, common aliases for the built-in services are normalized to
+their canonical internal names at injection time:
 
-- `llm` -> `llm_service`
-- `storage` -> `storage_service_manager`
-- `prompt` -> `prompt_manager_service`
+- `llm`, `LLMService` -> `llm_service`
+- `storage`, `StorageServiceManager` -> `storage_service_manager`
+- `prompt`, `PromptManagerService` -> `prompt_manager_service`
 - `orchestrator` -> `orchestrator_service`
 - `blob` -> `blob_storage_service`
-- `csv`, `json`, `file`, `vector`, `memory` -> remain as-is
+- `csv`, `json`, `file`, `vector`, `memory` -> the corresponding storage service
 
-Common aliases such as `LLMService`, `StorageServiceManager`, `CSVService`, and
-`PromptManagerService` are accepted, but they are normalized during load. If a
-token is unknown, `custom_agents.yaml` fails fast during bootstrap with an
-error that names the file, the agent type, and the bad token instead of
-silently skipping injection.
+Normalization is non-destructive: the token you declare is preserved and the
+canonical alias is added alongside it, so **host-registered services are matched
+by the exact name you registered them under** (e.g. `database_service`). Tokens
+that don't correspond to any declared service are simply not injected — declare
+the service (in the built-in registry or via host registration) for it to be
+wired up.
 
 ## State Management
 

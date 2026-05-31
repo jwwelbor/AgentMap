@@ -210,9 +210,7 @@ class TestDeclarationParser(unittest.TestCase):
         agent_data2 = {"class_path": "test.TestAgent", "services": ["storage_service"]}
         result2 = self.parser.parse_agent("test_agent", agent_data2, "test_source")
         self.assertEqual(len(result2.service_requirements), 1)
-        self.assertEqual(
-            result2.service_requirements[0].name, "storage_service_manager"
-        )
+        self.assertEqual(result2.service_requirements[0].name, "storage_service")
 
         # Test parsing both fields
         agent_data3 = {
@@ -223,8 +221,13 @@ class TestDeclarationParser(unittest.TestCase):
         result3 = self.parser.parse_agent("test_agent", agent_data3, "test_source")
         self.assertEqual(len(result3.service_requirements), 2)
 
-    def test_parse_agent_normalizes_service_aliases(self):
-        """Test service aliases are normalized to canonical injectable names."""
+    def test_parse_agent_preserves_service_tokens_verbatim(self):
+        """The parser preserves declared service tokens as-is.
+
+        Alias normalization is non-destructive and happens at the injection
+        boundary (see service_name_normalization.expand_declared_service_names),
+        not during parsing, so that host-registered service names survive.
+        """
         agent_data = {
             "class_path": "test.TestAgent",
             "services": ["LLMService", "StorageServiceManager", "CSVService"],
@@ -234,27 +237,28 @@ class TestDeclarationParser(unittest.TestCase):
 
         self.assertEqual(
             [req.name for req in result.service_requirements],
-            ["llm_service", "storage_service_manager", "csv"],
+            ["LLMService", "StorageServiceManager", "CSVService"],
         )
 
-    def test_parse_agent_rejects_unknown_service_tokens(self):
-        """Test unknown service tokens fail fast with clear validation context."""
+    def test_parse_agent_preserves_unknown_service_tokens(self):
+        """Unknown/host service tokens pass through parsing without raising.
+
+        Whether a required service actually exists is validated later, at
+        injection time, where the registered service names are known.
+        """
         agent_data = {
             "class_path": "test.TestAgent",
-            "services": ["LLMService", "DefinitelyNotAService"],
+            "services": ["llm_service", "database_service"],
         }
 
-        with self.assertRaises(ValueError) as context:
-            self.parser.parse_agent(
-                "test_agent", agent_data, "yaml:/tmp/custom_agents.yaml"
-            )
+        result = self.parser.parse_agent(
+            "test_agent", agent_data, "yaml:/tmp/custom_agents.yaml"
+        )
 
-        message = str(context.exception)
-        self.assertIn("yaml:/tmp/custom_agents.yaml", message)
-        self.assertIn("test_agent", message)
-        self.assertIn("DefinitelyNotAService", message)
-        self.assertIn("llm_service", message)
-        self.assertIn("storage_service_manager", message)
+        self.assertEqual(
+            [req.name for req in result.service_requirements],
+            ["llm_service", "database_service"],
+        )
 
     def test_error_handling_with_none_values(self):
         """Test error handling when required values are None."""

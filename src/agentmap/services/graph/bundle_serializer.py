@@ -84,6 +84,7 @@ class BundleSerializer:
             # Validation metadata (Phase 3)
             "validation_metadata": bundle.validation_metadata or {},
             "missing_declarations": set_to_list(bundle.missing_declarations),
+            "missing_services": set_to_list(bundle.missing_services),
             # Legacy fields for backwards compatibility
             "csv_hash": bundle.csv_hash,
             "version_hash": bundle.version_hash,
@@ -160,6 +161,8 @@ class BundleSerializer:
                 missing_declarations=list_to_set(
                     data.get("missing_declarations")
                 ),  # FIX: Restore missing_declarations
+                # Backward compatible: old bundles without the field -> empty set
+                missing_services=list_to_set(data.get("missing_services")),
             )
 
             # Set format metadata if available

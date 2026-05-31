@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional
 from langgraph.errors import GraphInterrupt
 
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
+from agentmap.exceptions.graph_exceptions import MissingServiceDeclarationError
 from agentmap.models.execution.result import ExecutionResult
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.config.app_config_service import AppConfigService
@@ -110,6 +111,27 @@ class GraphRunnerService:
         # Check configuration for execution approach
         self.logger.info("GraphRunnerService initialized")
 
+    def _check_missing_services(self, bundle: GraphBundle) -> None:
+        """Hard-fail if the bundle requires services with no declaration.
+
+        Args:
+            bundle: Prepared GraphBundle to validate
+
+        Raises:
+            MissingServiceDeclarationError: If ``bundle.missing_services`` is
+                non-empty.
+        """
+        missing_services = getattr(bundle, "missing_services", None)
+        if not missing_services:
+            return
+
+        services = ", ".join(sorted(missing_services))
+        raise MissingServiceDeclarationError(
+            f"Cannot run graph '{bundle.graph_name}': required service(s) not "
+            f"declared/registered: {services} (declare it as a builtin service "
+            f"or register it as a host service)."
+        )
+
     def run(
         self,
         bundle: GraphBundle,
@@ -140,6 +162,13 @@ class GraphRunnerService:
             Exception: Any errors from pipeline stages (not swallowed)
         """
         graph_name = bundle.graph_name
+
+        # Wiring gate: refuse to run a graph whose declared agents require a
+        # service that is declared in neither the builtin nor host namespace.
+        # Assembly records this (bundle.missing_services); execution enforces it.
+        # Scaffold/update/validate paths do not pass through run(), so they can
+        # still assemble an incomplete bundle to repair it.
+        self._check_missing_services(bundle)
 
         # Add contextual logging for subgraph execution
         if is_subgraph and parent_graph_name:

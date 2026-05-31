@@ -8,7 +8,11 @@ requirement resolution without loading implementations, and backwards compatibil
 import unittest
 from unittest.mock import Mock
 
-from agentmap.models.declaration_models import AgentDeclaration, ServiceDeclaration
+from agentmap.models.declaration_models import (
+    AgentDeclaration,
+    ServiceDeclaration,
+    ServiceRequirement,
+)
 from agentmap.services.declaration_registry_service import DeclarationRegistryService
 from tests.utils.mock_service_factory import MockServiceFactory
 
@@ -142,6 +146,86 @@ class TestDeclarationRegistryService(unittest.TestCase):
         self.assertIn("missing", result)
         self.assertIn("missing_agent", result["missing"])
         self.assertNotIn("valid_agent", result["missing"])
+
+    def test_resolver_normalizes_known_alias(self):
+        """A known alias (LLMService) resolves to its canonical declaration."""
+        agent = AgentDeclaration(
+            agent_type="llm_agent",
+            class_path="test.LLMAgent",
+            service_requirements=[ServiceRequirement(name="LLMService")],
+            source="test",
+        )
+        service = ServiceDeclaration(
+            service_name="llm_service",
+            class_path="test.LLMService",
+            source="test",
+        )
+        self.registry_service._agents["llm_agent"] = agent
+        self.registry_service._services["llm_service"] = service
+
+        result = self.registry_service.resolve_agent_requirements({"llm_agent"})
+
+        # Canonical name is present and the alias is NOT reported as missing.
+        self.assertIn("llm_service", result["services"])
+        self.assertEqual(result["missing_services"], set())
+
+    def test_resolver_reports_undeclared_service(self):
+        """A declared agent requiring an undeclared service is flagged."""
+        agent = AgentDeclaration(
+            agent_type="agent_a",
+            class_path="test.AgentA",
+            service_requirements=[ServiceRequirement(name="nonexistent_service")],
+            source="test",
+        )
+        self.registry_service._agents["agent_a"] = agent
+
+        result = self.registry_service.resolve_agent_requirements({"agent_a"})
+
+        self.assertIn("nonexistent_service", result["missing_services"])
+
+    def test_resolver_does_not_flag_host_declared_service(self):
+        """A verbatim host-declared service is not reported as missing."""
+        agent = AgentDeclaration(
+            agent_type="host_agent",
+            class_path="test.HostAgent",
+            service_requirements=[ServiceRequirement(name="my_host_service")],
+            source="test",
+        )
+        service = ServiceDeclaration(
+            service_name="my_host_service",
+            class_path="host.MyHostService",
+            source="host",
+        )
+        self.registry_service._agents["host_agent"] = agent
+        self.registry_service._services["my_host_service"] = service
+
+        result = self.registry_service.resolve_agent_requirements({"host_agent"})
+
+        self.assertIn("my_host_service", result["services"])
+        self.assertEqual(result["missing_services"], set())
+
+    def test_resolver_optional_service_not_flagged(self):
+        """An optional (non-required) service is never flagged as missing."""
+        agent = AgentDeclaration(
+            agent_type="agent_opt",
+            class_path="test.AgentOpt",
+            service_requirements=[
+                ServiceRequirement(name="optional_service", optional=True)
+            ],
+            source="test",
+        )
+        self.registry_service._agents["agent_opt"] = agent
+
+        result = self.registry_service.resolve_agent_requirements({"agent_opt"})
+
+        self.assertEqual(result["missing_services"], set())
+
+    def test_resolver_missing_agent_produces_no_missing_services(self):
+        """A missing agent contributes no service requirements (no false flags)."""
+        result = self.registry_service.resolve_agent_requirements({"ghost_agent"})
+
+        self.assertIn("ghost_agent", result["missing"])
+        self.assertEqual(result["missing_services"], set())
 
     def test_cycle_detection_in_service_dependencies(self):
         """Test detection of circular dependencies in service declarations."""
