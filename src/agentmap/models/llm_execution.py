@@ -129,6 +129,7 @@ class LLMBatchStatus(str, Enum):
     CANCELING = "canceling"
     ENDED = "ended"
     EXPIRED = "expired"
+    CANCELED = "canceled"
     FAILED = "failed"
 
 
@@ -187,6 +188,7 @@ class LLMBatchHandle:
     model: str
     spec_id_map: Dict[str, str]
     results_url: Optional[str] = None
+    result_ref: Optional[str] = None
     expires_at: Optional[str] = None
     ended_at: Optional[str] = None
     request_counts: Optional[LLMBatchRequestCounts] = None
@@ -219,6 +221,7 @@ class LLMBatchHandle:
             "model": self.model,
             "spec_id_map": dict(self.spec_id_map),
             "results_url": self.results_url,
+            "result_ref": self.result_ref,
             "expires_at": self.expires_at,
             "ended_at": self.ended_at,
             "request_counts": counts,
@@ -249,6 +252,7 @@ class LLMBatchHandle:
             model=data["model"],
             spec_id_map=dict(data["spec_id_map"]),
             results_url=data.get("results_url"),
+            result_ref=data.get("result_ref"),
             expires_at=data.get("expires_at"),
             ended_at=data.get("ended_at"),
             request_counts=counts,
@@ -273,3 +277,23 @@ class LLMBatchResultRecord:
     content: Optional[str] = None
     usage: Optional[LLMUsage] = None
     error: Optional[LLMExecutionError] = None
+
+
+@dataclass
+class BatchPollResult:
+    """
+    Normalized poll result returned by all adapter ``poll()`` implementations.
+
+    All adapters return this dataclass so ``LLMService.poll_batch`` can read
+    ``status`` directly without performing its own provider-specific mapping.
+    ``result_ref`` carries the provider file/object reference used to fetch
+    results (e.g. OpenAI output_file_id); it is ``None`` for providers that
+    use URL-based or inline result delivery.
+    """
+
+    status: LLMBatchStatus
+    request_counts: Optional[LLMBatchRequestCounts] = None
+    result_ref: Optional[str] = None
+    results_url: Optional[str] = None
+    ended_at: Optional[str] = None
+    expires_at: Optional[str] = None
