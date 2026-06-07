@@ -580,3 +580,342 @@ class TestBatchCapabilities:
         service, adapters, repo = _make_service(batch_dir=str(tmp_path))
         with pytest.raises(LLMBatchUnsupportedProviderError):
             service.batch_capabilities("unknown_provider")
+
+
+# ---------------------------------------------------------------------------
+# Parametrized end-to-end lifecycle through LLMService (all three providers)
+# ---------------------------------------------------------------------------
+
+
+# Provider-specific configuration for the e2e lifecycle fixture.
+# Each entry drives submit→poll→fetch_results through LLMService.
+#
+# result_ref_after_poll: the result_ref that the mock poll returns (None for
+#   Anthropic and Gemini inline; "file-output-xyz" for OpenAI).
+# results_url_after_poll: the results_url that the mock poll returns (set for
+#   Anthropic; None for OpenAI and Gemini).
+# expected_fetch_call: the kwargs assert on adapter.fetch_results.
+#
+# Critically: the OpenAI fixture does NOT inject a fabricated results_url into
+# the handle.  The original bug was masked by tests that did exactly that —
+# inject results_url=<something> for OpenAI so the guard passed.  Here we use
+# the real OpenAI handle shape (results_url=None, result_ref=<file_id>) so that
+# any reintroduction of the results_url guard would make the fetch assert fail.
+
+_PROVIDER_LIFECYCLE_PARAMS = [
+    pytest.param(
+        "anthropic",
+        # submit returns
+        ("msgbatch_ant001", {"s1": "ant_req_s1"}, "2026-07-01T00:00:00Z"),
+        # poll returns
+        BatchPollResult(
+            status=LLMBatchStatus.ENDED,
+            request_counts=None,
+            results_url="https://api.anthropic.com/v1/messages/batches/msgbatch_ant001/results",
+            result_ref=None,
+            ended_at="2026-06-08T01:00:00Z",
+        ),
+        # expected fetch call kwargs
+        {"result_ref": None},
+        id="anthropic",
+    ),
+    pytest.param(
+        "openai",
+        # submit returns
+        ("batch_openai_001", {"s1": "openai_req_s1"}, "2026-07-01T00:00:00Z"),
+        # poll returns (result_ref = output_file_id; results_url intentionally None)
+        BatchPollResult(
+            status=LLMBatchStatus.ENDED,
+            request_counts=None,
+            results_url=None,
+            result_ref="file-output-xyz",
+            ended_at="2026-06-08T01:00:00Z",
+        ),
+        # expected fetch call kwargs
+        {"result_ref": "file-output-xyz"},
+        id="openai",
+    ),
+    pytest.param(
+        "google",
+        # submit returns
+        ("job_gemini_abc", {"s1": "gemini_req_s1"}, None),
+        # poll returns (neither results_url nor result_ref for inline Gemini)
+        BatchPollResult(
+            status=LLMBatchStatus.ENDED,
+            request_counts=None,
+            results_url=None,
+            result_ref=None,
+            ended_at="2026-06-08T01:00:00Z",
+        ),
+        # expected fetch call kwargs
+        {"result_ref": None},
+        id="google",
+    ),
+]
+
+
+class TestProviderParametrizedLifecycle:
+    """
+    Provider-parametrized full lifecycle through LLMService for all three providers.
+
+    Entrypoint: LLMService.submit_batch → poll_batch → fetch_batch_results.
+    Lowest allowed mock seam: provider SDK adapter methods (submit, poll, fetch_results).
+    Forbidden mocks: LLMService._get_adapter, asyncio.to_thread.
+
+    Counter-factual — this suite would FAIL against the three original blockers:
+      Blocker 1 (poll drops result_ref): the openai case asserts
+        ended_handle.result_ref == "file-output-xyz"; if poll_batch drops it the
+        assertion fails immediately.
+      Blocker 2 (fetch never passes result_ref): the openai assert_called_once_with
+        includes result_ref="file-output-xyz"; without the kwarg the call-sig
+        mismatch raises AssertionError.
+      Blocker 3 (results_url guard applied to all): the openai fixture has
+        results_url=None throughout; if the guard is present fetch_batch_results
+        raises LLMServiceError before reaching the adapter and the test fails.
+
+    The suite also verifies Gemini inline (neither locator) and Anthropic
+    (results_url path) to confirm the guard replacement is provider-aware.
+    """
+
+    @pytest.mark.parametrize(
+        "provider,submit_rv,poll_rv,expected_fetch_kwargs",
+        _PROVIDER_LIFECYCLE_PARAMS,
+    )
+    def test_submit_routes_correct_adapter(
+        self, tmp_path, provider, submit_rv, poll_rv, expected_fetch_kwargs
+    ):
+        """submit_batch calls exactly the matching provider adapter."""
+        service, adapters, repo = _make_service(batch_dir=str(tmp_path))
+        adapters[provider].submit.return_value = submit_rv
+        model = {
+            "anthropic": "claude-sonnet-4-6",
+            "openai": "gpt-4o",
+            "google": "gemini-2.0-flash",
+        }[provider]
+        request = _make_batch_request(provider=provider, model=model)
+
+        service.submit_batch(request)
+
+        adapters[provider].submit.assert_called_once()
+        for other in ("anthropic", "openai", "google"):
+            if other != provider:
+                adapters[other].submit.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "provider,submit_rv,poll_rv,expected_fetch_kwargs",
+        _PROVIDER_LIFECYCLE_PARAMS,
+    )
+    def test_poll_routes_correct_adapter_and_returns_handle(
+        self, tmp_path, provider, submit_rv, poll_rv, expected_fetch_kwargs
+    ):
+        """poll_batch dispatches to the matching adapter and returns an updated handle."""
+        service, adapters, repo = _make_service(batch_dir=str(tmp_path))
+        adapters[provider].poll.return_value = poll_rv
+        handle = _make_handle(provider=provider)
+
+        updated = service.poll_batch(handle)
+
+        adapters[provider].poll.assert_called_once_with(handle.provider_batch_id)
+        assert updated.status == poll_rv.status
+        assert updated.provider == provider
+
+    @pytest.mark.parametrize(
+        "provider,submit_rv,poll_rv,expected_fetch_kwargs",
+        _PROVIDER_LIFECYCLE_PARAMS,
+    )
+    def test_poll_result_ref_survives_into_updated_handle(
+        self, tmp_path, provider, submit_rv, poll_rv, expected_fetch_kwargs
+    ):
+        """result_ref from poll must be carried into the updated LLMBatchHandle.
+
+        Counter-factual for blocker 1: if poll_batch drops result_ref, the openai
+        case asserts ended_handle.result_ref == "file-output-xyz" and FAILS.
+        """
+        service, adapters, repo = _make_service(batch_dir=str(tmp_path))
+        adapters[provider].poll.return_value = poll_rv
+        handle = _make_handle(provider=provider, result_ref=None)
+
+        updated = service.poll_batch(handle)
+
+        expected_result_ref = poll_rv.result_ref
+        assert updated.result_ref == expected_result_ref, (
+            f"[{provider}] poll_batch dropped result_ref: "
+            f"expected {expected_result_ref!r}, got {updated.result_ref!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "provider,submit_rv,poll_rv,expected_fetch_kwargs",
+        _PROVIDER_LIFECYCLE_PARAMS,
+    )
+    def test_fetch_results_does_not_raise_for_provider_handle_shape(
+        self, tmp_path, provider, submit_rv, poll_rv, expected_fetch_kwargs
+    ):
+        """fetch_batch_results must not raise for the real handle shape of each provider.
+
+        Counter-factual for blocker 3: the openai/google cases have results_url=None.
+        If the results_url guard is present, LLMServiceError is raised and the test FAILS.
+        """
+        service, adapters, repo = _make_service(batch_dir=str(tmp_path))
+        adapters[provider].fetch_results.return_value = []
+
+        # Build ended handle with the real locator shape for this provider
+        result_ref = poll_rv.result_ref
+        results_url = poll_rv.results_url
+        handle = _make_handle(
+            provider=provider,
+            status=LLMBatchStatus.ENDED,
+            result_ref=result_ref,
+            results_url=results_url,
+        )
+
+        # Must not raise for any provider
+        results = service.fetch_batch_results(handle)
+        assert results == []
+
+    @pytest.mark.parametrize(
+        "provider,submit_rv,poll_rv,expected_fetch_kwargs",
+        _PROVIDER_LIFECYCLE_PARAMS,
+    )
+    def test_fetch_results_passes_result_ref_to_adapter(
+        self, tmp_path, provider, submit_rv, poll_rv, expected_fetch_kwargs
+    ):
+        """fetch_batch_results must forward result_ref (from the handle) to the adapter.
+
+        Counter-factual for blocker 2: if result_ref is not forwarded, the
+        assert_called_once_with check fails for openai (expected result_ref=
+        "file-output-xyz" but adapter received None or was called with 2 args).
+        """
+        service, adapters, repo = _make_service(batch_dir=str(tmp_path))
+        adapters[provider].fetch_results.return_value = []
+
+        result_ref = poll_rv.result_ref
+        results_url = poll_rv.results_url
+        handle = _make_handle(
+            provider=provider,
+            status=LLMBatchStatus.ENDED,
+            result_ref=result_ref,
+            results_url=results_url,
+        )
+
+        service.fetch_batch_results(handle)
+
+        adapters[provider].fetch_results.assert_called_once_with(
+            handle.provider_batch_id,
+            handle.spec_id_map,
+            **expected_fetch_kwargs,
+        )
+
+    @pytest.mark.parametrize(
+        "provider,submit_rv,poll_rv,expected_fetch_kwargs",
+        _PROVIDER_LIFECYCLE_PARAMS,
+    )
+    def test_full_lifecycle_submit_poll_fetch(
+        self, tmp_path, provider, submit_rv, poll_rv, expected_fetch_kwargs
+    ):
+        """Full submit→poll→fetch round-trip through LLMService for each provider.
+
+        This is the primary end-to-end integration test.  It drives the real
+        production call chain: submit_batch → handle persisted → poll_batch →
+        updated handle (with result_ref carried through) → fetch_batch_results
+        (with result_ref forwarded to adapter).
+
+        Counter-factual summary:
+          - Blocker 1: openai ended_handle.result_ref == "file-output-xyz" fails if dropped.
+          - Blocker 2: assert_called_once_with(result_ref=...) fails if not forwarded.
+          - Blocker 3: fetch raises LLMServiceError if results_url guard fires for openai/google.
+        """
+        service, adapters, repo = _make_service(batch_dir=str(tmp_path))
+        model = {
+            "anthropic": "claude-sonnet-4-6",
+            "openai": "gpt-4o",
+            "google": "gemini-2.0-flash",
+        }[provider]
+
+        # --- submit ---
+        adapters[provider].submit.return_value = submit_rv
+        request = _make_batch_request(provider=provider, model=model)
+        submitted_handle = service.submit_batch(request)
+
+        assert submitted_handle.provider == provider
+        # submit_batch returns a handle with SUBMITTED (or IN_PROGRESS) status
+        assert submitted_handle.status in (
+            LLMBatchStatus.SUBMITTED,
+            LLMBatchStatus.IN_PROGRESS,
+        )
+        adapters[provider].submit.assert_called_once()
+
+        # --- poll (transitions to ENDED, carries result_ref) ---
+        adapters[provider].poll.return_value = poll_rv
+        ended_handle = service.poll_batch(submitted_handle)
+
+        assert ended_handle.status == LLMBatchStatus.ENDED
+        assert (
+            ended_handle.result_ref == poll_rv.result_ref
+        ), f"[{provider}] poll_batch dropped result_ref"
+
+        # --- fetch (result_ref must reach adapter; no results_url guard for openai/google) ---
+        adapters[provider].fetch_results.return_value = []
+        results = service.fetch_batch_results(ended_handle)
+
+        assert results == []
+        adapters[provider].fetch_results.assert_called_once_with(
+            ended_handle.provider_batch_id,
+            ended_handle.spec_id_map,
+            **expected_fetch_kwargs,
+        )
+
+    @pytest.mark.parametrize(
+        "provider,submit_rv,poll_rv,expected_fetch_kwargs",
+        [
+            pytest.param(
+                "anthropic",
+                ("msgbatch_ant_cancel", {"s1": "ant_req_s1"}, "2026-07-01T00:00:00Z"),
+                BatchPollResult(status=LLMBatchStatus.IN_PROGRESS),
+                {},
+                id="anthropic_cancel",
+            ),
+            pytest.param(
+                "openai",
+                (
+                    "batch_openai_cancel",
+                    {"s1": "openai_req_s1"},
+                    "2026-07-01T00:00:00Z",
+                ),
+                BatchPollResult(status=LLMBatchStatus.IN_PROGRESS),
+                {},
+                id="openai_cancel",
+            ),
+        ],
+    )
+    def test_cancel_routes_to_correct_adapter(
+        self, tmp_path, provider, submit_rv, poll_rv, expected_fetch_kwargs
+    ):
+        """cancel_batch dispatches to the matching adapter (Anthropic and OpenAI support cancel).
+
+        Google adapter has supports_cancel=False so cancel_batch raises — tested
+        separately below.
+        """
+        service, adapters, repo = _make_service(batch_dir=str(tmp_path))
+        adapters[provider].cancel.return_value = None
+        # cancel_batch calls poll_batch internally; provide a valid poll return value
+        adapters[provider].poll.return_value = BatchPollResult(
+            status=LLMBatchStatus.CANCELING,
+        )
+
+        handle = _make_handle(provider=provider, status=LLMBatchStatus.IN_PROGRESS)
+        service.cancel_batch(handle)
+
+        adapters[provider].cancel.assert_called_once()
+        for other in ("anthropic", "openai", "google"):
+            if other != provider:
+                adapters[other].cancel.assert_not_called()
+
+    def test_cancel_google_raises_not_supported(self, tmp_path):
+        """cancel_batch on a google handle raises because google does not support cancel."""
+        from agentmap.services.llm_batch_errors import LLMBatchCancelNotSupportedError
+
+        service, adapters, repo = _make_service(batch_dir=str(tmp_path))
+        handle = _make_handle(provider="google", status=LLMBatchStatus.IN_PROGRESS)
+
+        with pytest.raises(LLMBatchCancelNotSupportedError):
+            service.cancel_batch(handle)
