@@ -11,11 +11,8 @@ import json
 import os
 import tempfile
 
-import pytest
-
 from agentmap.models.llm_execution import (
     LLMBatchHandle,
-    LLMBatchRequestCounts,
     LLMBatchStatus,
 )
 
@@ -86,7 +83,10 @@ class TestBatchHandleRepositoryRoundTrip:
         )
         data = handle.to_dict()
         restored = BatchHandleRepository.load_from_dict(data)
-        assert restored.spec_id_map == {"my-spec": "my-spec", "needs/sanitize": "a3f9c2"}
+        assert restored.spec_id_map == {
+            "my-spec": "my-spec",
+            "needs/sanitize": "a3f9c2",
+        }
 
     def test_load_from_dict_preserves_all_identity_fields(self):
         """Restored handle identity fields must match original."""
@@ -161,3 +161,52 @@ class TestBatchHandleRepositoryPersistence:
             with open(expected_file) as f:
                 json_data = json.loads(f.read())
             assert json_data["spec_id_map"] == {"s1": "s1", "s2/sub": "a1b2c3"}
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for UAT-rejected defects (F-HIGH-1)
+# ---------------------------------------------------------------------------
+
+
+class TestBatchHandleRepositoryDirCreation:
+    """F-HIGH-1: BatchHandleRepository.save must create batch_dir if absent."""
+
+    def test_save_to_nonexistent_nested_dir_succeeds(self):
+        """
+        save() against a non-existent nested directory must create the directory
+        and write the JSON file successfully (no FileNotFoundError).
+
+        RED before fix: save() opens the file without makedirs → FileNotFoundError.
+        GREEN after fix: os.makedirs(exist_ok=True) is called before open().
+        """
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_root:
+            # Deep nested path that does NOT exist yet
+            nested_dir = os.path.join(tmp_root, "a", "b", "c", "llm_batches")
+            assert not os.path.exists(nested_dir), "precondition: dir must not exist"
+
+            repo = BatchHandleRepository(batch_dir=nested_dir)
+            handle = _make_handle()
+
+            # Must not raise FileNotFoundError
+            repo.save(handle)
+
+            expected_file = os.path.join(nested_dir, f"{handle.agentmap_batch_id}.json")
+            assert os.path.exists(expected_file), "JSON file must exist after save()"
+            with open(expected_file) as f:
+                data = json.load(f)
+            assert data["agentmap_batch_id"] == handle.agentmap_batch_id
+
+    def test_save_to_existing_dir_still_works(self):
+        """save() to an already-existing dir must not raise (exist_ok=True)."""
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            handle = _make_handle()
+            # Call twice — second call must not fail because dir exists
+            repo.save(handle)
+            repo.save(handle)
+            expected_file = os.path.join(tmp_path, f"{handle.agentmap_batch_id}.json")
+            assert os.path.exists(expected_file)

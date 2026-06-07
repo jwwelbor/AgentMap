@@ -12,7 +12,7 @@ import hashlib
 import re
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
-from agentmap.exceptions import LLMDependencyError
+from agentmap.exceptions import LLMDependencyError, LLMServiceError
 from agentmap.models.llm_execution import (
     LLMBatchResultRecord,
     LLMCallSpec,
@@ -82,8 +82,19 @@ class AnthropicBatchAdapter:
         spec_id_map: Dict[str, str] = {}
         requests = []
 
+        seen_custom_ids: Dict[str, str] = (
+            {}
+        )  # custom_id -> first spec_id (collision guard)
         for spec in specs:
             custom_id = _sanitize_spec_id(spec.spec_id)
+            # F-HIGH-4: detect custom_id collisions before sending to provider
+            if custom_id in seen_custom_ids:
+                raise LLMServiceError(
+                    f"custom_id collision: spec_id {spec.spec_id!r} and "
+                    f"{seen_custom_ids[custom_id]!r} both sanitize to {custom_id!r}. "
+                    "Rename one spec_id to avoid ambiguous demux."
+                )
+            seen_custom_ids[custom_id] = spec.spec_id
             spec_id_map[spec.spec_id] = custom_id
 
             params: Dict[str, Any] = {
@@ -106,11 +117,19 @@ class AnthropicBatchAdapter:
 
         response = self._client.messages.batches.create(requests=requests)
 
+        # F-MED-4: validate required SDK fields; raise typed error on malformed response
+        provider_batch_id = getattr(response, "id", None)
+        if not provider_batch_id:
+            raise LLMServiceError(
+                "Anthropic SDK returned a batch response with no 'id' field. "
+                "The batch may or may not have been submitted — check Anthropic dashboard."
+            )
+
         expires_at: Optional[str] = None
         if hasattr(response, "expires_at") and response.expires_at is not None:
             expires_at = str(response.expires_at)
 
-        return response.id, spec_id_map, expires_at
+        return provider_batch_id, spec_id_map, expires_at
 
     # ------------------------------------------------------------------
     # Poll
@@ -187,9 +206,27 @@ class AnthropicBatchAdapter:
                 msg = result.message
                 # Extract text content
                 content: Optional[str] = None
-                if hasattr(msg, "content") and msg.content:
-                    first = msg.content[0]
+                raw_content = getattr(msg, "content", None)
+                if raw_content:
+                    first = raw_content[0]
                     content = getattr(first, "text", None)
+
+                # F-MED-2: empty/missing content is a parse error — report as errored
+                if not content:
+                    yield LLMBatchResultRecord(
+                        spec_id=spec_id,
+                        status="errored",
+                        error=LLMExecutionError(
+                            error_type="empty_content",
+                            message=(
+                                "Provider returned a succeeded result with no text "
+                                "content blocks — treating as errored to avoid "
+                                "silent data loss."
+                            ),
+                            retryable=False,
+                        ),
+                    )
+                    continue
 
                 # Build usage
                 usage_obj = getattr(msg, "usage", None)
@@ -217,11 +254,20 @@ class AnthropicBatchAdapter:
 
             elif result.type == "errored":
                 error_data = getattr(result, "error", None)
-                error: Optional[LLMExecutionError] = None
+                # F-HIGH-3: always produce a populated LLMExecutionError (REQ-F-007)
                 if error_data is not None:
-                    error = LLMExecutionError(
+                    error: LLMExecutionError = LLMExecutionError(
                         error_type=getattr(error_data, "type", "unknown"),
                         message=getattr(error_data, "message", ""),
+                        retryable=False,
+                    )
+                else:
+                    error = LLMExecutionError(
+                        error_type="unknown",
+                        message=(
+                            "Provider returned an errored result with no error "
+                            "payload — cannot determine cause."
+                        ),
                         retryable=False,
                     )
                 yield LLMBatchResultRecord(
