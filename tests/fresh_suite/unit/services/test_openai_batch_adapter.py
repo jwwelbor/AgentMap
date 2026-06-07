@@ -46,6 +46,14 @@ def _make_mock_openai_module():
     return mock_sdk, client_instance
 
 
+def _make_resolved(specs, model="gpt-4o", max_tokens=1024, request_options=None):
+    """Build a resolved_params list from old-style args (test helper only)."""
+    rp = {"model": model, "max_tokens": max_tokens}
+    if request_options:
+        rp.update(request_options)
+    return [dict(rp) for _ in specs]
+
+
 def _make_adapter(client_instance=None):
     """Create an OpenAIBatchAdapter with the openai SDK mocked out."""
     mock_sdk, ci = _make_mock_openai_module()
@@ -175,7 +183,7 @@ class TestSubmit:
 
         specs = [_make_spec("s1"), _make_spec("s2")]
         batch_id, spec_id_map, expires_at = adapter.submit(
-            specs, model="gpt-4o", max_tokens=1024, request_options={}
+            specs, resolved_params=_make_resolved(specs, model="gpt-4o", max_tokens=1024)
         )
 
         # files.create must be called once
@@ -233,8 +241,9 @@ class TestSubmit:
         ci.batches.create.return_value = mock_batch
 
         adapter, _ = _make_adapter(client_instance=ci)
+        s = [_make_spec("s1")]
         result = adapter.submit(
-            [_make_spec("s1")], model="gpt-4o", max_tokens=512, request_options={}
+            s, resolved_params=_make_resolved(s, model="gpt-4o", max_tokens=512)
         )
 
         # Must unpack to exactly 3 without ValueError
@@ -257,8 +266,11 @@ class TestSubmit:
             messages=[{"role": "user", "content": "hi"}],
             model="gpt-3.5-turbo",
         )
+        # resolved_params carries the already-resolved model (spec.model wins after
+        # central resolution when only spec.model is set)
         adapter.submit(
-            [spec_override], model="gpt-4o", max_tokens=256, request_options={}
+            [spec_override],
+            resolved_params=[{"model": "gpt-3.5-turbo", "max_tokens": 256}],
         )
 
         file_arg = (

@@ -65,12 +65,15 @@ class AnthropicBatchAdapter:
     def submit(
         self,
         specs: List[LLMCallSpec],
-        model: str,
-        max_tokens: int,
-        request_options: Dict[str, Any],
+        resolved_params: List[Dict[str, Any]],
     ) -> Tuple[str, Dict[str, str], Optional[str]]:
         """
         Submit a batch to the Anthropic Batches API.
+
+        ``resolved_params[i]`` contains the already conflict-free param dict for
+        ``specs[i]`` (model, max_tokens, temperature, pass-throughs).  The
+        adapter must NOT merge or apply ``setdefault`` against any other source
+        (D-8: centralized resolver).
 
         Returns ``(provider_batch_id, spec_id_map, expires_at)`` where
         ``spec_id_map`` maps each caller ``spec_id`` to its ``custom_id``
@@ -83,28 +86,13 @@ class AnthropicBatchAdapter:
         spec_id_map = _build_spec_id_map(specs, _CUSTOM_ID_RE)
         requests = []
 
-        for spec in specs:
+        for spec, rp in zip(specs, resolved_params):
             custom_id = spec_id_map[spec.spec_id]
+            # Build params from resolved dict only — no merging.
             params: Dict[str, Any] = {
-                "model": model,
-                "max_tokens": max_tokens,
                 "messages": spec.messages,  # cache_control blocks pass through
             }
-
-            # Merge per-spec overrides (temperature, etc.)
-            if spec.model is not None:
-                params["model"] = spec.model
-            if spec.temperature is not None:
-                params["temperature"] = spec.temperature
-
-            # F3: apply per-spec request_options first (they win over batch-level),
-            # then batch-level request_options fill in any gaps.
-            if spec.request_options:
-                for k, v in spec.request_options.items():
-                    params.setdefault(k, v)
-            # Pass through any extra batch-level request_options that haven't been set
-            for k, v in request_options.items():
-                params.setdefault(k, v)
+            params.update(rp)
 
             requests.append({"custom_id": custom_id, "params": params})
 

@@ -86,12 +86,15 @@ class OpenAIBatchAdapter:
     def submit(
         self,
         specs: List[LLMCallSpec],
-        model: str,
-        max_tokens: int,
-        request_options: Dict[str, Any],
+        resolved_params: List[Dict[str, Any]],
     ) -> Tuple[str, Dict[str, str], Optional[str]]:
         """
         Submit a batch to the OpenAI Batch API.
+
+        ``resolved_params[i]`` contains the already conflict-free param dict for
+        ``specs[i]`` (model, max_tokens, temperature, pass-throughs).  The
+        adapter must NOT merge or apply ``setdefault`` against any other source
+        (D-8: centralized resolver).
 
         Builds one JSONL line per spec, stages the file via ``files.create``,
         then calls ``batches.create``.  The file id never crosses the service
@@ -103,9 +106,7 @@ class OpenAIBatchAdapter:
         """
         spec_id_map = _build_spec_id_map(specs, _CUSTOM_ID_RE)
 
-        jsonl_bytes = self._build_jsonl(
-            specs, spec_id_map, model, max_tokens, request_options
-        )
+        jsonl_bytes = self._build_jsonl(specs, spec_id_map, resolved_params)
 
         # Stage the file; file_id stays local — never returned to caller
         file_obj = self._client.files.create(
@@ -142,33 +143,22 @@ class OpenAIBatchAdapter:
         self,
         specs: List[LLMCallSpec],
         spec_id_map: Dict[str, str],
-        model: str,
-        max_tokens: int,
-        request_options: Dict[str, Any],
+        resolved_params: List[Dict[str, Any]],
     ) -> bytes:
         """
         Build JSONL bytes for the OpenAI Batch API.
 
         Each line is a JSON object with keys: ``custom_id``, ``method``,
         ``url``, ``body``.  The ``body`` follows the Chat Completions schema.
+
+        ``resolved_params[i]`` is consumed directly — no merging or setdefault
+        (D-8: centralized resolver).
         """
         lines = []
-        for spec in specs:
+        for spec, rp in zip(specs, resolved_params):
             custom_id = spec_id_map[spec.spec_id]
-            body: Dict[str, Any] = {
-                "model": spec.model if spec.model is not None else model,
-                "max_tokens": max_tokens,
-                "messages": spec.messages,
-            }
-            if spec.temperature is not None:
-                body["temperature"] = spec.temperature
-            # F3: apply per-spec request_options first (they win over batch-level),
-            # then batch-level request_options fill in any gaps.
-            if spec.request_options:
-                for k, v in spec.request_options.items():
-                    body.setdefault(k, v)
-            for k, v in request_options.items():
-                body.setdefault(k, v)
+            body: Dict[str, Any] = {"messages": spec.messages}
+            body.update(rp)  # model, max_tokens, temperature, pass-throughs
 
             record = {
                 "custom_id": custom_id,

@@ -1598,19 +1598,34 @@ class LLMService:
     # Pattern that a valid agentmap_batch_id must satisfy (no path separators).
     _AGENTMAP_BATCH_ID_RE = re.compile(r"^amatch_[a-f0-9]{32}$")
 
-    def _validate_batch_submit_request(self, request: LLMBatchSubmitRequest) -> None:
+    def _validate_batch_submit_request(
+        self, request: LLMBatchSubmitRequest
+    ) -> List[Dict[str, Any]]:
         """
-        Validate a batch submit request before any adapter call.
+        Validate a batch submit request and build the per-spec resolved param
+        dicts.  Returns the resolved params list (index-aligned with
+        ``request.call_specs``) so ``submit_batch`` can pass it straight to the
+        adapter without re-computing.
 
-        Raises ``LLMServiceError`` for:
-        - empty call_specs
-        - duplicate spec_ids
-        - per-spec ``provider`` set (provider is batch-level only — REQ-F-008)
-        - conflicting ``model``/``temperature`` in both spec and envelope (D-3)
-        - batch-incompatible request_options params (stream=True)
-        - max_tokens == 0 (cache pre-warm not supported in batches)
-        Raises ``LLMBatchUnsupportedProviderError`` for unregistered providers.
+        Validation order:
+        1. Non-empty call_specs
+        2. Per-spec provider not set (batch-level only — REQ-F-008)
+        3. Unique spec_ids
+        4. Centralized parameter resolution (D-8) — covers all conflict/
+           incompatible/max_tokens==0 checks via ``resolve_spec_params``
+        5. Batch-level max_tokens != 0 (envelope guard)
+        6. Registered provider check (raises LLMBatchUnsupportedProviderError)
+
+        Raises:
+            LLMServiceError: For validation failures (empty specs, duplicate
+                ids, per-spec provider, batch-incompatible params, max_tokens==0,
+                conflicting parameter values).
+            LLMBatchParamConflictError: When the same logical parameter is set
+                on two surfaces with different values (AC-8 / D-8).
+            LLMBatchUnsupportedProviderError: For unregistered providers.
         """
+        from agentmap.services.llm._param_resolution import build_resolved_params_list
+
         if not request.call_specs:
             raise LLMServiceError(
                 "call_specs must not be empty — at least one LLMCallSpec is required "
@@ -1635,81 +1650,29 @@ class LLMService:
                 )
             seen_ids.add(spec.spec_id)
 
-            # D-3: reject conflicting model/temperature in both spec and envelope.
-            if (
-                spec.model is not None
-                and request.model is not None
-                and spec.model != request.model
-            ):
-                raise LLMServiceError(
-                    f"spec_id={spec.spec_id!r}: conflicting model — "
-                    f"spec.model={spec.model!r} conflicts with "
-                    f"request.model={request.model!r}. Set model in one place only."
-                )
-            if spec.request_options and request.request_options:
-                spec_temp = spec.request_options.get("temperature")
-                req_temp = request.request_options.get("temperature")
-                if (
-                    spec_temp is not None
-                    and req_temp is not None
-                    and spec_temp != req_temp
-                ):
-                    raise LLMServiceError(
-                        f"spec_id={spec.spec_id!r}: conflicting temperature — "
-                        f"spec.request_options.temperature={spec_temp!r} conflicts "
-                        f"with request.request_options.temperature={req_temp!r}. "
-                        "Set temperature in one place only."
-                    )
+        # Batch-level stream check (before per-spec resolution, fast-fail)
+        if request.request_options and "stream" in request.request_options:
+            raise LLMServiceError(
+                "request_options contains batch-incompatible parameter 'stream'. "
+                "Batch submissions do not support streaming."
+            )
 
-            # D-3: reject spec.temperature (direct field) vs request-level temperature.
-            if spec.temperature is not None and request.request_options:
-                req_temp = request.request_options.get("temperature")
-                if req_temp is not None and spec.temperature != req_temp:
-                    raise LLMServiceError(
-                        f"spec_id={spec.spec_id!r}: conflicting temperature — "
-                        f"spec.temperature={spec.temperature!r} conflicts "
-                        f"with request.request_options.temperature={req_temp!r}. "
-                        "Set temperature in one place only."
-                    )
+        # D-8: centralized parameter resolution — raises LLMBatchParamConflictError
+        # or LLMServiceError for any conflict, incompatible param, or max_tokens==0.
+        resolved = build_resolved_params_list(request)
 
-            # Check for batch-incompatible params in per-spec request_options
-            if spec.request_options:
-                for bad_key in self._BATCH_INCOMPATIBLE_PARAMS:
-                    if bad_key in spec.request_options:
-                        raise LLMServiceError(
-                            f"spec_id={spec.spec_id!r}: request_options contains "
-                            f"batch-incompatible parameter {bad_key!r}. "
-                            "Batch submissions do not support streaming."
-                        )
-                if spec.request_options.get("max_tokens") == 0:
-                    raise LLMServiceError(
-                        f"spec_id={spec.spec_id!r}: request_options.max_tokens=0 "
-                        "is not supported in batch submissions. Cache pre-warm is "
-                        "incompatible with batch mode."
-                    )
-
-        # Check batch-level request_options for incompatible params (F-CRIT-1, F-MED-1).
-        if request.request_options:
-            for bad_key in self._BATCH_INCOMPATIBLE_PARAMS:
-                if bad_key in request.request_options:
-                    raise LLMServiceError(
-                        f"request_options contains batch-incompatible parameter "
-                        f"{bad_key!r}. Batch submissions do not support streaming."
-                    )
-            if request.request_options.get("max_tokens") == 0:
-                raise LLMServiceError(
-                    "request_options.max_tokens=0 is not supported in batch "
-                    "submissions. Cache pre-warm is incompatible with batch mode."
-                )
-
-        # REQ-F-002: registry-based provider check (raises LLMBatchUnsupportedProviderError).
-        self._get_adapter(request.provider)
-
+        # Envelope-level max_tokens guard (catches request.max_tokens == 0 before
+        # resolution would see it as S3; belt-and-suspenders).
         if request.max_tokens == 0:
             raise LLMServiceError(
                 "max_tokens=0 is not supported in batch submissions. "
                 "Cache pre-warm (max_tokens=0) is incompatible with batch mode."
             )
+
+        # REQ-F-002: registry-based provider check (raises LLMBatchUnsupportedProviderError).
+        self._get_adapter(request.provider)
+
+        return resolved
 
     def submit_batch(self, request: LLMBatchSubmitRequest) -> LLMBatchHandle:
         """
@@ -1723,7 +1686,9 @@ class LLMService:
             LLMServiceError: For validation failures.
             LLMBatchUnsupportedProviderError: For unsupported providers.
         """
-        self._validate_batch_submit_request(request)
+        # _validate_batch_submit_request returns the per-spec resolved param dicts
+        # (D-8: centralized resolver, no adapter merging).
+        resolved_params = self._validate_batch_submit_request(request)
 
         adapter = self._get_adapter(request.provider)
         self._logger.info(
@@ -1733,9 +1698,7 @@ class LLMService:
         )
         provider_batch_id, spec_id_map, expires_at = adapter.submit(
             specs=request.call_specs,
-            model=request.model,
-            max_tokens=request.max_tokens,
-            request_options=request.request_options,
+            resolved_params=resolved_params,
         )
 
         agentmap_batch_id = "amatch_" + uuid4().hex

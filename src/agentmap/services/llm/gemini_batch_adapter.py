@@ -104,17 +104,17 @@ class GeminiBatchAdapter:
     def submit(
         self,
         specs: List[LLMCallSpec],
-        model: str,
-        max_tokens: int,
-        request_options: Dict[str, Any],
+        resolved_params: List[Dict[str, Any]],
     ) -> Tuple[str, Dict[str, Any], Optional[str]]:
         """
         Submit an inline batch to the Gemini Developer API.
 
-        Each spec is converted to a src entry dict with ``contents`` and
-        ``config`` following the real SDK shape.  The model is set at the
-        batch level only — per-spec model overrides are embedded in the
-        per-request ``config`` via the GenerateContentConfig mechanism.
+        ``resolved_params[i]`` contains the already conflict-free param dict for
+        ``specs[i]`` (model, max_tokens, temperature, pass-throughs).  The
+        adapter must NOT merge or apply ``setdefault`` against any other source
+        (D-8: centralized resolver).  Provider-specific key renames
+        (``max_tokens`` → ``max_output_tokens``) are applied here, after
+        resolution.
 
         Results are correlated positionally (not by key), so the returned
         ``spec_id_map`` encodes the ordered spec_id list under
@@ -131,12 +131,16 @@ class GeminiBatchAdapter:
         spec_id_list = [spec.spec_id for spec in specs]
         spec_id_map: Dict[str, Any] = {"__ordered__": spec_id_list}
 
-        src = self._build_src(specs, model, max_tokens, request_options)
+        # Derive batch-level model from first resolved dict (all specs share a
+        # batch-level model after conflict resolution; per-spec overrides are
+        # identical or absent in the resolved dict).
+        batch_model = resolved_params[0].get("model") if resolved_params else None
+        src = self._build_src(specs, resolved_params, batch_model)
 
         # Real SDK: create(*, model, src, config=None)
         # NOT create(model=, requests=) — the old shape does not exist.
         response = self._client.batches.create(
-            model=model,
+            model=batch_model,
             src=src,
         )
 
@@ -153,9 +157,8 @@ class GeminiBatchAdapter:
     def _build_src(
         self,
         specs: List[LLMCallSpec],
-        model: str,
-        max_tokens: int,
-        request_options: Dict[str, Any],
+        resolved_params: List[Dict[str, Any]],
+        batch_model: Optional[str],
     ) -> List[Dict[str, Any]]:
         """
         Build the inline src list for ``client.batches.create``.
@@ -165,12 +168,18 @@ class GeminiBatchAdapter:
         ``key`` field for inline src entries — correlation is positional.
 
         Config field names follow the python-genai SDK snake_case convention:
-        ``max_output_tokens`` and ``temperature``.
+        ``max_output_tokens`` (renamed from resolved ``max_tokens``) and
+        ``temperature``.  The rename is applied here, after central resolution
+        (D-8: provider-specific renames happen after resolution, never as
+        conflict resolution).
+
+        ``resolved_params[i]`` is consumed directly — no merging or setdefault
+        against spec fields or request_options.
 
         Reference: https://ai.google.dev/gemini-api/docs/batch-api
         """
         src = []
-        for spec in specs:
+        for spec, rp in zip(specs, resolved_params):
             # Convert messages to Gemini contents format
             contents = []
             for msg in spec.messages:
@@ -182,17 +191,17 @@ class GeminiBatchAdapter:
                     {"role": role, "parts": [{"text": msg.get("content", "")}]}
                 )
 
-            # Build generation config using SDK snake_case names
-            generation_config: Dict[str, Any] = {"max_output_tokens": max_tokens}
-            if spec.temperature is not None:
-                generation_config["temperature"] = spec.temperature
-            # F3: apply per-spec request_options first (they win over batch-level),
-            # then batch-level request_options fill in any gaps.
-            if spec.request_options:
-                for k, v in spec.request_options.items():
-                    generation_config.setdefault(k, v)
-            for k, v in request_options.items():
-                generation_config.setdefault(k, v)
+            # Build generation config from resolved dict only — no merging.
+            # Apply Gemini-specific rename: max_tokens → max_output_tokens.
+            generation_config: Dict[str, Any] = {}
+            if "max_tokens" in rp:
+                generation_config["max_output_tokens"] = rp["max_tokens"]
+            if "temperature" in rp:
+                generation_config["temperature"] = rp["temperature"]
+            # Pass through any non-model, non-max_tokens, non-temperature keys
+            for k, v in rp.items():
+                if k not in ("max_tokens", "temperature", "model"):
+                    generation_config[k] = v
 
             src.append(
                 {

@@ -45,3 +45,35 @@ class LLMBatchExpiredError(LLMServiceError):
     Anthropic expires batches that are not polled within their retention window.
     Results are no longer available once a batch has expired.
     """
+
+
+class LLMBatchParamConflictError(LLMServiceError):
+    """
+    Raised when the same logical batch parameter is set on two parameter
+    surfaces with different values (AC-8: one canonical parameter path).
+
+    The message names the spec_id, the logical parameter, and each conflicting
+    surface with its value.  A parameter set on one surface — or on several
+    surfaces with the SAME value — is accepted and not an error.
+
+    Subclasses ``LLMServiceError`` so existing ``except LLMServiceError``
+    callers still catch it.
+
+    Decision: D-8 (spec.md § Canonical Parameter Resolution).
+    """
+
+
+class LLMBatchResultIntegrityError(LLMServiceError):
+    """
+    Raised when batch results cannot be safely correlated back to caller
+    spec_ids — e.g. the provider returned a different number of inline
+    responses than were submitted (positional demux would misattribute).
+
+    Names the batch id, submitted count, and returned count.
+
+    Only relevant for Gemini inline batches where positional demux is the
+    only available correlation mechanism.  OpenAI and Anthropic demux by
+    custom_id/key and are unaffected.
+
+    Decision: D-9 (spec.md § Gemini Result Demux Integrity).
+    """

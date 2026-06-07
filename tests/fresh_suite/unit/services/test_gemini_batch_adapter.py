@@ -52,6 +52,19 @@ def _make_spec(spec_id: str, messages=None, temperature=None) -> LLMCallSpec:
     return LLMCallSpec(spec_id=spec_id, messages=messages, temperature=temperature)
 
 
+def _make_resolved(specs, model="gemini-2.0-flash", max_tokens=512, request_options=None, temperature=None):
+    """Build a resolved_params list from old-style args (test helper only)."""
+    rp = {"model": model, "max_tokens": max_tokens}
+    if temperature is not None:
+        rp["temperature"] = temperature
+    elif specs and getattr(specs[0], "temperature", None) is not None:
+        # propagate per-spec temperature for single-spec tests
+        pass
+    if request_options:
+        rp.update(request_options)
+    return [dict(rp) for _ in specs]
+
+
 def _make_adapter(client_instance=None):
     """Create a GeminiBatchAdapter with the google-genai SDK mocked out."""
     mock_genai = MagicMock()
@@ -141,8 +154,9 @@ class TestGeminiSubmit:
         adapter = _make_adapter(client_instance)
 
         spec = _make_spec("s1")
+        specs_s1 = [spec]
         provider_batch_id, spec_id_map, expires_at = adapter.submit(
-            [spec], model="gemini-2.0-flash", max_tokens=512, request_options={}
+            specs_s1, resolved_params=_make_resolved(specs_s1)
         )
 
         assert provider_batch_id == "batches/test-batch-123"
@@ -166,8 +180,9 @@ class TestGeminiSubmit:
 
         adapter = _make_adapter(client_instance)
         spec = _make_spec("spec-1")
+        specs_sp1 = [spec]
         adapter.submit(
-            [spec], model="gemini-2.0-flash", max_tokens=256, request_options={}
+            specs_sp1, resolved_params=_make_resolved(specs_sp1, max_tokens=256)
         )
 
         call_kwargs = client_instance.batches.create.call_args
@@ -196,8 +211,10 @@ class TestGeminiSubmit:
 
         adapter = _make_adapter(client_instance)
         spec = _make_spec("my-spec", temperature=0.5)
+        specs_ms = [spec]
         adapter.submit(
-            [spec], model="gemini-2.0-flash", max_tokens=100, request_options={}
+            specs_ms,
+            resolved_params=[{"model": "gemini-2.0-flash", "max_tokens": 100, "temperature": 0.5}],
         )
 
         call_kwargs = client_instance.batches.create.call_args
@@ -224,7 +241,7 @@ class TestGeminiSubmit:
         adapter = _make_adapter(client_instance)
         specs = [_make_spec("alpha"), _make_spec("beta"), _make_spec("gamma")]
         _, spec_id_map, _ = adapter.submit(
-            specs, model="gemini-2.0-flash", max_tokens=100, request_options={}
+            specs, resolved_params=_make_resolved(specs, max_tokens=100)
         )
 
         assert spec_id_map["__ordered__"] == ["alpha", "beta", "gamma"]

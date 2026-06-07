@@ -25,6 +25,14 @@ def _make_mock_anthropic_module():
     return mock_sdk, client_instance
 
 
+def _make_resolved(specs, model="claude-sonnet-4-6", max_tokens=100, request_options=None):
+    """Build a resolved_params list from old-style args (test helper only)."""
+    rp = {"model": model, "max_tokens": max_tokens}
+    if request_options:
+        rp.update(request_options)
+    return [dict(rp) for _ in specs]
+
+
 class TestImportGating:
     """TC-AC8-03: AnthropicBatchAdapter raises LLMDependencyError when anthropic not importable."""
 
@@ -204,9 +212,7 @@ class TestCacheControlPassThrough:
 
             adapter.submit(
                 specs=[spec],
-                model="claude-sonnet-4-6",
-                max_tokens=100,
-                request_options={},
+                resolved_params=_make_resolved([spec]),
             )
 
         # Verify the SDK was called
@@ -271,9 +277,7 @@ class TestSpecIdSanitization:
 
             _provider_batch_id, spec_id_map, _expires_at = adapter.submit(
                 specs=[spec],
-                model="claude-sonnet-4-6",
-                max_tokens=100,
-                request_options={},
+                resolved_params=_make_resolved([spec]),
             )
 
         # The original spec_id must be a key in the map
@@ -316,9 +320,7 @@ class TestSpecIdSanitization:
 
             _provider_batch_id, spec_id_map, _expires_at = adapter.submit(
                 specs=[spec],
-                model="claude-sonnet-4-6",
-                max_tokens=100,
-                request_options={},
+                resolved_params=_make_resolved([spec]),
             )
 
         assert spec_id_map[clean_spec_id] == clean_spec_id
@@ -622,9 +624,7 @@ class TestCustomIdCollisionDetection:
             with pytest.raises(LLMServiceError):
                 adapter.submit(
                     specs=specs,
-                    model="claude-sonnet-4-6",
-                    max_tokens=100,
-                    request_options={},
+                    resolved_params=_make_resolved(specs),
                 )
 
         # SDK must NOT have been called
@@ -657,9 +657,7 @@ class TestCustomIdCollisionDetection:
             adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
             provider_batch_id, spec_id_map, _ = adapter.submit(
                 specs=specs,
-                model="claude-sonnet-4-6",
-                max_tokens=100,
-                request_options={},
+                resolved_params=_make_resolved(specs),
             )
 
         assert provider_batch_id == "msgbatch_ok"
@@ -743,16 +741,15 @@ class TestSubmitMalformedSDKResponse:
 
         with patch.dict(sys.modules, {"anthropic": mock_sdk}):
             adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
+            specs_single = [
+                LLMCallSpec(
+                    spec_id="s1", messages=[{"role": "user", "content": "hi"}]
+                )
+            ]
             with pytest.raises(LLMServiceError):
                 adapter.submit(
-                    specs=[
-                        LLMCallSpec(
-                            spec_id="s1", messages=[{"role": "user", "content": "hi"}]
-                        )
-                    ],
-                    model="claude-sonnet-4-6",
-                    max_tokens=100,
-                    request_options={},
+                    specs=specs_single,
+                    resolved_params=_make_resolved(specs_single),
                 )
 
 

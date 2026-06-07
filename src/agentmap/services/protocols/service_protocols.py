@@ -57,17 +57,23 @@ class BatchAdapterProtocol(Protocol):
     def submit(
         self,
         specs: List[LLMCallSpec],
-        model: str,
-        max_tokens: int,
-        request_options: Dict[str, Any],
+        resolved_params: List[Dict[str, Any]],
     ) -> "tuple[str, Dict[str, str], Optional[str]]":
         """
         Submit a batch and return ``(provider_batch_id, spec_id_map, expires_at)``.
+
+        ``specs`` carries messages and ``spec_id``; all *parameter* values
+        (model, max_tokens, temperature, pass-through options) are delivered
+        via ``resolved_params[i]`` which corresponds to ``specs[i]``.  The
+        dict is already conflict-free — adapters must not merge or apply
+        ``setdefault`` against any other source.
 
         ``spec_id_map`` maps each caller ``spec_id`` to the provider-side
         request identifier so that ``fetch_results`` can demultiplex responses
         back to the original spec.  ``expires_at`` is an ISO-8601 string or
         ``None`` if the provider does not return one.
+
+        Decision: D-8 (spec.md § Canonical Parameter Resolution).
         """
         ...
 
