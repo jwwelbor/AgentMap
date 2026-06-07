@@ -1823,6 +1823,7 @@ class LLMService:
             model=handle.model,
             spec_id_map=handle.spec_id_map,
             results_url=poll_result.results_url or handle.results_url,
+            result_ref=poll_result.result_ref or handle.result_ref,
             expires_at=handle.expires_at,
             ended_at=poll_result.ended_at,
             request_counts=poll_result.request_counts,
@@ -1910,21 +1911,18 @@ class LLMService:
                 "Poll until status == 'ended' before fetching results."
             )
 
-        # Guard: ended handle must carry results_url for REQ-NF-002 durability
-        # (F-MED-3).  The Anthropic adapter fetches by provider_batch_id directly,
-        # but results_url is required to have been persisted on the handle so that
-        # callers can independently verify and re-fetch without re-polling.
-        if not handle.results_url:
-            raise LLMServiceError(
-                f"Batch {handle.agentmap_batch_id!r} is ended but results_url is "
-                "absent. Re-poll to refresh the handle before fetching results."
-            )
-
+        # Adapter-aware fetch readiness (spec §1.3 / D-7).
+        # The universal results_url guard is intentionally removed here:
+        #   - Anthropic: fetches by provider_batch_id (results_url is advisory)
+        #   - OpenAI: requires result_ref (output_file_id), not results_url
+        #   - Gemini inline: requires neither — re-retrieves the job object
+        # Each adapter is authoritative over its own readiness check.
         adapter = self._get_adapter(handle.provider)
         records = list(
             adapter.fetch_results(
                 handle.provider_batch_id,
                 handle.spec_id_map,
+                result_ref=handle.result_ref,
             )
         )
 

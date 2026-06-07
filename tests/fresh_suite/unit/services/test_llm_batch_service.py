@@ -924,13 +924,20 @@ class TestRestoreBatchValidation:
 
 
 class TestFetchBatchResultsEndedNoResultsUrl:
-    """Regression tests for F-MED-3 (ended + results_url=None handling)."""
+    """Tests for adapter-aware fetch readiness (spec §1.3 / D-7).
 
-    def test_fetch_ended_with_results_url_none_raises(self, tmp_path):
-        """F-MED-3: fetch_batch_results on ended handle with results_url=None must raise.
+    The original F-MED-3 guard required results_url for every provider.
+    Per spec §1.3 that guard is relaxed to adapter-aware readiness:
+    Anthropic fetches by provider_batch_id regardless of results_url;
+    OpenAI requires result_ref; Gemini inline requires neither.
+    """
 
-        Previously the status gate passed and the adapter was called without a
-        results_url, leaving results_url durability (REQ-NF-002) unverified.
+    def test_fetch_ended_with_results_url_none_proceeds_for_anthropic(self, tmp_path):
+        """Spec §1.3: Anthropic ended handle with results_url=None must NOT raise.
+
+        The Anthropic adapter fetches by provider_batch_id directly; results_url
+        is advisory durability metadata, not required for fetch.  The removed
+        universal guard was Anthropic-specific and would have blocked OpenAI/Gemini.
         """
         service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
 
@@ -939,13 +946,15 @@ class TestFetchBatchResultsEndedNoResultsUrl:
             spec_id_map={"s1": "s1"},
             results_url=None,
         )
-        with pytest.raises(LLMServiceError, match="results_url"):
-            service.fetch_batch_results(handle)
+        mock_adapter.fetch_results.return_value = []
 
-        mock_adapter.fetch_results.assert_not_called()
+        # Must NOT raise — adapter-aware readiness replaces the universal guard
+        results = service.fetch_batch_results(handle)
+        mock_adapter.fetch_results.assert_called_once()
+        assert results == []
 
     def test_fetch_ended_with_results_url_set_proceeds(self, tmp_path):
-        """F-MED-3 counterpart: ended handle with results_url set proceeds normally."""
+        """Anthropic ended handle with results_url set also proceeds normally."""
         service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
 
         spec_id_map = {"s1": "s1"}
@@ -1679,3 +1688,214 @@ class TestNoProviderGuardLiterals:
         assert (
             'provider != "anthropic"' not in batch_section
         ), 'Found provider!="anthropic" guard literal in batch section'
+
+
+# ---------------------------------------------------------------------------
+# Blocker regression tests (code-review 2026-06-07): OpenAI/Gemini fetch wiring
+# ---------------------------------------------------------------------------
+
+
+class TestFetchBatchResultsOpenAIProvider:
+    """Service-level tests for fetch_batch_results with an OpenAI handle.
+
+    These tests drive LLMService.fetch_batch_results end-to-end with a real
+    OpenAI-shaped handle (result_ref set, results_url=None).  They were absent
+    from the original test suite — that gap allowed blockers 1-3 to slip past CR.
+
+    Counter-factual: against the pre-fix code, test_fetch_openai_passes_result_ref
+    fails because fetch_batch_results raises LLMServiceError("results_url absent")
+    before even reaching the adapter.
+    """
+
+    def test_fetch_openai_ended_handle_without_results_url_does_not_raise(self):
+        """OpenAI ended handle with result_ref and results_url=None must NOT raise.
+
+        Pre-fix counter-factual: LLMServiceError("results_url absent") raised.
+        """
+        service, adapters, repo = _make_registry_service()
+        handle = LLMBatchHandle(
+            agentmap_batch_id="amatch_" + "a1b2c3d4" * 4,
+            provider_batch_id="batch_openai_001",
+            status=LLMBatchStatus.ENDED,
+            provider="openai",
+            model="gpt-4o",
+            spec_id_map={"s1": "s1"},
+            results_url=None,  # OpenAI does NOT use results_url
+            result_ref="file-abc123",  # OpenAI output_file_id
+            expires_at="2026-06-08T00:00:00Z",
+            request_counts=None,
+        )
+        adapters["openai"].fetch_results.return_value = []
+
+        # Must not raise — OpenAI readiness is result_ref, not results_url
+        results = service.fetch_batch_results(handle)
+        assert results == []
+
+    def test_fetch_openai_passes_result_ref_to_adapter(self):
+        """fetch_batch_results must forward handle.result_ref to the adapter.
+
+        Pre-fix counter-factual: adapter.fetch_results called without result_ref
+        (only 2 args), so OpenAI returns nothing (openai_batch_adapter.py:257-263).
+        """
+        service, adapters, repo = _make_registry_service()
+        handle = LLMBatchHandle(
+            agentmap_batch_id="amatch_" + "a1b2c3d4" * 4,
+            provider_batch_id="batch_openai_001",
+            status=LLMBatchStatus.ENDED,
+            provider="openai",
+            model="gpt-4o",
+            spec_id_map={"s1": "s1"},
+            results_url=None,
+            result_ref="file-abc123",
+            expires_at="2026-06-08T00:00:00Z",
+            request_counts=None,
+        )
+        adapters["openai"].fetch_results.return_value = []
+
+        service.fetch_batch_results(handle)
+
+        # Adapter must receive result_ref so it can download the output file
+        adapters["openai"].fetch_results.assert_called_once_with(
+            "batch_openai_001",
+            {"s1": "s1"},
+            result_ref="file-abc123",
+        )
+
+    def test_poll_then_fetch_openai_result_ref_survives_poll(self):
+        """result_ref set by poll must survive into the updated handle and reach fetch.
+
+        Pre-fix counter-factual: poll_batch drops result_ref (blocker 1), so the
+        subsequent fetch_batch_results call sees result_ref=None and either raises
+        (if the results_url guard fires) or yields nothing.
+        """
+        service, adapters, repo = _make_registry_service()
+
+        # Step 1: in-progress handle with no result_ref yet
+        in_progress_handle = LLMBatchHandle(
+            agentmap_batch_id="amatch_" + "a1b2c3d4" * 4,
+            provider_batch_id="batch_openai_001",
+            status=LLMBatchStatus.IN_PROGRESS,
+            provider="openai",
+            model="gpt-4o",
+            spec_id_map={"s1": "s1"},
+            results_url=None,
+            result_ref=None,
+            expires_at="2026-06-08T00:00:00Z",
+            request_counts=None,
+        )
+
+        # Step 2: poll returns ENDED with result_ref populated
+        adapters["openai"].poll.return_value = BatchPollResult(
+            status=LLMBatchStatus.ENDED,
+            request_counts=None,
+            results_url=None,
+            result_ref="file-output-xyz",
+            ended_at="2026-06-08T01:00:00Z",
+        )
+        ended_handle = service.poll_batch(in_progress_handle)
+
+        # result_ref must survive the poll rebuild
+        assert (
+            ended_handle.result_ref == "file-output-xyz"
+        ), "poll_batch dropped result_ref from BatchPollResult"
+
+        # Step 3: fetch with the polled handle — result_ref must reach the adapter
+        adapters["openai"].fetch_results.return_value = []
+        service.fetch_batch_results(ended_handle)
+
+        adapters["openai"].fetch_results.assert_called_once_with(
+            "batch_openai_001",
+            {"s1": "s1"},
+            result_ref="file-output-xyz",
+        )
+
+
+class TestFetchBatchResultsGeminiProvider:
+    """Service-level tests for fetch_batch_results with a Gemini handle.
+
+    Gemini inline batches have neither results_url nor result_ref.  The pre-fix
+    code raised LLMServiceError("results_url absent") for every Gemini fetch.
+
+    Counter-factual: test_fetch_gemini_inline_handle_does_not_raise fails against
+    the pre-fix code because the results_url guard fires unconditionally.
+    """
+
+    def test_fetch_gemini_inline_handle_does_not_raise(self):
+        """Gemini ended handle with results_url=None and result_ref=None must NOT raise.
+
+        Gemini inline batches fetch results by re-retrieving the job object —
+        neither results_url nor result_ref is needed.
+
+        Pre-fix counter-factual: LLMServiceError("results_url absent") raised.
+        """
+        service, adapters, repo = _make_registry_service()
+        handle = LLMBatchHandle(
+            agentmap_batch_id="amatch_" + "a1b2c3d4" * 4,
+            provider_batch_id="job_gemini_abc",
+            status=LLMBatchStatus.ENDED,
+            provider="google",
+            model="gemini-2.0-flash",
+            spec_id_map={"s1": "s1"},
+            results_url=None,  # Gemini inline: no URL
+            result_ref=None,  # Gemini inline: no ref either
+            expires_at="2026-06-08T00:00:00Z",
+            request_counts=None,
+        )
+        adapters["google"].fetch_results.return_value = []
+
+        # Must not raise — Gemini inline readiness needs neither locator
+        results = service.fetch_batch_results(handle)
+        assert results == []
+
+    def test_fetch_gemini_passes_result_ref_none_to_adapter(self):
+        """fetch_batch_results must forward result_ref=None to Gemini adapter.
+
+        The Gemini adapter accepts result_ref (always None for inline) per protocol.
+        """
+        service, adapters, repo = _make_registry_service()
+        handle = LLMBatchHandle(
+            agentmap_batch_id="amatch_" + "a1b2c3d4" * 4,
+            provider_batch_id="job_gemini_abc",
+            status=LLMBatchStatus.ENDED,
+            provider="google",
+            model="gemini-2.0-flash",
+            spec_id_map={"s1": "s1"},
+            results_url=None,
+            result_ref=None,
+            expires_at="2026-06-08T00:00:00Z",
+            request_counts=None,
+        )
+        adapters["google"].fetch_results.return_value = []
+
+        service.fetch_batch_results(handle)
+
+        adapters["google"].fetch_results.assert_called_once_with(
+            "job_gemini_abc",
+            {"s1": "s1"},
+            result_ref=None,
+        )
+
+    def test_fetch_anthropic_with_results_url_still_works(self):
+        """Anthropic path (results_url set) must continue to work after the guard fix."""
+        service, adapters, repo = _make_registry_service()
+        handle = LLMBatchHandle(
+            agentmap_batch_id="amatch_" + "a1b2c3d4" * 4,
+            provider_batch_id="msgbatch_ant001",
+            status=LLMBatchStatus.ENDED,
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            spec_id_map={"s1": "s1"},
+            results_url="https://api.anthropic.com/v1/messages/batches/msgbatch_ant001/results",
+            result_ref=None,
+            expires_at="2026-06-08T00:00:00Z",
+            request_counts=None,
+        )
+        adapters["anthropic"].fetch_results.return_value = []
+
+        results = service.fetch_batch_results(handle)
+        assert results == []
+        adapters["anthropic"].fetch_results.assert_called_once_with(
+            "msgbatch_ant001",
+            {"s1": "s1"},
+            result_ref=None,
+        )
