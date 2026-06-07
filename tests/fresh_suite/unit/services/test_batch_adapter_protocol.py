@@ -111,8 +111,9 @@ class TestAnthropicAdapterLifecycle:
         mock_batch.expires_at = "2026-07-01T00:00:00Z"
         client.messages.batches.create.return_value = mock_batch
         specs = [_make_spec("s1")]
+        resolved_params = [{"model": "claude-sonnet-4-6", "max_tokens": 1024}]
         provider_batch_id, spec_id_map, expires_at = adapter.submit(
-            specs=specs, model="claude-sonnet-4-6", max_tokens=1024, request_options={}
+            specs=specs, resolved_params=resolved_params
         )
         assert provider_batch_id == "msgbatch_test001"
         assert "s1" in spec_id_map
@@ -191,8 +192,9 @@ class TestOpenAIAdapterLifecycle:
         mock_batch.expires_at = 1800000000
         client.batches.create.return_value = mock_batch
         specs = [_make_spec("s1")]
+        resolved_params = [{"model": "gpt-4o", "max_tokens": 1024}]
         provider_batch_id, spec_id_map, expires_at = adapter.submit(
-            specs=specs, model="gpt-4o", max_tokens=1024, request_options={}
+            specs=specs, resolved_params=resolved_params
         )
         assert provider_batch_id == "batch_openai001"
         assert "s1" in spec_id_map
@@ -274,11 +276,10 @@ class TestGeminiAdapterLifecycle:
         mock_genai.Client.return_value.batches.create.return_value = mock_job
 
         specs = [_make_spec("s1")]
+        resolved_params = [{"model": "gemini-2.0-flash", "max_tokens": 1024}]
         provider_batch_id, spec_id_map, expires_at = adapter.submit(
             specs=specs,
-            model="gemini-2.0-flash",
-            max_tokens=1024,
-            request_options={},
+            resolved_params=resolved_params,
         )
         assert len(provider_batch_id) > 0
         # Gemini uses positional demux: spec_id_map is {"__ordered__": [spec_ids]}

@@ -179,6 +179,12 @@ class GeminiBatchAdapter:
 
         Reference: https://ai.google.dev/gemini-api/docs/batch-api
         """
+        # CR5-2: guard against silent truncation if lists ever misalign
+        if len(specs) != len(resolved_params):
+            raise LLMServiceError(
+                f"specs/resolved_params length mismatch: {len(specs)} specs vs "
+                f"{len(resolved_params)} resolved param dicts — this is a bug."
+            )
         src = []
         for spec, rp in zip(specs, resolved_params):
             # Convert messages to Gemini contents format
@@ -199,9 +205,12 @@ class GeminiBatchAdapter:
                 generation_config["max_output_tokens"] = rp["max_tokens"]
             if "temperature" in rp:
                 generation_config["temperature"] = rp["temperature"]
-            # Pass through any non-model, non-max_tokens, non-temperature keys
+            # Pass through any non-model, non-max_tokens, non-temperature keys.
+            # max_output_tokens is the Gemini alias of max_tokens — the resolver
+            # already collapsed it to max_tokens (canonical) or raised a conflict
+            # error; it must never appear here as a raw pass-through key.
             for k, v in rp.items():
-                if k not in ("max_tokens", "temperature", "model"):
+                if k not in ("max_tokens", "temperature", "model", "max_output_tokens"):
                     generation_config[k] = v
 
             src.append(

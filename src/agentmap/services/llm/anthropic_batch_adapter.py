@@ -86,6 +86,12 @@ class AnthropicBatchAdapter:
         spec_id_map = _build_spec_id_map(specs, _CUSTOM_ID_RE)
         requests = []
 
+        # CR5-2: guard against silent truncation if lists ever misalign
+        if len(specs) != len(resolved_params):
+            raise LLMServiceError(
+                f"specs/resolved_params length mismatch: {len(specs)} specs vs "
+                f"{len(resolved_params)} resolved param dicts — this is a bug."
+            )
         for spec, rp in zip(specs, resolved_params):
             custom_id = spec_id_map[spec.spec_id]
             # Build params from resolved dict only — no merging.

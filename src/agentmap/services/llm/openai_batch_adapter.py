@@ -154,6 +154,12 @@ class OpenAIBatchAdapter:
         ``resolved_params[i]`` is consumed directly — no merging or setdefault
         (D-8: centralized resolver).
         """
+        # CR5-2: guard against silent truncation if lists ever misalign
+        if len(specs) != len(resolved_params):
+            raise LLMServiceError(
+                f"specs/resolved_params length mismatch: {len(specs)} specs vs "
+                f"{len(resolved_params)} resolved param dicts — this is a bug."
+            )
         lines = []
         for spec, rp in zip(specs, resolved_params):
             custom_id = spec_id_map[spec.spec_id]

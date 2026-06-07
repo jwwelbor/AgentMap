@@ -19,8 +19,8 @@ Decision: D-8 (spec.md § Canonical Parameter Resolution).
 """
 
 import itertools
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
 from agentmap.models.llm_execution import LLMBatchSubmitRequest, LLMCallSpec
 from agentmap.services.llm_batch_errors import LLMBatchParamConflictError
@@ -28,12 +28,23 @@ from agentmap.services.llm_batch_errors import LLMBatchParamConflictError
 
 @dataclass(frozen=True)
 class ReservedParam:
-    """Describes how one logical parameter maps across the four param surfaces."""
+    """Describes how one logical parameter maps across the four param surfaces.
+
+    ``aliases`` lists provider-specific keys that are logically equivalent to
+    ``options_key``.  Any alias found in an options dict is treated as if it
+    were the canonical ``options_key`` — so a conflict between ``max_tokens``
+    and ``max_output_tokens`` (a Gemini alias) across surfaces is detected and
+    raises ``LLMBatchParamConflictError``, rather than silently overwriting the
+    canonical value (AC-8 / N1, CR5-1).
+    """
 
     logical: str  # canonical name, e.g. "temperature"
     options_key: str  # key used in request_options dicts, e.g. "temperature"
     spec_field: Optional[str]  # LLMCallSpec direct attr, or None
     request_field: Optional[str]  # LLMBatchSubmitRequest direct attr, or None
+    aliases: FrozenSet[str] = field(
+        default_factory=frozenset
+    )  # provider-specific aliases
 
 
 # Single source of truth for reserved-parameter surface mapping.
@@ -50,6 +61,11 @@ class ReservedParam:
 #   max_tokens:   S2 (spec.request_options["max_tokens"])
 #                 | S3 (request.max_tokens) | S4 (request.request_options["max_tokens"])
 #                 (no per-spec direct field for max_tokens on LLMCallSpec)
+#
+# Aliases:
+#   max_tokens aliases max_output_tokens (Gemini provider-specific rename).
+#   A caller supplying max_output_tokens in any options dict is treated as
+#   supplying max_tokens — conflict-detection applies across the combined set.
 RESERVED_PARAMS: Tuple[ReservedParam, ...] = (
     ReservedParam(
         logical="model",
@@ -68,11 +84,20 @@ RESERVED_PARAMS: Tuple[ReservedParam, ...] = (
         options_key="max_tokens",
         spec_field=None,  # no per-spec direct max_tokens on LLMCallSpec
         request_field="max_tokens",
+        aliases=frozenset({"max_output_tokens"}),  # Gemini provider alias
     ),
 )
 
-# Canonical name for each options_key → fast lookup in pass-through filter
-_RESERVED_OPTIONS_KEYS = frozenset(p.options_key for p in RESERVED_PARAMS)
+# All keys that are "owned" by the reserved-param system (canonical + aliases).
+# Used to filter pass-through keys — aliases must NOT slip through as pass-through.
+_RESERVED_OPTIONS_KEYS: FrozenSet[str] = frozenset(
+    key for p in RESERVED_PARAMS for key in ({p.options_key} | p.aliases)
+)
+
+# Map alias → canonical options_key, for use in _collect_surfaces and error messages.
+_ALIAS_TO_CANONICAL: Dict[str, str] = {
+    alias: p.options_key for p in RESERVED_PARAMS for alias in p.aliases
+}
 
 # Surface labels used in error messages
 _SURFACE_LABELS = {
@@ -110,9 +135,13 @@ def _collect_surfaces(
         if val is not None:
             surfaces.append(("S1", val))
 
-    # S2 — per-spec request_options
-    if spec.request_options and param.options_key in spec.request_options:
-        surfaces.append(("S2", spec.request_options[param.options_key]))
+    # S2 — per-spec request_options (canonical key or any alias)
+    if spec.request_options:
+        _keys_to_check = [param.options_key] + sorted(param.aliases)
+        for _k in _keys_to_check:
+            if _k in spec.request_options:
+                surfaces.append(("S2", spec.request_options[_k]))
+                break  # only one entry per surface, first key wins
 
     # S3 — batch-level direct field
     if param.request_field is not None:
@@ -120,9 +149,13 @@ def _collect_surfaces(
         if val is not None:
             surfaces.append(("S3", val))
 
-    # S4 — batch-level request_options
-    if request.request_options and param.options_key in request.request_options:
-        surfaces.append(("S4", request.request_options[param.options_key]))
+    # S4 — batch-level request_options (canonical key or any alias)
+    if request.request_options:
+        _keys_to_check = [param.options_key] + sorted(param.aliases)
+        for _k in _keys_to_check:
+            if _k in request.request_options:
+                surfaces.append(("S4", request.request_options[_k]))
+                break  # only one entry per surface, first key wins
 
     return surfaces
 
@@ -175,7 +208,23 @@ def resolve_spec_params(
         if not surfaces:
             continue
 
-        distinct_values = list({v for _, v in surfaces})
+        # CR5-3: unhashable values (e.g. dict/list option values) must not raise
+        # a raw TypeError from set() — use list-equality instead and re-raise typed.
+        try:
+            distinct_values = list({v for _, v in surfaces})
+        except TypeError:
+            # At least two values; check equality sequentially to find conflicts.
+            first = surfaces[0][1]
+            if any(v != first for _, v in surfaces[1:]):
+                surface_detail = ", ".join(
+                    f"{_SURFACE_LABELS.get(s, s)}={v!r}" for s, v in surfaces
+                )
+                raise LLMBatchParamConflictError(
+                    f"spec_id={spec.spec_id!r}: conflicting values for "
+                    f"parameter {param.logical!r} — {surface_detail}. "
+                    "Set this parameter on exactly one surface."
+                ) from None
+            distinct_values = [first]
         if len(distinct_values) > 1:
             surface_detail = ", ".join(
                 f"{_SURFACE_LABELS.get(s, s)}={v!r}" for s, v in surfaces

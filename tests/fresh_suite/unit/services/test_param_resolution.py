@@ -471,3 +471,159 @@ def test_model_s1_vs_s3_same_value_allowed():
     request = _base_request(model="shared-model")
     resolved = resolve_spec_params(spec, request)
     assert resolved["model"] == "shared-model"
+
+
+# ---------------------------------------------------------------------------
+# Alias-awareness tests (CR5-1 regression, AC-8 / N1 via Gemini alias)
+# ---------------------------------------------------------------------------
+
+
+def test_alias_different_value_raises_conflict_error():
+    """
+    CR5-1 regression: max_tokens=1024 (canonical, S3) + request_options
+    max_output_tokens=2048 (Gemini alias, S4) → LLMBatchParamConflictError.
+
+    Previously the alias bypassed the resolver as a 'pass-through' key and
+    silently overrode the canonical value inside the Gemini adapter.
+    """
+    spec = _base_spec()
+    request = LLMBatchSubmitRequest(
+        provider="gemini",
+        model="gemini-1.5-flash",
+        max_tokens=1024,
+        call_specs=[],
+        request_options={"max_output_tokens": 2048},
+    )
+    with pytest.raises(LLMBatchParamConflictError) as exc_info:
+        resolve_spec_params(spec, request)
+    msg = str(exc_info.value)
+    assert "max_tokens" in msg
+    assert "s1" in msg
+
+
+def test_alias_same_value_is_allowed():
+    """
+    max_tokens=512 (S3) + request_options max_output_tokens=512 (S4 alias)
+    → allowed; resolved dict carries canonical max_tokens=512.
+    """
+    spec = _base_spec()
+    request = LLMBatchSubmitRequest(
+        provider="gemini",
+        model="gemini-1.5-flash",
+        max_tokens=512,
+        call_specs=[],
+        request_options={"max_output_tokens": 512},
+    )
+    resolved = resolve_spec_params(spec, request)
+    assert resolved["max_tokens"] == 512
+    # The alias must NOT appear in the resolved dict (canonical only)
+    assert "max_output_tokens" not in resolved
+
+
+def test_alias_only_in_spec_request_options():
+    """
+    max_output_tokens=768 in spec.request_options (S2) with no canonical
+    max_tokens set elsewhere → resolves to max_tokens=768.
+    """
+    spec = LLMCallSpec(
+        spec_id="s1",
+        messages=[{"role": "user", "content": "hi"}],
+        request_options={"max_output_tokens": 768},
+    )
+    request = LLMBatchSubmitRequest(
+        provider="gemini",
+        model="gemini-1.5-flash",
+        max_tokens=None,
+        call_specs=[],
+    )
+    resolved = resolve_spec_params(spec, request)
+    assert resolved["max_tokens"] == 768
+    assert "max_output_tokens" not in resolved
+
+
+def test_alias_not_treated_as_passthrough():
+    """
+    max_output_tokens must NOT appear as a pass-through key in the resolved
+    dict even when only set in one options surface.  It must be collapsed to
+    canonical max_tokens.
+    """
+    spec = _base_spec()
+    request = LLMBatchSubmitRequest(
+        provider="gemini",
+        model="gemini-1.5-flash",
+        max_tokens=None,
+        call_specs=[],
+        request_options={"max_output_tokens": 300},
+    )
+    resolved = resolve_spec_params(spec, request)
+    assert "max_output_tokens" not in resolved
+    assert resolved.get("max_tokens") == 300
+
+
+# Generate alias-vs-canonical conflict-matrix cases:
+# For each reserved param that has aliases, generate same/different-value cells
+# where one surface uses the canonical key and another uses the alias.
+def _alias_same_value_cases():
+    cases = []
+    for param in RESERVED_PARAMS:
+        if not param.aliases:
+            continue
+        v = _same_value_for_param(param)
+        for alias in sorted(param.aliases):
+            # S3 (canonical request_field) vs S4 (alias in request.request_options)
+            case_id = f"{param.logical}_S3_canonical_vs_S4_alias_{alias}_same"
+            cases.append(pytest.param(param, alias, v, v, id=case_id))
+    return cases
+
+
+def _alias_different_value_cases():
+    cases = []
+    for param in RESERVED_PARAMS:
+        if not param.aliases:
+            continue
+        va, vb = _different_values_for_param(param)
+        for alias in sorted(param.aliases):
+            case_id = f"{param.logical}_S3_canonical_vs_S4_alias_{alias}_different"
+            cases.append(pytest.param(param, alias, va, vb, id=case_id))
+    return cases
+
+
+@pytest.mark.parametrize("param,alias,v_canonical,v_alias", _alias_same_value_cases())
+def test_alias_same_value_matrix_allowed(param, alias, v_canonical, v_alias):
+    """Matrix: canonical (S3) + alias (S4) with same value → allowed."""
+    # Only run for params with a request_field (S3 available)
+    if param.request_field is None:
+        pytest.skip(f"{param.logical} has no S3")
+    req_kwargs = {
+        "provider": "gemini",
+        "model": "gemini-1.5-flash" if param.logical != "model" else v_canonical,
+        "max_tokens": v_canonical if param.logical == "max_tokens" else 1024,
+        "call_specs": [],
+        "request_options": {alias: v_alias},
+    }
+    request = LLMBatchSubmitRequest(**req_kwargs)
+    spec = _base_spec()
+    resolved = resolve_spec_params(spec, request)
+    assert resolved[param.options_key] == v_canonical
+    assert alias not in resolved
+
+
+@pytest.mark.parametrize(
+    "param,alias,v_canonical,v_alias", _alias_different_value_cases()
+)
+def test_alias_different_value_matrix_raises(param, alias, v_canonical, v_alias):
+    """Matrix: canonical (S3) + alias (S4) with different values → conflict error."""
+    if param.request_field is None:
+        pytest.skip(f"{param.logical} has no S3")
+    req_kwargs = {
+        "provider": "gemini",
+        "model": "gemini-1.5-flash" if param.logical != "model" else v_canonical,
+        "max_tokens": v_canonical if param.logical == "max_tokens" else 1024,
+        "call_specs": [],
+        "request_options": {alias: v_alias},
+    }
+    request = LLMBatchSubmitRequest(**req_kwargs)
+    spec = _base_spec()
+    with pytest.raises(LLMBatchParamConflictError) as exc_info:
+        resolve_spec_params(spec, request)
+    assert param.logical in str(exc_info.value)
