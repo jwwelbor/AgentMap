@@ -91,6 +91,34 @@ class LLMContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
+    def _create_anthropic_batch_adapter(app_config_service, logging_service):
+        from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
+
+        api_key = app_config_service.get_llm_config("anthropic").get("api_key", "")
+        logger = logging_service.get_class_logger(AnthropicBatchAdapter)
+        return AnthropicBatchAdapter(api_key=api_key, logger=logger)
+
+    anthropic_batch_adapter = providers.Singleton(
+        _create_anthropic_batch_adapter,
+        app_config_service,
+        logging_service,
+    )
+
+    @staticmethod
+    def _create_batch_handle_repository(app_config_service):
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        batch_dir = app_config_service.get_value(
+            "llm.batch_dir", "agentmap_data/llm_batches"
+        )
+        return BatchHandleRepository(batch_dir=batch_dir)
+
+    batch_handle_repository = providers.Singleton(
+        _create_batch_handle_repository,
+        app_config_service,
+    )
+
+    @staticmethod
     def _create_llm_service(
         app_config_service,
         logging_service,
@@ -99,6 +127,8 @@ class LLMContainer(containers.DeclarativeContainer):
         features_registry_service,
         llm_routing_config_service,
         telemetry_service,
+        anthropic_batch_adapter=None,
+        batch_handle_repository=None,
     ):
         from agentmap.services.llm_service import LLMService
 
@@ -110,6 +140,8 @@ class LLMContainer(containers.DeclarativeContainer):
             features_registry_service,
             llm_routing_config_service,
             telemetry_service,
+            batch_adapter=anthropic_batch_adapter,
+            batch_repo=batch_handle_repository,
         )
 
         # Wire content capture flags from telemetry config (T-E02-F04-003).
@@ -130,4 +162,6 @@ class LLMContainer(containers.DeclarativeContainer):
         features_registry_service,
         llm_routing_config_service,
         telemetry_service,
+        anthropic_batch_adapter,
+        batch_handle_repository,
     )

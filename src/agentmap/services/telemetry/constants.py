@@ -182,3 +182,23 @@ METRIC_DIM_ERROR_TYPE: str = "error_type"
 
 METRIC_DIM_TIER: str = "tier"
 """Tier dimension for metric attributes."""
+
+# ---------------------------------------------------------------------------
+# Metric name constants (LLM batch operations) — ADR-7 additive only
+# ---------------------------------------------------------------------------
+
+METRIC_LLM_BATCH_SUBMITTED_COUNT: str = "llm_batch.submitted_count"
+"""Counter for batch submission events, dimensioned by provider."""
+
+METRIC_LLM_BATCH_POLL_COUNT: str = "llm_batch.poll_count"
+"""Counter for batch poll operations, dimensioned by provider and status."""
+
+METRIC_LLM_BATCH_RESULTS_FETCHED_COUNT: str = "llm_batch.results_fetched_count"
+"""Counter for batch result fetch operations, dimensioned by provider."""
+
+# ---------------------------------------------------------------------------
+# Metric dimension constants (LLM batch)
+# ---------------------------------------------------------------------------
+
+METRIC_DIM_BATCH_STATUS: str = "batch_status"
+"""Per-status dimension for batch metric attributes (e.g. submitted, ended, expired)."""
