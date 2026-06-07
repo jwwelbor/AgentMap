@@ -8,8 +8,6 @@ The SDK import is gated so a missing optional dependency raises
 Pattern mirrors ``src/agentmap/services/llm_client_factory.py`` ~169–190.
 """
 
-import hashlib
-import re
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from agentmap.exceptions import LLMDependencyError, LLMServiceError
@@ -19,22 +17,8 @@ from agentmap.models.llm_execution import (
     LLMExecutionError,
     LLMUsage,
 )
-
-# Regex for valid Anthropic custom_id values.
-_CUSTOM_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
-
-
-def _sanitize_spec_id(spec_id: str) -> str:
-    """
-    Return a provider-safe custom_id for ``spec_id``.
-
-    If ``spec_id`` already matches ``^[a-zA-Z0-9_-]{1,64}$``, return it
-    unchanged.  Otherwise derive a deterministic SHA-1 hex string truncated
-    to 64 characters.
-    """
-    if _CUSTOM_ID_RE.match(spec_id):
-        return spec_id
-    return hashlib.sha1(spec_id.encode()).hexdigest()[:64]
+from agentmap.services.llm._batch_ids import CUSTOM_ID_RE as _CUSTOM_ID_RE
+from agentmap.services.llm._batch_ids import build_spec_id_map as _build_spec_id_map
 
 
 class AnthropicBatchAdapter:
@@ -79,24 +63,12 @@ class AnthropicBatchAdapter:
         ``cache_control`` blocks inside ``spec.messages`` are passed through
         unchanged (caching IS supported in batches per research §5.1).
         """
-        spec_id_map: Dict[str, str] = {}
+        # F-HIGH-4: build sanitized id map; raises LLMServiceError on collision
+        spec_id_map = _build_spec_id_map(specs, _CUSTOM_ID_RE)
         requests = []
 
-        seen_custom_ids: Dict[str, str] = (
-            {}
-        )  # custom_id -> first spec_id (collision guard)
         for spec in specs:
-            custom_id = _sanitize_spec_id(spec.spec_id)
-            # F-HIGH-4: detect custom_id collisions before sending to provider
-            if custom_id in seen_custom_ids:
-                raise LLMServiceError(
-                    f"custom_id collision: spec_id {spec.spec_id!r} and "
-                    f"{seen_custom_ids[custom_id]!r} both sanitize to {custom_id!r}. "
-                    "Rename one spec_id to avoid ambiguous demux."
-                )
-            seen_custom_ids[custom_id] = spec.spec_id
-            spec_id_map[spec.spec_id] = custom_id
-
+            custom_id = spec_id_map[spec.spec_id]
             params: Dict[str, Any] = {
                 "model": model,
                 "max_tokens": max_tokens,
