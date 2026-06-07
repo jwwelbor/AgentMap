@@ -25,7 +25,6 @@ from agentmap.exceptions import (
 )
 from agentmap.models.llm_execution import (
     LLMBatchHandle,
-    LLMBatchRequestCounts,
     LLMBatchResultRecord,
     LLMBatchStatus,
     LLMBatchSubmitRequest,
@@ -1740,33 +1739,17 @@ class LLMService:
         """
         poll_result = self._batch_adapter.poll(handle.provider_batch_id)
 
-        processing_status = poll_result.get("processing_status")
-        normalized_status = self._ANTHROPIC_STATUS_MAP.get(
-            processing_status, LLMBatchStatus.FAILED
-        )
-
-        raw_counts = poll_result.get("request_counts")
-        counts: Optional[LLMBatchRequestCounts] = None
-        if raw_counts is not None:
-            counts = LLMBatchRequestCounts(
-                processing=raw_counts.get("processing"),
-                succeeded=raw_counts.get("succeeded"),
-                errored=raw_counts.get("errored"),
-                canceled=raw_counts.get("canceled"),
-                expired=raw_counts.get("expired"),
-            )
-
         updated = LLMBatchHandle(
             agentmap_batch_id=handle.agentmap_batch_id,
             provider_batch_id=handle.provider_batch_id,
-            status=normalized_status,
+            status=poll_result.status,
             provider=handle.provider,
             model=handle.model,
             spec_id_map=handle.spec_id_map,
-            results_url=poll_result.get("results_url") or handle.results_url,
+            results_url=poll_result.results_url or handle.results_url,
             expires_at=handle.expires_at,
-            ended_at=poll_result.get("ended_at"),
-            request_counts=counts,
+            ended_at=poll_result.ended_at,
+            request_counts=poll_result.request_counts,
         )
 
         if self._batch_repo is not None:
@@ -1775,9 +1758,9 @@ class LLMService:
         self._logger.info(
             "llm_batch.polled agentmap_batch_id=%s status=%s processing=%s succeeded=%s",
             handle.agentmap_batch_id,
-            normalized_status.value,
-            counts.processing if counts else None,
-            counts.succeeded if counts else None,
+            updated.status.value,
+            updated.request_counts.processing if updated.request_counts else None,
+            updated.request_counts.succeeded if updated.request_counts else None,
         )
         return updated
 

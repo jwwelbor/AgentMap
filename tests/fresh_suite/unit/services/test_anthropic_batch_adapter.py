@@ -754,3 +754,190 @@ class TestSubmitMalformedSDKResponse:
                     max_tokens=100,
                     request_options={},
                 )
+
+
+# ---------------------------------------------------------------------------
+# T-E05-F04-004 tests: BatchAdapterProtocol conformance, normalized poll,
+# result_ref arg
+# ---------------------------------------------------------------------------
+
+
+def _make_adapter():
+    """Return a fully initialized AnthropicBatchAdapter with a mock SDK."""
+    mock_sdk, client_instance = _make_mock_anthropic_module()
+    with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+        from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
+
+        adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
+    # stash client for assertions
+    adapter._client = client_instance
+    return adapter
+
+
+class TestBatchAdapterProtocolConformance:
+    """AC-T1: isinstance(AnthropicBatchAdapter(...), BatchAdapterProtocol) is True."""
+
+    def test_isinstance_batch_adapter_protocol(self):
+        from agentmap.services.protocols.service_protocols import BatchAdapterProtocol
+
+        mock_sdk, _ = _make_mock_anthropic_module()
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            from agentmap.services.llm.anthropic_batch_adapter import (
+                AnthropicBatchAdapter,
+            )
+
+            adapter = AnthropicBatchAdapter(api_key="k", logger=MagicMock())
+
+        assert isinstance(adapter, BatchAdapterProtocol)
+
+    def test_provider_name_is_anthropic(self):
+        mock_sdk, _ = _make_mock_anthropic_module()
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            from agentmap.services.llm.anthropic_batch_adapter import (
+                AnthropicBatchAdapter,
+            )
+
+            assert AnthropicBatchAdapter.provider_name == "anthropic"
+            adapter = AnthropicBatchAdapter(api_key="k", logger=MagicMock())
+            assert adapter.provider_name == "anthropic"
+
+    def test_supports_cancel_is_true(self):
+        mock_sdk, _ = _make_mock_anthropic_module()
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            from agentmap.services.llm.anthropic_batch_adapter import (
+                AnthropicBatchAdapter,
+            )
+
+            assert AnthropicBatchAdapter.supports_cancel is True
+            adapter = AnthropicBatchAdapter(api_key="k", logger=MagicMock())
+            assert adapter.supports_cancel is True
+
+
+class TestNormalizedPoll:
+    """AC-T2: poll returns BatchPollResult with already-normalized LLMBatchStatus."""
+
+    def _make_batch_response(self, processing_status, results_url=None, ended_at=None):
+        batch = MagicMock()
+        batch.processing_status = processing_status
+        batch.results_url = results_url
+        batch.ended_at = ended_at
+        rc = MagicMock()
+        rc.processing = 1
+        rc.succeeded = 2
+        rc.errored = 0
+        rc.canceled = 0
+        rc.expired = 0
+        batch.request_counts = rc
+        return batch
+
+    def test_poll_returns_batch_poll_result_instance(self):
+        from agentmap.models.llm_execution import BatchPollResult
+
+        adapter = _make_adapter()
+        adapter._client.messages.batches.retrieve.return_value = (
+            self._make_batch_response("in_progress")
+        )
+        result = adapter.poll("batch-123")
+        assert isinstance(result, BatchPollResult)
+
+    def test_poll_in_progress_maps_to_in_progress(self):
+        from agentmap.models.llm_execution import LLMBatchStatus
+
+        adapter = _make_adapter()
+        adapter._client.messages.batches.retrieve.return_value = (
+            self._make_batch_response("in_progress")
+        )
+        result = adapter.poll("batch-123")
+        assert result.status == LLMBatchStatus.IN_PROGRESS
+
+    def test_poll_ended_maps_to_ended(self):
+        from agentmap.models.llm_execution import LLMBatchStatus
+
+        adapter = _make_adapter()
+        adapter._client.messages.batches.retrieve.return_value = (
+            self._make_batch_response("ended", results_url="https://example.com/r")
+        )
+        result = adapter.poll("batch-123")
+        assert result.status == LLMBatchStatus.ENDED
+        assert result.results_url == "https://example.com/r"
+
+    def test_poll_canceling_maps_to_canceling(self):
+        from agentmap.models.llm_execution import LLMBatchStatus
+
+        adapter = _make_adapter()
+        adapter._client.messages.batches.retrieve.return_value = (
+            self._make_batch_response("canceling")
+        )
+        result = adapter.poll("batch-123")
+        assert result.status == LLMBatchStatus.CANCELING
+
+    def test_poll_expired_maps_to_expired(self):
+        from agentmap.models.llm_execution import LLMBatchStatus
+
+        adapter = _make_adapter()
+        adapter._client.messages.batches.retrieve.return_value = (
+            self._make_batch_response("expired")
+        )
+        result = adapter.poll("batch-123")
+        assert result.status == LLMBatchStatus.EXPIRED
+
+    def test_poll_unknown_status_maps_to_failed(self):
+        from agentmap.models.llm_execution import LLMBatchStatus
+
+        adapter = _make_adapter()
+        adapter._client.messages.batches.retrieve.return_value = (
+            self._make_batch_response("some_unknown_status")
+        )
+        result = adapter.poll("batch-123")
+        assert result.status == LLMBatchStatus.FAILED
+
+    def test_poll_request_counts_populated(self):
+        from agentmap.models.llm_execution import LLMBatchRequestCounts
+
+        adapter = _make_adapter()
+        adapter._client.messages.batches.retrieve.return_value = (
+            self._make_batch_response("in_progress")
+        )
+        result = adapter.poll("batch-123")
+        assert isinstance(result.request_counts, LLMBatchRequestCounts)
+        assert result.request_counts.processing == 1
+        assert result.request_counts.succeeded == 2
+
+
+class TestFetchResultsResultRef:
+    """AC-T3: fetch_results accepts result_ref argument (ignored for Anthropic)."""
+
+    def test_fetch_results_accepts_result_ref_kwarg(self):
+        adapter = _make_adapter()
+        # Make SDK return one succeeded item
+        item = MagicMock()
+        item.custom_id = "spec__s1"
+        item.result.type = "succeeded"
+        item.result.message.content = [MagicMock(text="hello")]
+        item.result.message.model = "claude-sonnet-4-6"
+        usage = MagicMock()
+        usage.input_tokens = 10
+        usage.output_tokens = 5
+        usage.cache_creation_input_tokens = None
+        usage.cache_read_input_tokens = None
+        item.result.message.usage = usage
+        adapter._client.messages.batches.results.return_value = [item]
+
+        spec_id_map = {"s1": "spec__s1"}
+        records = list(
+            adapter.fetch_results("batch-123", spec_id_map, result_ref="some-ref")
+        )
+        assert len(records) == 1
+        assert records[0].spec_id == "s1"
+
+    def test_fetch_results_result_ref_none_is_default(self):
+        """result_ref defaults to None — existing callers without the arg still work."""
+        import inspect
+
+        mock_sdk, _ = _make_mock_anthropic_module()
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            from agentmap.services.llm.anthropic_batch_adapter import (
+                AnthropicBatchAdapter,
+            )
+        sig = inspect.signature(AnthropicBatchAdapter.fetch_results)
+        assert sig.parameters["result_ref"].default is None

@@ -23,7 +23,9 @@ import pytest
 
 from agentmap.exceptions import LLMServiceError
 from agentmap.models.llm_execution import (
+    BatchPollResult,
     LLMBatchHandle,
+    LLMBatchRequestCounts,
     LLMBatchResultRecord,
     LLMBatchStatus,
     LLMBatchSubmitRequest,
@@ -39,6 +41,33 @@ from agentmap.services.llm_batch_errors import (
 from agentmap.services.llm_batch_repository import BatchHandleRepository
 from agentmap.services.llm_service import LLMService
 from tests.utils.mock_service_factory import MockServiceFactory
+
+# Status map mirroring the adapter's _STATUS_MAP (used in test helpers only).
+_ANTHROPIC_STATUS_MAP = {
+    "in_progress": LLMBatchStatus.IN_PROGRESS,
+    "canceling": LLMBatchStatus.CANCELING,
+    "ended": LLMBatchStatus.ENDED,
+    "expired": LLMBatchStatus.EXPIRED,
+}
+
+
+def _make_poll_result(
+    processing_status: str,
+    request_counts: dict = None,
+    results_url: str = None,
+    ended_at: str = None,
+) -> BatchPollResult:
+    """Build a BatchPollResult (as the adapter now returns) from test params."""
+    counts = None
+    if request_counts is not None:
+        counts = LLMBatchRequestCounts(**request_counts)
+    status = _ANTHROPIC_STATUS_MAP.get(processing_status, LLMBatchStatus.FAILED)
+    return BatchPollResult(
+        status=status,
+        request_counts=counts,
+        results_url=results_url,
+        ended_at=ended_at,
+    )
 
 # ---------------------------------------------------------------------------
 # Shared fixtures / factories
@@ -298,18 +327,16 @@ class TestRestoreBatch:
             {"s1": "s1"},
             "2026-06-08T00:00:00Z",
         )
-        mock_adapter.poll.return_value = {
-            "processing_status": "in_progress",
-            "request_counts": {
+        mock_adapter.poll.return_value = _make_poll_result(
+            "in_progress",
+            request_counts={
                 "processing": 1,
                 "succeeded": 0,
                 "errored": 0,
                 "canceled": 0,
                 "expired": 0,
             },
-            "results_url": None,
-            "ended_at": None,
-        }
+        )
 
         # Submit, serialize, restore (simulating restart)
         request = _make_batch_request(specs=[_make_spec("s1")])
@@ -355,9 +382,9 @@ class TestPollBatchStatusMapping:
     def _poll_with_status(self, processing_status, request_counts=None, extra=None):
         """Helper: poll a handle with mocked adapter returning given processing_status."""
         service, mock_adapter, repo = _make_service()
-        poll_result = {
-            "processing_status": processing_status,
-            "request_counts": request_counts
+        poll_result = _make_poll_result(
+            processing_status=processing_status,
+            request_counts=request_counts
             or {
                 "processing": 0,
                 "succeeded": 0,
@@ -365,11 +392,7 @@ class TestPollBatchStatusMapping:
                 "canceled": 0,
                 "expired": 0,
             },
-            "results_url": None,
-            "ended_at": None,
-        }
-        if extra:
-            poll_result.update(extra)
+        )
         mock_adapter.poll.return_value = poll_result
 
         handle = _make_handle(status=LLMBatchStatus.SUBMITTED)
@@ -424,18 +447,17 @@ class TestPollBatchStatusMapping:
     def test_ended_with_results_url_populated(self):
         """TC-AC3-04: 'ended' with results_url -> results_url populated on handle."""
         service, mock_adapter, repo = _make_service()
-        mock_adapter.poll.return_value = {
-            "processing_status": "ended",
-            "request_counts": {
+        mock_adapter.poll.return_value = _make_poll_result(
+            "ended",
+            request_counts={
                 "processing": 0,
                 "succeeded": 0,
                 "errored": 2,
                 "canceled": 1,
                 "expired": 0,
             },
-            "results_url": "https://api.anthropic.com/v1/messages/batches/msgbatch_abc/results",
-            "ended_at": None,
-        }
+            results_url="https://api.anthropic.com/v1/messages/batches/msgbatch_abc/results",
+        )
         handle = _make_handle(status=LLMBatchStatus.IN_PROGRESS)
         result = service.poll_batch(handle)
         assert result.status == LLMBatchStatus.ENDED
@@ -450,18 +472,17 @@ class TestPollBatchStatusMapping:
     def test_ended_with_ended_at_populated(self):
         """TC-AC3-06: 'ended' with ended_at -> handle.ended_at populated."""
         service, mock_adapter, repo = _make_service()
-        mock_adapter.poll.return_value = {
-            "processing_status": "ended",
-            "request_counts": {
+        mock_adapter.poll.return_value = _make_poll_result(
+            "ended",
+            request_counts={
                 "processing": 0,
                 "succeeded": 1,
                 "errored": 0,
                 "canceled": 0,
                 "expired": 0,
             },
-            "results_url": None,
-            "ended_at": "2026-06-08T01:00:00Z",
-        }
+            ended_at="2026-06-08T01:00:00Z",
+        )
         handle = _make_handle(status=LLMBatchStatus.IN_PROGRESS)
         result = service.poll_batch(handle)
         assert result.status == LLMBatchStatus.ENDED
@@ -480,18 +501,16 @@ class TestCancelBatch:
         """TC-AC4-01: cancel active batch calls adapter.cancel() and returns updated handle."""
         service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
         mock_adapter.cancel.return_value = None
-        mock_adapter.poll.return_value = {
-            "processing_status": "canceling",
-            "request_counts": {
+        mock_adapter.poll.return_value = _make_poll_result(
+            "canceling",
+            request_counts={
                 "processing": 1,
                 "succeeded": 0,
                 "errored": 0,
                 "canceled": 0,
                 "expired": 0,
             },
-            "results_url": None,
-            "ended_at": None,
-        }
+        )
 
         handle = _make_handle(status=LLMBatchStatus.IN_PROGRESS)
         result = service.cancel_batch(handle)
@@ -505,30 +524,27 @@ class TestCancelBatch:
         mock_adapter.cancel.return_value = None
         # First poll after cancel returns canceling
         mock_adapter.poll.side_effect = [
-            {
-                "processing_status": "canceling",
-                "request_counts": {
+            _make_poll_result(
+                "canceling",
+                request_counts={
                     "processing": 0,
                     "succeeded": 0,
                     "errored": 0,
                     "canceled": 1,
                     "expired": 0,
                 },
-                "results_url": None,
-                "ended_at": None,
-            },
-            {
-                "processing_status": "ended",
-                "request_counts": {
+            ),
+            _make_poll_result(
+                "ended",
+                request_counts={
                     "processing": 0,
                     "succeeded": 0,
                     "errored": 0,
                     "canceled": 1,
                     "expired": 0,
                 },
-                "results_url": None,
-                "ended_at": "2026-06-08T01:00:00Z",
-            },
+                ended_at="2026-06-08T01:00:00Z",
+            ),
         ]
 
         handle = _make_handle(status=LLMBatchStatus.IN_PROGRESS)

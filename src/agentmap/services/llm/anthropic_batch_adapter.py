@@ -12,7 +12,10 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from agentmap.exceptions import LLMDependencyError, LLMServiceError
 from agentmap.models.llm_execution import (
+    BatchPollResult,
+    LLMBatchRequestCounts,
     LLMBatchResultRecord,
+    LLMBatchStatus,
     LLMCallSpec,
     LLMExecutionError,
     LLMUsage,
@@ -30,6 +33,19 @@ class AnthropicBatchAdapter:
     raises ``LLMDependencyError`` rather than letting a bare ``ImportError``
     propagate.
     """
+
+    # Satisfies BatchAdapterProtocol class attributes.
+    provider_name: str = "anthropic"
+    supports_cancel: bool = True
+
+    # Anthropic processing_status -> normalized LLMBatchStatus.
+    # Unknown status values map to FAILED (deterministic, documented decision D-3).
+    _STATUS_MAP: Dict[str, LLMBatchStatus] = {
+        "in_progress": LLMBatchStatus.IN_PROGRESS,
+        "canceling": LLMBatchStatus.CANCELING,
+        "ended": LLMBatchStatus.ENDED,
+        "expired": LLMBatchStatus.EXPIRED,
+    }
 
     def __init__(self, api_key: str, logger: Any) -> None:
         try:
@@ -107,33 +123,39 @@ class AnthropicBatchAdapter:
     # Poll
     # ------------------------------------------------------------------
 
-    def poll(self, provider_batch_id: str) -> Dict[str, Any]:
+    def poll(self, provider_batch_id: str) -> BatchPollResult:
         """
         Retrieve current batch status from the Anthropic API.
 
-        Returns a plain dict with ``processing_status``, ``request_counts``,
-        ``results_url``, and ``ended_at`` fields extracted from the SDK
-        response.
+        Returns a ``BatchPollResult`` with already-normalized ``LLMBatchStatus``.
+        The provider→status mapping lives entirely in ``_STATUS_MAP``; the
+        service layer reads ``result.status`` directly without further mapping.
+        Unknown ``processing_status`` values map to ``LLMBatchStatus.FAILED``.
         """
         batch = self._client.messages.batches.retrieve(provider_batch_id)
 
-        counts: Optional[Dict[str, Any]] = None
+        counts: Optional[LLMBatchRequestCounts] = None
         if hasattr(batch, "request_counts") and batch.request_counts is not None:
             rc = batch.request_counts
-            counts = {
-                "processing": getattr(rc, "processing", None),
-                "succeeded": getattr(rc, "succeeded", None),
-                "errored": getattr(rc, "errored", None),
-                "canceled": getattr(rc, "canceled", None),
-                "expired": getattr(rc, "expired", None),
-            }
+            counts = LLMBatchRequestCounts(
+                processing=getattr(rc, "processing", None),
+                succeeded=getattr(rc, "succeeded", None),
+                errored=getattr(rc, "errored", None),
+                canceled=getattr(rc, "canceled", None),
+                expired=getattr(rc, "expired", None),
+            )
 
-        return {
-            "processing_status": getattr(batch, "processing_status", None),
-            "request_counts": counts,
-            "results_url": getattr(batch, "results_url", None),
-            "ended_at": getattr(batch, "ended_at", None),
-        }
+        processing_status = getattr(batch, "processing_status", None)
+        normalized_status = self._STATUS_MAP.get(
+            processing_status, LLMBatchStatus.FAILED
+        )
+
+        return BatchPollResult(
+            status=normalized_status,
+            request_counts=counts,
+            results_url=getattr(batch, "results_url", None),
+            ended_at=getattr(batch, "ended_at", None),
+        )
 
     # ------------------------------------------------------------------
     # Cancel
@@ -156,6 +178,7 @@ class AnthropicBatchAdapter:
         self,
         provider_batch_id: str,
         spec_id_map: Dict[str, str],
+        result_ref: Optional[str] = None,
     ) -> Generator[LLMBatchResultRecord, None, None]:
         """
         Stream JSONL batch results lazily from the Anthropic API.
@@ -163,6 +186,9 @@ class AnthropicBatchAdapter:
         Yields ``LLMBatchResultRecord`` for each item, with ``spec_id``
         restored from ``spec_id_map`` (custom_id → original spec_id).
         ``cache_control`` metadata is preserved on the usage object.
+
+        ``result_ref`` is accepted to satisfy ``BatchAdapterProtocol`` but is
+        ignored for Anthropic — results are fetched via ``provider_batch_id``.
 
         This is a generator — results are NOT loaded all into memory.
         """

@@ -25,7 +25,9 @@ import tempfile
 from unittest.mock import MagicMock
 
 from agentmap.models.llm_execution import (
+    BatchPollResult,
     LLMBatchHandle,
+    LLMBatchRequestCounts,
     LLMBatchResultRecord,
     LLMBatchStatus,
     LLMBatchSubmitRequest,
@@ -36,6 +38,32 @@ from agentmap.models.llm_execution import (
 from agentmap.services.llm_batch_repository import BatchHandleRepository
 from agentmap.services.llm_service import LLMService
 from tests.utils.mock_service_factory import MockServiceFactory
+
+_ANTHROPIC_STATUS_MAP = {
+    "in_progress": LLMBatchStatus.IN_PROGRESS,
+    "canceling": LLMBatchStatus.CANCELING,
+    "ended": LLMBatchStatus.ENDED,
+    "expired": LLMBatchStatus.EXPIRED,
+}
+
+
+def _make_poll_result(
+    processing_status: str,
+    request_counts: dict = None,
+    results_url: str = None,
+    ended_at: str = None,
+) -> BatchPollResult:
+    counts = None
+    if request_counts is not None:
+        counts = LLMBatchRequestCounts(**request_counts)
+    status = _ANTHROPIC_STATUS_MAP.get(processing_status, LLMBatchStatus.FAILED)
+    return BatchPollResult(
+        status=status,
+        request_counts=counts,
+        results_url=results_url,
+        ended_at=ended_at,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -212,18 +240,16 @@ class TestInt01FullLifecycle:
 
         # ---- Phase 3: restore with new service instance ----
         service2, mock_adapter2, _ = _make_service(batch_dir=str(tmp_path))
-        mock_adapter2.poll.return_value = {
-            "processing_status": "in_progress",
-            "request_counts": {
+        mock_adapter2.poll.return_value = _make_poll_result(
+            "in_progress",
+            request_counts={
                 "processing": 1,
                 "succeeded": 0,
                 "errored": 0,
                 "canceled": 0,
                 "expired": 0,
             },
-            "results_url": None,
-            "ended_at": None,
-        }
+        )
 
         restored = service2.restore_batch(handle_dict)
         assert restored.agentmap_batch_id == handle.agentmap_batch_id
@@ -257,18 +283,18 @@ class TestInt01FullLifecycle:
         assert "api_key" not in handle_dict
 
         service2, mock_adapter2, _ = _make_service(batch_dir=str(tmp_path))
-        mock_adapter2.poll.return_value = {
-            "processing_status": "ended",
-            "request_counts": {
+        mock_adapter2.poll.return_value = _make_poll_result(
+            "ended",
+            request_counts={
                 "processing": 0,
                 "succeeded": 2,
                 "errored": 0,
                 "canceled": 0,
                 "expired": 0,
             },
-            "results_url": "https://api.anthropic.com/v1/messages/batches/msgbatch_round001/results",
-            "ended_at": "2026-06-09T01:00:00Z",
-        }
+            results_url="https://api.anthropic.com/v1/messages/batches/msgbatch_round001/results",
+            ended_at="2026-06-09T01:00:00Z",
+        )
 
         restored = service2.restore_batch(handle_dict)
         final = service2.poll_batch(restored)
