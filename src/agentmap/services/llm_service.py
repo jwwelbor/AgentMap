@@ -41,6 +41,7 @@ from agentmap.services.config.llm_routing_config_service import LLMRoutingConfig
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.llm_batch_errors import (
     LLMBatchCancelNotSupportedError,
+    LLMBatchExpiredError,
     LLMBatchNotReadyError,
     LLMBatchUnsupportedProviderError,
 )
@@ -115,6 +116,7 @@ class LLMService:
         routing_config_service: Optional[LLMRoutingConfigService] = None,
         telemetry_service: Optional[Any] = None,
         batch_adapter: Optional[Any] = None,
+        batch_adapters: Optional[Dict[str, Any]] = None,
         batch_repo: Optional[Any] = None,
     ):
         """
@@ -216,9 +218,15 @@ class LLMService:
             except Exception:
                 pass  # Instrument creation failure silently ignored
 
-        # Batch execution dependencies (E05-F03) — injected or left None for
-        # lazy/deferred wiring by the DI container.
-        self._batch_adapter = batch_adapter
+        # Batch execution dependencies (E05-F04) — provider→adapter registry.
+        # batch_adapters takes precedence; batch_adapter (single) kept for
+        # backwards-compat with F03 DI wiring (wraps it as {"anthropic": adapter}).
+        if batch_adapters is not None:
+            self._batch_adapters: Dict[str, Any] = dict(batch_adapters)
+        elif batch_adapter is not None:
+            self._batch_adapters = {"anthropic": batch_adapter}
+        else:
+            self._batch_adapters = {}
         self._batch_repo = batch_repo
 
     @property
@@ -1550,20 +1558,39 @@ class LLMService:
                 )
 
     # ------------------------------------------------------------------
-    # Batch lifecycle methods (E05-F03)
+    # Batch lifecycle methods (E05-F04 registry-based dispatch)
     # ------------------------------------------------------------------
 
-    # Anthropic processing_status -> normalized LLMBatchStatus mapping.
-    # Unknown status values map to FAILED (deterministic, documented decision).
-    _ANTHROPIC_STATUS_MAP: Dict[str, LLMBatchStatus] = {
-        "in_progress": LLMBatchStatus.IN_PROGRESS,
-        "canceling": LLMBatchStatus.CANCELING,
-        "ended": LLMBatchStatus.ENDED,
-        "expired": LLMBatchStatus.EXPIRED,
+    # Terminal statuses where cancel is not permitted.
+    _TERMINAL_STATUSES = {
+        LLMBatchStatus.ENDED,
+        LLMBatchStatus.EXPIRED,
+        LLMBatchStatus.FAILED,
+        LLMBatchStatus.CANCELED,
+        LLMBatchStatus.CANCELING,
     }
 
-    # Terminal statuses where cancel is not permitted.
-    _TERMINAL_STATUSES = {LLMBatchStatus.ENDED, LLMBatchStatus.EXPIRED}
+    def _get_adapter(self, provider: str) -> Any:
+        """Return the registered adapter for ``provider`` or raise.
+
+        Raises:
+            LLMBatchUnsupportedProviderError: When no adapter is registered for
+                the requested provider.  The error message names the registered
+                providers so callers can discover what is available.
+        """
+        adapter = self._batch_adapters.get(provider)
+        if adapter is None:
+            registered = list(self._batch_adapters.keys())
+            self._logger.error(
+                "llm_batch.unsupported_provider provider=%s registered=%s",
+                provider,
+                registered,
+            )
+            raise LLMBatchUnsupportedProviderError(
+                f"Provider {provider!r} is not registered for batch execution. "
+                f"Registered providers: {registered}."
+            )
+        return adapter
 
     # Params that are incompatible with batch submission.
     _BATCH_INCOMPATIBLE_PARAMS = frozenset({"stream"})
@@ -1578,15 +1605,26 @@ class LLMService:
         Raises ``LLMServiceError`` for:
         - empty call_specs
         - duplicate spec_ids
+        - per-spec ``provider`` set (provider is batch-level only — REQ-F-008)
+        - conflicting ``model``/``temperature`` in both spec and envelope (D-3)
         - batch-incompatible request_options params (stream=True)
         - max_tokens == 0 (cache pre-warm not supported in batches)
-        Raises ``LLMBatchUnsupportedProviderError`` for non-Anthropic providers.
+        Raises ``LLMBatchUnsupportedProviderError`` for unregistered providers.
         """
         if not request.call_specs:
             raise LLMServiceError(
                 "call_specs must not be empty — at least one LLMCallSpec is required "
                 "for batch submission."
             )
+
+        # REQ-F-008: provider is batch-level only; reject per-spec provider settings.
+        for spec in request.call_specs:
+            if spec.provider is not None and spec.provider != "":
+                raise LLMServiceError(
+                    f"spec_id={spec.spec_id!r}: LLMCallSpec.provider must not be set "
+                    "when LLMBatchSubmitRequest.provider is specified. Provider is a "
+                    "batch-level concern only (one batch = one adapter)."
+                )
 
         seen_ids: set = set()
         for spec in request.call_specs:
@@ -1596,6 +1634,33 @@ class LLMService:
                     "Each spec_id must be unique within one batch submission."
                 )
             seen_ids.add(spec.spec_id)
+
+            # D-3: reject conflicting model/temperature in both spec and envelope.
+            if (
+                spec.model is not None
+                and request.model is not None
+                and spec.model != request.model
+            ):
+                raise LLMServiceError(
+                    f"spec_id={spec.spec_id!r}: conflicting model — "
+                    f"spec.model={spec.model!r} conflicts with "
+                    f"request.model={request.model!r}. Set model in one place only."
+                )
+            if spec.request_options and request.request_options:
+                spec_temp = spec.request_options.get("temperature")
+                req_temp = request.request_options.get("temperature")
+                if (
+                    spec_temp is not None
+                    and req_temp is not None
+                    and spec_temp != req_temp
+                ):
+                    raise LLMServiceError(
+                        f"spec_id={spec.spec_id!r}: conflicting temperature — "
+                        f"spec.request_options.temperature={spec_temp!r} conflicts "
+                        f"with request.request_options.temperature={req_temp!r}. "
+                        "Set temperature in one place only."
+                    )
+
             # Check for batch-incompatible params in per-spec request_options
             if spec.request_options:
                 for bad_key in self._BATCH_INCOMPATIBLE_PARAMS:
@@ -1626,14 +1691,8 @@ class LLMService:
                     "submissions. Cache pre-warm is incompatible with batch mode."
                 )
 
-        if request.provider != "anthropic":
-            self._logger.warning(
-                "llm_batch.unsupported_provider provider=%s", request.provider
-            )
-            raise LLMBatchUnsupportedProviderError(
-                f"Provider {request.provider!r} does not support provider-native "
-                "batch execution. Only 'anthropic' is supported in this release."
-            )
+        # REQ-F-002: registry-based provider check (raises LLMBatchUnsupportedProviderError).
+        self._get_adapter(request.provider)
 
         if request.max_tokens == 0:
             raise LLMServiceError(
@@ -1646,7 +1705,7 @@ class LLMService:
         Submit a provider-native batch and return a serializable handle.
 
         Validation order: non-empty specs → unique spec_ids → batch-incompatible
-        params → provider == "anthropic" → max_tokens != 0 → adapter call →
+        params → registered provider check → max_tokens != 0 → adapter call →
         build handle → persist → return.
 
         Raises:
@@ -1655,7 +1714,13 @@ class LLMService:
         """
         self._validate_batch_submit_request(request)
 
-        provider_batch_id, spec_id_map, expires_at = self._batch_adapter.submit(
+        adapter = self._get_adapter(request.provider)
+        self._logger.info(
+            "llm_batch.submit provider=%s specs=%d",
+            request.provider,
+            len(request.call_specs),
+        )
+        provider_batch_id, spec_id_map, expires_at = adapter.submit(
             specs=request.call_specs,
             model=request.model,
             max_tokens=request.max_tokens,
@@ -1708,14 +1773,6 @@ class LLMService:
                 "empty in the provided handle dict."
             )
 
-        # Validate provider (F-HIGH-2): only 'anthropic' handles can be restored.
-        provider = handle_data.get("provider", "")
-        if provider != "anthropic":
-            raise LLMServiceError(
-                f"Cannot restore batch handle: provider {provider!r} is not "
-                "supported. Only 'anthropic' handles can be restored."
-            )
-
         # Validate agentmap_batch_id format (F-HIGH-2): prevent path traversal.
         # The id must match ^amatch_[a-f0-9]{32}$ — no slashes, dots, or other
         # path components that could escape the batch directory.
@@ -1733,11 +1790,30 @@ class LLMService:
         """
         Poll the provider for current batch status and return an updated handle.
 
-        Maps Anthropic ``processing_status`` to the normalized ``LLMBatchStatus``
-        set.  Unknown status values map to ``FAILED`` (deterministic, documented).
-        Persists the updated handle via the repository.
+        Dispatches through the provider→adapter registry.  Adapters return an
+        already-normalized ``LLMBatchStatus``; the service performs zero enum
+        mapping (REQ-F-003).
+
+        Raises:
+            LLMBatchExpiredError: If the handle is already in EXPIRED status.
+            LLMBatchUnsupportedProviderError: If handle.provider is not registered.
         """
-        poll_result = self._batch_adapter.poll(handle.provider_batch_id)
+        if handle.status == LLMBatchStatus.EXPIRED:
+            self._logger.warning(
+                "llm_batch.expired_operation handle_id=%s", handle.agentmap_batch_id
+            )
+            raise LLMBatchExpiredError(
+                f"Batch {handle.agentmap_batch_id!r} has expired. "
+                "Results are no longer available."
+            )
+
+        adapter = self._get_adapter(handle.provider)
+        self._logger.info(
+            "llm_batch.poll provider=%s status=%s",
+            handle.provider,
+            handle.status.value,
+        )
+        poll_result = adapter.poll(handle.provider_batch_id)
 
         updated = LLMBatchHandle(
             agentmap_batch_id=handle.agentmap_batch_id,
@@ -1769,8 +1845,26 @@ class LLMService:
         Request cancellation of an active batch.
 
         Raises:
-            LLMBatchCancelNotSupportedError: If the handle is in a terminal status.
+            LLMBatchCancelNotSupportedError: If the provider does not support
+                cancel (REQ-F-009e — distinct message from terminal-state case).
+            LLMBatchCancelNotSupportedError: If the handle is already in a
+                terminal status (distinct message from provider-not-supported).
         """
+        adapter = self._get_adapter(handle.provider)
+
+        # REQ-F-009e: disambiguate "provider does not support cancel" from
+        # "batch already in terminal state".
+        if not getattr(adapter, "supports_cancel", True):
+            self._logger.warning(
+                "llm_batch.cancel_not_supported provider=%s handle_id=%s",
+                handle.provider,
+                handle.agentmap_batch_id,
+            )
+            raise LLMBatchCancelNotSupportedError(
+                f"Provider {handle.provider!r} does not support cancel. "
+                f"Cannot cancel batch {handle.agentmap_batch_id!r}."
+            )
+
         if handle.status in self._TERMINAL_STATUSES:
             self._logger.warning(
                 "llm_batch.cancel_rejected agentmap_batch_id=%s status=%s",
@@ -1779,14 +1873,14 @@ class LLMService:
             )
             raise LLMBatchCancelNotSupportedError(
                 f"Cannot cancel batch {handle.agentmap_batch_id!r}: "
-                f"current status is {handle.status.value!r} (terminal)."
+                f"current status is {handle.status.value!r} (terminal state)."
             )
 
         self._logger.info(
             "llm_batch.cancel_requested agentmap_batch_id=%s",
             handle.agentmap_batch_id,
         )
-        self._batch_adapter.cancel(handle.provider_batch_id)
+        adapter.cancel(handle.provider_batch_id)
         return self.poll_batch(handle)
 
     def fetch_batch_results(self, handle: LLMBatchHandle) -> List[LLMBatchResultRecord]:
@@ -1797,8 +1891,18 @@ class LLMService:
         with ``spec_id`` already restored from the spec_id_map.
 
         Raises:
+            LLMBatchExpiredError: If the handle is in EXPIRED status.
             LLMBatchNotReadyError: If the handle status is not ``"ended"``.
         """
+        if handle.status == LLMBatchStatus.EXPIRED:
+            self._logger.warning(
+                "llm_batch.expired_operation handle_id=%s", handle.agentmap_batch_id
+            )
+            raise LLMBatchExpiredError(
+                f"Batch {handle.agentmap_batch_id!r} has expired. "
+                "Results are no longer available."
+            )
+
         if handle.status != LLMBatchStatus.ENDED:
             raise LLMBatchNotReadyError(
                 f"Batch {handle.agentmap_batch_id!r} is not yet ready for result "
@@ -1816,8 +1920,9 @@ class LLMService:
                 "absent. Re-poll to refresh the handle before fetching results."
             )
 
+        adapter = self._get_adapter(handle.provider)
         records = list(
-            self._batch_adapter.fetch_results(
+            adapter.fetch_results(
                 handle.provider_batch_id,
                 handle.spec_id_map,
             )
@@ -1829,6 +1934,142 @@ class LLMService:
             len(records),
         )
         return records
+
+    # ------------------------------------------------------------------
+    # Async surfaces (REQ-F-006) — wrap sync methods via asyncio.to_thread
+    # ------------------------------------------------------------------
+
+    async def asubmit_batch(self, request: "LLMBatchSubmitRequest") -> "LLMBatchHandle":
+        """Async wrapper for :meth:`submit_batch` (runs off event-loop thread)."""
+        return await asyncio.to_thread(self.submit_batch, request)
+
+    async def apoll_batch(self, handle: "LLMBatchHandle") -> "LLMBatchHandle":
+        """Async wrapper for :meth:`poll_batch` (runs off event-loop thread)."""
+        return await asyncio.to_thread(self.poll_batch, handle)
+
+    async def acancel_batch(self, handle: "LLMBatchHandle") -> "LLMBatchHandle":
+        """Async wrapper for :meth:`cancel_batch` (runs off event-loop thread)."""
+        return await asyncio.to_thread(self.cancel_batch, handle)
+
+    async def afetch_batch_results(
+        self, handle: "LLMBatchHandle"
+    ) -> "List[LLMBatchResultRecord]":
+        """Async wrapper for :meth:`fetch_batch_results` (runs off event-loop thread)."""
+        return await asyncio.to_thread(self.fetch_batch_results, handle)
+
+    async def wait_for_batch(
+        self,
+        handle: "LLMBatchHandle",
+        *,
+        poll_interval: float = 5.0,
+        timeout: float = 3600.0,
+    ) -> "LLMBatchHandle":
+        """Poll until the batch reaches a terminal status or timeout expires.
+
+        Uses capped exponential backoff between polls.  Raises
+        ``LLMBatchExpiredError`` immediately when the handle is already EXPIRED
+        (no polling needed).  Raises ``TimeoutError`` when ``timeout`` seconds
+        elapse without reaching a terminal status.
+
+        Args:
+            handle: The batch handle to watch.
+            poll_interval: Initial poll interval in seconds (default 5).
+            timeout: Maximum total wait in seconds (default 3600).
+
+        Raises:
+            LLMBatchExpiredError: If the handle status is EXPIRED before polling.
+            TimeoutError: If timeout elapses without reaching a terminal status.
+        """
+        if handle.status == LLMBatchStatus.EXPIRED:
+            self._logger.warning(
+                "llm_batch.expired_operation handle_id=%s", handle.agentmap_batch_id
+            )
+            raise LLMBatchExpiredError(
+                f"Batch {handle.agentmap_batch_id!r} has already expired."
+            )
+
+        import time
+
+        _TERMINAL = {
+            LLMBatchStatus.ENDED,
+            LLMBatchStatus.FAILED,
+            LLMBatchStatus.EXPIRED,
+            LLMBatchStatus.CANCELED,
+        }
+        deadline = time.monotonic() + timeout
+        interval = poll_interval
+
+        current = handle
+        while current.status not in _TERMINAL:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self._logger.warning(
+                    "llm_batch.wait_timeout handle_id=%s timeout_s=%s",
+                    handle.agentmap_batch_id,
+                    timeout,
+                )
+                raise TimeoutError(
+                    f"wait_for_batch timed out after {timeout}s for batch "
+                    f"{handle.agentmap_batch_id!r} (last status: {current.status.value!r})."
+                )
+            await asyncio.sleep(min(interval, remaining))
+            current = await self.apoll_batch(current)
+            # Capped exponential backoff (max 60 s).
+            interval = min(interval * 2, 60.0)
+
+        return current
+
+    def submit_and_wait(
+        self,
+        request: "LLMBatchSubmitRequest",
+        *,
+        poll_interval: float = 5.0,
+        timeout: float = 3600.0,
+    ) -> "LLMBatchHandle":
+        """Submit a batch and synchronously wait until it reaches a terminal status.
+
+        Convenience wrapper combining :meth:`submit_batch` and
+        :meth:`wait_for_batch`.
+
+        Raises:
+            TimeoutError: If timeout elapses before the batch terminates.
+        """
+        handle = self.submit_batch(request)
+        return asyncio.run(
+            self.wait_for_batch(handle, poll_interval=poll_interval, timeout=timeout)
+        )
+
+    def batch_capabilities(self, provider: str) -> Dict[str, Any]:
+        """Return capability information for a registered provider.
+
+        Reads the adapter's ``provider_name`` and ``supports_cancel`` attributes
+        plus static per-provider metadata.
+
+        Raises:
+            LLMBatchUnsupportedProviderError: If the provider is not registered.
+        """
+        adapter = self._get_adapter(provider)
+        return {
+            "supported": True,
+            "cancelable": bool(getattr(adapter, "supports_cancel", False)),
+            "provider": getattr(adapter, "provider_name", provider),
+            "completion_window": "24h",
+            "partial_fetch": False,
+        }
+
+    @staticmethod
+    def results_by_spec_id(
+        records: "List[LLMBatchResultRecord]",
+    ) -> "Dict[str, LLMBatchResultRecord]":
+        """Index a list of result records by their ``spec_id``.
+
+        Args:
+            records: Records returned by :meth:`fetch_batch_results`.
+
+        Returns:
+            Dict mapping ``spec_id`` → ``LLMBatchResultRecord``.
+        """
+        return {record.spec_id: record for record in records}
 
     @staticmethod
     def _extract_llm_usage(response: Any) -> Optional[LLMUsage]:

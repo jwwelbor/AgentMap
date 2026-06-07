@@ -173,7 +173,8 @@ class TestLLMDIBatchWiring:
             batch_repo=mock_batch_repo,
         )
 
-        assert svc._batch_adapter is mock_batch_adapter
+        # F04: _batch_adapter is stored in _batch_adapters registry keyed "anthropic".
+        assert svc._batch_adapters.get("anthropic") is mock_batch_adapter
         assert svc._batch_repo is mock_batch_repo
 
     def test_di_factory_creates_batch_adapter_singleton(self, tmp_path):

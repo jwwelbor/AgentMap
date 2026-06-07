@@ -70,7 +70,8 @@ def _make_poll_result(
 # ---------------------------------------------------------------------------
 
 
-def _make_spec(spec_id: str, provider: str = "anthropic", **kwargs) -> LLMCallSpec:
+def _make_spec(spec_id: str, provider: str = None, **kwargs) -> LLMCallSpec:
+    # provider defaults to None — it is a batch-level concern (REQ-F-008/F04).
     return LLMCallSpec(
         spec_id=spec_id,
         messages=[{"role": "user", "content": f"hello from {spec_id}"}],
@@ -152,7 +153,9 @@ def _make_service(batch_dir: str = None) -> tuple:
     )
 
     mock_adapter = MagicMock()
-    service._batch_adapter = mock_adapter
+    mock_adapter.provider_name = "anthropic"
+    mock_adapter.supports_cancel = True
+    service._batch_adapters = {"anthropic": mock_adapter}
 
     if batch_dir is not None:
         repo = BatchHandleRepository(batch_dir=batch_dir)
@@ -588,10 +591,10 @@ class TestInt05DIContainerWiring:
 
         assert llm_service is not None
         assert isinstance(llm_service, LLMService)
-        # Batch adapter must be wired
+        # Batch adapter must be wired (F04: stored in _batch_adapters registry).
         assert (
-            llm_service._batch_adapter is not None
-        ), "_batch_adapter must be wired by DI container"
+            llm_service._batch_adapters.get("anthropic") is not None
+        ), "_batch_adapters['anthropic'] must be wired by DI container"
         # Batch repo must be wired
         assert (
             llm_service._batch_repo is not None
@@ -624,9 +627,9 @@ class TestInt05DIContainerWiring:
 
         # Both calls must return the same singleton service
         assert svc1 is svc2, "llm_service must be a singleton"
-        # And the adapter on both references must be the same object
+        # And the adapter on both references must be the same object (singleton).
         assert (
-            svc1._batch_adapter is svc2._batch_adapter
+            svc1._batch_adapters.get("anthropic") is svc2._batch_adapters.get("anthropic")
         ), "anthropic_batch_adapter must be a singleton"
 
     def test_di_container_batch_repo_is_singleton(self, tmp_path):
