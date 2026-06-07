@@ -40,6 +40,7 @@ from agentmap.models.llm_execution import (
     LLMExecutionError,
     LLMUsage,
 )
+from agentmap.services.llm_batch_errors import LLMBatchResultIntegrityError
 
 
 class GeminiBatchAdapter:
@@ -302,19 +303,22 @@ class GeminiBatchAdapter:
             getattr(dest, "inlined_responses", None) if dest is not None else None
         ) or []
 
-        for idx, item in enumerate(inlined_responses):
-            # Positional demux: index in inlined_responses → spec_id_list[idx]
-            if idx >= len(spec_id_list):
-                self._logger.warning(
-                    "GeminiBatchAdapter.fetch_results: response index %d has no "
-                    "corresponding spec_id (spec_id_list length=%d) for batch %s "
-                    "— skipping record",
-                    idx,
-                    len(spec_id_list),
-                    provider_batch_id,
-                )
-                continue
+        submitted_count = len(spec_id_list)
+        returned_count = len(inlined_responses)
 
+        # D-9 / N2.1: Enforce count equality before yielding any record.
+        # Over-count means NO position is trustworthy — raise immediately.
+        if returned_count > submitted_count:
+            raise LLMBatchResultIntegrityError(
+                f"GeminiBatchAdapter.fetch_results: batch '{provider_batch_id}' "
+                f"returned {returned_count} inline responses but only "
+                f"{submitted_count} specs were submitted. "
+                f"Positional demux is unreliable — no records yielded."
+            )
+
+        # Yield records for present indices (positional demux is sound for equal
+        # counts; short-tail has returned_count < submitted_count).
+        for idx, item in enumerate(inlined_responses):
             spec_id = spec_id_list[idx]
 
             # Check for item-level error first
@@ -391,4 +395,31 @@ class GeminiBatchAdapter:
                 provider="google",
                 content=content,
                 usage=usage,
+            )
+
+        # D-9 / N2.1(2): Short-tail — synthesize errored records for each missing
+        # tail spec_id.  NEVER shift positions; the present records above were
+        # already yielded at their correct indices.
+        for missing_idx in range(returned_count, submitted_count):
+            missing_spec_id = spec_id_list[missing_idx]
+            self._logger.warning(
+                "GeminiBatchAdapter.fetch_results: no inline response for spec_id "
+                "'%s' (index %d) in batch '%s' — synthesizing missing_result record.",
+                missing_spec_id,
+                missing_idx,
+                provider_batch_id,
+            )
+            yield LLMBatchResultRecord(
+                spec_id=missing_spec_id,
+                status="errored",
+                error=LLMExecutionError(
+                    error_type="missing_result",
+                    message=(
+                        f"Gemini batch '{provider_batch_id}' returned only "
+                        f"{returned_count} inline responses but {submitted_count} "
+                        f"specs were submitted; no response for spec_id "
+                        f"'{missing_spec_id}' at index {missing_idx}."
+                    ),
+                    retryable=True,
+                ),
             )

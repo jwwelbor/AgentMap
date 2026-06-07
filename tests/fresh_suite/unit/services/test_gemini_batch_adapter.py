@@ -52,7 +52,13 @@ def _make_spec(spec_id: str, messages=None, temperature=None) -> LLMCallSpec:
     return LLMCallSpec(spec_id=spec_id, messages=messages, temperature=temperature)
 
 
-def _make_resolved(specs, model="gemini-2.0-flash", max_tokens=512, request_options=None, temperature=None):
+def _make_resolved(
+    specs,
+    model="gemini-2.0-flash",
+    max_tokens=512,
+    request_options=None,
+    temperature=None,
+):
     """Build a resolved_params list from old-style args (test helper only)."""
     rp = {"model": model, "max_tokens": max_tokens}
     if temperature is not None:
@@ -214,7 +220,9 @@ class TestGeminiSubmit:
         specs_ms = [spec]
         adapter.submit(
             specs_ms,
-            resolved_params=[{"model": "gemini-2.0-flash", "max_tokens": 100, "temperature": 0.5}],
+            resolved_params=[
+                {"model": "gemini-2.0-flash", "max_tokens": 100, "temperature": 0.5}
+            ],
         )
 
         call_kwargs = client_instance.batches.create.call_args
@@ -363,22 +371,225 @@ class TestGeminiFetchResults:
         assert results[0].status == "errored"
         assert results[0].spec_id == "s1"
 
-    def test_fetch_results_excess_responses_are_skipped(self):
-        """Extra inlined responses beyond spec_id_list length are skipped with a warning."""
+    def test_fetch_results_excess_responses_raises_integrity_error(self):
+        """N2 / D-9: over-count (responses > specs) raises LLMBatchResultIntegrityError.
+
+        Extra responses mean NO position is trustworthy — every result could be
+        misattributed.  The adapter must raise, not silently skip the tail.
+        Per spec.md § Gemini Result Demux Integrity N2.1(1) and D-9.
+        """
+        from agentmap.services.llm_batch_errors import LLMBatchResultIntegrityError
+
         client_instance = MagicMock()
         adapter = _make_adapter(client_instance)
 
-        spec_id_map = {"__ordered__": ["s1"]}  # only 1 spec
+        spec_id_map = {"__ordered__": ["s1"]}  # only 1 spec submitted
         item0 = _make_inlined_response("ok")
-        item1 = _make_inlined_response("extra")
+        item1 = _make_inlined_response("extra — more responses than specs")
+        mock_job = _make_job_with_responses([item0, item1])  # 2 responses, 1 spec
+        client_instance.batches.get.return_value = mock_job
+
+        with pytest.raises(LLMBatchResultIntegrityError) as exc_info:
+            list(adapter.fetch_results("batches/test", spec_id_map))
+
+        error_msg = str(exc_info.value)
+        # Error must name submitted count and returned count
+        assert "1" in error_msg  # submitted
+        assert "2" in error_msg  # returned
+
+
+# ---------------------------------------------------------------------------
+# N2: Demux integrity tests (D-9 / spec.md § Gemini Result Demux Integrity)
+# ---------------------------------------------------------------------------
+
+
+class TestGeminiDemuxIntegrity:
+    """N2.2 test cases for count-equality enforcement in fetch_results.
+
+    Per spec N5.2:
+    - short-tail (N-1 responses for N specs) → synthesize errored missing_result records
+    - over-count (N+1 responses for N specs) → raise LLMBatchResultIntegrityError
+    - equal count → positional demux proceeds unchanged (happy path)
+    - reorder-bound: equal-count shuffled content does NOT trigger an error (just
+      demonstrates the positional contract; the guard does not fire on equal counts)
+    """
+
+    def _make_adapter_with_responses(self, spec_ids, num_responses):
+        """Build adapter + client with num_responses inlined items for len(spec_ids) specs."""
+        client_instance = MagicMock()
+        adapter = _make_adapter(client_instance)
+        items = [
+            _make_inlined_response(f"text for idx {i}") for i in range(num_responses)
+        ]
+        mock_job = _make_job_with_responses(items)
+        client_instance.batches.get.return_value = mock_job
+        spec_id_map = {"__ordered__": list(spec_ids)}
+        return adapter, client_instance, spec_id_map
+
+    def test_n2_short_tail_synthesizes_missing_result_records(self):
+        """N2 / D-9: short-tail → errored missing_result records for missing spec_ids.
+
+        Submit 3 specs, provider returns only 2 responses.  The adapter must
+        yield 2 succeeded records for the present indices AND synthesize 1 errored
+        record for the missing spec_id.  No shifting of positions.
+        Per spec N2.1(2): short tail → synthesize errored LLMBatchResultRecord.
+        """
+        adapter, _, spec_id_map = self._make_adapter_with_responses(
+            ["spec-A", "spec-B", "spec-C"], num_responses=2  # 3 specs, 2 responses
+        )
+
+        results = list(
+            adapter.fetch_results("batches/short", spec_id_map, result_ref=None)
+        )
+
+        # Must have 3 total results — 2 present + 1 synthesized
+        assert len(results) == 3, f"Expected 3 results, got {len(results)}"
+
+        # First two positionally correct — no shifting
+        assert results[0].spec_id == "spec-A"
+        assert results[1].spec_id == "spec-B"
+
+        # Third is synthesized errored record for the missing tail spec_id
+        missing = results[2]
+        assert missing.spec_id == "spec-C"
+        assert missing.status == "errored"
+        assert missing.error is not None
+        assert missing.error.error_type == "missing_result"
+        assert missing.error.retryable is True
+
+    def test_n2_short_tail_multi_missing_synthesizes_all(self):
+        """N2: short tail of 2 produces errored records for both missing spec_ids."""
+        adapter, _, spec_id_map = self._make_adapter_with_responses(
+            ["s1", "s2", "s3", "s4"], num_responses=2  # 4 specs, 2 responses
+        )
+
+        results = list(
+            adapter.fetch_results("batches/short-multi", spec_id_map, result_ref=None)
+        )
+
+        assert len(results) == 4
+
+        # Present results at correct positions
+        assert results[0].spec_id == "s1"
+        assert results[0].status == "succeeded"
+        assert results[1].spec_id == "s2"
+        assert results[1].status == "succeeded"
+
+        # Missing results synthesized, correct spec_ids, not shifted
+        assert results[2].spec_id == "s3"
+        assert results[2].status == "errored"
+        assert results[2].error.error_type == "missing_result"
+        assert results[3].spec_id == "s4"
+        assert results[3].status == "errored"
+        assert results[3].error.error_type == "missing_result"
+
+    def test_n2_over_count_raises_integrity_error(self):
+        """N2 / D-9: over-count (responses > specs) raises LLMBatchResultIntegrityError.
+
+        With more responses than specs, no position can be trusted — raise,
+        yield nothing.  Per spec N2.1(1).
+        """
+        from agentmap.services.llm_batch_errors import LLMBatchResultIntegrityError
+
+        adapter, _, spec_id_map = self._make_adapter_with_responses(
+            ["spec-X", "spec-Y"], num_responses=3  # 2 specs, 3 responses
+        )
+
+        with pytest.raises(LLMBatchResultIntegrityError) as exc_info:
+            list(adapter.fetch_results("batches/over", spec_id_map, result_ref=None))
+
+        error_msg = str(exc_info.value)
+        # Must name the batch, submitted count, and returned count
+        assert "2" in error_msg  # submitted spec count
+        assert "3" in error_msg  # returned response count
+
+    def test_n2_over_count_names_batch_id_in_error(self):
+        """LLMBatchResultIntegrityError names the batch id per spec N2.2."""
+        from agentmap.services.llm_batch_errors import LLMBatchResultIntegrityError
+
+        adapter, _, spec_id_map = self._make_adapter_with_responses(
+            ["s1"], num_responses=2
+        )
+
+        with pytest.raises(LLMBatchResultIntegrityError) as exc_info:
+            list(
+                adapter.fetch_results(
+                    "batches/sentinel-batch-id", spec_id_map, result_ref=None
+                )
+            )
+
+        assert "sentinel-batch-id" in str(exc_info.value)
+
+    def test_n2_equal_count_proceeds_without_error(self):
+        """N2 equal-count happy path: positional demux runs normally, no error raised."""
+        adapter, _, spec_id_map = self._make_adapter_with_responses(
+            ["alpha", "beta", "gamma"], num_responses=3
+        )
+
+        results = list(
+            adapter.fetch_results("batches/equal", spec_id_map, result_ref=None)
+        )
+
+        assert len(results) == 3
+        assert results[0].spec_id == "alpha"
+        assert results[1].spec_id == "beta"
+        assert results[2].spec_id == "gamma"
+        for r in results:
+            assert r.status == "succeeded"
+
+    def test_n2_reorder_bound_equal_count_does_not_raise(self):
+        """N2 reorder-bound: equal-count demux proceeds even if content appears shuffled.
+
+        The guard fires on COUNT mismatch only; reordering within equal count is the
+        accepted (unavoidable) positional contract.  This test documents the assumption
+        and guards against an over-eager guard that fires on equal counts.
+        """
+        client_instance = MagicMock()
+        adapter = _make_adapter(client_instance)
+
+        # Two specs, two responses, but content "looks" swapped
+        spec_id_map = {"__ordered__": ["first", "second"]}
+        item0 = _make_inlined_response("content that would belong to second")
+        item1 = _make_inlined_response("content that would belong to first")
         mock_job = _make_job_with_responses([item0, item1])
         client_instance.batches.get.return_value = mock_job
 
-        results = list(adapter.fetch_results("batches/test", spec_id_map))
+        # Must NOT raise — equal count is the valid positional case
+        results = list(adapter.fetch_results("batches/reorder", spec_id_map))
 
-        # Only 1 result — the extra one is skipped
-        assert len(results) == 1
-        assert results[0].spec_id == "s1"
+        assert len(results) == 2
+        # Positional attribution: index 0 → "first", index 1 → "second"
+        assert results[0].spec_id == "first"
+        assert results[1].spec_id == "second"
+
+    def test_n2_short_tail_present_records_correct_spec_id_attribution(self):
+        """N2: present records carry correct spec_id, proving no silent shift.
+
+        The spec_id on each record must match the submitted spec at that
+        index — not shifted by 1 because one record was dropped.
+        """
+        client_instance = MagicMock()
+        adapter = _make_adapter(client_instance)
+
+        spec_id_map = {"__ordered__": ["X", "Y", "Z"]}
+        item0 = _make_inlined_response("text-X")
+        item1 = _make_inlined_response("text-Y")
+        # Z response is missing (short tail)
+        mock_job = _make_job_with_responses([item0, item1])
+        client_instance.batches.get.return_value = mock_job
+
+        results = list(adapter.fetch_results("batches/noshift", spec_id_map))
+
+        assert len(results) == 3
+        # Positional: idx 0 → X, idx 1 → Y
+        assert results[0].spec_id == "X"
+        assert results[0].content == "text-X"
+        assert results[1].spec_id == "Y"
+        assert results[1].content == "text-Y"
+        # Synthesized missing for Z — NOT shifted (Y content must not appear under Z)
+        assert results[2].spec_id == "Z"
+        assert results[2].status == "errored"
+        assert results[2].error.error_type == "missing_result"
 
 
 # ---------------------------------------------------------------------------
