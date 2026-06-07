@@ -17,6 +17,7 @@ from typing import (
 )
 
 from agentmap.models.llm_execution import (
+    BatchPollResult,
     LLMBatchHandle,
     LLMBatchResultRecord,
     LLMBatchSubmitRequest,
@@ -30,6 +31,79 @@ from agentmap.models.llm_execution import (
 
 if TYPE_CHECKING:
     pass
+
+
+@runtime_checkable
+class BatchAdapterProtocol(Protocol):
+    """
+    Protocol for provider-specific batch adapters.
+
+    Each adapter encapsulates all provider I/O and status normalization for one
+    LLM provider's batch API.  The service layer dispatches through this
+    interface; no provider-specific logic leaks into the service.
+
+    Members
+    -------
+    provider_name : str
+        Canonical provider key (e.g. ``"anthropic"``, ``"openai"``,
+        ``"google"``).  Must match the registry key used in DI wiring.
+    supports_cancel : bool
+        ``True`` when the provider API supports cancelling an in-flight batch.
+    """
+
+    provider_name: str
+    supports_cancel: bool
+
+    def submit(
+        self,
+        specs: List[LLMCallSpec],
+        model: str,
+        max_tokens: int,
+        request_options: Dict[str, Any],
+    ) -> "tuple[str, Dict[str, str], Optional[str]]":
+        """
+        Submit a batch and return ``(provider_batch_id, spec_id_map, expires_at)``.
+
+        ``spec_id_map`` maps each caller ``spec_id`` to the provider-side
+        request identifier so that ``fetch_results`` can demultiplex responses
+        back to the original spec.  ``expires_at`` is an ISO-8601 string or
+        ``None`` if the provider does not return one.
+        """
+        ...
+
+    def poll(self, provider_batch_id: str) -> BatchPollResult:
+        """
+        Return a ``BatchPollResult`` with *already-normalized* status.
+
+        The provider→``LLMBatchStatus`` mapping lives entirely inside each
+        adapter; the service never performs enum lookups on the returned value.
+        """
+        ...
+
+    def cancel(self, provider_batch_id: str) -> None:
+        """
+        Request cancellation of an in-flight batch.
+
+        Only called when ``supports_cancel`` is ``True`` and the batch is not
+        already in a terminal status.
+        """
+        ...
+
+    def fetch_results(
+        self,
+        provider_batch_id: str,
+        spec_id_map: Dict[str, str],
+        result_ref: Optional[str],
+    ) -> List[LLMBatchResultRecord]:
+        """
+        Retrieve completed results and key them by caller ``spec_id``.
+
+        ``result_ref`` carries the provider output reference (e.g. OpenAI
+        ``output_file_id``).  Adapters that fetch by ``provider_batch_id``
+        (e.g. Anthropic) ignore it.  Adapters that serve inline results (e.g.
+        Gemini) may also ignore it.
+        """
+        ...
 
 
 @runtime_checkable
@@ -226,6 +300,81 @@ class LLMServiceProtocol(Protocol):
 
         Raises:
             LLMBatchNotReadyError: If the handle status is not ``"ended"``.
+        """
+        ...
+
+    # ------------------------------------------------------------------
+    # Async batch surface (E05-F04) — asyncio.to_thread wrappers
+    # ------------------------------------------------------------------
+
+    async def asubmit_batch(self, request: LLMBatchSubmitRequest) -> LLMBatchHandle:
+        """Async variant of ``submit_batch``; runs blocking SDK call off-thread."""
+        ...
+
+    async def apoll_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
+        """Async variant of ``poll_batch``; runs blocking SDK call off-thread."""
+        ...
+
+    async def acancel_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
+        """Async variant of ``cancel_batch``; runs blocking SDK call off-thread."""
+        ...
+
+    async def afetch_batch_results(
+        self, handle: LLMBatchHandle
+    ) -> List[LLMBatchResultRecord]:
+        """Async variant of ``fetch_batch_results``; runs blocking SDK call off-thread."""
+        ...
+
+    async def wait_for_batch(
+        self,
+        handle: LLMBatchHandle,
+        *,
+        poll_interval: float = 5.0,
+        timeout: Optional[float] = None,
+    ) -> LLMBatchHandle:
+        """
+        Poll ``apoll_batch`` with capped exponential backoff until the batch
+        reaches a terminal status or ``timeout`` seconds elapse.
+
+        Raises:
+            TimeoutError: If ``timeout`` is set and the batch has not completed.
+        """
+        ...
+
+    def submit_and_wait(
+        self,
+        request: LLMBatchSubmitRequest,
+        *,
+        poll_interval: float = 5.0,
+        timeout: Optional[float] = None,
+    ) -> LLMBatchHandle:
+        """
+        Synchronous convenience: submit a batch then block until terminal.
+
+        Internally runs an event loop and delegates to ``wait_for_batch``.
+        """
+        ...
+
+    def batch_capabilities(self, provider: str) -> Dict[str, Any]:
+        """
+        Return capability metadata for a registered provider adapter.
+
+        Keys include at minimum: ``"supports_cancel"`` (bool),
+        ``"provider_name"`` (str).
+
+        Raises:
+            LLMBatchUnsupportedProviderError: If ``provider`` has no registered
+                adapter.
+        """
+        ...
+
+    def results_by_spec_id(
+        self, records: List[LLMBatchResultRecord]
+    ) -> Dict[str, LLMBatchResultRecord]:
+        """
+        Index ``records`` by ``spec_id`` for O(1) lookups.
+
+        Any record whose ``spec_id`` is ``None`` or empty is excluded.
         """
         ...
 
