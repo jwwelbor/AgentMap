@@ -255,12 +255,12 @@ class OpenAIBatchAdapter:
         a warning) to tolerate any extra records the provider may inject.
         """
         if result_ref is None:
-            self._logger.warning(
-                "OpenAIBatchAdapter.fetch_results: result_ref is None for batch %s "
-                "— no output file to download, yielding nothing",
-                provider_batch_id,
+            raise LLMServiceError(
+                f"OpenAIBatchAdapter.fetch_results: batch {provider_batch_id!r} has no "
+                "output_file_id — the batch completed but produced no retrievable output "
+                "file. This is an error condition, not an empty result set. Check the "
+                "OpenAI dashboard for details."
             )
-            return
 
         # Build reverse map: custom_id → original spec_id
         custom_to_spec: Dict[str, str] = {v: k for k, v in spec_id_map.items()}

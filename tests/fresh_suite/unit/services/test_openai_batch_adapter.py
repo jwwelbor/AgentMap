@@ -456,6 +456,25 @@ class TestFetchResults:
         assert rec.error is not None
         assert rec.usage is None
 
+    def test_fetch_results_raises_on_missing_output_file_when_batch_completed(self):
+        """
+        F4 / TC-F4: fetch_results called with result_ref=None on a completed
+        batch must raise LLMServiceError — NOT silently yield zero records.
+
+        Counter-factual: current code returns early (yields nothing); callers
+        see an empty result list and assume the batch had no items, masking
+        data loss.
+        """
+        from agentmap.exceptions import LLMServiceError
+
+        ci = MagicMock()
+        adapter, _ = _make_adapter(client_instance=ci)
+
+        with pytest.raises(LLMServiceError, match="output_file_id"):
+            list(
+                adapter.fetch_results("batch-done-123", {"s1": "cid1"}, result_ref=None)
+            )
+
     def test_fetch_results_unknown_custom_id_skipped(self):
         """A custom_id not in spec_id_map should not raise — skip or warn."""
         ci = MagicMock()
