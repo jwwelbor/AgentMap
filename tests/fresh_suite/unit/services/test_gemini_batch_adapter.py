@@ -948,3 +948,64 @@ class TestGeminiSubmitSerializesResolvedParams:
         assert (
             src[1]["config"]["temperature"] == 0.85
         ), "src[1] must carry temperature=0.85 (spec-b), not spec-a's 0.15"
+
+    def test_tc_ser_g6_raw_max_output_tokens_in_resolved_excluded_from_passthrough(
+        self,
+    ):
+        """
+        TC-SER-G6 / CR5-1 adapter-level regression: if a resolved dict
+        hypothetically contains the raw alias key ``max_output_tokens`` (e.g.
+        if the central resolver were bypassed), _build_src must NOT write it as
+        a second pass-through entry in generation_config.
+
+        The adapter's pass-through loop explicitly excludes ``max_output_tokens``
+        (alongside ``max_tokens``, ``temperature``, and ``model``).  This test
+        asserts the exclusion is effective: only ONE ``max_output_tokens`` key
+        appears in config, carrying the value from the canonical ``max_tokens``
+        rename path, not the raw alias.
+
+        Counter-factual: removing ``max_output_tokens`` from the exclusion set
+        in the pass-through loop would cause it to appear twice in the dict
+        assignment — the second write would silently overwrite the first,
+        carrying the wrong (raw alias) value; this test would detect that because
+        the resolved max_tokens value (512) differs from the injected raw alias
+        value (9999), so the final config value would be 9999 instead of 512.
+        """
+        from agentmap.models.llm_execution import LLMCallSpec
+
+        adapter, client_instance = self._make_adapter_and_client()
+
+        spec = LLMCallSpec(
+            spec_id="spec-alias-guard",
+            messages=[{"role": "user", "content": "check alias exclusion"}],
+        )
+        # Simulate a resolved dict where both max_tokens (canonical) and
+        # max_output_tokens (raw alias) are present.  The resolver would never
+        # produce this — it collapses aliases.  This test drives _build_src
+        # directly to prove the adapter-level exclusion guard holds.
+        resolved_params = [
+            {
+                "model": "gemini-2.0-flash",
+                "max_tokens": 512,
+                "max_output_tokens": 9999,  # raw alias — must be excluded from passthrough
+            }
+        ]
+
+        adapter.submit(specs=[spec], resolved_params=resolved_params)
+
+        src = self._extract_src(client_instance)
+        config = src[0]["config"]
+
+        # The rename path must have produced max_output_tokens = 512 (from max_tokens).
+        assert (
+            "max_output_tokens" in config
+        ), "max_tokens must be renamed to max_output_tokens in Gemini src config"
+        assert config["max_output_tokens"] == 512, (
+            "max_output_tokens must carry the resolved max_tokens value (512), "
+            "not the raw alias value (9999) — proves the pass-through loop "
+            "excludes max_output_tokens and cannot overwrite the renamed value"
+        )
+        # max_tokens (unrenamed) must not appear
+        assert (
+            "max_tokens" not in config
+        ), "raw max_tokens must not appear in Gemini src config after rename"
