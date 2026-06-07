@@ -63,6 +63,11 @@ telemetry = [
     "opentelemetry-sdk>=1.20",
     "opentelemetry-exporter-otlp>=1.20",
 ]
+batch = [
+    "anthropic>=0.40.0",
+    "openai>=1.0.0",
+    "google-genai>=1.0.0",
+]
 all = [
     "langchain-openai>=0.3.17",
     "langchain-anthropic>=0.3.13,<0.4.0",
@@ -71,6 +76,8 @@ all = [
     "unstructured",
     "python-docx",
     "chromadb",
+    "openai>=1.0.0",
+    "google-genai>=1.0.0",
 ]
 
 [project.urls]

@@ -1,9 +1,13 @@
 """
-Tests for T-E05-F03-004: DI wiring for batch adapter and repository.
+Tests for T-E05-F03-004 and T-E05-F04-008: DI wiring for batch adapter and repository.
 
 TC-AC9-02: LLMDependencyError raised when anthropic is not importable.
 INT-05: LLMService resolves with AnthropicBatchAdapter and BatchHandleRepository wired.
 TC-AC9-03: No new third-party dependency added to pyproject.toml for anthropic.
+
+TC-091: pyproject.toml has openai and google-genai only in optional extras (T-E05-F04-008).
+TC-092: ADR file exists documenting dependency policy change (T-E05-F04-008).
+TC-F04-DI: LLMContainer registers all three adapters; missing SDK results in log+skip.
 """
 
 import builtins
@@ -291,3 +295,268 @@ class TestBatchTelemetryConstants:
         assert METRIC_LLM_ROUTING_CACHE_HIT == "agentmap.llm.routing.cache_hit"
         assert METRIC_LLM_CIRCUIT_BREAKER == "agentmap.llm.circuit_breaker"
         assert METRIC_LLM_FALLBACK == "agentmap.llm.fallback"
+
+
+# ---------------------------------------------------------------------------
+# TC-091: pyproject.toml optional-extras policy (T-E05-F04-008)
+# ---------------------------------------------------------------------------
+
+
+class TestOptionalExtrasDependencyPolicy:
+    """TC-091: openai and google-genai must NOT appear in core deps."""
+
+    def _load_pyproject(self) -> dict:
+        repo_root = Path(__file__).parents[4]
+        pyproject_path = repo_root / "pyproject.toml"
+        assert pyproject_path.exists(), f"pyproject.toml not found at {pyproject_path}"
+        with open(pyproject_path, "rb") as f:
+            return tomllib.load(f)
+
+    def _normalize_dep_names(self, deps: list) -> set:
+        """Strip version specifiers and extras from PEP 517 dependency strings."""
+        result = set()
+        for dep in deps:
+            name = dep.split("[")[0].split(">=")[0].split("==")[0]
+            name = name.split("!=")[0].split("<")[0].split(">")[0].strip().lower()
+            result.add(name)
+        return result
+
+    def test_openai_not_in_core_dependencies(self):
+        """
+        TC-091: openai must NOT appear in [project.dependencies].
+        Counter-factual: if added to core, every agentmap install requires openai SDK.
+        """
+        data = self._load_pyproject()
+        core_deps = data.get("project", {}).get("dependencies", [])
+        names = self._normalize_dep_names(core_deps)
+        assert "openai" not in names, (
+            "openai must not appear in [project].dependencies (REQ-NF-001 / AC-T1). "
+            "It must be in optional extras only."
+        )
+
+    def test_google_genai_not_in_core_dependencies(self):
+        """
+        TC-091: google-genai must NOT appear in [project.dependencies].
+        Counter-factual: if added to core, every agentmap install requires google-genai.
+        """
+        data = self._load_pyproject()
+        core_deps = data.get("project", {}).get("dependencies", [])
+        names = self._normalize_dep_names(core_deps)
+        assert "google-genai" not in names, (
+            "google-genai must not appear in [project].dependencies (REQ-NF-001 / AC-T1). "
+            "It must be in optional extras only."
+        )
+
+    def test_deprecated_google_generativeai_not_in_any_section(self):
+        """
+        TC-091: google-generativeai (deprecated Nov 2025) must not appear anywhere.
+        Counter-factual: using deprecated package → breakage when Google removes it.
+        """
+        data = self._load_pyproject()
+        core_deps = data.get("project", {}).get("dependencies", [])
+        optional_deps = data.get("project", {}).get("optional-dependencies", {})
+        all_optional = [dep for deps in optional_deps.values() for dep in deps]
+        all_deps = core_deps + all_optional
+        names = self._normalize_dep_names(all_deps)
+        assert (
+            "google-generativeai" not in names
+        ), "google-generativeai is deprecated (Nov 2025). Use google-genai instead."
+
+    def test_openai_in_optional_extras(self):
+        """
+        TC-091: openai must appear in [project.optional-dependencies] (batch or all).
+        Counter-factual: not listed → pip install agentmap[batch] doesn't install openai.
+        """
+        data = self._load_pyproject()
+        optional_deps = data.get("project", {}).get("optional-dependencies", {})
+        all_optional_names = set()
+        for deps in optional_deps.values():
+            all_optional_names |= self._normalize_dep_names(deps)
+        assert "openai" in all_optional_names, (
+            "openai must appear in at least one optional-dependencies group "
+            "(e.g. batch or all) per REQ-NF-001 / AC-T1."
+        )
+
+    def test_google_genai_in_optional_extras(self):
+        """
+        TC-091: google-genai must appear in [project.optional-dependencies].
+        Counter-factual: not listed → pip install agentmap[batch] doesn't install google-genai.
+        """
+        data = self._load_pyproject()
+        optional_deps = data.get("project", {}).get("optional-dependencies", {})
+        all_optional_names = set()
+        for deps in optional_deps.values():
+            all_optional_names |= self._normalize_dep_names(deps)
+        assert "google-genai" in all_optional_names, (
+            "google-genai must appear in at least one optional-dependencies group "
+            "(e.g. batch or all) per REQ-NF-001 / AC-T1."
+        )
+
+
+# ---------------------------------------------------------------------------
+# TC-092: ADR file existence (T-E05-F04-008)
+# ---------------------------------------------------------------------------
+
+
+class TestADRExists:
+    """TC-092: ADR documenting dependency-policy change must exist."""
+
+    def test_adr_file_exists(self):
+        """
+        TC-092: adr-001-batch-optional-deps.md must exist at the specified path.
+        Counter-factual: ADR absent → engineer doesn't know why optional deps exist.
+        """
+        repo_root = Path(__file__).parents[4]
+        adr_path = (
+            repo_root
+            / "docs/plan/E05-llm-prompt-caching-and-batch-execution"
+            / "E05-F04-cross-provider-batch-expansion-and-usage-normaliza"
+            / "adr-001-batch-optional-deps.md"
+        )
+        assert adr_path.exists(), (
+            f"ADR not found at {adr_path}. "
+            "Create it per spec §1.13 and REQ-NF-001 / D-2."
+        )
+
+    def test_adr_has_required_sections(self):
+        """
+        TC-092: ADR must contain Context, Decision, and Consequences sections,
+        and must reference F03 REQ-NF-003 reversal.
+        """
+        repo_root = Path(__file__).parents[4]
+        adr_path = (
+            repo_root
+            / "docs/plan/E05-llm-prompt-caching-and-batch-execution"
+            / "E05-F04-cross-provider-batch-expansion-and-usage-normaliza"
+            / "adr-001-batch-optional-deps.md"
+        )
+        assert adr_path.exists(), "ADR file missing — cannot check sections."
+        content = adr_path.read_text()
+        assert len(content.strip()) > 0, "ADR file is empty."
+        assert "Context" in content, "ADR must contain a 'Context' section."
+        assert "Decision" in content, "ADR must contain a 'Decision' section."
+        assert "Consequences" in content, "ADR must contain a 'Consequences' section."
+        assert (
+            "REQ-NF-003" in content or "F03" in content
+        ), "ADR must reference F03 REQ-NF-003 reversal per spec §1.13."
+
+
+# ---------------------------------------------------------------------------
+# TC-F04-DI: Multi-provider registry wiring (T-E05-F04-008)
+# ---------------------------------------------------------------------------
+
+
+class TestMultiProviderDIRegistry:
+    """AC-T2: DI container registers all three adapters; missing SDK → log + skip."""
+
+    def test_llm_container_has_openai_batch_adapter_factory(self):
+        """AC-T2: LLMContainer must expose _create_openai_batch_adapter factory."""
+        from agentmap.di.container_parts.llm import LLMContainer
+
+        assert hasattr(
+            LLMContainer, "_create_openai_batch_adapter"
+        ), "LLMContainer must define _create_openai_batch_adapter factory (AC-T2)."
+        assert hasattr(
+            LLMContainer, "openai_batch_adapter"
+        ), "LLMContainer must expose openai_batch_adapter provider (AC-T2)."
+
+    def test_llm_container_has_gemini_batch_adapter_factory(self):
+        """AC-T2: LLMContainer must expose _create_gemini_batch_adapter factory."""
+        from agentmap.di.container_parts.llm import LLMContainer
+
+        assert hasattr(
+            LLMContainer, "_create_gemini_batch_adapter"
+        ), "LLMContainer must define _create_gemini_batch_adapter factory (AC-T2)."
+        assert hasattr(
+            LLMContainer, "gemini_batch_adapter"
+        ), "LLMContainer must expose gemini_batch_adapter provider (AC-T2)."
+
+    def test_create_llm_service_accepts_batch_adapters_dict(self):
+        """AC-T2: _create_llm_service must pass all adapters as a registry dict."""
+        from agentmap.services.llm_service import LLMService
+
+        mock_logging = MagicMock()
+        mock_logging.get_class_logger.return_value = MagicMock()
+        mock_config = MagicMock()
+        mock_config.get_llm_resilience_config.return_value = {
+            "retry": {"max_attempts": 1},
+            "circuit_breaker": {},
+        }
+
+        mock_anthropic = MagicMock()
+        mock_openai = MagicMock()
+        mock_gemini = MagicMock()
+
+        svc = LLMService(
+            configuration=mock_config,
+            logging_service=mock_logging,
+            routing_service=MagicMock(),
+            llm_models_config_service=MagicMock(),
+            features_registry_service=MagicMock(),
+            routing_config_service=MagicMock(),
+            telemetry_service=MagicMock(),
+            batch_adapters={
+                "anthropic": mock_anthropic,
+                "openai": mock_openai,
+                "google": mock_gemini,
+            },
+        )
+
+        assert svc._batch_adapters.get("anthropic") is mock_anthropic
+        assert svc._batch_adapters.get("openai") is mock_openai
+        assert svc._batch_adapters.get("google") is mock_gemini
+
+    def test_missing_openai_sdk_logs_and_skips(self):
+        """
+        AC-T2: If openai SDK is missing, the adapter factory must catch the error
+        and return None (log + skip), not propagate LLMDependencyError.
+        Counter-factual: uncaught error → container build fails even without openai.
+        """
+        from agentmap.di.container_parts.llm import LLMContainer
+
+        mock_app_config = MagicMock()
+        mock_app_config.get_llm_config.return_value = {"api_key": "sk-test"}
+        mock_logging = MagicMock()
+        mock_logger = MagicMock()
+        mock_logging.get_class_logger.return_value = mock_logger
+
+        from agentmap.exceptions import LLMDependencyError
+
+        with patch(
+            "agentmap.services.llm.openai_batch_adapter.OpenAIBatchAdapter.__init__",
+            side_effect=LLMDependencyError("openai not installed"),
+        ):
+            result = LLMContainer._create_openai_batch_adapter(
+                mock_app_config, mock_logging
+            )
+
+        assert (
+            result is None
+        ), "Factory must return None (not raise) when SDK is absent (AC-T2)."
+
+    def test_missing_gemini_sdk_logs_and_skips(self):
+        """
+        AC-T2: If google-genai SDK is missing, the adapter factory must catch the error
+        and return None (log + skip), not propagate LLMDependencyError.
+        """
+        from agentmap.di.container_parts.llm import LLMContainer
+
+        mock_app_config = MagicMock()
+        mock_app_config.get_llm_config.return_value = {"api_key": "fake-key"}
+        mock_logging = MagicMock()
+        mock_logger = MagicMock()
+        mock_logging.get_class_logger.return_value = mock_logger
+
+        from agentmap.exceptions import LLMDependencyError
+
+        with patch(
+            "agentmap.services.llm.gemini_batch_adapter.GeminiBatchAdapter.__init__",
+            side_effect=LLMDependencyError("google-genai not installed"),
+        ):
+            result = LLMContainer._create_gemini_batch_adapter(
+                mock_app_config, mock_logging
+            )
+
+        assert (
+            result is None
+        ), "Factory must return None (not raise) when SDK is absent (AC-T2)."

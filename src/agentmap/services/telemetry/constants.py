@@ -196,6 +196,9 @@ METRIC_LLM_BATCH_POLL_COUNT: str = "llm_batch.poll_count"
 METRIC_LLM_BATCH_RESULTS_FETCHED_COUNT: str = "llm_batch.results_fetched_count"
 """Counter for batch result fetch operations, dimensioned by provider."""
 
+METRIC_LLM_BATCH_CANCEL_COUNT: str = "llm_batch.cancel_count"
+"""Counter for batch cancellation operations, dimensioned by provider and outcome."""
+
 # ---------------------------------------------------------------------------
 # Metric dimension constants (LLM batch)
 # ---------------------------------------------------------------------------

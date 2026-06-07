@@ -681,13 +681,103 @@ Open circuits indicate a provider:model pair that has hit the failure threshold 
 
 ---
 
-## Batch Execution (Anthropic)
+## Batch Execution
 
-`LLMService` exposes five additive methods for provider-native batch execution.
-Batch execution submits many independent requests to the provider in a single
-API call, which Anthropic prices at 50 % of the per-token rate.  No provider
-SDK types cross the service boundary — all callers work exclusively with
-AgentMap-owned data classes.
+`LLMService` exposes five additive methods for provider-native batch execution,
+supporting Anthropic, OpenAI, and Gemini.  Batch execution submits many
+independent requests to the provider in a single API call, which providers
+typically price at a significant discount (e.g. Anthropic at 50 % of the
+per-token rate).  No provider SDK types cross the service boundary — all callers
+work exclusively with AgentMap-owned data classes.
+
+### Provider capability matrix
+
+| Capability | Anthropic | OpenAI | Gemini |
+|---|---|---|---|
+| `submit_batch` / `asubmit_batch` | Yes | Yes | Yes |
+| `poll_batch` / `apoll_batch` | Yes | Yes | Yes |
+| `cancel_batch` / `acancel_batch` | Yes | Yes | Yes |
+| `fetch_batch_results` / `afetch_batch_results` | Yes | Yes | Yes |
+| `wait_for_batch` / `await_for_batch` | Yes | Yes | Yes |
+| `restore_batch` (cross-process handle reload) | Yes | Yes | Yes |
+| File-API submission for large batches | No | No | Yes (auto) |
+| Normalized `LLMBatchStatus` | Yes | Yes | Yes |
+
+### Installation
+
+The batch SDKs are optional extras.  Install the providers you need:
+
+```bash
+pip install "agentmap[batch]"         # all three: anthropic, openai, google-genai
+pip install "agentmap[all]"           # everything including batch
+```
+
+Or individually:
+
+```bash
+pip install anthropic openai google-genai
+```
+
+If a provider SDK is not installed, its adapter is silently absent from the
+registry (a warning is logged).  Attempting `submit_batch` for an unregistered
+provider raises `LLMBatchUnsupportedProviderError`.
+
+### Sync usage example
+
+```python
+from agentmap.models.llm_execution import LLMBatchSubmitRequest, LLMCallSpec
+
+request = LLMBatchSubmitRequest(
+    provider="openai",          # or "anthropic" or "google"
+    model="gpt-4o-mini",
+    max_tokens=512,
+    call_specs=[
+        LLMCallSpec(spec_id="q1", messages=[{"role": "user", "content": "What is 2+2?"}]),
+        LLMCallSpec(spec_id="q2", messages=[{"role": "user", "content": "What is the capital of France?"}]),
+    ],
+)
+handle = llm_service.submit_batch(request)
+
+# Poll until complete
+import time
+while handle.status not in ("ended", "expired", "failed"):
+    time.sleep(30)
+    handle = llm_service.poll_batch(handle)
+
+results = llm_service.fetch_batch_results(handle)
+for record in results:
+    print(record.spec_id, record.content)
+```
+
+### Async usage example
+
+```python
+import asyncio
+
+async def run():
+    handle = await llm_service.asubmit_batch(request)
+    handle = await llm_service.await_for_batch(handle, poll_interval=30.0)
+    results = await llm_service.afetch_batch_results(handle)
+    return results
+
+results = asyncio.run(run())
+```
+
+### Restore-after-restart pattern (all providers)
+
+`LLMBatchHandle` is fully serializable and provider-agnostic.
+The `provider` field on the handle drives all dispatch decisions:
+
+```python
+# Process 1 — submit
+handle = llm_service.submit_batch(request)
+store_to_db(handle.agentmap_batch_id, handle.to_dict())
+
+# Process 2 — poll after restart (provider re-resolved from handle.provider)
+handle_data = load_from_db(agentmap_batch_id)
+handle = llm_service.restore_batch(handle_data)
+handle = llm_service.poll_batch(handle)   # dispatches to correct adapter via registry
+```
 
 ### Configuration
 
@@ -820,7 +910,7 @@ for record in results:
 
 | Exception | Raised by | Condition |
 |---|---|---|
-| `LLMBatchUnsupportedProviderError` | `submit_batch` | Provider is not `"anthropic"` |
+| `LLMBatchUnsupportedProviderError` | `submit_batch` | Provider has no registered adapter (SDK absent or unconfigured) |
 | `LLMServiceError` | `submit_batch` | Empty `call_specs`, duplicate `spec_id`, batch-incompatible params |
 | `LLMServiceError` / `ValueError` | `restore_batch` | Missing required field in `handle_data` |
 | `LLMBatchCancelNotSupportedError` | `cancel_batch` | Handle already in terminal state |
@@ -848,9 +938,13 @@ The persisted JSON file in `batch_dir` is an additional recovery path — it is
 
 ### DI wiring
 
-`AnthropicBatchAdapter` and `BatchHandleRepository` are registered as singletons
+All three batch adapters (`AnthropicBatchAdapter`, `OpenAIBatchAdapter`,
+`GeminiBatchAdapter`) and `BatchHandleRepository` are registered as singletons
 in `LLMContainer`.  No manual wiring is required when using the DI container.
-Both are injected into `LLMService` at construction time.
+Each adapter factory catches `LLMDependencyError` (raised when the provider SDK
+is not installed) and returns `None`; the container then omits that provider from
+the registry.  Only adapters with a working SDK and configured API key are
+registered.
 
 ---
 
