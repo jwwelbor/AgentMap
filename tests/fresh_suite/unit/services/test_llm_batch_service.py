@@ -1606,9 +1606,10 @@ class TestBatchCapabilities:
         caps = service.batch_capabilities("anthropic")
 
         assert caps["supported"] is True
-        assert "cancelable" in caps
-        assert caps["cancelable"] == adapters["anthropic"].supports_cancel
-        assert caps["provider"] == "anthropic"
+        # F7 fix: protocol keys are supports_cancel / provider_name (not cancelable/provider)
+        assert "supports_cancel" in caps
+        assert caps["supports_cancel"] == adapters["anthropic"].supports_cancel
+        assert caps["provider_name"] == "anthropic"
 
     def test_capabilities_openai(self):
         """TC-077: batch_capabilities("openai") returns correct dict."""
@@ -1617,8 +1618,8 @@ class TestBatchCapabilities:
         caps = service.batch_capabilities("openai")
 
         assert caps["supported"] is True
-        assert caps["cancelable"] == adapters["openai"].supports_cancel
-        assert caps["provider"] == "openai"
+        assert caps["supports_cancel"] == adapters["openai"].supports_cancel
+        assert caps["provider_name"] == "openai"
 
     def test_capabilities_google(self):
         """TC-078: batch_capabilities("google") returns correct dict with supports_cancel=False."""
@@ -1627,8 +1628,8 @@ class TestBatchCapabilities:
         caps = service.batch_capabilities("google")
 
         assert caps["supported"] is True
-        assert caps["cancelable"] is False  # google mock has supports_cancel=False
-        assert caps["provider"] == "google"
+        assert caps["supports_cancel"] is False  # google mock has supports_cancel=False
+        assert caps["provider_name"] == "google"
 
     def test_capabilities_unregistered_provider_raises(self):
         """TC-079: batch_capabilities("mistral") raises LLMBatchUnsupportedProviderError."""
@@ -1950,3 +1951,291 @@ class TestFetchBatchResultsGeminiProvider:
             {"s1": "s1"},
             result_ref=None,
         )
+
+
+# ===========================================================================
+# UAT-fix tests: F3, F5, F6, F7 (2026-06-07 UAT rejection rework)
+# ===========================================================================
+
+
+class TestF3PerSpecRequestOptions:
+    """F3 (HIGH): per-spec request_options must NOT be silently dropped.
+
+    REQ-F-008 / AC-8 — one canonical param path.  A caller who sets
+    ``LLMCallSpec.request_options`` with no batch-level override for the same
+    key must see the per-spec value applied inside the adapter, not discarded.
+    """
+
+    def test_per_spec_request_options_passed_to_anthropic_adapter(self, tmp_path):
+        """F3: spec.request_options are forwarded to the Anthropic adapter submit call.
+
+        Counter-factual: if spec.request_options were not passed, the adapter's
+        submit() would be called without the per-spec top_p value, and any
+        submitted request params built from those options would omit it.
+        This test verifies submit() is called with specs that carry request_options.
+        """
+        service, adapters, repo = _make_registry_service(batch_dir=str(tmp_path))
+        adapters["anthropic"].submit.return_value = (
+            "batch_ant_001",
+            {"s1": "s1"},
+            "2026-06-08T00:00:00Z",
+        )
+
+        spec = LLMCallSpec(
+            spec_id="s1",
+            messages=[{"role": "user", "content": "hello"}],
+            request_options={"top_p": 0.95},  # per-spec only, no batch-level top_p
+        )
+        request = _make_batch_request(provider="anthropic", specs=[spec])
+
+        service.submit_batch(request)
+
+        # The adapter must receive the spec with its request_options intact
+        call_kwargs = adapters["anthropic"].submit.call_args
+        submitted_specs = call_kwargs.kwargs.get(
+            "specs", call_kwargs.args[0] if call_kwargs.args else None
+        )
+        assert submitted_specs is not None
+        assert len(submitted_specs) == 1
+        assert submitted_specs[0].request_options == {"top_p": 0.95}, (
+            "spec.request_options must be forwarded to the adapter — "
+            "per-spec top_p=0.95 was silently dropped"
+        )
+
+    def test_per_spec_request_options_passed_to_openai_adapter(self, tmp_path):
+        """F3: spec.request_options are forwarded to the OpenAI adapter submit call."""
+        service, adapters, repo = _make_registry_service(batch_dir=str(tmp_path))
+        adapters["openai"].submit.return_value = (
+            "batch_oai_001",
+            {"s1": "s1"},
+            None,
+        )
+
+        spec = LLMCallSpec(
+            spec_id="s1",
+            messages=[{"role": "user", "content": "hello"}],
+            request_options={"frequency_penalty": 0.3},
+        )
+        request = _make_batch_request(provider="openai", specs=[spec])
+
+        service.submit_batch(request)
+
+        call_kwargs = adapters["openai"].submit.call_args
+        submitted_specs = call_kwargs.kwargs.get(
+            "specs", call_kwargs.args[0] if call_kwargs.args else None
+        )
+        assert submitted_specs is not None
+        assert submitted_specs[0].request_options == {"frequency_penalty": 0.3}, (
+            "spec.request_options must be forwarded to the OpenAI adapter"
+        )
+
+    def test_per_spec_request_options_passed_to_google_adapter(self, tmp_path):
+        """F3: spec.request_options are forwarded to the Gemini adapter submit call."""
+        service, adapters, repo = _make_registry_service(batch_dir=str(tmp_path))
+        adapters["google"].submit.return_value = (
+            "batch_gem_001",
+            {"__ordered__": ["s1"]},
+            None,
+        )
+
+        spec = LLMCallSpec(
+            spec_id="s1",
+            messages=[{"role": "user", "content": "hello"}],
+            request_options={"top_k": 40},
+        )
+        request = _make_batch_request(provider="google", specs=[spec])
+
+        service.submit_batch(request)
+
+        call_kwargs = adapters["google"].submit.call_args
+        submitted_specs = call_kwargs.kwargs.get(
+            "specs", call_kwargs.args[0] if call_kwargs.args else None
+        )
+        assert submitted_specs is not None
+        assert submitted_specs[0].request_options == {"top_k": 40}, (
+            "spec.request_options must be forwarded to the Gemini adapter"
+        )
+
+
+class TestF5CancelCheckOrdering:
+    """F5 (MEDIUM): terminal-state check must fire before supports_cancel check.
+
+    REQ-F-009e — cancel disambiguates "terminal state" from "provider does not
+    support cancel".  A terminal handle on a no-cancel provider must report the
+    terminal-state message, not the provider-capability message.
+    """
+
+    def test_terminal_handle_on_no_cancel_provider_reports_terminal_message(self):
+        """F5: terminal Google (supports_cancel=False) handle → terminal-state message.
+
+        Counter-factual: if supports_cancel check fires first, the error message
+        says "does not support cancel" instead of "terminal state", which is
+        the wrong diagnosis.
+        """
+        service, adapters, repo = _make_registry_service()
+        # google has supports_cancel=False AND the handle is ENDED (terminal)
+        handle = _make_handle(provider="google", status=LLMBatchStatus.ENDED)
+
+        with pytest.raises(LLMBatchCancelNotSupportedError) as exc_info:
+            service.cancel_batch(handle)
+
+        error_msg = str(exc_info.value)
+        # Must contain terminal-state language, NOT "does not support cancel"
+        assert "terminal" in error_msg, (
+            f"Expected 'terminal' in error message but got: {error_msg!r}"
+        )
+        assert "does not support cancel" not in error_msg, (
+            "Terminal-state message must take precedence over capability message"
+        )
+        adapters["google"].cancel.assert_not_called()
+
+    def test_active_handle_on_no_cancel_provider_reports_capability_message(self):
+        """F5 complement: active (non-terminal) no-cancel provider → capability message."""
+        service, adapters, repo = _make_registry_service()
+        handle = _make_handle(provider="google", status=LLMBatchStatus.IN_PROGRESS)
+
+        with pytest.raises(LLMBatchCancelNotSupportedError) as exc_info:
+            service.cancel_batch(handle)
+
+        error_msg = str(exc_info.value)
+        assert "does not support cancel" in error_msg
+
+
+class TestF6TimeoutNone:
+    """F6 (MEDIUM): timeout=None must mean 'wait indefinitely', not raise TypeError.
+
+    Protocol declares ``timeout: Optional[float] = None``; impl must honour it.
+    AC-4 sync/async parity.
+    """
+
+    def test_wait_for_batch_timeout_none_does_not_raise_type_error(self):
+        """F6: wait_for_batch(timeout=None) returns when batch reaches terminal.
+
+        Counter-factual: if timeout=None is passed to time.monotonic()+timeout,
+        a TypeError is raised immediately before any polling occurs.
+        """
+        service, adapters, repo = _make_registry_service()
+        # Batch starts IN_PROGRESS, transitions to ENDED on first poll
+        handle = _make_handle(provider="anthropic", status=LLMBatchStatus.IN_PROGRESS)
+        adapters["anthropic"].poll.return_value = BatchPollResult(
+            status=LLMBatchStatus.ENDED,
+            request_counts=None,
+            results_url=None,
+            ended_at=None,
+        )
+
+        async def run():
+            return await service.wait_for_batch(
+                handle, poll_interval=0.001, timeout=None
+            )
+
+        # Must not raise TypeError (or any error) — should return the ended handle
+        result = asyncio.run(run())
+        assert result.status == LLMBatchStatus.ENDED
+
+    def test_submit_and_wait_timeout_none_does_not_raise_type_error(self, tmp_path):
+        """F6: submit_and_wait(timeout=None) completes without TypeError."""
+        service, adapters, repo = _make_registry_service(batch_dir=str(tmp_path))
+        adapters["anthropic"].submit.return_value = (
+            "batch_ant_002",
+            {"s1": "s1"},
+            "2026-06-08T00:00:00Z",
+        )
+        adapters["anthropic"].poll.return_value = BatchPollResult(
+            status=LLMBatchStatus.ENDED,
+            request_counts=None,
+            results_url=None,
+            ended_at=None,
+        )
+
+        request = _make_batch_request(
+            provider="anthropic", specs=[_make_spec("s1")]
+        )
+
+        # Must not raise TypeError
+        result = service.submit_and_wait(
+            request, poll_interval=0.001, timeout=None
+        )
+        assert result.status == LLMBatchStatus.ENDED
+
+
+class TestF7CapabilityKeysAndReconciliation:
+    """F7 (MEDIUM): batch_capabilities key names + reconcile_batch_results helper.
+
+    Protocol promises ``supports_cancel`` / ``provider_name``.
+    REQ-F-009c: missing-spec reconciliation helper.
+    """
+
+    def test_batch_capabilities_uses_supports_cancel_key(self):
+        """F7: batch_capabilities returns 'supports_cancel' not 'cancelable'."""
+        service, adapters, repo = _make_registry_service()
+
+        caps = service.batch_capabilities("anthropic")
+
+        assert "supports_cancel" in caps, (
+            "Protocol requires 'supports_cancel' key, not 'cancelable'"
+        )
+        assert "cancelable" not in caps, (
+            "'cancelable' is the old/wrong key name — must be removed"
+        )
+
+    def test_batch_capabilities_uses_provider_name_key(self):
+        """F7: batch_capabilities returns 'provider_name' not 'provider'."""
+        service, adapters, repo = _make_registry_service()
+
+        caps = service.batch_capabilities("openai")
+
+        assert "provider_name" in caps, (
+            "Protocol requires 'provider_name' key, not 'provider'"
+        )
+        assert "provider" not in caps, (
+            "'provider' is the old/wrong key name — must be removed"
+        )
+
+    def test_reconcile_batch_results_all_present(self):
+        """F7 / REQ-F-009c: reconcile returns None for no missing spec_ids."""
+        service, adapters, repo = _make_registry_service()
+        records = [
+            LLMBatchResultRecord(spec_id="s1", status="succeeded", content="ok"),
+            LLMBatchResultRecord(spec_id="s2", status="succeeded", content="ok"),
+        ]
+
+        result = service.reconcile_batch_results(["s1", "s2"], records)
+
+        assert result == {"s1": records[0], "s2": records[1]}
+
+    def test_reconcile_batch_results_missing_spec(self):
+        """F7 / REQ-F-009c: missing spec_id maps to None in reconciliation output.
+
+        Counter-factual: without this helper, a submitted spec_id with no result
+        record is silently absent from results_by_spec_id — the caller cannot
+        distinguish 'no results yet' from 'provider dropped this spec'.
+        """
+        service, adapters, repo = _make_registry_service()
+        records = [
+            LLMBatchResultRecord(spec_id="s1", status="succeeded", content="ok"),
+            # s2 was submitted but provider returned no record for it
+        ]
+
+        result = service.reconcile_batch_results(["s1", "s2"], records)
+
+        assert result["s1"] is not None
+        assert result["s2"] is None, (
+            "Missing spec_id must map to None, not be absent from the dict"
+        )
+        assert "s2" in result, "All submitted spec_ids must appear as keys"
+
+    def test_reconcile_batch_results_extra_records_ignored(self):
+        """F7: records for spec_ids not in submitted list are not included in output."""
+        service, adapters, repo = _make_registry_service()
+        records = [
+            LLMBatchResultRecord(spec_id="s1", status="succeeded", content="ok"),
+            LLMBatchResultRecord(
+                spec_id="unexpected", status="succeeded", content="ok"
+            ),
+        ]
+
+        result = service.reconcile_batch_results(["s1"], records)
+
+        assert "s1" in result
+        assert "unexpected" not in result

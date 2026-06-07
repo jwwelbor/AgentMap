@@ -1864,19 +1864,11 @@ class LLMService:
         """
         adapter = self._get_adapter(handle.provider)
 
-        # REQ-F-009e: disambiguate "provider does not support cancel" from
-        # "batch already in terminal state".
-        if not getattr(adapter, "supports_cancel", True):
-            self._logger.warning(
-                "llm_batch.cancel_not_supported provider=%s handle_id=%s",
-                handle.provider,
-                handle.agentmap_batch_id,
-            )
-            raise LLMBatchCancelNotSupportedError(
-                f"Provider {handle.provider!r} does not support cancel. "
-                f"Cannot cancel batch {handle.agentmap_batch_id!r}."
-            )
-
+        # F5 / REQ-F-009e: check terminal state FIRST so a terminal batch on any
+        # provider (including one where supports_cancel=False) gets the more
+        # accurate "terminal state" message rather than "provider does not support
+        # cancel".  The two conditions are distinct and the batch state is the
+        # more specific diagnosis when both would apply.
         if handle.status in self._TERMINAL_STATUSES:
             self._logger.warning(
                 "llm_batch.cancel_rejected agentmap_batch_id=%s status=%s",
@@ -1886,6 +1878,19 @@ class LLMService:
             raise LLMBatchCancelNotSupportedError(
                 f"Cannot cancel batch {handle.agentmap_batch_id!r}: "
                 f"current status is {handle.status.value!r} (terminal state)."
+            )
+
+        # REQ-F-009e: provider capability check (after terminal check so terminal
+        # state is always the more specific diagnosis).
+        if not getattr(adapter, "supports_cancel", True):
+            self._logger.warning(
+                "llm_batch.cancel_not_supported provider=%s handle_id=%s",
+                handle.provider,
+                handle.agentmap_batch_id,
+            )
+            raise LLMBatchCancelNotSupportedError(
+                f"Provider {handle.provider!r} does not support cancel. "
+                f"Cannot cancel batch {handle.agentmap_batch_id!r}."
             )
 
         self._logger.info(
@@ -1971,7 +1976,7 @@ class LLMService:
         handle: "LLMBatchHandle",
         *,
         poll_interval: float = 5.0,
-        timeout: float = 3600.0,
+        timeout: "Optional[float]" = None,
     ) -> "LLMBatchHandle":
         """Poll until the batch reaches a terminal status or timeout expires.
 
@@ -1983,11 +1988,14 @@ class LLMService:
         Args:
             handle: The batch handle to watch.
             poll_interval: Initial poll interval in seconds (default 5).
-            timeout: Maximum total wait in seconds (default 3600).
+            timeout: Maximum total wait in seconds.  ``None`` (default) means
+                wait indefinitely — the call returns only when a terminal status
+                is reached or an exception is raised by the adapter.
 
         Raises:
             LLMBatchExpiredError: If the handle status is EXPIRED before polling.
-            TimeoutError: If timeout elapses without reaching a terminal status.
+            TimeoutError: If timeout is set and elapses without reaching a
+                terminal status.
         """
         if handle.status == LLMBatchStatus.EXPIRED:
             self._logger.warning(
@@ -2005,23 +2013,28 @@ class LLMService:
             LLMBatchStatus.EXPIRED,
             LLMBatchStatus.CANCELED,
         }
-        deadline = time.monotonic() + timeout
+        # F6: timeout=None means "no deadline" — wait indefinitely.
+        deadline = None if timeout is None else time.monotonic() + timeout
         interval = poll_interval
 
         current = handle
         while current.status not in _TERMINAL:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                self._logger.warning(
-                    "llm_batch.wait_timeout handle_id=%s timeout_s=%s",
-                    handle.agentmap_batch_id,
-                    timeout,
-                )
-                raise TimeoutError(
-                    f"wait_for_batch timed out after {timeout}s for batch "
-                    f"{handle.agentmap_batch_id!r} (last status: {current.status.value!r})."
-                )
-            await asyncio.sleep(min(interval, remaining))
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self._logger.warning(
+                        "llm_batch.wait_timeout handle_id=%s timeout_s=%s",
+                        handle.agentmap_batch_id,
+                        timeout,
+                    )
+                    raise TimeoutError(
+                        f"wait_for_batch timed out after {timeout}s for batch "
+                        f"{handle.agentmap_batch_id!r} "
+                        f"(last status: {current.status.value!r})."
+                    )
+                await asyncio.sleep(min(interval, remaining))
+            else:
+                await asyncio.sleep(interval)
             current = await self.apoll_batch(current)
             # Capped exponential backoff (max 60 s).
             interval = min(interval * 2, 60.0)
@@ -2033,7 +2046,7 @@ class LLMService:
         request: "LLMBatchSubmitRequest",
         *,
         poll_interval: float = 5.0,
-        timeout: float = 3600.0,
+        timeout: "Optional[float]" = None,
     ) -> "LLMBatchHandle":
         """Submit a batch and synchronously wait until it reaches a terminal status.
 
@@ -2054,14 +2067,18 @@ class LLMService:
         Reads the adapter's ``provider_name`` and ``supports_cancel`` attributes
         plus static per-provider metadata.
 
+        Returns a dict whose keys match the ``LLMServiceProtocol`` contract:
+        ``supports_cancel`` (bool), ``provider_name`` (str), ``supported`` (bool),
+        ``completion_window`` (str), ``partial_fetch`` (bool).
+
         Raises:
             LLMBatchUnsupportedProviderError: If the provider is not registered.
         """
         adapter = self._get_adapter(provider)
         return {
             "supported": True,
-            "cancelable": bool(getattr(adapter, "supports_cancel", False)),
-            "provider": getattr(adapter, "provider_name", provider),
+            "supports_cancel": bool(getattr(adapter, "supports_cancel", False)),
+            "provider_name": getattr(adapter, "provider_name", provider),
             "completion_window": "24h",
             "partial_fetch": False,
         }
@@ -2079,6 +2096,30 @@ class LLMService:
             Dict mapping ``spec_id`` → ``LLMBatchResultRecord``.
         """
         return {record.spec_id: record for record in records}
+
+    @staticmethod
+    def reconcile_batch_results(
+        submitted_spec_ids: "List[str]",
+        records: "List[LLMBatchResultRecord]",
+    ) -> "Dict[str, Optional[LLMBatchResultRecord]]":
+        """Report reconciliation between submitted spec_ids and returned records.
+
+        Identifies spec_ids that have no returned record (missing from results).
+        This satisfies REQ-F-009c: a caller can detect silent data loss where a
+        spec was submitted but the provider returned no result for it.
+
+        Args:
+            submitted_spec_ids: The list of spec_ids submitted in the batch.
+            records: Records returned by :meth:`fetch_batch_results`.
+
+        Returns:
+            Dict mapping every submitted ``spec_id`` to its
+            ``LLMBatchResultRecord`` if one was returned, or ``None`` if the
+            spec_id has no corresponding record in ``records``.  A ``None``
+            value signals a missing result that the caller should investigate.
+        """
+        by_id = {record.spec_id: record for record in records}
+        return {spec_id: by_id.get(spec_id) for spec_id in submitted_spec_ids}
 
     @staticmethod
     def _extract_llm_usage(response: Any) -> Optional[LLMUsage]:

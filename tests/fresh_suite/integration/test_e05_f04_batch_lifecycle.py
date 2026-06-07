@@ -572,8 +572,9 @@ class TestBatchCapabilities:
         service, adapters, repo = _make_service(batch_dir=str(tmp_path))
         # google adapter has supports_cancel=False
         caps = service.batch_capabilities("google")
-        assert caps["cancelable"] is False
-        assert caps["provider"] == "google"
+        # F7 fix: protocol keys are supports_cancel / provider_name
+        assert caps["supports_cancel"] is False
+        assert caps["provider_name"] == "google"
 
     def test_capabilities_unregistered_raises(self, tmp_path):
         """batch_capabilities raises LLMBatchUnsupportedProviderError for unknown provider."""

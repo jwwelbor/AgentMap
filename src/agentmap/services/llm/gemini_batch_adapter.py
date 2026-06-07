@@ -186,6 +186,11 @@ class GeminiBatchAdapter:
             generation_config: Dict[str, Any] = {"max_output_tokens": max_tokens}
             if spec.temperature is not None:
                 generation_config["temperature"] = spec.temperature
+            # F3: apply per-spec request_options first (they win over batch-level),
+            # then batch-level request_options fill in any gaps.
+            if spec.request_options:
+                for k, v in spec.request_options.items():
+                    generation_config.setdefault(k, v)
             for k, v in request_options.items():
                 generation_config.setdefault(k, v)
 

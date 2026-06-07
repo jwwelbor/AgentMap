@@ -91,13 +91,18 @@ class AnthropicBatchAdapter:
                 "messages": spec.messages,  # cache_control blocks pass through
             }
 
-            # Merge per-spec overrides (temperature, etc.) — not request_options keys
+            # Merge per-spec overrides (temperature, etc.)
             if spec.model is not None:
                 params["model"] = spec.model
             if spec.temperature is not None:
                 params["temperature"] = spec.temperature
 
-            # Pass through any extra request_options that are batch-compatible
+            # F3: apply per-spec request_options first (they win over batch-level),
+            # then batch-level request_options fill in any gaps.
+            if spec.request_options:
+                for k, v in spec.request_options.items():
+                    params.setdefault(k, v)
+            # Pass through any extra batch-level request_options that haven't been set
             for k, v in request_options.items():
                 params.setdefault(k, v)
 

@@ -162,6 +162,11 @@ class OpenAIBatchAdapter:
             }
             if spec.temperature is not None:
                 body["temperature"] = spec.temperature
+            # F3: apply per-spec request_options first (they win over batch-level),
+            # then batch-level request_options fill in any gaps.
+            if spec.request_options:
+                for k, v in spec.request_options.items():
+                    body.setdefault(k, v)
             for k, v in request_options.items():
                 body.setdefault(k, v)
 
