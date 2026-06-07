@@ -404,6 +404,159 @@ def test_surface_pairs_completeness():
 
 
 # ---------------------------------------------------------------------------
+# N4: Intra-surface (same-dict) canonical+alias conflict detection (AC-8)
+# ---------------------------------------------------------------------------
+
+
+def test_intra_surface_S2_canonical_and_alias_different_values_raises():
+    """N4: spec.request_options with canonical + alias at different values → LLMBatchParamConflictError.
+
+    Uses max_tokens=None at the request level to isolate the intra-surface conflict:
+    with the old break-on-first-match code, the alias value (200) is silently
+    discarded and only max_tokens=100 is seen on S2 — no conflict raised.
+    """
+    # max_tokens (canonical) and max_output_tokens (Gemini alias) in the SAME dict
+    spec = LLMCallSpec(
+        spec_id="s1",
+        messages=[{"role": "user", "content": "hi"}],
+        request_options={"max_tokens": 100, "max_output_tokens": 200},
+    )
+    # max_tokens=None so request envelope does NOT introduce a second surface;
+    # the only surface is S2, which contains the intra-dict conflict.
+    request = LLMBatchSubmitRequest(
+        provider="anthropic",
+        model="claude-3-5-haiku",
+        max_tokens=None,
+        call_specs=[],
+    )
+    with pytest.raises(LLMBatchParamConflictError) as exc_info:
+        resolve_spec_params(spec, request)
+    msg = str(exc_info.value)
+    assert "max_tokens" in msg, f"Error must name the param. Got: {msg!r}"
+    assert "s1" in msg, f"Error must name spec_id. Got: {msg!r}"
+
+
+def test_intra_surface_S4_canonical_and_alias_different_values_raises():
+    """N4: request.request_options with canonical + alias at different values → LLMBatchParamConflictError.
+
+    Uses max_tokens=None at the request direct-field level to isolate the intra-surface
+    conflict within request.request_options (S4 alone).
+    """
+    request = LLMBatchSubmitRequest(
+        provider="anthropic",
+        model="claude-3-5-haiku",
+        max_tokens=None,
+        call_specs=[],
+        request_options={"max_tokens": 100, "max_output_tokens": 200},
+    )
+    spec = _base_spec()
+    with pytest.raises(LLMBatchParamConflictError) as exc_info:
+        resolve_spec_params(spec, request)
+    msg = str(exc_info.value)
+    assert "max_tokens" in msg, f"Error must name the param. Got: {msg!r}"
+    assert "s1" in msg, f"Error must name spec_id. Got: {msg!r}"
+
+
+def test_intra_surface_S2_canonical_and_alias_same_values_allowed():
+    """N4: spec.request_options with canonical + alias at SAME value → allowed, single value resolved."""
+    spec = LLMCallSpec(
+        spec_id="s1",
+        messages=[{"role": "user", "content": "hi"}],
+        request_options={"max_tokens": 512, "max_output_tokens": 512},
+    )
+    # max_tokens=None so the only surface is S2 (the intra-dict same-value case).
+    request = LLMBatchSubmitRequest(
+        provider="anthropic",
+        model="claude-3-5-haiku",
+        max_tokens=None,
+        call_specs=[],
+    )
+    resolved = resolve_spec_params(spec, request)
+    assert resolved["max_tokens"] == 512
+
+
+def test_intra_surface_S4_canonical_and_alias_same_values_allowed():
+    """N4: request.request_options with canonical + alias at SAME value → allowed."""
+    request = LLMBatchSubmitRequest(
+        provider="anthropic",
+        model="claude-3-5-haiku",
+        max_tokens=None,
+        call_specs=[],
+        request_options={"max_tokens": 512, "max_output_tokens": 512},
+    )
+    spec = _base_spec()
+    resolved = resolve_spec_params(spec, request)
+    assert resolved["max_tokens"] == 512
+
+
+def _intra_surface_alias_cases():
+    """
+    Registry-driven intra-surface alias conflict cases.
+
+    For every param that HAS aliases, generate a test case where BOTH the
+    canonical key and an alias appear in the same options dict with different
+    values (S2 = spec.request_options, S4 = request.request_options).
+    """
+    cases = []
+    for param in RESERVED_PARAMS:
+        if not param.aliases:
+            continue
+        va, vb = _different_values_for_param(param)
+        for alias in sorted(param.aliases):
+            for surface_label in ("S2", "S4"):
+                cases.append(
+                    pytest.param(
+                        param,
+                        alias,
+                        surface_label,
+                        va,
+                        vb,
+                        id=f"{param.logical}_{alias}_{surface_label}_intra_conflict",
+                    )
+                )
+    return cases
+
+
+@pytest.mark.parametrize(
+    "param,alias,surface_label,canonical_val,alias_val", _intra_surface_alias_cases()
+)
+def test_intra_surface_alias_conflict_raises(
+    param, alias, surface_label, canonical_val, alias_val
+):
+    """N4 registry-driven: intra-surface canonical+alias with different values → raises."""
+    opts = {param.options_key: canonical_val, alias: alias_val}
+    if surface_label == "S2":
+        spec = LLMCallSpec(
+            spec_id="s1",
+            messages=[{"role": "user", "content": "hi"}],
+            request_options=opts,
+        )
+        # max_tokens=None isolates the S2 intra-surface conflict; no S3 pollution.
+        request = LLMBatchSubmitRequest(
+            provider="anthropic",
+            model="claude-3-5-haiku",
+            max_tokens=None,
+            call_specs=[],
+        )
+    else:  # S4
+        spec = _base_spec()
+        # max_tokens=None isolates the S4 intra-surface conflict; no S3 pollution.
+        request = LLMBatchSubmitRequest(
+            provider="anthropic",
+            model="claude-3-5-haiku",
+            max_tokens=None,
+            call_specs=[],
+            request_options=opts,
+        )
+    with pytest.raises(LLMBatchParamConflictError) as exc_info:
+        resolve_spec_params(spec, request)
+    msg = str(exc_info.value)
+    assert (
+        param.logical in msg or param.options_key in msg
+    ), f"Error must name the param. Got: {msg!r}"
+
+
+# ---------------------------------------------------------------------------
 # Test: same-spec conflict (S1 vs S2 for temperature — the N1 missing cell)
 # ---------------------------------------------------------------------------
 

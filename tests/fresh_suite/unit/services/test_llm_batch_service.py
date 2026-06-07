@@ -688,11 +688,70 @@ class TestUnsupportedProvider:
 
         mock_adapter.submit.assert_not_called()
 
-    def test_submit_gemini_raises_unsupported_provider(self, tmp_path):
-        """TC-AC6-02: provider='gemini' (unregistered) raises LLMBatchUnsupportedProviderError."""
+    def test_submit_gemini_alias_routes_to_google_adapter(self, tmp_path):
+        """N5/TC-AC6-02: provider='gemini' normalizes to 'google' and routes to registered adapter."""
         service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
 
+        # Register a mock google adapter
+        mock_google_adapter = MagicMock()
+        mock_google_adapter.provider_name = "google"
+        mock_google_adapter.supports_cancel = False
+        mock_google_adapter.submit.return_value = (
+            "googlebatch_001",
+            {"s1": "s1"},
+            "2026-06-08T00:00:00Z",
+        )
+        service._batch_adapters["google"] = mock_google_adapter
+
         request = _make_batch_request(provider="gemini", specs=[_make_spec("s1")])
+        handle = service.submit_batch(request)
+
+        mock_google_adapter.submit.assert_called_once()
+        assert handle.provider == "google"
+
+    def test_submit_claude_alias_routes_to_anthropic_adapter(self, tmp_path):
+        """N5: provider='claude' normalizes to 'anthropic' and routes to registered adapter."""
+        service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
+
+        mock_adapter.submit.return_value = (
+            "msgbatch_001",
+            {"s1": "s1"},
+            "2026-06-08T00:00:00Z",
+        )
+
+        request = _make_batch_request(provider="claude", specs=[_make_spec("s1")])
+        handle = service.submit_batch(request)
+
+        mock_adapter.submit.assert_called_once()
+        assert handle.provider == "anthropic"
+
+    def test_submit_gpt_alias_routes_to_openai_adapter(self, tmp_path):
+        """N5: provider='gpt' normalizes to 'openai' and routes to registered adapter."""
+        service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
+
+        mock_openai_adapter = MagicMock()
+        mock_openai_adapter.provider_name = "openai"
+        mock_openai_adapter.supports_cancel = True
+        mock_openai_adapter.submit.return_value = (
+            "openaibatch_001",
+            {"s1": "s1"},
+            "2026-06-08T00:00:00Z",
+        )
+        service._batch_adapters["openai"] = mock_openai_adapter
+
+        request = _make_batch_request(
+            provider="gpt", model="gpt-4o", specs=[_make_spec("s1")]
+        )
+        handle = service.submit_batch(request)
+
+        mock_openai_adapter.submit.assert_called_once()
+        assert handle.provider == "openai"
+
+    def test_submit_truly_unknown_provider_raises_unsupported(self, tmp_path):
+        """N5: truly unknown provider (not an alias) still raises LLMBatchUnsupportedProviderError."""
+        service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
+
+        request = _make_batch_request(provider="mistral", specs=[_make_spec("s1")])
         with pytest.raises(LLMBatchUnsupportedProviderError):
             service.submit_batch(request)
 
@@ -2025,9 +2084,9 @@ class TestF3PerSpecRequestOptions:
             "specs", call_kwargs.args[0] if call_kwargs.args else None
         )
         assert submitted_specs is not None
-        assert submitted_specs[0].request_options == {"frequency_penalty": 0.3}, (
-            "spec.request_options must be forwarded to the OpenAI adapter"
-        )
+        assert submitted_specs[0].request_options == {
+            "frequency_penalty": 0.3
+        }, "spec.request_options must be forwarded to the OpenAI adapter"
 
     def test_per_spec_request_options_passed_to_google_adapter(self, tmp_path):
         """F3: spec.request_options are forwarded to the Gemini adapter submit call."""
@@ -2052,9 +2111,9 @@ class TestF3PerSpecRequestOptions:
             "specs", call_kwargs.args[0] if call_kwargs.args else None
         )
         assert submitted_specs is not None
-        assert submitted_specs[0].request_options == {"top_k": 40}, (
-            "spec.request_options must be forwarded to the Gemini adapter"
-        )
+        assert submitted_specs[0].request_options == {
+            "top_k": 40
+        }, "spec.request_options must be forwarded to the Gemini adapter"
 
 
 class TestF5CancelCheckOrdering:
@@ -2081,12 +2140,12 @@ class TestF5CancelCheckOrdering:
 
         error_msg = str(exc_info.value)
         # Must contain terminal-state language, NOT "does not support cancel"
-        assert "terminal" in error_msg, (
-            f"Expected 'terminal' in error message but got: {error_msg!r}"
-        )
-        assert "does not support cancel" not in error_msg, (
-            "Terminal-state message must take precedence over capability message"
-        )
+        assert (
+            "terminal" in error_msg
+        ), f"Expected 'terminal' in error message but got: {error_msg!r}"
+        assert (
+            "does not support cancel" not in error_msg
+        ), "Terminal-state message must take precedence over capability message"
         adapters["google"].cancel.assert_not_called()
 
     def test_active_handle_on_no_cancel_provider_reports_capability_message(self):
@@ -2148,14 +2207,10 @@ class TestF6TimeoutNone:
             ended_at=None,
         )
 
-        request = _make_batch_request(
-            provider="anthropic", specs=[_make_spec("s1")]
-        )
+        request = _make_batch_request(provider="anthropic", specs=[_make_spec("s1")])
 
         # Must not raise TypeError
-        result = service.submit_and_wait(
-            request, poll_interval=0.001, timeout=None
-        )
+        result = service.submit_and_wait(request, poll_interval=0.001, timeout=None)
         assert result.status == LLMBatchStatus.ENDED
 
 
@@ -2172,12 +2227,12 @@ class TestF7CapabilityKeysAndReconciliation:
 
         caps = service.batch_capabilities("anthropic")
 
-        assert "supports_cancel" in caps, (
-            "Protocol requires 'supports_cancel' key, not 'cancelable'"
-        )
-        assert "cancelable" not in caps, (
-            "'cancelable' is the old/wrong key name — must be removed"
-        )
+        assert (
+            "supports_cancel" in caps
+        ), "Protocol requires 'supports_cancel' key, not 'cancelable'"
+        assert (
+            "cancelable" not in caps
+        ), "'cancelable' is the old/wrong key name — must be removed"
 
     def test_batch_capabilities_uses_provider_name_key(self):
         """F7: batch_capabilities returns 'provider_name' not 'provider'."""
@@ -2185,12 +2240,12 @@ class TestF7CapabilityKeysAndReconciliation:
 
         caps = service.batch_capabilities("openai")
 
-        assert "provider_name" in caps, (
-            "Protocol requires 'provider_name' key, not 'provider'"
-        )
-        assert "provider" not in caps, (
-            "'provider' is the old/wrong key name — must be removed"
-        )
+        assert (
+            "provider_name" in caps
+        ), "Protocol requires 'provider_name' key, not 'provider'"
+        assert (
+            "provider" not in caps
+        ), "'provider' is the old/wrong key name — must be removed"
 
     def test_reconcile_batch_results_all_present(self):
         """F7 / REQ-F-009c: reconcile returns None for no missing spec_ids."""
@@ -2220,9 +2275,9 @@ class TestF7CapabilityKeysAndReconciliation:
         result = service.reconcile_batch_results(["s1", "s2"], records)
 
         assert result["s1"] is not None
-        assert result["s2"] is None, (
-            "Missing spec_id must map to None, not be absent from the dict"
-        )
+        assert (
+            result["s2"] is None
+        ), "Missing spec_id must map to None, not be absent from the dict"
         assert "s2" in result, "All submitted spec_ids must appear as keys"
 
     def test_reconcile_batch_results_extra_records_ignored(self):

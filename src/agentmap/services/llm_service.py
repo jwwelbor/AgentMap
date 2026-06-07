@@ -1573,11 +1573,17 @@ class LLMService:
     def _get_adapter(self, provider: str) -> Any:
         """Return the registered adapter for ``provider`` or raise.
 
+        Provider aliases (e.g. "gemini" → "google", "claude" → "anthropic",
+        "gpt" → "openai") are normalized via the same
+        ``_provider_utils.normalize_provider`` function used by every other
+        LLMService path (N5 / AC-2 / AC-3 contract parity).
+
         Raises:
             LLMBatchUnsupportedProviderError: When no adapter is registered for
                 the requested provider.  The error message names the registered
                 providers so callers can discover what is available.
         """
+        provider = self._provider_utils.normalize_provider(provider)
         adapter = self._batch_adapters.get(provider)
         if adapter is None:
             registered = list(self._batch_adapters.keys())
@@ -1690,10 +1696,14 @@ class LLMService:
         # (D-8: centralized resolver, no adapter merging).
         resolved_params = self._validate_batch_submit_request(request)
 
-        adapter = self._get_adapter(request.provider)
+        # N5: normalize provider alias to canonical key (same function used by
+        # sync/async direct paths) so the handle stores the canonical provider name
+        # and downstream lookups (poll/fetch/cancel) succeed without re-normalizing.
+        canonical_provider = self._provider_utils.normalize_provider(request.provider)
+        adapter = self._get_adapter(canonical_provider)
         self._logger.info(
             "llm_batch.submit provider=%s specs=%d",
-            request.provider,
+            canonical_provider,
             len(request.call_specs),
         )
         provider_batch_id, spec_id_map, expires_at = adapter.submit(
@@ -1706,7 +1716,7 @@ class LLMService:
             agentmap_batch_id=agentmap_batch_id,
             provider_batch_id=provider_batch_id,
             status=LLMBatchStatus.SUBMITTED,
-            provider=request.provider,
+            provider=canonical_provider,
             model=request.model,
             spec_id_map=spec_id_map,
             expires_at=expires_at,
