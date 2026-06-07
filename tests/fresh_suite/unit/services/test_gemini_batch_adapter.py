@@ -1,15 +1,31 @@
 """
 Unit tests for GeminiBatchAdapter.
 
+All mocks in this file reflect the **real** google-genai SDK shape, confirmed
+against https://ai.google.dev/gemini-api/docs/batch-api:
+
+  - create(*, model, src, config=None)   NOT create(model=, requests=)
+  - get(*, name=...)                     NOT get(positional_arg)
+  - cancel(*, name=...)
+  - Results at batch_job.dest.inlined_responses  NOT job.inline_responses
+  - state is an enum; state.name == "JOB_STATE_*"
+  - Inline request entries: {'contents': [...], 'config': {...}}  — NO 'key' field
+  - Response correlation is positional (index), not by key
+
+If the adapter is reverted to the wrong API shape (requests=, positional get,
+job.inline_responses, etc.), the call-arg assertions in this file will fail.
+
 Covers:
 - TC-045: Gemini inline batch submit returns result_ref=None
-- TC-046: fetch_results with result_ref=None reads inline response payloads
+- TC-046: fetch_results reads dest.inlined_responses positionally
 - TC-047: Gemini usage normalization from usage_metadata shape
-- TC-048: Gemini key sanitization uses shared helper
+- TC-048: src entries contain contents + config, no key field
 - TC-088: LLMDependencyError raised when google-genai not installed
 - TC-089: With SDK installed (mocked), adapter instantiates successfully
 - AC-T3: JOB_STATE_* values each map to a documented LLMBatchStatus
-- AC-T5: provider_name == "google", supports_cancel
+- AC-T5: provider_name == "google", supports_cancel == True
+- cancel: calls client.batches.cancel(name=...) with keyword arg
+- error items: inlined response with error attr yields errored record
 """
 
 import builtins
@@ -29,19 +45,11 @@ from agentmap.models.llm_execution import (
 # ---------------------------------------------------------------------------
 
 
-def _make_spec(spec_id: str, messages=None) -> LLMCallSpec:
+def _make_spec(spec_id: str, messages=None, temperature=None) -> LLMCallSpec:
     """Build a minimal LLMCallSpec for testing."""
     if messages is None:
         messages = [{"role": "user", "content": f"hello from {spec_id}"}]
-    return LLMCallSpec(spec_id=spec_id, messages=messages)
-
-
-def _make_mock_genai_module():
-    """Build a minimal fake google.genai module for patching sys.modules."""
-    mock_genai = MagicMock()
-    client_instance = MagicMock()
-    mock_genai.Client.return_value = client_instance
-    return mock_genai, client_instance
+    return LLMCallSpec(spec_id=spec_id, messages=messages, temperature=temperature)
 
 
 def _make_adapter(client_instance=None):
@@ -58,7 +66,6 @@ def _make_adapter(client_instance=None):
             "google.genai": mock_genai,
         },
     ):
-        # Force reimport with patched modules
         if "agentmap.services.llm.gemini_batch_adapter" in sys.modules:
             del sys.modules["agentmap.services.llm.gemini_batch_adapter"]
         from agentmap.services.llm.gemini_batch_adapter import GeminiBatchAdapter
@@ -68,14 +75,64 @@ def _make_adapter(client_instance=None):
         return adapter
 
 
+def _make_state_enum(name: str) -> MagicMock:
+    """Build a mock enum object whose .name attribute returns the JOB_STATE_* string.
+
+    The real google-genai SDK returns state as an enum, not a raw string.
+    Confirmed: https://ai.google.dev/gemini-api/docs/batch-api uses state.name
+    """
+    state = MagicMock()
+    state.name = name
+    return state
+
+
+def _make_inlined_response(text: str, prompt_tokens=80, candidates_tokens=40):
+    """Build a mock inlined response item as returned by dest.inlined_responses.
+
+    Real shape (confirmed against SDK docs):
+      item.error  — None for success
+      item.response.candidates[0].content.parts[0].text
+      item.response.usage_metadata.prompt_token_count
+      item.response.usage_metadata.candidates_token_count
+    """
+    item = MagicMock()
+    item.error = None  # no error — success path
+    part = MagicMock()
+    part.text = text
+    item.response = MagicMock()
+    item.response.candidates = [MagicMock()]
+    item.response.candidates[0].content = MagicMock()
+    item.response.candidates[0].content.parts = [part]
+    item.response.usage_metadata = MagicMock()
+    item.response.usage_metadata.prompt_token_count = prompt_tokens
+    item.response.usage_metadata.candidates_token_count = candidates_tokens
+    return item
+
+
+def _make_job_with_responses(items, batch_name="batches/test-123"):
+    """Build a mock batch job with dest.inlined_responses.
+
+    Real shape (confirmed): batch_job.dest.inlined_responses
+    NOT job.inline_responses (that attribute does not exist in the real SDK).
+    """
+    mock_job = MagicMock()
+    mock_job.name = batch_name
+    mock_job.dest = MagicMock()
+    mock_job.dest.inlined_responses = items
+    return mock_job
+
+
 # ---------------------------------------------------------------------------
-# TC-045: Gemini inline batch submit returns result_ref=None
+# TC-045 / TC-048: submit
 # ---------------------------------------------------------------------------
 
 
 class TestGeminiSubmit:
     def test_tc045_inline_submit_returns_result_ref_none(self):
-        """TC-045: submit for inline batch returns (job.name, spec_id_map, None)."""
+        """TC-045: submit returns (job.name, spec_id_map, None).
+
+        expires_at is always None for inline Gemini batches.
+        """
         client_instance = MagicMock()
         mock_job = MagicMock()
         mock_job.name = "batches/test-batch-123"
@@ -89,107 +146,155 @@ class TestGeminiSubmit:
         )
 
         assert provider_batch_id == "batches/test-batch-123"
-        assert "s1" in spec_id_map
         assert expires_at is None
-        client_instance.batches.create.assert_called_once()
+        # spec_id_map encodes ordered list for positional demux
+        assert "__ordered__" in spec_id_map
+        assert spec_id_map["__ordered__"] == ["s1"]
 
-    def test_tc045_submit_calls_batches_create_with_requests(self):
-        """submit passes requests with 'key' field to batches.create."""
+    def test_submit_calls_create_with_src_not_requests(self):
+        """TC-048 / regression guard: create is called with 'src=', NOT 'requests='.
+
+        If the adapter is reverted to the wrong API shape (requests=), this
+        assertion catches it.  Confirmed real shape:
+        client.batches.create(*, model, src, config=None)
+        https://ai.google.dev/gemini-api/docs/batch-api
+        """
         client_instance = MagicMock()
         mock_job = MagicMock()
         mock_job.name = "batches/job-abc"
         client_instance.batches.create.return_value = mock_job
 
         adapter = _make_adapter(client_instance)
-
         spec = _make_spec("spec-1")
         adapter.submit(
             [spec], model="gemini-2.0-flash", max_tokens=256, request_options={}
         )
 
         call_kwargs = client_instance.batches.create.call_args
-        # Should have been called — check it was called with model and requests
         assert call_kwargs is not None
+        # 'src' must be present as a keyword argument
+        assert "src" in call_kwargs.kwargs, (
+            "create() must be called with src=..., not requests=... "
+            "(the old shape does not exist in the real SDK)"
+        )
+        # 'requests' must NOT appear — it's the wrong (non-existent) parameter
+        assert (
+            "requests" not in call_kwargs.kwargs
+        ), "create() was called with requests= which is not the real SDK shape"
 
-    def test_tc048_key_sanitization_uses_shared_helper(self):
-        """TC-048: spec_id with special chars is sanitized via GEMINI_KEY_RE."""
+    def test_submit_src_entries_have_contents_and_config_no_key(self):
+        """TC-048: each src entry has 'contents' and 'config', NO 'key' field.
+
+        For inline batches the real SDK takes GenerateContentRequest dicts.
+        There is no 'key' field on inline src entries — keys are only for
+        file-based JSONL input.  Confirmed: https://ai.google.dev/gemini-api/docs/batch-api
+        """
         client_instance = MagicMock()
         mock_job = MagicMock()
         mock_job.name = "batches/job-x"
         client_instance.batches.create.return_value = mock_job
 
         adapter = _make_adapter(client_instance)
-
-        # spec_id with characters that would fail Gemini key validation
-        spec = _make_spec("spec id with spaces and !special!")
-        provider_batch_id, spec_id_map, expires_at = adapter.submit(
+        spec = _make_spec("my-spec", temperature=0.5)
+        adapter.submit(
             [spec], model="gemini-2.0-flash", max_tokens=100, request_options={}
         )
 
-        original_spec_id = "spec id with spaces and !special!"
-        assert original_spec_id in spec_id_map
-        sanitized = spec_id_map[original_spec_id]
-        # The sanitized key must only contain [a-zA-Z0-9_-]
-        import re
+        call_kwargs = client_instance.batches.create.call_args
+        src_list = call_kwargs.kwargs["src"]
+        assert len(src_list) == 1
+        entry = src_list[0]
+        assert "contents" in entry, "src entry must have 'contents'"
+        assert "config" in entry, "src entry must have 'config'"
+        assert "key" not in entry, (
+            "src entry must NOT have 'key' — inline batches use positional "
+            "correlation, not key-based (key is only for file-based JSONL)"
+        )
+        # Config must contain max_output_tokens (snake_case SDK name)
+        assert "max_output_tokens" in entry["config"]
+        assert entry["config"]["temperature"] == 0.5
 
-        assert re.match(r"^[a-zA-Z0-9_-]{1,128}$", sanitized)
+    def test_submit_spec_id_map_preserves_order(self):
+        """The __ordered__ list preserves submission order for positional demux."""
+        client_instance = MagicMock()
+        mock_job = MagicMock()
+        mock_job.name = "batches/job-order"
+        client_instance.batches.create.return_value = mock_job
+
+        adapter = _make_adapter(client_instance)
+        specs = [_make_spec("alpha"), _make_spec("beta"), _make_spec("gamma")]
+        _, spec_id_map, _ = adapter.submit(
+            specs, model="gemini-2.0-flash", max_tokens=100, request_options={}
+        )
+
+        assert spec_id_map["__ordered__"] == ["alpha", "beta", "gamma"]
 
 
 # ---------------------------------------------------------------------------
-# TC-046 + TC-047: fetch_results reads inline response payloads
+# TC-046 + TC-047: fetch_results reads dest.inlined_responses positionally
 # ---------------------------------------------------------------------------
 
 
 class TestGeminiFetchResults:
-    def _make_inline_response(self, key, text, prompt_tokens=80, candidates_tokens=40):
-        """Build a mock inline response object."""
-        resp = MagicMock()
-        resp.key = key
-        # content.parts[0].text
-        part = MagicMock()
-        part.text = text
-        resp.response = MagicMock()
-        resp.response.candidates = [MagicMock()]
-        resp.response.candidates[0].content = MagicMock()
-        resp.response.candidates[0].content.parts = [part]
-        resp.response.usage_metadata = MagicMock()
-        resp.response.usage_metadata.prompt_token_count = prompt_tokens
-        resp.response.usage_metadata.candidates_token_count = candidates_tokens
-        return resp
+    def test_tc046_fetch_results_reads_dest_inlined_responses(self):
+        """TC-046: fetch_results reads from batch_job.dest.inlined_responses.
 
-    def test_tc046_fetch_results_inline_no_result_ref(self):
-        """TC-046: fetch_results with result_ref=None reads inline responses by key."""
+        NOT from job.inline_responses — that attribute does not exist in the
+        real google-genai SDK.  Confirmed: https://ai.google.dev/gemini-api/docs/batch-api
+        """
         client_instance = MagicMock()
         adapter = _make_adapter(client_instance)
 
-        spec_id_map = {"s1": "s1", "s2": "s2"}
-
-        inline_resp1 = self._make_inline_response("s1", "Answer 1")
-        inline_resp2 = self._make_inline_response("s2", "Answer 2")
-
-        mock_job = MagicMock()
-        mock_job.inline_responses = [inline_resp1, inline_resp2]
+        spec_id_map = {"__ordered__": ["s1", "s2"]}
+        item1 = _make_inlined_response("Answer 1")
+        item2 = _make_inlined_response("Answer 2")
+        mock_job = _make_job_with_responses([item1, item2])
+        # get() must be called with name= keyword arg
         client_instance.batches.get.return_value = mock_job
 
         results = list(
             adapter.fetch_results("batches/test-123", spec_id_map, result_ref=None)
         )
 
-        assert len(results) == 2
-        spec_ids = {r.spec_id for r in results}
-        assert spec_ids == {"s1", "s2"}
+        # Verify get was called with keyword name= (NOT positional)
+        client_instance.batches.get.assert_called_once_with(name="batches/test-123")
 
-    def test_tc047_usage_normalization_from_usage_metadata(self):
-        """TC-047: usage_metadata.prompt_token_count → input_tokens, candidates_token_count → output_tokens."""
+        assert len(results) == 2
+        assert results[0].spec_id == "s1"
+        assert results[1].spec_id == "s2"
+
+    def test_tc046_get_called_with_keyword_name_not_positional(self):
+        """Regression guard: batches.get must use keyword name=, not positional.
+
+        Real SDK: get(*, name, ...) keyword-only.
+        If the adapter reverts to get(positional_arg), this fails.
+        Confirmed: https://ai.google.dev/gemini-api/docs/batch-api
+        """
         client_instance = MagicMock()
         adapter = _make_adapter(client_instance)
 
-        spec_id_map = {"s1": "s1"}
-        inline_resp = self._make_inline_response(
-            "s1", "Result text", prompt_tokens=80, candidates_tokens=40
-        )
-        mock_job = MagicMock()
-        mock_job.inline_responses = [inline_resp]
+        spec_id_map = {"__ordered__": ["s1"]}
+        item = _make_inlined_response("Hello")
+        mock_job = _make_job_with_responses([item])
+        client_instance.batches.get.return_value = mock_job
+
+        list(adapter.fetch_results("batches/abc", spec_id_map))
+
+        # Must be called as keyword arg, not positional
+        call_kwargs = client_instance.batches.get.call_args
+        assert (
+            call_kwargs.kwargs.get("name") == "batches/abc"
+        ), "batches.get() must use name= keyword arg (SDK is keyword-only)"
+        assert not call_kwargs.args, "batches.get() must not use positional args"
+
+    def test_tc047_usage_normalization_from_usage_metadata(self):
+        """TC-047: prompt_token_count→input_tokens, candidates_token_count→output_tokens."""
+        client_instance = MagicMock()
+        adapter = _make_adapter(client_instance)
+
+        spec_id_map = {"__ordered__": ["s1"]}
+        item = _make_inlined_response("Result", prompt_tokens=80, candidates_tokens=40)
+        mock_job = _make_job_with_responses([item])
         client_instance.batches.get.return_value = mock_job
 
         results = list(
@@ -204,93 +309,166 @@ class TestGeminiFetchResults:
         assert record.usage.cache_creation_input_tokens is None
         assert record.usage.cache_read_input_tokens is None
 
-    def test_tc046_fetch_results_maps_key_back_to_spec_id(self):
-        """TC-046: demux by key resolves back to original spec_id even after sanitization."""
+    def test_fetch_results_positional_demux_by_index(self):
+        """Results are matched to spec_ids by position, not by any key."""
         client_instance = MagicMock()
         adapter = _make_adapter(client_instance)
 
-        # Spec ID was sanitized to a hash key
-        spec_id_map = {"original spec id": "abc123sanitized"}
-
-        inline_resp = self._make_inline_response("abc123sanitized", "some answer")
-        mock_job = MagicMock()
-        mock_job.inline_responses = [inline_resp]
+        spec_id_map = {"__ordered__": ["first-spec", "second-spec"]}
+        item0 = _make_inlined_response("text for first")
+        item1 = _make_inlined_response("text for second")
+        mock_job = _make_job_with_responses([item0, item1])
         client_instance.batches.get.return_value = mock_job
 
-        results = list(
-            adapter.fetch_results("batches/test-123", spec_id_map, result_ref=None)
-        )
+        results = list(adapter.fetch_results("batches/test", spec_id_map))
+
+        assert results[0].spec_id == "first-spec"
+        assert results[0].content == "text for first"
+        assert results[1].spec_id == "second-spec"
+        assert results[1].content == "text for second"
+
+    def test_fetch_results_item_error_yields_errored_record(self):
+        """An inlined response with an error attr yields an errored LLMBatchResultRecord."""
+        client_instance = MagicMock()
+        adapter = _make_adapter(client_instance)
+
+        spec_id_map = {"__ordered__": ["s1"]}
+        item = MagicMock()
+        item.error = MagicMock()
+        item.error.__str__ = lambda self: "rate limit exceeded"
+        item.response = None
+        mock_job = _make_job_with_responses([item])
+        client_instance.batches.get.return_value = mock_job
+
+        results = list(adapter.fetch_results("batches/test", spec_id_map))
 
         assert len(results) == 1
-        assert results[0].spec_id == "original spec id"
+        assert results[0].status == "errored"
+        assert results[0].spec_id == "s1"
 
-    def test_fetch_results_unknown_key_is_skipped(self):
-        """Inline responses with a key not in spec_id_map are skipped (logged)."""
+    def test_fetch_results_excess_responses_are_skipped(self):
+        """Extra inlined responses beyond spec_id_list length are skipped with a warning."""
         client_instance = MagicMock()
         adapter = _make_adapter(client_instance)
 
-        spec_id_map = {"s1": "s1"}
-        inline_resp = self._make_inline_response("unknown_key", "oops")
-        mock_job = MagicMock()
-        mock_job.inline_responses = [inline_resp]
+        spec_id_map = {"__ordered__": ["s1"]}  # only 1 spec
+        item0 = _make_inlined_response("ok")
+        item1 = _make_inlined_response("extra")
+        mock_job = _make_job_with_responses([item0, item1])
         client_instance.batches.get.return_value = mock_job
 
-        results = list(
-            adapter.fetch_results("batches/test-123", spec_id_map, result_ref=None)
-        )
+        results = list(adapter.fetch_results("batches/test", spec_id_map))
 
-        assert results == []
+        # Only 1 result — the extra one is skipped
+        assert len(results) == 1
+        assert results[0].spec_id == "s1"
 
 
 # ---------------------------------------------------------------------------
-# AC-T3: JOB_STATE_* → LLMBatchStatus mapping
+# Poll: state enum, get keyword arg, status mapping
 # ---------------------------------------------------------------------------
 
 
-class TestGeminiPollStatusMapping:
-    def _poll_with_state(self, state_str):
+class TestGeminiPoll:
+    def _poll_with_state(self, state_name: str):
+        """Helper: poll with a state enum mock whose .name == state_name."""
         client_instance = MagicMock()
         adapter = _make_adapter(client_instance)
 
         mock_job = MagicMock()
-        mock_job.state = state_str
-        mock_job.inline_responses = []
+        # Real SDK: state is an enum, access state.name for string
+        mock_job.state = _make_state_enum(state_name)
         client_instance.batches.get.return_value = mock_job
 
-        return adapter.poll("batches/test-123")
+        return adapter.poll("batches/test-123"), client_instance
+
+    def test_poll_calls_get_with_keyword_name(self):
+        """poll calls client.batches.get(name=...) keyword-only.
+
+        Real SDK: get(*, name, ...) — keyword-only, NOT positional.
+        If reverted to get(provider_batch_id) positional, this fails.
+        """
+        _, client_instance = self._poll_with_state("JOB_STATE_RUNNING")
+        call_kwargs = client_instance.batches.get.call_args
+        assert (
+            call_kwargs.kwargs.get("name") == "batches/test-123"
+        ), "batches.get() must use name= keyword (SDK is keyword-only)"
+        assert not call_kwargs.args, "batches.get() must not use positional args"
+
+    def test_poll_reads_state_via_dot_name(self):
+        """State is an enum; adapter reads state.name, not state directly."""
+        result, _ = self._poll_with_state("JOB_STATE_SUCCEEDED")
+        assert result.status == LLMBatchStatus.ENDED
 
     def test_job_state_succeeded_maps_to_ended(self):
-        result = self._poll_with_state("JOB_STATE_SUCCEEDED")
+        result, _ = self._poll_with_state("JOB_STATE_SUCCEEDED")
         assert result.status == LLMBatchStatus.ENDED
 
     def test_job_state_failed_maps_to_failed(self):
-        result = self._poll_with_state("JOB_STATE_FAILED")
+        result, _ = self._poll_with_state("JOB_STATE_FAILED")
         assert result.status == LLMBatchStatus.FAILED
 
     def test_job_state_cancelled_maps_to_canceled(self):
-        result = self._poll_with_state("JOB_STATE_CANCELLED")
+        result, _ = self._poll_with_state("JOB_STATE_CANCELLED")
         assert result.status == LLMBatchStatus.CANCELED
 
     def test_job_state_running_maps_to_in_progress(self):
-        result = self._poll_with_state("JOB_STATE_RUNNING")
+        result, _ = self._poll_with_state("JOB_STATE_RUNNING")
         assert result.status == LLMBatchStatus.IN_PROGRESS
 
     def test_job_state_pending_maps_to_in_progress(self):
-        result = self._poll_with_state("JOB_STATE_PENDING")
+        result, _ = self._poll_with_state("JOB_STATE_PENDING")
         assert result.status == LLMBatchStatus.IN_PROGRESS
 
     def test_job_state_expired_maps_to_expired(self):
-        result = self._poll_with_state("JOB_STATE_EXPIRED")
+        result, _ = self._poll_with_state("JOB_STATE_EXPIRED")
         assert result.status == LLMBatchStatus.EXPIRED
 
     def test_unknown_state_maps_to_failed(self):
-        result = self._poll_with_state("JOB_STATE_UNSPECIFIED")
+        result, _ = self._poll_with_state("JOB_STATE_UNSPECIFIED")
         assert result.status == LLMBatchStatus.FAILED
 
-    def test_poll_result_ref_is_none_for_inline_batch(self):
+    def test_poll_result_ref_is_none(self):
         """Gemini inline batch: result_ref is always None in poll result."""
-        result = self._poll_with_state("JOB_STATE_SUCCEEDED")
+        result, _ = self._poll_with_state("JOB_STATE_SUCCEEDED")
         assert result.result_ref is None
+
+
+# ---------------------------------------------------------------------------
+# Cancel
+# ---------------------------------------------------------------------------
+
+
+class TestGeminiCancel:
+    def test_cancel_calls_batches_cancel_with_keyword_name(self):
+        """cancel() calls client.batches.cancel(name=...) — keyword-only.
+
+        Real SDK: cancel(*, name) confirmed.
+        https://ai.google.dev/gemini-api/docs/batch-api
+        If reverted to always-raise or wrong signature, this fails.
+        """
+        client_instance = MagicMock()
+        adapter = _make_adapter(client_instance)
+
+        adapter.cancel("batches/test-batch-456")
+
+        client_instance.batches.cancel.assert_called_once_with(
+            name="batches/test-batch-456"
+        )
+
+    def test_cancel_with_positional_arg_would_be_wrong_shape(self):
+        """Regression: cancel must use name= keyword, not positional.
+
+        This test verifies the call_args show keyword usage.
+        """
+        client_instance = MagicMock()
+        adapter = _make_adapter(client_instance)
+
+        adapter.cancel("batches/xyz")
+
+        call_kwargs = client_instance.batches.cancel.call_args
+        assert call_kwargs.kwargs.get("name") == "batches/xyz"
+        assert not call_kwargs.args
 
 
 # ---------------------------------------------------------------------------
@@ -301,16 +479,12 @@ class TestGeminiPollStatusMapping:
 class TestGeminiImportGating:
     def test_tc088_missing_google_genai_raises_llm_dependency_error(self):
         """TC-088: Instantiating GeminiBatchAdapter without google-genai raises LLMDependencyError."""
-        # Ensure module is not cached
         if "agentmap.services.llm.gemini_batch_adapter" in sys.modules:
             del sys.modules["agentmap.services.llm.gemini_batch_adapter"]
 
         original_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
-            if name in ("google.genai", "google") and "genai" in str(args):
-                raise ImportError("No module named 'google.genai'")
-            # Also block at the from google import genai level
             if name == "google":
                 raise ImportError("No module named 'google'")
             return original_import(name, *args, **kwargs)
@@ -339,7 +513,6 @@ class TestGeminiImportGating:
                 del sys.modules["agentmap.services.llm.gemini_batch_adapter"]
             from agentmap.services.llm.gemini_batch_adapter import GeminiBatchAdapter
 
-            # Should not raise
             adapter = GeminiBatchAdapter(api_key="test-key", logger=MagicMock())
             assert adapter is not None
 
@@ -355,7 +528,12 @@ class TestGeminiClassAttributes:
         adapter = _make_adapter()
         assert adapter.provider_name == "google"
 
-    def test_ac_t5_supports_cancel_is_bool(self):
-        """AC-T5: supports_cancel is a documented bool."""
+    def test_ac_t5_supports_cancel_is_true(self):
+        """AC-T5: supports_cancel is True — Gemini Developer API supports cancel.
+
+        Confirmed: client.batches.cancel(name=...) exists in the real SDK.
+        https://ai.google.dev/gemini-api/docs/batch-api
+        Previously incorrectly set to False.
+        """
         adapter = _make_adapter()
-        assert isinstance(adapter.supports_cancel, bool)
+        assert adapter.supports_cancel is True

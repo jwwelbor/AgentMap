@@ -6,11 +6,21 @@ The ``google-genai`` SDK import is gated so a missing optional dependency
 raises ``LLMDependencyError`` rather than a bare ``ImportError``.
 
 Gemini-specific concerns handled here:
-- Inline request submission: ``client.batches.create(model=..., requests=[...])``
-  where each request carries a ``key`` (sanitized via ``GEMINI_KEY_RE``).
-- Status mapping: Gemini ``JOB_STATE_*`` → normalized ``LLMBatchStatus``
-- Result demux: inline responses (``job.inline_responses``) keyed by ``key``
-  → map back to caller ``spec_id`` — no ``result_ref`` for inline batches.
+- Inline request submission via ``client.batches.create(model=..., src=[...])``
+  where each src entry is a dict with ``contents`` and optional ``config``.
+  NOTE: The real SDK signature is ``create(*, model, src, config=None)``,
+  NOT ``create(model=, requests=)``.  Confirmed against:
+  https://ai.google.dev/gemini-api/docs/batch-api
+- Request-to-response correlation is **positional** (index-based) for inline
+  batches — there is no ``key`` field on inline src entries.  The adapter
+  maintains an ordered ``spec_id_list`` to map index → original spec_id.
+- Status mapping: Gemini ``state`` is an enum; access via ``state.name``
+  to get ``JOB_STATE_*`` strings → normalized ``LLMBatchStatus``.
+- Result access: ``batch_job.dest.inlined_responses`` (NOT ``job.inline_responses``).
+  Each item has a ``response`` attribute (GenerateContentResponse) or an
+  ``error`` attribute.
+- Cancellation: ``client.batches.cancel(name=...)`` is supported; set
+  ``supports_cancel=True``.
 - Usage normalization: ``usage_metadata.prompt_token_count`` → ``input_tokens``,
   ``candidates_token_count`` → ``output_tokens`` (no cache fields for Gemini).
 
@@ -30,8 +40,6 @@ from agentmap.models.llm_execution import (
     LLMExecutionError,
     LLMUsage,
 )
-from agentmap.services.llm._batch_ids import GEMINI_KEY_RE as _GEMINI_KEY_RE
-from agentmap.services.llm._batch_ids import build_spec_id_map as _build_spec_id_map
 
 
 class GeminiBatchAdapter:
@@ -43,25 +51,32 @@ class GeminiBatchAdapter:
     instantiation raises ``LLMDependencyError`` rather than letting a bare
     ``ImportError`` propagate.
 
-    ``submit`` sends inline requests keyed by sanitized ``key`` (Gemini's
-    per-request identifier).  Results are read directly from the inline
-    response list returned by the job object — no separate download step and
-    no ``result_ref`` (unlike OpenAI's file-backed approach).
+    ``submit`` sends inline requests via ``client.batches.create(model=...,
+    src=[...])``.  Results are read positionally from
+    ``batch_job.dest.inlined_responses`` — there is no key-based demux for
+    inline batches; the adapter preserves an ordered ``spec_id_list`` as
+    the ``spec_id_map`` value (stored as a JSON-encoded list in the handle)
+    to recover the original spec_ids by position.
+
+    API reference: https://ai.google.dev/gemini-api/docs/batch-api
 
     The caller-facing return shape is the same as ``AnthropicBatchAdapter``
     and ``OpenAIBatchAdapter``:
     ``(provider_batch_id, spec_id_map, expires_at)``
-    where ``expires_at`` is always ``None`` for inline Gemini batches.
+    where ``expires_at`` is always ``None`` for inline Gemini batches and
+    ``spec_id_map`` is ``{"__ordered__": json-list-of-spec-ids}`` for
+    positional demux.
     """
 
     # Satisfies BatchAdapterProtocol class attributes.
     provider_name: str = "google"
-    # Developer API batch cancellation support: set False until confirmed
-    # supported; callers must check supports_cancel before calling cancel().
-    supports_cancel: bool = False
+    # Gemini Developer API supports cancel via client.batches.cancel(name=...).
+    # Confirmed: https://ai.google.dev/gemini-api/docs/batch-api
+    supports_cancel: bool = True
 
-    # Gemini JOB_STATE_* → normalized LLMBatchStatus.
+    # Gemini state is an enum; access state.name for the string value.
     # Unknown state values map to FAILED (deterministic, documented — D-3).
+    # Confirmed state strings: https://ai.google.dev/gemini-api/docs/batch-api
     _STATUS_MAP: Dict[str, LLMBatchStatus] = {
         "JOB_STATE_PENDING": LLMBatchStatus.IN_PROGRESS,
         "JOB_STATE_RUNNING": LLMBatchStatus.IN_PROGRESS,
@@ -92,28 +107,37 @@ class GeminiBatchAdapter:
         model: str,
         max_tokens: int,
         request_options: Dict[str, Any],
-    ) -> Tuple[str, Dict[str, str], Optional[str]]:
+    ) -> Tuple[str, Dict[str, Any], Optional[str]]:
         """
         Submit an inline batch to the Gemini Developer API.
 
-        Each spec is converted to a request dict with a sanitized ``key`` field
-        (Gemini's per-request identifier).  ``client.batches.create`` is called
-        with the full request list.
+        Each spec is converted to a src entry dict with ``contents`` and
+        ``config`` following the real SDK shape.  The model is set at the
+        batch level only — per-spec model overrides are embedded in the
+        per-request ``config`` via the GenerateContentConfig mechanism.
+
+        Results are correlated positionally (not by key), so the returned
+        ``spec_id_map`` encodes the ordered spec_id list under
+        ``{"__ordered__": [spec_id, ...]}``.
 
         Returns ``(provider_batch_id, spec_id_map, None)`` where ``None`` is
         the ``expires_at`` — Gemini inline batches do not expose an expiry.
-        ``spec_id_map`` maps each caller ``spec_id`` to its sanitized ``key``
-        sent to Gemini.
+
+        SDK signature confirmed:
+        ``client.batches.create(*, model, src, config=None)``
+        https://ai.google.dev/gemini-api/docs/batch-api
         """
-        spec_id_map = _build_spec_id_map(specs, _GEMINI_KEY_RE)
+        # Build ordered list for positional demux
+        spec_id_list = [spec.spec_id for spec in specs]
+        spec_id_map: Dict[str, Any] = {"__ordered__": spec_id_list}
 
-        requests = self._build_requests(
-            specs, spec_id_map, model, max_tokens, request_options
-        )
+        src = self._build_src(specs, model, max_tokens, request_options)
 
+        # Real SDK: create(*, model, src, config=None)
+        # NOT create(model=, requests=) — the old shape does not exist.
         response = self._client.batches.create(
             model=model,
-            requests=requests,
+            src=src,
         )
 
         provider_batch_id = getattr(response, "name", None)
@@ -126,24 +150,27 @@ class GeminiBatchAdapter:
         # Inline Gemini batches never return an expiry timestamp
         return provider_batch_id, spec_id_map, None
 
-    def _build_requests(
+    def _build_src(
         self,
         specs: List[LLMCallSpec],
-        spec_id_map: Dict[str, str],
         model: str,
         max_tokens: int,
         request_options: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """
-        Build the inline request list for ``client.batches.create``.
+        Build the inline src list for ``client.batches.create``.
 
-        Each entry has a ``key`` (sanitized spec_id) and a ``request`` dict
-        following the Gemini GenerateContent schema with ``contents`` and
-        ``generationConfig``.
+        Each entry is a GenerateContentRequest-shaped dict with ``contents``
+        and a ``config`` sub-dict (GenerateContentConfig).  There is no
+        ``key`` field for inline src entries — correlation is positional.
+
+        Config field names follow the python-genai SDK snake_case convention:
+        ``max_output_tokens`` and ``temperature``.
+
+        Reference: https://ai.google.dev/gemini-api/docs/batch-api
         """
-        requests = []
+        src = []
         for spec in specs:
-            key = spec_id_map[spec.spec_id]
             # Convert messages to Gemini contents format
             contents = []
             for msg in spec.messages:
@@ -155,22 +182,20 @@ class GeminiBatchAdapter:
                     {"role": role, "parts": [{"text": msg.get("content", "")}]}
                 )
 
-            generation_config: Dict[str, Any] = {"maxOutputTokens": max_tokens}
-            effective_model = spec.model if spec.model is not None else model
+            # Build generation config using SDK snake_case names
+            generation_config: Dict[str, Any] = {"max_output_tokens": max_tokens}
             if spec.temperature is not None:
                 generation_config["temperature"] = spec.temperature
             for k, v in request_options.items():
                 generation_config.setdefault(k, v)
 
-            requests.append(
+            src.append(
                 {
-                    "key": key,
-                    "model": effective_model,
                     "contents": contents,
-                    "generationConfig": generation_config,
+                    "config": generation_config,
                 }
             )
-        return requests
+        return src
 
     # ------------------------------------------------------------------
     # Poll
@@ -180,14 +205,21 @@ class GeminiBatchAdapter:
         """
         Retrieve current batch status from the Gemini API.
 
+        ``state`` is an enum; the string is accessed via ``state.name``.
         Returns a ``BatchPollResult`` with already-normalized ``LLMBatchStatus``.
         ``result_ref`` is always ``None`` for inline Gemini batches — results
-        are read from the job's inline response list in ``fetch_results``.
-        Unknown ``state`` values map to ``LLMBatchStatus.FAILED``.
-        """
-        job = self._client.batches.get(provider_batch_id)
+        are read positionally from the job's dest in ``fetch_results``.
+        Unknown ``state.name`` values map to ``LLMBatchStatus.FAILED``.
 
-        raw_state = getattr(job, "state", None)
+        SDK signature confirmed: ``client.batches.get(*, name)``
+        https://ai.google.dev/gemini-api/docs/batch-api
+        """
+        # Real SDK: get(*, name=...) — keyword-only, NOT positional
+        job = self._client.batches.get(name=provider_batch_id)
+
+        state_obj = getattr(job, "state", None)
+        # state is an enum; .name gives the JOB_STATE_* string
+        raw_state = getattr(state_obj, "name", None) if state_obj is not None else None
         normalized_status = self._STATUS_MAP.get(raw_state, LLMBatchStatus.FAILED)
         if raw_state not in self._STATUS_MAP:
             self._logger.warning(
@@ -209,16 +241,16 @@ class GeminiBatchAdapter:
 
     def cancel(self, provider_batch_id: str) -> None:
         """
-        Cancel an in-progress batch.
+        Cancel an in-progress batch via ``client.batches.cancel(name=...)``.
 
-        ``supports_cancel`` is ``False`` for the Developer API; this method
-        raises ``LLMServiceError`` so callers that skip the capability check
-        receive an explicit failure rather than a silent no-op.
+        The Gemini Developer API supports cancellation.
+        ``supports_cancel`` is ``True``; this method calls through to the SDK.
+
+        SDK signature confirmed: ``client.batches.cancel(*, name)``
+        https://ai.google.dev/gemini-api/docs/batch-api
         """
-        raise LLMServiceError(
-            "GeminiBatchAdapter: the Gemini Developer API does not support "
-            "batch cancellation.  Check supports_cancel before calling cancel()."
-        )
+        # Real SDK: cancel(*, name=...) — keyword-only
+        self._client.batches.cancel(name=provider_batch_id)
 
     # ------------------------------------------------------------------
     # Fetch results
@@ -227,39 +259,61 @@ class GeminiBatchAdapter:
     def fetch_results(
         self,
         provider_batch_id: str,
-        spec_id_map: Dict[str, str],
+        spec_id_map: Dict[str, Any],
         result_ref: Optional[str] = None,
     ) -> Generator[LLMBatchResultRecord, None, None]:
         """
         Read and yield results from a completed inline Gemini batch.
 
-        Gemini inline batches store results directly on the job object via
-        ``inline_responses``.  ``result_ref`` is unused (always ``None`` for
-        inline batches) — results are always fetched by re-retrieving the job.
+        Results live at ``batch_job.dest.inlined_responses`` (NOT
+        ``job.inline_responses``).  Correlation is by **position** (index),
+        matching the order of the original src list.  The ``spec_id_map``
+        must contain ``{"__ordered__": [spec_id, ...]}``.
 
-        Results are demuxed by ``key`` (not position) back to the caller's
-        ``spec_id``.  Responses whose ``key`` is absent from ``spec_id_map``
-        are skipped with a warning to tolerate any extra records the provider
-        may inject.
+        ``result_ref`` is unused (always ``None`` for inline batches).
 
-        Yields ``LLMBatchResultRecord`` for each inline response.
+        Each inline response item has a ``response`` attribute
+        (GenerateContentResponse) or an ``error`` attribute.
+
+        SDK reference: https://ai.google.dev/gemini-api/docs/batch-api
         """
-        # Build reverse map: key → original spec_id
-        key_to_spec: Dict[str, str] = {v: k for k, v in spec_id_map.items()}
+        # Recover ordered spec_id list from map
+        spec_id_list: List[str] = spec_id_map.get("__ordered__", [])
 
-        job = self._client.batches.get(provider_batch_id)
-        inline_responses = getattr(job, "inline_responses", None) or []
+        # Real SDK: get(*, name=...) — keyword-only
+        job = self._client.batches.get(name=provider_batch_id)
+        dest = getattr(job, "dest", None)
+        # Results are at batch_job.dest.inlined_responses (NOT job.inline_responses)
+        inlined_responses = (
+            getattr(dest, "inlined_responses", None) if dest is not None else None
+        ) or []
 
-        for item in inline_responses:
-            key = getattr(item, "key", None)
-            spec_id = key_to_spec.get(key) if key else None
-
-            if spec_id is None:
+        for idx, item in enumerate(inlined_responses):
+            # Positional demux: index in inlined_responses → spec_id_list[idx]
+            if idx >= len(spec_id_list):
                 self._logger.warning(
-                    "GeminiBatchAdapter.fetch_results: key %r not in spec_id_map "
-                    "for batch %s — skipping record",
-                    key,
+                    "GeminiBatchAdapter.fetch_results: response index %d has no "
+                    "corresponding spec_id (spec_id_list length=%d) for batch %s "
+                    "— skipping record",
+                    idx,
+                    len(spec_id_list),
                     provider_batch_id,
+                )
+                continue
+
+            spec_id = spec_id_list[idx]
+
+            # Check for item-level error first
+            item_error = getattr(item, "error", None)
+            if item_error is not None:
+                yield LLMBatchResultRecord(
+                    spec_id=spec_id,
+                    status="errored",
+                    error=LLMExecutionError(
+                        error_type="provider_error",
+                        message=str(item_error),
+                        retryable=False,
+                    ),
                 )
                 continue
 
