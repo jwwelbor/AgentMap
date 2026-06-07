@@ -628,8 +628,8 @@ class TestInt05DIContainerWiring:
         # Both calls must return the same singleton service
         assert svc1 is svc2, "llm_service must be a singleton"
         # And the adapter on both references must be the same object (singleton).
-        assert (
-            svc1._batch_adapters.get("anthropic") is svc2._batch_adapters.get("anthropic")
+        assert svc1._batch_adapters.get("anthropic") is svc2._batch_adapters.get(
+            "anthropic"
         ), "anthropic_batch_adapter must be a singleton"
 
     def test_di_container_batch_repo_is_singleton(self, tmp_path):
