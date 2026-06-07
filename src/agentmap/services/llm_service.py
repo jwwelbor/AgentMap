@@ -1661,6 +1661,17 @@ class LLMService:
                         "Set temperature in one place only."
                     )
 
+            # D-3: reject spec.temperature (direct field) vs request-level temperature.
+            if spec.temperature is not None and request.request_options:
+                req_temp = request.request_options.get("temperature")
+                if req_temp is not None and spec.temperature != req_temp:
+                    raise LLMServiceError(
+                        f"spec_id={spec.spec_id!r}: conflicting temperature — "
+                        f"spec.temperature={spec.temperature!r} conflicts "
+                        f"with request.request_options.temperature={req_temp!r}. "
+                        "Set temperature in one place only."
+                    )
+
             # Check for batch-incompatible params in per-spec request_options
             if spec.request_options:
                 for bad_key in self._BATCH_INCOMPATIBLE_PARAMS:

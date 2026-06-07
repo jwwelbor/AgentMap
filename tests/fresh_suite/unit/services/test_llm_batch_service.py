@@ -1539,6 +1539,57 @@ class TestTypedErrors:
         assert "model" in error_msg
         adapters["anthropic"].submit.assert_not_called()
 
+    def test_conflicting_spec_temperature_field_and_request_options_temperature_raises(
+        self,
+    ):
+        """TC-086: spec.temperature conflicts with request.request_options["temperature"] raises LLMServiceError.
+
+        AC-8 / REQ-F-008 / spec D-3: when spec.temperature (direct field) and
+        request.request_options["temperature"] are both set to DIFFERENT values,
+        submit_batch must raise LLMServiceError with a clear message naming the
+        conflict.  Matching values must NOT raise.
+        """
+        service, adapters, repo = _make_registry_service()
+
+        # --- differing values: must raise ---
+        spec = LLMCallSpec(
+            spec_id="s1",
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0.5,
+        )
+        request = _make_batch_request(
+            provider="anthropic",
+            specs=[spec],
+            request_options={"temperature": 0.9},
+        )
+
+        with pytest.raises(LLMServiceError) as exc_info:
+            service.submit_batch(request)
+
+        error_msg = str(exc_info.value).lower()
+        assert "temperature" in error_msg
+        assert "s1" in str(exc_info.value)
+        adapters["anthropic"].submit.assert_not_called()
+
+        # --- matching values: must NOT raise ---
+        adapters["anthropic"].submit.return_value = (
+            "batch_001",
+            {"s1": "s1"},
+            "2026-06-08T00:00:00Z",
+        )
+        spec_same = LLMCallSpec(
+            spec_id="s1",
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0.7,
+        )
+        request_same = _make_batch_request(
+            provider="anthropic",
+            specs=[spec_same],
+            request_options={"temperature": 0.7},
+        )
+        handle = service.submit_batch(request_same)
+        assert handle is not None
+
 
 # ---------------------------------------------------------------------------
 # AC-8 (TC-076..086): batch_capabilities and canonical param path
