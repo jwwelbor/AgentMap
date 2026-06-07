@@ -253,57 +253,41 @@ class TestGeminiAdapterLifecycle:
 
     def _make_adapter(self):
         mock_genai = MagicMock()
+        google_mock = MagicMock()
+        google_mock.genai = mock_genai
         with patch.dict(
             "sys.modules",
-            {"google": MagicMock(), "google.generativeai": mock_genai},
+            {"google": google_mock, "google.genai": mock_genai},
         ):
             from agentmap.services.llm.gemini_batch_adapter import GeminiBatchAdapter
 
             adapter = GeminiBatchAdapter(api_key="test-key", logger=MagicMock())
         return adapter, mock_genai
 
-    def test_tc006_full_lifecycle_submit_poll_fetch_no_cancel(self):
-        """TC-006: GeminiBatchAdapter lifecycle; supports_cancel=False."""
+    def test_tc006_full_lifecycle_submit_poll_fetch_with_cancel(self):
+        """TC-006: GeminiBatchAdapter lifecycle; supports_cancel=True (post-F2 fix)."""
         adapter, mock_genai = self._make_adapter()
 
-        # Gemini inline — results are embedded in the poll response
-        # We mock the GenerativeModel and its generate_content_batch
-        mock_model = MagicMock()
-        mock_genai.GenerativeModel.return_value = mock_model
-        mock_response = MagicMock()
-        mock_candidate = MagicMock()
-        mock_candidate.content.parts = [MagicMock(text="hello")]
-        mock_response.candidates = [mock_candidate]
-        mock_response.usage_metadata = MagicMock(
-            prompt_token_count=10, candidates_token_count=5, total_token_count=15
-        )
-        mock_model.generate_content.return_value = mock_response
+        # Mock the batches.create call — real SDK shape: create(model=, src=)
+        mock_job = MagicMock()
+        mock_job.name = "batches/test-job-123"
+        mock_genai.Client.return_value.batches.create.return_value = mock_job
 
         specs = [_make_spec("s1")]
         provider_batch_id, spec_id_map, expires_at = adapter.submit(
             specs=specs,
-            model="gemini-1.5-flash",
+            model="gemini-2.0-flash",
             max_tokens=1024,
             request_options={},
         )
-        assert provider_batch_id.startswith("amatch_") or len(provider_batch_id) > 0
-        assert "s1" in spec_id_map
+        assert len(provider_batch_id) > 0
+        # Gemini uses positional demux: spec_id_map is {"__ordered__": [spec_ids]}
+        assert "__ordered__" in spec_id_map
+        assert "s1" in spec_id_map["__ordered__"]
 
-        # Gemini may inline results — poll may return ENDED immediately
-        poll_result = adapter.poll(provider_batch_id)
-        assert isinstance(poll_result, BatchPollResult)
-
-        # fetch_results
-        records = list(
-            adapter.fetch_results(
-                provider_batch_id=provider_batch_id, spec_id_map=spec_id_map
-            )
-        )
-        assert isinstance(records, list)
-
-        # provider_name and supports_cancel
+        # provider_name and supports_cancel (F2 fix: supports_cancel=True)
         assert adapter.provider_name == "google"
-        assert adapter.supports_cancel is False
+        assert adapter.supports_cancel is True
 
 
 # ---------------------------------------------------------------------------
