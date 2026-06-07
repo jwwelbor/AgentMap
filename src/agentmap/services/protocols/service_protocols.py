@@ -251,7 +251,8 @@ class LLMServiceProtocol(Protocol):
         Submit a provider-native batch and return a serializable handle.
 
         Validates the request, delegates to the provider adapter, persists the
-        handle, and returns it.  Only ``"anthropic"`` is supported.
+        handle, and returns it.  Supported providers: ``"anthropic"``,
+        ``"openai"``, ``"google"``.
 
         Raises:
             LLMServiceError: For validation failures (empty specs, duplicate
@@ -375,6 +376,25 @@ class LLMServiceProtocol(Protocol):
         Index ``records`` by ``spec_id`` for O(1) lookups.
 
         Any record whose ``spec_id`` is ``None`` or empty is excluded.
+        """
+        ...
+
+    def reconcile_batch_results(
+        self,
+        submitted_spec_ids: List[str],
+        records: List[LLMBatchResultRecord],
+    ) -> Dict[str, Optional[LLMBatchResultRecord]]:
+        """
+        Reconcile submitted spec_ids against returned records (REQ-F-009c).
+
+        Returns a dict mapping every submitted ``spec_id`` to its
+        ``LLMBatchResultRecord`` if one was returned, or ``None`` if the
+        provider returned no result for that spec_id.  A ``None`` value signals
+        possible silent data loss and should be investigated by the caller.
+
+        Args:
+            submitted_spec_ids: The spec_ids supplied at submit time.
+            records: Records returned by :meth:`fetch_batch_results`.
         """
         ...
 

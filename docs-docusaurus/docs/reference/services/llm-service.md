@@ -698,10 +698,19 @@ work exclusively with AgentMap-owned data classes.
 | `poll_batch` / `apoll_batch` | Yes | Yes | Yes |
 | `cancel_batch` / `acancel_batch` | Yes | Yes | Yes |
 | `fetch_batch_results` / `afetch_batch_results` | Yes | Yes | Yes |
-| `wait_for_batch` / `await_for_batch` | Yes | Yes | Yes |
+| `wait_for_batch` | Yes | Yes | Yes |
 | `restore_batch` (cross-process handle reload) | Yes | Yes | Yes |
 | File-API submission for large batches | No | No | Yes (auto) |
 | Normalized `LLMBatchStatus` | Yes | Yes | Yes |
+| `supports_cancel` (`batch_capabilities` key) | `True` | `True` | `True` |
+
+`batch_capabilities(provider)` returns a dict with at minimum these keys:
+
+| Key | Type | Description |
+|---|---|---|
+| `supports_cancel` | `bool` | Whether the adapter supports `cancel_batch` (all three providers: `True`) |
+| `provider_name` | `str` | Canonical adapter provider name string |
+| `supported` | `bool` | Whether an adapter is registered for this provider |
 
 ### Installation
 
@@ -756,7 +765,7 @@ import asyncio
 
 async def run():
     handle = await llm_service.asubmit_batch(request)
-    handle = await llm_service.await_for_batch(handle, poll_interval=30.0)
+    handle = await llm_service.wait_for_batch(handle, poll_interval=30.0)
     results = await llm_service.afetch_batch_results(handle)
     return results
 
@@ -812,6 +821,7 @@ The directory is created automatically if it does not exist.
 | `submitted` | Batch submitted; not yet processing |
 | `in_progress` | Provider is processing requests |
 | `canceling` | Cancel initiated; not yet terminal |
+| `canceled` | Batch was canceled by the caller |
 | `ended` | Processing complete; results available |
 | `expired` | Batch expired before completion |
 | `failed` | Unknown or unrecognized provider status |
@@ -827,20 +837,21 @@ SHA-1 hash and stores the `spec_id -> custom_id` map in the handle.  On
 
 #### `submit_batch(request: LLMBatchSubmitRequest) -> LLMBatchHandle`
 
-Validates the request, submits to Anthropic, persists the handle to `batch_dir`,
-and returns an `LLMBatchHandle`.
+Validates the request, submits to the provider, persists the handle to `batch_dir`,
+and returns an `LLMBatchHandle`.  Supported providers: `"anthropic"`, `"openai"`, `"google"`.
 
 **Validation errors (raised before any network call):**
-- `LLMBatchUnsupportedProviderError` — provider is not `"anthropic"`
+- `LLMBatchUnsupportedProviderError` — provider has no registered adapter (SDK absent or unconfigured)
 - `LLMServiceError` — `call_specs` is empty, contains duplicate `spec_id` values,
   or a spec has batch-incompatible `request_options` (`stream=True`, `max_tokens=0`)
 
 ```python
 from agentmap.models.llm_execution import LLMBatchSubmitRequest, LLMCallSpec
 
+# Works for any registered provider: "anthropic", "openai", or "google"
 request = LLMBatchSubmitRequest(
-    provider="anthropic",
-    model="claude-sonnet-4-6",
+    provider="anthropic",          # or "openai" or "google"
+    model="claude-sonnet-4-6",     # provider-specific model name
     max_tokens=1024,
     call_specs=[
         LLMCallSpec(spec_id="task-1", messages=[{"role": "user", "content": "Q1"}]),
@@ -906,6 +917,69 @@ for record in results:
         print(record.spec_id, record.status)
 ```
 
+#### `wait_for_batch(handle, *, poll_interval=5.0, timeout=None) -> LLMBatchHandle` (async)
+
+Polls `apoll_batch` with capped exponential backoff until the batch reaches a
+terminal status (`ended`, `canceled`, `expired`, `failed`) or `timeout` seconds
+elapse.  Pass `timeout=None` (the default) to wait indefinitely.
+
+**Error:** `TimeoutError` — if `timeout` is set and the batch has not reached a
+terminal status within that many seconds.
+
+```python
+# Wait at most 10 minutes
+handle = await llm_service.wait_for_batch(handle, poll_interval=30.0, timeout=600)
+
+# Wait indefinitely
+handle = await llm_service.wait_for_batch(handle, poll_interval=30.0)
+```
+
+#### `submit_and_wait(request, *, poll_interval=5.0, timeout=None) -> LLMBatchHandle` (sync)
+
+Synchronous convenience: submit a batch then block until it reaches a terminal
+status.  Internally calls `asyncio.run` and delegates to `wait_for_batch`.
+
+#### `batch_capabilities(provider: str) -> dict`
+
+Returns capability metadata for a registered provider adapter.  See the
+capability matrix above for the key definitions.
+
+**Error:** `LLMBatchUnsupportedProviderError` — provider has no registered adapter.
+
+```python
+caps = llm_service.batch_capabilities("google")
+# {"supports_cancel": True, "provider_name": "google", "supported": True, ...}
+```
+
+#### `results_by_spec_id(records) -> dict[str, LLMBatchResultRecord]` (static)
+
+Index a list of result records by `spec_id` for O(1) lookups.
+
+```python
+by_id = LLMService.results_by_spec_id(results)
+print(by_id["task-1"].content)
+```
+
+#### `reconcile_batch_results(submitted_spec_ids, records) -> dict[str, LLMBatchResultRecord | None]` (static)
+
+Reconcile submitted spec_ids against the records returned by
+`fetch_batch_results` (REQ-F-009c).  Returns a dict mapping every submitted
+`spec_id` to its `LLMBatchResultRecord` if the provider returned one, or `None`
+if the provider returned no result for that spec_id.  A `None` value indicates
+possible silent data loss and should be investigated.
+
+```python
+reconciled = LLMService.reconcile_batch_results(
+    submitted_spec_ids=["task-1", "task-2", "task-3"],
+    records=results,
+)
+for spec_id, record in reconciled.items():
+    if record is None:
+        print(f"WARNING: no result for {spec_id} — investigate")
+    elif record.status == "succeeded":
+        print(spec_id, record.content)
+```
+
 ### Error conditions reference
 
 | Exception | Raised by | Condition |
@@ -915,7 +989,7 @@ for record in results:
 | `LLMServiceError` / `ValueError` | `restore_batch` | Missing required field in `handle_data` |
 | `LLMBatchCancelNotSupportedError` | `cancel_batch` | Handle already in terminal state |
 | `LLMBatchNotReadyError` | `fetch_batch_results` | Handle status is not `"ended"` |
-| `LLMDependencyError` | Adapter init | `anthropic` package not importable |
+| `LLMDependencyError` | Adapter init | Provider SDK not importable (`anthropic`, `openai`, or `google-genai`) |
 
 ### Restore-after-restart pattern
 
