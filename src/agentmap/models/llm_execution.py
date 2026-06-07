@@ -188,6 +188,7 @@ class LLMBatchHandle:
     spec_id_map: Dict[str, str]
     results_url: Optional[str] = None
     expires_at: Optional[str] = None
+    ended_at: Optional[str] = None
     request_counts: Optional[LLMBatchRequestCounts] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -219,6 +220,7 @@ class LLMBatchHandle:
             "spec_id_map": dict(self.spec_id_map),
             "results_url": self.results_url,
             "expires_at": self.expires_at,
+            "ended_at": self.ended_at,
             "request_counts": counts,
         }
 
@@ -248,6 +250,7 @@ class LLMBatchHandle:
             spec_id_map=dict(data["spec_id_map"]),
             results_url=data.get("results_url"),
             expires_at=data.get("expires_at"),
+            ended_at=data.get("ended_at"),
             request_counts=counts,
         )
 

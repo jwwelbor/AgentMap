@@ -13,6 +13,7 @@ import mimetypes
 import random
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
+from uuid import uuid4
 
 from agentmap.exceptions import (
     LLMConfigurationError,
@@ -22,6 +23,11 @@ from agentmap.exceptions import (
     LLMServiceError,
 )
 from agentmap.models.llm_execution import (
+    LLMBatchHandle,
+    LLMBatchRequestCounts,
+    LLMBatchResultRecord,
+    LLMBatchStatus,
+    LLMBatchSubmitRequest,
     LLMCallResult,
     LLMCallSpec,
     LLMExecutionError,
@@ -33,6 +39,11 @@ from agentmap.services.config import AppConfigService
 from agentmap.services.config.llm_models_config_service import LLMModelsConfigService
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
+from agentmap.services.llm_batch_errors import (
+    LLMBatchCancelNotSupportedError,
+    LLMBatchNotReadyError,
+    LLMBatchUnsupportedProviderError,
+)
 from agentmap.services.llm_client_factory import LLMClientFactory
 from agentmap.services.llm_error_utils import (
     _sanitize_error_message,
@@ -103,6 +114,8 @@ class LLMService:
         features_registry_service: Optional[FeaturesRegistryService] = None,
         routing_config_service: Optional[LLMRoutingConfigService] = None,
         telemetry_service: Optional[Any] = None,
+        batch_adapter: Optional[Any] = None,
+        batch_repo: Optional[Any] = None,
     ):
         """
         Initialize the LLM service.
@@ -202,6 +215,11 @@ class LLMService:
                 )
             except Exception:
                 pass  # Instrument creation failure silently ignored
+
+        # Batch execution dependencies (E05-F03) — injected or left None for
+        # lazy/deferred wiring by the DI container.
+        self._batch_adapter = batch_adapter
+        self._batch_repo = batch_repo
 
     @property
     def _clients(self):
@@ -1530,6 +1548,250 @@ class LLMService:
                         retryable=is_retryable(exc),
                     ),
                 )
+
+    # ------------------------------------------------------------------
+    # Batch lifecycle methods (E05-F03)
+    # ------------------------------------------------------------------
+
+    # Anthropic processing_status -> normalized LLMBatchStatus mapping.
+    # Unknown status values map to FAILED (deterministic, documented decision).
+    _ANTHROPIC_STATUS_MAP: Dict[str, LLMBatchStatus] = {
+        "in_progress": LLMBatchStatus.IN_PROGRESS,
+        "canceling": LLMBatchStatus.CANCELING,
+        "ended": LLMBatchStatus.ENDED,
+        "expired": LLMBatchStatus.EXPIRED,
+    }
+
+    # Terminal statuses where cancel is not permitted.
+    _TERMINAL_STATUSES = {LLMBatchStatus.ENDED, LLMBatchStatus.EXPIRED}
+
+    # Params that are incompatible with batch submission.
+    _BATCH_INCOMPATIBLE_PARAMS = frozenset({"stream"})
+
+    def _validate_batch_submit_request(self, request: LLMBatchSubmitRequest) -> None:
+        """
+        Validate a batch submit request before any adapter call.
+
+        Raises ``LLMServiceError`` for:
+        - empty call_specs
+        - duplicate spec_ids
+        - batch-incompatible request_options params (stream=True)
+        - max_tokens == 0 (cache pre-warm not supported in batches)
+        Raises ``LLMBatchUnsupportedProviderError`` for non-Anthropic providers.
+        """
+        if not request.call_specs:
+            raise LLMServiceError(
+                "call_specs must not be empty — at least one LLMCallSpec is required "
+                "for batch submission."
+            )
+
+        seen_ids: set = set()
+        for spec in request.call_specs:
+            if spec.spec_id in seen_ids:
+                raise LLMServiceError(
+                    f"Duplicate spec_id detected: {spec.spec_id!r}. "
+                    "Each spec_id must be unique within one batch submission."
+                )
+            seen_ids.add(spec.spec_id)
+            # Check for batch-incompatible params in per-spec request_options
+            if spec.request_options:
+                for bad_key in self._BATCH_INCOMPATIBLE_PARAMS:
+                    if bad_key in spec.request_options:
+                        raise LLMServiceError(
+                            f"spec_id={spec.spec_id!r}: request_options contains "
+                            f"batch-incompatible parameter {bad_key!r}. "
+                            "Batch submissions do not support streaming."
+                        )
+
+        if request.provider != "anthropic":
+            self._logger.warning(
+                "llm_batch.unsupported_provider provider=%s", request.provider
+            )
+            raise LLMBatchUnsupportedProviderError(
+                f"Provider {request.provider!r} does not support provider-native "
+                "batch execution. Only 'anthropic' is supported in this release."
+            )
+
+        if request.max_tokens == 0:
+            raise LLMServiceError(
+                "max_tokens=0 is not supported in batch submissions. "
+                "Cache pre-warm (max_tokens=0) is incompatible with batch mode."
+            )
+
+    def submit_batch(self, request: LLMBatchSubmitRequest) -> LLMBatchHandle:
+        """
+        Submit a provider-native batch and return a serializable handle.
+
+        Validation order: non-empty specs → unique spec_ids → batch-incompatible
+        params → provider == "anthropic" → max_tokens != 0 → adapter call →
+        build handle → persist → return.
+
+        Raises:
+            LLMServiceError: For validation failures.
+            LLMBatchUnsupportedProviderError: For unsupported providers.
+        """
+        self._validate_batch_submit_request(request)
+
+        provider_batch_id, spec_id_map, expires_at = self._batch_adapter.submit(
+            specs=request.call_specs,
+            model=request.model,
+            max_tokens=request.max_tokens,
+            request_options=request.request_options,
+        )
+
+        agentmap_batch_id = "amatch_" + uuid4().hex
+        handle = LLMBatchHandle(
+            agentmap_batch_id=agentmap_batch_id,
+            provider_batch_id=provider_batch_id,
+            status=LLMBatchStatus.SUBMITTED,
+            provider=request.provider,
+            model=request.model,
+            spec_id_map=spec_id_map,
+            expires_at=expires_at,
+        )
+
+        if self._batch_repo is not None:
+            self._batch_repo.save(handle)
+            self._logger.info(
+                "llm_batch.handle_saved agentmap_batch_id=%s path=%s",
+                agentmap_batch_id,
+                getattr(self._batch_repo, "_batch_dir", "<unknown>"),
+            )
+
+        self._logger.info(
+            "llm_batch.submitted agentmap_batch_id=%s provider_batch_id=%s spec_count=%d",
+            agentmap_batch_id,
+            provider_batch_id,
+            len(request.call_specs),
+        )
+        return handle
+
+    def restore_batch(self, handle_data: dict) -> LLMBatchHandle:
+        """
+        Restore a batch handle from a serialized dict.
+
+        Validates that the dict contains the required ``provider_batch_id``
+        field before constructing the handle.
+
+        Raises:
+            LLMServiceError: If ``provider_batch_id`` is absent.
+        """
+        if (
+            "provider_batch_id" not in handle_data
+            or not handle_data["provider_batch_id"]
+        ):
+            raise LLMServiceError(
+                "Cannot restore batch handle: 'provider_batch_id' is missing or "
+                "empty in the provided handle dict."
+            )
+        return LLMBatchHandle.from_dict(handle_data)
+
+    def poll_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
+        """
+        Poll the provider for current batch status and return an updated handle.
+
+        Maps Anthropic ``processing_status`` to the normalized ``LLMBatchStatus``
+        set.  Unknown status values map to ``FAILED`` (deterministic, documented).
+        Persists the updated handle via the repository.
+        """
+        poll_result = self._batch_adapter.poll(handle.provider_batch_id)
+
+        processing_status = poll_result.get("processing_status")
+        normalized_status = self._ANTHROPIC_STATUS_MAP.get(
+            processing_status, LLMBatchStatus.FAILED
+        )
+
+        raw_counts = poll_result.get("request_counts")
+        counts: Optional[LLMBatchRequestCounts] = None
+        if raw_counts is not None:
+            counts = LLMBatchRequestCounts(
+                processing=raw_counts.get("processing"),
+                succeeded=raw_counts.get("succeeded"),
+                errored=raw_counts.get("errored"),
+                canceled=raw_counts.get("canceled"),
+                expired=raw_counts.get("expired"),
+            )
+
+        updated = LLMBatchHandle(
+            agentmap_batch_id=handle.agentmap_batch_id,
+            provider_batch_id=handle.provider_batch_id,
+            status=normalized_status,
+            provider=handle.provider,
+            model=handle.model,
+            spec_id_map=handle.spec_id_map,
+            results_url=poll_result.get("results_url") or handle.results_url,
+            expires_at=handle.expires_at,
+            ended_at=poll_result.get("ended_at"),
+            request_counts=counts,
+        )
+
+        if self._batch_repo is not None:
+            self._batch_repo.save(updated)
+
+        self._logger.info(
+            "llm_batch.polled agentmap_batch_id=%s status=%s processing=%s succeeded=%s",
+            handle.agentmap_batch_id,
+            normalized_status.value,
+            counts.processing if counts else None,
+            counts.succeeded if counts else None,
+        )
+        return updated
+
+    def cancel_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
+        """
+        Request cancellation of an active batch.
+
+        Raises:
+            LLMBatchCancelNotSupportedError: If the handle is in a terminal status.
+        """
+        if handle.status in self._TERMINAL_STATUSES:
+            self._logger.warning(
+                "llm_batch.cancel_rejected agentmap_batch_id=%s status=%s",
+                handle.agentmap_batch_id,
+                handle.status.value,
+            )
+            raise LLMBatchCancelNotSupportedError(
+                f"Cannot cancel batch {handle.agentmap_batch_id!r}: "
+                f"current status is {handle.status.value!r} (terminal)."
+            )
+
+        self._logger.info(
+            "llm_batch.cancel_requested agentmap_batch_id=%s",
+            handle.agentmap_batch_id,
+        )
+        self._batch_adapter.cancel(handle.provider_batch_id)
+        return self.poll_batch(handle)
+
+    def fetch_batch_results(self, handle: LLMBatchHandle) -> List[LLMBatchResultRecord]:
+        """
+        Retrieve completed batch results keyed by caller ``spec_id``.
+
+        Delegates to the adapter which yields ``LLMBatchResultRecord`` items
+        with ``spec_id`` already restored from the spec_id_map.
+
+        Raises:
+            LLMBatchNotReadyError: If the handle status is not ``"ended"``.
+        """
+        if handle.status != LLMBatchStatus.ENDED:
+            raise LLMBatchNotReadyError(
+                f"Batch {handle.agentmap_batch_id!r} is not yet ready for result "
+                f"retrieval (current status: {handle.status.value!r}). "
+                "Poll until status == 'ended' before fetching results."
+            )
+
+        records = list(
+            self._batch_adapter.fetch_results(
+                handle.provider_batch_id,
+                handle.spec_id_map,
+            )
+        )
+
+        self._logger.info(
+            "llm_batch.results_fetched agentmap_batch_id=%s item_count=%d",
+            handle.agentmap_batch_id,
+            len(records),
+        )
+        return records
 
     @staticmethod
     def _extract_llm_usage(response: Any) -> Optional[LLMUsage]:

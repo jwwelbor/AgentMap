@@ -17,6 +17,9 @@ from typing import (
 )
 
 from agentmap.models.llm_execution import (
+    LLMBatchHandle,
+    LLMBatchResultRecord,
+    LLMBatchSubmitRequest,
     LLMCallResult,
     LLMCallSpec,
     LLMMessage,
@@ -162,6 +165,67 @@ class LLMServiceProtocol(Protocol):
 
         Raises:
             LLMServiceError: For invalid submissions (before any execution).
+        """
+        ...
+
+    # ------------------------------------------------------------------
+    # Batch lifecycle methods (E05-F03) — additive, provider-agnostic
+    # ------------------------------------------------------------------
+
+    def submit_batch(self, request: LLMBatchSubmitRequest) -> LLMBatchHandle:
+        """
+        Submit a provider-native batch and return a serializable handle.
+
+        Validates the request, delegates to the provider adapter, persists the
+        handle, and returns it.  Only ``"anthropic"`` is supported.
+
+        Raises:
+            LLMServiceError: For validation failures (empty specs, duplicate
+                spec_ids, batch-incompatible params).
+            LLMBatchUnsupportedProviderError: For unsupported providers.
+        """
+        ...
+
+    def restore_batch(self, handle_data: dict) -> LLMBatchHandle:
+        """
+        Restore a batch handle from a serialized dict after process restart.
+
+        The dict must be the output of a previous ``handle.to_dict()`` call.
+        Validates that the dict contains all required fields.
+
+        Raises:
+            LLMServiceError: If the dict is missing required fields.
+        """
+        ...
+
+    def poll_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
+        """
+        Poll the provider for current batch status and return an updated handle.
+
+        Maps provider-specific status strings to the normalized
+        ``LLMBatchStatus`` set.  Persists the updated handle.
+
+        Returns:
+            Updated ``LLMBatchHandle`` with current status and request counts.
+        """
+        ...
+
+    def cancel_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
+        """
+        Request cancellation of an active batch.
+
+        Raises:
+            LLMBatchCancelNotSupportedError: If the handle is in a terminal
+                status (``"ended"`` or ``"expired"``).
+        """
+        ...
+
+    def fetch_batch_results(self, handle: LLMBatchHandle) -> List[LLMBatchResultRecord]:
+        """
+        Retrieve completed batch results keyed by caller ``spec_id``.
+
+        Raises:
+            LLMBatchNotReadyError: If the handle status is not ``"ended"``.
         """
         ...
 
