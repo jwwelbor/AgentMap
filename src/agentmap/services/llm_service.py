@@ -11,6 +11,7 @@ import base64
 import inspect
 import mimetypes
 import random
+import re
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
@@ -1568,6 +1569,9 @@ class LLMService:
     # Params that are incompatible with batch submission.
     _BATCH_INCOMPATIBLE_PARAMS = frozenset({"stream"})
 
+    # Pattern that a valid agentmap_batch_id must satisfy (no path separators).
+    _AGENTMAP_BATCH_ID_RE = re.compile(r"^amatch_[a-f0-9]{32}$")
+
     def _validate_batch_submit_request(self, request: LLMBatchSubmitRequest) -> None:
         """
         Validate a batch submit request before any adapter call.
@@ -1602,6 +1606,26 @@ class LLMService:
                             f"batch-incompatible parameter {bad_key!r}. "
                             "Batch submissions do not support streaming."
                         )
+                if spec.request_options.get("max_tokens") == 0:
+                    raise LLMServiceError(
+                        f"spec_id={spec.spec_id!r}: request_options.max_tokens=0 "
+                        "is not supported in batch submissions. Cache pre-warm is "
+                        "incompatible with batch mode."
+                    )
+
+        # Check batch-level request_options for incompatible params (F-CRIT-1, F-MED-1).
+        if request.request_options:
+            for bad_key in self._BATCH_INCOMPATIBLE_PARAMS:
+                if bad_key in request.request_options:
+                    raise LLMServiceError(
+                        f"request_options contains batch-incompatible parameter "
+                        f"{bad_key!r}. Batch submissions do not support streaming."
+                    )
+            if request.request_options.get("max_tokens") == 0:
+                raise LLMServiceError(
+                    "request_options.max_tokens=0 is not supported in batch "
+                    "submissions. Cache pre-warm is incompatible with batch mode."
+                )
 
         if request.provider != "anthropic":
             self._logger.warning(
@@ -1684,6 +1708,26 @@ class LLMService:
                 "Cannot restore batch handle: 'provider_batch_id' is missing or "
                 "empty in the provided handle dict."
             )
+
+        # Validate provider (F-HIGH-2): only 'anthropic' handles can be restored.
+        provider = handle_data.get("provider", "")
+        if provider != "anthropic":
+            raise LLMServiceError(
+                f"Cannot restore batch handle: provider {provider!r} is not "
+                "supported. Only 'anthropic' handles can be restored."
+            )
+
+        # Validate agentmap_batch_id format (F-HIGH-2): prevent path traversal.
+        # The id must match ^amatch_[a-f0-9]{32}$ — no slashes, dots, or other
+        # path components that could escape the batch directory.
+        agentmap_batch_id = handle_data.get("agentmap_batch_id", "")
+        if not self._AGENTMAP_BATCH_ID_RE.match(agentmap_batch_id):
+            raise LLMServiceError(
+                f"Cannot restore batch handle: agentmap_batch_id "
+                f"{agentmap_batch_id!r} is invalid. Expected format: "
+                "amatch_<32 hex chars> (e.g. amatch_0a1b...c2d3)."
+            )
+
         return LLMBatchHandle.from_dict(handle_data)
 
     def poll_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
@@ -1777,6 +1821,16 @@ class LLMService:
                 f"Batch {handle.agentmap_batch_id!r} is not yet ready for result "
                 f"retrieval (current status: {handle.status.value!r}). "
                 "Poll until status == 'ended' before fetching results."
+            )
+
+        # Guard: ended handle must carry results_url for REQ-NF-002 durability
+        # (F-MED-3).  The Anthropic adapter fetches by provider_batch_id directly,
+        # but results_url is required to have been persisted on the handle so that
+        # callers can independently verify and re-fetch without re-polling.
+        if not handle.results_url:
+            raise LLMServiceError(
+                f"Batch {handle.agentmap_batch_id!r} is ended but results_url is "
+                "absent. Re-poll to refresh the handle before fetching results."
             )
 
         records = list(

@@ -81,7 +81,7 @@ def _make_handle(
 ) -> LLMBatchHandle:
     """Convenience factory for constructing handles in known states."""
     defaults = dict(
-        agentmap_batch_id="amatch_test123",
+        agentmap_batch_id="amatch_" + "a1b2c3d4" * 4,
         provider_batch_id="msgbatch_abc123",
         status=status,
         provider="anthropic",
@@ -572,6 +572,7 @@ class TestFetchBatchResults:
         handle = _make_handle(
             status=LLMBatchStatus.ENDED,
             spec_id_map=spec_id_map,
+            results_url="https://api.anthropic.com/v1/batches/batch_01/results",
         )
         # adapter returns in shuffled order: gamma, alpha, beta
         mock_adapter.fetch_results.return_value = _mock_jsonl_records(
@@ -594,6 +595,7 @@ class TestFetchBatchResults:
         handle = _make_handle(
             status=LLMBatchStatus.ENDED,
             spec_id_map=spec_id_map,
+            results_url="https://api.anthropic.com/v1/batches/batch_01/results",
         )
         mock_adapter.fetch_results.return_value = _mock_jsonl_records(
             spec_id_map,
@@ -621,6 +623,7 @@ class TestFetchBatchResults:
         handle = _make_handle(
             status=LLMBatchStatus.ENDED,
             spec_id_map=spec_id_map,
+            results_url="https://api.anthropic.com/v1/batches/batch_01/results",
         )
         mock_adapter.fetch_results.return_value = _mock_jsonl_records(
             spec_id_map,
@@ -714,7 +717,11 @@ class TestPrematureFetch:
         """fetch_batch_results on ended handle calls adapter (no guard error)."""
         service, mock_adapter, repo = _make_service()
         spec_id_map = {"s1": "s1"}
-        handle = _make_handle(status=LLMBatchStatus.ENDED, spec_id_map=spec_id_map)
+        handle = _make_handle(
+            status=LLMBatchStatus.ENDED,
+            spec_id_map=spec_id_map,
+            results_url="https://api.anthropic.com/v1/batches/batch_01/results",
+        )
         mock_adapter.fetch_results.return_value = _mock_jsonl_records(
             spec_id_map, {"s1": "succeeded"}
         )
@@ -752,3 +759,179 @@ class TestBatchIncompatibleParams:
             service.submit_batch(request)
 
         mock_adapter.submit.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for UAT-rejected defects (F-CRIT-1, F-MED-1, F-HIGH-2, F-MED-3)
+# ---------------------------------------------------------------------------
+
+
+class TestBatchLevelRequestOptionsValidation:
+    """Regression tests for F-CRIT-1 and F-MED-1.
+
+    Batch-level request.request_options must be subject to the same
+    incompatible-param validation as per-spec request_options.
+    """
+
+    def test_batch_level_stream_true_raises_before_adapter(self, tmp_path):
+        """F-CRIT-1: request.request_options={'stream': True} must raise LLMServiceError.
+
+        Previously only per-spec request_options were checked; batch-level options
+        were forwarded to the adapter unchecked.
+        """
+        service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
+
+        request = _make_batch_request(
+            specs=[_make_spec("s1")],
+            request_options={"stream": True},
+        )
+        with pytest.raises(LLMServiceError, match="stream"):
+            service.submit_batch(request)
+
+        mock_adapter.submit.assert_not_called()
+
+    def test_batch_level_max_tokens_zero_raises_before_adapter(self, tmp_path):
+        """F-MED-1: request.request_options={'max_tokens': 0} must raise LLMServiceError.
+
+        max_tokens=0 as a request_options key bypassed the request.max_tokens check.
+        """
+        service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
+
+        request = _make_batch_request(
+            specs=[_make_spec("s1")],
+            request_options={"max_tokens": 0},
+        )
+        with pytest.raises(LLMServiceError, match="max_tokens"):
+            service.submit_batch(request)
+
+        mock_adapter.submit.assert_not_called()
+
+    def test_per_spec_max_tokens_zero_in_request_options_raises_before_adapter(
+        self, tmp_path
+    ):
+        """F-MED-1: per-spec request_options={'max_tokens': 0} must also raise.
+
+        The per-spec loop checked for incompatible *keys* (stream) but not
+        for max_tokens=0 value in per-spec request_options.
+        """
+        service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
+
+        spec = _make_spec("s1", request_options={"max_tokens": 0})
+        request = _make_batch_request(specs=[spec])
+        with pytest.raises(LLMServiceError, match="max_tokens"):
+            service.submit_batch(request)
+
+        mock_adapter.submit.assert_not_called()
+
+
+class TestRestoreBatchValidation:
+    """Regression tests for F-HIGH-2 (provider + id validation in restore_batch)."""
+
+    def test_restore_with_non_anthropic_provider_raises(self):
+        """F-HIGH-2: restore_batch must reject providers other than 'anthropic'.
+
+        Previously only provider_batch_id presence was checked; any provider
+        was accepted and later sent to the Anthropic adapter incorrectly.
+        """
+        service, mock_adapter, repo = _make_service()
+
+        handle_data = {
+            "agentmap_batch_id": "amatch_" + "a" * 32,
+            "provider_batch_id": "batch_openai_abc",
+            "provider": "openai",
+            "model": "gpt-4",
+            "status": "submitted",
+            "spec_id_map": {},
+        }
+        with pytest.raises(LLMServiceError, match="openai"):
+            service.restore_batch(handle_data)
+
+    def test_restore_with_path_traversal_id_raises(self):
+        """F-HIGH-2: restore_batch must reject agentmap_batch_id containing path separators.
+
+        '../../etc/pwn' was previously accepted and later used in the file path,
+        enabling writes outside the batch directory.
+        """
+        service, mock_adapter, repo = _make_service()
+
+        handle_data = {
+            "agentmap_batch_id": "../../etc/pwn",
+            "provider_batch_id": "batch_01abc",
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-6",
+            "status": "submitted",
+            "spec_id_map": {},
+        }
+        with pytest.raises(LLMServiceError, match="agentmap_batch_id"):
+            service.restore_batch(handle_data)
+
+    def test_restore_with_invalid_id_format_raises(self):
+        """F-HIGH-2: agentmap_batch_id must match ^amatch_[a-f0-9]{32}$."""
+        service, mock_adapter, repo = _make_service()
+
+        handle_data = {
+            "agentmap_batch_id": "not_valid",
+            "provider_batch_id": "batch_01abc",
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-6",
+            "status": "submitted",
+            "spec_id_map": {},
+        }
+        with pytest.raises(LLMServiceError, match="agentmap_batch_id"):
+            service.restore_batch(handle_data)
+
+    def test_restore_with_valid_data_succeeds(self):
+        """F-HIGH-2: well-formed handle with provider=anthropic and valid id still works."""
+        service, mock_adapter, repo = _make_service()
+
+        valid_id = "amatch_" + "a" * 32
+        handle_data = {
+            "agentmap_batch_id": valid_id,
+            "provider_batch_id": "batch_01abc",
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-6",
+            "status": "submitted",
+            "spec_id_map": {},
+        }
+        handle = service.restore_batch(handle_data)
+        assert handle.agentmap_batch_id == valid_id
+
+
+class TestFetchBatchResultsEndedNoResultsUrl:
+    """Regression tests for F-MED-3 (ended + results_url=None handling)."""
+
+    def test_fetch_ended_with_results_url_none_raises(self, tmp_path):
+        """F-MED-3: fetch_batch_results on ended handle with results_url=None must raise.
+
+        Previously the status gate passed and the adapter was called without a
+        results_url, leaving results_url durability (REQ-NF-002) unverified.
+        """
+        service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
+
+        handle = _make_handle(
+            status=LLMBatchStatus.ENDED,
+            spec_id_map={"s1": "s1"},
+            results_url=None,
+        )
+        with pytest.raises(LLMServiceError, match="results_url"):
+            service.fetch_batch_results(handle)
+
+        mock_adapter.fetch_results.assert_not_called()
+
+    def test_fetch_ended_with_results_url_set_proceeds(self, tmp_path):
+        """F-MED-3 counterpart: ended handle with results_url set proceeds normally."""
+        service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
+
+        spec_id_map = {"s1": "s1"}
+        handle = _make_handle(
+            status=LLMBatchStatus.ENDED,
+            spec_id_map=spec_id_map,
+            results_url="https://api.anthropic.com/v1/batches/batch_01/results",
+        )
+        mock_adapter.fetch_results.return_value = _mock_jsonl_records(
+            spec_id_map, {"s1": "succeeded"}
+        )
+
+        results = service.fetch_batch_results(handle)
+        mock_adapter.fetch_results.assert_called_once()
+        assert len(results) == 1

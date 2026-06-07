@@ -20,7 +20,7 @@ from agentmap.models.llm_execution import (
 def _make_handle(**kwargs):
     """Convenience factory for LLMBatchHandle in known states."""
     defaults = dict(
-        agentmap_batch_id="amatch_test123",
+        agentmap_batch_id="amatch_" + "a1b2c3d4" * 4,
         provider_batch_id="msgbatch_abc123",
         status=LLMBatchStatus.IN_PROGRESS,
         provider="anthropic",
@@ -60,7 +60,7 @@ class TestLLMBatchHandleSerialization:
         """to_dict() must contain all required fields."""
         handle = _make_handle()
         result = handle.to_dict()
-        assert result["agentmap_batch_id"] == "amatch_test123"
+        assert result["agentmap_batch_id"] == "amatch_" + "a1b2c3d4" * 4
         assert result["provider_batch_id"] == "msgbatch_abc123"
         assert "spec_id_map" in result
 
@@ -210,3 +210,62 @@ class TestBatchHandleRepositoryDirCreation:
             repo.save(handle)
             expected_file = os.path.join(tmp_path, f"{handle.agentmap_batch_id}.json")
             assert os.path.exists(expected_file)
+
+
+class TestBatchHandleRepositoryPathSafety:
+    """Defense-in-depth: repository must reject path-unsafe batch ids itself.
+
+    The service layer (restore_batch) already validates restored handles, but a
+    direct or hand-constructed repository caller must not be able to traverse out
+    of the batch directory. Mirrors UAT F-HIGH-2 remediation at the repo seam.
+    """
+
+    def test_save_rejects_path_traversal_id(self):
+        from agentmap.exceptions import LLMServiceError
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            handle = _make_handle(agentmap_batch_id="../../etc/pwn")
+            try:
+                repo.save(handle)
+                assert False, "save() must reject a path-traversal agentmap_batch_id"
+            except LLMServiceError:
+                pass
+            # Nothing must have been written outside the batch dir.
+            assert not os.path.exists(os.path.join(tmp_path, "..", "..", "etc", "pwn"))
+
+    def test_save_rejects_malformed_id(self):
+        from agentmap.exceptions import LLMServiceError
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            handle = _make_handle(agentmap_batch_id="not_an_amatch_id")
+            try:
+                repo.save(handle)
+                assert False, "save() must reject a malformed agentmap_batch_id"
+            except LLMServiceError:
+                pass
+
+    def test_load_rejects_path_traversal_id(self):
+        from agentmap.exceptions import LLMServiceError
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            try:
+                repo.load("../../etc/passwd")
+                assert False, "load() must reject a path-traversal agentmap_batch_id"
+            except LLMServiceError:
+                pass
+
+    def test_save_accepts_valid_amatch_id(self):
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            valid_id = "amatch_" + "0f" * 16
+            handle = _make_handle(agentmap_batch_id=valid_id)
+            repo.save(handle)
+            assert os.path.exists(os.path.join(tmp_path, f"{valid_id}.json"))

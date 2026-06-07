@@ -681,6 +681,179 @@ Open circuits indicate a provider:model pair that has hit the failure threshold 
 
 ---
 
+## Batch Execution (Anthropic)
+
+`LLMService` exposes five additive methods for provider-native batch execution.
+Batch execution submits many independent requests to the provider in a single
+API call, which Anthropic prices at 50 % of the per-token rate.  No provider
+SDK types cross the service boundary — all callers work exclusively with
+AgentMap-owned data classes.
+
+### Configuration
+
+Add a `batch_dir` key under `llm:` in `agentmap_config.yaml`:
+
+```yaml
+llm:
+  anthropic:
+    api_key: "${ANTHROPIC_API_KEY}"
+    model: "claude-sonnet-4-6"
+  batch_dir: "agentmap_data/llm_batches"   # file-backed handle storage
+```
+
+`batch_dir` is the directory where `LLMBatchHandle` JSON files are persisted.
+The directory is created automatically if it does not exist.
+
+### Data classes
+
+| Class | Description |
+|---|---|
+| `LLMBatchSubmitRequest` | Input to `submit_batch` — provider, model, list of `LLMCallSpec`, `max_tokens` |
+| `LLMCallSpec` | Single request within a batch — `spec_id`, `messages`, optional `request_options` |
+| `LLMBatchHandle` | Returned by `submit_batch` and all lifecycle methods — serializable, no SDK types |
+| `LLMBatchResultRecord` | Per-item result keyed by `spec_id` — `status`, `content`, `usage`, `error` |
+| `LLMUsage` | Normalized token usage — `input_tokens`, `output_tokens`, optional cache fields |
+| `LLMExecutionError` | Structured error for errored items — `error_type`, `message`, `retryable` |
+
+### Normalized status values
+
+| Status | Meaning |
+|---|---|
+| `submitted` | Batch submitted; not yet processing |
+| `in_progress` | Provider is processing requests |
+| `canceling` | Cancel initiated; not yet terminal |
+| `ended` | Processing complete; results available |
+| `expired` | Batch expired before completion |
+| `failed` | Unknown or unrecognized provider status |
+
+### `spec_id` / `custom_id` mapping
+
+Anthropic requires `custom_id` values to match `^[a-zA-Z0-9_-]{1,64}$`.
+`LLMService` sanitizes spec_ids that violate this pattern using a deterministic
+SHA-1 hash and stores the `spec_id -> custom_id` map in the handle.  On
+`fetch_batch_results`, results are re-keyed by the original caller `spec_id`.
+
+### Batch lifecycle methods
+
+#### `submit_batch(request: LLMBatchSubmitRequest) -> LLMBatchHandle`
+
+Validates the request, submits to Anthropic, persists the handle to `batch_dir`,
+and returns an `LLMBatchHandle`.
+
+**Validation errors (raised before any network call):**
+- `LLMBatchUnsupportedProviderError` — provider is not `"anthropic"`
+- `LLMServiceError` — `call_specs` is empty, contains duplicate `spec_id` values,
+  or a spec has batch-incompatible `request_options` (`stream=True`, `max_tokens=0`)
+
+```python
+from agentmap.models.llm_execution import LLMBatchSubmitRequest, LLMCallSpec
+
+request = LLMBatchSubmitRequest(
+    provider="anthropic",
+    model="claude-sonnet-4-6",
+    max_tokens=1024,
+    call_specs=[
+        LLMCallSpec(spec_id="task-1", messages=[{"role": "user", "content": "Q1"}]),
+        LLMCallSpec(spec_id="task-2", messages=[{"role": "user", "content": "Q2"}]),
+    ],
+)
+handle = llm_service.submit_batch(request)
+print(handle.agentmap_batch_id)   # "amatch_..."
+print(handle.status)              # LLMBatchStatus.SUBMITTED
+```
+
+#### `restore_batch(handle_data: dict) -> LLMBatchHandle`
+
+Reconstructs an `LLMBatchHandle` from a serialized `dict` (e.g. loaded from a
+database or message queue after a process restart).  Validates that required
+fields (`provider_batch_id`, `agentmap_batch_id`, `spec_id_map`) are present.
+
+**Error:** `LLMServiceError` — required field missing from `handle_data`.
+
+```python
+# After restart — load the dict from wherever you stored it
+handle = llm_service.restore_batch(handle_data)
+```
+
+#### `poll_batch(handle: LLMBatchHandle) -> LLMBatchHandle`
+
+Queries the provider for the current processing status and returns an updated
+handle.  The returned handle's `status` is one of the six normalized values
+above.  Unknown provider statuses map to `"failed"`.
+
+```python
+updated_handle = llm_service.poll_batch(handle)
+if updated_handle.status == LLMBatchStatus.ENDED:
+    results = llm_service.fetch_batch_results(updated_handle)
+```
+
+#### `cancel_batch(handle: LLMBatchHandle) -> LLMBatchHandle`
+
+Requests cancellation from the provider and returns an updated handle.
+
+**Error:** `LLMBatchCancelNotSupportedError` — handle is already in a terminal
+state (`ended` or `expired`).  Cancellation of a batch already in `canceling`
+state is a no-op (re-triggers the provider cancel request).
+
+#### `fetch_batch_results(handle: LLMBatchHandle) -> list[LLMBatchResultRecord]`
+
+Fetches results for an `ended` batch.  Returns one `LLMBatchResultRecord` per
+`spec_id` in submission order.
+
+**Error:** `LLMBatchNotReadyError` — handle status is not `"ended"` (i.e.
+`submitted`, `in_progress`, or `canceling`).
+
+```python
+results = llm_service.fetch_batch_results(ended_handle)
+for record in results:
+    if record.status == "succeeded":
+        print(record.spec_id, record.content)
+        print(record.usage.input_tokens, record.usage.output_tokens)
+    elif record.status == "errored":
+        print(record.spec_id, record.error.error_type, record.error.message)
+    else:
+        # "canceled" or "expired"
+        print(record.spec_id, record.status)
+```
+
+### Error conditions reference
+
+| Exception | Raised by | Condition |
+|---|---|---|
+| `LLMBatchUnsupportedProviderError` | `submit_batch` | Provider is not `"anthropic"` |
+| `LLMServiceError` | `submit_batch` | Empty `call_specs`, duplicate `spec_id`, batch-incompatible params |
+| `LLMServiceError` / `ValueError` | `restore_batch` | Missing required field in `handle_data` |
+| `LLMBatchCancelNotSupportedError` | `cancel_batch` | Handle already in terminal state |
+| `LLMBatchNotReadyError` | `fetch_batch_results` | Handle status is not `"ended"` |
+| `LLMDependencyError` | Adapter init | `anthropic` package not importable |
+
+### Restore-after-restart pattern
+
+`LLMBatchHandle` is fully serializable.  Store `handle.to_dict()` to any
+persistence layer (database, Redis, S3) and reconstruct with `restore_batch`:
+
+```python
+# Process 1 — submit
+handle = llm_service.submit_batch(request)
+store_to_db(handle.agentmap_batch_id, handle.to_dict())
+
+# Process 2 — poll (different process, after restart)
+handle_data = load_from_db(agentmap_batch_id)
+handle = llm_service.restore_batch(handle_data)
+handle = llm_service.poll_batch(handle)
+```
+
+The persisted JSON file in `batch_dir` is an additional recovery path — it is
+**never written with an `api_key`** field (security requirement).
+
+### DI wiring
+
+`AnthropicBatchAdapter` and `BatchHandleRepository` are registered as singletons
+in `LLMContainer`.  No manual wiring is required when using the DI container.
+Both are injected into `LLMService` at construction time.
+
+---
+
 ## Next Steps
 
 - **[LLM Configuration](../../configuration/llm-config)** — Provider setup, resilience tuning, and routing matrix

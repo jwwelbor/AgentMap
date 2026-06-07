@@ -41,10 +41,17 @@ class TestAnthropicImportGating:
 
         # Reload the adapter module so the import guard runs fresh.
         import importlib
+        import sys
 
         import agentmap.services.llm.anthropic_batch_adapter as _mod
 
-        importlib.reload(_mod)
+        # Guard against the module having been evicted from sys.modules by
+        # another test's teardown — reload() requires the live object to be the
+        # one registered in sys.modules.
+        if sys.modules.get(_mod.__name__) is not _mod:
+            _mod = importlib.import_module(_mod.__name__)
+        else:
+            importlib.reload(_mod)
 
         with patch("builtins.__import__", side_effect=_fail_anthropic):
             with pytest.raises(LLMDependencyError):

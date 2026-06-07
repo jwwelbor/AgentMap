@@ -8,10 +8,27 @@ level and are never part of the handle.
 
 import json
 import os
+import re
 import tempfile
 from typing import Any, Dict
 
+from agentmap.exceptions import LLMServiceError
 from agentmap.models.llm_execution import LLMBatchHandle
+
+# Defense-in-depth: an agentmap_batch_id must be exactly this shape before it is
+# ever composed into a filesystem path. The service layer (restore_batch) already
+# validates restored handles, but the repository re-checks so that any direct or
+# hand-constructed caller cannot path-traverse out of the batch directory.
+_AGENTMAP_BATCH_ID_RE = re.compile(r"^amatch_[a-f0-9]{32}$")
+
+
+def _require_safe_batch_id(agentmap_batch_id: str) -> None:
+    """Reject any batch id that is not a path-safe ``amatch_<32 hex>`` token."""
+    if not _AGENTMAP_BATCH_ID_RE.match(agentmap_batch_id or ""):
+        raise LLMServiceError(
+            f"Refusing to build a batch file path from invalid agentmap_batch_id "
+            f"{agentmap_batch_id!r}. Expected format: amatch_<32 hex chars>."
+        )
 
 
 class BatchHandleRepository:
@@ -34,11 +51,12 @@ class BatchHandleRepository:
         then writes atomically via a temp file + ``os.replace`` so a crash
         mid-write cannot leave a partial/corrupt JSON file.
         """
+        _require_safe_batch_id(handle.agentmap_batch_id)
         os.makedirs(self._batch_dir, exist_ok=True)
         data = handle.to_dict()
         file_path = os.path.join(self._batch_dir, f"{handle.agentmap_batch_id}.json")
         # Atomic write: write to a temp file in the same dir, then replace.
-        dir_fd = os.open(self._batch_dir, os.O_RDONLY)
+        tmp_path = None
         try:
             with tempfile.NamedTemporaryFile(
                 mode="w",
@@ -51,16 +69,16 @@ class BatchHandleRepository:
                 json.dump(data, tmp, indent=2)
             os.replace(tmp_path, file_path)
         except Exception:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+            if tmp_path is not None:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
             raise
-        finally:
-            os.close(dir_fd)
 
     def load(self, agentmap_batch_id: str) -> LLMBatchHandle:
         """Load a handle from disk by its agentmap_batch_id."""
+        _require_safe_batch_id(agentmap_batch_id)
         file_path = os.path.join(self._batch_dir, f"{agentmap_batch_id}.json")
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
