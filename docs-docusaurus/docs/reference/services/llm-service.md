@@ -700,7 +700,7 @@ work exclusively with AgentMap-owned data classes.
 | `fetch_batch_results` / `afetch_batch_results` | Yes | Yes | Yes |
 | `wait_for_batch` | Yes | Yes | Yes |
 | `restore_batch` (cross-process handle reload) | Yes | Yes | Yes |
-| File-API submission for large batches | No | No | Yes (auto) |
+| Gemini delivery mechanism | inline | — | inline only (File API / Vertex / GCS / BigQuery are out of scope) |
 | Normalized `LLMBatchStatus` | Yes | Yes | Yes |
 | `supports_cancel` (`batch_capabilities` key) | `True` | `True` | `True` |
 
@@ -813,6 +813,76 @@ The directory is created automatically if it does not exist.
 | `LLMBatchResultRecord` | Per-item result keyed by `spec_id` — `status`, `content`, `usage`, `error` |
 | `LLMUsage` | Normalized token usage — `input_tokens`, `output_tokens`, optional cache fields |
 | `LLMExecutionError` | Structured error for errored items — `error_type`, `message`, `retryable` |
+
+### Canonical parameter resolution (D-8)
+
+`LLMBatchSubmitRequest` and each `LLMCallSpec` each expose multiple "surfaces"
+where the same logical parameter can be set:
+
+| Surface | Example |
+|---|---|
+| S1 — per-spec direct field | `spec.temperature = 0.2` |
+| S2 — per-spec `request_options` | `spec.request_options = {"temperature": 0.2}` |
+| S3 — batch-level direct field | `request.max_tokens = 1024` |
+| S4 — batch-level `request_options` | `request.request_options = {"temperature": 0.2}` |
+
+**Reserved parameters** (`temperature`, `model`, `max_tokens`) are detected across all
+applicable surfaces.  The resolution rule, applied per spec before any adapter call:
+
+- **One surface set** — that value is applied.
+- **Multiple surfaces, all equal** — applied; no error.
+- **Multiple surfaces with different values** — `LLMBatchParamConflictError` is raised,
+  naming the `spec_id`, the logical parameter, and each conflicting surface with its value.
+  Nothing is silently dropped.
+
+Pass-through keys (any `request_options` key not in the reserved list) obey the same
+rule: present in one dict → applied; present in both with the same value → applied;
+present in both with different values → `LLMBatchParamConflictError`.
+
+**Batch-incompatible params** (`stream=True`, `max_tokens=0`) are always rejected with
+`LLMServiceError`, regardless of which surface they appear on.
+
+```python
+# WRONG — same parameter on two surfaces with different values
+spec = LLMCallSpec(
+    spec_id="q1",
+    messages=[...],
+    temperature=0.2,                          # S1
+    request_options={"temperature": 0.9},     # S2 — CONFLICT
+)
+# → LLMBatchParamConflictError: spec_id='q1': conflicting values for parameter
+#     'temperature' — spec direct field=0.2, spec.request_options=0.9.
+#     Set this parameter on exactly one surface.
+
+# CORRECT — single surface
+spec = LLMCallSpec(spec_id="q1", messages=[...], temperature=0.2)
+```
+
+### Typed batch errors
+
+| Exception | When raised |
+|---|---|
+| `LLMBatchUnsupportedProviderError` | `provider` has no registered adapter (SDK absent or unconfigured) |
+| `LLMBatchParamConflictError` | Same logical parameter set on two surfaces with different values (D-8) |
+| `LLMBatchResultIntegrityError` | Gemini returned a different number of inline responses than were submitted; positional demux would misattribute results (D-9) |
+| `LLMBatchCancelNotSupportedError` | `cancel_batch` called on a terminal handle (`ended` or `expired`) |
+| `LLMBatchNotReadyError` | `fetch_batch_results` called before status is `ended` |
+| `LLMBatchExpiredError` | Operation attempted on an expired batch |
+
+All batch errors subclass `LLMServiceError`.
+
+#### `LLMBatchResultIntegrityError` — Gemini demux integrity (D-9)
+
+Gemini inline batches carry no per-response key; results are correlated by position.
+If the provider returns fewer responses than were submitted, the adapter raises
+`LLMBatchResultIntegrityError` (naming the batch id, submitted count, and returned
+count) rather than silently shifting results onto wrong `spec_id` values.
+
+When a short-tail response set is detected at the service level (result count < spec
+count after a successful fetch), missing records are synthesized as errored
+`LLMBatchResultRecord` entries with `error_type="missing_result"` so every submitted
+`spec_id` always has a corresponding record.  OpenAI and Anthropic are unaffected —
+they demux by `custom_id`/key.
 
 ### Normalized status values
 

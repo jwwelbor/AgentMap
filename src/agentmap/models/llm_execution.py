@@ -155,7 +155,7 @@ class LLMBatchSubmitRequest:
     Caller-owned submission descriptor for a provider-native batch call.
 
     ``call_specs`` must be non-empty and contain unique ``spec_id`` values.
-    ``provider`` must be ``"anthropic"`` (the only supported batch provider).
+    ``provider`` must be one of ``"anthropic"``, ``"openai"``, or ``"google"``.
     No ``api_key`` field — credentials are injected at adapter level.
     """
 

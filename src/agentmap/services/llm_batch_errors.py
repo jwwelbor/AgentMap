@@ -13,8 +13,9 @@ class LLMBatchUnsupportedProviderError(LLMServiceError):
     Raised when the caller requests batch execution for a provider that does
     not support provider-native batching.
 
-    Only ``"anthropic"`` is supported in the current implementation.
-    Raised before any network call is made.
+    Supported providers are ``"anthropic"``, ``"openai"``, and ``"google"``.
+    An adapter is absent when the required SDK is not installed or the
+    provider is not configured.  Raised before any network call is made.
     """
 
 
