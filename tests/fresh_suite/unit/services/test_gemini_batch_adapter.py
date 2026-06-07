@@ -765,3 +765,186 @@ class TestGeminiClassAttributes:
         """
         adapter = _make_adapter()
         assert adapter.supports_cancel is True
+
+
+# ---------------------------------------------------------------------------
+# T-E05-F04-010: Adapter-level serialization assertions
+# ---------------------------------------------------------------------------
+
+
+class TestGeminiSubmitSerializesResolvedParams:
+    """
+    TC-SER-G1 through TC-SER-G5: prove that resolved_params values actually
+    reach the src entries passed to client.batches.create.
+
+    Gemini adapter builds config from rp, applying max_tokens→max_output_tokens
+    rename and passing temperature and non-reserved keys through verbatim.
+
+    Counter-factual: removing the generation_config assembly in _build_src would
+    produce empty config dicts; every assertion below would fail.
+    """
+
+    def _make_adapter_and_client(self):
+        adapter = _make_adapter()
+        client_instance = adapter._client
+
+        batch_response = MagicMock()
+        batch_response.name = "batches/ser-test-001"
+        client_instance.batches.create.return_value = batch_response
+
+        return adapter, client_instance
+
+    def _extract_src(self, client_instance):
+        """Extract the src list passed to client.batches.create."""
+        call_args = client_instance.batches.create.call_args
+        if call_args.kwargs:
+            return call_args.kwargs.get("src", [])
+        return []
+
+    def test_tc_ser_g1_temperature_appears_in_src_config(self):
+        """
+        TC-SER-G1: resolved temperature=0.6 must appear in src[i].config
+        for the corresponding spec entry.
+
+        Counter-factual: removing generation_config["temperature"] = rp["temperature"]
+        leaves config with no temperature key.
+        """
+        from agentmap.models.llm_execution import LLMCallSpec
+
+        adapter, client_instance = self._make_adapter_and_client()
+
+        spec = LLMCallSpec(
+            spec_id="spec-temp", messages=[{"role": "user", "content": "hi"}]
+        )
+        resolved_params = [
+            {"model": "gemini-2.0-flash", "max_tokens": 256, "temperature": 0.6}
+        ]
+
+        adapter.submit(specs=[spec], resolved_params=resolved_params)
+
+        src = self._extract_src(client_instance)
+        assert len(src) == 1
+        config = src[0]["config"]
+        assert "temperature" in config, (
+            "temperature must appear in src[0].config — "
+            "counter-factual: removing config assembly drops this key"
+        )
+        assert config["temperature"] == 0.6
+
+    def test_tc_ser_g2_max_tokens_renamed_to_max_output_tokens(self):
+        """
+        TC-SER-G2: resolved max_tokens must be renamed to max_output_tokens
+        in src[i].config (Gemini-specific rename applied by _build_src).
+
+        Counter-factual: removing the rename produces max_tokens key instead of
+        max_output_tokens, which the Gemini SDK would reject.
+        """
+        from agentmap.models.llm_execution import LLMCallSpec
+
+        adapter, client_instance = self._make_adapter_and_client()
+
+        spec = LLMCallSpec(
+            spec_id="spec-maxtok", messages=[{"role": "user", "content": "hi"}]
+        )
+        resolved_params = [{"model": "gemini-2.0-flash", "max_tokens": 512}]
+
+        adapter.submit(specs=[spec], resolved_params=resolved_params)
+
+        src = self._extract_src(client_instance)
+        config = src[0]["config"]
+        assert (
+            "max_output_tokens" in config
+        ), "max_tokens must be renamed to max_output_tokens in Gemini src config"
+        assert config["max_output_tokens"] == 512
+        assert (
+            "max_tokens" not in config
+        ), "max_tokens (unrenamed) must NOT appear in Gemini src config"
+
+    def test_tc_ser_g3_passthrough_key_appears_in_src_config(self):
+        """
+        TC-SER-G3: a non-reserved passthrough key (top_k=40) must appear
+        verbatim in src[i].config.
+
+        Proves non-conflicting request_options fills reach the Gemini payload.
+        """
+        from agentmap.models.llm_execution import LLMCallSpec
+
+        adapter, client_instance = self._make_adapter_and_client()
+
+        spec = LLMCallSpec(
+            spec_id="spec-passthrough", messages=[{"role": "user", "content": "hi"}]
+        )
+        resolved_params = [
+            {"model": "gemini-2.0-flash", "max_tokens": 100, "top_k": 40}
+        ]
+
+        adapter.submit(specs=[spec], resolved_params=resolved_params)
+
+        src = self._extract_src(client_instance)
+        config = src[0]["config"]
+        assert "top_k" in config, (
+            "passthrough key top_k must appear in Gemini src config — "
+            "proves non-reserved request_options fills are applied"
+        )
+        assert config["top_k"] == 40
+
+    def test_tc_ser_g4_model_not_leaked_into_config(self):
+        """
+        TC-SER-G4: the model key must NOT appear in src[i].config.
+
+        Model is passed as a batch-level argument to batches.create(model=...);
+        _build_src explicitly excludes it from generation_config.
+        """
+        from agentmap.models.llm_execution import LLMCallSpec
+
+        adapter, client_instance = self._make_adapter_and_client()
+
+        spec = LLMCallSpec(
+            spec_id="spec-nomodel", messages=[{"role": "user", "content": "hi"}]
+        )
+        resolved_params = [
+            {"model": "gemini-2.0-flash", "max_tokens": 64, "temperature": 0.5}
+        ]
+
+        adapter.submit(specs=[spec], resolved_params=resolved_params)
+
+        src = self._extract_src(client_instance)
+        config = src[0]["config"]
+        assert (
+            "model" not in config
+        ), "model must not leak into src[i].config — it belongs at batch level only"
+
+    def test_tc_ser_g5_params_appear_on_correct_spec_by_position(self):
+        """
+        TC-SER-G5: per-spec params must land at the correct positional index,
+        not bleed across entries.
+
+        Two specs with different temperatures; verify each src[i].config carries
+        only its own value (Gemini uses positional demux).
+        """
+        from agentmap.models.llm_execution import LLMCallSpec
+
+        adapter, client_instance = self._make_adapter_and_client()
+
+        spec_a = LLMCallSpec(
+            spec_id="spec-a", messages=[{"role": "user", "content": "a"}]
+        )
+        spec_b = LLMCallSpec(
+            spec_id="spec-b", messages=[{"role": "user", "content": "b"}]
+        )
+        resolved_params = [
+            {"model": "gemini-2.0-flash", "max_tokens": 100, "temperature": 0.15},
+            {"model": "gemini-2.0-flash", "max_tokens": 100, "temperature": 0.85},
+        ]
+
+        adapter.submit(specs=[spec_a, spec_b], resolved_params=resolved_params)
+
+        src = self._extract_src(client_instance)
+        assert len(src) == 2
+
+        assert (
+            src[0]["config"]["temperature"] == 0.15
+        ), "src[0] must carry temperature=0.15 (spec-a), not spec-b's 0.85"
+        assert (
+            src[1]["config"]["temperature"] == 0.85
+        ), "src[1] must carry temperature=0.85 (spec-b), not spec-a's 0.15"

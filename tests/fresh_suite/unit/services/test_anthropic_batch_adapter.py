@@ -2,6 +2,10 @@
 Unit tests for AnthropicBatchAdapter.
 
 Covers:
+- TC-SER-A1: resolved temperature appears in requests[i].params on the correct spec
+- TC-SER-A2: resolved max_tokens appears in requests[i].params on the correct spec
+- TC-SER-A3: passthrough (non-reserved) request_options key appears in params
+- TC-SER-A4: per-spec params appear only on the correct custom_id (not every entry)
 - TC-AC8-03: LLMDependencyError raised when anthropic package not importable
 - TC-AC8-04: cache_control blocks pass through to Anthropic SDK unchanged
 - TC-AC5-05: spec_id requiring sanitization is correctly demuxed via custom_id
@@ -25,7 +29,9 @@ def _make_mock_anthropic_module():
     return mock_sdk, client_instance
 
 
-def _make_resolved(specs, model="claude-sonnet-4-6", max_tokens=100, request_options=None):
+def _make_resolved(
+    specs, model="claude-sonnet-4-6", max_tokens=100, request_options=None
+):
     """Build a resolved_params list from old-style args (test helper only)."""
     rp = {"model": model, "max_tokens": max_tokens}
     if request_options:
@@ -742,9 +748,7 @@ class TestSubmitMalformedSDKResponse:
         with patch.dict(sys.modules, {"anthropic": mock_sdk}):
             adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
             specs_single = [
-                LLMCallSpec(
-                    spec_id="s1", messages=[{"role": "user", "content": "hi"}]
-                )
+                LLMCallSpec(spec_id="s1", messages=[{"role": "user", "content": "hi"}])
             ]
             with pytest.raises(LLMServiceError):
                 adapter.submit(
@@ -938,3 +942,166 @@ class TestFetchResultsResultRef:
             )
         sig = inspect.signature(AnthropicBatchAdapter.fetch_results)
         assert sig.parameters["result_ref"].default is None
+
+
+# ---------------------------------------------------------------------------
+# T-E05-F04-010: Adapter-level serialization assertions
+# ---------------------------------------------------------------------------
+
+
+class TestAnthropicSubmitSerializesResolvedParams:
+    """
+    TC-SER-A1 through TC-SER-A4: prove that resolved_params values actually
+    reach the dict passed to client.messages.batches.create(requests=...).
+
+    The adapter builds ``params = {"messages": ...}`` then calls
+    ``params.update(rp)`` for each spec, so temperature/max_tokens/passthroughs
+    all end up nested inside ``requests[i]["params"]``.
+
+    Counter-factual: removing the ``params.update(rp)`` line would make every
+    assertion below fail, which is what we want.
+    """
+
+    def _make_adapter_and_client(self):
+        """Return (adapter, client_instance) with SDK mocked."""
+        from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
+
+        client_instance = MagicMock()
+        mock_sdk = MagicMock()
+        mock_sdk.Anthropic.return_value = client_instance
+
+        batch_response = MagicMock()
+        batch_response.id = "msgbatch_ser_test"
+        batch_response.expires_at = None
+        client_instance.messages.batches.create.return_value = batch_response
+
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
+        return adapter, client_instance
+
+    def _extract_requests(self, client_instance):
+        """Pull the ``requests`` list from the last batches.create call."""
+        call_args = client_instance.messages.batches.create.call_args
+        # submit calls create(requests=requests)
+        if call_args.kwargs:
+            return call_args.kwargs.get("requests", [])
+        return call_args.args[0] if call_args.args else []
+
+    def test_tc_ser_a1_temperature_appears_in_correct_spec_params(self):
+        """
+        TC-SER-A1: resolved temperature=0.7 must appear in requests[i].params
+        on the exact spec that was submitted with that value.
+
+        Counter-factual: if update(rp) is removed, params has no temperature key.
+        """
+        from agentmap.models.llm_execution import LLMCallSpec
+
+        adapter, client_instance = self._make_adapter_and_client()
+
+        spec = LLMCallSpec(
+            spec_id="spec-temp", messages=[{"role": "user", "content": "hi"}]
+        )
+        resolved_params = [
+            {"model": "claude-3-5-haiku", "max_tokens": 512, "temperature": 0.7}
+        ]
+
+        adapter.submit(specs=[spec], resolved_params=resolved_params)
+
+        requests = self._extract_requests(client_instance)
+        assert len(requests) == 1
+        entry = requests[0]
+        assert isinstance(entry, dict), "Each request entry must be a dict"
+        params = entry["params"]
+        assert "temperature" in params, (
+            "temperature must be serialized into requests[0].params — "
+            "counter-factual: removing params.update(rp) would drop this key"
+        )
+        assert params["temperature"] == 0.7
+
+    def test_tc_ser_a2_max_tokens_appears_in_correct_spec_params(self):
+        """
+        TC-SER-A2: resolved max_tokens=256 must appear in requests[i].params
+        on the correct spec entry.
+        """
+        from agentmap.models.llm_execution import LLMCallSpec
+
+        adapter, client_instance = self._make_adapter_and_client()
+
+        spec = LLMCallSpec(
+            spec_id="spec-maxtok", messages=[{"role": "user", "content": "hi"}]
+        )
+        resolved_params = [{"model": "claude-3-5-haiku", "max_tokens": 256}]
+
+        adapter.submit(specs=[spec], resolved_params=resolved_params)
+
+        requests = self._extract_requests(client_instance)
+        params = requests[0]["params"]
+        assert "max_tokens" in params, "max_tokens must appear in SDK request params"
+        assert params["max_tokens"] == 256
+
+    def test_tc_ser_a3_passthrough_key_appears_in_correct_spec_params(self):
+        """
+        TC-SER-A3: a non-reserved key in resolved_params (simulating a
+        passthrough from request_options) must appear verbatim in params.
+
+        We use ``top_p=0.95`` as the passthrough — it is not in RESERVED_PARAMS
+        and therefore flows through as-is after central resolution.
+        """
+        from agentmap.models.llm_execution import LLMCallSpec
+
+        adapter, client_instance = self._make_adapter_and_client()
+
+        spec = LLMCallSpec(
+            spec_id="spec-passthrough", messages=[{"role": "user", "content": "hi"}]
+        )
+        resolved_params = [
+            {"model": "claude-3-5-haiku", "max_tokens": 100, "top_p": 0.95}
+        ]
+
+        adapter.submit(specs=[spec], resolved_params=resolved_params)
+
+        requests = self._extract_requests(client_instance)
+        params = requests[0]["params"]
+        assert "top_p" in params, (
+            "passthrough key top_p must appear in SDK request params — "
+            "proves non-reserved request_options fills are applied"
+        )
+        assert params["top_p"] == 0.95
+
+    def test_tc_ser_a4_params_appear_on_correct_spec_not_all(self):
+        """
+        TC-SER-A4: per-spec resolved params must land on the RIGHT spec entry
+        (matched by custom_id), not bleed into every entry.
+
+        Two specs with different temperatures; verify each entry has only its own value.
+        """
+        from agentmap.models.llm_execution import LLMCallSpec
+
+        adapter, client_instance = self._make_adapter_and_client()
+
+        spec_a = LLMCallSpec(
+            spec_id="spec-a", messages=[{"role": "user", "content": "a"}]
+        )
+        spec_b = LLMCallSpec(
+            spec_id="spec-b", messages=[{"role": "user", "content": "b"}]
+        )
+        resolved_params = [
+            {"model": "claude-3-5-haiku", "max_tokens": 100, "temperature": 0.2},
+            {"model": "claude-3-5-haiku", "max_tokens": 100, "temperature": 0.9},
+        ]
+
+        adapter.submit(specs=[spec_a, spec_b], resolved_params=resolved_params)
+
+        requests = self._extract_requests(client_instance)
+        assert len(requests) == 2
+
+        # Build map: custom_id -> params
+        by_custom_id = {r["custom_id"]: r["params"] for r in requests}
+
+        # spec-a is clean — custom_id == spec-a
+        assert (
+            by_custom_id["spec-a"]["temperature"] == 0.2
+        ), "spec-a must carry its own temperature=0.2, not spec-b's 0.9"
+        assert (
+            by_custom_id["spec-b"]["temperature"] == 0.9
+        ), "spec-b must carry its own temperature=0.9, not spec-a's 0.2"

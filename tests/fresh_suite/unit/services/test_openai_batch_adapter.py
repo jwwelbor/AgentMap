@@ -183,7 +183,8 @@ class TestSubmit:
 
         specs = [_make_spec("s1"), _make_spec("s2")]
         batch_id, spec_id_map, expires_at = adapter.submit(
-            specs, resolved_params=_make_resolved(specs, model="gpt-4o", max_tokens=1024)
+            specs,
+            resolved_params=_make_resolved(specs, model="gpt-4o", max_tokens=1024),
         )
 
         # files.create must be called once
@@ -613,3 +614,156 @@ class TestCancel:
         adapter, _ = _make_adapter(client_instance=ci)
         adapter.cancel("batch-to-cancel")
         ci.batches.cancel.assert_called_once_with("batch-to-cancel")
+
+
+# ---------------------------------------------------------------------------
+# T-E05-F04-010: Adapter-level serialization assertions
+# ---------------------------------------------------------------------------
+
+
+class TestOpenAISubmitSerializesResolvedParams:
+    """
+    TC-SER-O1 through TC-SER-O4: prove that resolved_params values actually
+    reach the JSONL body lines staged via files.create.
+
+    OpenAI adapter builds body = {"messages": ...}; body.update(rp), so
+    temperature/max_tokens/passthroughs all end up inside body of each JSONL line.
+
+    Counter-factual: removing body.update(rp) in _build_jsonl would drop all
+    these keys and make every assertion below fail.
+    """
+
+    def _make_adapter_and_client(self):
+        mock_sdk, client_instance = _make_mock_openai_module()
+
+        batch_response = MagicMock()
+        batch_response.id = "batch_ser_test"
+        batch_response.expires_at = None
+        client_instance.batches.create.return_value = batch_response
+
+        file_response = MagicMock()
+        file_response.id = "file-ser-001"
+        client_instance.files.create.return_value = file_response
+
+        adapter, ci = _make_adapter(client_instance=client_instance)
+        return adapter, ci
+
+    def _extract_jsonl_bodies(self, client_instance):
+        """Parse the JSONL bytes passed to files.create and return list of body dicts."""
+        call_args = client_instance.files.create.call_args
+        # files.create(file=("batch_requests.jsonl", jsonl_bytes), purpose="batch")
+        if call_args.kwargs:
+            file_arg = call_args.kwargs.get("file")
+        else:
+            file_arg = call_args.args[0] if call_args.args else None
+
+        if isinstance(file_arg, tuple):
+            jsonl_bytes = file_arg[1]
+        else:
+            jsonl_bytes = file_arg
+
+        import json as _json
+
+        bodies = []
+        for line in jsonl_bytes.split(b"\n"):
+            line = line.strip()
+            if line:
+                record = _json.loads(line)
+                bodies.append(record)
+        return bodies
+
+    def test_tc_ser_o1_temperature_appears_in_jsonl_body(self):
+        """
+        TC-SER-O1: resolved temperature=0.3 must appear in the JSONL body
+        of the corresponding line staged via files.create.
+
+        Counter-factual: removing body.update(rp) leaves body with only
+        'messages' key; temperature would be missing.
+        """
+        adapter, client_instance = self._make_adapter_and_client()
+
+        spec = _make_spec("spec-temp")
+        resolved_params = [{"model": "gpt-4o", "max_tokens": 512, "temperature": 0.3}]
+
+        adapter.submit(specs=[spec], resolved_params=resolved_params)
+
+        bodies = self._extract_jsonl_bodies(client_instance)
+        assert len(bodies) == 1
+        body = bodies[0]["body"]
+        assert "temperature" in body, (
+            "temperature must be serialized into the JSONL body — "
+            "counter-factual: removing body.update(rp) drops this key"
+        )
+        assert body["temperature"] == 0.3
+
+    def test_tc_ser_o2_max_tokens_appears_in_jsonl_body(self):
+        """
+        TC-SER-O2: resolved max_tokens=128 must appear in the JSONL body.
+        """
+        adapter, client_instance = self._make_adapter_and_client()
+
+        spec = _make_spec("spec-maxtok")
+        resolved_params = [{"model": "gpt-4o", "max_tokens": 128}]
+
+        adapter.submit(specs=[spec], resolved_params=resolved_params)
+
+        bodies = self._extract_jsonl_bodies(client_instance)
+        body = bodies[0]["body"]
+        assert "max_tokens" in body, "max_tokens must appear in JSONL body"
+        assert body["max_tokens"] == 128
+
+    def test_tc_ser_o3_passthrough_key_appears_in_jsonl_body(self):
+        """
+        TC-SER-O3: a non-reserved passthrough key (frequency_penalty=0.3)
+        from resolved_params must appear verbatim in the JSONL body.
+
+        Proves non-conflicting request_options fills reach the payload.
+        """
+        adapter, client_instance = self._make_adapter_and_client()
+
+        spec = _make_spec("spec-passthrough")
+        resolved_params = [
+            {"model": "gpt-4o", "max_tokens": 100, "frequency_penalty": 0.3}
+        ]
+
+        adapter.submit(specs=[spec], resolved_params=resolved_params)
+
+        bodies = self._extract_jsonl_bodies(client_instance)
+        body = bodies[0]["body"]
+        assert "frequency_penalty" in body, (
+            "passthrough key frequency_penalty must appear in JSONL body — "
+            "proves non-reserved request_options fills are applied"
+        )
+        assert body["frequency_penalty"] == 0.3
+
+    def test_tc_ser_o4_params_appear_on_correct_spec_not_all(self):
+        """
+        TC-SER-O4: per-spec params must land on the RIGHT JSONL line
+        (matched by custom_id), not bleed into every line.
+
+        Two specs with different temperatures; verify each line carries only its
+        own value.
+        """
+        adapter, client_instance = self._make_adapter_and_client()
+
+        spec_a = _make_spec("spec-a")
+        spec_b = _make_spec("spec-b")
+        resolved_params = [
+            {"model": "gpt-4o", "max_tokens": 100, "temperature": 0.1},
+            {"model": "gpt-4o", "max_tokens": 100, "temperature": 0.8},
+        ]
+
+        adapter.submit(specs=[spec_a, spec_b], resolved_params=resolved_params)
+
+        bodies = self._extract_jsonl_bodies(client_instance)
+        assert len(bodies) == 2
+
+        # Build map: custom_id -> body
+        by_custom_id = {r["custom_id"]: r["body"] for r in bodies}
+
+        assert (
+            by_custom_id["spec-a"]["temperature"] == 0.1
+        ), "spec-a JSONL line must carry temperature=0.1, not spec-b's 0.8"
+        assert (
+            by_custom_id["spec-b"]["temperature"] == 0.8
+        ), "spec-b JSONL line must carry temperature=0.8, not spec-a's 0.1"
