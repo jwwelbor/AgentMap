@@ -13,6 +13,7 @@ Covers:
 """
 
 import builtins
+import datetime
 import re
 import sys
 from unittest.mock import MagicMock, patch
@@ -905,6 +906,18 @@ class TestNormalizedPoll:
         assert isinstance(result.request_counts, LLMBatchRequestCounts)
         assert result.request_counts.processing == 1
         assert result.request_counts.succeeded == 2
+
+    def test_poll_converts_ended_at_datetime_to_iso_string(self):
+        adapter = _make_adapter()
+        batch = self._make_batch_response("ended", results_url="https://example.com/r")
+        batch.ended_at = datetime.datetime(
+            2026, 6, 8, 14, 45, tzinfo=datetime.timezone.utc
+        )
+        adapter._client.messages.batches.retrieve.return_value = batch
+
+        result = adapter.poll("batch-123")
+
+        assert result.ended_at == "2026-06-08T14:45:00+00:00"
 
 
 class TestFetchResultsResultRef:

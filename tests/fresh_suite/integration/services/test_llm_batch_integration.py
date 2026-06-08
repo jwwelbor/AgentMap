@@ -37,6 +37,14 @@ from agentmap.models.llm_execution import (
 )
 from agentmap.services.llm_batch_repository import BatchHandleRepository
 from agentmap.services.llm_service import LLMService
+from agentmap.services.telemetry.constants import (
+    METRIC_DIM_BATCH_STATUS,
+    METRIC_DIM_PROVIDER,
+    METRIC_LLM_BATCH_CANCEL_COUNT,
+    METRIC_LLM_BATCH_POLL_COUNT,
+    METRIC_LLM_BATCH_RESULTS_FETCHED_COUNT,
+    METRIC_LLM_BATCH_SUBMITTED_COUNT,
+)
 from tests.utils.mock_service_factory import MockServiceFactory
 
 _ANTHROPIC_STATUS_MAP = {
@@ -564,30 +572,66 @@ class TestInt05DIContainerWiring:
     at sys.modules level so no real SDK or network call is made.
     """
 
+    def _make_container(self, tmp_path, api_key="test-key", telemetry_service=None):
+        import sys
+        from unittest.mock import patch
+
+        from dependency_injector import providers
+
+        from agentmap.di.container_parts.llm import LLMContainer
+
+        mock_sdk = MagicMock()
+        mock_sdk.Anthropic.return_value = MagicMock()
+        mock_logging = MockServiceFactory.create_mock_logging_service()
+        mock_app_config = MockServiceFactory.create_mock_app_config_service()
+        mock_app_config.get_llm_config.side_effect = lambda provider: {
+            "api_key": api_key if provider == "anthropic" else "",
+            "model": "claude-sonnet-4-6",
+        }
+        mock_app_config.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {"failure_threshold": 5, "reset_timeout": 60},
+        }
+        mock_app_config.get_routing_config.return_value = {
+            "enabled": False,
+            "routing_matrix": {},
+            "task_types": {},
+            "complexity_analysis": {},
+            "cost_optimization": {},
+            "fallback": {},
+            "performance": {},
+            "activities": {},
+        }
+        mock_app_config.get_value.side_effect = lambda key, default=None: (
+            str(tmp_path) if key == "llm.batch_dir" else default
+        )
+        mock_models = MockServiceFactory.create_mock_llm_models_config_service()
+        mock_features_registry = MagicMock()
+        mock_availability_cache = MagicMock()
+        telemetry_provider = providers.Object(telemetry_service)
+
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            return LLMContainer(
+                app_config_service=providers.Object(mock_app_config),
+                logging_service=providers.Object(mock_logging),
+                availability_cache_service=providers.Object(mock_availability_cache),
+                features_registry_service=providers.Object(mock_features_registry),
+                llm_models_config_service=providers.Object(mock_models),
+                telemetry_service=telemetry_provider,
+            )
+
     def test_di_container_wires_batch_adapter_and_repo_as_singletons(self, tmp_path):
         """
         Container resolves LLMService; _batch_adapter and _batch_repo attributes
         are non-None singletons.
         """
-        import sys
-        from unittest.mock import MagicMock, patch
-
-        from agentmap.di import initialize_di_for_testing
-
-        # Patch anthropic SDK at module level so adapter init does not fail
-        mock_sdk = MagicMock()
-        mock_sdk.Anthropic.return_value = MagicMock()
-
-        config_overrides = {
-            "llm": {
-                "anthropic": {"api_key": "test-key", "model": "claude-sonnet-4-6"},
-                "batch_dir": str(tmp_path),
-            }
-        }
-
-        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
-            container = initialize_di_for_testing(config_overrides=config_overrides)
-            llm_service = container.llm_service()
+        container = self._make_container(tmp_path, api_key="test-key")
+        llm_service = container.llm_service()
 
         assert llm_service is not None
         assert isinstance(llm_service, LLMService)
@@ -605,25 +649,9 @@ class TestInt05DIContainerWiring:
         Resolving LLMService twice must yield the same _batch_adapter instance
         (singleton scope wired through LLMContainer).
         """
-        import sys
-        from unittest.mock import patch
-
-        from agentmap.di import initialize_di_for_testing
-
-        mock_sdk = MagicMock()
-        mock_sdk.Anthropic.return_value = MagicMock()
-
-        config_overrides = {
-            "llm": {
-                "anthropic": {"api_key": "test-key", "model": "claude-sonnet-4-6"},
-                "batch_dir": str(tmp_path),
-            }
-        }
-
-        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
-            container = initialize_di_for_testing(config_overrides=config_overrides)
-            svc1 = container.llm_service()
-            svc2 = container.llm_service()
+        container = self._make_container(tmp_path, api_key="test-key")
+        svc1 = container.llm_service()
+        svc2 = container.llm_service()
 
         # Both calls must return the same singleton service
         assert svc1 is svc2, "llm_service must be a singleton"
@@ -637,29 +665,126 @@ class TestInt05DIContainerWiring:
         Resolving LLMService twice must yield the same _batch_repo instance
         (singleton scope wired through LLMContainer).
         """
-        import sys
-        from unittest.mock import patch
-
-        from agentmap.di import initialize_di_for_testing
-
-        mock_sdk = MagicMock()
-        mock_sdk.Anthropic.return_value = MagicMock()
-
-        config_overrides = {
-            "llm": {
-                "anthropic": {"api_key": "test-key", "model": "claude-sonnet-4-6"},
-                "batch_dir": str(tmp_path),
-            }
-        }
-
-        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
-            container = initialize_di_for_testing(config_overrides=config_overrides)
-            svc1 = container.llm_service()
-            svc2 = container.llm_service()
+        container = self._make_container(tmp_path, api_key="test-key")
+        svc1 = container.llm_service()
+        svc2 = container.llm_service()
 
         assert (
             svc1._batch_repo is svc2._batch_repo
         ), "batch_handle_repository must be a singleton"
+
+    def test_di_container_skips_anthropic_batch_adapter_when_api_key_empty(
+        self, tmp_path
+    ):
+        """Anthropic batch adapter should not register when the configured API key is empty."""
+        container = self._make_container(tmp_path, api_key="")
+        llm_service = container.llm_service()
+
+        assert llm_service._batch_adapters.get("anthropic") is None
+
+    def test_di_container_wires_batch_counters_and_records_lifecycle_metrics(
+        self, tmp_path
+    ):
+        """Batch lifecycle operations should create and increment the dedicated telemetry counters."""
+        from unittest.mock import Mock
+
+        mock_telemetry = Mock()
+        counters = {
+            METRIC_LLM_BATCH_SUBMITTED_COUNT: Mock(),
+            METRIC_LLM_BATCH_POLL_COUNT: Mock(),
+            METRIC_LLM_BATCH_RESULTS_FETCHED_COUNT: Mock(),
+            METRIC_LLM_BATCH_CANCEL_COUNT: Mock(),
+        }
+        mock_telemetry.create_counter.side_effect = lambda name, **kwargs: counters.get(
+            name, Mock()
+        )
+        mock_telemetry.create_histogram.return_value = Mock()
+        mock_telemetry.create_up_down_counter.return_value = Mock()
+        container = self._make_container(
+            tmp_path, api_key="test-key", telemetry_service=mock_telemetry
+        )
+        llm_service = container.llm_service()
+
+        adapter = MagicMock()
+        adapter.provider_name = "anthropic"
+        adapter.supports_cancel = True
+        adapter.submit.return_value = (
+            "msgbatch_metric001",
+            {"s1": "s1"},
+            "2026-06-09T00:00:00Z",
+        )
+        adapter.poll.side_effect = [
+            BatchPollResult(
+                status=LLMBatchStatus.IN_PROGRESS,
+                request_counts=LLMBatchRequestCounts(
+                    processing=1,
+                    succeeded=0,
+                    errored=0,
+                    canceled=0,
+                    expired=0,
+                ),
+            ),
+            BatchPollResult(
+                status=LLMBatchStatus.ENDED,
+                request_counts=LLMBatchRequestCounts(
+                    processing=0,
+                    succeeded=1,
+                    errored=0,
+                    canceled=0,
+                    expired=0,
+                ),
+                results_url="https://example.com/results",
+            ),
+        ]
+        adapter.fetch_results.return_value = [_make_succeeded_record("s1")]
+        llm_service._batch_adapters["anthropic"] = adapter
+
+        handle = llm_service.submit_batch(_make_batch_request(specs=[_make_spec("s1")]))
+        polled = llm_service.poll_batch(handle)
+        llm_service.fetch_batch_results(
+            _make_handle(
+                status=LLMBatchStatus.ENDED,
+                request_id_map=polled.request_id_map,
+                results_url="https://example.com/results",
+            )
+        )
+        llm_service.cancel_batch(
+            _make_handle(
+                status=LLMBatchStatus.IN_PROGRESS,
+                request_id_map=polled.request_id_map,
+            )
+        )
+
+        created_counter_names = [
+            call.args[0] for call in mock_telemetry.create_counter.call_args_list
+        ]
+        assert METRIC_LLM_BATCH_SUBMITTED_COUNT in created_counter_names
+        assert METRIC_LLM_BATCH_POLL_COUNT in created_counter_names
+        assert METRIC_LLM_BATCH_RESULTS_FETCHED_COUNT in created_counter_names
+        assert METRIC_LLM_BATCH_CANCEL_COUNT in created_counter_names
+
+        counters[METRIC_LLM_BATCH_SUBMITTED_COUNT].add.assert_called_once_with(
+            1,
+            {
+                METRIC_DIM_PROVIDER: "anthropic",
+                METRIC_DIM_BATCH_STATUS: LLMBatchStatus.SUBMITTED.value,
+            },
+        )
+        assert counters[METRIC_LLM_BATCH_POLL_COUNT].add.call_count == 2
+        counters[METRIC_LLM_BATCH_RESULTS_FETCHED_COUNT].add.assert_called_once_with(
+            1,
+            {
+                METRIC_DIM_PROVIDER: "anthropic",
+                METRIC_DIM_BATCH_STATUS: LLMBatchStatus.ENDED.value,
+            },
+        )
+        counters[METRIC_LLM_BATCH_CANCEL_COUNT].add.assert_called_once_with(
+            1,
+            {
+                METRIC_DIM_PROVIDER: "anthropic",
+                METRIC_DIM_BATCH_STATUS: LLMBatchStatus.IN_PROGRESS.value,
+            },
+        )
 
 
 # ---------------------------------------------------------------------------

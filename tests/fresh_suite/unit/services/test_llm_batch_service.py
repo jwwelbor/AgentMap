@@ -381,6 +381,37 @@ class TestRestoreBatch:
 
         mock_adapter.poll.assert_not_called()
 
+    def test_restore_bad_status_raises_llm_service_error(self):
+        """restore_batch should wrap invalid enum payloads as LLMServiceError."""
+        service, mock_adapter, repo = _make_service()
+
+        with pytest.raises(LLMServiceError, match="Cannot restore batch handle"):
+            service.restore_batch(
+                {
+                    "agentmap_batch_id": "amatch_" + "a" * 32,
+                    "provider_batch_id": "msgbatch_abc123",
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-6",
+                    "status": "not-a-real-status",
+                    "request_id_map": {"s1": "s1"},
+                }
+            )
+
+    def test_restore_missing_status_raises_llm_service_error(self):
+        """restore_batch should wrap missing required fields as LLMServiceError."""
+        service, mock_adapter, repo = _make_service()
+
+        with pytest.raises(LLMServiceError, match="Cannot restore batch handle"):
+            service.restore_batch(
+                {
+                    "agentmap_batch_id": "amatch_" + "a" * 32,
+                    "provider_batch_id": "msgbatch_abc123",
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-6",
+                    "request_id_map": {"s1": "s1"},
+                }
+            )
+
 
 # ---------------------------------------------------------------------------
 # AC-3: Status mapping
@@ -1484,6 +1515,25 @@ class TestSyncAndAsyncSurfaces:
             )
 
         assert result.status == LLMBatchStatus.ENDED
+
+    @pytest.mark.asyncio
+    async def test_submit_and_wait_inside_running_loop_raises_before_submit(
+        self, tmp_path
+    ):
+        """submit_and_wait must reject active event loops before submitting a batch."""
+        service, adapters, repo = _make_registry_service(batch_dir=str(tmp_path))
+
+        with patch.object(service, "submit_batch") as submit_batch:
+            with pytest.raises(
+                LLMServiceError, match="cannot run inside an active event loop"
+            ):
+                service.submit_and_wait(
+                    _make_batch_request(provider="anthropic", specs=[_make_spec("s1")]),
+                    poll_interval=0.01,
+                    timeout=1.0,
+                )
+
+        submit_batch.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

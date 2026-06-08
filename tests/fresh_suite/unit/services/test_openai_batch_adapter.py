@@ -13,6 +13,7 @@ Covers:
 """
 
 import builtins
+import datetime
 import importlib
 import json
 import sys
@@ -302,7 +303,9 @@ class TestFetchResults:
     def _setup_files_content(self, ci, jsonl_records):
         """Wire ci.files.content to return mock JSONL."""
         mock_resp = MagicMock()
-        mock_resp.content = _jsonl_bytes(jsonl_records)
+        raw_bytes = _jsonl_bytes(jsonl_records)
+        mock_resp.content = raw_bytes
+        mock_resp.iter_lines.return_value = iter(raw_bytes.split(b"\n"))
         ci.files.content.return_value = mock_resp
 
     def test_fetch_results_demuxes_by_custom_id_not_position(self):
@@ -521,6 +524,45 @@ class TestFetchResults:
         # as long as it doesn't raise
         assert isinstance(results, list)
 
+    def test_fetch_results_streams_via_iter_lines(self):
+        """fetch_results should stream JSONL lines without reading a full content buffer."""
+        ci = MagicMock()
+        line = json.dumps(
+            {
+                "id": "r1",
+                "custom_id": "cid1",
+                "response": {
+                    "status_code": 200,
+                    "body": {
+                        "choices": [{"message": {"content": "streamed"}}],
+                        "usage": {
+                            "prompt_tokens": 3,
+                            "completion_tokens": 4,
+                            "total_tokens": 7,
+                        },
+                        "model": "gpt-4o",
+                    },
+                },
+                "error": None,
+            }
+        ).encode("utf-8")
+        mock_resp = MagicMock()
+        mock_resp.iter_lines.return_value = iter([line])
+        type(mock_resp).content = property(
+            lambda self: (_ for _ in ()).throw(
+                AssertionError("content should not be read")
+            )
+        )
+        ci.files.content.return_value = mock_resp
+
+        adapter, _ = _make_adapter(client_instance=ci)
+        results = list(
+            adapter.fetch_results("batch-id", {"s1": "cid1"}, result_ref="file-out")
+        )
+
+        assert len(results) == 1
+        assert results[0].text == "streamed"
+
 
 # ---------------------------------------------------------------------------
 # TC-003 (poll): OpenAI status → LLMBatchStatus
@@ -599,6 +641,34 @@ class TestPoll:
 
         result = self._poll_with_status("in_progress")
         assert isinstance(result, BatchPollResult)
+
+    def test_poll_maps_request_counts_and_completed_timestamp(self):
+        """OpenAI poll must map SDK counts and convert completed_at epoch to ISO string."""
+        ci = MagicMock()
+        mock_batch = MagicMock()
+        mock_batch.status = "completed"
+        mock_batch.output_file_id = "file-output-456"
+        mock_batch.request_counts = MagicMock(completed=3, failed=2, total=9)
+        mock_batch.completed_at = 1710000000
+        mock_batch.cancelled_at = None
+        mock_batch.expired_at = None
+        mock_batch.failed_at = None
+        ci.batches.retrieve.return_value = mock_batch
+
+        adapter, _ = _make_adapter(client_instance=ci)
+        result = adapter.poll("batch-id")
+
+        assert result.request_counts.succeeded == 3
+        assert result.request_counts.errored == 2
+        assert result.request_counts.processing == 4
+        assert result.request_counts.canceled is None
+        assert result.request_counts.expired is None
+        assert (
+            result.ended_at
+            == datetime.datetime.fromtimestamp(
+                1710000000, tz=datetime.timezone.utc
+            ).isoformat()
+        )
 
 
 # ---------------------------------------------------------------------------

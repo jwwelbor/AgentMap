@@ -91,19 +91,39 @@ class LLMContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_anthropic_batch_adapter(app_config_service, logging_service):
+    def _make_batch_adapter(
+        provider_key, adapter_cls, app_config_service, logging_service
+    ):
         from agentmap.exceptions import LLMDependencyError
-        from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
 
-        api_key = app_config_service.get_llm_config("anthropic").get("api_key", "")
-        logger = logging_service.get_class_logger(AnthropicBatchAdapter)
-        try:
-            return AnthropicBatchAdapter(api_key=api_key, logger=logger)
-        except LLMDependencyError as exc:
-            logging_service.get_class_logger(AnthropicBatchAdapter).warning(
-                "llm_batch.dependency_missing adapter=AnthropicBatchAdapter: %s", exc
+        api_key = app_config_service.get_llm_config(provider_key).get("api_key", "")
+        logger = logging_service.get_class_logger(adapter_cls)
+        if not api_key:
+            logger.debug(
+                "llm_batch.adapter_skipped adapter=%s reason=no_api_key",
+                adapter_cls.__name__,
             )
             return None
+        try:
+            return adapter_cls(api_key=api_key, logger=logger)
+        except LLMDependencyError as exc:
+            logger.warning(
+                "llm_batch.dependency_missing adapter=%s: %s",
+                adapter_cls.__name__,
+                exc,
+            )
+            return None
+
+    @staticmethod
+    def _create_anthropic_batch_adapter(app_config_service, logging_service):
+        from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
+
+        return LLMContainer._make_batch_adapter(
+            "anthropic",
+            AnthropicBatchAdapter,
+            app_config_service,
+            logging_service,
+        )
 
     anthropic_batch_adapter = providers.Singleton(
         _create_anthropic_batch_adapter,
@@ -113,23 +133,14 @@ class LLMContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_openai_batch_adapter(app_config_service, logging_service):
-        from agentmap.exceptions import LLMDependencyError
         from agentmap.services.llm.openai_batch_adapter import OpenAIBatchAdapter
 
-        api_key = app_config_service.get_llm_config("openai").get("api_key", "")
-        logger = logging_service.get_class_logger(OpenAIBatchAdapter)
-        if not api_key:
-            logger.debug(
-                "llm_batch.adapter_skipped adapter=OpenAIBatchAdapter reason=no_api_key"
-            )
-            return None
-        try:
-            return OpenAIBatchAdapter(api_key=api_key, logger=logger)
-        except LLMDependencyError as exc:
-            logger.warning(
-                "llm_batch.dependency_missing adapter=OpenAIBatchAdapter: %s", exc
-            )
-            return None
+        return LLMContainer._make_batch_adapter(
+            "openai",
+            OpenAIBatchAdapter,
+            app_config_service,
+            logging_service,
+        )
 
     openai_batch_adapter = providers.Singleton(
         _create_openai_batch_adapter,
@@ -139,23 +150,14 @@ class LLMContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_gemini_batch_adapter(app_config_service, logging_service):
-        from agentmap.exceptions import LLMDependencyError
         from agentmap.services.llm.gemini_batch_adapter import GeminiBatchAdapter
 
-        api_key = app_config_service.get_llm_config("google").get("api_key", "")
-        logger = logging_service.get_class_logger(GeminiBatchAdapter)
-        if not api_key:
-            logger.debug(
-                "llm_batch.adapter_skipped adapter=GeminiBatchAdapter reason=no_api_key"
-            )
-            return None
-        try:
-            return GeminiBatchAdapter(api_key=api_key, logger=logger)
-        except LLMDependencyError as exc:
-            logger.warning(
-                "llm_batch.dependency_missing adapter=GeminiBatchAdapter: %s", exc
-            )
-            return None
+        return LLMContainer._make_batch_adapter(
+            "google",
+            GeminiBatchAdapter,
+            app_config_service,
+            logging_service,
+        )
 
     gemini_batch_adapter = providers.Singleton(
         _create_gemini_batch_adapter,

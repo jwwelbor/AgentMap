@@ -16,6 +16,7 @@ Forbidden mocks: do not mock LLMService._get_adapter (must exercise real registr
 """
 
 import asyncio
+import datetime
 import re
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
@@ -239,6 +240,25 @@ class TestRegistryDispatch:
         msg = str(exc_info.value)
         # Error must name the registered providers so caller can discover them
         assert "anthropic" in msg
+
+    @pytest.mark.parametrize("provider", ["anthropic", "google"])
+    def test_poll_persists_datetime_ended_at_without_json_type_error(
+        self, tmp_path, provider
+    ):
+        """Ended poll results with datetime ended_at should still persist and round-trip."""
+        service, adapters, repo = _make_service(batch_dir=str(tmp_path))
+        ended_at = datetime.datetime(2026, 6, 8, 15, 0, tzinfo=datetime.timezone.utc)
+        adapters[provider].poll.return_value = BatchPollResult(
+            status=LLMBatchStatus.ENDED,
+            ended_at=ended_at,
+        )
+        handle = _make_handle(provider=provider, status=LLMBatchStatus.IN_PROGRESS)
+
+        updated = service.poll_batch(handle)
+        restored = repo.load(updated.agentmap_batch_id)
+
+        assert isinstance(restored.ended_at, str)
+        assert restored.ended_at == "2026-06-08 15:00:00+00:00"
 
 
 # ---------------------------------------------------------------------------

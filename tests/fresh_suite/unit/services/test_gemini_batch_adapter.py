@@ -29,12 +29,13 @@ Covers:
 """
 
 import builtins
+import datetime
 import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentmap.exceptions import LLMDependencyError
+from agentmap.exceptions import LLMDependencyError, LLMServiceError
 from agentmap.models.llm_execution import (
     LLMBatchStatus,
     LLMRequest,
@@ -253,6 +254,67 @@ class TestGeminiSubmit:
         )
 
         assert request_id_map["__ordered__"] == ["alpha", "beta", "gamma"]
+
+    def test_submit_rejects_heterogeneous_models(self):
+        """Gemini batch submit must fail fast when resolved specs use multiple models."""
+        client_instance = MagicMock()
+        adapter = _make_adapter(client_instance)
+        specs = [_make_spec("s1"), _make_spec("s2")]
+
+        with pytest.raises(LLMServiceError, match="single model"):
+            adapter.submit(
+                specs,
+                resolved_params=[
+                    {"model": "gemini-2.0-flash", "max_tokens": 100},
+                    {"model": "gemini-2.0-pro", "max_tokens": 100},
+                ],
+            )
+
+        client_instance.batches.create.assert_not_called()
+
+    def test_submit_routes_system_messages_to_system_instruction(self):
+        """Gemini system-role messages should be emitted as system_instruction, not contents."""
+        client_instance = MagicMock()
+        mock_job = MagicMock()
+        mock_job.name = "batches/job-system"
+        client_instance.batches.create.return_value = mock_job
+
+        adapter = _make_adapter(client_instance)
+        spec = _make_spec(
+            "s1",
+            messages=[
+                {"role": "system", "content": "Answer tersely."},
+                {"role": "user", "content": "Summarize this."},
+            ],
+        )
+        adapter.submit([spec], resolved_params=_make_resolved([spec], max_tokens=64))
+
+        src_entry = client_instance.batches.create.call_args.kwargs["src"][0]
+        assert src_entry["config"]["system_instruction"] == "Answer tersely."
+        assert src_entry["contents"] == [
+            {"role": "user", "parts": [{"text": "Summarize this."}]}
+        ]
+
+    def test_submit_rejects_non_string_message_content(self):
+        """Gemini batch submit must reject multimodal/list content instead of stringifying it."""
+        client_instance = MagicMock()
+        adapter = _make_adapter(client_instance)
+        spec = _make_spec(
+            "s1",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "hello"}],
+                }
+            ],
+        )
+
+        with pytest.raises(LLMServiceError, match="request_id='s1'"):
+            adapter.submit(
+                [spec], resolved_params=_make_resolved([spec], max_tokens=32)
+            )
+
+        client_instance.batches.create.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -662,6 +724,21 @@ class TestGeminiPoll:
         """Gemini inline batch: result_ref is always None in poll result."""
         result, _ = self._poll_with_state("JOB_STATE_SUCCEEDED")
         assert result.result_ref is None
+
+    def test_poll_converts_end_time_to_iso_string(self):
+        """Gemini poll should serialize datetime end_time to ISO-8601."""
+        client_instance = MagicMock()
+        adapter = _make_adapter(client_instance)
+        mock_job = MagicMock()
+        mock_job.state = _make_state_enum("JOB_STATE_SUCCEEDED")
+        mock_job.end_time = datetime.datetime(
+            2026, 6, 8, 12, 30, tzinfo=datetime.timezone.utc
+        )
+        client_instance.batches.get.return_value = mock_job
+
+        result = adapter.poll("batches/test-123")
+
+        assert result.ended_at == "2026-06-08T12:30:00+00:00"
 
 
 # ---------------------------------------------------------------------------

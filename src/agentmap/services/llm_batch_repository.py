@@ -66,7 +66,7 @@ class BatchHandleRepository:
                 suffix=".tmp",
             ) as tmp:
                 tmp_path = tmp.name
-                json.dump(data, tmp, indent=2)
+                json.dump(data, tmp, indent=2, default=str)
             os.replace(tmp_path, file_path)
         except Exception:
             if tmp_path is not None:

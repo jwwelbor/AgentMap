@@ -18,7 +18,11 @@ from typing import Any, Dict, List, Tuple
 
 import pytest
 
-from agentmap.models.llm_execution import LLMBatchSubmitRequest, LLMRequest
+from agentmap.models.llm_execution import (
+    DEFAULT_TOKEN_LIMIT,
+    LLMBatchSubmitRequest,
+    LLMRequest,
+)
 from agentmap.services.llm._param_resolution import (
     RESERVED_PARAMS,
     ReservedParam,
@@ -274,6 +278,40 @@ def test_max_tokens_always_resolved_from_request_envelope():
     request = _base_request(max_tokens=2048)
     resolved = resolve_request_params(spec, request)
     assert resolved["max_tokens"] == 2048
+
+
+def test_spec_level_max_tokens_override_does_not_conflict_when_batch_default_unset():
+    """Per-spec max_tokens should resolve cleanly when request.max_tokens is None."""
+    spec = LLMRequest(
+        request_id="s1",
+        messages=[{"role": "user", "content": "hi"}],
+        request_options={"max_tokens": 256},
+    )
+    request = LLMBatchSubmitRequest(
+        provider="anthropic",
+        model="claude-3-5-haiku",
+        max_tokens=None,
+        requests=[],
+    )
+
+    resolved = resolve_request_params(spec, request)
+
+    assert resolved["max_tokens"] == 256
+
+
+def test_max_tokens_falls_back_to_default_token_limit_when_unset_everywhere():
+    """Anthropic-compatible fallback must inject DEFAULT_TOKEN_LIMIT when unresolved."""
+    spec = _base_spec()
+    request = LLMBatchSubmitRequest(
+        provider="anthropic",
+        model="claude-3-5-haiku",
+        max_tokens=None,
+        requests=[],
+    )
+
+    resolved = resolve_request_params(spec, request)
+
+    assert resolved["max_tokens"] == DEFAULT_TOKEN_LIMIT
 
 
 # ---------------------------------------------------------------------------

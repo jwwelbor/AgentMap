@@ -22,7 +22,11 @@ import itertools
 from dataclasses import dataclass, field
 from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
-from agentmap.models.llm_execution import LLMBatchSubmitRequest, LLMRequest
+from agentmap.models.llm_execution import (
+    DEFAULT_TOKEN_LIMIT,
+    LLMBatchSubmitRequest,
+    LLMRequest,
+)
 from agentmap.services.llm_batch_errors import LLMBatchParamConflictError
 
 
@@ -276,8 +280,12 @@ def resolve_request_params(
     # envelope-level defaults that are the fallback).
     if "model" not in resolved and request.model is not None:
         resolved["model"] = request.model
-    if "max_tokens" not in resolved and request.max_tokens is not None:
-        resolved["max_tokens"] = request.max_tokens
+    if "max_tokens" not in resolved:
+        resolved["max_tokens"] = (
+            request.max_tokens
+            if request.max_tokens is not None
+            else DEFAULT_TOKEN_LIMIT
+        )
 
     # --- Batch-incompatible param check (centralized) ---
     for bad_key in _BATCH_INCOMPATIBLE_PARAMS:

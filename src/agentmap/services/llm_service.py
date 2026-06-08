@@ -70,10 +70,15 @@ from agentmap.services.telemetry.constants import (
     GEN_AI_USAGE_INPUT_TOKENS,
     GEN_AI_USAGE_OUTPUT_TOKENS,
     LLM_CALL_SPAN,
+    METRIC_DIM_BATCH_STATUS,
     METRIC_DIM_ERROR_TYPE,
     METRIC_DIM_MODEL,
     METRIC_DIM_PROVIDER,
     METRIC_DIM_TIER,
+    METRIC_LLM_BATCH_CANCEL_COUNT,
+    METRIC_LLM_BATCH_POLL_COUNT,
+    METRIC_LLM_BATCH_RESULTS_FETCHED_COUNT,
+    METRIC_LLM_BATCH_SUBMITTED_COUNT,
     METRIC_LLM_CIRCUIT_BREAKER,
     METRIC_LLM_DURATION,
     METRIC_LLM_ERRORS,
@@ -178,6 +183,10 @@ class LLMService:
         self._metric_cache_hit = None
         self._metric_circuit_breaker = None
         self._metric_fallback = None
+        self._metric_batch_submitted = None
+        self._metric_batch_poll = None
+        self._metric_batch_results_fetched = None
+        self._metric_batch_cancel = None
         if telemetry_service is not None:
             try:
                 self._metric_duration = telemetry_service.create_histogram(
@@ -214,6 +223,26 @@ class LLMService:
                     METRIC_LLM_FALLBACK,
                     unit="1",
                     description="Fallback activations",
+                )
+                self._metric_batch_submitted = telemetry_service.create_counter(
+                    METRIC_LLM_BATCH_SUBMITTED_COUNT,
+                    unit="1",
+                    description="Batch submissions",
+                )
+                self._metric_batch_poll = telemetry_service.create_counter(
+                    METRIC_LLM_BATCH_POLL_COUNT,
+                    unit="1",
+                    description="Batch polls",
+                )
+                self._metric_batch_results_fetched = telemetry_service.create_counter(
+                    METRIC_LLM_BATCH_RESULTS_FETCHED_COUNT,
+                    unit="1",
+                    description="Batch result fetches",
+                )
+                self._metric_batch_cancel = telemetry_service.create_counter(
+                    METRIC_LLM_BATCH_CANCEL_COUNT,
+                    unit="1",
+                    description="Batch cancellation requests",
                 )
             except Exception:
                 pass  # Instrument creation failure silently ignored
@@ -1598,9 +1627,6 @@ class LLMService:
             )
         return adapter
 
-    # Params that are incompatible with batch submission.
-    _BATCH_INCOMPATIBLE_PARAMS = frozenset({"stream"})
-
     # Pattern that a valid agentmap_batch_id must satisfy (no path separators).
     _AGENTMAP_BATCH_ID_RE = re.compile(r"^amatch_[a-f0-9]{32}$")
 
@@ -1655,13 +1681,6 @@ class LLMService:
                     "Each request_id must be unique within one batch submission."
                 )
             seen_ids.add(spec.request_id)
-
-        # Batch-level stream check (before per-spec resolution, fast-fail)
-        if request.request_options and "stream" in request.request_options:
-            raise LLMServiceError(
-                "request_options contains batch-incompatible parameter 'stream'. "
-                "Batch submissions do not support streaming."
-            )
 
         # D-8: centralized parameter resolution — raises LLMBatchParamConflictError
         # or LLMServiceError for any conflict, incompatible param, or max_tokens==0.
@@ -1730,6 +1749,10 @@ class LLMService:
                 getattr(self._batch_repo, "_batch_dir", "<unknown>"),
             )
 
+        self._record_batch_submit_metric(
+            provider=canonical_provider,
+            status=handle.status.value,
+        )
         self._logger.info(
             "llm_batch.submitted agentmap_batch_id=%s provider_batch_id=%s spec_count=%d",
             agentmap_batch_id,
@@ -1768,7 +1791,10 @@ class LLMService:
                 "amatch_<32 hex chars> (e.g. amatch_0a1b...c2d3)."
             )
 
-        return LLMBatchHandle.from_dict(handle_data)
+        try:
+            return LLMBatchHandle.from_dict(handle_data)
+        except (KeyError, ValueError) as exc:
+            raise LLMServiceError(f"Cannot restore batch handle: {exc}") from exc
 
     def poll_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
         """
@@ -1816,6 +1842,10 @@ class LLMService:
         if self._batch_repo is not None:
             self._batch_repo.save(updated)
 
+        self._record_batch_poll_metric(
+            provider=handle.provider,
+            status=updated.status.value,
+        )
         self._logger.info(
             "llm_batch.polled agentmap_batch_id=%s status=%s processing=%s succeeded=%s",
             handle.agentmap_batch_id,
@@ -1870,6 +1900,10 @@ class LLMService:
             "llm_batch.cancel_requested agentmap_batch_id=%s",
             handle.agentmap_batch_id,
         )
+        self._record_batch_cancel_metric(
+            provider=handle.provider,
+            status=handle.status.value,
+        )
         adapter.cancel(handle.provider_batch_id)
         return self.poll_batch(handle)
 
@@ -1919,6 +1953,10 @@ class LLMService:
             "llm_batch.results_fetched agentmap_batch_id=%s item_count=%d",
             handle.agentmap_batch_id,
             len(records),
+        )
+        self._record_batch_results_fetched_metric(
+            provider=handle.provider,
+            status=handle.status.value,
         )
         return records
 
@@ -2024,11 +2062,20 @@ class LLMService:
         """Submit a batch and synchronously wait until it reaches a terminal status.
 
         Convenience wrapper combining :meth:`submit_batch` and
-        :meth:`wait_for_batch`.
+        :meth:`wait_for_batch`. Sync-context only.
 
         Raises:
             TimeoutError: If timeout elapses before the batch terminates.
         """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            raise LLMServiceError(
+                "submit_and_wait cannot run inside an active event loop; "
+                "use asubmit_batch() + await wait_for_batch() from async contexts."
+            )
         handle = self.submit_batch(request)
         return asyncio.run(
             self.wait_for_batch(handle, poll_interval=poll_interval, timeout=timeout)
@@ -2384,6 +2431,37 @@ class LLMService:
             )
         except Exception:
             pass
+
+    def _record_batch_metric(self, metric: Any, provider: str, status: str) -> None:
+        """Record a batch lifecycle counter with provider/status dimensions."""
+        if self._telemetry_service is None or metric is None:
+            return
+        try:
+            metric.add(
+                1,
+                {
+                    METRIC_DIM_PROVIDER: provider,
+                    METRIC_DIM_BATCH_STATUS: status,
+                },
+            )
+        except Exception:
+            pass
+
+    def _record_batch_submit_metric(self, provider: str, status: str) -> None:
+        """Record one batch submit event."""
+        self._record_batch_metric(self._metric_batch_submitted, provider, status)
+
+    def _record_batch_poll_metric(self, provider: str, status: str) -> None:
+        """Record one batch poll event."""
+        self._record_batch_metric(self._metric_batch_poll, provider, status)
+
+    def _record_batch_results_fetched_metric(self, provider: str, status: str) -> None:
+        """Record one batch result-fetch event."""
+        self._record_batch_metric(self._metric_batch_results_fetched, provider, status)
+
+    def _record_batch_cancel_metric(self, provider: str, status: str) -> None:
+        """Record one batch cancel request event."""
+        self._record_batch_metric(self._metric_batch_cancel, provider, status)
 
     def _record_fallback_metric(self, tier: str) -> None:
         """Record a fallback activation on the fallback counter.

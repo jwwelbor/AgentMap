@@ -166,7 +166,7 @@ class LLMBatchSubmitRequest:
     provider: str
     model: str
     requests: List[LLMRequest]
-    max_tokens: int = DEFAULT_TOKEN_LIMIT
+    max_tokens: Optional[int] = None
     request_options: Dict[str, Any] = field(default_factory=dict)
 
 

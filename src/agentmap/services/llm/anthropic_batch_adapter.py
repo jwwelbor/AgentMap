@@ -8,6 +8,7 @@ The SDK import is gated so a missing optional dependency raises
 Pattern mirrors ``src/agentmap/services/llm_client_factory.py`` ~169–190.
 """
 
+from datetime import datetime
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from agentmap.exceptions import LLMDependencyError, LLMServiceError
@@ -59,6 +60,17 @@ class AnthropicBatchAdapter:
             )
         self._client = anthropic.Anthropic(api_key=api_key)
         self._logger = logger
+
+    @staticmethod
+    def _stringify_datetime(value: Any) -> Optional[str]:
+        """Normalize provider datetime objects to ISO-8601 strings."""
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return str(value)
 
     # ------------------------------------------------------------------
     # Submit
@@ -155,7 +167,7 @@ class AnthropicBatchAdapter:
             status=normalized_status,
             request_counts=counts,
             results_url=getattr(batch, "results_url", None),
-            ended_at=getattr(batch, "ended_at", None),
+            ended_at=self._stringify_datetime(getattr(batch, "ended_at", None)),
         )
 
     # ------------------------------------------------------------------

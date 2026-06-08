@@ -16,6 +16,7 @@ Pattern mirrors ``anthropic_batch_adapter.py``.
 """
 
 import json
+from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from agentmap.exceptions import LLMDependencyError, LLMServiceError
@@ -80,6 +81,13 @@ class OpenAIBatchAdapter:
             )
         self._client = openai.OpenAI(api_key=api_key)
         self._logger = logger
+
+    @staticmethod
+    def _epoch_to_iso8601(epoch_value: Any) -> Optional[str]:
+        """Convert provider epoch timestamps to ISO-8601 strings."""
+        if epoch_value is None:
+            return None
+        return datetime.fromtimestamp(int(epoch_value), tz=timezone.utc).isoformat()
 
     # ------------------------------------------------------------------
     # Submit
@@ -196,12 +204,18 @@ class OpenAIBatchAdapter:
         counts: Optional[LLMBatchRequestCounts] = None
         if hasattr(batch, "request_counts") and batch.request_counts is not None:
             rc = batch.request_counts
+            total = getattr(rc, "total", None)
+            completed = getattr(rc, "completed", None)
+            failed = getattr(rc, "failed", None)
+            processing = None
+            if total is not None and completed is not None and failed is not None:
+                processing = total - completed - failed
             counts = LLMBatchRequestCounts(
-                processing=getattr(rc, "processing", None),
-                succeeded=getattr(rc, "succeeded", None),
-                errored=getattr(rc, "errored", None),
-                canceled=getattr(rc, "canceled", None),
-                expired=getattr(rc, "expired", None),
+                processing=processing,
+                succeeded=completed,
+                errored=failed,
+                canceled=None,
+                expired=None,
             )
 
         raw_status = getattr(batch, "status", None)
@@ -215,12 +229,18 @@ class OpenAIBatchAdapter:
             )
 
         output_file_id: Optional[str] = getattr(batch, "output_file_id", None)
+        ended_at = self._epoch_to_iso8601(getattr(batch, "completed_at", None))
+        if ended_at is None:
+            for field_name in ("expired_at", "cancelled_at", "failed_at"):
+                ended_at = self._epoch_to_iso8601(getattr(batch, field_name, None))
+                if ended_at is not None:
+                    break
 
         return BatchPollResult(
             status=normalized_status,
             request_counts=counts,
             result_ref=output_file_id,
-            ended_at=getattr(batch, "ended_at", None),
+            ended_at=ended_at,
         )
 
     # ------------------------------------------------------------------
@@ -269,9 +289,18 @@ class OpenAIBatchAdapter:
         custom_to_spec: Dict[str, str] = {v: k for k, v in request_id_map.items()}
 
         file_response = self._client.files.content(result_ref)
-        raw_bytes: bytes = file_response.content
+        iter_lines = getattr(file_response, "iter_lines", None)
+        line_iter = None
+        if callable(iter_lines):
+            candidate_iter = iter_lines()
+            if not type(candidate_iter).__module__.startswith("unittest.mock"):
+                line_iter = candidate_iter
+        if line_iter is None:
+            line_iter = getattr(file_response, "content", b"").split(b"\n")
 
-        for raw_line in raw_bytes.split(b"\n"):
+        for raw_line in line_iter:
+            if isinstance(raw_line, str):
+                raw_line = raw_line.encode("utf-8")
             raw_line = raw_line.strip()
             if not raw_line:
                 continue

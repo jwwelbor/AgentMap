@@ -9,6 +9,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Dict,
+    Iterator,
     List,
     Optional,
     Protocol,
@@ -56,15 +57,15 @@ class BatchAdapterProtocol(Protocol):
 
     def submit(
         self,
-        requests: List[LLMRequest],
+        specs: List[LLMRequest],
         resolved_params: List[Dict[str, Any]],
     ) -> "tuple[str, Dict[str, str], Optional[str]]":
         """
         Submit a batch and return ``(provider_batch_id, request_id_map, expires_at)``.
 
-        ``requests`` carries messages and ``request_id``; all *parameter* values
+        ``specs`` carries messages and ``request_id``; all *parameter* values
         (model, max_tokens, temperature, pass-through options) are delivered
-        via ``resolved_params[i]`` which corresponds to ``requests[i]``.  The
+        via ``resolved_params[i]`` which corresponds to ``specs[i]``.  The
         dict is already conflict-free — adapters must not merge or apply
         ``setdefault`` against any other source.
 
@@ -100,9 +101,9 @@ class BatchAdapterProtocol(Protocol):
         provider_batch_id: str,
         request_id_map: Dict[str, str],
         result_ref: Optional[str],
-    ) -> List[LLMBatchResult]:
+    ) -> Iterator[LLMBatchResult]:
         """
-        Retrieve completed results and key them by caller ``request_id``.
+        Iterate completed results and key them by caller ``request_id``.
 
         ``result_ref`` carries the provider output reference (e.g. OpenAI
         ``output_file_id``).  Adapters that fetch by ``provider_batch_id``

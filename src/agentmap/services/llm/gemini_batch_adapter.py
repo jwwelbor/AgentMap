@@ -29,6 +29,7 @@ Vertex AI (service-account / GCS / BigQuery) is explicitly out of scope.
 Pattern mirrors ``openai_batch_adapter.py``.
 """
 
+from datetime import datetime
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from agentmap.exceptions import LLMDependencyError, LLMServiceError
@@ -67,6 +68,11 @@ class GeminiBatchAdapter:
     where ``expires_at`` is always ``None`` for inline Gemini batches and
     ``request_id_map`` is ``{"__ordered__": json-list-of-spec-ids}`` for
     positional demux.
+
+    Gemini Developer API inline batches require a single model across the
+    submission.  Message content support is string-only in this adapter: system
+    messages are emitted as ``system_instruction`` and non-string content is
+    rejected with ``LLMServiceError`` instead of being stringified.
     """
 
     # Satisfies BatchAdapterProtocol class attributes.
@@ -98,6 +104,17 @@ class GeminiBatchAdapter:
         self._client = genai.Client(api_key=api_key)
         self._logger = logger
 
+    @staticmethod
+    def _stringify_datetime(value: Any) -> Optional[str]:
+        """Normalize provider datetime objects to ISO-8601 strings."""
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return str(value)
+
     # ------------------------------------------------------------------
     # Submit
     # ------------------------------------------------------------------
@@ -128,6 +145,13 @@ class GeminiBatchAdapter:
         ``client.batches.create(*, model, src, config=None)``
         https://ai.google.dev/gemini-api/docs/batch-api
         """
+        batch_models = {rp.get("model") for rp in resolved_params if rp.get("model")}
+        if len(batch_models) > 1:
+            raise LLMServiceError(
+                "Gemini batch requires a single model for all requests; "
+                f"got {len(batch_models)} distinct models."
+            )
+
         # Build ordered list for positional demux
         request_id_list = [spec.request_id for spec in specs]
         request_id_map: Dict[str, Any] = {"__ordered__": request_id_list}
@@ -189,14 +213,22 @@ class GeminiBatchAdapter:
         for spec, rp in zip(specs, resolved_params):
             # Convert messages to Gemini contents format
             contents = []
+            system_messages: List[str] = []
             for msg in spec.messages:
                 role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if not isinstance(content, str):
+                    raise LLMServiceError(
+                        f"Gemini batch request_id={spec.request_id!r} has unsupported "
+                        f"non-string message content for role {role!r}."
+                    )
+                if role == "system":
+                    system_messages.append(content)
+                    continue
                 # Gemini uses "model" for assistant; map accordingly
                 if role == "assistant":
                     role = "model"
-                contents.append(
-                    {"role": role, "parts": [{"text": msg.get("content", "")}]}
-                )
+                contents.append({"role": role, "parts": [{"text": content}]})
 
             # Build generation config from resolved dict only — no merging.
             # Apply Gemini-specific rename: max_tokens → max_output_tokens.
@@ -205,6 +237,8 @@ class GeminiBatchAdapter:
                 generation_config["max_output_tokens"] = rp["max_tokens"]
             if "temperature" in rp:
                 generation_config["temperature"] = rp["temperature"]
+            if system_messages:
+                generation_config["system_instruction"] = "\n\n".join(system_messages)
             # Pass through any non-model, non-max_tokens, non-temperature keys.
             # max_output_tokens is the Gemini alias of max_tokens — the resolver
             # already collapsed it to max_tokens (canonical) or raised a conflict
@@ -256,7 +290,7 @@ class GeminiBatchAdapter:
         return BatchPollResult(
             status=normalized_status,
             result_ref=None,  # Gemini inline batches have no result file
-            ended_at=getattr(job, "end_time", None),
+            ended_at=self._stringify_datetime(getattr(job, "end_time", None)),
         )
 
     # ------------------------------------------------------------------
