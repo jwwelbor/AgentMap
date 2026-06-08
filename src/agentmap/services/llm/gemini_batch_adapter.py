@@ -13,7 +13,7 @@ Gemini-specific concerns handled here:
   https://ai.google.dev/gemini-api/docs/batch-api
 - Request-to-response correlation is **positional** (index-based) for inline
   batches — there is no ``key`` field on inline src entries.  The adapter
-  maintains an ordered ``spec_id_list`` to map index → original spec_id.
+  maintains an ordered ``request_id_list`` to map index → original request_id.
 - Status mapping: Gemini ``state`` is an enum; access via ``state.name``
   to get ``JOB_STATE_*`` strings → normalized ``LLMBatchStatus``.
 - Result access: ``batch_job.dest.inlined_responses`` (NOT ``job.inline_responses``).
@@ -36,8 +36,8 @@ from agentmap.models.llm_execution import (
     BatchPollResult,
     LLMBatchResultRecord,
     LLMBatchStatus,
-    LLMCallSpec,
     LLMExecutionError,
+    LLMRequest,
     LLMUsage,
 )
 from agentmap.services.llm_batch_errors import LLMBatchResultIntegrityError
@@ -55,17 +55,17 @@ class GeminiBatchAdapter:
     ``submit`` sends inline requests via ``client.batches.create(model=...,
     src=[...])``.  Results are read positionally from
     ``batch_job.dest.inlined_responses`` — there is no key-based demux for
-    inline batches; the adapter preserves an ordered ``spec_id_list`` as
-    the ``spec_id_map`` value (stored as a JSON-encoded list in the handle)
-    to recover the original spec_ids by position.
+    inline batches; the adapter preserves an ordered ``request_id_list`` as
+    the ``request_id_map`` value (stored as a JSON-encoded list in the handle)
+    to recover the original request_ids by position.
 
     API reference: https://ai.google.dev/gemini-api/docs/batch-api
 
     The caller-facing return shape is the same as ``AnthropicBatchAdapter``
     and ``OpenAIBatchAdapter``:
-    ``(provider_batch_id, spec_id_map, expires_at)``
+    ``(provider_batch_id, request_id_map, expires_at)``
     where ``expires_at`` is always ``None`` for inline Gemini batches and
-    ``spec_id_map`` is ``{"__ordered__": json-list-of-spec-ids}`` for
+    ``request_id_map`` is ``{"__ordered__": json-list-of-spec-ids}`` for
     positional demux.
     """
 
@@ -104,7 +104,7 @@ class GeminiBatchAdapter:
 
     def submit(
         self,
-        specs: List[LLMCallSpec],
+        specs: List[LLMRequest],
         resolved_params: List[Dict[str, Any]],
     ) -> Tuple[str, Dict[str, Any], Optional[str]]:
         """
@@ -118,10 +118,10 @@ class GeminiBatchAdapter:
         resolution.
 
         Results are correlated positionally (not by key), so the returned
-        ``spec_id_map`` encodes the ordered spec_id list under
-        ``{"__ordered__": [spec_id, ...]}``.
+        ``request_id_map`` encodes the ordered request_id list under
+        ``{"__ordered__": [request_id, ...]}``.
 
-        Returns ``(provider_batch_id, spec_id_map, None)`` where ``None`` is
+        Returns ``(provider_batch_id, request_id_map, None)`` where ``None`` is
         the ``expires_at`` — Gemini inline batches do not expose an expiry.
 
         SDK signature confirmed:
@@ -129,8 +129,8 @@ class GeminiBatchAdapter:
         https://ai.google.dev/gemini-api/docs/batch-api
         """
         # Build ordered list for positional demux
-        spec_id_list = [spec.spec_id for spec in specs]
-        spec_id_map: Dict[str, Any] = {"__ordered__": spec_id_list}
+        request_id_list = [spec.request_id for spec in specs]
+        request_id_map: Dict[str, Any] = {"__ordered__": request_id_list}
 
         # Derive batch-level model from first resolved dict (all specs share a
         # batch-level model after conflict resolution; per-spec overrides are
@@ -153,11 +153,11 @@ class GeminiBatchAdapter:
             )
 
         # Inline Gemini batches never return an expiry timestamp
-        return provider_batch_id, spec_id_map, None
+        return provider_batch_id, request_id_map, None
 
     def _build_src(
         self,
-        specs: List[LLMCallSpec],
+        specs: List[LLMRequest],
         resolved_params: List[Dict[str, Any]],
         batch_model: Optional[str],
     ) -> List[Dict[str, Any]]:
@@ -283,7 +283,7 @@ class GeminiBatchAdapter:
     def fetch_results(
         self,
         provider_batch_id: str,
-        spec_id_map: Dict[str, Any],
+        request_id_map: Dict[str, Any],
         result_ref: Optional[str] = None,
     ) -> Generator[LLMBatchResultRecord, None, None]:
         """
@@ -291,8 +291,8 @@ class GeminiBatchAdapter:
 
         Results live at ``batch_job.dest.inlined_responses`` (NOT
         ``job.inline_responses``).  Correlation is by **position** (index),
-        matching the order of the original src list.  The ``spec_id_map``
-        must contain ``{"__ordered__": [spec_id, ...]}``.
+        matching the order of the original src list.  The ``request_id_map``
+        must contain ``{"__ordered__": [request_id, ...]}``.
 
         ``result_ref`` is unused (always ``None`` for inline batches).
 
@@ -301,8 +301,8 @@ class GeminiBatchAdapter:
 
         SDK reference: https://ai.google.dev/gemini-api/docs/batch-api
         """
-        # Recover ordered spec_id list from map
-        spec_id_list: List[str] = spec_id_map.get("__ordered__", [])
+        # Recover ordered request_id list from map
+        request_id_list: List[str] = request_id_map.get("__ordered__", [])
 
         # Real SDK: get(*, name=...) — keyword-only
         job = self._client.batches.get(name=provider_batch_id)
@@ -312,7 +312,7 @@ class GeminiBatchAdapter:
             getattr(dest, "inlined_responses", None) if dest is not None else None
         ) or []
 
-        submitted_count = len(spec_id_list)
+        submitted_count = len(request_id_list)
         returned_count = len(inlined_responses)
 
         # D-9 / N2.1: Enforce count equality before yielding any record.
@@ -328,13 +328,13 @@ class GeminiBatchAdapter:
         # Yield records for present indices (positional demux is sound for equal
         # counts; short-tail has returned_count < submitted_count).
         for idx, item in enumerate(inlined_responses):
-            spec_id = spec_id_list[idx]
+            request_id = request_id_list[idx]
 
             # Check for item-level error first
             item_error = getattr(item, "error", None)
             if item_error is not None:
                 yield LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
                         error_type="provider_error",
@@ -347,7 +347,7 @@ class GeminiBatchAdapter:
             response = getattr(item, "response", None)
             if response is None:
                 yield LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
                         error_type="missing_response",
@@ -371,7 +371,7 @@ class GeminiBatchAdapter:
 
             if not content:
                 yield LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
                         error_type="empty_content",
@@ -399,7 +399,7 @@ class GeminiBatchAdapter:
                 )
 
             yield LLMBatchResultRecord(
-                spec_id=spec_id,
+                request_id=request_id,
                 status="succeeded",
                 provider="google",
                 content=content,
@@ -407,27 +407,27 @@ class GeminiBatchAdapter:
             )
 
         # D-9 / N2.1(2): Short-tail — synthesize errored records for each missing
-        # tail spec_id.  NEVER shift positions; the present records above were
+        # tail request_id.  NEVER shift positions; the present records above were
         # already yielded at their correct indices.
         for missing_idx in range(returned_count, submitted_count):
-            missing_spec_id = spec_id_list[missing_idx]
+            missing_request_id = request_id_list[missing_idx]
             self._logger.warning(
-                "GeminiBatchAdapter.fetch_results: no inline response for spec_id "
+                "GeminiBatchAdapter.fetch_results: no inline response for request_id "
                 "'%s' (index %d) in batch '%s' — synthesizing missing_result record.",
-                missing_spec_id,
+                missing_request_id,
                 missing_idx,
                 provider_batch_id,
             )
             yield LLMBatchResultRecord(
-                spec_id=missing_spec_id,
+                request_id=missing_request_id,
                 status="errored",
                 error=LLMExecutionError(
                     error_type="missing_result",
                     message=(
                         f"Gemini batch '{provider_batch_id}' returned only "
                         f"{returned_count} inline responses but {submitted_count} "
-                        f"specs were submitted; no response for spec_id "
-                        f"'{missing_spec_id}' at index {missing_idx}."
+                        f"specs were submitted; no response for request_id "
+                        f"'{missing_request_id}' at index {missing_idx}."
                     ),
                     retryable=True,
                 ),

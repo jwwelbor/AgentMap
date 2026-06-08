@@ -3,7 +3,7 @@ Integration test suite for E05-F03: Provider-Native Batch LLM Contract.
 
 Covers the five integration scenarios from the test plan:
   INT-01: submit_batch -> persist -> restore -> poll (full lifecycle)
-  INT-02: submit_batch -> fetch_batch_results with sanitized spec_ids (demux)
+  INT-02: submit_batch -> fetch_batch_results with sanitized request_ids (demux)
   INT-03: BatchHandleRepository mirrors bundle_storage pattern (atomic write,
           keyed by agentmap_batch_id, JSON-valid, no api_key)
   INT-04: No change to existing LLMService single-call and fan-out methods
@@ -31,8 +31,8 @@ from agentmap.models.llm_execution import (
     LLMBatchResultRecord,
     LLMBatchStatus,
     LLMBatchSubmitRequest,
-    LLMCallSpec,
     LLMExecutionError,
+    LLMRequest,
     LLMUsage,
 )
 from agentmap.services.llm_batch_repository import BatchHandleRepository
@@ -70,11 +70,11 @@ def _make_poll_result(
 # ---------------------------------------------------------------------------
 
 
-def _make_spec(spec_id: str, provider: str = None, **kwargs) -> LLMCallSpec:
+def _make_spec(request_id: str, provider: str = None, **kwargs) -> LLMRequest:
     # provider defaults to None — it is a batch-level concern (REQ-F-008/F04).
-    return LLMCallSpec(
-        spec_id=spec_id,
-        messages=[{"role": "user", "content": f"hello from {spec_id}"}],
+    return LLMRequest(
+        request_id=request_id,
+        messages=[{"role": "user", "content": f"hello from {request_id}"}],
         provider=provider,
         **kwargs,
     )
@@ -92,7 +92,7 @@ def _make_batch_request(
     return LLMBatchSubmitRequest(
         provider=provider,
         model=model,
-        call_specs=specs,
+        requests=specs,
         max_tokens=max_tokens,
         **kwargs,
     )
@@ -100,7 +100,7 @@ def _make_batch_request(
 
 def _make_handle(
     status: LLMBatchStatus = LLMBatchStatus.IN_PROGRESS,
-    spec_id_map: dict = None,
+    request_id_map: dict = None,
     **kwargs,
 ) -> LLMBatchHandle:
     # agentmap_batch_id must match ^amatch_[a-f0-9]{32}$ (path-safety constraint
@@ -113,7 +113,7 @@ def _make_handle(
         status=status,
         provider="anthropic",
         model="claude-sonnet-4-6",
-        spec_id_map=spec_id_map or {"s1": "s1"},
+        request_id_map=request_id_map or {"s1": "s1"},
         results_url="https://api.anthropic.com/v1/messages/batches/msgbatch_intabc123/results",
         expires_at="2026-06-08T00:00:00Z",
         request_counts=None,
@@ -166,13 +166,13 @@ def _make_service(batch_dir: str = None) -> tuple:
     return service, mock_adapter, repo
 
 
-def _make_succeeded_record(spec_id: str) -> LLMBatchResultRecord:
+def _make_succeeded_record(request_id: str) -> LLMBatchResultRecord:
     return LLMBatchResultRecord(
-        spec_id=spec_id,
+        request_id=request_id,
         status="succeeded",
         provider="anthropic",
         model="claude-sonnet-4-6",
-        content=f"result for {spec_id}",
+        content=f"result for {request_id}",
         usage=LLMUsage(
             input_tokens=100,
             output_tokens=50,
@@ -182,9 +182,9 @@ def _make_succeeded_record(spec_id: str) -> LLMBatchResultRecord:
     )
 
 
-def _make_errored_record(spec_id: str) -> LLMBatchResultRecord:
+def _make_errored_record(request_id: str) -> LLMBatchResultRecord:
     return LLMBatchResultRecord(
-        spec_id=spec_id,
+        request_id=request_id,
         status="errored",
         error=LLMExecutionError(
             error_type="server_error",
@@ -228,7 +228,7 @@ class TestInt01FullLifecycle:
         assert handle.agentmap_batch_id.startswith("amatch_")
         assert handle.provider_batch_id == "msgbatch_lifecycle001"
         assert handle.status == LLMBatchStatus.SUBMITTED
-        assert handle.spec_id_map == {"s1": "s1"}
+        assert handle.request_id_map == {"s1": "s1"}
 
         # File persisted
         json_file = os.path.join(str(tmp_path), f"{handle.agentmap_batch_id}.json")
@@ -257,7 +257,7 @@ class TestInt01FullLifecycle:
         restored = service2.restore_batch(handle_dict)
         assert restored.agentmap_batch_id == handle.agentmap_batch_id
         assert restored.provider_batch_id == "msgbatch_lifecycle001"
-        assert restored.spec_id_map == {"s1": "s1"}
+        assert restored.request_id_map == {"s1": "s1"}
 
         # ---- Phase 4: poll ----
         updated = service2.poll_batch(restored)
@@ -267,7 +267,7 @@ class TestInt01FullLifecycle:
     def test_handle_serialization_roundtrip_preserves_all_fields(self, tmp_path):
         """
         to_dict() -> restore_batch() must preserve all handle fields end-to-end.
-        This catches bugs where status or spec_id_map serialization loses data.
+        This catches bugs where status or request_id_map serialization loses data.
         """
         service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
         mock_adapter.submit.return_value = (
@@ -307,49 +307,49 @@ class TestInt01FullLifecycle:
 
 
 # ---------------------------------------------------------------------------
-# INT-02: submit_batch -> fetch_batch_results with sanitized spec_ids
+# INT-02: submit_batch -> fetch_batch_results with sanitized request_ids
 # ---------------------------------------------------------------------------
 
 
 class TestInt02SanitizedSpecIdDemux:
     """
-    INT-02: End-to-end spec_id sanitization + demux.
+    INT-02: End-to-end request_id sanitization + demux.
 
     Components: LLMService + AnthropicBatchAdapter (sanitization) + demux logic
-    UAT coverage: 3.10 (results mapped to spec_id)
+    UAT coverage: 3.10 (results mapped to request_id)
     """
 
-    def test_sanitized_spec_id_demux_end_to_end(self):
+    def test_sanitized_request_id_demux_end_to_end(self):
         """
-        When spec_id requires sanitization, the custom_id stored in spec_id_map
-        must be used during fetch_results to produce a record with the original spec_id.
+        When request_id requires sanitization, the custom_id stored in request_id_map
+        must be used during fetch_results to produce a record with the original request_id.
         """
         service, mock_adapter, repo = _make_service()
 
-        dirty_spec_id = "my spec/id"
+        dirty_request_id = "my spec/id"
         # Compute the sanitized id the adapter would produce
         import hashlib
 
-        sanitized = hashlib.sha1(dirty_spec_id.encode()).hexdigest()[:64]
+        sanitized = hashlib.sha1(dirty_request_id.encode()).hexdigest()[:64]
 
-        # Adapter returns spec_id_map with sanitized custom_id
+        # Adapter returns request_id_map with sanitized custom_id
         mock_adapter.submit.return_value = (
             "msgbatch_sanitized",
-            {dirty_spec_id: sanitized},
+            {dirty_request_id: sanitized},
             "2026-06-09T00:00:00Z",
         )
 
-        request = _make_batch_request(specs=[_make_spec(dirty_spec_id)])
+        request = _make_batch_request(specs=[_make_spec(dirty_request_id)])
         handle = service.submit_batch(request)
 
-        # Verify spec_id_map maps dirty -> sanitized
-        assert dirty_spec_id in handle.spec_id_map
-        assert handle.spec_id_map[dirty_spec_id] == sanitized
+        # Verify request_id_map maps dirty -> sanitized
+        assert dirty_request_id in handle.request_id_map
+        assert handle.request_id_map[dirty_request_id] == sanitized
 
         # Now fetch results: adapter returns record keyed by sanitized custom_id
-        # The service must reverse-map back to the original spec_id
+        # The service must reverse-map back to the original request_id
         result_record = LLMBatchResultRecord(
-            spec_id=dirty_spec_id,  # service demux restores original spec_id
+            request_id=dirty_request_id,  # service demux restores original request_id
             status="succeeded",
             provider="anthropic",
             model="claude-sonnet-4-6",
@@ -360,17 +360,17 @@ class TestInt02SanitizedSpecIdDemux:
 
         ended_handle = _make_handle(
             status=LLMBatchStatus.ENDED,
-            spec_id_map={dirty_spec_id: sanitized},
+            request_id_map={dirty_request_id: sanitized},
             agentmap_batch_id=handle.agentmap_batch_id,
             provider_batch_id=handle.provider_batch_id,
         )
         results = service.fetch_batch_results(ended_handle)
 
         assert len(results) == 1
-        assert results[0].spec_id == dirty_spec_id
+        assert results[0].request_id == dirty_request_id
 
-    def test_clean_spec_id_used_verbatim_in_demux(self):
-        """Clean spec_ids (valid regex) must appear unchanged in result records."""
+    def test_clean_request_id_used_verbatim_in_demux(self):
+        """Clean request_ids (valid regex) must appear unchanged in result records."""
         service, mock_adapter, repo = _make_service()
 
         clean_id = "my-clean-spec"
@@ -382,17 +382,17 @@ class TestInt02SanitizedSpecIdDemux:
 
         request = _make_batch_request(specs=[_make_spec(clean_id)])
         handle = service.submit_batch(request)
-        assert handle.spec_id_map[clean_id] == clean_id
+        assert handle.request_id_map[clean_id] == clean_id
 
         mock_adapter.fetch_results.return_value = [_make_succeeded_record(clean_id)]
         ended_handle = _make_handle(
             status=LLMBatchStatus.ENDED,
-            spec_id_map={clean_id: clean_id},
+            request_id_map={clean_id: clean_id},
             agentmap_batch_id=handle.agentmap_batch_id,
             provider_batch_id=handle.provider_batch_id,
         )
         results = service.fetch_batch_results(ended_handle)
-        assert results[0].spec_id == clean_id
+        assert results[0].request_id == clean_id
 
 
 # ---------------------------------------------------------------------------
@@ -442,25 +442,25 @@ class TestInt03RepositoryPersistencePattern:
                 data = json.loads(f.read())
             assert "api_key" not in data
 
-    def test_saved_json_preserves_spec_id_map(self):
-        """spec_id_map must survive write/read cycle intact."""
+    def test_saved_json_preserves_request_id_map(self):
+        """request_id_map must survive write/read cycle intact."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = BatchHandleRepository(batch_dir=tmp_dir)
-            spec_id_map = {"clean": "clean", "dirty/key": "hash123abc"}
-            handle = _make_handle(spec_id_map=spec_id_map)
+            request_id_map = {"clean": "clean", "dirty/key": "hash123abc"}
+            handle = _make_handle(request_id_map=request_id_map)
             repo.save(handle)
             path = os.path.join(tmp_dir, f"{handle.agentmap_batch_id}.json")
             with open(path) as f:
                 data = json.loads(f.read())
-            assert data["spec_id_map"] == spec_id_map
+            assert data["request_id_map"] == request_id_map
 
-    def test_load_from_dict_restores_handle_with_spec_id_map(self):
-        """load_from_dict must reconstruct handle preserving spec_id_map."""
-        spec_id_map = {"my-spec": "my-spec", "needs/sanitize": "a3f9c2"}
-        handle = _make_handle(spec_id_map=spec_id_map)
+    def test_load_from_dict_restores_handle_with_request_id_map(self):
+        """load_from_dict must reconstruct handle preserving request_id_map."""
+        request_id_map = {"my-spec": "my-spec", "needs/sanitize": "a3f9c2"}
+        handle = _make_handle(request_id_map=request_id_map)
         data = handle.to_dict()
         restored = BatchHandleRepository.load_from_dict(data)
-        assert restored.spec_id_map == spec_id_map
+        assert restored.request_id_map == request_id_map
         assert restored.agentmap_batch_id == handle.agentmap_batch_id
         assert restored.provider_batch_id == handle.provider_batch_id
         assert isinstance(restored.status, LLMBatchStatus)

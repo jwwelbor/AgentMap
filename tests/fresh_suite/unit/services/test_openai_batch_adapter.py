@@ -23,7 +23,7 @@ import pytest
 from agentmap.exceptions import LLMDependencyError
 from agentmap.models.llm_execution import (
     LLMBatchStatus,
-    LLMCallSpec,
+    LLMRequest,
 )
 
 # ---------------------------------------------------------------------------
@@ -31,11 +31,11 @@ from agentmap.models.llm_execution import (
 # ---------------------------------------------------------------------------
 
 
-def _make_spec(spec_id: str, messages=None) -> LLMCallSpec:
-    """Build a minimal LLMCallSpec for testing."""
+def _make_spec(request_id: str, messages=None) -> LLMRequest:
+    """Build a minimal LLMRequest for testing."""
     if messages is None:
-        messages = [{"role": "user", "content": f"hello from {spec_id}"}]
-    return LLMCallSpec(spec_id=spec_id, messages=messages)
+        messages = [{"role": "user", "content": f"hello from {request_id}"}]
+    return LLMRequest(request_id=request_id, messages=messages)
 
 
 def _make_mock_openai_module():
@@ -182,7 +182,7 @@ class TestSubmit:
         adapter, _ = _make_adapter(client_instance=ci)
 
         specs = [_make_spec("s1"), _make_spec("s2")]
-        batch_id, spec_id_map, expires_at = adapter.submit(
+        batch_id, request_id_map, expires_at = adapter.submit(
             specs,
             resolved_params=_make_resolved(specs, model="gpt-4o", max_tokens=1024),
         )
@@ -222,9 +222,9 @@ class TestSubmit:
         assert batch_kwargs.get("endpoint") == "/v1/chat/completions"
         assert batch_kwargs.get("completion_window") == "24h"
 
-        # Return tuple must be (batch_id, spec_id_map, expires_at) — 3 elements
+        # Return tuple must be (batch_id, request_id_map, expires_at) — 3 elements
         assert batch_id == "batch-abc"
-        assert set(spec_id_map.keys()) == {"s1", "s2"}
+        assert set(request_id_map.keys()) == {"s1", "s2"}
         assert expires_at == "2025-01-01T00:00:00Z"
 
     def test_submit_file_id_does_not_leak_to_caller(self):
@@ -248,7 +248,7 @@ class TestSubmit:
         )
 
         # Must unpack to exactly 3 without ValueError
-        batch_id, spec_id_map, expires_at = result
+        batch_id, request_id_map, expires_at = result
 
     def test_submit_per_spec_model_override(self):
         """Spec with model override uses spec.model in the body."""
@@ -262,8 +262,8 @@ class TestSubmit:
         ci.batches.create.return_value = mock_batch
 
         adapter, _ = _make_adapter(client_instance=ci)
-        spec_override = LLMCallSpec(
-            spec_id="s1",
+        spec_override = LLMRequest(
+            request_id="s1",
             messages=[{"role": "user", "content": "hi"}],
             model="gpt-3.5-turbo",
         )
@@ -307,7 +307,7 @@ class TestFetchResults:
 
     def test_fetch_results_demuxes_by_custom_id_not_position(self):
         """
-        TC-042: Records must be mapped by custom_id back to spec_id.
+        TC-042: Records must be mapped by custom_id back to request_id.
         The response has cid2 before cid1 — order-independent demux required.
         """
         ci = MagicMock()
@@ -351,13 +351,13 @@ class TestFetchResults:
         self._setup_files_content(ci, records)
 
         adapter, _ = _make_adapter(client_instance=ci)
-        spec_id_map = {"s1": "cid1", "s2": "cid2"}
+        request_id_map = {"s1": "cid1", "s2": "cid2"}
         results = list(
-            adapter.fetch_results("batch-id", spec_id_map, result_ref="file-out")
+            adapter.fetch_results("batch-id", request_id_map, result_ref="file-out")
         )
 
         assert len(results) == 2
-        by_spec = {r.spec_id: r for r in results}
+        by_spec = {r.request_id: r for r in results}
         assert "s1" in by_spec
         assert "s2" in by_spec
         assert by_spec["s1"].content == "response for s1"
@@ -430,7 +430,7 @@ class TestFetchResults:
 
         assert len(results) == 1
         rec = results[0]
-        assert rec.spec_id == "s1"
+        assert rec.request_id == "s1"
         assert rec.status == "succeeded"
         assert rec.usage is not None
         assert rec.usage.input_tokens == 100
@@ -464,7 +464,7 @@ class TestFetchResults:
 
         assert len(results) == 1
         rec = results[0]
-        assert rec.spec_id == "s1"
+        assert rec.request_id == "s1"
         assert rec.status == "errored"
         assert rec.error is not None
         assert rec.usage is None
@@ -489,7 +489,7 @@ class TestFetchResults:
             )
 
     def test_fetch_results_unknown_custom_id_skipped(self):
-        """A custom_id not in spec_id_map should not raise — skip or warn."""
+        """A custom_id not in request_id_map should not raise — skip or warn."""
         ci = MagicMock()
         records = [
             {
@@ -517,7 +517,7 @@ class TestFetchResults:
         results = list(
             adapter.fetch_results("batch-id", {"s1": "cid1"}, result_ref="file-out")
         )
-        # Result may be empty or contain a record with the unknown id as spec_id — either is fine
+        # Result may be empty or contain a record with the unknown id as request_id — either is fine
         # as long as it doesn't raise
         assert isinstance(results, list)
 

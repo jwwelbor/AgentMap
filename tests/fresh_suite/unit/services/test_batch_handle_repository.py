@@ -3,7 +3,7 @@ Unit tests for LLMBatchHandle serialization and BatchHandleRepository persistenc
 
 Covers:
 - TC-AC1-03: handle.to_dict() is a plain dict; json.dumps() succeeds; no anthropic SDK types
-- TC-AC2-03: BatchHandleRepository.load_from_dict preserves spec_id_map
+- TC-AC2-03: BatchHandleRepository.load_from_dict preserves request_id_map
 - TC-AC9-01: saved JSON contains no api_key field
 """
 
@@ -25,7 +25,7 @@ def _make_handle(**kwargs):
         status=LLMBatchStatus.IN_PROGRESS,
         provider="anthropic",
         model="claude-sonnet-4-6",
-        spec_id_map={"spec-1": "spec-1", "needs/sanitize": "a3f9c2"},
+        request_id_map={"spec-1": "spec-1", "needs/sanitize": "a3f9c2"},
         results_url=None,
         expires_at="2026-06-08T00:00:00Z",
         request_counts=None,
@@ -62,7 +62,7 @@ class TestLLMBatchHandleSerialization:
         result = handle.to_dict()
         assert result["agentmap_batch_id"] == "amatch_" + "a1b2c3d4" * 4
         assert result["provider_batch_id"] == "msgbatch_abc123"
-        assert "spec_id_map" in result
+        assert "request_id_map" in result
 
     def test_to_dict_status_is_string(self):
         """Status in dict must be a string (not an enum), for JSON portability."""
@@ -72,18 +72,18 @@ class TestLLMBatchHandleSerialization:
 
 
 class TestBatchHandleRepositoryRoundTrip:
-    """TC-AC2-03: BatchHandleRepository.load_from_dict preserves spec_id_map."""
+    """TC-AC2-03: BatchHandleRepository.load_from_dict preserves request_id_map."""
 
-    def test_load_from_dict_preserves_spec_id_map(self):
-        """Restored handle spec_id_map must match original exactly."""
+    def test_load_from_dict_preserves_request_id_map(self):
+        """Restored handle request_id_map must match original exactly."""
         from agentmap.services.llm_batch_repository import BatchHandleRepository
 
         handle = _make_handle(
-            spec_id_map={"my-spec": "my-spec", "needs/sanitize": "a3f9c2"}
+            request_id_map={"my-spec": "my-spec", "needs/sanitize": "a3f9c2"}
         )
         data = handle.to_dict()
         restored = BatchHandleRepository.load_from_dict(data)
-        assert restored.spec_id_map == {
+        assert restored.request_id_map == {
             "my-spec": "my-spec",
             "needs/sanitize": "a3f9c2",
         }
@@ -149,18 +149,18 @@ class TestBatchHandleRepositoryPersistence:
                 json_data = json.loads(f.read())
             assert json_data["agentmap_batch_id"] == handle.agentmap_batch_id
 
-    def test_save_written_json_preserves_spec_id_map(self):
-        """JSON file must contain spec_id_map matching handle."""
+    def test_save_written_json_preserves_request_id_map(self):
+        """JSON file must contain request_id_map matching handle."""
         from agentmap.services.llm_batch_repository import BatchHandleRepository
 
         with tempfile.TemporaryDirectory() as tmp_path:
             repo = BatchHandleRepository(batch_dir=tmp_path)
-            handle = _make_handle(spec_id_map={"s1": "s1", "s2/sub": "a1b2c3"})
+            handle = _make_handle(request_id_map={"s1": "s1", "s2/sub": "a1b2c3"})
             repo.save(handle)
             expected_file = os.path.join(tmp_path, f"{handle.agentmap_batch_id}.json")
             with open(expected_file) as f:
                 json_data = json.loads(f.read())
-            assert json_data["spec_id_map"] == {"s1": "s1", "s2/sub": "a1b2c3"}
+            assert json_data["request_id_map"] == {"s1": "s1", "s2/sub": "a1b2c3"}
 
 
 # ---------------------------------------------------------------------------

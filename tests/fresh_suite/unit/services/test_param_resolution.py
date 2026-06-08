@@ -8,8 +8,8 @@ key to RESERVED_PARAMS automatically generates its full row of cells — a futur
 quality gate cannot find an uncovered pair.
 
 Surface labels:
-    S1 = LLMCallSpec direct field
-    S2 = LLMCallSpec.request_options[options_key]
+    S1 = LLMRequest direct field
+    S2 = LLMRequest.request_options[options_key]
     S3 = LLMBatchSubmitRequest direct field
     S4 = LLMBatchSubmitRequest.request_options[options_key]
 """
@@ -18,12 +18,12 @@ from typing import Any, Dict, List, Tuple
 
 import pytest
 
-from agentmap.models.llm_execution import LLMBatchSubmitRequest, LLMCallSpec
+from agentmap.models.llm_execution import LLMBatchSubmitRequest, LLMRequest
 from agentmap.services.llm._param_resolution import (
     RESERVED_PARAMS,
     ReservedParam,
     applicable_surfaces,
-    resolve_spec_params,
+    resolve_request_params,
     surface_pairs,
 )
 from agentmap.services.llm_batch_errors import LLMBatchParamConflictError
@@ -38,13 +38,13 @@ def _base_request(provider="anthropic", model="claude-3-5-haiku", max_tokens=102
         provider=provider,
         model=model,
         max_tokens=max_tokens,
-        call_specs=[],
+        requests=[],
     )
 
 
-def _base_spec(spec_id="s1"):
-    return LLMCallSpec(
-        spec_id=spec_id,
+def _base_spec(request_id="s1"):
+    return LLMRequest(
+        request_id=request_id,
         messages=[{"role": "user", "content": "hi"}],
     )
 
@@ -53,20 +53,20 @@ def _apply_surface(
     param: ReservedParam,
     surface: str,
     value: Any,
-    spec: LLMCallSpec,
+    spec: LLMRequest,
     request: LLMBatchSubmitRequest,
-) -> Tuple[LLMCallSpec, LLMBatchSubmitRequest]:
+) -> Tuple[LLMRequest, LLMBatchSubmitRequest]:
     """Return (spec, request) with ``value`` applied on ``surface`` for ``param``."""
     # We return new objects to avoid shared-state bugs between test cells.
     spec_kwargs: Dict[str, Any] = {
-        "spec_id": spec.spec_id,
+        "request_id": spec.request_id,
         "messages": spec.messages,
     }
     req_kwargs: Dict[str, Any] = {
         "provider": request.provider,
         "model": request.model,
         "max_tokens": request.max_tokens,
-        "call_specs": request.call_specs,
+        "requests": request.requests,
     }
 
     # Carry over existing options
@@ -99,14 +99,14 @@ def _apply_surface(
     if req_req_opts:
         req_kwargs["request_options"] = req_req_opts
 
-    return LLMCallSpec(**spec_kwargs), LLMBatchSubmitRequest(**req_kwargs)
+    return LLMRequest(**spec_kwargs), LLMBatchSubmitRequest(**req_kwargs)
 
 
 def _build_cell(
     param: ReservedParam,
     surfaces: List[str],
     values: List[Any],
-) -> Tuple[LLMCallSpec, LLMBatchSubmitRequest]:
+) -> Tuple[LLMRequest, LLMBatchSubmitRequest]:
     """
     Build a (spec, request) pair with each surface[i] set to values[i].
 
@@ -187,10 +187,10 @@ def _different_value_cases():
 
 @pytest.mark.parametrize("param,surfaces,values", _same_value_cases())
 def test_same_value_on_two_surfaces_is_allowed(param, surfaces, values):
-    """N5.1: same-value cell — resolve_spec_params must NOT raise."""
+    """N5.1: same-value cell — resolve_request_params must NOT raise."""
     spec, request = _build_cell(param, surfaces, values)
     # Must not raise
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     # The resolved dict must carry the single value under options_key
     assert param.options_key in resolved, (
         f"Param {param.logical!r} should be in resolved dict "
@@ -210,18 +210,18 @@ def test_same_value_on_two_surfaces_is_allowed(param, surfaces, values):
 def test_different_values_on_two_surfaces_raises_conflict_error(
     param, surfaces, values
 ):
-    """N5.1: different-value cell — resolve_spec_params must raise LLMBatchParamConflictError."""
+    """N5.1: different-value cell — resolve_request_params must raise LLMBatchParamConflictError."""
     spec, request = _build_cell(param, surfaces, values)
     with pytest.raises(LLMBatchParamConflictError) as exc_info:
-        resolve_spec_params(spec, request)
+        resolve_request_params(spec, request)
     msg = str(exc_info.value)
     # Error must name the param
     assert param.logical in msg, (
         f"Error message for {param.logical!r} conflict must name the parameter. "
         f"Got: {msg!r}"
     )
-    # Error must name the spec_id
-    assert "s1" in msg, f"Error must name spec_id. Got: {msg!r}"
+    # Error must name the request_id
+    assert "s1" in msg, f"Error must name request_id. Got: {msg!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +240,7 @@ def test_single_surface_value_is_applied(param, surface):
 
     v = _same_value_for_param(param)
     spec, request = _build_cell(param, [surface], [v])
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert param.options_key in resolved
     assert resolved[param.options_key] == v
 
@@ -254,7 +254,7 @@ def test_temperature_absent_when_no_surface_set():
     """N5.1: zero-surface cell for temperature → not in resolved dict."""
     spec = _base_spec()
     request = _base_request()
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert (
         "temperature" not in resolved
     ), "temperature should be absent from resolved dict when no surface sets it"
@@ -264,7 +264,7 @@ def test_model_always_resolved_from_request_envelope():
     """model is always resolved from request.model when no per-spec override."""
     spec = _base_spec()
     request = _base_request(model="base-model")
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert resolved["model"] == "base-model"
 
 
@@ -272,7 +272,7 @@ def test_max_tokens_always_resolved_from_request_envelope():
     """max_tokens is always resolved from request.max_tokens when no per-spec override."""
     spec = _base_spec()
     request = _base_request(max_tokens=2048)
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert resolved["max_tokens"] == 2048
 
 
@@ -284,25 +284,25 @@ def test_max_tokens_always_resolved_from_request_envelope():
 def test_passthrough_same_value_on_both_dicts_is_allowed():
     """Non-reserved key with same value in both option dicts → allowed."""
     spec = _base_spec()
-    spec = LLMCallSpec(
-        spec_id="s1", messages=spec.messages, request_options={"top_p": 0.9}
+    spec = LLMRequest(
+        request_id="s1", messages=spec.messages, request_options={"top_p": 0.9}
     )
     request = _base_request()
     request = LLMBatchSubmitRequest(
         provider="anthropic",
         model="m",
         max_tokens=100,
-        call_specs=[],
+        requests=[],
         request_options={"top_p": 0.9},
     )
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert resolved["top_p"] == 0.9
 
 
 def test_passthrough_different_values_raises_conflict_error():
     """Non-reserved key with different values in both option dicts → conflict error."""
-    spec = LLMCallSpec(
-        spec_id="s1",
+    spec = LLMRequest(
+        request_id="s1",
         messages=[{"role": "user", "content": "hi"}],
         request_options={"top_p": 0.5},
     )
@@ -310,23 +310,23 @@ def test_passthrough_different_values_raises_conflict_error():
         provider="anthropic",
         model="m",
         max_tokens=100,
-        call_specs=[],
+        requests=[],
         request_options={"top_p": 0.9},
     )
     with pytest.raises(LLMBatchParamConflictError) as exc_info:
-        resolve_spec_params(spec, request)
+        resolve_request_params(spec, request)
     assert "top_p" in str(exc_info.value)
 
 
 def test_passthrough_key_only_in_spec_request_options():
     """Non-reserved key only in spec.request_options → applied."""
-    spec = LLMCallSpec(
-        spec_id="s1",
+    spec = LLMRequest(
+        request_id="s1",
         messages=[{"role": "user", "content": "hi"}],
         request_options={"seed": 42},
     )
     request = _base_request()
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert resolved["seed"] == 42
 
 
@@ -337,10 +337,10 @@ def test_passthrough_key_only_in_batch_request_options():
         provider="anthropic",
         model="m",
         max_tokens=100,
-        call_specs=[],
+        requests=[],
         request_options={"seed": 99},
     )
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert resolved["seed"] == 99
 
 
@@ -353,14 +353,14 @@ def test_stream_in_spec_request_options_raises():
     """stream param in spec.request_options raises LLMServiceError."""
     from agentmap.exceptions.service_exceptions import LLMServiceError
 
-    spec = LLMCallSpec(
-        spec_id="s1",
+    spec = LLMRequest(
+        request_id="s1",
         messages=[{"role": "user", "content": "hi"}],
         request_options={"stream": True},
     )
     request = _base_request()
     with pytest.raises(LLMServiceError):
-        resolve_spec_params(spec, request)
+        resolve_request_params(spec, request)
 
 
 # ---------------------------------------------------------------------------
@@ -375,7 +375,7 @@ def test_max_tokens_zero_raises():
     spec = _base_spec()
     request = _base_request(max_tokens=0)
     with pytest.raises(LLMServiceError):
-        resolve_spec_params(spec, request)
+        resolve_request_params(spec, request)
 
 
 # ---------------------------------------------------------------------------
@@ -416,8 +416,8 @@ def test_intra_surface_S2_canonical_and_alias_different_values_raises():
     discarded and only max_tokens=100 is seen on S2 — no conflict raised.
     """
     # max_tokens (canonical) and max_output_tokens (Gemini alias) in the SAME dict
-    spec = LLMCallSpec(
-        spec_id="s1",
+    spec = LLMRequest(
+        request_id="s1",
         messages=[{"role": "user", "content": "hi"}],
         request_options={"max_tokens": 100, "max_output_tokens": 200},
     )
@@ -427,13 +427,13 @@ def test_intra_surface_S2_canonical_and_alias_different_values_raises():
         provider="anthropic",
         model="claude-3-5-haiku",
         max_tokens=None,
-        call_specs=[],
+        requests=[],
     )
     with pytest.raises(LLMBatchParamConflictError) as exc_info:
-        resolve_spec_params(spec, request)
+        resolve_request_params(spec, request)
     msg = str(exc_info.value)
     assert "max_tokens" in msg, f"Error must name the param. Got: {msg!r}"
-    assert "s1" in msg, f"Error must name spec_id. Got: {msg!r}"
+    assert "s1" in msg, f"Error must name request_id. Got: {msg!r}"
 
 
 def test_intra_surface_S4_canonical_and_alias_different_values_raises():
@@ -446,21 +446,21 @@ def test_intra_surface_S4_canonical_and_alias_different_values_raises():
         provider="anthropic",
         model="claude-3-5-haiku",
         max_tokens=None,
-        call_specs=[],
+        requests=[],
         request_options={"max_tokens": 100, "max_output_tokens": 200},
     )
     spec = _base_spec()
     with pytest.raises(LLMBatchParamConflictError) as exc_info:
-        resolve_spec_params(spec, request)
+        resolve_request_params(spec, request)
     msg = str(exc_info.value)
     assert "max_tokens" in msg, f"Error must name the param. Got: {msg!r}"
-    assert "s1" in msg, f"Error must name spec_id. Got: {msg!r}"
+    assert "s1" in msg, f"Error must name request_id. Got: {msg!r}"
 
 
 def test_intra_surface_S2_canonical_and_alias_same_values_allowed():
     """N4: spec.request_options with canonical + alias at SAME value → allowed, single value resolved."""
-    spec = LLMCallSpec(
-        spec_id="s1",
+    spec = LLMRequest(
+        request_id="s1",
         messages=[{"role": "user", "content": "hi"}],
         request_options={"max_tokens": 512, "max_output_tokens": 512},
     )
@@ -469,9 +469,9 @@ def test_intra_surface_S2_canonical_and_alias_same_values_allowed():
         provider="anthropic",
         model="claude-3-5-haiku",
         max_tokens=None,
-        call_specs=[],
+        requests=[],
     )
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert resolved["max_tokens"] == 512
 
 
@@ -481,11 +481,11 @@ def test_intra_surface_S4_canonical_and_alias_same_values_allowed():
         provider="anthropic",
         model="claude-3-5-haiku",
         max_tokens=None,
-        call_specs=[],
+        requests=[],
         request_options={"max_tokens": 512, "max_output_tokens": 512},
     )
     spec = _base_spec()
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert resolved["max_tokens"] == 512
 
 
@@ -526,8 +526,8 @@ def test_intra_surface_alias_conflict_raises(
     """N4 registry-driven: intra-surface canonical+alias with different values → raises."""
     opts = {param.options_key: canonical_val, alias: alias_val}
     if surface_label == "S2":
-        spec = LLMCallSpec(
-            spec_id="s1",
+        spec = LLMRequest(
+            request_id="s1",
             messages=[{"role": "user", "content": "hi"}],
             request_options=opts,
         )
@@ -536,7 +536,7 @@ def test_intra_surface_alias_conflict_raises(
             provider="anthropic",
             model="claude-3-5-haiku",
             max_tokens=None,
-            call_specs=[],
+            requests=[],
         )
     else:  # S4
         spec = _base_spec()
@@ -545,11 +545,11 @@ def test_intra_surface_alias_conflict_raises(
             provider="anthropic",
             model="claude-3-5-haiku",
             max_tokens=None,
-            call_specs=[],
+            requests=[],
             request_options=opts,
         )
     with pytest.raises(LLMBatchParamConflictError) as exc_info:
-        resolve_spec_params(spec, request)
+        resolve_request_params(spec, request)
     msg = str(exc_info.value)
     assert (
         param.logical in msg or param.options_key in msg
@@ -569,15 +569,15 @@ def test_same_spec_s1_vs_s2_temperature_conflict_raises():
     This is the exact cell that was uncovered by the pair-by-pair implementation
     and that triggered the N1 UAT finding.
     """
-    spec = LLMCallSpec(
-        spec_id="s1",
+    spec = LLMRequest(
+        request_id="s1",
         messages=[{"role": "user", "content": "hi"}],
         temperature=0.2,
         request_options={"temperature": 0.9},
     )
     request = _base_request()
     with pytest.raises(LLMBatchParamConflictError) as exc_info:
-        resolve_spec_params(spec, request)
+        resolve_request_params(spec, request)
     msg = str(exc_info.value)
     assert "temperature" in msg
     assert "s1" in msg
@@ -585,14 +585,14 @@ def test_same_spec_s1_vs_s2_temperature_conflict_raises():
 
 def test_same_spec_s1_vs_s2_temperature_same_value_allowed():
     """Same value on S1 and S2 for temperature → allowed (same-value rule)."""
-    spec = LLMCallSpec(
-        spec_id="s1",
+    spec = LLMRequest(
+        request_id="s1",
         messages=[{"role": "user", "content": "hi"}],
         temperature=0.7,
         request_options={"temperature": 0.7},
     )
     request = _base_request()
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert resolved["temperature"] == 0.7
 
 
@@ -603,26 +603,26 @@ def test_same_spec_s1_vs_s2_temperature_same_value_allowed():
 
 def test_model_s1_vs_s3_conflict_raises():
     """spec.model (S1) vs request.model (S3) with different values → conflict."""
-    spec = LLMCallSpec(
-        spec_id="s1",
+    spec = LLMRequest(
+        request_id="s1",
         messages=[{"role": "user", "content": "hi"}],
         model="model-a",
     )
     request = _base_request(model="model-b")
     with pytest.raises(LLMBatchParamConflictError) as exc_info:
-        resolve_spec_params(spec, request)
+        resolve_request_params(spec, request)
     assert "model" in str(exc_info.value)
 
 
 def test_model_s1_vs_s3_same_value_allowed():
     """spec.model (S1) == request.model (S3) → allowed."""
-    spec = LLMCallSpec(
-        spec_id="s1",
+    spec = LLMRequest(
+        request_id="s1",
         messages=[{"role": "user", "content": "hi"}],
         model="shared-model",
     )
     request = _base_request(model="shared-model")
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert resolved["model"] == "shared-model"
 
 
@@ -644,11 +644,11 @@ def test_alias_different_value_raises_conflict_error():
         provider="gemini",
         model="gemini-1.5-flash",
         max_tokens=1024,
-        call_specs=[],
+        requests=[],
         request_options={"max_output_tokens": 2048},
     )
     with pytest.raises(LLMBatchParamConflictError) as exc_info:
-        resolve_spec_params(spec, request)
+        resolve_request_params(spec, request)
     msg = str(exc_info.value)
     assert "max_tokens" in msg
     assert "s1" in msg
@@ -664,10 +664,10 @@ def test_alias_same_value_is_allowed():
         provider="gemini",
         model="gemini-1.5-flash",
         max_tokens=512,
-        call_specs=[],
+        requests=[],
         request_options={"max_output_tokens": 512},
     )
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert resolved["max_tokens"] == 512
     # The alias must NOT appear in the resolved dict (canonical only)
     assert "max_output_tokens" not in resolved
@@ -678,8 +678,8 @@ def test_alias_only_in_spec_request_options():
     max_output_tokens=768 in spec.request_options (S2) with no canonical
     max_tokens set elsewhere → resolves to max_tokens=768.
     """
-    spec = LLMCallSpec(
-        spec_id="s1",
+    spec = LLMRequest(
+        request_id="s1",
         messages=[{"role": "user", "content": "hi"}],
         request_options={"max_output_tokens": 768},
     )
@@ -687,9 +687,9 @@ def test_alias_only_in_spec_request_options():
         provider="gemini",
         model="gemini-1.5-flash",
         max_tokens=None,
-        call_specs=[],
+        requests=[],
     )
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert resolved["max_tokens"] == 768
     assert "max_output_tokens" not in resolved
 
@@ -705,10 +705,10 @@ def test_alias_not_treated_as_passthrough():
         provider="gemini",
         model="gemini-1.5-flash",
         max_tokens=None,
-        call_specs=[],
+        requests=[],
         request_options={"max_output_tokens": 300},
     )
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert "max_output_tokens" not in resolved
     assert resolved.get("max_tokens") == 300
 
@@ -751,12 +751,12 @@ def test_alias_same_value_matrix_allowed(param, alias, v_canonical, v_alias):
         "provider": "gemini",
         "model": "gemini-1.5-flash" if param.logical != "model" else v_canonical,
         "max_tokens": v_canonical if param.logical == "max_tokens" else 1024,
-        "call_specs": [],
+        "requests": [],
         "request_options": {alias: v_alias},
     }
     request = LLMBatchSubmitRequest(**req_kwargs)
     spec = _base_spec()
-    resolved = resolve_spec_params(spec, request)
+    resolved = resolve_request_params(spec, request)
     assert resolved[param.options_key] == v_canonical
     assert alias not in resolved
 
@@ -772,11 +772,11 @@ def test_alias_different_value_matrix_raises(param, alias, v_canonical, v_alias)
         "provider": "gemini",
         "model": "gemini-1.5-flash" if param.logical != "model" else v_canonical,
         "max_tokens": v_canonical if param.logical == "max_tokens" else 1024,
-        "call_specs": [],
+        "requests": [],
         "request_options": {alias: v_alias},
     }
     request = LLMBatchSubmitRequest(**req_kwargs)
     spec = _base_spec()
     with pytest.raises(LLMBatchParamConflictError) as exc_info:
-        resolve_spec_params(spec, request)
+        resolve_request_params(spec, request)
     assert param.logical in str(exc_info.value)

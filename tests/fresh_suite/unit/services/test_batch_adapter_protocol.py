@@ -4,7 +4,7 @@ Provider-parametrized lifecycle and protocol tests.
 Covers:
 - TC-001..003: isinstance(adapter, BatchAdapterProtocol) for all three adapters
 - TC-004..006: Full submit→poll→restore→fetch→cancel lifecycle per provider
-- TC-007: _sanitize_spec_id used by all adapters
+- TC-007: _sanitize_request_id used by all adapters
 - TC-008: BatchPollResult is a dataclass with required fields
 - AC-T1: Provider-parametrized suite exercises lifecycle for all three adapters
 
@@ -18,7 +18,7 @@ from agentmap.models.llm_execution import (
     BatchPollResult,
     LLMBatchResultRecord,
     LLMBatchStatus,
-    LLMCallSpec,
+    LLMRequest,
 )
 from agentmap.services.protocols.service_protocols import BatchAdapterProtocol
 
@@ -27,10 +27,10 @@ from agentmap.services.protocols.service_protocols import BatchAdapterProtocol
 # ---------------------------------------------------------------------------
 
 
-def _make_spec(spec_id: str) -> LLMCallSpec:
-    return LLMCallSpec(
-        spec_id=spec_id,
-        messages=[{"role": "user", "content": f"prompt for {spec_id}"}],
+def _make_spec(request_id: str) -> LLMRequest:
+    return LLMRequest(
+        request_id=request_id,
+        messages=[{"role": "user", "content": f"prompt for {request_id}"}],
     )
 
 
@@ -112,11 +112,11 @@ class TestAnthropicAdapterLifecycle:
         client.messages.batches.create.return_value = mock_batch
         specs = [_make_spec("s1")]
         resolved_params = [{"model": "claude-sonnet-4-6", "max_tokens": 1024}]
-        provider_batch_id, spec_id_map, expires_at = adapter.submit(
+        provider_batch_id, request_id_map, expires_at = adapter.submit(
             specs=specs, resolved_params=resolved_params
         )
         assert provider_batch_id == "msgbatch_test001"
-        assert "s1" in spec_id_map
+        assert "s1" in request_id_map
         assert expires_at == "2026-07-01T00:00:00Z"
 
         # --- poll ---
@@ -133,7 +133,7 @@ class TestAnthropicAdapterLifecycle:
         assert poll_result.status == LLMBatchStatus.ENDED
 
         # --- fetch_results ---
-        custom_id = spec_id_map["s1"]
+        custom_id = request_id_map["s1"]
         mock_result = MagicMock()
         mock_result.custom_id = custom_id
         mock_result.result = MagicMock()
@@ -149,12 +149,12 @@ class TestAnthropicAdapterLifecycle:
         client.messages.batches.results.return_value = iter([mock_result])
         records = list(
             adapter.fetch_results(
-                provider_batch_id=provider_batch_id, spec_id_map=spec_id_map
+                provider_batch_id=provider_batch_id, request_id_map=request_id_map
             )
         )
         assert len(records) == 1
         assert isinstance(records[0], LLMBatchResultRecord)
-        assert records[0].spec_id == "s1"
+        assert records[0].request_id == "s1"
         assert records[0].status == "succeeded"
 
         # --- cancel ---
@@ -193,11 +193,11 @@ class TestOpenAIAdapterLifecycle:
         client.batches.create.return_value = mock_batch
         specs = [_make_spec("s1")]
         resolved_params = [{"model": "gpt-4o", "max_tokens": 1024}]
-        provider_batch_id, spec_id_map, expires_at = adapter.submit(
+        provider_batch_id, request_id_map, expires_at = adapter.submit(
             specs=specs, resolved_params=resolved_params
         )
         assert provider_batch_id == "batch_openai001"
-        assert "s1" in spec_id_map
+        assert "s1" in request_id_map
 
         # --- poll ---
         mock_poll = MagicMock()
@@ -211,7 +211,7 @@ class TestOpenAIAdapterLifecycle:
         assert poll_result.status == LLMBatchStatus.ENDED
 
         # --- fetch_results (OpenAI uses files.content) ---
-        custom_id = spec_id_map["s1"]
+        custom_id = request_id_map["s1"]
         import json
 
         result_line = json.dumps(
@@ -236,12 +236,12 @@ class TestOpenAIAdapterLifecycle:
         records = list(
             adapter.fetch_results(
                 provider_batch_id=provider_batch_id,
-                spec_id_map=spec_id_map,
+                request_id_map=request_id_map,
                 result_ref="file_out001",
             )
         )
         assert len(records) >= 1
-        assert records[0].spec_id == "s1"
+        assert records[0].request_id == "s1"
 
         # --- provider_name ---
         assert adapter.provider_name == "openai"
@@ -277,14 +277,14 @@ class TestGeminiAdapterLifecycle:
 
         specs = [_make_spec("s1")]
         resolved_params = [{"model": "gemini-2.0-flash", "max_tokens": 1024}]
-        provider_batch_id, spec_id_map, expires_at = adapter.submit(
+        provider_batch_id, request_id_map, expires_at = adapter.submit(
             specs=specs,
             resolved_params=resolved_params,
         )
         assert len(provider_batch_id) > 0
-        # Gemini uses positional demux: spec_id_map is {"__ordered__": [spec_ids]}
-        assert "__ordered__" in spec_id_map
-        assert "s1" in spec_id_map["__ordered__"]
+        # Gemini uses positional demux: request_id_map is {"__ordered__": [request_ids]}
+        assert "__ordered__" in request_id_map
+        assert "s1" in request_id_map["__ordered__"]
 
         # provider_name and supports_cancel (F2 fix: supports_cancel=True)
         assert adapter.provider_name == "google"
@@ -292,36 +292,36 @@ class TestGeminiAdapterLifecycle:
 
 
 # ---------------------------------------------------------------------------
-# TC-007: _sanitize_spec_id
+# TC-007: _sanitize_request_id
 # ---------------------------------------------------------------------------
 
 
 class TestSanitizeSpecId:
-    """TC-007: _sanitize_spec_id shared helper is present and works correctly."""
+    """TC-007: _sanitize_request_id shared helper is present and works correctly."""
 
-    def test_tc007_sanitize_spec_id_strips_invalid_chars(self):
-        """_sanitize_spec_id is a shared module-level helper used by all adapters."""
-        from agentmap.services.llm._batch_ids import _sanitize_spec_id
+    def test_tc007_sanitize_request_id_strips_invalid_chars(self):
+        """_sanitize_request_id is a shared module-level helper used by all adapters."""
+        from agentmap.services.llm._batch_ids import _sanitize_request_id
 
-        sanitized = _sanitize_spec_id("my spec/id with spaces")
+        sanitized = _sanitize_request_id("my spec/id with spaces")
         assert " " not in sanitized
         assert "/" not in sanitized
 
-    def test_tc007_sanitize_spec_id_is_used_by_anthropic_adapter(self):
+    def test_tc007_sanitize_request_id_is_used_by_anthropic_adapter(self):
         """AnthropicBatchAdapter import path includes _batch_ids module."""
         import importlib
 
         # Verify that _batch_ids is importable and used by the anthropic adapter
         batch_ids_mod = importlib.import_module("agentmap.services.llm._batch_ids")
-        assert hasattr(batch_ids_mod, "_sanitize_spec_id")
-        assert hasattr(batch_ids_mod, "build_spec_id_map")
+        assert hasattr(batch_ids_mod, "_sanitize_request_id")
+        assert hasattr(batch_ids_mod, "build_request_id_map")
 
-    def test_tc007_sanitize_spec_id_is_used_by_openai_adapter(self):
+    def test_tc007_sanitize_request_id_is_used_by_openai_adapter(self):
         """OpenAIBatchAdapter also uses _batch_ids shared helper."""
         import importlib
 
         batch_ids_mod = importlib.import_module("agentmap.services.llm._batch_ids")
-        assert hasattr(batch_ids_mod, "_sanitize_spec_id")
+        assert hasattr(batch_ids_mod, "_sanitize_request_id")
 
 
 # ---------------------------------------------------------------------------

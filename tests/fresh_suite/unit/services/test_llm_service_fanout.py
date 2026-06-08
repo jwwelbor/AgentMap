@@ -27,7 +27,7 @@ from agentmap.exceptions import LLMServiceError
 from agentmap.exceptions.service_exceptions import LLMResolvedCallError
 from agentmap.models.llm_execution import (
     LLMCallResult,
-    LLMCallSpec,
+    LLMRequest,
     LLMResponse,
     LLMUsage,
 )
@@ -40,11 +40,11 @@ from tests.utils.mock_service_factory import MockServiceFactory
 # ---------------------------------------------------------------------------
 
 
-def _make_spec(spec_id: str, provider: str = "openai", **kwargs) -> LLMCallSpec:
-    """Factory for minimal test LLMCallSpec instances."""
-    return LLMCallSpec(
-        spec_id=spec_id,
-        messages=[{"role": "user", "content": f"prompt for {spec_id}"}],
+def _make_spec(request_id: str, provider: str = "openai", **kwargs) -> LLMRequest:
+    """Factory for minimal test LLMRequest instances."""
+    return LLMRequest(
+        request_id=request_id,
+        messages=[{"role": "user", "content": f"prompt for {request_id}"}],
         provider=provider,
         **kwargs,
     )
@@ -171,7 +171,7 @@ class TestAC002OneResultPerSpec(unittest.IsolatedAsyncioTestCase):
             results = await self.service.call_llm_many_async(specs, max_concurrency=1)
 
         self.assertEqual(len(results), 1)
-        self.assertEqual(results[0].spec_id, "only-one")
+        self.assertEqual(results[0].request_id, "only-one")
         self.assertEqual(results[0].content, "hello")
 
     async def test_tc_ac2_02_large_submission_has_no_dropped_or_duplicated_results(
@@ -188,10 +188,10 @@ class TestAC002OneResultPerSpec(unittest.IsolatedAsyncioTestCase):
             results = await self.service.call_llm_many_async(specs, max_concurrency=8)
 
         self.assertEqual(len(results), 100)
-        returned_ids = [r.spec_id for r in results]
+        returned_ids = [r.request_id for r in results]
         self.assertEqual(len(set(returned_ids)), 100)
         for spec in specs:
-            self.assertIn(spec.spec_id, returned_ids)
+            self.assertIn(spec.request_id, returned_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -229,12 +229,12 @@ class TestAC003StableOrdering(unittest.IsolatedAsyncioTestCase):
             results = await self.service.call_llm_many_async(specs, max_concurrency=3)
 
         self.assertEqual(len(results), 3)
-        self.assertEqual(results[0].spec_id, "spec-a")
-        self.assertEqual(results[1].spec_id, "spec-b")
-        self.assertEqual(results[2].spec_id, "spec-c")
+        self.assertEqual(results[0].request_id, "spec-a")
+        self.assertEqual(results[1].request_id, "spec-b")
+        self.assertEqual(results[2].request_id, "spec-c")
 
-    async def test_tc_ac3_02_each_result_carries_original_spec_id(self):
-        """TC-AC3-02: each result's spec_id matches its originating spec."""
+    async def test_tc_ac3_02_each_result_carries_original_request_id(self):
+        """TC-AC3-02: each result's request_id matches its originating spec."""
         specs = [_make_spec("id-first"), _make_spec("id-second")]
 
         with patch.object(
@@ -244,8 +244,8 @@ class TestAC003StableOrdering(unittest.IsolatedAsyncioTestCase):
         ):
             results = await self.service.call_llm_many_async(specs, max_concurrency=2)
 
-        self.assertEqual(results[0].spec_id, "id-first")
-        self.assertEqual(results[1].spec_id, "id-second")
+        self.assertEqual(results[0].request_id, "id-first")
+        self.assertEqual(results[1].request_id, "id-second")
 
 
 # ---------------------------------------------------------------------------
@@ -259,16 +259,16 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.service = _make_service()
 
-    async def test_tc_ac4_01_empty_call_specs_raises_before_execution(self):
-        """TC-AC4-01: empty call_specs must raise LLMServiceError."""
+    async def test_tc_ac4_01_empty_requests_raises_before_execution(self):
+        """TC-AC4-01: empty requests must raise LLMServiceError."""
         with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
             with self.assertRaises(LLMServiceError):
                 await self.service.call_llm_many_async([], max_concurrency=1)
 
             mock_call.assert_not_called()
 
-    async def test_tc_ac4_02_duplicate_spec_id_raises_before_execution(self):
-        """TC-AC4-02: duplicate spec_id raises LLMServiceError before execution."""
+    async def test_tc_ac4_02_duplicate_request_id_raises_before_execution(self):
+        """TC-AC4-02: duplicate request_id raises LLMServiceError before execution."""
         specs = [_make_spec("dup-1"), _make_spec("dup-1")]
 
         with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
@@ -277,7 +277,7 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
 
             mock_call.assert_not_called()
 
-    async def test_tc_ac4_02_duplicate_spec_id_separated_in_large_list(self):
+    async def test_tc_ac4_02_duplicate_request_id_separated_in_large_list(self):
         """TC-AC4-02 edge: duplicates separated in a large list are still caught."""
         specs = [_make_spec(f"item-{i}") for i in range(20)]
         specs.append(_make_spec("item-5"))  # duplicate at the end
@@ -332,10 +332,10 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
 
             mock_call.assert_not_called()
 
-    async def test_tc_ac4_02_non_string_spec_id_raises_before_execution(self):
-        """MEDIUM-1: spec_id=123 (non-string) raises LLMServiceError before execution."""
-        spec = LLMCallSpec(
-            spec_id=123,  # type: ignore[arg-type]
+    async def test_tc_ac4_02_non_string_request_id_raises_before_execution(self):
+        """MEDIUM-1: request_id=123 (non-string) raises LLMServiceError before execution."""
+        spec = LLMRequest(
+            request_id=123,  # type: ignore[arg-type]
             messages=[{"role": "user", "content": "hi"}],
         )
         with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
@@ -344,10 +344,10 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
 
             mock_call.assert_not_called()
 
-    async def test_tc_ac4_02_empty_string_spec_id_raises_before_execution(self):
-        """MEDIUM-1: spec_id="" (empty string) raises LLMServiceError before execution."""
-        spec = LLMCallSpec(
-            spec_id="",
+    async def test_tc_ac4_02_empty_string_request_id_raises_before_execution(self):
+        """MEDIUM-1: request_id="" (empty string) raises LLMServiceError before execution."""
+        spec = LLMRequest(
+            request_id="",
             messages=[{"role": "user", "content": "hi"}],
         )
         with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
@@ -437,8 +437,8 @@ class TestAC005ConcurrencyCap(unittest.IsolatedAsyncioTestCase):
         ):
             results_3 = await self.service.call_llm_many_async(specs, max_concurrency=3)
 
-        ids_1 = [r.spec_id for r in results_1]
-        ids_3 = [r.spec_id for r in results_3]
+        ids_1 = [r.request_id for r in results_1]
+        ids_3 = [r.request_id for r in results_3]
         self.assertEqual(ids_1, ids_3)
 
 
@@ -472,7 +472,7 @@ class TestAC006PartialFailure(unittest.IsolatedAsyncioTestCase):
             results = await self.service.call_llm_many_async(specs, max_concurrency=3)
 
         self.assertEqual(len(results), 3)
-        statuses = {r.spec_id: r.status for r in results}
+        statuses = {r.request_id: r.status for r in results}
         self.assertEqual(statuses["ok-a"], "succeeded")
         self.assertEqual(statuses["fail-b"], "failed")
         self.assertEqual(statuses["ok-c"], "succeeded")
@@ -511,7 +511,7 @@ class TestAC006PartialFailure(unittest.IsolatedAsyncioTestCase):
             results = await self.service.call_llm_many_async(specs, max_concurrency=2)
 
         self.assertEqual(len(results), 2)
-        statuses = {r.spec_id: r.status for r in results}
+        statuses = {r.request_id: r.status for r in results}
         self.assertEqual(statuses["fast-fail"], "failed")
         self.assertEqual(statuses["slow-ok"], "succeeded")
         self.assertEqual(results[1].content, "slow result")
@@ -528,8 +528,8 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.service = _make_service()
 
-    async def test_tc_ac7_01_succeeded_result_has_spec_id_status_and_content(self):
-        """TC-AC7-01: successful result carries spec_id, status=succeeded, content."""
+    async def test_tc_ac7_01_succeeded_result_has_request_id_status_and_content(self):
+        """TC-AC7-01: successful result carries request_id, status=succeeded, content."""
         spec = _make_spec("result-check", provider="openai", model="gpt-4o-mini")
 
         with patch.object(
@@ -544,7 +544,7 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
             results = await self.service.call_llm_many_async([spec], max_concurrency=1)
 
         r = results[0]
-        self.assertEqual(r.spec_id, "result-check")
+        self.assertEqual(r.request_id, "result-check")
         self.assertEqual(r.status, "succeeded")
         self.assertEqual(r.content, "great answer")
 
@@ -652,8 +652,8 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
         Forbidden: ``_call_llm_async_with_response`` (deleted).
         """
         # Spec requests openai/gpt-4o-mini but routing redirects to anthropic.
-        spec = LLMCallSpec(
-            spec_id="routed-item",
+        spec = LLMRequest(
+            request_id="routed-item",
             messages=[{"role": "user", "content": "hello"}],
             provider="openai",
             model="gpt-4o-mini",
@@ -857,15 +857,15 @@ class TestAC008FailureNormalization(unittest.IsolatedAsyncioTestCase):
             results = await self.service.call_llm_many_async([spec], max_concurrency=1)
 
         r = results[0]
-        self.assertEqual(r.spec_id, "fail-me")
+        self.assertEqual(r.request_id, "fail-me")
         self.assertEqual(r.status, "failed")
         self.assertIsNotNone(r.error)
         self.assertIsInstance(r.error.error_type, str)
         self.assertIsInstance(r.error.message, str)
         self.assertIn("Connection timeout", r.error.message)
 
-    async def test_tc_ac8_02_failed_result_spec_id_is_preserved(self):
-        """TC-AC8-02: spec_id is always present on the failure record."""
+    async def test_tc_ac8_02_failed_result_request_id_is_preserved(self):
+        """TC-AC8-02: request_id is always present on the failure record."""
         spec = _make_spec("id-must-survive")
 
         with patch.object(
@@ -875,12 +875,12 @@ class TestAC008FailureNormalization(unittest.IsolatedAsyncioTestCase):
         ):
             results = await self.service.call_llm_many_async([spec], max_concurrency=1)
 
-        self.assertEqual(results[0].spec_id, "id-must-survive")
+        self.assertEqual(results[0].request_id, "id-must-survive")
 
     async def test_tc_ac8_02_unknown_provider_failure_does_not_fabricate_provider(self):
         """TC-AC8-02: provider=None spec stays None on failure, not a placeholder."""
-        spec = LLMCallSpec(
-            spec_id="no-provider",
+        spec = LLMRequest(
+            request_id="no-provider",
             messages=[{"role": "user", "content": "hi"}],
             provider=None,
             routing_context={"routing_enabled": True},
@@ -939,8 +939,8 @@ class TestAC009CacheAwarePassThrough(unittest.IsolatedAsyncioTestCase):
             {"role": "user", "content": [{"type": "text", "text": "hello"}]},
         ]
         cache_options = {"requires_prompt_caching": True, "cache_mode": "ephemeral"}
-        spec = LLMCallSpec(
-            spec_id="cache-spec",
+        spec = LLMRequest(
+            request_id="cache-spec",
             messages=structured_messages,
             provider="anthropic",
             request_options=cache_options,
@@ -967,8 +967,8 @@ class TestAC009CacheAwarePassThrough(unittest.IsolatedAsyncioTestCase):
         """TC-AC9-02: unsupported cache mode error is captured as failure record."""
         specs = [
             _make_spec("ok-sibling"),
-            LLMCallSpec(
-                spec_id="bad-cache",
+            LLMRequest(
+                request_id="bad-cache",
                 messages=[{"role": "user", "content": "hi"}],
                 provider="openai",
                 request_options={"requires_prompt_caching": True},
@@ -987,7 +987,7 @@ class TestAC009CacheAwarePassThrough(unittest.IsolatedAsyncioTestCase):
         ):
             results = await self.service.call_llm_many_async(specs, max_concurrency=2)
 
-        statuses = {r.spec_id: r.status for r in results}
+        statuses = {r.request_id: r.status for r in results}
         self.assertEqual(statuses["ok-sibling"], "succeeded")
         self.assertEqual(statuses["bad-cache"], "failed")
 
@@ -1148,8 +1148,8 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
         """
         # Spec with provider=None triggers routing; routing resolves to google:gemini-pro.
         # "google" is intentionally different from the routing fallback default "anthropic".
-        spec = LLMCallSpec(
-            spec_id="routed-fail",
+        spec = LLMRequest(
+            request_id="routed-fail",
             messages=[{"role": "user", "content": "hello"}],
             provider=None,
             routing_context={"routing_enabled": True, "task_type": "general"},
@@ -1172,7 +1172,7 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
             results = await service.call_llm_many_async([spec], max_concurrency=1)
 
         r = results[0]
-        self.assertEqual(r.spec_id, "routed-fail")
+        self.assertEqual(r.request_id, "routed-fail")
         self.assertEqual(r.status, "failed")
         self.assertEqual(
             r.provider,
@@ -1261,7 +1261,7 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
             results = await service.call_llm_many_async([spec], max_concurrency=1)
 
         r = results[0]
-        self.assertEqual(r.spec_id, "fallback-exhaust")
+        self.assertEqual(r.request_id, "fallback-exhaust")
         self.assertEqual(r.status, "failed")
         # Tier 3 is the last tier — it selects "google" (skipping "openai" and
         # "anthropic"). r.provider must be "google", not spec.provider="openai".
@@ -1303,8 +1303,8 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
         # Spec with provider=None triggers routing; routing resolves to google:gemini-pro.
         # Crucially, "google" != routing fallback default "anthropic" — so the swallow-
         # and-retry path would produce a DIFFERENT provider identity.
-        spec = LLMCallSpec(
-            spec_id="routed-fail-no-rewrite",
+        spec = LLMRequest(
+            request_id="routed-fail-no-rewrite",
             messages=[{"role": "user", "content": "hello"}],
             provider=None,
             routing_context={"routing_enabled": True, "task_type": "general"},
@@ -1325,7 +1325,7 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
             results = await service.call_llm_many_async([spec], max_concurrency=1)
 
         r = results[0]
-        self.assertEqual(r.spec_id, "routed-fail-no-rewrite")
+        self.assertEqual(r.request_id, "routed-fail-no-rewrite")
         self.assertEqual(r.status, "failed")
         self.assertEqual(
             r.provider,
@@ -1432,8 +1432,8 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
         ``_execute_fan_out_item`` still handles pre-resolution failures correctly
         after the LLMResolvedCallError catch is added.
         """
-        spec = LLMCallSpec(
-            spec_id="pre-resolution-fail",
+        spec = LLMRequest(
+            request_id="pre-resolution-fail",
             messages=[{"role": "user", "content": "hi"}],
             provider=None,
             routing_context={"routing_enabled": True},

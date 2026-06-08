@@ -32,7 +32,7 @@ class _MinimalAdapter:
 
     def cancel(self, provider_batch_id): ...
 
-    def fetch_results(self, provider_batch_id, spec_id_map, result_ref): ...
+    def fetch_results(self, provider_batch_id, request_id_map, result_ref): ...
 
 
 class _MissingProviderName:
@@ -46,7 +46,7 @@ class _MissingProviderName:
 
     def cancel(self, provider_batch_id): ...
 
-    def fetch_results(self, provider_batch_id, spec_id_map, result_ref): ...
+    def fetch_results(self, provider_batch_id, request_id_map, result_ref): ...
 
 
 class _MissingSupportsCancel:
@@ -60,7 +60,7 @@ class _MissingSupportsCancel:
 
     def cancel(self, provider_batch_id): ...
 
-    def fetch_results(self, provider_batch_id, spec_id_map, result_ref): ...
+    def fetch_results(self, provider_batch_id, request_id_map, result_ref): ...
 
 
 class _MissingMethods:
@@ -165,7 +165,7 @@ class TestOpenAIAdapterShape:
 
             def cancel(self, provider_batch_id): ...
 
-            def fetch_results(self, provider_batch_id, spec_id_map, result_ref): ...
+            def fetch_results(self, provider_batch_id, request_id_map, result_ref): ...
 
         return _OpenAIStub()
 
@@ -217,7 +217,7 @@ class TestGeminiAdapterShape:
 
             def cancel(self, provider_batch_id): ...
 
-            def fetch_results(self, provider_batch_id, spec_id_map, result_ref): ...
+            def fetch_results(self, provider_batch_id, request_id_map, result_ref): ...
 
         return _GeminiStub()
 
@@ -332,7 +332,7 @@ class TestLLMServiceProtocolAsyncBatchMethods:
 
         assert hasattr(LLMServiceProtocol, "batch_capabilities")
 
-    def test_protocol_has_results_by_spec_id(self):
+    def test_protocol_has_results_by_request_id(self):
         from agentmap.services.protocols.service_protocols import LLMServiceProtocol
 
-        assert hasattr(LLMServiceProtocol, "results_by_spec_id")
+        assert hasattr(LLMServiceProtocol, "results_by_request_id")

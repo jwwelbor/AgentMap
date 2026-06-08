@@ -29,9 +29,9 @@ from agentmap.models.llm_execution import (
     LLMBatchStatus,
     LLMBatchSubmitRequest,
     LLMCallResult,
-    LLMCallSpec,
     LLMExecutionError,
     LLMMessage,
+    LLMRequest,
     LLMResponse,
     LLMUsage,
 )
@@ -91,7 +91,7 @@ from agentmap.services.telemetry.constants import (
 )
 
 # Keys that ``call_llm_async`` accepts as explicit parameters.  If any of these
-# appear in ``LLMCallSpec.request_options`` they would collide with the explicit
+# appear in ``LLMRequest.request_options`` they would collide with the explicit
 # keyword arguments in ``_execute_fan_out_item``, causing a TypeError at runtime.
 _RESERVED_KEYS: frozenset = frozenset(
     {"messages", "provider", "model", "temperature", "routing_context"}
@@ -1426,40 +1426,40 @@ class LLMService:
 
     async def call_llm_many_async(
         self,
-        call_specs: List[LLMCallSpec],
+        requests: List[LLMRequest],
         max_concurrency: int,
     ) -> List[LLMCallResult]:
         """
         Submit many LLM call specs and receive one terminal result per spec.
 
         Validates the submission before any provider execution:
-        - ``call_specs`` must not be empty.
-        - ``spec_id`` values must be unique within one submission.
+        - ``requests`` must not be empty.
+        - ``request_id`` values must be unique within one submission.
         - ``max_concurrency`` must be an integer >= 1.
 
         Once execution starts, item failures are captured as ``LLMCallResult``
         records with ``status="failed"`` rather than aborting the submission.
-        The returned list preserves the same positional order as ``call_specs``.
+        The returned list preserves the same positional order as ``requests``.
         """
-        self._validate_fan_out_submission(call_specs, max_concurrency)
+        self._validate_fan_out_submission(requests, max_concurrency)
 
         semaphore = asyncio.Semaphore(max_concurrency)
         tasks = [
             asyncio.ensure_future(self._execute_fan_out_item(spec, semaphore))
-            for spec in call_specs
+            for spec in requests
         ]
         results = await asyncio.gather(*tasks, return_exceptions=False)
         return list(results)
 
     def _validate_fan_out_submission(
         self,
-        call_specs: List[LLMCallSpec],
+        requests: List[LLMRequest],
         max_concurrency: int,
     ) -> None:
         """Validate a fan-out submission before any provider execution begins."""
-        if not call_specs:
+        if not requests:
             raise LLMServiceError(
-                "call_specs must not be empty — at least one LLMCallSpec is required."
+                "requests must not be empty — at least one LLMRequest is required."
             )
         # Reject bool explicitly: isinstance(True, int) is True in Python.
         if (
@@ -1471,28 +1471,28 @@ class LLMService:
                 f"max_concurrency must be an integer >= 1, got {max_concurrency!r}."
             )
         seen_ids: set = set()
-        for spec in call_specs:
-            if not isinstance(spec.spec_id, str) or not spec.spec_id:
+        for spec in requests:
+            if not isinstance(spec.request_id, str) or not spec.request_id:
                 raise LLMServiceError(
-                    f"spec_id must be a non-empty string, got {spec.spec_id!r}."
+                    f"request_id must be a non-empty string, got {spec.request_id!r}."
                 )
-            if spec.spec_id in seen_ids:
+            if spec.request_id in seen_ids:
                 raise LLMServiceError(
-                    f"Duplicate spec_id detected: {spec.spec_id!r}. "
-                    "Each spec_id must be unique within one submission."
+                    f"Duplicate request_id detected: {spec.request_id!r}. "
+                    "Each request_id must be unique within one submission."
                 )
-            seen_ids.add(spec.spec_id)
+            seen_ids.add(spec.request_id)
             if spec.request_options:
                 collision = _RESERVED_KEYS & spec.request_options.keys()
                 if collision:
                     raise LLMServiceError(
-                        f"spec_id={spec.spec_id!r}: request_options contains reserved "
+                        f"request_id={spec.request_id!r}: request_options contains reserved "
                         f"keys that collide with call_llm_async parameters: {collision}"
                     )
 
     async def _execute_fan_out_item(
         self,
-        spec: LLMCallSpec,
+        spec: LLMRequest,
         semaphore: asyncio.Semaphore,
     ) -> LLMCallResult:
         """Execute one fan-out item through the public ``call_llm_async`` path.
@@ -1516,7 +1516,7 @@ class LLMService:
                     **kwargs,
                 )
                 return LLMCallResult(
-                    spec_id=spec.spec_id,
+                    request_id=spec.request_id,
                     status="succeeded",
                     provider=llm_response.resolved_provider,
                     model=llm_response.resolved_model,
@@ -1527,7 +1527,7 @@ class LLMService:
                 # Failure occurred after routing/fallback resolved a concrete
                 # provider/model — preserve that identity in the result record.
                 return LLMCallResult(
-                    spec_id=spec.spec_id,
+                    request_id=spec.request_id,
                     status="failed",
                     provider=exc.resolved_provider,
                     model=exc.resolved_model,
@@ -1544,7 +1544,7 @@ class LLMService:
                 # (e.g., validation error, routing service unavailable).
                 # Echo spec values — may be None. Do not fabricate.
                 return LLMCallResult(
-                    spec_id=spec.spec_id,
+                    request_id=spec.request_id,
                     status="failed",
                     provider=spec.provider,
                     model=spec.model,
@@ -1610,15 +1610,15 @@ class LLMService:
         """
         Validate a batch submit request and build the per-spec resolved param
         dicts.  Returns the resolved params list (index-aligned with
-        ``request.call_specs``) so ``submit_batch`` can pass it straight to the
+        ``request.requests``) so ``submit_batch`` can pass it straight to the
         adapter without re-computing.
 
         Validation order:
-        1. Non-empty call_specs
+        1. Non-empty requests
         2. Per-spec provider not set (batch-level only — REQ-F-008)
-        3. Unique spec_ids
+        3. Unique request_ids
         4. Centralized parameter resolution (D-8) — covers all conflict/
-           incompatible/max_tokens==0 checks via ``resolve_spec_params``
+           incompatible/max_tokens==0 checks via ``resolve_request_params``
         5. Batch-level max_tokens != 0 (envelope guard)
         6. Registered provider check (raises LLMBatchUnsupportedProviderError)
 
@@ -1632,29 +1632,29 @@ class LLMService:
         """
         from agentmap.services.llm._param_resolution import build_resolved_params_list
 
-        if not request.call_specs:
+        if not request.requests:
             raise LLMServiceError(
-                "call_specs must not be empty — at least one LLMCallSpec is required "
+                "requests must not be empty — at least one LLMRequest is required "
                 "for batch submission."
             )
 
         # REQ-F-008: provider is batch-level only; reject per-spec provider settings.
-        for spec in request.call_specs:
+        for spec in request.requests:
             if spec.provider is not None and spec.provider != "":
                 raise LLMServiceError(
-                    f"spec_id={spec.spec_id!r}: LLMCallSpec.provider must not be set "
+                    f"request_id={spec.request_id!r}: LLMRequest.provider must not be set "
                     "when LLMBatchSubmitRequest.provider is specified. Provider is a "
                     "batch-level concern only (one batch = one adapter)."
                 )
 
         seen_ids: set = set()
-        for spec in request.call_specs:
-            if spec.spec_id in seen_ids:
+        for spec in request.requests:
+            if spec.request_id in seen_ids:
                 raise LLMServiceError(
-                    f"Duplicate spec_id detected: {spec.spec_id!r}. "
-                    "Each spec_id must be unique within one batch submission."
+                    f"Duplicate request_id detected: {spec.request_id!r}. "
+                    "Each request_id must be unique within one batch submission."
                 )
-            seen_ids.add(spec.spec_id)
+            seen_ids.add(spec.request_id)
 
         # Batch-level stream check (before per-spec resolution, fast-fail)
         if request.request_options and "stream" in request.request_options:
@@ -1684,7 +1684,7 @@ class LLMService:
         """
         Submit a provider-native batch and return a serializable handle.
 
-        Validation order: non-empty specs → unique spec_ids → batch-incompatible
+        Validation order: non-empty specs → unique request_ids → batch-incompatible
         params → registered provider check → max_tokens != 0 → adapter call →
         build handle → persist → return.
 
@@ -1704,10 +1704,10 @@ class LLMService:
         self._logger.info(
             "llm_batch.submit provider=%s specs=%d",
             canonical_provider,
-            len(request.call_specs),
+            len(request.requests),
         )
-        provider_batch_id, spec_id_map, expires_at = adapter.submit(
-            specs=request.call_specs,
+        provider_batch_id, request_id_map, expires_at = adapter.submit(
+            specs=request.requests,
             resolved_params=resolved_params,
         )
 
@@ -1718,7 +1718,7 @@ class LLMService:
             status=LLMBatchStatus.SUBMITTED,
             provider=canonical_provider,
             model=request.model,
-            spec_id_map=spec_id_map,
+            request_id_map=request_id_map,
             expires_at=expires_at,
         )
 
@@ -1734,7 +1734,7 @@ class LLMService:
             "llm_batch.submitted agentmap_batch_id=%s provider_batch_id=%s spec_count=%d",
             agentmap_batch_id,
             provider_batch_id,
-            len(request.call_specs),
+            len(request.requests),
         )
         return handle
 
@@ -1805,7 +1805,7 @@ class LLMService:
             status=poll_result.status,
             provider=handle.provider,
             model=handle.model,
-            spec_id_map=handle.spec_id_map,
+            request_id_map=handle.request_id_map,
             results_url=poll_result.results_url or handle.results_url,
             result_ref=poll_result.result_ref or handle.result_ref,
             expires_at=handle.expires_at,
@@ -1875,10 +1875,10 @@ class LLMService:
 
     def fetch_batch_results(self, handle: LLMBatchHandle) -> List[LLMBatchResultRecord]:
         """
-        Retrieve completed batch results keyed by caller ``spec_id``.
+        Retrieve completed batch results keyed by caller ``request_id``.
 
         Delegates to the adapter which yields ``LLMBatchResultRecord`` items
-        with ``spec_id`` already restored from the spec_id_map.
+        with ``request_id`` already restored from the request_id_map.
 
         Raises:
             LLMBatchExpiredError: If the handle is in EXPIRED status.
@@ -1910,7 +1910,7 @@ class LLMService:
         records = list(
             adapter.fetch_results(
                 handle.provider_batch_id,
-                handle.spec_id_map,
+                handle.request_id_map,
                 result_ref=handle.result_ref,
             )
         )
@@ -2057,42 +2057,44 @@ class LLMService:
         }
 
     @staticmethod
-    def results_by_spec_id(
+    def results_by_request_id(
         records: "List[LLMBatchResultRecord]",
     ) -> "Dict[str, LLMBatchResultRecord]":
-        """Index a list of result records by their ``spec_id``.
+        """Index a list of result records by their ``request_id``.
 
         Args:
             records: Records returned by :meth:`fetch_batch_results`.
 
         Returns:
-            Dict mapping ``spec_id`` → ``LLMBatchResultRecord``.
+            Dict mapping ``request_id`` → ``LLMBatchResultRecord``.
         """
-        return {record.spec_id: record for record in records}
+        return {record.request_id: record for record in records}
 
     @staticmethod
     def reconcile_batch_results(
-        submitted_spec_ids: "List[str]",
+        submitted_request_ids: "List[str]",
         records: "List[LLMBatchResultRecord]",
     ) -> "Dict[str, Optional[LLMBatchResultRecord]]":
-        """Report reconciliation between submitted spec_ids and returned records.
+        """Report reconciliation between submitted request_ids and returned records.
 
-        Identifies spec_ids that have no returned record (missing from results).
+        Identifies request_ids that have no returned record (missing from results).
         This satisfies REQ-F-009c: a caller can detect silent data loss where a
         spec was submitted but the provider returned no result for it.
 
         Args:
-            submitted_spec_ids: The list of spec_ids submitted in the batch.
+            submitted_request_ids: The list of request_ids submitted in the batch.
             records: Records returned by :meth:`fetch_batch_results`.
 
         Returns:
-            Dict mapping every submitted ``spec_id`` to its
+            Dict mapping every submitted ``request_id`` to its
             ``LLMBatchResultRecord`` if one was returned, or ``None`` if the
-            spec_id has no corresponding record in ``records``.  A ``None``
+            request_id has no corresponding record in ``records``.  A ``None``
             value signals a missing result that the caller should investigate.
         """
-        by_id = {record.spec_id: record for record in records}
-        return {spec_id: by_id.get(spec_id) for spec_id in submitted_spec_ids}
+        by_id = {record.request_id: record for record in records}
+        return {
+            request_id: by_id.get(request_id) for request_id in submitted_request_ids
+        }
 
     @staticmethod
     def _extract_llm_usage(response: Any) -> Optional[LLMUsage]:

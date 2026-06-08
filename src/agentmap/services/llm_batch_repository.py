@@ -90,6 +90,6 @@ class BatchHandleRepository:
         Reconstruct an ``LLMBatchHandle`` from a serialized dict.
 
         This is the production entrypoint for repo-layer restore.
-        Preserves ``spec_id_map`` and all identity fields exactly.
+        Preserves ``request_id_map`` and all identity fields exactly.
         """
         return LLMBatchHandle.from_dict(data)

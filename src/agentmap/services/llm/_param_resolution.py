@@ -1,7 +1,7 @@
 """
 Centralized batch request parameter resolution (E05-F04, AC-8 / REQ-F-008).
 
-A single ``resolve_spec_params`` function runs at the service boundary, before
+A single ``resolve_request_params`` function runs at the service boundary, before
 any adapter dispatch.  It reads a ``RESERVED_PARAMS`` registry that is the
 *only* place the "these are the same logical parameter" mapping lives, applies
 one deterministic rule:
@@ -22,7 +22,7 @@ import itertools
 from dataclasses import dataclass, field
 from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
-from agentmap.models.llm_execution import LLMBatchSubmitRequest, LLMCallSpec
+from agentmap.models.llm_execution import LLMBatchSubmitRequest, LLMRequest
 from agentmap.services.llm_batch_errors import LLMBatchParamConflictError
 
 
@@ -40,7 +40,7 @@ class ReservedParam:
 
     logical: str  # canonical name, e.g. "temperature"
     options_key: str  # key used in request_options dicts, e.g. "temperature"
-    spec_field: Optional[str]  # LLMCallSpec direct attr, or None
+    spec_field: Optional[str]  # LLMRequest direct attr, or None
     request_field: Optional[str]  # LLMBatchSubmitRequest direct attr, or None
     aliases: FrozenSet[str] = field(
         default_factory=frozenset
@@ -60,7 +60,7 @@ class ReservedParam:
 #                 | S3 (request.model) | S4 (request.request_options["model"])
 #   max_tokens:   S2 (spec.request_options["max_tokens"])
 #                 | S3 (request.max_tokens) | S4 (request.request_options["max_tokens"])
-#                 (no per-spec direct field for max_tokens on LLMCallSpec)
+#                 (no per-spec direct field for max_tokens on LLMRequest)
 #
 # Aliases:
 #   max_tokens aliases max_output_tokens (Gemini provider-specific rename).
@@ -82,7 +82,7 @@ RESERVED_PARAMS: Tuple[ReservedParam, ...] = (
     ReservedParam(
         logical="max_tokens",
         options_key="max_tokens",
-        spec_field=None,  # no per-spec direct max_tokens on LLMCallSpec
+        spec_field=None,  # no per-spec direct max_tokens on LLMRequest
         request_field="max_tokens",
         aliases=frozenset({"max_output_tokens"}),  # Gemini provider alias
     ),
@@ -113,7 +113,7 @@ _BATCH_INCOMPATIBLE_PARAMS = frozenset({"stream"})
 
 def _collect_surfaces(
     param: ReservedParam,
-    spec: LLMCallSpec,
+    spec: LLMRequest,
     request: LLMBatchSubmitRequest,
 ) -> List[Tuple[str, Any]]:
     """
@@ -155,7 +155,7 @@ def _collect_surfaces(
                 and any(v != _s2_values[0] for v in _s2_values[1:])
             ):
                 raise LLMBatchParamConflictError(
-                    f"spec_id={spec.spec_id!r}: conflicting values for "
+                    f"request_id={spec.request_id!r}: conflicting values for "
                     f"parameter {param.logical!r} within spec.request_options — "
                     f"keys {_s2_keys} have different values {_s2_values}. "
                     "Set this parameter using exactly one key."
@@ -185,7 +185,7 @@ def _collect_surfaces(
                 and any(v != _s4_values[0] for v in _s4_values[1:])
             ):
                 raise LLMBatchParamConflictError(
-                    f"spec_id={spec.spec_id!r}: conflicting values for "
+                    f"request_id={spec.request_id!r}: conflicting values for "
                     f"parameter {param.logical!r} within request.request_options — "
                     f"keys {_s4_keys} have different values {_s4_values}. "
                     "Set this parameter using exactly one key."
@@ -195,8 +195,8 @@ def _collect_surfaces(
     return surfaces
 
 
-def resolve_spec_params(
-    spec: LLMCallSpec,
+def resolve_request_params(
+    spec: LLMRequest,
     request: LLMBatchSubmitRequest,
 ) -> Dict[str, Any]:
     """
@@ -207,7 +207,7 @@ def resolve_spec_params(
     - Zero surfaces set → param absent; not included in result dict.
     - One or more surfaces set, all equal → allow; emit the single value.
     - Two or more surfaces set with ≥2 distinct values → raise
-      ``LLMBatchParamConflictError`` naming the spec_id, logical param, and
+      ``LLMBatchParamConflictError`` naming the request_id, logical param, and
       each conflicting surface with its value.
 
     Pass-through keys (keys in either ``request_options`` dict that are NOT
@@ -218,7 +218,7 @@ def resolve_spec_params(
     rejected here — centralizing all validation in one chokepoint.
 
     Args:
-        spec: One ``LLMCallSpec`` from the batch request.
+        spec: One ``LLMRequest`` from the batch request.
         request: The enclosing ``LLMBatchSubmitRequest``.
 
     Returns:
@@ -255,7 +255,7 @@ def resolve_spec_params(
                     f"{_SURFACE_LABELS.get(s, s)}={v!r}" for s, v in surfaces
                 )
                 raise LLMBatchParamConflictError(
-                    f"spec_id={spec.spec_id!r}: conflicting values for "
+                    f"request_id={spec.request_id!r}: conflicting values for "
                     f"parameter {param.logical!r} — {surface_detail}. "
                     "Set this parameter on exactly one surface."
                 ) from None
@@ -265,7 +265,7 @@ def resolve_spec_params(
                 f"{_SURFACE_LABELS.get(s, s)}={v!r}" for s, v in surfaces
             )
             raise LLMBatchParamConflictError(
-                f"spec_id={spec.spec_id!r}: conflicting values for "
+                f"request_id={spec.request_id!r}: conflicting values for "
                 f"parameter {param.logical!r} — {surface_detail}. "
                 "Set this parameter on exactly one surface."
             )
@@ -287,7 +287,7 @@ def resolve_spec_params(
             or (request.request_options and bad_key in request.request_options)
         ):
             raise LLMServiceError(
-                f"spec_id={spec.spec_id!r}: request_options contains "
+                f"request_id={spec.request_id!r}: request_options contains "
                 f"batch-incompatible parameter {bad_key!r}. "
                 "Batch submissions do not support streaming."
             )
@@ -295,7 +295,7 @@ def resolve_spec_params(
     # --- max_tokens == 0 check (centralized) ---
     if resolved.get("max_tokens") == 0:
         raise LLMServiceError(
-            f"spec_id={spec.spec_id!r}: max_tokens=0 is not supported in batch "
+            f"request_id={spec.request_id!r}: max_tokens=0 is not supported in batch "
             "submissions. Cache pre-warm is incompatible with batch mode."
         )
 
@@ -333,7 +333,7 @@ def resolve_spec_params(
             resolved[key] = spec_val
         else:
             raise LLMBatchParamConflictError(
-                f"spec_id={spec.spec_id!r}: conflicting values for "
+                f"request_id={spec.request_id!r}: conflicting values for "
                 f"pass-through parameter {key!r} — "
                 f"spec.request_options={spec_val!r} vs "
                 f"request.request_options={req_val!r}. "
@@ -366,9 +366,9 @@ def build_resolved_params_list(
     Build the full list of resolved param dicts, one per spec.
 
     Raises ``LLMBatchParamConflictError`` on the first conflicting spec.
-    The returned list is index-aligned with ``request.call_specs``.
+    The returned list is index-aligned with ``request.requests``.
     """
-    return [resolve_spec_params(spec, request) for spec in request.call_specs]
+    return [resolve_request_params(spec, request) for spec in request.requests]
 
 
 # ---------------------------------------------------------------------------

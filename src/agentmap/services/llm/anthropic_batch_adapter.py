@@ -16,12 +16,14 @@ from agentmap.models.llm_execution import (
     LLMBatchRequestCounts,
     LLMBatchResultRecord,
     LLMBatchStatus,
-    LLMCallSpec,
     LLMExecutionError,
+    LLMRequest,
     LLMUsage,
 )
 from agentmap.services.llm._batch_ids import CUSTOM_ID_RE as _CUSTOM_ID_RE
-from agentmap.services.llm._batch_ids import build_spec_id_map as _build_spec_id_map
+from agentmap.services.llm._batch_ids import (
+    build_request_id_map as _build_request_id_map,
+)
 
 
 class AnthropicBatchAdapter:
@@ -64,7 +66,7 @@ class AnthropicBatchAdapter:
 
     def submit(
         self,
-        specs: List[LLMCallSpec],
+        specs: List[LLMRequest],
         resolved_params: List[Dict[str, Any]],
     ) -> Tuple[str, Dict[str, str], Optional[str]]:
         """
@@ -75,15 +77,15 @@ class AnthropicBatchAdapter:
         adapter must NOT merge or apply ``setdefault`` against any other source
         (D-8: centralized resolver).
 
-        Returns ``(provider_batch_id, spec_id_map, expires_at)`` where
-        ``spec_id_map`` maps each caller ``spec_id`` to its ``custom_id``
+        Returns ``(provider_batch_id, request_id_map, expires_at)`` where
+        ``request_id_map`` maps each caller ``request_id`` to its ``custom_id``
         sent to Anthropic.
 
         ``cache_control`` blocks inside ``spec.messages`` are passed through
         unchanged (caching IS supported in batches per research §5.1).
         """
         # F-HIGH-4: build sanitized id map; raises LLMServiceError on collision
-        spec_id_map = _build_spec_id_map(specs, _CUSTOM_ID_RE)
+        request_id_map = _build_request_id_map(specs, _CUSTOM_ID_RE)
         requests = []
 
         # CR5-2: guard against silent truncation if lists ever misalign
@@ -93,7 +95,7 @@ class AnthropicBatchAdapter:
                 f"{len(resolved_params)} resolved param dicts — this is a bug."
             )
         for spec, rp in zip(specs, resolved_params):
-            custom_id = spec_id_map[spec.spec_id]
+            custom_id = request_id_map[spec.request_id]
             # Build params from resolved dict only — no merging.
             params: Dict[str, Any] = {
                 "messages": spec.messages,  # cache_control blocks pass through
@@ -116,7 +118,7 @@ class AnthropicBatchAdapter:
         if hasattr(response, "expires_at") and response.expires_at is not None:
             expires_at = str(response.expires_at)
 
-        return provider_batch_id, spec_id_map, expires_at
+        return provider_batch_id, request_id_map, expires_at
 
     # ------------------------------------------------------------------
     # Poll
@@ -176,14 +178,14 @@ class AnthropicBatchAdapter:
     def fetch_results(
         self,
         provider_batch_id: str,
-        spec_id_map: Dict[str, str],
+        request_id_map: Dict[str, str],
         result_ref: Optional[str] = None,
     ) -> Generator[LLMBatchResultRecord, None, None]:
         """
         Stream JSONL batch results lazily from the Anthropic API.
 
-        Yields ``LLMBatchResultRecord`` for each item, with ``spec_id``
-        restored from ``spec_id_map`` (custom_id → original spec_id).
+        Yields ``LLMBatchResultRecord`` for each item, with ``request_id``
+        restored from ``request_id_map`` (custom_id → original request_id).
         ``cache_control`` metadata is preserved on the usage object.
 
         ``result_ref`` is accepted to satisfy ``BatchAdapterProtocol`` but is
@@ -191,12 +193,12 @@ class AnthropicBatchAdapter:
 
         This is a generator — results are NOT loaded all into memory.
         """
-        # Build reverse map: custom_id -> original spec_id
-        custom_to_spec: Dict[str, str] = {v: k for k, v in spec_id_map.items()}
+        # Build reverse map: custom_id -> original request_id
+        custom_to_spec: Dict[str, str] = {v: k for k, v in request_id_map.items()}
 
         for item in self._client.messages.batches.results(provider_batch_id):
             custom_id = item.custom_id
-            spec_id = custom_to_spec.get(custom_id, custom_id)
+            request_id = custom_to_spec.get(custom_id, custom_id)
             result = item.result
 
             if result.type == "succeeded":
@@ -211,7 +213,7 @@ class AnthropicBatchAdapter:
                 # F-MED-2: empty/missing content is a parse error — report as errored
                 if not content:
                     yield LLMBatchResultRecord(
-                        spec_id=spec_id,
+                        request_id=request_id,
                         status="errored",
                         error=LLMExecutionError(
                             error_type="empty_content",
@@ -241,7 +243,7 @@ class AnthropicBatchAdapter:
                     )
 
                 yield LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="succeeded",
                     provider="anthropic",
                     model=getattr(msg, "model", None),
@@ -268,27 +270,27 @@ class AnthropicBatchAdapter:
                         retryable=False,
                     )
                 yield LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="errored",
                     error=error,
                 )
 
             elif result.type == "canceled":
                 yield LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="canceled",
                 )
 
             elif result.type == "expired":
                 yield LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="expired",
                 )
 
             else:
                 # Unknown item type — yield as errored to avoid silent data loss
                 yield LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
                         error_type="unknown_result_type",

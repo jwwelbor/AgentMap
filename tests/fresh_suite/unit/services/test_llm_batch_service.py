@@ -2,11 +2,11 @@
 Unit tests for LLMService batch lifecycle methods.
 
 Covers TC-AC1-01 through TC-AC8-02 from the E05-F03 test plan:
-  AC-1: Submit returns LLMBatchHandle with amatch_ id; validates call_specs
+  AC-1: Submit returns LLMBatchHandle with amatch_ id; validates requests
   AC-2: Restore-after-restart handle supports poll and fetch
   AC-3: Normalized status mapping for all Anthropic processing_status values
   AC-4: Cancel active batch; cancel terminal raises LLMBatchCancelNotSupportedError
-  AC-5: Results keyed by spec_id; mixed outcomes; usage/error shapes
+  AC-5: Results keyed by request_id; mixed outcomes; usage/error shapes
   AC-6: Unsupported provider raises LLMBatchUnsupportedProviderError before network
   AC-7: Fetch before ended raises LLMBatchNotReadyError
   AC-8: Batch-incompatible params rejected before adapter call
@@ -30,8 +30,8 @@ from agentmap.models.llm_execution import (
     LLMBatchResultRecord,
     LLMBatchStatus,
     LLMBatchSubmitRequest,
-    LLMCallSpec,
     LLMExecutionError,
+    LLMRequest,
     LLMUsage,
 )
 from agentmap.services.llm_batch_errors import (
@@ -77,16 +77,16 @@ def _make_poll_result(
 # ---------------------------------------------------------------------------
 
 
-def _make_spec(spec_id: str, provider: str = None, **kwargs) -> LLMCallSpec:
-    """Factory for minimal LLMCallSpec instances for batch tests.
+def _make_spec(request_id: str, provider: str = None, **kwargs) -> LLMRequest:
+    """Factory for minimal LLMRequest instances for batch tests.
 
     ``provider`` defaults to ``None`` — provider is a batch-level concern
     (REQ-F-008) and must not be set on individual specs unless testing the
     rejection path.
     """
-    return LLMCallSpec(
-        spec_id=spec_id,
-        messages=[{"role": "user", "content": f"prompt for {spec_id}"}],
+    return LLMRequest(
+        request_id=request_id,
+        messages=[{"role": "user", "content": f"prompt for {request_id}"}],
         provider=provider,
         **kwargs,
     )
@@ -105,7 +105,7 @@ def _make_batch_request(
     return LLMBatchSubmitRequest(
         provider=provider,
         model=model,
-        call_specs=specs,
+        requests=specs,
         max_tokens=max_tokens,
         **kwargs,
     )
@@ -113,7 +113,7 @@ def _make_batch_request(
 
 def _make_handle(
     status: LLMBatchStatus = LLMBatchStatus.IN_PROGRESS,
-    spec_id_map: dict = None,
+    request_id_map: dict = None,
     **kwargs,
 ) -> LLMBatchHandle:
     """Convenience factory for constructing handles in known states."""
@@ -123,7 +123,7 @@ def _make_handle(
         status=status,
         provider="anthropic",
         model="claude-sonnet-4-6",
-        spec_id_map=spec_id_map or {"s1": "s1"},
+        request_id_map=request_id_map or {"s1": "s1"},
         results_url=None,
         expires_at="2026-06-08T00:00:00Z",
         request_counts=None,
@@ -132,24 +132,24 @@ def _make_handle(
     return LLMBatchHandle(**defaults)
 
 
-def _mock_jsonl_records(spec_id_map: dict, outcomes: dict) -> list:
+def _mock_jsonl_records(request_id_map: dict, outcomes: dict) -> list:
     """
     Factory for LLMBatchResultRecord objects returned by adapter.fetch_results().
 
-    ``outcomes`` maps spec_id -> outcome string: "succeeded", "errored",
+    ``outcomes`` maps request_id -> outcome string: "succeeded", "errored",
     "canceled", "expired".  The adapter already converts JSONL to
     LLMBatchResultRecord objects, so this matches the real seam.
     """
     records = []
-    for spec_id, outcome in outcomes.items():
+    for request_id, outcome in outcomes.items():
         if outcome == "succeeded":
             records.append(
                 LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="succeeded",
                     provider="anthropic",
                     model="claude-sonnet-4-6",
-                    content=f"Response for {spec_id}",
+                    content=f"Response for {request_id}",
                     usage=LLMUsage(
                         input_tokens=100,
                         output_tokens=50,
@@ -161,7 +161,7 @@ def _mock_jsonl_records(spec_id_map: dict, outcomes: dict) -> list:
         elif outcome == "errored":
             records.append(
                 LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
                         error_type="server_error",
@@ -173,14 +173,14 @@ def _mock_jsonl_records(spec_id_map: dict, outcomes: dict) -> list:
         elif outcome == "canceled":
             records.append(
                 LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="canceled",
                 )
             )
         elif outcome == "expired":
             records.append(
                 LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="expired",
                 )
             )
@@ -260,7 +260,7 @@ class TestSubmitBatch:
         assert handle.agentmap_batch_id.startswith("amatch_")
         assert handle.provider_batch_id == "msgbatch_abc123"
         assert handle.status == LLMBatchStatus.SUBMITTED
-        assert handle.spec_id_map == {"s1": "s1"}
+        assert handle.request_id_map == {"s1": "s1"}
 
     def test_submit_persists_handle_to_disk(self, tmp_path):
         """TC-AC1-01: submitted handle is persisted to disk as a JSON file."""
@@ -300,8 +300,8 @@ class TestSubmitBatch:
         json.dumps(d)  # Must not raise
         assert "api_key" not in d
 
-    def test_submit_empty_call_specs_raises_before_adapter(self, tmp_path):
-        """TC-AC1-02: empty call_specs raises LLMServiceError before adapter call."""
+    def test_submit_empty_requests_raises_before_adapter(self, tmp_path):
+        """TC-AC1-02: empty requests raises LLMServiceError before adapter call."""
         service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
 
         request = _make_batch_request(specs=[])
@@ -310,8 +310,8 @@ class TestSubmitBatch:
 
         mock_adapter.submit.assert_not_called()
 
-    def test_submit_duplicate_spec_ids_raises_before_adapter(self, tmp_path):
-        """TC-AC1-04: duplicate spec_ids raises LLMServiceError before adapter call."""
+    def test_submit_duplicate_request_ids_raises_before_adapter(self, tmp_path):
+        """TC-AC1-04: duplicate request_ids raises LLMServiceError before adapter call."""
         service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
 
         specs = [_make_spec("dup"), _make_spec("dup")]
@@ -361,7 +361,7 @@ class TestRestoreBatch:
         restored = service2.restore_batch(handle_dict)
         assert restored.agentmap_batch_id == handle.agentmap_batch_id
         assert restored.provider_batch_id == "msgbatch_abc123"
-        assert restored.spec_id_map == {"s1": "s1"}
+        assert restored.request_id_map == {"s1": "s1"}
 
         # Poll should delegate with correct provider_batch_id
         updated = service2.poll_batch(restored)
@@ -592,47 +592,47 @@ class TestCancelBatch:
 class TestFetchBatchResults:
     """TC-AC5-01, TC-AC5-02, TC-AC5-04."""
 
-    def test_fetch_returns_records_keyed_by_spec_id_in_any_order(self):
-        """TC-AC5-01: fetch returns records for each spec_id regardless of JSONL order."""
+    def test_fetch_returns_records_keyed_by_request_id_in_any_order(self):
+        """TC-AC5-01: fetch returns records for each request_id regardless of JSONL order."""
         service, mock_adapter, repo = _make_service()
-        spec_id_map = {"alpha": "alpha", "beta": "beta", "gamma": "gamma"}
+        request_id_map = {"alpha": "alpha", "beta": "beta", "gamma": "gamma"}
         handle = _make_handle(
             status=LLMBatchStatus.ENDED,
-            spec_id_map=spec_id_map,
+            request_id_map=request_id_map,
             results_url="https://api.anthropic.com/v1/batches/batch_01/results",
         )
         # adapter returns in shuffled order: gamma, alpha, beta
         mock_adapter.fetch_results.return_value = _mock_jsonl_records(
-            spec_id_map,
+            request_id_map,
             {"gamma": "succeeded", "alpha": "succeeded", "beta": "succeeded"},
         )
 
         results = service.fetch_batch_results(handle)
 
         assert len(results) == 3
-        spec_ids = {r.spec_id for r in results}
-        assert spec_ids == {"alpha", "beta", "gamma"}
+        request_ids = {r.request_id for r in results}
+        assert request_ids == {"alpha", "beta", "gamma"}
         assert all(r.status == "succeeded" for r in results)
         assert all(isinstance(r.usage, LLMUsage) for r in results)
 
     def test_fetch_mixed_outcomes_all_records_returned(self):
         """TC-AC5-02: mixed outcomes (succeeded/errored/canceled/expired) all returned."""
         service, mock_adapter, repo = _make_service()
-        spec_id_map = {"s1": "s1", "s2": "s2", "s3": "s3", "s4": "s4"}
+        request_id_map = {"s1": "s1", "s2": "s2", "s3": "s3", "s4": "s4"}
         handle = _make_handle(
             status=LLMBatchStatus.ENDED,
-            spec_id_map=spec_id_map,
+            request_id_map=request_id_map,
             results_url="https://api.anthropic.com/v1/batches/batch_01/results",
         )
         mock_adapter.fetch_results.return_value = _mock_jsonl_records(
-            spec_id_map,
+            request_id_map,
             {"s1": "succeeded", "s2": "errored", "s3": "canceled", "s4": "expired"},
         )
 
         results = service.fetch_batch_results(handle)
 
         assert len(results) == 4
-        by_id = {r.spec_id: r for r in results}
+        by_id = {r.request_id: r for r in results}
         assert by_id["s1"].status == "succeeded"
         assert isinstance(by_id["s1"].usage, LLMUsage)
         assert by_id["s2"].status == "errored"
@@ -646,14 +646,14 @@ class TestFetchBatchResults:
     def test_fetch_errored_record_has_error_and_no_usage(self):
         """TC-AC5-04: errored record has LLMExecutionError; usage is None."""
         service, mock_adapter, repo = _make_service()
-        spec_id_map = {"s1": "s1"}
+        request_id_map = {"s1": "s1"}
         handle = _make_handle(
             status=LLMBatchStatus.ENDED,
-            spec_id_map=spec_id_map,
+            request_id_map=request_id_map,
             results_url="https://api.anthropic.com/v1/batches/batch_01/results",
         )
         mock_adapter.fetch_results.return_value = _mock_jsonl_records(
-            spec_id_map,
+            request_id_map,
             {"s1": "errored"},
         )
 
@@ -799,14 +799,14 @@ class TestPrematureFetch:
     def test_fetch_ended_proceeds_without_error(self):
         """fetch_batch_results on ended handle calls adapter (no guard error)."""
         service, mock_adapter, repo = _make_service()
-        spec_id_map = {"s1": "s1"}
+        request_id_map = {"s1": "s1"}
         handle = _make_handle(
             status=LLMBatchStatus.ENDED,
-            spec_id_map=spec_id_map,
+            request_id_map=request_id_map,
             results_url="https://api.anthropic.com/v1/batches/batch_01/results",
         )
         mock_adapter.fetch_results.return_value = _mock_jsonl_records(
-            spec_id_map, {"s1": "succeeded"}
+            request_id_map, {"s1": "succeeded"}
         )
 
         results = service.fetch_batch_results(handle)
@@ -823,7 +823,7 @@ class TestBatchIncompatibleParams:
     """TC-AC8-01, TC-AC8-02."""
 
     def test_submit_with_stream_true_raises_before_adapter(self, tmp_path):
-        """TC-AC8-01: call_specs containing stream=True raises LLMServiceError before adapter."""
+        """TC-AC8-01: requests containing stream=True raises LLMServiceError before adapter."""
         service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
 
         spec = _make_spec("s1", request_options={"stream": True})
@@ -925,7 +925,7 @@ class TestRestoreBatchValidation:
             "provider": "openai",
             "model": "gpt-4",
             "status": "submitted",
-            "spec_id_map": {},
+            "request_id_map": {},
         }
         # Should not raise in F04 — any provider can be restored.
         handle = service.restore_batch(handle_data)
@@ -945,7 +945,7 @@ class TestRestoreBatchValidation:
             "provider": "anthropic",
             "model": "claude-sonnet-4-6",
             "status": "submitted",
-            "spec_id_map": {},
+            "request_id_map": {},
         }
         with pytest.raises(LLMServiceError, match="agentmap_batch_id"):
             service.restore_batch(handle_data)
@@ -960,7 +960,7 @@ class TestRestoreBatchValidation:
             "provider": "anthropic",
             "model": "claude-sonnet-4-6",
             "status": "submitted",
-            "spec_id_map": {},
+            "request_id_map": {},
         }
         with pytest.raises(LLMServiceError, match="agentmap_batch_id"):
             service.restore_batch(handle_data)
@@ -976,7 +976,7 @@ class TestRestoreBatchValidation:
             "provider": "anthropic",
             "model": "claude-sonnet-4-6",
             "status": "submitted",
-            "spec_id_map": {},
+            "request_id_map": {},
         }
         handle = service.restore_batch(handle_data)
         assert handle.agentmap_batch_id == valid_id
@@ -1002,7 +1002,7 @@ class TestFetchBatchResultsEndedNoResultsUrl:
 
         handle = _make_handle(
             status=LLMBatchStatus.ENDED,
-            spec_id_map={"s1": "s1"},
+            request_id_map={"s1": "s1"},
             results_url=None,
         )
         mock_adapter.fetch_results.return_value = []
@@ -1016,14 +1016,14 @@ class TestFetchBatchResultsEndedNoResultsUrl:
         """Anthropic ended handle with results_url set also proceeds normally."""
         service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
 
-        spec_id_map = {"s1": "s1"}
+        request_id_map = {"s1": "s1"}
         handle = _make_handle(
             status=LLMBatchStatus.ENDED,
-            spec_id_map=spec_id_map,
+            request_id_map=request_id_map,
             results_url="https://api.anthropic.com/v1/batches/batch_01/results",
         )
         mock_adapter.fetch_results.return_value = _mock_jsonl_records(
-            spec_id_map, {"s1": "succeeded"}
+            request_id_map, {"s1": "succeeded"}
         )
 
         results = service.fetch_batch_results(handle)
@@ -1105,7 +1105,7 @@ def _make_ended_handle(provider: str = "anthropic", **kwargs) -> LLMBatchHandle:
         status=LLMBatchStatus.ENDED,
         provider=provider,
         model="test-model",
-        spec_id_map={"s1": "s1"},
+        request_id_map={"s1": "s1"},
         results_url="https://example.com/results",
         expires_at="2026-06-08T00:00:00Z",
         request_counts=None,
@@ -1121,7 +1121,7 @@ def _make_expired_handle(provider: str = "anthropic") -> LLMBatchHandle:
         status=LLMBatchStatus.EXPIRED,
         provider=provider,
         model="test-model",
-        spec_id_map={"s1": "s1"},
+        request_id_map={"s1": "s1"},
         results_url=None,
         expires_at="2024-01-01T00:00:00Z",
         request_counts=None,
@@ -1571,7 +1571,7 @@ class TestTypedErrors:
             asyncio.run(run())
 
     def test_spec_provider_set_with_request_provider_raises(self):
-        """TC-068/TC-080: LLMCallSpec.provider set alongside request.provider raises LLMServiceError."""
+        """TC-068/TC-080: LLMRequest.provider set alongside request.provider raises LLMServiceError."""
         service, adapters, repo = _make_registry_service()
         spec = _make_spec("s1", provider="openai")
         request = _make_batch_request(provider="anthropic", specs=[spec])
@@ -1611,8 +1611,8 @@ class TestTypedErrors:
         service, adapters, repo = _make_registry_service()
 
         # --- differing values: must raise ---
-        spec = LLMCallSpec(
-            spec_id="s1",
+        spec = LLMRequest(
+            request_id="s1",
             messages=[{"role": "user", "content": "hello"}],
             temperature=0.5,
         )
@@ -1636,8 +1636,8 @@ class TestTypedErrors:
             {"s1": "s1"},
             "2026-06-08T00:00:00Z",
         )
-        spec_same = LLMCallSpec(
-            spec_id="s1",
+        spec_same = LLMRequest(
+            request_id="s1",
             messages=[{"role": "user", "content": "hello"}],
             temperature=0.7,
         )
@@ -1697,19 +1697,19 @@ class TestBatchCapabilities:
         with pytest.raises(LLMBatchUnsupportedProviderError):
             service.batch_capabilities("mistral")
 
-    def test_results_by_spec_id(self):
-        """TC-008/CX: results_by_spec_id returns dict keyed by spec_id."""
+    def test_results_by_request_id(self):
+        """TC-008/CX: results_by_request_id returns dict keyed by request_id."""
         service, adapters, repo = _make_registry_service()
         records = [
             LLMBatchResultRecord(
-                spec_id="s1",
+                request_id="s1",
                 status="succeeded",
                 content="resp1",
                 provider="anthropic",
                 model="claude-3",
             ),
             LLMBatchResultRecord(
-                spec_id="s2",
+                request_id="s2",
                 status="succeeded",
                 content="resp2",
                 provider="anthropic",
@@ -1717,7 +1717,7 @@ class TestBatchCapabilities:
             ),
         ]
 
-        result = service.results_by_spec_id(records)
+        result = service.results_by_request_id(records)
 
         assert "s1" in result
         assert "s2" in result
@@ -1733,8 +1733,8 @@ class TestBatchCapabilities:
             "2026-06-08T00:00:00Z",
         )
         # Spec has no model override
-        spec = LLMCallSpec(
-            spec_id="s1",
+        spec = LLMRequest(
+            request_id="s1",
             messages=[{"role": "user", "content": "hello"}],
         )
         request = _make_batch_request(
@@ -1753,8 +1753,8 @@ class TestBatchCapabilities:
             {"s1": "s1"},
             "2026-06-08T00:00:00Z",
         )
-        spec = LLMCallSpec(
-            spec_id="s1",
+        spec = LLMRequest(
+            request_id="s1",
             messages=[{"role": "user", "content": "hello"}],
         )
         request = _make_batch_request(
@@ -1830,7 +1830,7 @@ class TestFetchBatchResultsOpenAIProvider:
             status=LLMBatchStatus.ENDED,
             provider="openai",
             model="gpt-4o",
-            spec_id_map={"s1": "s1"},
+            request_id_map={"s1": "s1"},
             results_url=None,  # OpenAI does NOT use results_url
             result_ref="file-abc123",  # OpenAI output_file_id
             expires_at="2026-06-08T00:00:00Z",
@@ -1855,7 +1855,7 @@ class TestFetchBatchResultsOpenAIProvider:
             status=LLMBatchStatus.ENDED,
             provider="openai",
             model="gpt-4o",
-            spec_id_map={"s1": "s1"},
+            request_id_map={"s1": "s1"},
             results_url=None,
             result_ref="file-abc123",
             expires_at="2026-06-08T00:00:00Z",
@@ -1888,7 +1888,7 @@ class TestFetchBatchResultsOpenAIProvider:
             status=LLMBatchStatus.IN_PROGRESS,
             provider="openai",
             model="gpt-4o",
-            spec_id_map={"s1": "s1"},
+            request_id_map={"s1": "s1"},
             results_url=None,
             result_ref=None,
             expires_at="2026-06-08T00:00:00Z",
@@ -1946,7 +1946,7 @@ class TestFetchBatchResultsGeminiProvider:
             status=LLMBatchStatus.ENDED,
             provider="google",
             model="gemini-2.0-flash",
-            spec_id_map={"s1": "s1"},
+            request_id_map={"s1": "s1"},
             results_url=None,  # Gemini inline: no URL
             result_ref=None,  # Gemini inline: no ref either
             expires_at="2026-06-08T00:00:00Z",
@@ -1970,7 +1970,7 @@ class TestFetchBatchResultsGeminiProvider:
             status=LLMBatchStatus.ENDED,
             provider="google",
             model="gemini-2.0-flash",
-            spec_id_map={"s1": "s1"},
+            request_id_map={"s1": "s1"},
             results_url=None,
             result_ref=None,
             expires_at="2026-06-08T00:00:00Z",
@@ -1995,7 +1995,7 @@ class TestFetchBatchResultsGeminiProvider:
             status=LLMBatchStatus.ENDED,
             provider="anthropic",
             model="claude-sonnet-4-6",
-            spec_id_map={"s1": "s1"},
+            request_id_map={"s1": "s1"},
             results_url="https://api.anthropic.com/v1/messages/batches/msgbatch_ant001/results",
             result_ref=None,
             expires_at="2026-06-08T00:00:00Z",
@@ -2021,7 +2021,7 @@ class TestF3PerSpecRequestOptions:
     """F3 (HIGH): per-spec request_options must NOT be silently dropped.
 
     REQ-F-008 / AC-8 — one canonical param path.  A caller who sets
-    ``LLMCallSpec.request_options`` with no batch-level override for the same
+    ``LLMRequest.request_options`` with no batch-level override for the same
     key must see the per-spec value applied inside the adapter, not discarded.
     """
 
@@ -2040,8 +2040,8 @@ class TestF3PerSpecRequestOptions:
             "2026-06-08T00:00:00Z",
         )
 
-        spec = LLMCallSpec(
-            spec_id="s1",
+        spec = LLMRequest(
+            request_id="s1",
             messages=[{"role": "user", "content": "hello"}],
             request_options={"top_p": 0.95},  # per-spec only, no batch-level top_p
         )
@@ -2070,8 +2070,8 @@ class TestF3PerSpecRequestOptions:
             None,
         )
 
-        spec = LLMCallSpec(
-            spec_id="s1",
+        spec = LLMRequest(
+            request_id="s1",
             messages=[{"role": "user", "content": "hello"}],
             request_options={"frequency_penalty": 0.3},
         )
@@ -2097,8 +2097,8 @@ class TestF3PerSpecRequestOptions:
             None,
         )
 
-        spec = LLMCallSpec(
-            spec_id="s1",
+        spec = LLMRequest(
+            request_id="s1",
             messages=[{"role": "user", "content": "hello"}],
             request_options={"top_k": 40},
         )
@@ -2248,11 +2248,11 @@ class TestF7CapabilityKeysAndReconciliation:
         ), "'provider' is the old/wrong key name — must be removed"
 
     def test_reconcile_batch_results_all_present(self):
-        """F7 / REQ-F-009c: reconcile returns None for no missing spec_ids."""
+        """F7 / REQ-F-009c: reconcile returns None for no missing request_ids."""
         service, adapters, repo = _make_registry_service()
         records = [
-            LLMBatchResultRecord(spec_id="s1", status="succeeded", content="ok"),
-            LLMBatchResultRecord(spec_id="s2", status="succeeded", content="ok"),
+            LLMBatchResultRecord(request_id="s1", status="succeeded", content="ok"),
+            LLMBatchResultRecord(request_id="s2", status="succeeded", content="ok"),
         ]
 
         result = service.reconcile_batch_results(["s1", "s2"], records)
@@ -2260,15 +2260,15 @@ class TestF7CapabilityKeysAndReconciliation:
         assert result == {"s1": records[0], "s2": records[1]}
 
     def test_reconcile_batch_results_missing_spec(self):
-        """F7 / REQ-F-009c: missing spec_id maps to None in reconciliation output.
+        """F7 / REQ-F-009c: missing request_id maps to None in reconciliation output.
 
-        Counter-factual: without this helper, a submitted spec_id with no result
-        record is silently absent from results_by_spec_id — the caller cannot
+        Counter-factual: without this helper, a submitted request_id with no result
+        record is silently absent from results_by_request_id — the caller cannot
         distinguish 'no results yet' from 'provider dropped this spec'.
         """
         service, adapters, repo = _make_registry_service()
         records = [
-            LLMBatchResultRecord(spec_id="s1", status="succeeded", content="ok"),
+            LLMBatchResultRecord(request_id="s1", status="succeeded", content="ok"),
             # s2 was submitted but provider returned no record for it
         ]
 
@@ -2277,16 +2277,16 @@ class TestF7CapabilityKeysAndReconciliation:
         assert result["s1"] is not None
         assert (
             result["s2"] is None
-        ), "Missing spec_id must map to None, not be absent from the dict"
-        assert "s2" in result, "All submitted spec_ids must appear as keys"
+        ), "Missing request_id must map to None, not be absent from the dict"
+        assert "s2" in result, "All submitted request_ids must appear as keys"
 
     def test_reconcile_batch_results_extra_records_ignored(self):
-        """F7: records for spec_ids not in submitted list are not included in output."""
+        """F7: records for request_ids not in submitted list are not included in output."""
         service, adapters, repo = _make_registry_service()
         records = [
-            LLMBatchResultRecord(spec_id="s1", status="succeeded", content="ok"),
+            LLMBatchResultRecord(request_id="s1", status="succeeded", content="ok"),
             LLMBatchResultRecord(
-                spec_id="unexpected", status="succeeded", content="ok"
+                request_id="unexpected", status="succeeded", content="ok"
             ),
         ]
 

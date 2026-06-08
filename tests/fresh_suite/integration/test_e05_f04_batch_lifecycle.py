@@ -27,7 +27,7 @@ from agentmap.models.llm_execution import (
     LLMBatchHandle,
     LLMBatchStatus,
     LLMBatchSubmitRequest,
-    LLMCallSpec,
+    LLMRequest,
 )
 from agentmap.services.llm_batch_errors import LLMBatchUnsupportedProviderError
 from agentmap.services.llm_batch_repository import BatchHandleRepository
@@ -39,10 +39,10 @@ from tests.utils.mock_service_factory import MockServiceFactory
 # ---------------------------------------------------------------------------
 
 
-def _make_spec(spec_id: str) -> LLMCallSpec:
-    return LLMCallSpec(
-        spec_id=spec_id,
-        messages=[{"role": "user", "content": f"prompt for {spec_id}"}],
+def _make_spec(request_id: str) -> LLMRequest:
+    return LLMRequest(
+        request_id=request_id,
+        messages=[{"role": "user", "content": f"prompt for {request_id}"}],
     )
 
 
@@ -57,7 +57,7 @@ def _make_batch_request(
     return LLMBatchSubmitRequest(
         provider=provider,
         model=model,
-        call_specs=specs,
+        requests=specs,
         max_tokens=max_tokens,
     )
 
@@ -73,7 +73,7 @@ def _make_handle(
         status=status,
         provider=provider,
         model="test-model",
-        spec_id_map={"s1": "s1"},
+        request_id_map={"s1": "s1"},
         results_url=None,
         result_ref=None,
         expires_at="2026-07-01T00:00:00Z",
@@ -382,7 +382,7 @@ class TestF03HandleBackcompat:
         "status": "in_progress",
         "provider": "anthropic",
         "model": "claude-sonnet-4-6",
-        "spec_id_map": {"s1": "ant_req_s1"},
+        "request_id_map": {"s1": "ant_req_s1"},
         "results_url": "https://api.anthropic.com/v1/messages/batches/msgbatch_f03compat001/results",
         # result_ref intentionally absent — F03 did not persist this field
         "expires_at": "2026-07-01T00:00:00Z",
@@ -802,7 +802,7 @@ class TestProviderParametrizedLifecycle:
 
         adapters[provider].fetch_results.assert_called_once_with(
             handle.provider_batch_id,
-            handle.spec_id_map,
+            handle.request_id_map,
             **expected_fetch_kwargs,
         )
 
@@ -861,7 +861,7 @@ class TestProviderParametrizedLifecycle:
         assert results == []
         adapters[provider].fetch_results.assert_called_once_with(
             ended_handle.provider_batch_id,
-            ended_handle.spec_id_map,
+            ended_handle.request_id_map,
             **expected_fetch_kwargs,
         )
 

@@ -22,8 +22,8 @@ from agentmap.models.llm_execution import (
     LLMBatchResultRecord,
     LLMBatchSubmitRequest,
     LLMCallResult,
-    LLMCallSpec,
     LLMMessage,
+    LLMRequest,
     LLMResponse,
 )
 
@@ -56,19 +56,19 @@ class BatchAdapterProtocol(Protocol):
 
     def submit(
         self,
-        specs: List[LLMCallSpec],
+        requests: List[LLMRequest],
         resolved_params: List[Dict[str, Any]],
     ) -> "tuple[str, Dict[str, str], Optional[str]]":
         """
-        Submit a batch and return ``(provider_batch_id, spec_id_map, expires_at)``.
+        Submit a batch and return ``(provider_batch_id, request_id_map, expires_at)``.
 
-        ``specs`` carries messages and ``spec_id``; all *parameter* values
+        ``requests`` carries messages and ``request_id``; all *parameter* values
         (model, max_tokens, temperature, pass-through options) are delivered
-        via ``resolved_params[i]`` which corresponds to ``specs[i]``.  The
+        via ``resolved_params[i]`` which corresponds to ``requests[i]``.  The
         dict is already conflict-free — adapters must not merge or apply
         ``setdefault`` against any other source.
 
-        ``spec_id_map`` maps each caller ``spec_id`` to the provider-side
+        ``request_id_map`` maps each caller ``request_id`` to the provider-side
         request identifier so that ``fetch_results`` can demultiplex responses
         back to the original spec.  ``expires_at`` is an ISO-8601 string or
         ``None`` if the provider does not return one.
@@ -98,11 +98,11 @@ class BatchAdapterProtocol(Protocol):
     def fetch_results(
         self,
         provider_batch_id: str,
-        spec_id_map: Dict[str, str],
+        request_id_map: Dict[str, str],
         result_ref: Optional[str],
     ) -> List[LLMBatchResultRecord]:
         """
-        Retrieve completed results and key them by caller ``spec_id``.
+        Retrieve completed results and key them by caller ``request_id``.
 
         ``result_ref`` carries the provider output reference (e.g. OpenAI
         ``output_file_id``).  Adapters that fetch by ``provider_batch_id``
@@ -221,27 +221,27 @@ class LLMServiceProtocol(Protocol):
 
     async def call_llm_many_async(
         self,
-        call_specs: List[LLMCallSpec],
+        requests: List[LLMRequest],
         max_concurrency: int,
     ) -> List[LLMCallResult]:
         """
         Submit many LLM call specs and receive one terminal result per spec.
 
         Submission is validated before any provider execution begins:
-        - ``call_specs`` must not be empty.
-        - ``spec_id`` values must be unique within one submission.
+        - ``requests`` must not be empty.
+        - ``request_id`` values must be unique within one submission.
         - ``max_concurrency`` must be an integer >= 1.
 
         Once execution starts, per-item failures are captured as ``LLMCallResult``
         records with ``status="failed"`` rather than aborting the whole submission.
-        The returned list preserves the same positional order as ``call_specs``.
+        The returned list preserves the same positional order as ``requests``.
 
         Args:
-            call_specs: Non-empty list of ``LLMCallSpec`` items.
+            requests: Non-empty list of ``LLMRequest`` items.
             max_concurrency: Maximum number of in-flight provider calls at once.
 
         Returns:
-            List of ``LLMCallResult`` in the same order as ``call_specs``.
+            List of ``LLMCallResult`` in the same order as ``requests``.
 
         Raises:
             LLMServiceError: For invalid submissions (before any execution).
@@ -262,7 +262,7 @@ class LLMServiceProtocol(Protocol):
 
         Raises:
             LLMServiceError: For validation failures (empty specs, duplicate
-                spec_ids, batch-incompatible params).
+                request_ids, batch-incompatible params).
             LLMBatchUnsupportedProviderError: For unsupported providers.
         """
         ...
@@ -303,7 +303,7 @@ class LLMServiceProtocol(Protocol):
 
     def fetch_batch_results(self, handle: LLMBatchHandle) -> List[LLMBatchResultRecord]:
         """
-        Retrieve completed batch results keyed by caller ``spec_id``.
+        Retrieve completed batch results keyed by caller ``request_id``.
 
         Raises:
             LLMBatchNotReadyError: If the handle status is not ``"ended"``.
@@ -375,31 +375,31 @@ class LLMServiceProtocol(Protocol):
         """
         ...
 
-    def results_by_spec_id(
+    def results_by_request_id(
         self, records: List[LLMBatchResultRecord]
     ) -> Dict[str, LLMBatchResultRecord]:
         """
-        Index ``records`` by ``spec_id`` for O(1) lookups.
+        Index ``records`` by ``request_id`` for O(1) lookups.
 
-        Any record whose ``spec_id`` is ``None`` or empty is excluded.
+        Any record whose ``request_id`` is ``None`` or empty is excluded.
         """
         ...
 
     def reconcile_batch_results(
         self,
-        submitted_spec_ids: List[str],
+        submitted_request_ids: List[str],
         records: List[LLMBatchResultRecord],
     ) -> Dict[str, Optional[LLMBatchResultRecord]]:
         """
-        Reconcile submitted spec_ids against returned records (REQ-F-009c).
+        Reconcile submitted request_ids against returned records (REQ-F-009c).
 
-        Returns a dict mapping every submitted ``spec_id`` to its
+        Returns a dict mapping every submitted ``request_id`` to its
         ``LLMBatchResultRecord`` if one was returned, or ``None`` if the
-        provider returned no result for that spec_id.  A ``None`` value signals
+        provider returned no result for that request_id.  A ``None`` value signals
         possible silent data loss and should be investigated by the caller.
 
         Args:
-            submitted_spec_ids: The spec_ids supplied at submit time.
+            submitted_request_ids: The request_ids supplied at submit time.
             records: Records returned by :meth:`fetch_batch_results`.
         """
         ...

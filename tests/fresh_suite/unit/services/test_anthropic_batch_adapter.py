@@ -8,7 +8,7 @@ Covers:
 - TC-SER-A4: per-spec params appear only on the correct custom_id (not every entry)
 - TC-AC8-03: LLMDependencyError raised when anthropic package not importable
 - TC-AC8-04: cache_control blocks pass through to Anthropic SDK unchanged
-- TC-AC5-05: spec_id requiring sanitization is correctly demuxed via custom_id
+- TC-AC5-05: request_id requiring sanitization is correctly demuxed via custom_id
 - TC-AC5-03: succeeded result record has populated LLMUsage
 """
 
@@ -183,7 +183,7 @@ class TestCacheControlPassThrough:
         cache_control in message content must appear verbatim in the request
         passed to mock_sdk.messages.batches.create().
         """
-        from agentmap.models.llm_execution import LLMCallSpec
+        from agentmap.models.llm_execution import LLMRequest
         from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
 
         client_instance = MagicMock()
@@ -200,8 +200,8 @@ class TestCacheControlPassThrough:
         with patch.dict(sys.modules, {"anthropic": mock_sdk}):
             adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
 
-            spec = LLMCallSpec(
-                spec_id="spec-1",
+            spec = LLMRequest(
+                request_id="spec-1",
                 messages=[
                     {
                         "role": "user",
@@ -253,14 +253,14 @@ class TestCacheControlPassThrough:
 
 
 class TestSpecIdSanitization:
-    """TC-AC5-05: spec_id requiring sanitization is correctly demuxed via custom_id."""
+    """TC-AC5-05: request_id requiring sanitization is correctly demuxed via custom_id."""
 
-    def test_sanitized_spec_id_stored_in_spec_id_map(self):
+    def test_sanitized_request_id_stored_in_request_id_map(self):
         """
-        When spec_id contains chars outside ^[a-zA-Z0-9_-]{1,64}$,
-        a sanitized custom_id must be used and stored in spec_id_map.
+        When request_id contains chars outside ^[a-zA-Z0-9_-]{1,64}$,
+        a sanitized custom_id must be used and stored in request_id_map.
         """
-        from agentmap.models.llm_execution import LLMCallSpec
+        from agentmap.models.llm_execution import LLMRequest
         from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
 
         client_instance = MagicMock()
@@ -275,22 +275,22 @@ class TestSpecIdSanitization:
         with patch.dict(sys.modules, {"anthropic": mock_sdk}):
             adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
 
-            dirty_spec_id = "my spec/id"  # space and slash — violates regex
-            spec = LLMCallSpec(
-                spec_id=dirty_spec_id,
+            dirty_request_id = "my spec/id"  # space and slash — violates regex
+            spec = LLMRequest(
+                request_id=dirty_request_id,
                 messages=[{"role": "user", "content": "test"}],
             )
 
-            _provider_batch_id, spec_id_map, _expires_at = adapter.submit(
+            _provider_batch_id, request_id_map, _expires_at = adapter.submit(
                 specs=[spec],
                 resolved_params=_make_resolved([spec]),
             )
 
-        # The original spec_id must be a key in the map
+        # The original request_id must be a key in the map
         assert (
-            dirty_spec_id in spec_id_map
-        ), "original spec_id must be key in spec_id_map"
-        custom_id = spec_id_map[dirty_spec_id]
+            dirty_request_id in request_id_map
+        ), "original request_id must be key in request_id_map"
+        custom_id = request_id_map[dirty_request_id]
 
         # custom_id must be valid per Anthropic regex
         valid_pattern = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
@@ -298,12 +298,12 @@ class TestSpecIdSanitization:
             custom_id
         ), f"custom_id {custom_id!r} must match ^[a-zA-Z0-9_-]{{1,64}}$"
 
-        # custom_id must differ from dirty spec_id
-        assert custom_id != dirty_spec_id
+        # custom_id must differ from dirty request_id
+        assert custom_id != dirty_request_id
 
-    def test_clean_spec_id_used_as_is(self):
-        """When spec_id is already valid, it must be used as-is (no hash)."""
-        from agentmap.models.llm_execution import LLMCallSpec
+    def test_clean_request_id_used_as_is(self):
+        """When request_id is already valid, it must be used as-is (no hash)."""
+        from agentmap.models.llm_execution import LLMRequest
         from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
 
         client_instance = MagicMock()
@@ -318,23 +318,23 @@ class TestSpecIdSanitization:
         with patch.dict(sys.modules, {"anthropic": mock_sdk}):
             adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
 
-            clean_spec_id = "my-clean-spec"
-            spec = LLMCallSpec(
-                spec_id=clean_spec_id,
+            clean_request_id = "my-clean-spec"
+            spec = LLMRequest(
+                request_id=clean_request_id,
                 messages=[{"role": "user", "content": "test"}],
             )
 
-            _provider_batch_id, spec_id_map, _expires_at = adapter.submit(
+            _provider_batch_id, request_id_map, _expires_at = adapter.submit(
                 specs=[spec],
                 resolved_params=_make_resolved([spec]),
             )
 
-        assert spec_id_map[clean_spec_id] == clean_spec_id
+        assert request_id_map[clean_request_id] == clean_request_id
 
     def test_fetch_results_demuxes_sanitized_custom_id(self):
         """
-        fetch_results must yield records keyed by original spec_id, not custom_id,
-        when the spec_id was sanitized.
+        fetch_results must yield records keyed by original request_id, not custom_id,
+        when the request_id was sanitized.
         """
         from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
 
@@ -343,11 +343,11 @@ class TestSpecIdSanitization:
         mock_sdk.Anthropic.return_value = client_instance
 
         # Simulate JSONL-like result from SDK
-        dirty_spec_id = "my spec/id"
+        dirty_request_id = "my spec/id"
         # Compute what the adapter would produce for the sanitized custom_id
         import hashlib
 
-        sanitized = hashlib.sha1(dirty_spec_id.encode()).hexdigest()[:64]
+        sanitized = hashlib.sha1(dirty_request_id.encode()).hexdigest()[:64]
 
         result_item = MagicMock()
         result_item.custom_id = sanitized
@@ -363,20 +363,20 @@ class TestSpecIdSanitization:
 
         client_instance.messages.batches.results.return_value = iter([result_item])
 
-        # spec_id_map: dirty -> sanitized
-        spec_id_map = {dirty_spec_id: sanitized}
+        # request_id_map: dirty -> sanitized
+        request_id_map = {dirty_request_id: sanitized}
 
         with patch.dict(sys.modules, {"anthropic": mock_sdk}):
             adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
             records = list(
                 adapter.fetch_results(
                     provider_batch_id="msgbatch_abc",
-                    spec_id_map=spec_id_map,
+                    request_id_map=request_id_map,
                 )
             )
 
         assert len(records) == 1
-        assert records[0].spec_id == dirty_spec_id
+        assert records[0].request_id == dirty_request_id
 
 
 class TestFetchResultsUsageParsing:
@@ -408,14 +408,14 @@ class TestFetchResultsUsageParsing:
 
         client_instance.messages.batches.results.return_value = iter([result_item])
 
-        spec_id_map = {"spec-1": "spec-1"}
+        request_id_map = {"spec-1": "spec-1"}
 
         with patch.dict(sys.modules, {"anthropic": mock_sdk}):
             adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
             records = list(
                 adapter.fetch_results(
                     provider_batch_id="msgbatch_abc",
-                    spec_id_map=spec_id_map,
+                    request_id_map=request_id_map,
                 )
             )
 
@@ -452,14 +452,14 @@ class TestFetchResultsUsageParsing:
 
         client_instance.messages.batches.results.return_value = iter([result_item])
 
-        spec_id_map = {"spec-2": "spec-2"}
+        request_id_map = {"spec-2": "spec-2"}
 
         with patch.dict(sys.modules, {"anthropic": mock_sdk}):
             adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
             records = list(
                 adapter.fetch_results(
                     provider_batch_id="msgbatch_abc",
-                    spec_id_map=spec_id_map,
+                    request_id_map=request_id_map,
                 )
             )
 
@@ -481,7 +481,7 @@ class TestFetchResultsUsageParsing:
             adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
             result = adapter.fetch_results(
                 provider_batch_id="msgbatch_abc",
-                spec_id_map={},
+                request_id_map={},
             )
 
         import types
@@ -539,7 +539,7 @@ class TestFetchResultsErroredBranch:
             records = list(
                 adapter.fetch_results(
                     provider_batch_id="msgbatch_abc",
-                    spec_id_map={"spec-err": "spec-err"},
+                    request_id_map={"spec-err": "spec-err"},
                 )
             )
 
@@ -580,7 +580,7 @@ class TestFetchResultsErroredBranch:
             records = list(
                 adapter.fetch_results(
                     provider_batch_id="msgbatch_abc",
-                    spec_id_map={"spec-noattr": "spec-noattr"},
+                    request_id_map={"spec-noattr": "spec-noattr"},
                 )
             )
 
@@ -592,36 +592,36 @@ class TestFetchResultsErroredBranch:
 class TestCustomIdCollisionDetection:
     """F-HIGH-4: custom_id sanitization collisions must be detected and raised."""
 
-    def test_colliding_spec_ids_raise_before_submit(self):
+    def test_colliding_request_ids_raise_before_submit(self):
         """
-        When two distinct spec_ids sanitize to the same custom_id, submit()
+        When two distinct request_ids sanitize to the same custom_id, submit()
         must raise LLMServiceError before calling the provider SDK.
 
-        RED before fix: collision silently overwrites spec_id_map.
+        RED before fix: collision silently overwrites request_id_map.
         GREEN after fix: uniqueness check raises before batches.create().
         """
         from agentmap.exceptions import LLMServiceError
-        from agentmap.models.llm_execution import LLMCallSpec
+        from agentmap.models.llm_execution import LLMRequest
         from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
 
         client_instance = MagicMock()
         mock_sdk = MagicMock()
         mock_sdk.Anthropic.return_value = client_instance
 
-        # Craft two spec_ids that produce the same SHA-1 hex prefix.
-        # The easiest way: one dirty spec_id whose SHA-1 prefix equals a second
-        # clean spec_id that is already in ^[a-zA-Z0-9_-]{1,64}$ form.
+        # Craft two request_ids that produce the same SHA-1 hex prefix.
+        # The easiest way: one dirty request_id whose SHA-1 prefix equals a second
+        # clean request_id that is already in ^[a-zA-Z0-9_-]{1,64}$ form.
         import hashlib
 
         dirty = "colliding spec/id"
         expected_hash = hashlib.sha1(dirty.encode()).hexdigest()[:64]
-        # Make the second spec_id exactly equal to the hash of the first
+        # Make the second request_id exactly equal to the hash of the first
         clean_collider = expected_hash  # already alphanum — passes regex unchanged
 
         specs = [
-            LLMCallSpec(spec_id=dirty, messages=[{"role": "user", "content": "a"}]),
-            LLMCallSpec(
-                spec_id=clean_collider, messages=[{"role": "user", "content": "b"}]
+            LLMRequest(request_id=dirty, messages=[{"role": "user", "content": "a"}]),
+            LLMRequest(
+                request_id=clean_collider, messages=[{"role": "user", "content": "b"}]
             ),
         ]
 
@@ -636,9 +636,9 @@ class TestCustomIdCollisionDetection:
         # SDK must NOT have been called
         client_instance.messages.batches.create.assert_not_called()
 
-    def test_non_colliding_spec_ids_succeed(self):
-        """Non-colliding spec_ids (mixed dirty/clean) must submit without error."""
-        from agentmap.models.llm_execution import LLMCallSpec
+    def test_non_colliding_request_ids_succeed(self):
+        """Non-colliding request_ids (mixed dirty/clean) must submit without error."""
+        from agentmap.models.llm_execution import LLMRequest
         from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
 
         client_instance = MagicMock()
@@ -650,24 +650,24 @@ class TestCustomIdCollisionDetection:
         client_instance.messages.batches.create.return_value = batch_response
 
         specs = [
-            LLMCallSpec(
-                spec_id="clean-id", messages=[{"role": "user", "content": "a"}]
+            LLMRequest(
+                request_id="clean-id", messages=[{"role": "user", "content": "a"}]
             ),
-            LLMCallSpec(
-                spec_id="another/dirty id",
+            LLMRequest(
+                request_id="another/dirty id",
                 messages=[{"role": "user", "content": "b"}],
             ),
         ]
 
         with patch.dict(sys.modules, {"anthropic": mock_sdk}):
             adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
-            provider_batch_id, spec_id_map, _ = adapter.submit(
+            provider_batch_id, request_id_map, _ = adapter.submit(
                 specs=specs,
                 resolved_params=_make_resolved(specs),
             )
 
         assert provider_batch_id == "msgbatch_ok"
-        assert len(spec_id_map) == 2
+        assert len(request_id_map) == 2
 
 
 class TestSucceededEmptyContent:
@@ -707,7 +707,7 @@ class TestSucceededEmptyContent:
             records = list(
                 adapter.fetch_results(
                     provider_batch_id="msgbatch_abc",
-                    spec_id_map={"spec-empty": "spec-empty"},
+                    request_id_map={"spec-empty": "spec-empty"},
                 )
             )
 
@@ -734,7 +734,7 @@ class TestSubmitMalformedSDKResponse:
         GREEN after fix: validated; raises LLMServiceError.
         """
         from agentmap.exceptions import LLMServiceError
-        from agentmap.models.llm_execution import LLMCallSpec
+        from agentmap.models.llm_execution import LLMRequest
         from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
 
         client_instance = MagicMock()
@@ -748,7 +748,9 @@ class TestSubmitMalformedSDKResponse:
         with patch.dict(sys.modules, {"anthropic": mock_sdk}):
             adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
             specs_single = [
-                LLMCallSpec(spec_id="s1", messages=[{"role": "user", "content": "hi"}])
+                LLMRequest(
+                    request_id="s1", messages=[{"role": "user", "content": "hi"}]
+                )
             ]
             with pytest.raises(LLMServiceError):
                 adapter.submit(
@@ -924,12 +926,12 @@ class TestFetchResultsResultRef:
         item.result.message.usage = usage
         adapter._client.messages.batches.results.return_value = [item]
 
-        spec_id_map = {"s1": "spec__s1"}
+        request_id_map = {"s1": "spec__s1"}
         records = list(
-            adapter.fetch_results("batch-123", spec_id_map, result_ref="some-ref")
+            adapter.fetch_results("batch-123", request_id_map, result_ref="some-ref")
         )
         assert len(records) == 1
-        assert records[0].spec_id == "s1"
+        assert records[0].request_id == "s1"
 
     def test_fetch_results_result_ref_none_is_default(self):
         """result_ref defaults to None — existing callers without the arg still work."""
@@ -994,12 +996,12 @@ class TestAnthropicSubmitSerializesResolvedParams:
 
         Counter-factual: if update(rp) is removed, params has no temperature key.
         """
-        from agentmap.models.llm_execution import LLMCallSpec
+        from agentmap.models.llm_execution import LLMRequest
 
         adapter, client_instance = self._make_adapter_and_client()
 
-        spec = LLMCallSpec(
-            spec_id="spec-temp", messages=[{"role": "user", "content": "hi"}]
+        spec = LLMRequest(
+            request_id="spec-temp", messages=[{"role": "user", "content": "hi"}]
         )
         resolved_params = [
             {"model": "claude-3-5-haiku", "max_tokens": 512, "temperature": 0.7}
@@ -1023,12 +1025,12 @@ class TestAnthropicSubmitSerializesResolvedParams:
         TC-SER-A2: resolved max_tokens=256 must appear in requests[i].params
         on the correct spec entry.
         """
-        from agentmap.models.llm_execution import LLMCallSpec
+        from agentmap.models.llm_execution import LLMRequest
 
         adapter, client_instance = self._make_adapter_and_client()
 
-        spec = LLMCallSpec(
-            spec_id="spec-maxtok", messages=[{"role": "user", "content": "hi"}]
+        spec = LLMRequest(
+            request_id="spec-maxtok", messages=[{"role": "user", "content": "hi"}]
         )
         resolved_params = [{"model": "claude-3-5-haiku", "max_tokens": 256}]
 
@@ -1047,12 +1049,12 @@ class TestAnthropicSubmitSerializesResolvedParams:
         We use ``top_p=0.95`` as the passthrough — it is not in RESERVED_PARAMS
         and therefore flows through as-is after central resolution.
         """
-        from agentmap.models.llm_execution import LLMCallSpec
+        from agentmap.models.llm_execution import LLMRequest
 
         adapter, client_instance = self._make_adapter_and_client()
 
-        spec = LLMCallSpec(
-            spec_id="spec-passthrough", messages=[{"role": "user", "content": "hi"}]
+        spec = LLMRequest(
+            request_id="spec-passthrough", messages=[{"role": "user", "content": "hi"}]
         )
         resolved_params = [
             {"model": "claude-3-5-haiku", "max_tokens": 100, "top_p": 0.95}
@@ -1075,15 +1077,15 @@ class TestAnthropicSubmitSerializesResolvedParams:
 
         Two specs with different temperatures; verify each entry has only its own value.
         """
-        from agentmap.models.llm_execution import LLMCallSpec
+        from agentmap.models.llm_execution import LLMRequest
 
         adapter, client_instance = self._make_adapter_and_client()
 
-        spec_a = LLMCallSpec(
-            spec_id="spec-a", messages=[{"role": "user", "content": "a"}]
+        spec_a = LLMRequest(
+            request_id="spec-a", messages=[{"role": "user", "content": "a"}]
         )
-        spec_b = LLMCallSpec(
-            spec_id="spec-b", messages=[{"role": "user", "content": "b"}]
+        spec_b = LLMRequest(
+            request_id="spec-b", messages=[{"role": "user", "content": "b"}]
         )
         resolved_params = [
             {"model": "claude-3-5-haiku", "max_tokens": 100, "temperature": 0.2},

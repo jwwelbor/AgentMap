@@ -6,7 +6,7 @@ Part A: LLMFallbackHandler.__init__ invoke_async_fn parameter must be typed
 
 Part B: messages parameters across service_protocols.py and llm_service.py must
         accept Dict[str, Any] content (not str-only), consistent with
-        LLMCallSpec.messages: List[Dict[str, Any]].
+        LLMRequest.messages: List[Dict[str, Any]].
 
 Production entrypoints:
   - LLMFallbackHandler.__init__ (invoke_async_fn kwarg)
@@ -20,7 +20,7 @@ import inspect
 import unittest
 from typing import get_type_hints
 
-from agentmap.models.llm_execution import LLMCallSpec, LLMResponse
+from agentmap.models.llm_execution import LLMRequest, LLMResponse
 from agentmap.services.llm_fallback_handler import LLMFallbackHandler
 from agentmap.services.llm_service import LLMService
 from agentmap.services.protocols.service_protocols import LLMServiceProtocol
@@ -104,12 +104,12 @@ class TestMessagesTypeHintAllowsAny(unittest.TestCase):
     Counter-factual: if messages is still List[Dict[str, str]], a static type
     checker rejects structured content blocks (vision messages, cache-control
     dicts, list-valued content) that production callers pass. The fix widens
-    the annotation to List[Dict[str, Any]] to match LLMCallSpec.messages.
+    the annotation to List[Dict[str, Any]] to match LLMRequest.messages.
     """
 
-    def test_llm_call_spec_messages_type_is_any(self):
-        """LLMCallSpec.messages field uses Dict[str, Any] — the reference contract."""
-        hints = get_type_hints(LLMCallSpec)
+    def test_llm_request_messages_type_is_any(self):
+        """LLMRequest.messages field uses Dict[str, Any] — the reference contract."""
+        hints = get_type_hints(LLMRequest)
         messages_hint = hints.get("messages")
         self.assertIsNotNone(messages_hint)
         hint_str = str(messages_hint)
@@ -117,7 +117,7 @@ class TestMessagesTypeHintAllowsAny(unittest.TestCase):
         self.assertNotIn(
             "Dict[str, str]",
             hint_str,
-            f"LLMCallSpec.messages should already use Dict[str, Any]; got: {hint_str}",
+            f"LLMRequest.messages should already use Dict[str, Any]; got: {hint_str}",
         )
 
     def test_service_protocols_call_llm_messages_accepts_any(self):
@@ -192,7 +192,7 @@ class TestMessagesTypeHintAllowsAny(unittest.TestCase):
         )
 
     def test_structured_message_content_accepted_at_runtime(self):
-        """LLMCallSpec can be constructed with structured (non-str) content values."""
+        """LLMRequest can be constructed with structured (non-str) content values."""
         # This tests the actual data model allows structured blocks
         structured_messages = [
             {"role": "user", "content": [{"type": "text", "text": "hello"}]},
@@ -201,8 +201,8 @@ class TestMessagesTypeHintAllowsAny(unittest.TestCase):
                 "content": [{"type": "image_url", "url": "http://x.com/img.png"}],
             },
         ]
-        spec = LLMCallSpec(
-            spec_id="test-001",
+        spec = LLMRequest(
+            request_id="test-001",
             messages=structured_messages,
             provider="openai",
             model="gpt-4o",

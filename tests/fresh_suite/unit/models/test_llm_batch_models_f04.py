@@ -91,7 +91,7 @@ def _make_f03_handle_dict():
         "status": "ended",
         "provider": "anthropic",
         "model": "claude-3-5-haiku-20241022",
-        "spec_id_map": {"s1": "s1"},
+        "request_id_map": {"s1": "s1"},
         "results_url": "https://api.anthropic.com/v1/messages/batches/msgbatch_xyz/results",
         "expires_at": "2026-06-08T00:00:00Z",
         "ended_at": "2026-06-07T10:00:00Z",

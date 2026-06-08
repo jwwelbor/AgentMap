@@ -24,12 +24,14 @@ from agentmap.models.llm_execution import (
     LLMBatchRequestCounts,
     LLMBatchResultRecord,
     LLMBatchStatus,
-    LLMCallSpec,
     LLMExecutionError,
+    LLMRequest,
     LLMUsage,
 )
 from agentmap.services.llm._batch_ids import CUSTOM_ID_RE as _CUSTOM_ID_RE
-from agentmap.services.llm._batch_ids import build_spec_id_map as _build_spec_id_map
+from agentmap.services.llm._batch_ids import (
+    build_request_id_map as _build_request_id_map,
+)
 
 
 class OpenAIBatchAdapter:
@@ -47,7 +49,7 @@ class OpenAIBatchAdapter:
     3. ``batches.create(input_file_id, ...)`` → get batch.
 
     The caller never sees a file id; the return tuple is
-    ``(provider_batch_id, spec_id_map, expires_at)`` — same shape as
+    ``(provider_batch_id, request_id_map, expires_at)`` — same shape as
     ``AnthropicBatchAdapter.submit``.
     """
 
@@ -85,7 +87,7 @@ class OpenAIBatchAdapter:
 
     def submit(
         self,
-        specs: List[LLMCallSpec],
+        specs: List[LLMRequest],
         resolved_params: List[Dict[str, Any]],
     ) -> Tuple[str, Dict[str, str], Optional[str]]:
         """
@@ -100,13 +102,13 @@ class OpenAIBatchAdapter:
         then calls ``batches.create``.  The file id never crosses the service
         boundary.
 
-        Returns ``(provider_batch_id, spec_id_map, expires_at)`` where
-        ``spec_id_map`` maps each caller ``spec_id`` to its ``custom_id``
+        Returns ``(provider_batch_id, request_id_map, expires_at)`` where
+        ``request_id_map`` maps each caller ``request_id`` to its ``custom_id``
         sent to OpenAI.
         """
-        spec_id_map = _build_spec_id_map(specs, _CUSTOM_ID_RE)
+        request_id_map = _build_request_id_map(specs, _CUSTOM_ID_RE)
 
-        jsonl_bytes = self._build_jsonl(specs, spec_id_map, resolved_params)
+        jsonl_bytes = self._build_jsonl(specs, request_id_map, resolved_params)
 
         # Stage the file; file_id stays local — never returned to caller
         file_obj = self._client.files.create(
@@ -137,12 +139,12 @@ class OpenAIBatchAdapter:
         if hasattr(response, "expires_at") and response.expires_at is not None:
             expires_at = str(response.expires_at)
 
-        return provider_batch_id, spec_id_map, expires_at
+        return provider_batch_id, request_id_map, expires_at
 
     def _build_jsonl(
         self,
-        specs: List[LLMCallSpec],
-        spec_id_map: Dict[str, str],
+        specs: List[LLMRequest],
+        request_id_map: Dict[str, str],
         resolved_params: List[Dict[str, Any]],
     ) -> bytes:
         """
@@ -162,7 +164,7 @@ class OpenAIBatchAdapter:
             )
         lines = []
         for spec, rp in zip(specs, resolved_params):
-            custom_id = spec_id_map[spec.spec_id]
+            custom_id = request_id_map[spec.request_id]
             body: Dict[str, Any] = {"messages": spec.messages}
             body.update(rp)  # model, max_tokens, temperature, pass-throughs
 
@@ -241,7 +243,7 @@ class OpenAIBatchAdapter:
     def fetch_results(
         self,
         provider_batch_id: str,
-        spec_id_map: Dict[str, str],
+        request_id_map: Dict[str, str],
         result_ref: Optional[str] = None,
     ) -> Generator[LLMBatchResultRecord, None, None]:
         """
@@ -249,10 +251,10 @@ class OpenAIBatchAdapter:
 
         ``result_ref`` must be the ``output_file_id`` from ``poll``.
         Results are demuxed by ``custom_id`` (not position) back to the
-        caller's ``spec_id``.
+        caller's ``request_id``.
 
         Yields ``LLMBatchResultRecord`` for each JSONL record.  Records whose
-        ``custom_id`` is absent from ``spec_id_map`` are skipped (logged as
+        ``custom_id`` is absent from ``request_id_map`` are skipped (logged as
         a warning) to tolerate any extra records the provider may inject.
         """
         if result_ref is None:
@@ -263,8 +265,8 @@ class OpenAIBatchAdapter:
                 "OpenAI dashboard for details."
             )
 
-        # Build reverse map: custom_id → original spec_id
-        custom_to_spec: Dict[str, str] = {v: k for k, v in spec_id_map.items()}
+        # Build reverse map: custom_id → original request_id
+        custom_to_spec: Dict[str, str] = {v: k for k, v in request_id_map.items()}
 
         file_response = self._client.files.content(result_ref)
         raw_bytes: bytes = file_response.content
@@ -284,11 +286,11 @@ class OpenAIBatchAdapter:
                 continue
 
             custom_id = item.get("custom_id")
-            spec_id = custom_to_spec.get(custom_id) if custom_id else None
+            request_id = custom_to_spec.get(custom_id) if custom_id else None
 
-            if spec_id is None:
+            if request_id is None:
                 self._logger.warning(
-                    "OpenAIBatchAdapter.fetch_results: custom_id %r not in spec_id_map "
+                    "OpenAIBatchAdapter.fetch_results: custom_id %r not in request_id_map "
                     "— skipping record",
                     custom_id,
                 )
@@ -300,7 +302,7 @@ class OpenAIBatchAdapter:
             # Item-level error (the request itself failed)
             if error_payload:
                 yield LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
                         error_type=error_payload.get("code", "unknown"),
@@ -312,7 +314,7 @@ class OpenAIBatchAdapter:
 
             if response_payload is None:
                 yield LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
                         error_type="missing_response",
@@ -332,7 +334,7 @@ class OpenAIBatchAdapter:
                 # HTTP-level error from the provider
                 error_detail = body.get("error", {}) if isinstance(body, dict) else {}
                 yield LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
                         error_type=error_detail.get("code", "http_error"),
@@ -353,7 +355,7 @@ class OpenAIBatchAdapter:
 
             if not content:
                 yield LLMBatchResultRecord(
-                    spec_id=spec_id,
+                    request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
                         error_type="empty_content",
@@ -379,7 +381,7 @@ class OpenAIBatchAdapter:
                 )
 
             yield LLMBatchResultRecord(
-                spec_id=spec_id,
+                request_id=request_id,
                 status="succeeded",
                 provider="openai",
                 model=body.get("model"),
