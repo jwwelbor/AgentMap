@@ -5,7 +5,7 @@ Covers:
 - TC-041: submit builds JSONL and stages file before batches.create
 - TC-042: fetch_results downloads output_file_id and demuxes by custom_id
 - TC-043: OpenAI usage normalization from completion_tokens/prompt_tokens shape
-- TC-044: item-level error (failed request) produces LLMBatchResultRecord with error field
+- TC-044: item-level error (failed request) produces LLMBatchResult with error field
 - TC-087: LLMDependencyError raised when openai package not importable
 - TC-089: With SDK installed (mocked), adapter instantiates successfully
 - TC-005: provider_name and supports_cancel class attributes
@@ -360,8 +360,8 @@ class TestFetchResults:
         by_spec = {r.request_id: r for r in results}
         assert "s1" in by_spec
         assert "s2" in by_spec
-        assert by_spec["s1"].content == "response for s1"
-        assert by_spec["s2"].content == "response for s2"
+        assert by_spec["s1"].text == "response for s1"
+        assert by_spec["s2"].text == "response for s2"
 
     def test_fetch_results_uses_result_ref_for_file_download(self):
         """fetch_results must call files.content(result_ref), not use provider_batch_id for file."""
@@ -442,7 +442,7 @@ class TestFetchResults:
     def test_fetch_results_item_error_produces_result_record(self):
         """
         TC-044: An item with error field (no response) must produce
-        LLMBatchResultRecord with populated error, not raise.
+        LLMBatchResult with populated error, not raise.
         Counter-factual: if exception propagates, caller cannot distinguish
         item failure from fetch failure.
         """

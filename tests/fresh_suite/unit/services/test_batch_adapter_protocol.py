@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 
 from agentmap.models.llm_execution import (
     BatchPollResult,
-    LLMBatchResultRecord,
+    LLMBatchResult,
     LLMBatchStatus,
     LLMRequest,
 )
@@ -153,7 +153,7 @@ class TestAnthropicAdapterLifecycle:
             )
         )
         assert len(records) == 1
-        assert isinstance(records[0], LLMBatchResultRecord)
+        assert isinstance(records[0], LLMBatchResult)
         assert records[0].request_id == "s1"
         assert records[0].status == "succeeded"
 

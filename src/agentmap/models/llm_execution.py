@@ -91,21 +91,24 @@ class LLMExecutionError:
 
 
 @dataclass
-class LLMCallResult:
+class LLMFanoutResult:
     """
     Terminal per-item result for a fan-out submission.
 
     ``status`` is a closed terminal set: ``"succeeded"`` or ``"failed"``.
-    Successful results carry ``content`` and ``usage``; failed results carry
-    ``error``. ``provider`` and ``model`` may be ``None`` when the failure
-    occurs before provider resolution.
+    Successful results carry ``text`` and ``usage``; failed results carry
+    ``error``. ``resolved_provider`` and ``resolved_model`` may be ``None``
+    when the failure occurs before provider resolution.
+
+    Field names mirror ``LLMResponse`` so the realtime and fan-out result
+    envelopes read as one family.
     """
 
     request_id: str
     status: str  # "succeeded" | "failed"
-    provider: Optional[str] = None
-    model: Optional[str] = None
-    content: Optional[str] = None
+    resolved_provider: Optional[str] = None
+    resolved_model: Optional[str] = None
+    text: Optional[str] = None
     usage: Optional[LLMUsage] = None
     error: Optional[LLMExecutionError] = None
 
@@ -261,21 +264,24 @@ class LLMBatchHandle:
 
 
 @dataclass
-class LLMBatchResultRecord:
+class LLMBatchResult:
     """
     Per-item result from a completed provider-native batch.
 
     ``request_id`` is the caller-provided identifier from ``LLMRequest``.
     ``status`` is one of: ``"succeeded"``, ``"errored"``, ``"canceled"``,
-    ``"expired"``.  ``content`` and ``usage`` are populated on success;
+    ``"expired"``.  ``text`` and ``usage`` are populated on success;
     ``error`` is populated on failure.
+
+    Field names mirror ``LLMResponse``. ``resolved_model`` stays optional —
+    the Gemini batch adapter legitimately omits it.
     """
 
     request_id: str
     status: str  # "succeeded" | "errored" | "canceled" | "expired"
-    provider: Optional[str] = None
-    model: Optional[str] = None
-    content: Optional[str] = None
+    resolved_provider: Optional[str] = None
+    resolved_model: Optional[str] = None
+    text: Optional[str] = None
     usage: Optional[LLMUsage] = None
     error: Optional[LLMExecutionError] = None
 

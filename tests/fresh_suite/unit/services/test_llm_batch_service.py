@@ -27,7 +27,7 @@ from agentmap.models.llm_execution import (
     BatchPollResult,
     LLMBatchHandle,
     LLMBatchRequestCounts,
-    LLMBatchResultRecord,
+    LLMBatchResult,
     LLMBatchStatus,
     LLMBatchSubmitRequest,
     LLMExecutionError,
@@ -134,22 +134,22 @@ def _make_handle(
 
 def _mock_jsonl_records(request_id_map: dict, outcomes: dict) -> list:
     """
-    Factory for LLMBatchResultRecord objects returned by adapter.fetch_results().
+    Factory for LLMBatchResult objects returned by adapter.fetch_results().
 
     ``outcomes`` maps request_id -> outcome string: "succeeded", "errored",
     "canceled", "expired".  The adapter already converts JSONL to
-    LLMBatchResultRecord objects, so this matches the real seam.
+    LLMBatchResult objects, so this matches the real seam.
     """
     records = []
     for request_id, outcome in outcomes.items():
         if outcome == "succeeded":
             records.append(
-                LLMBatchResultRecord(
+                LLMBatchResult(
                     request_id=request_id,
                     status="succeeded",
-                    provider="anthropic",
-                    model="claude-sonnet-4-6",
-                    content=f"Response for {request_id}",
+                    resolved_provider="anthropic",
+                    resolved_model="claude-sonnet-4-6",
+                    text=f"Response for {request_id}",
                     usage=LLMUsage(
                         input_tokens=100,
                         output_tokens=50,
@@ -160,7 +160,7 @@ def _mock_jsonl_records(request_id_map: dict, outcomes: dict) -> list:
             )
         elif outcome == "errored":
             records.append(
-                LLMBatchResultRecord(
+                LLMBatchResult(
                     request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
@@ -172,14 +172,14 @@ def _mock_jsonl_records(request_id_map: dict, outcomes: dict) -> list:
             )
         elif outcome == "canceled":
             records.append(
-                LLMBatchResultRecord(
+                LLMBatchResult(
                     request_id=request_id,
                     status="canceled",
                 )
             )
         elif outcome == "expired":
             records.append(
-                LLMBatchResultRecord(
+                LLMBatchResult(
                     request_id=request_id,
                     status="expired",
                 )
@@ -639,9 +639,9 @@ class TestFetchBatchResults:
         assert isinstance(by_id["s2"].error, LLMExecutionError)
         assert by_id["s2"].usage is None
         assert by_id["s3"].status == "canceled"
-        assert by_id["s3"].content is None
+        assert by_id["s3"].text is None
         assert by_id["s4"].status == "expired"
-        assert by_id["s4"].content is None
+        assert by_id["s4"].text is None
 
     def test_fetch_errored_record_has_error_and_no_usage(self):
         """TC-AC5-04: errored record has LLMExecutionError; usage is None."""
@@ -666,7 +666,7 @@ class TestFetchBatchResults:
         assert record.error.error_type == "server_error"
         assert record.error.message == "internal error"
         assert record.usage is None
-        assert record.content is None
+        assert record.text is None
 
 
 # ---------------------------------------------------------------------------
@@ -1701,19 +1701,19 @@ class TestBatchCapabilities:
         """TC-008/CX: results_by_request_id returns dict keyed by request_id."""
         service, adapters, repo = _make_registry_service()
         records = [
-            LLMBatchResultRecord(
+            LLMBatchResult(
                 request_id="s1",
                 status="succeeded",
-                content="resp1",
-                provider="anthropic",
-                model="claude-3",
+                text="resp1",
+                resolved_provider="anthropic",
+                resolved_model="claude-3",
             ),
-            LLMBatchResultRecord(
+            LLMBatchResult(
                 request_id="s2",
                 status="succeeded",
-                content="resp2",
-                provider="anthropic",
-                model="claude-3",
+                text="resp2",
+                resolved_provider="anthropic",
+                resolved_model="claude-3",
             ),
         ]
 
@@ -1721,8 +1721,8 @@ class TestBatchCapabilities:
 
         assert "s1" in result
         assert "s2" in result
-        assert result["s1"].content == "resp1"
-        assert result["s2"].content == "resp2"
+        assert result["s1"].text == "resp1"
+        assert result["s2"].text == "resp2"
 
     def test_model_only_at_batch_level_accepted(self, tmp_path):
         """TC-082: model set only at request level (no per-spec conflict) is accepted."""
@@ -2251,8 +2251,8 @@ class TestF7CapabilityKeysAndReconciliation:
         """F7 / REQ-F-009c: reconcile returns None for no missing request_ids."""
         service, adapters, repo = _make_registry_service()
         records = [
-            LLMBatchResultRecord(request_id="s1", status="succeeded", content="ok"),
-            LLMBatchResultRecord(request_id="s2", status="succeeded", content="ok"),
+            LLMBatchResult(request_id="s1", status="succeeded", text="ok"),
+            LLMBatchResult(request_id="s2", status="succeeded", text="ok"),
         ]
 
         result = service.reconcile_batch_results(["s1", "s2"], records)
@@ -2268,7 +2268,7 @@ class TestF7CapabilityKeysAndReconciliation:
         """
         service, adapters, repo = _make_registry_service()
         records = [
-            LLMBatchResultRecord(request_id="s1", status="succeeded", content="ok"),
+            LLMBatchResult(request_id="s1", status="succeeded", text="ok"),
             # s2 was submitted but provider returned no record for it
         ]
 
@@ -2284,10 +2284,8 @@ class TestF7CapabilityKeysAndReconciliation:
         """F7: records for request_ids not in submitted list are not included in output."""
         service, adapters, repo = _make_registry_service()
         records = [
-            LLMBatchResultRecord(request_id="s1", status="succeeded", content="ok"),
-            LLMBatchResultRecord(
-                request_id="unexpected", status="succeeded", content="ok"
-            ),
+            LLMBatchResult(request_id="s1", status="succeeded", text="ok"),
+            LLMBatchResult(request_id="unexpected", status="succeeded", text="ok"),
         ]
 
         result = service.reconcile_batch_results(["s1"], records)

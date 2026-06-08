@@ -34,7 +34,7 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 from agentmap.exceptions import LLMDependencyError, LLMServiceError
 from agentmap.models.llm_execution import (
     BatchPollResult,
-    LLMBatchResultRecord,
+    LLMBatchResult,
     LLMBatchStatus,
     LLMExecutionError,
     LLMRequest,
@@ -285,7 +285,7 @@ class GeminiBatchAdapter:
         provider_batch_id: str,
         request_id_map: Dict[str, Any],
         result_ref: Optional[str] = None,
-    ) -> Generator[LLMBatchResultRecord, None, None]:
+    ) -> Generator[LLMBatchResult, None, None]:
         """
         Read and yield results from a completed inline Gemini batch.
 
@@ -333,7 +333,7 @@ class GeminiBatchAdapter:
             # Check for item-level error first
             item_error = getattr(item, "error", None)
             if item_error is not None:
-                yield LLMBatchResultRecord(
+                yield LLMBatchResult(
                     request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
@@ -346,7 +346,7 @@ class GeminiBatchAdapter:
 
             response = getattr(item, "response", None)
             if response is None:
-                yield LLMBatchResultRecord(
+                yield LLMBatchResult(
                     request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
@@ -370,7 +370,7 @@ class GeminiBatchAdapter:
                     content = getattr(parts[0], "text", None)
 
             if not content:
-                yield LLMBatchResultRecord(
+                yield LLMBatchResult(
                     request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
@@ -398,11 +398,11 @@ class GeminiBatchAdapter:
                     cache_read_input_tokens=None,
                 )
 
-            yield LLMBatchResultRecord(
+            yield LLMBatchResult(
                 request_id=request_id,
                 status="succeeded",
-                provider="google",
-                content=content,
+                resolved_provider="google",
+                text=content,
                 usage=usage,
             )
 
@@ -418,7 +418,7 @@ class GeminiBatchAdapter:
                 missing_idx,
                 provider_batch_id,
             )
-            yield LLMBatchResultRecord(
+            yield LLMBatchResult(
                 request_id=missing_request_id,
                 status="errored",
                 error=LLMExecutionError(

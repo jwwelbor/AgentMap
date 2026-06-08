@@ -25,11 +25,11 @@ from agentmap.exceptions import (
 )
 from agentmap.models.llm_execution import (
     LLMBatchHandle,
-    LLMBatchResultRecord,
+    LLMBatchResult,
     LLMBatchStatus,
     LLMBatchSubmitRequest,
-    LLMCallResult,
     LLMExecutionError,
+    LLMFanoutResult,
     LLMMessage,
     LLMRequest,
     LLMResponse,
@@ -1428,7 +1428,7 @@ class LLMService:
         self,
         requests: List[LLMRequest],
         max_concurrency: int,
-    ) -> List[LLMCallResult]:
+    ) -> List[LLMFanoutResult]:
         """
         Submit many LLM call specs and receive one terminal result per spec.
 
@@ -1437,7 +1437,7 @@ class LLMService:
         - ``request_id`` values must be unique within one submission.
         - ``max_concurrency`` must be an integer >= 1.
 
-        Once execution starts, item failures are captured as ``LLMCallResult``
+        Once execution starts, item failures are captured as ``LLMFanoutResult``
         records with ``status="failed"`` rather than aborting the submission.
         The returned list preserves the same positional order as ``requests``.
         """
@@ -1494,13 +1494,13 @@ class LLMService:
         self,
         spec: LLMRequest,
         semaphore: asyncio.Semaphore,
-    ) -> LLMCallResult:
+    ) -> LLMFanoutResult:
         """Execute one fan-out item through the public ``call_llm_async`` path.
 
         Calls ``call_llm_async`` directly so that routing, retry, jitter,
         circuit-breaker, fallback, telemetry, and cache-aware behavior are all
         inherited from the single async resilience stack (spec Decision 3).
-        Builds ``LLMCallResult`` from the returned ``LLMResponse`` so that
+        Builds ``LLMFanoutResult`` from the returned ``LLMResponse`` so that
         ``provider``, ``model``, and ``usage`` reflect the resolved values, not
         the requested spec values.
         """
@@ -1515,23 +1515,23 @@ class LLMService:
                     routing_context=spec.routing_context,
                     **kwargs,
                 )
-                return LLMCallResult(
+                return LLMFanoutResult(
                     request_id=spec.request_id,
                     status="succeeded",
-                    provider=llm_response.resolved_provider,
-                    model=llm_response.resolved_model,
-                    content=llm_response.text,
+                    resolved_provider=llm_response.resolved_provider,
+                    resolved_model=llm_response.resolved_model,
+                    text=llm_response.text,
                     usage=llm_response.usage,
                 )
             except LLMResolvedCallError as exc:
                 # Failure occurred after routing/fallback resolved a concrete
                 # provider/model — preserve that identity in the result record.
-                return LLMCallResult(
+                return LLMFanoutResult(
                     request_id=spec.request_id,
                     status="failed",
-                    provider=exc.resolved_provider,
-                    model=exc.resolved_model,
-                    content=None,
+                    resolved_provider=exc.resolved_provider,
+                    resolved_model=exc.resolved_model,
+                    text=None,
                     usage=None,
                     error=LLMExecutionError(
                         error_type=type(exc.cause).__name__,
@@ -1543,12 +1543,12 @@ class LLMService:
                 # Failure occurred before any provider/model was resolved
                 # (e.g., validation error, routing service unavailable).
                 # Echo spec values — may be None. Do not fabricate.
-                return LLMCallResult(
+                return LLMFanoutResult(
                     request_id=spec.request_id,
                     status="failed",
-                    provider=spec.provider,
-                    model=spec.model,
-                    content=None,
+                    resolved_provider=spec.provider,
+                    resolved_model=spec.model,
+                    text=None,
                     usage=None,
                     error=LLMExecutionError(
                         error_type=type(exc).__name__,
@@ -1873,11 +1873,11 @@ class LLMService:
         adapter.cancel(handle.provider_batch_id)
         return self.poll_batch(handle)
 
-    def fetch_batch_results(self, handle: LLMBatchHandle) -> List[LLMBatchResultRecord]:
+    def fetch_batch_results(self, handle: LLMBatchHandle) -> List[LLMBatchResult]:
         """
         Retrieve completed batch results keyed by caller ``request_id``.
 
-        Delegates to the adapter which yields ``LLMBatchResultRecord`` items
+        Delegates to the adapter which yields ``LLMBatchResult`` items
         with ``request_id`` already restored from the request_id_map.
 
         Raises:
@@ -1940,7 +1940,7 @@ class LLMService:
 
     async def afetch_batch_results(
         self, handle: "LLMBatchHandle"
-    ) -> "List[LLMBatchResultRecord]":
+    ) -> "List[LLMBatchResult]":
         """Async wrapper for :meth:`fetch_batch_results` (runs off event-loop thread)."""
         return await asyncio.to_thread(self.fetch_batch_results, handle)
 
@@ -2058,23 +2058,23 @@ class LLMService:
 
     @staticmethod
     def results_by_request_id(
-        records: "List[LLMBatchResultRecord]",
-    ) -> "Dict[str, LLMBatchResultRecord]":
+        records: "List[LLMBatchResult]",
+    ) -> "Dict[str, LLMBatchResult]":
         """Index a list of result records by their ``request_id``.
 
         Args:
             records: Records returned by :meth:`fetch_batch_results`.
 
         Returns:
-            Dict mapping ``request_id`` → ``LLMBatchResultRecord``.
+            Dict mapping ``request_id`` → ``LLMBatchResult``.
         """
         return {record.request_id: record for record in records}
 
     @staticmethod
     def reconcile_batch_results(
         submitted_request_ids: "List[str]",
-        records: "List[LLMBatchResultRecord]",
-    ) -> "Dict[str, Optional[LLMBatchResultRecord]]":
+        records: "List[LLMBatchResult]",
+    ) -> "Dict[str, Optional[LLMBatchResult]]":
         """Report reconciliation between submitted request_ids and returned records.
 
         Identifies request_ids that have no returned record (missing from results).
@@ -2087,7 +2087,7 @@ class LLMService:
 
         Returns:
             Dict mapping every submitted ``request_id`` to its
-            ``LLMBatchResultRecord`` if one was returned, or ``None`` if the
+            ``LLMBatchResult`` if one was returned, or ``None`` if the
             request_id has no corresponding record in ``records``.  A ``None``
             value signals a missing result that the caller should investigate.
         """
@@ -2104,7 +2104,7 @@ class LLMService:
         ``usage_metadata`` is present but all fields fail coercion.  Per-field
         coercion failures return ``None`` for that field (not for the whole
         ``LLMUsage``) so that a malformed token count never converts a successful
-        provider response into a failed ``LLMCallResult``.
+        provider response into a failed ``LLMFanoutResult``.
         """
         usage_metadata = getattr(response, "usage_metadata", None)
         if not usage_metadata:

@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, Mock, create_autospec, patch
 from agentmap.exceptions import LLMServiceError
 from agentmap.exceptions.service_exceptions import LLMResolvedCallError
 from agentmap.models.llm_execution import (
-    LLMCallResult,
+    LLMFanoutResult,
     LLMRequest,
     LLMResponse,
     LLMUsage,
@@ -156,7 +156,7 @@ class TestAC002OneResultPerSpec(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(results), 3)
         for result in results:
-            self.assertIsInstance(result, LLMCallResult)
+            self.assertIsInstance(result, LLMFanoutResult)
             self.assertEqual(result.status, "succeeded")
 
     async def test_tc_ac2_01_single_spec_returns_single_result(self):
@@ -172,7 +172,7 @@ class TestAC002OneResultPerSpec(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].request_id, "only-one")
-        self.assertEqual(results[0].content, "hello")
+        self.assertEqual(results[0].text, "hello")
 
     async def test_tc_ac2_02_large_submission_has_no_dropped_or_duplicated_results(
         self,
@@ -514,7 +514,7 @@ class TestAC006PartialFailure(unittest.IsolatedAsyncioTestCase):
         statuses = {r.request_id: r.status for r in results}
         self.assertEqual(statuses["fast-fail"], "failed")
         self.assertEqual(statuses["slow-ok"], "succeeded")
-        self.assertEqual(results[1].content, "slow result")
+        self.assertEqual(results[1].text, "slow result")
 
 
 # ---------------------------------------------------------------------------
@@ -546,7 +546,7 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
         r = results[0]
         self.assertEqual(r.request_id, "result-check")
         self.assertEqual(r.status, "succeeded")
-        self.assertEqual(r.content, "great answer")
+        self.assertEqual(r.text, "great answer")
 
     async def test_tc_ac7_01_succeeded_result_carries_resolved_provider_and_model(self):
         """TC-AC7-01: result.provider/model carry resolved values from LLMResponse."""
@@ -565,8 +565,8 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
             results = await self.service.call_llm_many_async([spec], max_concurrency=1)
 
         r = results[0]
-        self.assertEqual(r.provider, "anthropic")
-        self.assertEqual(r.model, "claude-3-haiku")
+        self.assertEqual(r.resolved_provider, "anthropic")
+        self.assertEqual(r.resolved_model, "claude-3-haiku")
 
     async def test_tc_ac7_01_full_usage_metadata_is_normalized_onto_result(self):
         """TC-AC7-01 end-to-end: result.usage carries all token fields.
@@ -598,7 +598,7 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
 
         r = results[0]
         self.assertEqual(r.status, "succeeded")
-        self.assertEqual(r.content, "answer with usage")
+        self.assertEqual(r.text, "answer with usage")
         self.assertIsNotNone(
             r.usage, "result.usage must not be None when LLMResponse.usage is set"
         )
@@ -716,16 +716,16 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
 
         r = results[0]
         self.assertEqual(r.status, "succeeded")
-        self.assertEqual(r.content, "routed answer")
+        self.assertEqual(r.text, "routed answer")
 
         # Result must reflect the routing decision, NOT the spec values.
         self.assertEqual(
-            r.provider,
+            r.resolved_provider,
             "anthropic",
             "provider must be the routed provider, not spec.provider='openai'",
         )
         self.assertEqual(
-            r.model,
+            r.resolved_model,
             "claude-haiku",
             "model must be the routed model, not spec.model='gpt-4o-mini'",
         )
@@ -814,16 +814,16 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
 
         r = results[0]
         self.assertEqual(r.status, "succeeded")
-        self.assertEqual(r.content, "fallback answer")
+        self.assertEqual(r.text, "fallback answer")
 
         # Must reflect the fallback tier, not spec.provider.
         self.assertEqual(
-            r.provider,
+            r.resolved_provider,
             "anthropic",
             "provider must be the fallback provider, not spec.provider='openai'",
         )
         self.assertEqual(
-            r.model,
+            r.resolved_model,
             "claude-haiku",
             "model must be the fallback model",
         )
@@ -895,7 +895,7 @@ class TestAC008FailureNormalization(unittest.IsolatedAsyncioTestCase):
 
         r = results[0]
         self.assertEqual(r.status, "failed")
-        self.assertIsNone(r.provider)
+        self.assertIsNone(r.resolved_provider)
 
     async def test_tc_ac8_01_error_message_is_sanitized(self):
         """LOW-2: error message is sanitized — raw exception detail passed through
@@ -1175,14 +1175,14 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.request_id, "routed-fail")
         self.assertEqual(r.status, "failed")
         self.assertEqual(
-            r.provider,
+            r.resolved_provider,
             "google",
             "provider must be the routing-resolved provider 'google', not the "
             "fallback default 'anthropic' — if this is 'anthropic', the routing "
             "handler is swallowing LLMResolvedCallError and re-routing",
         )
         self.assertEqual(
-            r.model,
+            r.resolved_model,
             "gemini-pro",
             "model must be the routing-resolved model, not spec.model=None",
         )
@@ -1268,14 +1268,14 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
         # If this is "openai", the fallback ladder identity is not propagating.
         # If this is "anthropic", tier-3 isn't running (only 2-provider test issue).
         self.assertEqual(
-            r.provider,
+            r.resolved_provider,
             "google",
             "provider must be 'google' (tier-3 provider) — not 'openai' (spec.provider) "
             "and not 'anthropic' (tier-2 provider). 'openai' means last_attempted is "
             "not propagating. 'anthropic' means tier-3 never executed.",
         )
         self.assertEqual(
-            r.model,
+            r.resolved_model,
             "gemini-flash",
             "model must be 'gemini-flash' (tier-3 google's fallback model from routing_matrix)",
         )
@@ -1328,14 +1328,14 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.request_id, "routed-fail-no-rewrite")
         self.assertEqual(r.status, "failed")
         self.assertEqual(
-            r.provider,
+            r.resolved_provider,
             "google",
             "provider must be 'google' (the routing-resolved provider). "
             "If 'anthropic', the routing handler swallowed LLMResolvedCallError "
             "and re-routed to the fallback provider — fix #1 is not in place.",
         )
         self.assertEqual(
-            r.model,
+            r.resolved_model,
             "gemini-pro",
             "model must be the routing-resolved model 'gemini-pro'",
         )
@@ -1450,7 +1450,9 @@ class TestAC008FailureNormalizationRound2(unittest.IsolatedAsyncioTestCase):
 
         r = results[0]
         self.assertEqual(r.status, "failed")
-        self.assertIsNone(r.provider, "provider must remain None — do not fabricate")
+        self.assertIsNone(
+            r.resolved_provider, "provider must remain None — do not fabricate"
+        )
 
     def setUp(self):
         self.service = _make_service()

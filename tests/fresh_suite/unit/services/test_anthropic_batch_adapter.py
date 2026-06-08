@@ -715,7 +715,7 @@ class TestSucceededEmptyContent:
         record = records[0]
         # Must NOT be a clean 'succeeded' with content=None
         assert not (
-            record.status == "succeeded" and record.content is None
+            record.status == "succeeded" and record.text is None
         ), "empty content must not be silently reported as succeeded with content=None"
         # Must be errored with a structured error
         assert record.status == "errored"

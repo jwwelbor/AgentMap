@@ -348,12 +348,12 @@ class TestGeminiFetchResults:
         results = list(adapter.fetch_results("batches/test", request_id_map))
 
         assert results[0].request_id == "first-spec"
-        assert results[0].content == "text for first"
+        assert results[0].text == "text for first"
         assert results[1].request_id == "second-spec"
-        assert results[1].content == "text for second"
+        assert results[1].text == "text for second"
 
     def test_fetch_results_item_error_yields_errored_record(self):
-        """An inlined response with an error attr yields an errored LLMBatchResultRecord."""
+        """An inlined response with an error attr yields an errored LLMBatchResult."""
         client_instance = MagicMock()
         adapter = _make_adapter(client_instance)
 
@@ -432,7 +432,7 @@ class TestGeminiDemuxIntegrity:
         Submit 3 specs, provider returns only 2 responses.  The adapter must
         yield 2 succeeded records for the present indices AND synthesize 1 errored
         record for the missing request_id.  No shifting of positions.
-        Per spec N2.1(2): short tail → synthesize errored LLMBatchResultRecord.
+        Per spec N2.1(2): short tail → synthesize errored LLMBatchResult.
         """
         adapter, _, request_id_map = self._make_adapter_with_responses(
             ["spec-A", "spec-B", "spec-C"], num_responses=2  # 3 specs, 2 responses
@@ -585,9 +585,9 @@ class TestGeminiDemuxIntegrity:
         assert len(results) == 3
         # Positional: idx 0 → X, idx 1 → Y
         assert results[0].request_id == "X"
-        assert results[0].content == "text-X"
+        assert results[0].text == "text-X"
         assert results[1].request_id == "Y"
-        assert results[1].content == "text-Y"
+        assert results[1].text == "text-Y"
         # Synthesized missing for Z — NOT shifted (Y content must not appear under Z)
         assert results[2].request_id == "Z"
         assert results[2].status == "errored"

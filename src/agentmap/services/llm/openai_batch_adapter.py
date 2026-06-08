@@ -22,7 +22,7 @@ from agentmap.exceptions import LLMDependencyError, LLMServiceError
 from agentmap.models.llm_execution import (
     BatchPollResult,
     LLMBatchRequestCounts,
-    LLMBatchResultRecord,
+    LLMBatchResult,
     LLMBatchStatus,
     LLMExecutionError,
     LLMRequest,
@@ -245,7 +245,7 @@ class OpenAIBatchAdapter:
         provider_batch_id: str,
         request_id_map: Dict[str, str],
         result_ref: Optional[str] = None,
-    ) -> Generator[LLMBatchResultRecord, None, None]:
+    ) -> Generator[LLMBatchResult, None, None]:
         """
         Download and parse batch results from the OpenAI output file.
 
@@ -253,7 +253,7 @@ class OpenAIBatchAdapter:
         Results are demuxed by ``custom_id`` (not position) back to the
         caller's ``request_id``.
 
-        Yields ``LLMBatchResultRecord`` for each JSONL record.  Records whose
+        Yields ``LLMBatchResult`` for each JSONL record.  Records whose
         ``custom_id`` is absent from ``request_id_map`` are skipped (logged as
         a warning) to tolerate any extra records the provider may inject.
         """
@@ -301,7 +301,7 @@ class OpenAIBatchAdapter:
 
             # Item-level error (the request itself failed)
             if error_payload:
-                yield LLMBatchResultRecord(
+                yield LLMBatchResult(
                     request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
@@ -313,7 +313,7 @@ class OpenAIBatchAdapter:
                 continue
 
             if response_payload is None:
-                yield LLMBatchResultRecord(
+                yield LLMBatchResult(
                     request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
@@ -333,7 +333,7 @@ class OpenAIBatchAdapter:
             if status_code != 200:
                 # HTTP-level error from the provider
                 error_detail = body.get("error", {}) if isinstance(body, dict) else {}
-                yield LLMBatchResultRecord(
+                yield LLMBatchResult(
                     request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
@@ -354,7 +354,7 @@ class OpenAIBatchAdapter:
                 content = msg.get("content")
 
             if not content:
-                yield LLMBatchResultRecord(
+                yield LLMBatchResult(
                     request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
@@ -380,11 +380,11 @@ class OpenAIBatchAdapter:
                     cache_read_input_tokens=None,
                 )
 
-            yield LLMBatchResultRecord(
+            yield LLMBatchResult(
                 request_id=request_id,
                 status="succeeded",
-                provider="openai",
-                model=body.get("model"),
-                content=content,
+                resolved_provider="openai",
+                resolved_model=body.get("model"),
+                text=content,
                 usage=usage,
             )

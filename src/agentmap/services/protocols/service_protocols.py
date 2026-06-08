@@ -19,9 +19,9 @@ from typing import (
 from agentmap.models.llm_execution import (
     BatchPollResult,
     LLMBatchHandle,
-    LLMBatchResultRecord,
+    LLMBatchResult,
     LLMBatchSubmitRequest,
-    LLMCallResult,
+    LLMFanoutResult,
     LLMMessage,
     LLMRequest,
     LLMResponse,
@@ -100,7 +100,7 @@ class BatchAdapterProtocol(Protocol):
         provider_batch_id: str,
         request_id_map: Dict[str, str],
         result_ref: Optional[str],
-    ) -> List[LLMBatchResultRecord]:
+    ) -> List[LLMBatchResult]:
         """
         Retrieve completed results and key them by caller ``request_id``.
 
@@ -223,7 +223,7 @@ class LLMServiceProtocol(Protocol):
         self,
         requests: List[LLMRequest],
         max_concurrency: int,
-    ) -> List[LLMCallResult]:
+    ) -> List[LLMFanoutResult]:
         """
         Submit many LLM call specs and receive one terminal result per spec.
 
@@ -232,7 +232,7 @@ class LLMServiceProtocol(Protocol):
         - ``request_id`` values must be unique within one submission.
         - ``max_concurrency`` must be an integer >= 1.
 
-        Once execution starts, per-item failures are captured as ``LLMCallResult``
+        Once execution starts, per-item failures are captured as ``LLMFanoutResult``
         records with ``status="failed"`` rather than aborting the whole submission.
         The returned list preserves the same positional order as ``requests``.
 
@@ -241,7 +241,7 @@ class LLMServiceProtocol(Protocol):
             max_concurrency: Maximum number of in-flight provider calls at once.
 
         Returns:
-            List of ``LLMCallResult`` in the same order as ``requests``.
+            List of ``LLMFanoutResult`` in the same order as ``requests``.
 
         Raises:
             LLMServiceError: For invalid submissions (before any execution).
@@ -301,7 +301,7 @@ class LLMServiceProtocol(Protocol):
         """
         ...
 
-    def fetch_batch_results(self, handle: LLMBatchHandle) -> List[LLMBatchResultRecord]:
+    def fetch_batch_results(self, handle: LLMBatchHandle) -> List[LLMBatchResult]:
         """
         Retrieve completed batch results keyed by caller ``request_id``.
 
@@ -328,7 +328,7 @@ class LLMServiceProtocol(Protocol):
 
     async def afetch_batch_results(
         self, handle: LLMBatchHandle
-    ) -> List[LLMBatchResultRecord]:
+    ) -> List[LLMBatchResult]:
         """Async variant of ``fetch_batch_results``; runs blocking SDK call off-thread."""
         ...
 
@@ -376,8 +376,8 @@ class LLMServiceProtocol(Protocol):
         ...
 
     def results_by_request_id(
-        self, records: List[LLMBatchResultRecord]
-    ) -> Dict[str, LLMBatchResultRecord]:
+        self, records: List[LLMBatchResult]
+    ) -> Dict[str, LLMBatchResult]:
         """
         Index ``records`` by ``request_id`` for O(1) lookups.
 
@@ -388,13 +388,13 @@ class LLMServiceProtocol(Protocol):
     def reconcile_batch_results(
         self,
         submitted_request_ids: List[str],
-        records: List[LLMBatchResultRecord],
-    ) -> Dict[str, Optional[LLMBatchResultRecord]]:
+        records: List[LLMBatchResult],
+    ) -> Dict[str, Optional[LLMBatchResult]]:
         """
         Reconcile submitted request_ids against returned records (REQ-F-009c).
 
         Returns a dict mapping every submitted ``request_id`` to its
-        ``LLMBatchResultRecord`` if one was returned, or ``None`` if the
+        ``LLMBatchResult`` if one was returned, or ``None`` if the
         provider returned no result for that request_id.  A ``None`` value signals
         possible silent data loss and should be investigated by the caller.
 

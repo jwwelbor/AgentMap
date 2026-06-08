@@ -14,7 +14,7 @@ from agentmap.exceptions import LLMDependencyError, LLMServiceError
 from agentmap.models.llm_execution import (
     BatchPollResult,
     LLMBatchRequestCounts,
-    LLMBatchResultRecord,
+    LLMBatchResult,
     LLMBatchStatus,
     LLMExecutionError,
     LLMRequest,
@@ -180,11 +180,11 @@ class AnthropicBatchAdapter:
         provider_batch_id: str,
         request_id_map: Dict[str, str],
         result_ref: Optional[str] = None,
-    ) -> Generator[LLMBatchResultRecord, None, None]:
+    ) -> Generator[LLMBatchResult, None, None]:
         """
         Stream JSONL batch results lazily from the Anthropic API.
 
-        Yields ``LLMBatchResultRecord`` for each item, with ``request_id``
+        Yields ``LLMBatchResult`` for each item, with ``request_id``
         restored from ``request_id_map`` (custom_id → original request_id).
         ``cache_control`` metadata is preserved on the usage object.
 
@@ -212,7 +212,7 @@ class AnthropicBatchAdapter:
 
                 # F-MED-2: empty/missing content is a parse error — report as errored
                 if not content:
-                    yield LLMBatchResultRecord(
+                    yield LLMBatchResult(
                         request_id=request_id,
                         status="errored",
                         error=LLMExecutionError(
@@ -242,12 +242,12 @@ class AnthropicBatchAdapter:
                         ),
                     )
 
-                yield LLMBatchResultRecord(
+                yield LLMBatchResult(
                     request_id=request_id,
                     status="succeeded",
-                    provider="anthropic",
-                    model=getattr(msg, "model", None),
-                    content=content,
+                    resolved_provider="anthropic",
+                    resolved_model=getattr(msg, "model", None),
+                    text=content,
                     usage=usage,
                 )
 
@@ -269,27 +269,27 @@ class AnthropicBatchAdapter:
                         ),
                         retryable=False,
                     )
-                yield LLMBatchResultRecord(
+                yield LLMBatchResult(
                     request_id=request_id,
                     status="errored",
                     error=error,
                 )
 
             elif result.type == "canceled":
-                yield LLMBatchResultRecord(
+                yield LLMBatchResult(
                     request_id=request_id,
                     status="canceled",
                 )
 
             elif result.type == "expired":
-                yield LLMBatchResultRecord(
+                yield LLMBatchResult(
                     request_id=request_id,
                     status="expired",
                 )
 
             else:
                 # Unknown item type — yield as errored to avoid silent data loss
-                yield LLMBatchResultRecord(
+                yield LLMBatchResult(
                     request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(

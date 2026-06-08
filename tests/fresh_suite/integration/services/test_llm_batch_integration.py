@@ -28,7 +28,7 @@ from agentmap.models.llm_execution import (
     BatchPollResult,
     LLMBatchHandle,
     LLMBatchRequestCounts,
-    LLMBatchResultRecord,
+    LLMBatchResult,
     LLMBatchStatus,
     LLMBatchSubmitRequest,
     LLMExecutionError,
@@ -166,13 +166,13 @@ def _make_service(batch_dir: str = None) -> tuple:
     return service, mock_adapter, repo
 
 
-def _make_succeeded_record(request_id: str) -> LLMBatchResultRecord:
-    return LLMBatchResultRecord(
+def _make_succeeded_record(request_id: str) -> LLMBatchResult:
+    return LLMBatchResult(
         request_id=request_id,
         status="succeeded",
-        provider="anthropic",
-        model="claude-sonnet-4-6",
-        content=f"result for {request_id}",
+        resolved_provider="anthropic",
+        resolved_model="claude-sonnet-4-6",
+        text=f"result for {request_id}",
         usage=LLMUsage(
             input_tokens=100,
             output_tokens=50,
@@ -182,8 +182,8 @@ def _make_succeeded_record(request_id: str) -> LLMBatchResultRecord:
     )
 
 
-def _make_errored_record(request_id: str) -> LLMBatchResultRecord:
-    return LLMBatchResultRecord(
+def _make_errored_record(request_id: str) -> LLMBatchResult:
+    return LLMBatchResult(
         request_id=request_id,
         status="errored",
         error=LLMExecutionError(
@@ -348,12 +348,12 @@ class TestInt02SanitizedSpecIdDemux:
 
         # Now fetch results: adapter returns record keyed by sanitized custom_id
         # The service must reverse-map back to the original request_id
-        result_record = LLMBatchResultRecord(
+        result_record = LLMBatchResult(
             request_id=dirty_request_id,  # service demux restores original request_id
             status="succeeded",
-            provider="anthropic",
-            model="claude-sonnet-4-6",
-            content="hello",
+            resolved_provider="anthropic",
+            resolved_model="claude-sonnet-4-6",
+            text="hello",
             usage=LLMUsage(input_tokens=10, output_tokens=5),
         )
         mock_adapter.fetch_results.return_value = [result_record]
