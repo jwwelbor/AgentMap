@@ -128,7 +128,7 @@ class AnthropicBatchAdapter:
 
         expires_at: Optional[str] = None
         if hasattr(response, "expires_at") and response.expires_at is not None:
-            expires_at = str(response.expires_at)
+            expires_at = self._stringify_datetime(response.expires_at)
 
         return provider_batch_id, request_id_map, expires_at
 

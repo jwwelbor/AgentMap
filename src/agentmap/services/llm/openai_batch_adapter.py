@@ -84,10 +84,18 @@ class OpenAIBatchAdapter:
 
     @staticmethod
     def _epoch_to_iso8601(epoch_value: Any) -> Optional[str]:
-        """Convert provider epoch timestamps to ISO-8601 strings."""
+        """Convert provider epoch timestamps to ISO-8601 strings.
+
+        Accepts epoch seconds (int/float/numeric str) and normalizes them to an
+        ISO-8601 UTC string. Values that are not numeric (e.g. already ISO-8601)
+        are returned unchanged so the method is safe to call defensively.
+        """
         if epoch_value is None:
             return None
-        return datetime.fromtimestamp(int(epoch_value), tz=timezone.utc).isoformat()
+        try:
+            return datetime.fromtimestamp(int(epoch_value), tz=timezone.utc).isoformat()
+        except (ValueError, TypeError):
+            return str(epoch_value)
 
     # ------------------------------------------------------------------
     # Submit
@@ -145,7 +153,7 @@ class OpenAIBatchAdapter:
 
         expires_at: Optional[str] = None
         if hasattr(response, "expires_at") and response.expires_at is not None:
-            expires_at = str(response.expires_at)
+            expires_at = self._epoch_to_iso8601(response.expires_at)
 
         return provider_batch_id, request_id_map, expires_at
 
@@ -378,7 +386,7 @@ class OpenAIBatchAdapter:
             # Parse successful response
             choices = body.get("choices") or []
             content: Optional[str] = None
-            if choices:
+            if choices and isinstance(choices[0], dict):
                 msg = choices[0].get("message") or {}
                 content = msg.get("content")
 

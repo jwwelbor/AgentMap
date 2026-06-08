@@ -1664,6 +1664,11 @@ class LLMService:
                 "for batch submission."
             )
 
+        if not isinstance(request.model, str) or not request.model:
+            raise LLMServiceError(
+                f"model must be a non-empty string, got {request.model!r}."
+            )
+
         # REQ-F-008: provider is batch-level only; reject per-spec provider settings.
         for spec in request.requests:
             if spec.provider is not None and spec.provider != "":
@@ -1675,6 +1680,10 @@ class LLMService:
 
         seen_ids: set = set()
         for spec in request.requests:
+            if not isinstance(spec.request_id, str) or not spec.request_id:
+                raise LLMServiceError(
+                    f"request_id must be a non-empty string, got {spec.request_id!r}."
+                )
             if spec.request_id in seen_ids:
                 raise LLMServiceError(
                     f"Duplicate request_id detected: {spec.request_id!r}. "
@@ -1834,7 +1843,7 @@ class LLMService:
             request_id_map=handle.request_id_map,
             results_url=poll_result.results_url or handle.results_url,
             result_ref=poll_result.result_ref or handle.result_ref,
-            expires_at=handle.expires_at,
+            expires_at=poll_result.expires_at or handle.expires_at,
             ended_at=poll_result.ended_at,
             request_counts=poll_result.request_counts,
         )
@@ -2115,7 +2124,11 @@ class LLMService:
         Returns:
             Dict mapping ``request_id`` → ``LLMBatchResult``.
         """
-        return {record.request_id: record for record in records}
+        return {
+            record.request_id: record
+            for record in records
+            if record.request_id is not None and record.request_id != ""
+        }
 
     @staticmethod
     def reconcile_batch_results(
