@@ -1831,7 +1831,9 @@ class TestNoProviderGuardLiterals:
         # Read the file and extract the batch section.
         from pathlib import Path
 
-        llm_service_path = Path(__file__).parents[4] / "src/agentmap/services/llm_service.py"
+        llm_service_path = (
+            Path(__file__).parents[4] / "src/agentmap/services/llm_service.py"
+        )
         with open(llm_service_path) as f:
             content = f.read()
 
