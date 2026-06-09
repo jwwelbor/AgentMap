@@ -298,7 +298,7 @@ class MyVectorAgent(BaseAgent, VectorCapableAgent):
 ```python
 # CSV context field
 context = {
-    'provider': 'chroma',
+    'provider': 'faiss',
     'embedding_model': 'text-embedding-ada-002',
     'similarity_threshold': 0.8,
     'max_results': 5,

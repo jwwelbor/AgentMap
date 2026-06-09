@@ -305,7 +305,7 @@ def diagnose_system(*, config_file: Optional[str] = None) -> Dict[str, Any]:
             )
 
         if not storage_providers.get("vector", False):
-            suggestions.append("For vector storage: pip install chromadb")
+            suggestions.append("For vector storage: pip install faiss-cpu")
 
         # Get environment information
         import os
@@ -321,7 +321,7 @@ def diagnose_system(*, config_file: Optional[str] = None) -> Dict[str, Any]:
             ("langchain_openai", "LangChain OpenAI"),
             ("langchain_anthropic", "LangChain Anthropic"),
             ("langchain_google_genai", "LangChain Google"),
-            ("chromadb", "ChromaDB"),
+            ("faiss", "FAISS"),
             ("pandas", "Pandas (CSV support)"),
         ]
 

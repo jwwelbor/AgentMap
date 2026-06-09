@@ -103,7 +103,7 @@ context = {
     contextOptions: ['provider', 'embedding_model', 'similarity_threshold', 'max_results', 'collection_name'],
     usageExample: `# CSV Configuration
 context = {
-    "provider": "chroma",
+    "provider": "faiss",
     "embedding_model": "text-embedding-ada-002",
     "similarity_threshold": 0.8,
     "max_results": 5

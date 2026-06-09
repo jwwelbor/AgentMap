@@ -2,7 +2,7 @@
 Vector store provider implementations.
 
 This module provides factory functions for creating and managing
-different vector store backends (Chroma, FAISS, etc.).
+the supported FAISS vector store backend.
 """
 
 import logging
@@ -32,7 +32,7 @@ class VectorStoreFactory:
     """
     Factory for creating and caching vector store instances.
 
-    Supports Chroma and FAISS backends with automatic caching.
+    Supports the FAISS backend with automatic caching.
     """
 
     def __init__(
@@ -90,13 +90,14 @@ class VectorStoreFactory:
         if embeddings is None:
             return None
 
-        provider = self._client_config.get("provider", "chroma").lower()
+        provider = self._client_config.get("provider", "faiss").lower()
 
         try:
-            if provider == "chroma":
-                vector_store = self._create_chroma_store(embeddings, collection)
-            elif provider == "faiss":
+            if provider == "faiss":
                 vector_store = self._create_faiss_store(embeddings, collection)
+            elif provider in {"chroma", "chromadb"}:
+                self._logger.error(self._get_legacy_provider_error(provider))
+                return None
             else:
                 self._logger.error(f"Unsupported vector store provider: {provider}")
                 return None
@@ -111,42 +112,6 @@ class VectorStoreFactory:
 
         except Exception as e:
             self._logger.error(f"Failed to create vector store: {e}")
-            return None
-
-    def _create_chroma_store(self, embeddings: Any, collection: str) -> Optional[Any]:
-        """
-        Create Chroma vector store.
-
-        Args:
-            embeddings: Embedding model instance
-            collection: Collection name
-
-        Returns:
-            Chroma vector store instance or None if creation fails
-        """
-        try:
-            # Get Chroma from parent module (allows test patching)
-            Chroma = _get_parent_module_attr("Chroma")
-
-            if Chroma is None:
-                self._logger.error(
-                    "Chroma not installed. Install with 'pip install chromadb'"
-                )
-                return None
-
-            persist_dir = os.path.join(
-                self._client_config["persist_directory"], collection
-            )
-            os.makedirs(persist_dir, exist_ok=True)
-
-            return Chroma(
-                persist_directory=persist_dir,
-                embedding_function=embeddings,
-                collection_name=collection,
-            )
-
-        except Exception as e:
-            self._logger.error(f"Failed to create Chroma store: {e}")
             return None
 
     def _create_faiss_store(self, embeddings: Any, collection: str) -> Optional[Any]:
@@ -190,6 +155,15 @@ class VectorStoreFactory:
         except Exception as e:
             self._logger.error(f"Failed to create FAISS store: {e}")
             return None
+
+    @staticmethod
+    def _get_legacy_provider_error(provider: str) -> str:
+        """Build a migration-focused error for removed Chroma providers."""
+        return (
+            f"Vector provider '{provider}' is no longer supported. "
+            "switch your vector storage provider to 'faiss' and install "
+            "'faiss-cpu' if needed."
+        )
 
     def remove_from_cache(self, collection: str) -> None:
         """

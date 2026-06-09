@@ -112,10 +112,10 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
                 "collections": {"test_collection": {"file_path": "test.csv"}},
             },
             "vector": {
-                "default_provider": "chroma",
+                "default_provider": "faiss",
                 "collections": {
                     "test_vectors": {
-                        "provider": "chroma",
+                        "provider": "faiss",
                         "settings": {
                             "persist_directory": str(
                                 Path(self.temp_dir) / "vector_data"
@@ -770,7 +770,7 @@ class TestConfigValidationIntegration(BaseIntegrationTest):
         # Create storage config
         summary_storage_config = {
             "csv": {"default_directory": "data/csv", "collections": {}},
-            "vector": {"default_provider": "chroma", "collections": {}},
+            "vector": {"default_provider": "faiss", "collections": {}},
         }
 
         config_path = Path(self.temp_dir) / "summary_config.yaml"

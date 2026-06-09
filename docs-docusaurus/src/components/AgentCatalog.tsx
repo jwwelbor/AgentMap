@@ -222,7 +222,7 @@ const AGENTS: Agent[] = [
     inputFields: 'document data',
     outputField: 'Operation status',
     promptUsage: 'Optional configuration override',
-    csvExample: 'VectorGraph,LoadDocs,{"provider": "chroma", "embedding_model": "text-embedding-ada-002"},Load documents into vector store,vector_writer,Search,,documents,load_result,',
+    csvExample: 'VectorGraph,LoadDocs,{"provider": "faiss", "embedding_model": "text-embedding-ada-002"},Load documents into vector store,vector_writer,Search,,documents,load_result,',
     contextOptions: ['provider', 'embedding_model', 'collection_name'],
     protocols: ['StorageCapableAgent', 'VectorCapableAgent'],
     businessServices: ['StorageService']

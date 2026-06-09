@@ -323,7 +323,7 @@ langchain-google-genai = "*"
 [tool.poetry.extras.storage]
 firebase = "*"
 firebase-admin = "*"
-chromadb = "*"
+faiss-cpu = "*"
 ```
 
 #### Development Dependencies

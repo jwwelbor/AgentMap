@@ -131,7 +131,7 @@ STORAGE_WRITE_SPAN: str = "agentmap.storage.write"
 """Span wrapping a storage write operation."""
 
 STORAGE_BACKEND: str = "agentmap.storage.backend"
-"""Storage provider name (e.g. 'csv', 'json', 'firebase', 'chroma')."""
+"""Storage provider name (e.g. 'csv', 'json', 'firebase', 'faiss')."""
 
 STORAGE_OPERATION: str = "agentmap.storage.operation"
 """Storage operation type ('read' or 'write')."""

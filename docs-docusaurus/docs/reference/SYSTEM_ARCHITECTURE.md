@@ -1124,7 +1124,7 @@ Cloud Storage (BlobStorageService):
 └── Local files: file:///path
 
 Vector Storage:
-├── ChromaDB: Local vector database
+├── FAISS: Local vector database
 ├── Embeddings: OpenAI, Anthropic, Google
 └── Semantic search operations
 ```

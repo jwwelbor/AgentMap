@@ -6,7 +6,7 @@ These tests validate the VectorStorageService implementation including:
 - Indexing and query optimization
 - Vector operations and transformations
 - LangChain vector store integration
-- Chroma and FAISS backend support
+- FAISS backend support
 - Document embedding and retrieval
 """
 
@@ -36,7 +36,7 @@ class TestVectorStorageService(unittest.TestCase):
                 {
                     "vector": {
                         "enabled": True,
-                        "provider": "chroma",
+                        "provider": "faiss",
                         "default_directory": self.temp_dir,
                         "embedding_model": "openai",
                         "k": 4,
@@ -99,7 +99,7 @@ class TestVectorStorageService(unittest.TestCase):
 
         # Verify configuration values
         self.assertEqual(client["persist_directory"], self.temp_dir)
-        self.assertEqual(client["provider"], "chroma")
+        self.assertEqual(client["provider"], "faiss")
         self.assertEqual(client["embedding_model"], "openai")
         self.assertEqual(client["k"], 4)
 
@@ -133,7 +133,7 @@ class TestVectorStorageService(unittest.TestCase):
             {
                 "vector": {
                     "enabled": True,
-                    "provider": "chroma",
+                    "provider": "faiss",
                     "default_directory": "/root/protected/directory",
                 }
             }
@@ -184,57 +184,76 @@ class TestVectorStorageService(unittest.TestCase):
     # =============================================================================
     # 3. Vector Store Creation Tests
     # =============================================================================
-    # NOTE: Vector store creation is now handled by VectorStoreFactory
-    # These tests should be moved to a separate test file for VectorStoreFactory
+    @patch.object(VectorStorageService, "_check_langchain", return_value=True)
+    @patch.object(VectorStorageService, "_get_embeddings")
+    @patch("agentmap.services.storage.vector.service.os.path.exists")
+    @patch("agentmap.services.storage.vector.service._get_parent_module_attr")
+    def test_get_vector_store_creates_new_faiss_index(
+        self,
+        mock_parent_attr,
+        mock_exists,
+        mock_get_embeddings,
+        mock_check_langchain,
+    ):
+        """Test getting a FAISS vector store creates a new index when missing."""
+        mock_embeddings = Mock()
+        mock_store = Mock()
+        mock_store.save_local = Mock()
+        mock_get_embeddings.return_value = mock_embeddings
+        mock_exists.return_value = False
 
-    # @patch('agentmap.services.storage.vector.providers.Chroma')
-    # def test_create_chroma_store(self, mock_chroma):
-    #     """Test Chroma vector store creation."""
-    #     # Now handled by VectorStoreFactory
-    #     pass
+        def attr_side_effect(name):
+            if name == "FAISS":
+                return Mock(
+                    from_texts=Mock(return_value=mock_store),
+                    load_local=Mock(),
+                )
+            return Mock()
 
-    # def test_create_chroma_store_import_failure(self):
-    #     """Test Chroma store creation with import failure."""
-    #     # Now handled by VectorStoreFactory
-    #     pass
+        mock_parent_attr.side_effect = attr_side_effect
 
-    # @patch('agentmap.services.storage.vector.providers.FAISS')
-    # def test_create_faiss_store_new(self, mock_faiss):
-    #     """Test FAISS vector store creation (new index)."""
-    #     # Now handled by VectorStoreFactory
-    #     pass
+        result = self.service._get_vector_store("test_collection")
 
-    # @patch('agentmap.services.storage.vector.providers.FAISS')
-    # @patch('os.path.exists')
-    # def test_create_faiss_store_existing(self, mock_exists, mock_faiss):
-    #     """Test FAISS vector store loading (existing index)."""
-    #     # Now handled by VectorStoreFactory
-    #     pass
+        self.assertIs(result, mock_store)
+        mock_store.save_local.assert_called_once_with(
+            os.path.join(self.temp_dir, "test_collection")
+        )
+        self.assertIs(
+            self.service.client["_vector_stores"]["test_collection"], mock_store
+        )
 
-    # def test_create_faiss_store_import_failure(self):
-    #     """Test FAISS store creation with import failure."""
-    #     # Now handled by VectorStoreFactory
-    #     pass
+    @patch.object(VectorStorageService, "_check_langchain", return_value=True)
+    @patch.object(VectorStorageService, "_get_embeddings")
+    @patch("agentmap.services.storage.vector.service.os.path.exists")
+    @patch("agentmap.services.storage.vector.service._get_parent_module_attr")
+    def test_get_vector_store_loads_existing_faiss_index(
+        self,
+        mock_parent_attr,
+        mock_exists,
+        mock_get_embeddings,
+        mock_check_langchain,
+    ):
+        """Test getting a FAISS vector store loads an existing persisted index."""
+        mock_embeddings = Mock()
+        mock_store = Mock()
+        mock_faiss = Mock()
+        mock_faiss.load_local.return_value = mock_store
+        mock_get_embeddings.return_value = mock_embeddings
+        mock_exists.return_value = True
 
-    # def test_get_vector_store_chroma(self):
-    #     """Test getting Chroma vector store."""
-    #     # Now handled by VectorStoreFactory
-    #     pass
+        def attr_side_effect(name):
+            if name == "FAISS":
+                return mock_faiss
+            return Mock()
 
-    # def test_get_vector_store_unsupported_provider(self):
-    #     """Test getting vector store with unsupported provider."""
-    #     # Now handled by VectorStoreFactory
-    #     pass
+        mock_parent_attr.side_effect = attr_side_effect
 
-    # def test_get_vector_store_without_langchain(self):
-    #     """Test getting vector store without LangChain."""
-    #     # Now handled by VectorStoreFactory
-    #     pass
+        result = self.service._get_vector_store("existing_collection")
 
-    # def test_get_vector_store_without_embeddings(self):
-    #     """Test getting vector store without embeddings."""
-    #     # Now handled by VectorStoreFactory
-    #     pass
+        self.assertIs(result, mock_store)
+        mock_faiss.load_local.assert_called_once_with(
+            os.path.join(self.temp_dir, "existing_collection"), mock_embeddings
+        )
 
     # =============================================================================
     # 4. Read Operations (Similarity Search) Tests
@@ -456,22 +475,24 @@ class TestVectorStorageService(unittest.TestCase):
         """Test writing with persistence enabled."""
         mock_store = Mock()
         mock_store.add_texts.return_value = ["text1"]
-        mock_store.persist = Mock()  # Mock persist method
+        mock_store.save_local = Mock()
         mock_get_store.return_value = mock_store
 
         # Write with persistence
         result = self.service.write("test_collection", "text", should_persist=True)
 
-        # Verify persistence was called
+        # Verify FAISS persistence was called
         self.assertTrue(result.success)
-        mock_store.persist.assert_called_once()
+        mock_store.save_local.assert_called_once_with(
+            os.path.join(self.temp_dir, "test_collection")
+        )
 
     @patch.object(VectorStorageService, "_get_vector_store")
     def test_write_without_persistence(self, mock_get_store):
         """Test writing without persistence."""
         mock_store = Mock()
         mock_store.add_texts.return_value = ["text1"]
-        mock_store.persist = Mock()
+        mock_store.save_local = Mock()
         mock_get_store.return_value = mock_store
 
         # Write without persistence
@@ -479,21 +500,21 @@ class TestVectorStorageService(unittest.TestCase):
 
         # Verify persistence was not called
         self.assertTrue(result.success)
-        mock_store.persist.assert_not_called()
+        mock_store.save_local.assert_not_called()
 
     @patch.object(VectorStorageService, "_get_vector_store")
     def test_write_store_without_persist_method(self, mock_get_store):
-        """Test writing when vector store doesn't have persist method."""
+        """Test writing when vector store doesn't have FAISS persistence support."""
         mock_store = Mock()
         mock_store.add_texts.return_value = ["text1"]
-        # No persist method
-        del mock_store.persist
+        # No save_local method
+        del mock_store.save_local
         mock_get_store.return_value = mock_store
 
         # Write (should not fail even without persist method)
         result = self.service.write("test_collection", "text", should_persist=True)
 
-        # Should succeed without calling persist
+        # Should succeed without calling save_local
         self.assertTrue(result.success)
 
     def test_write_without_vector_store(self):
@@ -807,7 +828,7 @@ class TestVectorStorageService(unittest.TestCase):
             {
                 "vector": {
                     "enabled": True,
-                    "provider": "chroma",
+                    "provider": "faiss",
                     # Missing other configuration options
                 }
             }

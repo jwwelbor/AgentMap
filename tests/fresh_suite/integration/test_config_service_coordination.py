@@ -616,7 +616,7 @@ class TestConfigServiceCoordination(BaseIntegrationTest):
                 "default_directory": str(Path(self.temp_dir) / "csv_data"),
                 "collections": {},
             },
-            "vector": {"default_provider": "chroma", "collections": {}},
+            "vector": {"default_provider": "faiss", "collections": {}},
         }
 
         config_path = Path(self.temp_dir) / "full_pipeline_config.yaml"

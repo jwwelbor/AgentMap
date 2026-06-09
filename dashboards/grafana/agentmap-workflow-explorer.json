@@ -248,7 +248,7 @@
       "panels": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "description": "Rate of storage read and write operations by backend type. Monitors data access patterns across storage backends (CSV, JSON, Firebase, Chroma, etc.).",
+          "description": "Rate of storage read and write operations by backend type. Monitors data access patterns across storage backends (CSV, JSON, Firebase, FAISS, etc.).",
           "fieldConfig": {
             "defaults": {
               "custom": {

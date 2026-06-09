@@ -21,7 +21,7 @@ Explore all available AgentMap agent types in this interactive catalog. Use the 
 - **💾 Storage Agents** - Data persistence and retrieval from various storage systems
 - **📁 File Agents** - File operations for reading and writing documents
 - **☁️ Cloud Storage** - Azure, AWS, GCP, and local file system connectors
-- **🔍 Vector Search** - Semantic search with embedding models (Chroma, FAISS)
+- **🔍 Vector Search** - Semantic search with embedding models (FAISS)
 - **🔧 Specialized Agents** - Advanced workflow orchestration and data processing
 
 ### Usage Tips
@@ -97,10 +97,10 @@ Analysis,SaveReport,,Save final report,file_writer,End,Error,executive_report,sa
 ```csv
 CloudSearch,LoadFromS3,{"provider":"aws","bucket":"company-data"},Fetch documents from S3,blob_reader,ProcessDocuments,Error,path,documents,reports/quarterly/
 CloudSearch,ProcessDocuments,{"chunk_size":1000,"should_split":true},Process documents,file_reader,IndexInVector,Error,documents,processed_docs,
-CloudSearch,IndexInVector,{"provider":"chroma","embedding_model":"text-embedding-ada-002"},Index in vector database,vector_writer,SearchReady,Error,processed_docs,index_status,
+CloudSearch,IndexInVector,{"provider":"faiss","embedding_model":"text-embedding-ada-002"},Index in vector database,vector_writer,SearchReady,Error,processed_docs,index_status,
 CloudSearch,SearchReady,,Ready to search,echo,GetQuery,End,index_status,ready_message,Vector search system is ready for queries
 CloudSearch,GetQuery,,Get search query,input,PerformSearch,End,message,search_query,Enter your search query:
-CloudSearch,PerformSearch,{"provider":"chroma","similarity_threshold":0.75,"max_results":5},Search for similar content,vector_reader,AnalyzeResults,Error,search_query,search_results,
+CloudSearch,PerformSearch,{"provider":"faiss","similarity_threshold":0.75,"max_results":5},Search for similar content,vector_reader,AnalyzeResults,Error,search_query,search_results,
 CloudSearch,AnalyzeResults,{"routing_enabled":true,"task_type":"analysis"},Analyze search results,llm,DisplayResults,Error,search_query|search_results,analysis,Analyze these search results for the query: {search_query}
 CloudSearch,DisplayResults,,Show results,echo,GetQuery,End,analysis,final_output,
 ```
@@ -130,7 +130,7 @@ These examples demonstrate the power and flexibility of AgentMap's agent system.
 ### Vector Search with Document Processing
 ```csv
 VectorSearch,LoadDocs,{"chunk_size":1000,"should_split":true},Load documents for indexing,file_reader,IndexDocs,Error,collection,documents,
-VectorSearch,IndexDocs,{"provider":"chroma","embedding_model":"text-embedding-ada-002"},Index documents in vector store,vector_writer,SearchReady,Error,documents,index_result,
+VectorSearch,IndexDocs,{"provider":"faiss","embedding_model":"text-embedding-ada-002"},Index documents in vector store,vector_writer,SearchReady,Error,documents,index_result,
 VectorSearch,SearchReady,,Ready for search queries,echo,ProcessQuery,End,index_result,ready_message,Vector search system ready
 VectorSearch,ProcessQuery,,Get search query,input,PerformSearch,ProcessQuery,message,search_query,Enter your search query:
 VectorSearch,PerformSearch,{"similarity_threshold":0.8,"max_results":5},Search for similar content,vector_reader,AnalyzeResults,Error,search_query,search_results,
@@ -169,9 +169,6 @@ CloudSync,End,,End workflow,echo,,,final_status,result,
 
 ### Advanced Vector Database Configuration
 ```csv
-VectorConfig,ChooseProvider,,Select vector database provider,input,RouteProvider,End,message,provider_choice,Choose vector database provider (chroma or faiss):
-VectorConfig,RouteProvider,,{"nodes":"ConfigureChroma|ConfigureFAISS"},Route to configuration,orchestrator,End,Error,available_nodes|provider_choice,selected_config,Route to the appropriate vector configuration
-VectorConfig,ConfigureChroma,,{"provider":"chroma","embedding_model":"text-embedding-ada-002","persist_directory":"./chroma_db","collection_name":"semantic_search"},Configure Chroma,vector_writer,TestSearch,Error,documents,setup_result,
 VectorConfig,ConfigureFAISS,,{"provider":"faiss","embedding_model":"text-embedding-ada-002","persist_directory":"./faiss_index","collection_name":"embeddings"},Configure FAISS,vector_writer,TestSearch,Error,documents,setup_result,
 VectorConfig,TestSearch,,{"similarity_threshold":0.8,"max_results":10,"metadata_keys":["source","author","date"]},Test search configuration,vector_reader,End,Error,query,search_results,
 ```

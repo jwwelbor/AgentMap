@@ -46,7 +46,7 @@ class InstallationGuideHelper:
 
         guides = {
             "csv": "pip install pandas",
-            "vector": "pip install 'agentmap[vector]' or pip install langchain chromadb",
+            "vector": "For vector storage: pip install 'agentmap[storage]' or pip install langchain faiss-cpu",
             "firebase": "pip install 'agentmap[firebase]' or pip install firebase-admin",
             "azure_blob": "pip install 'agentmap[azure]' or pip install azure-storage-blob",
             "aws_s3": "pip install 'agentmap[aws]' or pip install boto3",

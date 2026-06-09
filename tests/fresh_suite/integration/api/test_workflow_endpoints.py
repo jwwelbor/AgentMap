@@ -164,7 +164,7 @@ class TestWorkflowEndpoints(BaseAPIIntegrationTest):
             },
             "vector": {
                 "default_directory": "vector",
-                "default_provider": "chroma",
+                "default_provider": "faiss",
                 "collections": {},
             },
             "kv": {
