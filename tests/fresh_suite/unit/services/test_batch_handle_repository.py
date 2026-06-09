@@ -1,0 +1,271 @@
+"""
+Unit tests for LLMBatchHandle serialization and BatchHandleRepository persistence.
+
+Covers:
+- TC-AC1-03: handle.to_dict() is a plain dict; json.dumps() succeeds; no anthropic SDK types
+- TC-AC2-03: BatchHandleRepository.load_from_dict preserves request_id_map
+- TC-AC9-01: saved JSON contains no api_key field
+"""
+
+import json
+import os
+import tempfile
+
+from agentmap.models.llm_execution import (
+    LLMBatchHandle,
+    LLMBatchStatus,
+)
+
+
+def _make_handle(**kwargs):
+    """Convenience factory for LLMBatchHandle in known states."""
+    defaults = dict(
+        agentmap_batch_id="amatch_" + "a1b2c3d4" * 4,
+        provider_batch_id="msgbatch_abc123",
+        status=LLMBatchStatus.IN_PROGRESS,
+        provider="anthropic",
+        model="claude-sonnet-4-6",
+        request_id_map={"spec-1": "spec-1", "needs/sanitize": "a3f9c2"},
+        results_url=None,
+        expires_at="2026-06-08T00:00:00Z",
+        request_counts=None,
+    )
+    defaults.update(kwargs)
+    return LLMBatchHandle(**defaults)
+
+
+class TestLLMBatchHandleSerialization:
+    """TC-AC1-03: handle.to_dict() is a plain dict; json.dumps() succeeds."""
+
+    def test_to_dict_returns_plain_dict(self):
+        """to_dict() must return a plain dict with no non-serializable values."""
+        handle = _make_handle()
+        result = handle.to_dict()
+        assert isinstance(result, dict)
+
+    def test_to_dict_is_json_serializable(self):
+        """json.dumps(handle.to_dict()) must succeed without error."""
+        handle = _make_handle()
+        result = handle.to_dict()
+        # Must not raise
+        json.dumps(result)
+
+    def test_to_dict_contains_no_api_key(self):
+        """to_dict() must not contain 'api_key' key."""
+        handle = _make_handle()
+        result = handle.to_dict()
+        assert "api_key" not in result
+
+    def test_to_dict_contains_required_fields(self):
+        """to_dict() must contain all required fields."""
+        handle = _make_handle()
+        result = handle.to_dict()
+        assert result["agentmap_batch_id"] == "amatch_" + "a1b2c3d4" * 4
+        assert result["provider_batch_id"] == "msgbatch_abc123"
+        assert "request_id_map" in result
+
+    def test_to_dict_status_is_string(self):
+        """Status in dict must be a string (not an enum), for JSON portability."""
+        handle = _make_handle()
+        result = handle.to_dict()
+        assert isinstance(result["status"], str)
+
+
+class TestBatchHandleRepositoryRoundTrip:
+    """TC-AC2-03: BatchHandleRepository.load_from_dict preserves request_id_map."""
+
+    def test_load_from_dict_preserves_request_id_map(self):
+        """Restored handle request_id_map must match original exactly."""
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        handle = _make_handle(
+            request_id_map={"my-spec": "my-spec", "needs/sanitize": "a3f9c2"}
+        )
+        data = handle.to_dict()
+        restored = BatchHandleRepository.load_from_dict(data)
+        assert restored.request_id_map == {
+            "my-spec": "my-spec",
+            "needs/sanitize": "a3f9c2",
+        }
+
+    def test_load_from_dict_preserves_all_identity_fields(self):
+        """Restored handle identity fields must match original."""
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        handle = _make_handle()
+        data = handle.to_dict()
+        restored = BatchHandleRepository.load_from_dict(data)
+        assert restored.agentmap_batch_id == handle.agentmap_batch_id
+        assert restored.provider_batch_id == handle.provider_batch_id
+        assert restored.status == handle.status
+
+    def test_load_from_dict_status_is_enum(self):
+        """Restored handle status must be LLMBatchStatus enum, not a raw string."""
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        handle = _make_handle()
+        data = handle.to_dict()
+        restored = BatchHandleRepository.load_from_dict(data)
+        assert isinstance(restored.status, LLMBatchStatus)
+
+
+class TestBatchHandleRepositoryPersistence:
+    """TC-AC9-01: BatchHandleRepository.save writes JSON without api_key field."""
+
+    def test_save_writes_json_file(self):
+        """save(handle) must write a JSON file to the batch directory."""
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            handle = _make_handle()
+            repo.save(handle)
+            expected_file = os.path.join(tmp_path, f"{handle.agentmap_batch_id}.json")
+            assert os.path.exists(expected_file)
+
+    def test_save_written_json_excludes_api_key(self):
+        """JSON file must not contain 'api_key' key."""
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            handle = _make_handle()
+            repo.save(handle)
+            expected_file = os.path.join(tmp_path, f"{handle.agentmap_batch_id}.json")
+            with open(expected_file) as f:
+                json_data = json.loads(f.read())
+            assert "api_key" not in json_data
+
+    def test_save_written_json_has_correct_agentmap_batch_id(self):
+        """JSON file must contain correct agentmap_batch_id."""
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            handle = _make_handle()
+            repo.save(handle)
+            expected_file = os.path.join(tmp_path, f"{handle.agentmap_batch_id}.json")
+            with open(expected_file) as f:
+                json_data = json.loads(f.read())
+            assert json_data["agentmap_batch_id"] == handle.agentmap_batch_id
+
+    def test_save_written_json_preserves_request_id_map(self):
+        """JSON file must contain request_id_map matching handle."""
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            handle = _make_handle(request_id_map={"s1": "s1", "s2/sub": "a1b2c3"})
+            repo.save(handle)
+            expected_file = os.path.join(tmp_path, f"{handle.agentmap_batch_id}.json")
+            with open(expected_file) as f:
+                json_data = json.loads(f.read())
+            assert json_data["request_id_map"] == {"s1": "s1", "s2/sub": "a1b2c3"}
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for UAT-rejected defects (F-HIGH-1)
+# ---------------------------------------------------------------------------
+
+
+class TestBatchHandleRepositoryDirCreation:
+    """F-HIGH-1: BatchHandleRepository.save must create batch_dir if absent."""
+
+    def test_save_to_nonexistent_nested_dir_succeeds(self):
+        """
+        save() against a non-existent nested directory must create the directory
+        and write the JSON file successfully (no FileNotFoundError).
+
+        RED before fix: save() opens the file without makedirs → FileNotFoundError.
+        GREEN after fix: os.makedirs(exist_ok=True) is called before open().
+        """
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_root:
+            # Deep nested path that does NOT exist yet
+            nested_dir = os.path.join(tmp_root, "a", "b", "c", "llm_batches")
+            assert not os.path.exists(nested_dir), "precondition: dir must not exist"
+
+            repo = BatchHandleRepository(batch_dir=nested_dir)
+            handle = _make_handle()
+
+            # Must not raise FileNotFoundError
+            repo.save(handle)
+
+            expected_file = os.path.join(nested_dir, f"{handle.agentmap_batch_id}.json")
+            assert os.path.exists(expected_file), "JSON file must exist after save()"
+            with open(expected_file) as f:
+                data = json.load(f)
+            assert data["agentmap_batch_id"] == handle.agentmap_batch_id
+
+    def test_save_to_existing_dir_still_works(self):
+        """save() to an already-existing dir must not raise (exist_ok=True)."""
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            handle = _make_handle()
+            # Call twice — second call must not fail because dir exists
+            repo.save(handle)
+            repo.save(handle)
+            expected_file = os.path.join(tmp_path, f"{handle.agentmap_batch_id}.json")
+            assert os.path.exists(expected_file)
+
+
+class TestBatchHandleRepositoryPathSafety:
+    """Defense-in-depth: repository must reject path-unsafe batch ids itself.
+
+    The service layer (restore_batch) already validates restored handles, but a
+    direct or hand-constructed repository caller must not be able to traverse out
+    of the batch directory. Mirrors UAT F-HIGH-2 remediation at the repo seam.
+    """
+
+    def test_save_rejects_path_traversal_id(self):
+        from agentmap.exceptions import LLMServiceError
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            handle = _make_handle(agentmap_batch_id="../../etc/pwn")
+            try:
+                repo.save(handle)
+                assert False, "save() must reject a path-traversal agentmap_batch_id"
+            except LLMServiceError:
+                pass
+            # Nothing must have been written outside the batch dir.
+            assert not os.path.exists(os.path.join(tmp_path, "..", "..", "etc", "pwn"))
+
+    def test_save_rejects_malformed_id(self):
+        from agentmap.exceptions import LLMServiceError
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            handle = _make_handle(agentmap_batch_id="not_an_amatch_id")
+            try:
+                repo.save(handle)
+                assert False, "save() must reject a malformed agentmap_batch_id"
+            except LLMServiceError:
+                pass
+
+    def test_load_rejects_path_traversal_id(self):
+        from agentmap.exceptions import LLMServiceError
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            try:
+                repo.load("../../etc/passwd")
+                assert False, "load() must reject a path-traversal agentmap_batch_id"
+            except LLMServiceError:
+                pass
+
+    def test_save_accepts_valid_amatch_id(self):
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            valid_id = "amatch_" + "0f" * 16
+            handle = _make_handle(agentmap_batch_id=valid_id)
+            repo.save(handle)
+            assert os.path.exists(os.path.join(tmp_path, f"{valid_id}.json"))

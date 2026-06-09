@@ -21,7 +21,7 @@ AgentMap is a sophisticated **agentic AI orchestration framework** that transfor
 - **Event-driven autonomy** where agents react intelligently to triggers and state changes
 
 ### RAG AI & Vector Database Integration
-- **Native vector database support** (Chroma, FAISS, Pinecone) for retrieval-augmented generation
+- **Native vector database support** (FAISS, Pinecone) for retrieval-augmented generation
 - **Semantic search agents** that intelligently query knowledge bases
 - **Document processing pipelines** with chunking, embedding, and retrieval
 - **Knowledge-aware LLM agents** that combine reasoning with retrieved context
@@ -58,7 +58,7 @@ AgentMap is a sophisticated **agentic AI orchestration framework** that transfor
 ### Universal Storage Support
 - **Local Storage**: CSV, JSON, file operations with LangChain integration
 - **Cloud Storage**: Azure Blob, AWS S3, Google Cloud Storage with URI-based access
-- **Databases**: Firebase integration, vector stores (Chroma, FAISS)
+- **Databases**: Firebase integration, vector stores (FAISS)
 - **Document Processing**: PDF, Word, Markdown, HTML with intelligent chunking
 
 ### Storage Configuration

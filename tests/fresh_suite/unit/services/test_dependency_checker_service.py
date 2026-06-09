@@ -9,6 +9,7 @@ import sys
 import unittest
 from unittest.mock import MagicMock, Mock, patch
 
+from agentmap.builtin_definition_constants import BuiltinDefinitionConstants
 from agentmap.services.dependency_checker_service import DependencyCheckerService
 from tests.utils.mock_service_factory import MockServiceFactory
 
@@ -353,6 +354,19 @@ class TestDependencyCheckerService(unittest.TestCase):
             # Verify CSV validation was called
             mock_validate.assert_called_once_with("csv")
             self.assertTrue(result)
+
+    def test_vector_storage_dependency_mapping_uses_faiss(self):
+        """Test vector storage dependency mapping validates FAISS instead of Chroma."""
+        self.assertEqual(
+            BuiltinDefinitionConstants.get_storage_dependencies("vector"),
+            ["langchain", "faiss"],
+        )
+
+    def test_vector_storage_install_guide_mentions_faiss_cpu(self):
+        """Test vector storage installation guidance points to faiss-cpu."""
+        guide = self.service.get_installation_guide("vector", category="storage")
+
+        self.assertIn("faiss-cpu", guide)
 
     # =============================================================================
     # 6. Provider Availability Tests

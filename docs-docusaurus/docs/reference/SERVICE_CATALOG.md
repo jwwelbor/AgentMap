@@ -462,7 +462,7 @@ def embed_batch(items: List[EmbeddingInput]) -> List[EmbeddingOutput]:
 
 **Dependencies**:
 - LLM providers (for embeddings)
-- ChromaDB (vector database)
+- FAISS (vector database)
 - `LoggingService`
 
 ---
@@ -495,7 +495,7 @@ def get_available_features() -> List[str]:
 - "storage_s3": AWS S3 available
 - "storage_azure": Azure Blob available
 - "storage_gcs": Google Cloud Storage available
-- "vector_search": ChromaDB available
+- "vector_search": FAISS available
 ```
 
 ---

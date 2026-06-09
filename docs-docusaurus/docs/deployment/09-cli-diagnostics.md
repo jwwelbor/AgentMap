@@ -153,13 +153,13 @@ Storage feature enabled: True
   csv: ✅ Available [Registry: reg=True, val=True, avail=True]
   json: ✅ Available [Registry: reg=True, val=True, avail=True]
   file: ✅ Available [Registry: reg=True, val=True, avail=True]
-  vector: ❌ Not available (Missing: chromadb) [Registry: reg=True, val=False, avail=False]
+  vector: ❌ Not available (Missing: faiss) [Registry: reg=True, val=False, avail=False]
   firebase: ❌ Not available (Missing: firebase_admin) [Registry: reg=True, val=False, avail=False]
   blob: ❌ Not available (Missing: azure-storage-blob) [Registry: reg=True, val=False, avail=False]
 
 Installation Suggestions:
   For Anthropic support: pip install agentmap[anthropic] or pip install anthropic
-  For vector storage: pip install chromadb
+  For vector storage: pip install faiss-cpu
   For Google support: pip install agentmap[google] or pip install google-generativeai langchain-google-genai
 
 Environment Information:
@@ -173,7 +173,7 @@ Relevant Package Versions:
   google.generativeai: Not installed
   langchain: v0.1.11
   langchain_google_genai: Not installed
-  chromadb: Not installed
+  faiss: Not installed
 ```
 
 ### Dependency Validation Architecture
@@ -261,16 +261,16 @@ agentmap diagnose
 **Example Output**:
 ```
 Storage Dependencies:
-  vector: ❌ Not available (Missing: chromadb) [Registry: reg=True, val=False, avail=False]
+  vector: ❌ Not available (Missing: faiss) [Registry: reg=True, val=False, avail=False]
   
 Installation Suggestions:
-  For vector storage: pip install chromadb
+  For vector storage: pip install faiss-cpu
 ```
 
 **Resolution**:
 ```bash
 # Install vector storage dependencies
-pip install chromadb
+pip install faiss-cpu
 
 # Verify vector storage is now available
 agentmap diagnose

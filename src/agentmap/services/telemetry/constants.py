@@ -131,7 +131,7 @@ STORAGE_WRITE_SPAN: str = "agentmap.storage.write"
 """Span wrapping a storage write operation."""
 
 STORAGE_BACKEND: str = "agentmap.storage.backend"
-"""Storage provider name (e.g. 'csv', 'json', 'firebase', 'chroma')."""
+"""Storage provider name (e.g. 'csv', 'json', 'firebase', 'faiss')."""
 
 STORAGE_OPERATION: str = "agentmap.storage.operation"
 """Storage operation type ('read' or 'write')."""
@@ -182,3 +182,26 @@ METRIC_DIM_ERROR_TYPE: str = "error_type"
 
 METRIC_DIM_TIER: str = "tier"
 """Tier dimension for metric attributes."""
+
+# ---------------------------------------------------------------------------
+# Metric name constants (LLM batch operations) — ADR-7 additive only
+# ---------------------------------------------------------------------------
+
+METRIC_LLM_BATCH_SUBMITTED_COUNT: str = "llm_batch.submitted_count"
+"""Counter for batch submission events, dimensioned by provider."""
+
+METRIC_LLM_BATCH_POLL_COUNT: str = "llm_batch.poll_count"
+"""Counter for batch poll operations, dimensioned by provider and status."""
+
+METRIC_LLM_BATCH_RESULTS_FETCHED_COUNT: str = "llm_batch.results_fetched_count"
+"""Counter for batch result fetch operations, dimensioned by provider."""
+
+METRIC_LLM_BATCH_CANCEL_COUNT: str = "llm_batch.cancel_count"
+"""Counter for batch cancellation operations, dimensioned by provider and outcome."""
+
+# ---------------------------------------------------------------------------
+# Metric dimension constants (LLM batch)
+# ---------------------------------------------------------------------------
+
+METRIC_DIM_BATCH_STATUS: str = "batch_status"
+"""Per-status dimension for batch metric attributes (e.g. submitted, ended, expired)."""

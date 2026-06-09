@@ -126,7 +126,7 @@ csv:
   collections: {{}}
 
 vector:
-  default_provider: "chroma"
+  default_provider: "faiss"
   collections: {{}}
 
 kv:

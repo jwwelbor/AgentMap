@@ -432,7 +432,7 @@ class BuiltinDefinitionConstants:
 
     STORAGE_TYPE_DEPENDENCIES = {
         "csv": ["pandas"],
-        "vector": ["langchain", "chromadb"],
+        "vector": ["langchain", "faiss"],
         "firebase": ["firebase_admin"],
         "azure_blob": ["azure-storage-blob"],
         "aws_s3": ["boto3"],

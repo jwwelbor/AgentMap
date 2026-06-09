@@ -1,8 +1,8 @@
 """
-Vector Storage Service implementation for AgentMap.
+Vector storage service implementation for AgentMap.
 
 This module provides the main VectorStorageService class that implements
-vector database operations using LangChain.
+FAISS-backed vector database operations using LangChain.
 """
 
 import os
@@ -35,7 +35,7 @@ class VectorStorageService(BaseStorageService):
     Vector storage service implementation using LangChain.
 
     Provides vector database operations including similarity search,
-    document storage, and support for multiple vector store backends.
+    document storage, and FAISS-backed persistence.
     """
 
     def __init__(
@@ -63,7 +63,7 @@ class VectorStorageService(BaseStorageService):
 
         store_key = vector_config.get("store_key", "_vector_store")
         persist_directory = str(self.configuration.get_vector_data_path())
-        provider = vector_config.get("provider", "chroma")
+        provider = vector_config.get("provider", "faiss")
         embedding_model = vector_config.get("embedding_model", "openai")
         k = vector_config.get("k", 4)
 
@@ -154,10 +154,11 @@ class VectorStorageService(BaseStorageService):
         provider = self.client["provider"].lower()
 
         try:
-            if provider == "chroma":
-                vector_store = self._create_chroma_store(embeddings, collection)
-            elif provider == "faiss":
+            if provider == "faiss":
                 vector_store = self._create_faiss_store(embeddings, collection)
+            elif provider in {"chroma", "chromadb"}:
+                self._logger.error(self._get_legacy_provider_error(provider))
+                return None
             else:
                 self._logger.error(f"Unsupported vector store provider: {provider}")
                 return None
@@ -168,28 +169,6 @@ class VectorStorageService(BaseStorageService):
 
         except Exception as e:
             self._logger.error(f"Failed to create vector store: {e}")
-            return None
-
-    def _create_chroma_store(self, embeddings: Any, collection: str) -> Any:
-        """Create Chroma vector store."""
-        try:
-            Chroma = _get_parent_module_attr("Chroma")
-            if Chroma is None:
-                self._logger.error(
-                    "Chroma not installed. Install with 'pip install chromadb'"
-                )
-                return None
-
-            persist_dir = os.path.join(self.client["persist_directory"], collection)
-            os.makedirs(persist_dir, exist_ok=True)
-
-            return Chroma(
-                persist_directory=persist_dir,
-                embedding_function=embeddings,
-                collection_name=collection,
-            )
-        except Exception as e:
-            self._logger.error(f"Failed to create Chroma store: {e}")
             return None
 
     def _create_faiss_store(self, embeddings: Any, collection: str) -> Any:
@@ -219,6 +198,15 @@ class VectorStorageService(BaseStorageService):
         except Exception as e:
             self._logger.error(f"Failed to create FAISS store: {e}")
             return None
+
+    @staticmethod
+    def _get_legacy_provider_error(provider: str) -> str:
+        """Build a migration-focused error for removed Chroma providers."""
+        return (
+            f"Vector provider '{provider}' is no longer supported. "
+            "switch your vector storage provider to 'faiss' and install "
+            "'faiss-cpu' if needed."
+        )
 
     def _perform_read(
         self,
@@ -316,7 +304,9 @@ class VectorStorageService(BaseStorageService):
                 ids = []
 
             should_persist = kwargs.get("should_persist", True)
-            if should_persist and hasattr(vector_store, "persist"):
+            if should_persist and self.client["provider"].lower() == "faiss":
+                self._persist_faiss_store(vector_store, collection)
+            elif should_persist and hasattr(vector_store, "persist"):
                 self._logger.debug(
                     f"Persisting vector store for collection {collection}"
                 )
@@ -330,6 +320,15 @@ class VectorStorageService(BaseStorageService):
             return self._create_error_result(
                 "write", f"Vector storage failed: {str(e)}", collection=collection
             )
+
+    def _persist_faiss_store(self, vector_store: Any, collection: str) -> None:
+        """Persist a FAISS store when save_local is available."""
+        if not hasattr(vector_store, "save_local"):
+            return
+
+        persist_dir = os.path.join(self.client["persist_directory"], collection)
+        self._logger.debug(f"Persisting FAISS store for collection {collection}")
+        vector_store.save_local(persist_dir)
 
     def delete(
         self,

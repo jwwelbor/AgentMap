@@ -11,8 +11,10 @@ import base64
 import inspect
 import mimetypes
 import random
+import re
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
+from uuid import uuid4
 
 from agentmap.exceptions import (
     LLMConfigurationError,
@@ -22,10 +24,14 @@ from agentmap.exceptions import (
     LLMServiceError,
 )
 from agentmap.models.llm_execution import (
-    LLMCallResult,
-    LLMCallSpec,
+    LLMBatchHandle,
+    LLMBatchResult,
+    LLMBatchStatus,
+    LLMBatchSubmitRequest,
     LLMExecutionError,
+    LLMFanoutResult,
     LLMMessage,
+    LLMRequest,
     LLMResponse,
     LLMUsage,
 )
@@ -33,6 +39,12 @@ from agentmap.services.config import AppConfigService
 from agentmap.services.config.llm_models_config_service import LLMModelsConfigService
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
+from agentmap.services.llm_batch_errors import (
+    LLMBatchCancelNotSupportedError,
+    LLMBatchExpiredError,
+    LLMBatchNotReadyError,
+    LLMBatchUnsupportedProviderError,
+)
 from agentmap.services.llm_client_factory import LLMClientFactory
 from agentmap.services.llm_error_utils import (
     _sanitize_error_message,
@@ -58,10 +70,15 @@ from agentmap.services.telemetry.constants import (
     GEN_AI_USAGE_INPUT_TOKENS,
     GEN_AI_USAGE_OUTPUT_TOKENS,
     LLM_CALL_SPAN,
+    METRIC_DIM_BATCH_STATUS,
     METRIC_DIM_ERROR_TYPE,
     METRIC_DIM_MODEL,
     METRIC_DIM_PROVIDER,
     METRIC_DIM_TIER,
+    METRIC_LLM_BATCH_CANCEL_COUNT,
+    METRIC_LLM_BATCH_POLL_COUNT,
+    METRIC_LLM_BATCH_RESULTS_FETCHED_COUNT,
+    METRIC_LLM_BATCH_SUBMITTED_COUNT,
     METRIC_LLM_CIRCUIT_BREAKER,
     METRIC_LLM_DURATION,
     METRIC_LLM_ERRORS,
@@ -79,7 +96,7 @@ from agentmap.services.telemetry.constants import (
 )
 
 # Keys that ``call_llm_async`` accepts as explicit parameters.  If any of these
-# appear in ``LLMCallSpec.request_options`` they would collide with the explicit
+# appear in ``LLMRequest.request_options`` they would collide with the explicit
 # keyword arguments in ``_execute_fan_out_item``, causing a TypeError at runtime.
 _RESERVED_KEYS: frozenset = frozenset(
     {"messages", "provider", "model", "temperature", "routing_context"}
@@ -103,6 +120,9 @@ class LLMService:
         features_registry_service: Optional[FeaturesRegistryService] = None,
         routing_config_service: Optional[LLMRoutingConfigService] = None,
         telemetry_service: Optional[Any] = None,
+        batch_adapter: Optional[Any] = None,
+        batch_adapters: Optional[Dict[str, Any]] = None,
+        batch_repo: Optional[Any] = None,
     ):
         """
         Initialize the LLM service.
@@ -163,6 +183,10 @@ class LLMService:
         self._metric_cache_hit = None
         self._metric_circuit_breaker = None
         self._metric_fallback = None
+        self._metric_batch_submitted = None
+        self._metric_batch_poll = None
+        self._metric_batch_results_fetched = None
+        self._metric_batch_cancel = None
         if telemetry_service is not None:
             try:
                 self._metric_duration = telemetry_service.create_histogram(
@@ -200,8 +224,39 @@ class LLMService:
                     unit="1",
                     description="Fallback activations",
                 )
+                self._metric_batch_submitted = telemetry_service.create_counter(
+                    METRIC_LLM_BATCH_SUBMITTED_COUNT,
+                    unit="1",
+                    description="Batch submissions",
+                )
+                self._metric_batch_poll = telemetry_service.create_counter(
+                    METRIC_LLM_BATCH_POLL_COUNT,
+                    unit="1",
+                    description="Batch polls",
+                )
+                self._metric_batch_results_fetched = telemetry_service.create_counter(
+                    METRIC_LLM_BATCH_RESULTS_FETCHED_COUNT,
+                    unit="1",
+                    description="Batch result fetches",
+                )
+                self._metric_batch_cancel = telemetry_service.create_counter(
+                    METRIC_LLM_BATCH_CANCEL_COUNT,
+                    unit="1",
+                    description="Batch cancellation requests",
+                )
             except Exception:
                 pass  # Instrument creation failure silently ignored
+
+        # Batch execution dependencies (E05-F04) — provider→adapter registry.
+        # batch_adapters takes precedence; batch_adapter (single) kept for
+        # backwards-compat with F03 DI wiring (wraps it as {"anthropic": adapter}).
+        if batch_adapters is not None:
+            self._batch_adapters: Dict[str, Any] = dict(batch_adapters)
+        elif batch_adapter is not None:
+            self._batch_adapters = {"anthropic": batch_adapter}
+        else:
+            self._batch_adapters = {}
+        self._batch_repo = batch_repo
 
     @property
     def _clients(self):
@@ -1400,40 +1455,40 @@ class LLMService:
 
     async def call_llm_many_async(
         self,
-        call_specs: List[LLMCallSpec],
+        requests: List[LLMRequest],
         max_concurrency: int,
-    ) -> List[LLMCallResult]:
+    ) -> List[LLMFanoutResult]:
         """
         Submit many LLM call specs and receive one terminal result per spec.
 
         Validates the submission before any provider execution:
-        - ``call_specs`` must not be empty.
-        - ``spec_id`` values must be unique within one submission.
+        - ``requests`` must not be empty.
+        - ``request_id`` values must be unique within one submission.
         - ``max_concurrency`` must be an integer >= 1.
 
-        Once execution starts, item failures are captured as ``LLMCallResult``
+        Once execution starts, item failures are captured as ``LLMFanoutResult``
         records with ``status="failed"`` rather than aborting the submission.
-        The returned list preserves the same positional order as ``call_specs``.
+        The returned list preserves the same positional order as ``requests``.
         """
-        self._validate_fan_out_submission(call_specs, max_concurrency)
+        self._validate_fan_out_submission(requests, max_concurrency)
 
         semaphore = asyncio.Semaphore(max_concurrency)
         tasks = [
             asyncio.ensure_future(self._execute_fan_out_item(spec, semaphore))
-            for spec in call_specs
+            for spec in requests
         ]
         results = await asyncio.gather(*tasks, return_exceptions=False)
         return list(results)
 
     def _validate_fan_out_submission(
         self,
-        call_specs: List[LLMCallSpec],
+        requests: List[LLMRequest],
         max_concurrency: int,
     ) -> None:
         """Validate a fan-out submission before any provider execution begins."""
-        if not call_specs:
+        if not requests:
             raise LLMServiceError(
-                "call_specs must not be empty — at least one LLMCallSpec is required."
+                "requests must not be empty — at least one LLMRequest is required."
             )
         # Reject bool explicitly: isinstance(True, int) is True in Python.
         if (
@@ -1445,36 +1500,36 @@ class LLMService:
                 f"max_concurrency must be an integer >= 1, got {max_concurrency!r}."
             )
         seen_ids: set = set()
-        for spec in call_specs:
-            if not isinstance(spec.spec_id, str) or not spec.spec_id:
+        for spec in requests:
+            if not isinstance(spec.request_id, str) or not spec.request_id:
                 raise LLMServiceError(
-                    f"spec_id must be a non-empty string, got {spec.spec_id!r}."
+                    f"request_id must be a non-empty string, got {spec.request_id!r}."
                 )
-            if spec.spec_id in seen_ids:
+            if spec.request_id in seen_ids:
                 raise LLMServiceError(
-                    f"Duplicate spec_id detected: {spec.spec_id!r}. "
-                    "Each spec_id must be unique within one submission."
+                    f"Duplicate request_id detected: {spec.request_id!r}. "
+                    "Each request_id must be unique within one submission."
                 )
-            seen_ids.add(spec.spec_id)
+            seen_ids.add(spec.request_id)
             if spec.request_options:
                 collision = _RESERVED_KEYS & spec.request_options.keys()
                 if collision:
                     raise LLMServiceError(
-                        f"spec_id={spec.spec_id!r}: request_options contains reserved "
+                        f"request_id={spec.request_id!r}: request_options contains reserved "
                         f"keys that collide with call_llm_async parameters: {collision}"
                     )
 
     async def _execute_fan_out_item(
         self,
-        spec: LLMCallSpec,
+        spec: LLMRequest,
         semaphore: asyncio.Semaphore,
-    ) -> LLMCallResult:
+    ) -> LLMFanoutResult:
         """Execute one fan-out item through the public ``call_llm_async`` path.
 
         Calls ``call_llm_async`` directly so that routing, retry, jitter,
         circuit-breaker, fallback, telemetry, and cache-aware behavior are all
         inherited from the single async resilience stack (spec Decision 3).
-        Builds ``LLMCallResult`` from the returned ``LLMResponse`` so that
+        Builds ``LLMFanoutResult`` from the returned ``LLMResponse`` so that
         ``provider``, ``model``, and ``usage`` reflect the resolved values, not
         the requested spec values.
         """
@@ -1489,23 +1544,23 @@ class LLMService:
                     routing_context=spec.routing_context,
                     **kwargs,
                 )
-                return LLMCallResult(
-                    spec_id=spec.spec_id,
+                return LLMFanoutResult(
+                    request_id=spec.request_id,
                     status="succeeded",
-                    provider=llm_response.resolved_provider,
-                    model=llm_response.resolved_model,
-                    content=llm_response.text,
+                    resolved_provider=llm_response.resolved_provider,
+                    resolved_model=llm_response.resolved_model,
+                    text=llm_response.text,
                     usage=llm_response.usage,
                 )
             except LLMResolvedCallError as exc:
                 # Failure occurred after routing/fallback resolved a concrete
                 # provider/model — preserve that identity in the result record.
-                return LLMCallResult(
-                    spec_id=spec.spec_id,
+                return LLMFanoutResult(
+                    request_id=spec.request_id,
                     status="failed",
-                    provider=exc.resolved_provider,
-                    model=exc.resolved_model,
-                    content=None,
+                    resolved_provider=exc.resolved_provider,
+                    resolved_model=exc.resolved_model,
+                    text=None,
                     usage=None,
                     error=LLMExecutionError(
                         error_type=type(exc.cause).__name__,
@@ -1517,12 +1572,12 @@ class LLMService:
                 # Failure occurred before any provider/model was resolved
                 # (e.g., validation error, routing service unavailable).
                 # Echo spec values — may be None. Do not fabricate.
-                return LLMCallResult(
-                    spec_id=spec.spec_id,
+                return LLMFanoutResult(
+                    request_id=spec.request_id,
                     status="failed",
-                    provider=spec.provider,
-                    model=spec.model,
-                    content=None,
+                    resolved_provider=spec.provider,
+                    resolved_model=spec.model,
+                    text=None,
                     usage=None,
                     error=LLMExecutionError(
                         error_type=type(exc).__name__,
@@ -1530,6 +1585,576 @@ class LLMService:
                         retryable=is_retryable(exc),
                     ),
                 )
+
+    # ------------------------------------------------------------------
+    # Batch lifecycle methods (E05-F04 registry-based dispatch)
+    # ------------------------------------------------------------------
+
+    # Terminal statuses where cancel is not permitted.
+    _TERMINAL_STATUSES = {
+        LLMBatchStatus.ENDED,
+        LLMBatchStatus.EXPIRED,
+        LLMBatchStatus.FAILED,
+        LLMBatchStatus.CANCELED,
+        LLMBatchStatus.CANCELING,
+    }
+
+    def _get_adapter(self, provider: str) -> Any:
+        """Return the registered adapter for ``provider`` or raise.
+
+        Provider aliases (e.g. "gemini" → "google", "claude" → "anthropic",
+        "gpt" → "openai") are normalized via the same
+        ``_provider_utils.normalize_provider`` function used by every other
+        LLMService path (N5 / AC-2 / AC-3 contract parity).
+
+        Raises:
+            LLMBatchUnsupportedProviderError: When no adapter is registered for
+                the requested provider.  The error message names the registered
+                providers so callers can discover what is available.
+        """
+        provider = self._provider_utils.normalize_provider(provider)
+        adapter = self._batch_adapters.get(provider)
+        if adapter is None:
+            registered = list(self._batch_adapters.keys())
+            self._logger.error(
+                "llm_batch.unsupported_provider provider=%s registered=%s",
+                provider,
+                registered,
+            )
+            raise LLMBatchUnsupportedProviderError(
+                f"Provider {provider!r} is not registered for batch execution. "
+                f"Registered providers: {registered}."
+            )
+        return adapter
+
+    # Pattern that a valid agentmap_batch_id must satisfy (no path separators).
+    _AGENTMAP_BATCH_ID_RE = re.compile(r"^amatch_[a-f0-9]{32}$")
+
+    def _validate_batch_submit_request(
+        self, request: LLMBatchSubmitRequest
+    ) -> List[Dict[str, Any]]:
+        """
+        Validate a batch submit request and build the per-spec resolved param
+        dicts.  Returns the resolved params list (index-aligned with
+        ``request.requests``) so ``submit_batch`` can pass it straight to the
+        adapter without re-computing.
+
+        Validation order:
+        1. Non-empty requests
+        2. Per-spec provider not set (batch-level only — REQ-F-008)
+        3. Unique request_ids
+        4. Centralized parameter resolution (D-8) — covers all conflict/
+           incompatible/max_tokens==0 checks via ``resolve_request_params``
+        5. Batch-level max_tokens != 0 (envelope guard)
+        6. Registered provider check (raises LLMBatchUnsupportedProviderError)
+
+        Raises:
+            LLMServiceError: For validation failures (empty specs, duplicate
+                ids, per-spec provider, batch-incompatible params, max_tokens==0,
+                conflicting parameter values).
+            LLMBatchParamConflictError: When the same logical parameter is set
+                on two surfaces with different values (AC-8 / D-8).
+            LLMBatchUnsupportedProviderError: For unregistered providers.
+        """
+        from agentmap.services.llm._param_resolution import build_resolved_params_list
+
+        if not request.requests:
+            raise LLMServiceError(
+                "requests must not be empty — at least one LLMRequest is required "
+                "for batch submission."
+            )
+
+        if not isinstance(request.model, str) or not request.model:
+            raise LLMServiceError(
+                f"model must be a non-empty string, got {request.model!r}."
+            )
+
+        # REQ-F-008: provider is batch-level only; reject per-spec provider settings.
+        for spec in request.requests:
+            if spec.provider is not None and spec.provider != "":
+                raise LLMServiceError(
+                    f"request_id={spec.request_id!r}: LLMRequest.provider must not be set "
+                    "when LLMBatchSubmitRequest.provider is specified. Provider is a "
+                    "batch-level concern only (one batch = one adapter)."
+                )
+
+        seen_ids: set = set()
+        for spec in request.requests:
+            if not isinstance(spec.request_id, str) or not spec.request_id:
+                raise LLMServiceError(
+                    f"request_id must be a non-empty string, got {spec.request_id!r}."
+                )
+            if spec.request_id in seen_ids:
+                raise LLMServiceError(
+                    f"Duplicate request_id detected: {spec.request_id!r}. "
+                    "Each request_id must be unique within one batch submission."
+                )
+            seen_ids.add(spec.request_id)
+
+        # D-8: centralized parameter resolution — raises LLMBatchParamConflictError
+        # or LLMServiceError for any conflict, incompatible param, or max_tokens==0.
+        resolved = build_resolved_params_list(request)
+
+        # Envelope-level max_tokens guard (catches request.max_tokens == 0 before
+        # resolution would see it as S3; belt-and-suspenders).
+        if request.max_tokens == 0:
+            raise LLMServiceError(
+                "max_tokens=0 is not supported in batch submissions. "
+                "Cache pre-warm (max_tokens=0) is incompatible with batch mode."
+            )
+
+        # REQ-F-002: registry-based provider check (raises LLMBatchUnsupportedProviderError).
+        self._get_adapter(request.provider)
+
+        return resolved
+
+    def submit_batch(self, request: LLMBatchSubmitRequest) -> LLMBatchHandle:
+        """
+        Submit a provider-native batch and return a serializable handle.
+
+        Validation order: non-empty specs → unique request_ids → batch-incompatible
+        params → registered provider check → max_tokens != 0 → adapter call →
+        build handle → persist → return.
+
+        Raises:
+            LLMServiceError: For validation failures.
+            LLMBatchUnsupportedProviderError: For unsupported providers.
+        """
+        # _validate_batch_submit_request returns the per-spec resolved param dicts
+        # (D-8: centralized resolver, no adapter merging).
+        resolved_params = self._validate_batch_submit_request(request)
+
+        # N5: normalize provider alias to canonical key (same function used by
+        # sync/async direct paths) so the handle stores the canonical provider name
+        # and downstream lookups (poll/fetch/cancel) succeed without re-normalizing.
+        canonical_provider = self._provider_utils.normalize_provider(request.provider)
+        adapter = self._get_adapter(canonical_provider)
+        self._logger.info(
+            "llm_batch.submit provider=%s specs=%d",
+            canonical_provider,
+            len(request.requests),
+        )
+        provider_batch_id, request_id_map, expires_at = adapter.submit(
+            specs=request.requests,
+            resolved_params=resolved_params,
+        )
+
+        agentmap_batch_id = "amatch_" + uuid4().hex
+        handle = LLMBatchHandle(
+            agentmap_batch_id=agentmap_batch_id,
+            provider_batch_id=provider_batch_id,
+            status=LLMBatchStatus.SUBMITTED,
+            provider=canonical_provider,
+            model=request.model,
+            request_id_map=request_id_map,
+            expires_at=expires_at,
+        )
+
+        if self._batch_repo is not None:
+            self._batch_repo.save(handle)
+            self._logger.info(
+                "llm_batch.handle_saved agentmap_batch_id=%s path=%s",
+                agentmap_batch_id,
+                getattr(self._batch_repo, "_batch_dir", "<unknown>"),
+            )
+
+        self._record_batch_submit_metric(
+            provider=canonical_provider,
+            status=handle.status.value,
+        )
+        self._logger.info(
+            "llm_batch.submitted agentmap_batch_id=%s provider_batch_id=%s spec_count=%d",
+            agentmap_batch_id,
+            provider_batch_id,
+            len(request.requests),
+        )
+        return handle
+
+    def restore_batch(self, handle_data: dict) -> LLMBatchHandle:
+        """
+        Restore a batch handle from a serialized dict.
+
+        Validates that the dict contains the required ``provider_batch_id``
+        field before constructing the handle.
+
+        Raises:
+            LLMServiceError: If ``provider_batch_id`` is absent.
+        """
+        if (
+            "provider_batch_id" not in handle_data
+            or not handle_data["provider_batch_id"]
+        ):
+            raise LLMServiceError(
+                "Cannot restore batch handle: 'provider_batch_id' is missing or "
+                "empty in the provided handle dict."
+            )
+
+        # Validate agentmap_batch_id format (F-HIGH-2): prevent path traversal.
+        # The id must match ^amatch_[a-f0-9]{32}$ — no slashes, dots, or other
+        # path components that could escape the batch directory.
+        agentmap_batch_id = handle_data.get("agentmap_batch_id", "")
+        if not self._AGENTMAP_BATCH_ID_RE.match(agentmap_batch_id):
+            raise LLMServiceError(
+                f"Cannot restore batch handle: agentmap_batch_id "
+                f"{agentmap_batch_id!r} is invalid. Expected format: "
+                "amatch_<32 hex chars> (e.g. amatch_0a1b...c2d3)."
+            )
+
+        try:
+            return LLMBatchHandle.from_dict(handle_data)
+        except (KeyError, ValueError) as exc:
+            raise LLMServiceError(f"Cannot restore batch handle: {exc}") from exc
+
+    def poll_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
+        """
+        Poll the provider for current batch status and return an updated handle.
+
+        Dispatches through the provider→adapter registry.  Adapters return an
+        already-normalized ``LLMBatchStatus``; the service performs zero enum
+        mapping (REQ-F-003).
+
+        Raises:
+            LLMBatchExpiredError: If the handle is already in EXPIRED status.
+            LLMBatchUnsupportedProviderError: If handle.provider is not registered.
+        """
+        if handle.status == LLMBatchStatus.EXPIRED:
+            self._logger.warning(
+                "llm_batch.expired_operation handle_id=%s", handle.agentmap_batch_id
+            )
+            raise LLMBatchExpiredError(
+                f"Batch {handle.agentmap_batch_id!r} has expired. "
+                "Results are no longer available."
+            )
+
+        adapter = self._get_adapter(handle.provider)
+        self._logger.info(
+            "llm_batch.poll provider=%s status=%s",
+            handle.provider,
+            handle.status.value,
+        )
+        poll_result = adapter.poll(handle.provider_batch_id)
+
+        updated = LLMBatchHandle(
+            agentmap_batch_id=handle.agentmap_batch_id,
+            provider_batch_id=handle.provider_batch_id,
+            status=poll_result.status,
+            provider=handle.provider,
+            model=handle.model,
+            request_id_map=handle.request_id_map,
+            results_url=poll_result.results_url or handle.results_url,
+            result_ref=poll_result.result_ref or handle.result_ref,
+            expires_at=poll_result.expires_at or handle.expires_at,
+            ended_at=poll_result.ended_at,
+            request_counts=poll_result.request_counts,
+        )
+
+        if self._batch_repo is not None:
+            self._batch_repo.save(updated)
+
+        self._record_batch_poll_metric(
+            provider=handle.provider,
+            status=updated.status.value,
+        )
+        self._logger.info(
+            "llm_batch.polled agentmap_batch_id=%s status=%s processing=%s succeeded=%s",
+            handle.agentmap_batch_id,
+            updated.status.value,
+            updated.request_counts.processing if updated.request_counts else None,
+            updated.request_counts.succeeded if updated.request_counts else None,
+        )
+        return updated
+
+    def cancel_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
+        """
+        Request cancellation of an active batch.
+
+        Raises:
+            LLMBatchCancelNotSupportedError: If the provider does not support
+                cancel (REQ-F-009e — distinct message from terminal-state case).
+            LLMBatchCancelNotSupportedError: If the handle is already in a
+                terminal status (distinct message from provider-not-supported).
+        """
+        adapter = self._get_adapter(handle.provider)
+
+        # F5 / REQ-F-009e: check terminal state FIRST so a terminal batch on any
+        # provider (including one where supports_cancel=False) gets the more
+        # accurate "terminal state" message rather than "provider does not support
+        # cancel".  The two conditions are distinct and the batch state is the
+        # more specific diagnosis when both would apply.
+        if handle.status in self._TERMINAL_STATUSES:
+            self._logger.warning(
+                "llm_batch.cancel_rejected agentmap_batch_id=%s status=%s",
+                handle.agentmap_batch_id,
+                handle.status.value,
+            )
+            raise LLMBatchCancelNotSupportedError(
+                f"Cannot cancel batch {handle.agentmap_batch_id!r}: "
+                f"current status is {handle.status.value!r} (terminal state)."
+            )
+
+        # REQ-F-009e: provider capability check (after terminal check so terminal
+        # state is always the more specific diagnosis).
+        if not getattr(adapter, "supports_cancel", True):
+            self._logger.warning(
+                "llm_batch.cancel_not_supported provider=%s handle_id=%s",
+                handle.provider,
+                handle.agentmap_batch_id,
+            )
+            raise LLMBatchCancelNotSupportedError(
+                f"Provider {handle.provider!r} does not support cancel. "
+                f"Cannot cancel batch {handle.agentmap_batch_id!r}."
+            )
+
+        self._logger.info(
+            "llm_batch.cancel_requested agentmap_batch_id=%s",
+            handle.agentmap_batch_id,
+        )
+        self._record_batch_cancel_metric(
+            provider=handle.provider,
+            status=handle.status.value,
+        )
+        adapter.cancel(handle.provider_batch_id)
+        return self.poll_batch(handle)
+
+    def fetch_batch_results(self, handle: LLMBatchHandle) -> List[LLMBatchResult]:
+        """
+        Retrieve completed batch results keyed by caller ``request_id``.
+
+        Delegates to the adapter which yields ``LLMBatchResult`` items
+        with ``request_id`` already restored from the request_id_map.
+
+        Raises:
+            LLMBatchExpiredError: If the handle is in EXPIRED status.
+            LLMBatchNotReadyError: If the handle status is not ``"ended"``.
+        """
+        if handle.status == LLMBatchStatus.EXPIRED:
+            self._logger.warning(
+                "llm_batch.expired_operation handle_id=%s", handle.agentmap_batch_id
+            )
+            raise LLMBatchExpiredError(
+                f"Batch {handle.agentmap_batch_id!r} has expired. "
+                "Results are no longer available."
+            )
+
+        if handle.status != LLMBatchStatus.ENDED:
+            raise LLMBatchNotReadyError(
+                f"Batch {handle.agentmap_batch_id!r} is not yet ready for result "
+                f"retrieval (current status: {handle.status.value!r}). "
+                "Poll until status == 'ended' before fetching results."
+            )
+
+        # Adapter-aware fetch readiness (spec §1.3 / D-7).
+        # The universal results_url guard is intentionally removed here:
+        #   - Anthropic: fetches by provider_batch_id (results_url is advisory)
+        #   - OpenAI: requires result_ref (output_file_id), not results_url
+        #   - Gemini inline: requires neither — re-retrieves the job object
+        # Each adapter is authoritative over its own readiness check.
+        adapter = self._get_adapter(handle.provider)
+        records = list(
+            adapter.fetch_results(
+                handle.provider_batch_id,
+                handle.request_id_map,
+                result_ref=handle.result_ref,
+            )
+        )
+
+        self._logger.info(
+            "llm_batch.results_fetched agentmap_batch_id=%s item_count=%d",
+            handle.agentmap_batch_id,
+            len(records),
+        )
+        self._record_batch_results_fetched_metric(
+            provider=handle.provider,
+            status=handle.status.value,
+        )
+        return records
+
+    # ------------------------------------------------------------------
+    # Async surfaces (REQ-F-006) — wrap sync methods via asyncio.to_thread
+    # ------------------------------------------------------------------
+
+    async def asubmit_batch(self, request: "LLMBatchSubmitRequest") -> "LLMBatchHandle":
+        """Async wrapper for :meth:`submit_batch` (runs off event-loop thread)."""
+        return await asyncio.to_thread(self.submit_batch, request)
+
+    async def apoll_batch(self, handle: "LLMBatchHandle") -> "LLMBatchHandle":
+        """Async wrapper for :meth:`poll_batch` (runs off event-loop thread)."""
+        return await asyncio.to_thread(self.poll_batch, handle)
+
+    async def acancel_batch(self, handle: "LLMBatchHandle") -> "LLMBatchHandle":
+        """Async wrapper for :meth:`cancel_batch` (runs off event-loop thread)."""
+        return await asyncio.to_thread(self.cancel_batch, handle)
+
+    async def afetch_batch_results(
+        self, handle: "LLMBatchHandle"
+    ) -> "List[LLMBatchResult]":
+        """Async wrapper for :meth:`fetch_batch_results` (runs off event-loop thread)."""
+        return await asyncio.to_thread(self.fetch_batch_results, handle)
+
+    async def wait_for_batch(
+        self,
+        handle: "LLMBatchHandle",
+        *,
+        poll_interval: float = 5.0,
+        timeout: "Optional[float]" = None,
+    ) -> "LLMBatchHandle":
+        """Poll until the batch reaches a terminal status or timeout expires.
+
+        Uses capped exponential backoff between polls.  Raises
+        ``LLMBatchExpiredError`` immediately when the handle is already EXPIRED
+        (no polling needed).  Raises ``TimeoutError`` when ``timeout`` seconds
+        elapse without reaching a terminal status.
+
+        Args:
+            handle: The batch handle to watch.
+            poll_interval: Initial poll interval in seconds (default 5).
+            timeout: Maximum total wait in seconds.  ``None`` (default) means
+                wait indefinitely — the call returns only when a terminal status
+                is reached or an exception is raised by the adapter.
+
+        Raises:
+            LLMBatchExpiredError: If the handle status is EXPIRED before polling.
+            TimeoutError: If timeout is set and elapses without reaching a
+                terminal status.
+        """
+        if handle.status == LLMBatchStatus.EXPIRED:
+            self._logger.warning(
+                "llm_batch.expired_operation handle_id=%s", handle.agentmap_batch_id
+            )
+            raise LLMBatchExpiredError(
+                f"Batch {handle.agentmap_batch_id!r} has already expired."
+            )
+
+        import time
+
+        _TERMINAL = {
+            LLMBatchStatus.ENDED,
+            LLMBatchStatus.FAILED,
+            LLMBatchStatus.EXPIRED,
+            LLMBatchStatus.CANCELED,
+        }
+        # F6: timeout=None means "no deadline" — wait indefinitely.
+        deadline = None if timeout is None else time.monotonic() + timeout
+        interval = poll_interval
+
+        current = handle
+        while current.status not in _TERMINAL:
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self._logger.warning(
+                        "llm_batch.wait_timeout handle_id=%s timeout_s=%s",
+                        handle.agentmap_batch_id,
+                        timeout,
+                    )
+                    raise TimeoutError(
+                        f"wait_for_batch timed out after {timeout}s for batch "
+                        f"{handle.agentmap_batch_id!r} "
+                        f"(last status: {current.status.value!r})."
+                    )
+                await asyncio.sleep(min(interval, remaining))
+            else:
+                await asyncio.sleep(interval)
+            current = await self.apoll_batch(current)
+            # Capped exponential backoff (max 60 s).
+            interval = min(interval * 2, 60.0)
+
+        return current
+
+    def submit_and_wait(
+        self,
+        request: "LLMBatchSubmitRequest",
+        *,
+        poll_interval: float = 5.0,
+        timeout: "Optional[float]" = None,
+    ) -> "LLMBatchHandle":
+        """Submit a batch and synchronously wait until it reaches a terminal status.
+
+        Convenience wrapper combining :meth:`submit_batch` and
+        :meth:`wait_for_batch`. Sync-context only.
+
+        Raises:
+            TimeoutError: If timeout elapses before the batch terminates.
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            raise LLMServiceError(
+                "submit_and_wait cannot run inside an active event loop; "
+                "use asubmit_batch() + await wait_for_batch() from async contexts."
+            )
+        handle = self.submit_batch(request)
+        return asyncio.run(
+            self.wait_for_batch(handle, poll_interval=poll_interval, timeout=timeout)
+        )
+
+    def batch_capabilities(self, provider: str) -> Dict[str, Any]:
+        """Return capability information for a registered provider.
+
+        Reads the adapter's ``provider_name`` and ``supports_cancel`` attributes
+        plus static per-provider metadata.
+
+        Returns a dict whose keys match the ``LLMServiceProtocol`` contract:
+        ``supports_cancel`` (bool), ``provider_name`` (str), ``supported`` (bool),
+        ``completion_window`` (str), ``partial_fetch`` (bool).
+
+        Raises:
+            LLMBatchUnsupportedProviderError: If the provider is not registered.
+        """
+        adapter = self._get_adapter(provider)
+        return {
+            "supported": True,
+            "supports_cancel": bool(getattr(adapter, "supports_cancel", False)),
+            "provider_name": getattr(adapter, "provider_name", provider),
+            "completion_window": "24h",
+            "partial_fetch": False,
+        }
+
+    @staticmethod
+    def results_by_request_id(
+        records: "List[LLMBatchResult]",
+    ) -> "Dict[str, LLMBatchResult]":
+        """Index a list of result records by their ``request_id``.
+
+        Args:
+            records: Records returned by :meth:`fetch_batch_results`.
+
+        Returns:
+            Dict mapping ``request_id`` → ``LLMBatchResult``.
+        """
+        return {
+            record.request_id: record
+            for record in records
+            if record.request_id is not None and record.request_id != ""
+        }
+
+    @staticmethod
+    def reconcile_batch_results(
+        submitted_request_ids: "List[str]",
+        records: "List[LLMBatchResult]",
+    ) -> "Dict[str, Optional[LLMBatchResult]]":
+        """Report reconciliation between submitted request_ids and returned records.
+
+        Identifies request_ids that have no returned record (missing from results).
+        This satisfies REQ-F-009c: a caller can detect silent data loss where a
+        spec was submitted but the provider returned no result for it.
+
+        Args:
+            submitted_request_ids: The list of request_ids submitted in the batch.
+            records: Records returned by :meth:`fetch_batch_results`.
+
+        Returns:
+            Dict mapping every submitted ``request_id`` to its
+            ``LLMBatchResult`` if one was returned, or ``None`` if the
+            request_id has no corresponding record in ``records``.  A ``None``
+            value signals a missing result that the caller should investigate.
+        """
+        by_id = {record.request_id: record for record in records}
+        return {
+            request_id: by_id.get(request_id) for request_id in submitted_request_ids
+        }
 
     @staticmethod
     def _extract_llm_usage(response: Any) -> Optional[LLMUsage]:
@@ -1539,7 +2164,7 @@ class LLMService:
         ``usage_metadata`` is present but all fields fail coercion.  Per-field
         coercion failures return ``None`` for that field (not for the whole
         ``LLMUsage``) so that a malformed token count never converts a successful
-        provider response into a failed ``LLMCallResult``.
+        provider response into a failed ``LLMFanoutResult``.
         """
         usage_metadata = getattr(response, "usage_metadata", None)
         if not usage_metadata:
@@ -1819,6 +2444,37 @@ class LLMService:
             )
         except Exception:
             pass
+
+    def _record_batch_metric(self, metric: Any, provider: str, status: str) -> None:
+        """Record a batch lifecycle counter with provider/status dimensions."""
+        if self._telemetry_service is None or metric is None:
+            return
+        try:
+            metric.add(
+                1,
+                {
+                    METRIC_DIM_PROVIDER: provider,
+                    METRIC_DIM_BATCH_STATUS: status,
+                },
+            )
+        except Exception:
+            pass
+
+    def _record_batch_submit_metric(self, provider: str, status: str) -> None:
+        """Record one batch submit event."""
+        self._record_batch_metric(self._metric_batch_submitted, provider, status)
+
+    def _record_batch_poll_metric(self, provider: str, status: str) -> None:
+        """Record one batch poll event."""
+        self._record_batch_metric(self._metric_batch_poll, provider, status)
+
+    def _record_batch_results_fetched_metric(self, provider: str, status: str) -> None:
+        """Record one batch result-fetch event."""
+        self._record_batch_metric(self._metric_batch_results_fetched, provider, status)
+
+    def _record_batch_cancel_metric(self, provider: str, status: str) -> None:
+        """Record one batch cancel request event."""
+        self._record_batch_metric(self._metric_batch_cancel, provider, status)
 
     def _record_fallback_metric(self, tier: str) -> None:
         """Record a fallback activation on the fallback counter.

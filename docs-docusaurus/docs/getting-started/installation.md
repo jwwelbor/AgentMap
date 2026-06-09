@@ -233,7 +233,7 @@ storage:
   # Vector database
   vector:
     enabled: true
-    provider: "chromadb"
+    provider: "faiss"
     config:
       persist_directory: "data/vector_store"
       collection_name: "agentmap_vectors"

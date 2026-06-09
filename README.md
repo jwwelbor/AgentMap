@@ -21,7 +21,7 @@ pip install agentmap
 # With LLM support (OpenAI, Anthropic, Google)
 pip install agentmap[llm]
 
-# With storage support (Firebase, Chroma, document processing)
+# With storage support (Firebase, FAISS, document processing)
 pip install agentmap[storage]
 
 # Everything included

@@ -651,7 +651,7 @@ def diagnose_system(
             }
         },
         "suggestions": [
-            "For vector storage: pip install chromadb"
+            "For vector storage: pip install faiss-cpu"
         ],
         "environment": {
             "python_version": "3.11.0",

@@ -427,33 +427,33 @@ CodeBot,Review,Review code,llm,Done,Error,code,feedback,You are a code reviewer,
 
 ## Async Fan-Out (`call_llm_many_async`)
 
-`call_llm_many_async()` submits many LLM call specs in a single async call and returns one terminal result record per submitted spec. It reuses the existing async realtime path — routing, retries, timeouts, fallback, circuit-breaker, and E05-F01 cache-aware request support all apply per item.
+`call_llm_many_async()` submits many LLM requests in a single async call and returns one terminal result record per submitted request. It reuses the existing async realtime path — routing, retries, timeouts, fallback, circuit-breaker, and E05-F01 cache-aware request support all apply per item.
 
 Fan-out is additive. The synchronous `call_llm() -> str` and the high-level `ask()`, `ask_async()`, `ask_vision()` interfaces are unchanged. The internal `call_llm_async()` method now returns `LLMResponse` (carrying resolved provider, model, and usage) rather than a plain `str`; the public `ask_async()` method continues to return `str` by extracting `.text` from the response.
 
 ### Request shape
 
 ```python
-from agentmap.models.llm_execution import LLMCallSpec, LLMCallResult, LLMUsage
+from agentmap.models.llm_execution import LLMRequest, LLMFanoutResult, LLMUsage
 
-specs = [
+requests = [
     # Direct provider item
-    LLMCallSpec(
-        spec_id="item-1",
+    LLMRequest(
+        request_id="item-1",
         messages=[{"role": "user", "content": "Translate to French: Hello"}],
         provider="openai",
         model="gpt-4o-mini",
         temperature=0.3,
     ),
     # Routed item — routing selects provider and model
-    LLMCallSpec(
-        spec_id="item-2",
+    LLMRequest(
+        request_id="item-2",
         messages=[{"role": "user", "content": "Summarize this report."}],
         routing_context={"task_type": "summarization"},
     ),
     # Cache-aware item (E05-F01 compatible)
-    LLMCallSpec(
-        spec_id="item-3",
+    LLMRequest(
+        request_id="item-3",
         messages=[
             {"role": "system", "content": [{"type": "text", "text": "You are helpful."}]},
             {"role": "user", "content": "What is 2+2?"},
@@ -463,17 +463,17 @@ specs = [
     ),
 ]
 
-results: list[LLMCallResult] = await llm_service.call_llm_many_async(
-    call_specs=specs,
+results: list[LLMFanoutResult] = await llm_service.call_llm_many_async(
+    requests=requests,
     max_concurrency=4,
 )
 ```
 
-**`LLMCallSpec` fields**
+**`LLMRequest` fields**
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `spec_id` | `str` | Yes | Unique identifier for this item within the submission. Must be unique across all items in a single call. |
+| `request_id` | `str` | Yes | Unique identifier for this item within the submission. Must be unique across all items in a single call. |
 | `messages` | `List[Dict]` | Yes | Messages list in the same shape as `call_llm()`. Supports both plain string content and structured content blocks (E05-F01). |
 | `provider` | `Optional[str]` | No | Target provider for direct execution. Ignored when `routing_context` is provided. |
 | `model` | `Optional[str]` | No | Model override. Ignored when `routing_context` is provided. |
@@ -481,9 +481,9 @@ results: list[LLMCallResult] = await llm_service.call_llm_many_async(
 | `routing_context` | `Optional[Dict]` | No | Routing context. When present, routing selects provider and model — same semantics as `call_llm()`. |
 | `request_options` | `Dict[str, Any]` | No | Additional keyword arguments forwarded to `call_llm_async()` unchanged. Use for cache-aware fields such as `requires_prompt_caching` and `cache_mode`. |
 
-### `spec_id` uniqueness rule
+### `request_id` uniqueness rule
 
-Each `spec_id` must be unique within one `call_llm_many_async()` submission. Duplicate `spec_id` values cause the entire submission to fail before any provider call begins.
+Each `request_id` must be unique within one `call_llm_many_async()` submission. Duplicate `request_id` values cause the entire submission to fail before any provider call begins.
 
 ### Concurrency limit (`max_concurrency`)
 
@@ -495,29 +495,29 @@ Each `spec_id` must be unique within one `call_llm_many_async()` submission. Dup
 
 ### Result shape
 
-`call_llm_many_async()` returns a `List[LLMCallResult]` with the same length and positional order as `call_specs`. Order is stable even when provider responses arrive out of order.
+`call_llm_many_async()` returns a `List[LLMFanoutResult]` with the same length and positional order as `requests`. Order is stable even when provider responses arrive out of order.
 
 ```python
 for result in results:
     if result.status == "succeeded":
-        print(f"{result.spec_id}: {result.content}")
+        print(f"{result.request_id}: {result.text}")
         if result.usage:
             print(f"  tokens: {result.usage.input_tokens} in / {result.usage.output_tokens} out")
             if result.usage.cache_read_input_tokens:
                 print(f"  cache read: {result.usage.cache_read_input_tokens} tokens")
     else:
-        print(f"{result.spec_id} failed: {result.error.message} ({result.error.error_type})")
+        print(f"{result.request_id} failed: {result.error.message} ({result.error.error_type})")
 ```
 
-**`LLMCallResult` fields**
+**`LLMFanoutResult` fields**
 
 | Field | Type | Description |
 |---|---|---|
-| `spec_id` | `str` | The `spec_id` from the originating `LLMCallSpec`. Always present, including on failure. |
+| `request_id` | `str` | The `request_id` from the originating `LLMRequest`. Always present, including on failure. |
 | `status` | `str` | `"succeeded"` or `"failed"`. |
-| `provider` | `Optional[str]` | The provider that **actually handled** this item (after routing or fallback tier selection). `None` only when a routing failure occurred before provider resolution. |
-| `model` | `Optional[str]` | The model that **actually handled** this item (after routing or fallback tier selection). `None` only when a routing failure occurred before model resolution. |
-| `content` | `Optional[str]` | Response text. Present only on success. |
+| `resolved_provider` | `Optional[str]` | The provider that **actually handled** this item (after routing or fallback tier selection). `None` only when a routing failure occurred before provider resolution. |
+| `resolved_model` | `Optional[str]` | The model that **actually handled** this item (after routing or fallback tier selection). `None` only when a routing failure occurred before model resolution. |
+| `text` | `Optional[str]` | Response text. Present only on success. |
 | `usage` | `Optional[LLMUsage]` | Normalized usage envelope. Present when the provider returned usage metadata. This includes routed and fallback items — the resolved provider's raw response is used to extract usage, so cache-aware fields such as `cache_read_input_tokens` are available on routed cache-aware requests. |
 | `error` | `Optional[LLMExecutionError]` | Structured error payload. Present only on failure. |
 
@@ -544,8 +544,8 @@ Absent fields remain `None` rather than being filled with a default value.
 
 A single failing item does not cancel, abort, or modify sibling items. Each item is independent:
 
-- Pre-execution validation failures (empty submission, duplicate `spec_id`, invalid `max_concurrency`) raise `LLMServiceError` before any provider call begins.
-- Once execution starts, per-item errors are captured as `LLMCallResult` records with `status="failed"`. The submission-level `call_llm_many_async()` call does not re-raise item exceptions.
+- Pre-execution validation failures (empty submission, duplicate `request_id`, invalid `max_concurrency`) raise `LLMServiceError` before any provider call begins.
+- Once execution starts, per-item errors are captured as `LLMFanoutResult` records with `status="failed"`. The submission-level `call_llm_many_async()` call does not re-raise item exceptions.
 - Sibling items continue to completion regardless of another item's failure.
 
 **Failure-path resolved identity**
@@ -555,21 +555,21 @@ When a fan-out item fails *after* routing or fallback selected a concrete provid
 ```python
 # Spec requests no specific provider — routing selects anthropic:claude-haiku.
 # The call then times out. The failure record still names the provider tried.
-spec = LLMCallSpec(
-    spec_id="routed-item",
+request = LLMRequest(
+    request_id="routed-item",
     messages=[{"role": "user", "content": "hello"}],
     provider=None,  # routing chooses the provider
     routing_context={"routing_enabled": True},
 )
-results = await llm_service.call_llm_many_async([spec], max_concurrency=1)
+results = await llm_service.call_llm_many_async([request], max_concurrency=1)
 r = results[0]
 assert r.status == "failed"
-assert r.provider == "anthropic"    # resolved before the failure
-assert r.model == "claude-haiku"    # resolved before the failure
+assert r.resolved_provider == "anthropic"    # resolved before the failure
+assert r.resolved_model == "claude-haiku"    # resolved before the failure
 assert r.error.error_type == "LLMTimeoutError"
 ```
 
-When failure occurs before any provider was selected (e.g., the routing service itself raises), `result.provider` and `result.model` remain `None` — they are never fabricated.
+When failure occurs before any provider was selected (e.g., the routing service itself raises), `result.resolved_provider` and `result.resolved_model` remain `None` — they are never fabricated.
 
 This behaviour is implemented via the `LLMResolvedCallError` exception (subclass of `LLMServiceError`). The fan-out layer catches it and extracts the resolved identity. Single-call callers using `call_llm_async()` directly receive `LLMResolvedCallError` propagated unchanged; existing `except LLMServiceError` handlers continue to match.
 
@@ -582,12 +582,12 @@ This behaviour is implemented via the `LLMResolvedCallError` exception (subclass
 | `cause` | `BaseException` | The underlying typed exception (e.g. `LLMProviderError`, `LLMTimeoutError`) that triggered the failure. |
 
 ```python
-specs = [
-    LLMCallSpec(spec_id="ok", messages=[...], provider="openai"),
-    LLMCallSpec(spec_id="bad-cache", messages=[...], provider="openai",
+requests = [
+    LLMRequest(request_id="ok", messages=[...], provider="openai"),
+    LLMRequest(request_id="bad-cache", messages=[...], provider="openai",
                 request_options={"requires_prompt_caching": True}),
 ]
-results = await llm_service.call_llm_many_async(specs, max_concurrency=2)
+results = await llm_service.call_llm_many_async(requests, max_concurrency=2)
 # results[0].status == "succeeded"
 # results[1].status == "failed"  — unsupported cache mode on this provider
 ```
@@ -597,8 +597,8 @@ results = await llm_service.call_llm_many_async(specs, max_concurrency=2)
 Fan-out items fully support E05-F01 structured message content and cache-aware request options. Pass structured blocks and caching metadata through `request_options` — the fan-out layer forwards them unchanged to `call_llm_async()`:
 
 ```python
-LLMCallSpec(
-    spec_id="cached-system",
+LLMRequest(
+    request_id="cached-system",
     messages=[
         {
             "role": "system",
@@ -613,13 +613,13 @@ LLMCallSpec(
 )
 ```
 
-When a cache-aware item succeeds, the resolved provider and cache usage are both visible on the result — even when routing selected a different model than the spec's nominal provider:
+When a cache-aware item succeeds, the resolved provider and cache usage are both visible on the result — even when routing selected a different model than the request's nominal provider:
 
 ```python
-result = results[0]  # spec_id="cached-system"
+result = results[0]  # request_id="cached-system"
 assert result.status == "succeeded"
-assert result.provider == "anthropic"           # resolved provider (after any routing)
-assert result.model == "claude-3-haiku"         # resolved model (after any routing)
+assert result.resolved_provider == "anthropic"           # resolved provider (after any routing)
+assert result.resolved_model == "claude-3-haiku"         # resolved model (after any routing)
 assert result.usage.cache_creation_input_tokens == 1024  # tokens written to cache
 assert result.usage.cache_read_input_tokens == 0         # first request — nothing cached yet
 # On a subsequent identical request:
@@ -678,6 +678,176 @@ Open circuits indicate a provider:model pair that has hit the failure threshold 
 6. **Let retries handle transient failures** — don't add your own retry loop around `call_llm()`; the service already retries rate limits and timeouts automatically.
 7. **Catch specific exceptions** — handle `LLMConfigurationError` (fix your config) differently from `LLMServiceError` (transient, may resolve later).
 8. **Monitor circuit breaker state** — use `get_routing_stats()` to detect providers that are consistently failing.
+
+---
+
+## Batch Execution
+
+`LLMService` now exposes a provider-agnostic batch surface backed by a
+provider-to-adapter registry. Callers submit one `LLMBatchSubmitRequest`,
+receive one serializable `LLMBatchHandle`, and drive the lifecycle the same way
+for Anthropic, OpenAI, and Gemini.
+
+For the full batch docs, use:
+
+- [LLM Batch User Guide](./llm-batch-user-guide)
+- [LLM Batch Adapter Developer Guide](./llm-batch-adapter-developer-guide)
+
+### Batch surface
+
+| Method | Purpose |
+|---|---|
+| `submit_batch()` / `asubmit_batch()` | Submit a batch and return a serializable `LLMBatchHandle` |
+| `restore_batch()` | Rebuild a handle from stored `handle.to_dict()` data |
+| `poll_batch()` / `apoll_batch()` | Refresh batch status through the registered provider adapter |
+| `cancel_batch()` / `acancel_batch()` | Request cancellation, then re-poll the handle |
+| `fetch_batch_results()` / `afetch_batch_results()` | Fetch terminal results as `LLMBatchResult` items |
+| `wait_for_batch()` | Async poll loop with capped exponential backoff |
+| `submit_and_wait()` | Sync convenience wrapper around submit + wait; not for active event loops |
+| `batch_capabilities()` | Report adapter capability metadata for one provider |
+| `results_by_request_id()` | Index results by caller `request_id` |
+| `reconcile_batch_results()` | Report missing records for submitted `request_id` values |
+
+### Provider capability matrix
+
+| Capability | Anthropic | OpenAI | Gemini Developer API |
+|---|---|---|---|
+| Registered under canonical provider key | `anthropic` | `openai` | `google` |
+| Common aliases accepted by `LLMService` | `claude` | `gpt` | `gemini` |
+| Sync lifecycle surface | Yes | Yes | Yes |
+| Async lifecycle surface | Yes | Yes | Yes |
+| `supports_cancel` | `True` | `True` | `True` |
+| Completion window reported by `batch_capabilities()` | `24h` | `24h` | `24h` |
+| `partial_fetch` reported by `batch_capabilities()` | `False` | `False` | `False` |
+| Result delivery used by the adapter | Provider batch results stream | `output_file_id` file download | Inline responses only |
+
+Gemini-specific constraints:
+
+- Gemini inline batches require a single model across every request in the batch.
+- `system` messages are mapped to Gemini `system_instruction`, not `contents`.
+- Non-string message content is rejected for Gemini batch submission instead of being stringified.
+
+### Install and registration
+
+Batch SDKs are optional extras:
+
+```bash
+pip install "agentmap[batch]"
+pip install "agentmap[all]"
+```
+
+The `batch` extra installs `anthropic`, `openai`, and `google-genai`. If an SDK
+is missing, that adapter raises `LLMDependencyError` at construction time; the
+DI container logs the problem and omits that provider from the registry.
+
+### Minimal usage
+
+```python
+from agentmap.models.llm_execution import LLMBatchSubmitRequest, LLMRequest
+
+request = LLMBatchSubmitRequest(
+    provider="gemini",  # normalized to the canonical registry key "google"
+    model="models/gemini-2.5-flash",
+    max_tokens=256,
+    requests=[
+        LLMRequest(
+            request_id="job-1",
+            messages=[{"role": "user", "content": "Summarize this changelog."}],
+        ),
+        LLMRequest(
+            request_id="job-2",
+            messages=[{"role": "user", "content": "List the breaking changes."}],
+        ),
+    ],
+)
+
+handle = llm_service.submit_batch(request)
+handle = llm_service.submit_and_wait(request, poll_interval=10.0, timeout=900)
+records = llm_service.fetch_batch_results(handle)
+```
+
+```python
+import asyncio
+
+async def run_batch(request):
+    handle = await llm_service.asubmit_batch(request)
+    handle = await llm_service.wait_for_batch(
+        handle,
+        poll_interval=10.0,
+        timeout=900,
+    )
+    return await llm_service.afetch_batch_results(handle)
+
+records = asyncio.run(run_batch(request))
+```
+
+`submit_and_wait()` is sync-context only. If you are already inside an event loop,
+use `await llm_service.asubmit_batch(...)` plus `await llm_service.wait_for_batch(...)`.
+
+### Status model
+
+Every adapter returns the same normalized `LLMBatchStatus` values:
+
+- `submitted`
+- `in_progress`
+- `canceling`
+- `canceled`
+- `ended`
+- `expired`
+- `failed`
+
+`canceled`, `ended`, `expired`, and `failed` are terminal from the service's
+perspective. `restore_batch()` is intentionally network-free; a restored handle
+may be stale until you call `poll_batch()` or `apoll_batch()`.
+
+### Core validation rules
+
+- `provider` is batch-level only. Setting `LLMRequest.provider` is rejected.
+- Reserved params are centrally resolved before adapter dispatch:
+  `model`, `temperature`, `max_tokens`.
+- `max_output_tokens` is treated as an alias of `max_tokens`.
+- Conflicting values across any supported surface raise
+  `LLMBatchParamConflictError`.
+- Batch-incompatible params such as `stream=True` and `max_tokens=0` raise
+  `LLMServiceError`.
+
+### Batch-specific types
+
+| Type | Purpose |
+|---|---|
+| `LLMBatchSubmitRequest` | Batch request envelope |
+| `LLMRequest` | One caller-owned request inside the batch |
+| `LLMBatchHandle` | Serializable lifecycle handle |
+| `BatchPollResult` | Adapter-owned normalized poll result |
+| `LLMBatchResult` | One terminal result keyed by caller `request_id` |
+| `LLMBatchRequestCounts` | Normalized provider request counts snapshot |
+
+### Batch-specific errors
+
+| Exception | Raised when |
+|---|---|
+| `LLMBatchUnsupportedProviderError` | No adapter is registered for the requested provider |
+| `LLMBatchParamConflictError` | A logical parameter is set in conflicting ways |
+| `LLMBatchCancelNotSupportedError` | Cancel is requested for a terminal batch, or the adapter does not support cancel |
+| `LLMBatchNotReadyError` | Results are fetched before the batch reaches `ended` |
+| `LLMBatchExpiredError` | An operation targets an expired handle |
+| `LLMBatchResultIntegrityError` | Gemini inline result counts make positional demux unsafe |
+
+### Persistence
+
+`LLMBatchHandle.to_dict()` contains AgentMap-owned metadata only. It does not
+store messages, request options, API keys, or provider SDK objects. The default
+file-backed repository persists those handle dicts under `llm.batch_dir`.
+
+### Implementation notes
+
+- The adapter registry is assembled in `src/agentmap/di/container_parts/llm.py`.
+- `BatchAdapterProtocol` is defined in
+  `src/agentmap/services/protocols/service_protocols.py`.
+- Canonical parameter resolution lives in
+  `src/agentmap/services/llm/_param_resolution.py`.
+- The optional dependency decision is documented in
+  `docs/plan/E05-llm-prompt-caching-and-batch-execution/E05-F04-cross-provider-batch-expansion-and-usage-normaliza/adr-001-batch-optional-deps.md`.
 
 ---
 

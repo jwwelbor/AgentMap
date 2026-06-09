@@ -9,6 +9,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Dict,
+    Iterator,
     List,
     Optional,
     Protocol,
@@ -17,9 +18,13 @@ from typing import (
 )
 
 from agentmap.models.llm_execution import (
-    LLMCallResult,
-    LLMCallSpec,
+    BatchPollResult,
+    LLMBatchHandle,
+    LLMBatchResult,
+    LLMBatchSubmitRequest,
+    LLMFanoutResult,
     LLMMessage,
+    LLMRequest,
     LLMResponse,
 )
 
@@ -27,6 +32,85 @@ from agentmap.models.llm_execution import (
 
 if TYPE_CHECKING:
     pass
+
+
+@runtime_checkable
+class BatchAdapterProtocol(Protocol):
+    """
+    Protocol for provider-specific batch adapters.
+
+    Each adapter encapsulates all provider I/O and status normalization for one
+    LLM provider's batch API.  The service layer dispatches through this
+    interface; no provider-specific logic leaks into the service.
+
+    Members
+    -------
+    provider_name : str
+        Canonical provider key (e.g. ``"anthropic"``, ``"openai"``,
+        ``"google"``).  Must match the registry key used in DI wiring.
+    supports_cancel : bool
+        ``True`` when the provider API supports cancelling an in-flight batch.
+    """
+
+    provider_name: str
+    supports_cancel: bool
+
+    def submit(
+        self,
+        specs: List[LLMRequest],
+        resolved_params: List[Dict[str, Any]],
+    ) -> "tuple[str, Dict[str, str], Optional[str]]":
+        """
+        Submit a batch and return ``(provider_batch_id, request_id_map, expires_at)``.
+
+        ``specs`` carries messages and ``request_id``; all *parameter* values
+        (model, max_tokens, temperature, pass-through options) are delivered
+        via ``resolved_params[i]`` which corresponds to ``specs[i]``.  The
+        dict is already conflict-free — adapters must not merge or apply
+        ``setdefault`` against any other source.
+
+        ``request_id_map`` maps each caller ``request_id`` to the provider-side
+        request identifier so that ``fetch_results`` can demultiplex responses
+        back to the original spec.  ``expires_at`` is an ISO-8601 string or
+        ``None`` if the provider does not return one.
+
+        Decision: D-8 (spec.md § Canonical Parameter Resolution).
+        """
+        ...
+
+    def poll(self, provider_batch_id: str) -> BatchPollResult:
+        """
+        Return a ``BatchPollResult`` with *already-normalized* status.
+
+        The provider→``LLMBatchStatus`` mapping lives entirely inside each
+        adapter; the service never performs enum lookups on the returned value.
+        """
+        ...
+
+    def cancel(self, provider_batch_id: str) -> None:
+        """
+        Request cancellation of an in-flight batch.
+
+        Only called when ``supports_cancel`` is ``True`` and the batch is not
+        already in a terminal status.
+        """
+        ...
+
+    def fetch_results(
+        self,
+        provider_batch_id: str,
+        request_id_map: Dict[str, str],
+        result_ref: Optional[str],
+    ) -> Iterator[LLMBatchResult]:
+        """
+        Iterate completed results and key them by caller ``request_id``.
+
+        ``result_ref`` carries the provider output reference (e.g. OpenAI
+        ``output_file_id``).  Adapters that fetch by ``provider_batch_id``
+        (e.g. Anthropic) ignore it.  Adapters that serve inline results (e.g.
+        Gemini) may also ignore it.
+        """
+        ...
 
 
 @runtime_checkable
@@ -138,30 +222,186 @@ class LLMServiceProtocol(Protocol):
 
     async def call_llm_many_async(
         self,
-        call_specs: List[LLMCallSpec],
+        requests: List[LLMRequest],
         max_concurrency: int,
-    ) -> List[LLMCallResult]:
+    ) -> List[LLMFanoutResult]:
         """
         Submit many LLM call specs and receive one terminal result per spec.
 
         Submission is validated before any provider execution begins:
-        - ``call_specs`` must not be empty.
-        - ``spec_id`` values must be unique within one submission.
+        - ``requests`` must not be empty.
+        - ``request_id`` values must be unique within one submission.
         - ``max_concurrency`` must be an integer >= 1.
 
-        Once execution starts, per-item failures are captured as ``LLMCallResult``
+        Once execution starts, per-item failures are captured as ``LLMFanoutResult``
         records with ``status="failed"`` rather than aborting the whole submission.
-        The returned list preserves the same positional order as ``call_specs``.
+        The returned list preserves the same positional order as ``requests``.
 
         Args:
-            call_specs: Non-empty list of ``LLMCallSpec`` items.
+            requests: Non-empty list of ``LLMRequest`` items.
             max_concurrency: Maximum number of in-flight provider calls at once.
 
         Returns:
-            List of ``LLMCallResult`` in the same order as ``call_specs``.
+            List of ``LLMFanoutResult`` in the same order as ``requests``.
 
         Raises:
             LLMServiceError: For invalid submissions (before any execution).
+        """
+        ...
+
+    # ------------------------------------------------------------------
+    # Batch lifecycle methods (E05-F03) — additive, provider-agnostic
+    # ------------------------------------------------------------------
+
+    def submit_batch(self, request: LLMBatchSubmitRequest) -> LLMBatchHandle:
+        """
+        Submit a provider-native batch and return a serializable handle.
+
+        Validates the request, delegates to the provider adapter, persists the
+        handle, and returns it.  Supported providers: ``"anthropic"``,
+        ``"openai"``, ``"google"``.
+
+        Raises:
+            LLMServiceError: For validation failures (empty specs, duplicate
+                request_ids, batch-incompatible params).
+            LLMBatchUnsupportedProviderError: For unsupported providers.
+        """
+        ...
+
+    def restore_batch(self, handle_data: dict) -> LLMBatchHandle:
+        """
+        Restore a batch handle from a serialized dict after process restart.
+
+        The dict must be the output of a previous ``handle.to_dict()`` call.
+        Validates that the dict contains all required fields.
+
+        Raises:
+            LLMServiceError: If the dict is missing required fields.
+        """
+        ...
+
+    def poll_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
+        """
+        Poll the provider for current batch status and return an updated handle.
+
+        Maps provider-specific status strings to the normalized
+        ``LLMBatchStatus`` set.  Persists the updated handle.
+
+        Returns:
+            Updated ``LLMBatchHandle`` with current status and request counts.
+        """
+        ...
+
+    def cancel_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
+        """
+        Request cancellation of an active batch.
+
+        Raises:
+            LLMBatchCancelNotSupportedError: If the handle is in a terminal
+                status (``"ended"`` or ``"expired"``).
+        """
+        ...
+
+    def fetch_batch_results(self, handle: LLMBatchHandle) -> List[LLMBatchResult]:
+        """
+        Retrieve completed batch results keyed by caller ``request_id``.
+
+        Raises:
+            LLMBatchNotReadyError: If the handle status is not ``"ended"``.
+        """
+        ...
+
+    # ------------------------------------------------------------------
+    # Async batch surface (E05-F04) — asyncio.to_thread wrappers
+    # ------------------------------------------------------------------
+
+    async def asubmit_batch(self, request: LLMBatchSubmitRequest) -> LLMBatchHandle:
+        """Async variant of ``submit_batch``; runs blocking SDK call off-thread."""
+        ...
+
+    async def apoll_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
+        """Async variant of ``poll_batch``; runs blocking SDK call off-thread."""
+        ...
+
+    async def acancel_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
+        """Async variant of ``cancel_batch``; runs blocking SDK call off-thread."""
+        ...
+
+    async def afetch_batch_results(
+        self, handle: LLMBatchHandle
+    ) -> List[LLMBatchResult]:
+        """Async variant of ``fetch_batch_results``; runs blocking SDK call off-thread."""
+        ...
+
+    async def wait_for_batch(
+        self,
+        handle: LLMBatchHandle,
+        *,
+        poll_interval: float = 5.0,
+        timeout: Optional[float] = None,
+    ) -> LLMBatchHandle:
+        """
+        Poll ``apoll_batch`` with capped exponential backoff until the batch
+        reaches a terminal status or ``timeout`` seconds elapse.
+
+        Raises:
+            TimeoutError: If ``timeout`` is set and the batch has not completed.
+        """
+        ...
+
+    def submit_and_wait(
+        self,
+        request: LLMBatchSubmitRequest,
+        *,
+        poll_interval: float = 5.0,
+        timeout: Optional[float] = None,
+    ) -> LLMBatchHandle:
+        """
+        Synchronous convenience: submit a batch then block until terminal.
+
+        Internally runs an event loop and delegates to ``wait_for_batch``.
+        """
+        ...
+
+    def batch_capabilities(self, provider: str) -> Dict[str, Any]:
+        """
+        Return capability metadata for a registered provider adapter.
+
+        Keys include at minimum: ``"supports_cancel"`` (bool),
+        ``"provider_name"`` (str).
+
+        Raises:
+            LLMBatchUnsupportedProviderError: If ``provider`` has no registered
+                adapter.
+        """
+        ...
+
+    def results_by_request_id(
+        self, records: List[LLMBatchResult]
+    ) -> Dict[str, LLMBatchResult]:
+        """
+        Index ``records`` by ``request_id`` for O(1) lookups.
+
+        Any record whose ``request_id`` is ``None`` or empty is excluded.
+        """
+        ...
+
+    def reconcile_batch_results(
+        self,
+        submitted_request_ids: List[str],
+        records: List[LLMBatchResult],
+    ) -> Dict[str, Optional[LLMBatchResult]]:
+        """
+        Reconcile submitted request_ids against returned records (REQ-F-009c).
+
+        Returns a dict mapping every submitted ``request_id`` to its
+        ``LLMBatchResult`` if one was returned, or ``None`` if the
+        provider returned no result for that request_id.  A ``None`` value signals
+        possible silent data loss and should be investigated by the caller.
+
+        Args:
+            submitted_request_ids: The request_ids supplied at submit time.
+            records: Records returned by :meth:`fetch_batch_results`.
         """
         ...
 

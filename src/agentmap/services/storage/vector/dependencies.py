@@ -20,15 +20,6 @@ except ImportError:
     except ImportError:
         OpenAIEmbeddings = None
 
-# Optional vector store imports
-try:
-    from langchain_chroma import Chroma
-except ImportError:
-    try:
-        from langchain_community.vectorstores import Chroma
-    except ImportError:
-        Chroma = None
-
 try:
     from langchain_community.vectorstores import FAISS
 except ImportError:
@@ -38,6 +29,5 @@ except ImportError:
 __all__ = [
     "langchain",
     "OpenAIEmbeddings",
-    "Chroma",
     "FAISS",
 ]

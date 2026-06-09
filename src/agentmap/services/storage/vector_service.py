@@ -3,7 +3,7 @@ Vector Storage Service implementation for AgentMap.
 
 This module provides a concrete implementation of the storage service
 for vector databases, extracted from VectorAgent functionality.
-Supports Chroma, FAISS, and other LangChain vector stores.
+Supports the FAISS LangChain vector store backend.
 
 Note: This module re-exports from the refactored vector package
 for backwards compatibility.
@@ -12,7 +12,6 @@ for backwards compatibility.
 # Re-export dependencies for backwards compatibility with tests
 from agentmap.services.storage.vector.dependencies import (
     FAISS,
-    Chroma,
     OpenAIEmbeddings,
     langchain,
 )
@@ -24,6 +23,5 @@ __all__ = [
     "VectorStorageService",
     "langchain",
     "OpenAIEmbeddings",
-    "Chroma",
     "FAISS",
 ]

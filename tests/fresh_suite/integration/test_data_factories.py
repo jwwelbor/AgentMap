@@ -337,10 +337,10 @@ class ConfigTestDataFactory:
                 },
             },
             "vector": {
-                "default_provider": "chroma",
+                "default_provider": "faiss",
                 "collections": {
                     "test_vectors": {
-                        "provider": "chroma",
+                        "provider": "faiss",
                         "settings": {"persist_directory": f"{temp_dir}/vector_storage"},
                     }
                 },

@@ -38,7 +38,7 @@ class LLMResolvedCallError(LLMServiceError):
     """Raised when execution fails after a concrete provider/model was resolved.
 
     Carries the resolved identity so the fan-out result builder (and any
-    single-call caller) can populate ``LLMCallResult.provider``/``.model``
+    single-call caller) can populate ``LLMFanoutResult.provider``/``.model``
     with the provider that was actually attempted, not just the requested spec
     values.  ``cause`` is the underlying typed error (e.g. ``LLMProviderError``,
     ``LLMTimeoutError``) that triggered the failure.
@@ -51,7 +51,7 @@ class LLMResolvedCallError(LLMServiceError):
       carrying the last-attempted tier's identity (policy: last tier wins).
 
     Catch site:
-    - ``LLMService._execute_fan_out_item`` — populates ``LLMCallResult.provider``
+    - ``LLMService._execute_fan_out_item`` — populates ``LLMFanoutResult.provider``
       and ``.model`` from this exception's attributes.  The bare
       ``except Exception`` block below it handles pre-resolution failures where
       no concrete provider was selected.

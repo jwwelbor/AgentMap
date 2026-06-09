@@ -37,7 +37,7 @@ json:
   collections: {}
 
 vector:
-  default_provider: "chroma"
+  default_provider: "faiss"
   collections: {}
 
 kv:
@@ -434,7 +434,7 @@ json:
   collections: {{}}
 
 vector:
-  default_provider: "chroma"
+  default_provider: "faiss"
   collections: {{}}
 
 kv:

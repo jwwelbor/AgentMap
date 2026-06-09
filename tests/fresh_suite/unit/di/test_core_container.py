@@ -107,7 +107,7 @@ storage_config_path: "{storage_config_path_str}"
   collections: {{}}
 
 vector:
-  default_provider: "chroma"
+  default_provider: "faiss"
   collections: {{}}
 
 kv:

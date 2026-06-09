@@ -197,13 +197,13 @@ class BaseIntegrationTest(unittest.TestCase):
             },
             "vector": {
                 "default_directory": "vector",
-                "default_provider": "chroma",
+                "default_provider": "faiss",
                 "collections": {
                     "test_collection": {
-                        "provider": "chroma",
+                        "provider": "faiss",
                         "settings": {
                             "persist_directory": str(
-                                Path(self.temp_dir) / "storage" / "vector" / "chroma"
+                                Path(self.temp_dir) / "storage" / "vector" / "faiss"
                             )
                         },
                     }
