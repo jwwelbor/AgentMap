@@ -1829,9 +1829,10 @@ class TestNoProviderGuardLiterals:
         'anthropic' for telemetry extraction (non-batch).
         """
         # Read the file and extract the batch section.
-        with open(
-            "/home/jwwel/projects/agentmap/src/agentmap/services/llm_service.py"
-        ) as f:
+        from pathlib import Path
+
+        llm_service_path = Path(__file__).parents[4] / "src/agentmap/services/llm_service.py"
+        with open(llm_service_path) as f:
             content = f.read()
 
         # Find the batch section (from _get_adapter to _extract_llm_usage).

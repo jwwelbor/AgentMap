@@ -180,12 +180,13 @@ class TestAC1InstrumentsCreatedAtInit:
         assert call_args[0][0] == METRIC_LLM_DURATION
 
     def test_create_counter_called_five_times(self):
-        """create_counter called 5 times for tokens_input, tokens_output,
-        errors, cache_hit, fallback."""
+        """create_counter called 9 times: tokens_input, tokens_output, errors,
+        cache_hit, fallback, batch_submitted, batch_poll, batch_results_fetched,
+        batch_cancel."""
         mock_telemetry, _, instruments = _make_mock_telemetry()
         _make_llm_service(telemetry_service=mock_telemetry)
 
-        assert mock_telemetry.create_counter.call_count == 5
+        assert mock_telemetry.create_counter.call_count == 9
         names = [c[0][0] for c in mock_telemetry.create_counter.call_args_list]
         assert METRIC_LLM_TOKENS_INPUT in names
         assert METRIC_LLM_TOKENS_OUTPUT in names
@@ -210,11 +211,11 @@ class TestAC1InstrumentsCreatedAtInit:
         assert METRIC_LLM_FALLBACK in names
 
     def test_total_counter_calls_is_five(self):
-        """create_counter called 5 times total (4 + fallback)."""
+        """create_counter called 9 times total (5 realtime + 4 batch)."""
         mock_telemetry, _, instruments = _make_mock_telemetry()
         _make_llm_service(telemetry_service=mock_telemetry)
 
-        assert mock_telemetry.create_counter.call_count == 5
+        assert mock_telemetry.create_counter.call_count == 9
 
     def test_instruments_stored_as_instance_attributes(self):
         """All seven instruments stored on self."""
