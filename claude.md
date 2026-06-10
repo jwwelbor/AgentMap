@@ -52,38 +52,6 @@ Before sending ANY message, ask yourself:
 - ✅ Are ALL bash commands grouped in ONE message?
 - ✅ Are ALL memory operations concurrent?
 
-## 🤖 Claude Sub-Agents Integration
-
-This project includes 15 specialized AI sub-agents for enhanced development.
-
-### Available Agents
-
-The following agents are installed in `.claude/agents/`:
-
-- **project-planner**: Strategic planning and task decomposition specialist
-- **api-developer**: Backend API development specialist with PRP awareness
-- **frontend-developer**: Modern web interface implementation specialist
-- **tdd-specialist**: Test-driven development and comprehensive testing expert
-- **code-reviewer**: Code quality, security, and best practices analyst
-- **debugger**: Error analysis and debugging specialist
-- **refactor**: Code refactoring and improvement specialist
-- **doc-writer**: Technical documentation specialist
-- **security-scanner**: Security vulnerability detection specialist
-- **devops-engineer**: CI/CD and deployment automation specialist
-- **product-manager**: Product requirements and user story specialist
-- **marketing-writer**: Technical marketing content specialist
-- **api-documenter**: OpenAPI/Swagger documentation specialist
-- **test-runner**: Automated test execution specialist
-- **shadcn-ui-builder**: UI/UX implementation with ShadCN components
-
-### Using Sub-Agents
-
-Agents work alongside your existing PRPs and can be invoked in several ways:
-
-1. **Direct execution**: `claude-agents run <agent> --task "description"`
-2. **Task tool in Claude Code**: `Task("agent-name: task description")`
-3. **Agent slash commands**: Located in `.claude/commands/agents/`
-
 ### Memory System
 
 Agents share context and coordinate through:

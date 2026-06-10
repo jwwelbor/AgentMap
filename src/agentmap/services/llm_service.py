@@ -2347,12 +2347,12 @@ class LLMService:
 
         Two-path extraction for ``cache_read_input_tokens`` (REQ-F-004):
           1. Flat key: ``usage_metadata.cache_read_input_tokens`` (Anthropic-style).
-          2. Nested fallback: ``usage_metadata.input_token_details.cached_tokens``
+          2. Nested fallback: ``usage_metadata.input_token_details.cache_read``
              (OpenAI-style, where the LangChain adapter exposes cached token
              counts under the ``input_token_details`` object).
 
         Precedence rule: the flat ``cache_read_input_tokens`` value is used when
-        it is non-None; the nested ``input_token_details.cached_tokens`` value is
+        it is non-None; the nested ``input_token_details.cache_read`` value is
         used only when the flat key is absent or None. This matches the
         Anthropic-first convention already established for other cache fields.
         """

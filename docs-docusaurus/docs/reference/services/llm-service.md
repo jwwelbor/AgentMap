@@ -335,7 +335,7 @@ The `cache_system_prompt=True` parameter lets you declare caching intent without
 | **OpenAI** | No-op. OpenAI automatically caches prompts over 1024 tokens — no explicit metadata is needed. The call proceeds unchanged. |
 | **Google (Gemini)** | Unsupported. Raises `LLMServiceError` before provider invocation. Gemini prompt caching is out of scope for this feature. |
 
-Capability is gated through `routing.provider_capabilities` (same check as the E05-F01 manual passthrough path). Passing `cache_system_prompt=True` to a provider not marked cache-capable raises `LLMServiceError` before the client is created.
+Capability is gated through `routing.provider_capabilities` for most providers. **OpenAI is exempt from this check** — it is always treated as a no-op (automatic server-side caching) regardless of the `prompt_caching` config value. For all other providers, passing `cache_system_prompt=True` to a provider not marked cache-capable raises `LLMServiceError` before the client is created.
 
 ### `call_llm()` example
 
