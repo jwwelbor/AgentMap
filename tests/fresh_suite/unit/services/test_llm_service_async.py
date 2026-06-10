@@ -285,6 +285,7 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
                 "fallback_provider": "google",
                 "max_tokens": 64,
             },
+            cache_system_prompt=False,
             max_tokens=64,
         )
         self.assertEqual(self.service._logger.warning.call_count, 2)
@@ -327,6 +328,7 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
                 "fallback_provider": "openai",
                 "max_tokens": 128,
             },
+            cache_system_prompt=False,
             max_tokens=128,
         )
 

@@ -8,11 +8,11 @@ Handles multi-tier fallback logic when LLM calls fail, including:
 - Tier 4: Error with full context
 """
 
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, List, Optional
 
 from agentmap.exceptions import LLMServiceError
 from agentmap.exceptions.service_exceptions import LLMResolvedCallError
-from agentmap.models.llm_execution import LLMResponse
+from agentmap.models.llm_execution import LLMMessage, LLMResponse
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
@@ -180,7 +180,7 @@ class LLMFallbackHandler:
         self,
         original_provider: str,
         original_model: str,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         error: Exception,
         get_provider_config_fn: Any,
         get_or_create_client_fn: Any,
@@ -216,6 +216,7 @@ class LLMFallbackHandler:
         )
 
         attempted_fallbacks = []
+        langchain_msgs = convert_messages_fn(messages)
 
         # Use shared tier plan — keeps sync/async ladders in sync (DRY).
         for fallback_provider, fallback_model in self._build_tier_plan(
@@ -231,7 +232,6 @@ class LLMFallbackHandler:
                 config = dict(config)  # defensive copy — avoid mutating shared config
                 config["model"] = fallback_model
                 client = get_or_create_client_fn(fallback_provider, config)
-                langchain_msgs = convert_messages_fn(messages)
                 result = self._invoke_client(
                     client, langchain_msgs, fallback_provider, fallback_model
                 )
@@ -258,7 +258,7 @@ class LLMFallbackHandler:
         self,
         original_provider: str,
         original_model: str,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         error: Exception,
         get_provider_config_fn: Any,
         get_or_create_client_fn: Any,
@@ -279,6 +279,7 @@ class LLMFallbackHandler:
         )
 
         attempted_fallbacks = []
+        langchain_msgs = convert_messages_fn(messages)
         # Last tier actually invoked.
         # Updated immediately before _invoke_client_async so it only reflects providers
         # where an actual network call was attempted (MEDIUM-2 fix).
@@ -305,9 +306,6 @@ class LLMFallbackHandler:
                 client = get_or_create_client_fn(fallback_provider, config)
                 last_attempted_provider = fallback_provider
                 last_attempted_model = fallback_model
-                # Update last_attempted before message conversion so it reflects
-                # a provider that was actually called (MEDIUM-2 fix).
-                langchain_msgs = convert_messages_fn(messages)
                 result = await self._invoke_client_async(
                     client, langchain_msgs, fallback_provider, fallback_model
                 )

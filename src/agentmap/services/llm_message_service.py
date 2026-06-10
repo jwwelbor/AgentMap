@@ -116,8 +116,8 @@ class LLMMessageService:
 
         return langchain_messages
 
+    @staticmethod
     def inject_cache_metadata(
-        self,
         messages: List[Dict[str, Any]],
         provider: str,
         cache_system_prompt: bool,
@@ -149,14 +149,14 @@ class LLMMessageService:
                 "inject_cache_metadata: provider=%s, injected=False, reason=cache_system_prompt_false",
                 provider,
             )
-            return messages
+            return list(messages)
 
         if provider != "anthropic":
             logger.debug(
                 "inject_cache_metadata: provider=%s, injected=False, reason=no-op",
                 provider,
             )
-            return messages
+            return list(messages)
 
         # Anthropic path: make a defensive copy and inject into system messages
         result = copy.deepcopy(messages)

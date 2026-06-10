@@ -324,6 +324,7 @@ class TestLLMServiceEnhanced(unittest.TestCase):
                 model="claude-opus-4-6",  # From routing decision
                 temperature=None,
                 routing_context=routing_context,
+                cache_system_prompt=False,
             )
 
             self.assertEqual(result, "Routed high-quality response")
@@ -353,6 +354,7 @@ class TestLLMServiceEnhanced(unittest.TestCase):
                 model=None,
                 temperature=None,
                 routing_context=routing_context,
+                cache_system_prompt=False,
             )
 
             self.assertEqual(result, "Fallback response")

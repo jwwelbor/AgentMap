@@ -301,6 +301,12 @@ class LLMService:
             return True
         return LLMMessageService.has_prompt_caching(messages)
 
+    # Providers where cache_system_prompt=True is a documented silent no-op.
+    # inject_cache_metadata returns messages unchanged for these providers;
+    # the capability check is skipped so callers do not receive a spurious error.
+    # E05-F05 spec: "OpenAI auto-caches at >1024 tokens — no injection needed."
+    _CACHE_SYSTEM_PROMPT_NOOP_PROVIDERS: frozenset = frozenset({"openai"})
+
     def _validate_prompt_caching_support(
         self,
         provider: Optional[str],
@@ -316,6 +322,14 @@ class LLMService:
         - ``cache_system_prompt=True`` kwarg (E05-F05 agnostic interface)
         - ``routing_context["requires_prompt_caching"]`` is True (routing path)
         - Any message content block carries a ``cache_control`` key (E05-F01 passthrough)
+
+        For providers in ``_CACHE_SYSTEM_PROMPT_NOOP_PROVIDERS`` (e.g. ``openai``),
+        ``cache_system_prompt=True`` is a documented no-op: ``inject_cache_metadata``
+        returns messages unchanged and no error is raised.  The capability flag
+        ``prompt_caching`` in config controls the E05-F01 passthrough path
+        (Anthropic-specific ``cache_control`` syntax) and is not consulted when the
+        only caching signal is the agnostic ``cache_system_prompt`` kwarg for a
+        known no-op provider.
         """
         if not cache_system_prompt and not self._is_prompt_caching_requested(
             messages, routing_context
@@ -330,6 +344,19 @@ class LLMService:
         normalized_provider = (
             self._provider_utils.normalize_provider(provider) if provider else None
         )
+
+        # When cache_system_prompt=True is the only caching signal and the provider
+        # is a known no-op (e.g. openai), injection is skipped by inject_cache_metadata
+        # and no error should be raised.  The capability check is only needed for
+        # the E05-F01 passthrough path (embedded cache_control blocks) or routing
+        # context signals, both of which require Anthropic-specific syntax.
+        if (
+            cache_system_prompt
+            and normalized_provider in self._CACHE_SYSTEM_PROMPT_NOOP_PROVIDERS
+            and not self._is_prompt_caching_requested(messages, routing_context)
+        ):
+            return
+
         if (
             normalized_provider is None
             or self.routing_config is None
@@ -348,6 +375,7 @@ class LLMService:
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
+        cache_system_prompt: bool = False,
         **kwargs,
     ) -> str:
         """
@@ -367,6 +395,9 @@ class LLMService:
             temperature: Optional temperature override
             routing_context: Optional routing context for intelligent model selection.
                              When present, routing owns all provider/model decisions.
+            cache_system_prompt: When True, inject provider-specific prompt-caching
+                                 metadata into system messages (Anthropic only; no-op
+                                 for other providers).
             **kwargs: Additional provider-specific parameters
 
         Returns:
@@ -375,6 +406,7 @@ class LLMService:
         Raises:
             LLMServiceError: On various error conditions
         """
+        kwargs["cache_system_prompt"] = cache_system_prompt
         if self._telemetry_service is not None:
             return self._call_llm_with_telemetry(
                 messages, provider, model, temperature, routing_context, **kwargs
@@ -390,6 +422,7 @@ class LLMService:
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
+        cache_system_prompt: bool = False,
         **kwargs,
     ) -> LLMResponse:
         """
@@ -403,7 +436,13 @@ class LLMService:
         When routing_context is provided, routing owns all provider and model
         selection. Explicit provider and model inputs are ignored with the same
         warnings used by the sync path.
+
+        Args:
+            cache_system_prompt: When True, inject provider-specific prompt-caching
+                                 metadata into system messages (Anthropic only; no-op
+                                 for other providers).
         """
+        kwargs["cache_system_prompt"] = cache_system_prompt
         if self._telemetry_service is not None:
             return await self._call_llm_async_with_telemetry(
                 messages, provider, model, temperature, routing_context, **kwargs
@@ -793,6 +832,7 @@ class LLMService:
             LLMServiceError: On various error conditions
         """
         config: Dict[str, Any] = {}
+        original_messages = messages
         try:
             # Extract cache_system_prompt before forwarding kwargs to the provider.
             # This must happen before validation so the flag triggers the support check.
@@ -861,7 +901,7 @@ class LLMService:
                     return self._fallback_handler.try_with_fallback(
                         provider,
                         current_model,
-                        messages,
+                        original_messages,
                         typed_error,
                         self._provider_utils.get_provider_config,
                         self._client_factory.get_or_create_client,
@@ -1001,6 +1041,7 @@ class LLMService:
         extracted from the raw provider response.
         """
         current_model: str = "unknown"
+        original_messages = messages
         try:
             # Extract cache_system_prompt before forwarding kwargs to the provider.
             # Mirrors the sync path (_call_llm_direct) for NFR-F-002 parity.
@@ -1060,7 +1101,7 @@ class LLMService:
                     return await self._fallback_handler.try_with_fallback_async(
                         provider,
                         current_model,
-                        messages,
+                        original_messages,
                         typed_error,
                         self._provider_utils.get_provider_config,
                         self._client_factory.get_or_create_client,
@@ -2312,11 +2353,7 @@ class LLMService:
         if not usage_metadata:
             return None
 
-        def _get(key: str) -> Optional[int]:
-            if isinstance(usage_metadata, dict):
-                val = usage_metadata.get(key)
-            else:
-                val = getattr(usage_metadata, key, None)
+        def _to_int(val: Any) -> Optional[int]:
             if val is None:
                 return None
             try:
@@ -2324,21 +2361,24 @@ class LLMService:
             except (TypeError, ValueError):
                 return None
 
-        def _to_int(val: Any) -> Optional[int]:
-            """Coerce val to int, returning None on failure."""
-            if val is None:
-                return None
-            try:
-                return int(val)
-            except (TypeError, ValueError):
-                return None
+        def _get(key: str) -> Optional[int]:
+            if isinstance(usage_metadata, dict):
+                return _to_int(usage_metadata.get(key))
+            return _to_int(getattr(usage_metadata, key, None))
 
         # Flat key first (Anthropic-style); fall back to OpenAI nested path.
         flat_cache_read = _get("cache_read_input_tokens")
         if flat_cache_read is None:
-            # OpenAI: usage_metadata.input_token_details.cached_tokens
-            details = getattr(usage_metadata, "input_token_details", None)
-            nested_cached = getattr(details, "cached_tokens", None)
+            # OpenAI: usage_metadata["input_token_details"]["cache_read"]
+            # LangChain normalizes AIMessage.usage_metadata as a dict (UsageMetadata
+            # TypedDict); the nested sub-dict uses key "cache_read" (InputTokenDetails
+            # TypedDict), not an object attribute "cached_tokens".
+            if isinstance(usage_metadata, dict):
+                details = usage_metadata.get("input_token_details")
+                nested_cached = details.get("cache_read") if isinstance(details, dict) else None
+            else:
+                details = getattr(usage_metadata, "input_token_details", None)
+                nested_cached = getattr(details, "cache_read", None)
             cache_read_input_tokens = _to_int(nested_cached)
         else:
             cache_read_input_tokens = flat_cache_read

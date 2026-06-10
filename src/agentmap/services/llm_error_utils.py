@@ -50,20 +50,7 @@ def classify_llm_error(
     msg = str(error).lower()
 
     # Already one of ours — pass through without re-wrapping.
-    # LLMServiceError is the base; checking it last covers all typed subclasses
-    # (LLMProviderError, LLMConfigurationError, LLMDependencyError, etc.) that
-    # are not listed above but share the hierarchy.
-    if isinstance(
-        error,
-        (
-            LLMTimeoutError,
-            LLMRateLimitError,
-            LLMConfigurationError,
-            LLMDependencyError,
-            LLMProviderError,
-            LLMServiceError,
-        ),
-    ):
+    if isinstance(error, LLMServiceError):
         return error
 
     safe_msg = _sanitize_error_message(error)

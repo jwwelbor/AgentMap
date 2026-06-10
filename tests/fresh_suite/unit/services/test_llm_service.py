@@ -213,6 +213,7 @@ class TestLLMService(unittest.TestCase):
                 model="claude-3-7-sonnet-20250219",
                 temperature=0.3,
                 routing_context=routing_context,
+                cache_system_prompt=False,
             )
 
             self.assertEqual(result, "Routed response")
@@ -307,6 +308,7 @@ class TestLLMService(unittest.TestCase):
                 model="custom-model",
                 temperature=0.5,
                 routing_context=routing_context,
+                cache_system_prompt=False,
             )
 
             self.assertEqual(result, "Fallback response")
@@ -830,48 +832,52 @@ class TestExtractLLMUsage(unittest.TestCase):
         self.assertIsNone(result)
 
     # ------------------------------------------------------------------
-    # TC-017: OpenAI-style response — nested input_token_details.cached_tokens
+    # TC-017: OpenAI-style response — nested input_token_details["cache_read"]
+    #
+    # LangChain normalizes AIMessage.usage_metadata as a dict (UsageMetadata
+    # TypedDict).  The nested input_token_details sub-dict uses key "cache_read"
+    # (InputTokenDetails TypedDict), NOT an object attribute "cached_tokens".
     # ------------------------------------------------------------------
 
     def test_extract_llm_usage_openai_nested_cached_tokens(self):
-        """TC-017: OpenAI-style attribute usage_metadata with flat cache_read_input_tokens=None
-        but nested input_token_details.cached_tokens=250 -> LLMUsage.cache_read_input_tokens == 250.
+        """TC-017: OpenAI-style dict usage_metadata with flat cache_read_input_tokens
+        absent (None) but nested input_token_details["cache_read"]=250 ->
+        LLMUsage.cache_read_input_tokens == 250.
 
-        Counter-factual: an impl that only does flat-key lookup on usage_metadata would
-        return None for cache_read_input_tokens, failing this assertion.
+        Counter-factual: an impl that only does flat-key lookup on usage_metadata
+        (or uses getattr on a dict, or reads key "cached_tokens") would return None
+        for cache_read_input_tokens, failing this assertion.
+
+        Fixture matches the real LangChain UsageMetadata TypedDict contract:
+        usage_metadata = {"input_tokens": ..., "output_tokens": ...,
+                          "input_token_details": {"cache_read": ...}}
         """
 
-        class TokenDetails:
-            cached_tokens = 250
-
-        class UsageMeta:
-            input_tokens = 1500
-            output_tokens = 200
-            cache_creation_input_tokens = None
-            cache_read_input_tokens = None
-            input_token_details = TokenDetails()
-
         class FakeOpenAIResponse:
-            usage_metadata = UsageMeta()
+            usage_metadata = {
+                "input_tokens": 1500,
+                "output_tokens": 200,
+                "input_token_details": {"cache_read": 250},
+            }
 
         result = LLMService._extract_llm_usage(FakeOpenAIResponse())
 
         self.assertIsNotNone(result)
+        self.assertEqual(result.input_tokens, 1500)
+        self.assertEqual(result.output_tokens, 200)
         self.assertEqual(result.cache_read_input_tokens, 250)
         self.assertIsNone(result.cache_creation_input_tokens)
 
     def test_extract_llm_usage_openai_input_token_details_absent(self):
-        """TC-017 edge: input_token_details absent -> cache_read_input_tokens is None, no AttributeError."""
-
-        class UsageMetaNoDetails:
-            input_tokens = 1000
-            output_tokens = 100
-            cache_creation_input_tokens = None
-            cache_read_input_tokens = None
-            # no input_token_details attribute
+        """TC-017 edge: input_token_details key absent in usage_metadata dict ->
+        cache_read_input_tokens is None, no KeyError."""
 
         class FakeOpenAIResponse:
-            usage_metadata = UsageMetaNoDetails()
+            usage_metadata = {
+                "input_tokens": 1000,
+                "output_tokens": 100,
+                # no input_token_details key
+            }
 
         result = LLMService._extract_llm_usage(FakeOpenAIResponse())
 
@@ -879,20 +885,14 @@ class TestExtractLLMUsage(unittest.TestCase):
         self.assertIsNone(result.cache_read_input_tokens)
 
     def test_extract_llm_usage_openai_nested_cached_tokens_zero(self):
-        """TC-017 edge: cached_tokens=0 in nested path -> returns 0, not None."""
-
-        class TokenDetailsZero:
-            cached_tokens = 0
-
-        class UsageMetaZero:
-            input_tokens = 500
-            output_tokens = 100
-            cache_creation_input_tokens = None
-            cache_read_input_tokens = None
-            input_token_details = TokenDetailsZero()
+        """TC-017 edge: input_token_details["cache_read"]=0 -> returns 0, not None."""
 
         class FakeOpenAIResponseZero:
-            usage_metadata = UsageMetaZero()
+            usage_metadata = {
+                "input_tokens": 500,
+                "output_tokens": 100,
+                "input_token_details": {"cache_read": 0},
+            }
 
         result = LLMService._extract_llm_usage(FakeOpenAIResponseZero())
 
@@ -901,23 +901,18 @@ class TestExtractLLMUsage(unittest.TestCase):
 
     def test_extract_llm_usage_flat_cache_read_takes_precedence_over_nested(self):
         """TC-017 edge (precedence): when both flat cache_read_input_tokens and nested
-        input_token_details.cached_tokens are present, flat value takes precedence.
+        input_token_details["cache_read"] are present, flat value takes precedence.
 
         Precedence rule is documented in the implementation comment in _extract_llm_usage().
         """
 
-        class TokenDetailsBoth:
-            cached_tokens = 999
-
-        class UsageMetaBoth:
-            input_tokens = 300
-            output_tokens = 50
-            cache_creation_input_tokens = None
-            cache_read_input_tokens = 100  # flat value present
-            input_token_details = TokenDetailsBoth()
-
         class FakeResponseBoth:
-            usage_metadata = UsageMetaBoth()
+            usage_metadata = {
+                "input_tokens": 300,
+                "output_tokens": 50,
+                "cache_read_input_tokens": 100,  # flat value present
+                "input_token_details": {"cache_read": 999},  # nested value present
+            }
 
         result = LLMService._extract_llm_usage(FakeResponseBoth())
 
@@ -925,24 +920,70 @@ class TestExtractLLMUsage(unittest.TestCase):
         # Flat value (100) takes precedence over nested (999)
         self.assertEqual(result.cache_read_input_tokens, 100)
 
-    def test_extract_llm_usage_input_token_details_missing_cached_tokens_attr(self):
-        """TC-017 negative: input_token_details present but has no cached_tokens attribute
-        -> cache_read_input_tokens is None without raising AttributeError."""
-
-        class TokenDetailsNoAttr:
-            pass  # no cached_tokens
-
-        class UsageMetaPartial:
-            input_tokens = 800
-            output_tokens = 150
-            cache_creation_input_tokens = None
-            cache_read_input_tokens = None
-            input_token_details = TokenDetailsNoAttr()
+    def test_extract_llm_usage_input_token_details_missing_cache_read_key(self):
+        """TC-017 negative: input_token_details dict present but has no "cache_read" key
+        -> cache_read_input_tokens is None without raising KeyError."""
 
         class FakeResponsePartial:
-            usage_metadata = UsageMetaPartial()
+            usage_metadata = {
+                "input_tokens": 800,
+                "output_tokens": 150,
+                "input_token_details": {},  # empty — no cache_read key
+            }
 
         result = LLMService._extract_llm_usage(FakeResponsePartial())
+
+        self.assertIsNotNone(result)
+        self.assertIsNone(result.cache_read_input_tokens)
+
+    def test_extract_llm_usage_object_style_fallback_cache_read(self):
+        """TC-017 object-style fallback: usage_metadata is an object (not dict),
+        input_token_details is an object with cache_read attribute -> extracted correctly.
+
+        This covers the object-style branch at llm_service.py:2346-2348:
+          details = getattr(usage_metadata, "input_token_details", None)
+          nested_cached = getattr(details, "cache_read", None)
+
+        Counter-factual: if the object branch used "cached_tokens" instead of "cache_read",
+        this test would return None instead of 300.
+        """
+
+        class InputTokenDetails:
+            cache_read = 300
+
+        class ObjectUsageMeta:
+            input_tokens = 2000
+            output_tokens = 400
+            cache_creation_input_tokens = None
+            cache_read_input_tokens = None  # flat key absent -> falls through to nested
+            input_token_details = InputTokenDetails()
+
+        class FakeObjectResponse:
+            usage_metadata = ObjectUsageMeta()
+
+        result = LLMService._extract_llm_usage(FakeObjectResponse())
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.cache_read_input_tokens, 300)
+        self.assertIsNone(result.cache_creation_input_tokens)
+
+    def test_extract_llm_usage_object_style_fallback_no_cache_read_attr(self):
+        """TC-017 object-style fallback negative: input_token_details object has no
+        cache_read attribute -> returns None without AttributeError."""
+
+        class InputTokenDetailsNoAttr:
+            pass  # no cache_read attribute
+
+        class ObjectUsageMetaNoAttr:
+            input_tokens = 500
+            output_tokens = 100
+            cache_read_input_tokens = None
+            input_token_details = InputTokenDetailsNoAttr()
+
+        class FakeObjectResponseNoAttr:
+            usage_metadata = ObjectUsageMetaNoAttr()
+
+        result = LLMService._extract_llm_usage(FakeObjectResponseNoAttr())
 
         self.assertIsNotNone(result)
         self.assertIsNone(result.cache_read_input_tokens)
@@ -1227,6 +1268,59 @@ class TestCacheSystemPromptWiring(unittest.TestCase):
         # For user messages, content should be a plain string
         self.assertIsInstance(langchain_messages[0].content, str)
         self.assertEqual(result, "hi")
+
+    # -------------------------------------------------------------------------
+    # AC-2 / TC-011-service: OpenAI + cache_system_prompt=True => no-op, no error
+    # Default config has openai: prompt_caching: false.  The call must complete
+    # without error (inject_cache_metadata is a no-op for non-Anthropic providers).
+    # Counter-factual: without the fix, _validate_prompt_caching_support raises
+    # LLMServiceError because supports_prompt_caching("openai") returns False.
+    # -------------------------------------------------------------------------
+
+    def test_call_llm_openai_cache_system_prompt_no_op_with_default_config(self):
+        """AC-2: call_llm with provider='openai' and cache_system_prompt=True must
+        complete without error when the default config marks OpenAI as
+        prompt_caching: false.  OpenAI auto-caches at >1024 tokens; AgentMap
+        treats it as a silent no-op (no injection, no error).
+
+        setUp() configures supports_prompt_caching to return False for OpenAI,
+        mirroring the shipped agentmap_config.yaml default.
+
+        Counter-factual: a buggy impl raises LLMServiceError before reaching the
+        mock client.  This test fails against that buggy impl.
+        """
+        # Arrange
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "What is 2+2?"},
+        ]
+        mock_client = Mock()
+        mock_client.invoke.return_value = Mock(content="4")
+
+        # Act — must NOT raise
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = self.service.call_llm(
+                messages=messages,
+                provider="openai",
+                cache_system_prompt=True,
+            )
+
+        # Assert — call succeeded and client was actually invoked
+        self.assertEqual(result, "4")
+        mock_client.invoke.assert_called_once()
+        # Assert — no cache_control was injected (no-op for OpenAI)
+        langchain_messages = mock_client.invoke.call_args.args[0]
+        system_content = langchain_messages[0].content
+        # System message content should remain a plain string (not converted to blocks)
+        self.assertIsInstance(
+            system_content,
+            str,
+            "OpenAI no-op: system message content should remain a plain string",
+        )
 
 
 if __name__ == "__main__":
