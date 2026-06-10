@@ -13,6 +13,25 @@ from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
+# Cached LangChain message classes — resolved once to avoid retrying a
+# failed langchain.schema import on every convert_messages_to_langchain call.
+_langchain_message_classes = None
+
+
+def _resolve_langchain_message_classes():
+    global _langchain_message_classes
+    if _langchain_message_classes is not None:
+        return _langchain_message_classes
+    try:
+        from langchain.schema import AIMessage, HumanMessage, SystemMessage
+    except ImportError:
+        try:
+            from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+        except ImportError:
+            return None
+    _langchain_message_classes = (AIMessage, HumanMessage, SystemMessage)
+    return _langchain_message_classes
+
 
 class LLMMessageService:
     """Service for handling LLM message transformation and cache metadata injection."""
@@ -91,19 +110,10 @@ class LLMMessageService:
         Returns:
             List of LangChain message objects
         """
-        try:
-            from langchain.schema import AIMessage, HumanMessage, SystemMessage
-        except ImportError:
-            # Try newer imports
-            try:
-                from langchain_core.messages import (
-                    AIMessage,
-                    HumanMessage,
-                    SystemMessage,
-                )
-            except ImportError:
-                # Last resort - return as-is and hope the client handles it
-                return messages
+        classes = _resolve_langchain_message_classes()
+        if classes is None:
+            return messages
+        AIMessage, HumanMessage, SystemMessage = classes
 
         langchain_messages = []
 
