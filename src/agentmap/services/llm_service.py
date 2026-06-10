@@ -678,20 +678,6 @@ class LLMService:
                 routing_context=context,
             )
 
-            self._validate_prompt_caching_support(
-                decision.provider,
-                messages,
-                routing_context,
-                execution_path="call_llm_async",
-            )
-
-            self._validate_prompt_caching_support(
-                decision.provider,
-                messages,
-                routing_context,
-                execution_path="call_llm",
-            )
-
             self._logger.info(
                 f"Routing decision: {decision.provider}:{decision.model} "
                 f"(complexity: {decision.complexity}, "
