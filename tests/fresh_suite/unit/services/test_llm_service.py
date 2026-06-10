@@ -757,5 +757,286 @@ class TestLLMServiceCachePassthroughRouting(unittest.TestCase):
         self.assertIn("prompt caching", str(ctx.exception).lower())
 
 
+class TestCacheSystemPromptWiring(unittest.TestCase):
+    """Tests for cache_system_prompt kwarg wiring through LLMService sync paths.
+
+    Covers TC-005, TC-008, TC-009, TC-012, TC-013, TC-015, TC-018 from the
+    E05-F05 test plan.
+    """
+
+    def setUp(self):
+        self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        self.mock_app_config_service = (
+            MockServiceFactory.create_mock_app_config_service()
+        )
+        self.mock_app_config_service.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {
+                "failure_threshold": 3,
+                "reset_timeout": 60,
+            },
+        }
+        self.mock_app_config_service.get_llm_config.side_effect = lambda provider: {
+            "model": f"{provider}-model",
+            "api_key": "test-key",
+            "temperature": 0.7,
+        }
+        self.mock_llm_models_config_service = (
+            MockServiceFactory.create_mock_llm_models_config_service()
+        )
+        self.mock_routing_service = None  # no routing for direct calls
+        self.mock_routing_config_service = Mock()
+        # Anthropic supports caching; google and openai do not
+        self.mock_routing_config_service.supports_prompt_caching.side_effect = (
+            lambda provider: provider == "anthropic"
+        )
+
+        self.service = LLMService(
+            configuration=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            routing_service=self.mock_routing_service,
+            llm_models_config_service=self.mock_llm_models_config_service,
+            routing_config_service=self.mock_routing_config_service,
+        )
+
+    # -------------------------------------------------------------------------
+    # TC-005: call_llm Anthropic + cache_system_prompt=True => injection applied
+    # -------------------------------------------------------------------------
+
+    def test_tc005_call_llm_anthropic_cache_system_prompt_injects_cache_control(self):
+        """TC-005: call_llm with cache_system_prompt=True for Anthropic injects
+        cache_control on the system message before the mock client is called.
+        inject_cache_metadata is NOT mocked — the real method runs end-to-end.
+        """
+        # Arrange
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "What is 2+2?"},
+        ]
+        mock_client = Mock()
+        mock_client.invoke.return_value = Mock(content="4")
+
+        # Act
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = self.service.call_llm(
+                messages=messages,
+                provider="anthropic",
+                cache_system_prompt=True,
+            )
+
+        # Assert
+        self.assertEqual(result, "4")
+        # Verify messages passed to client have cache_control on the system message
+        langchain_messages = mock_client.invoke.call_args.args[0]
+        system_content = langchain_messages[0].content
+        self.assertIsInstance(system_content, list)
+        self.assertTrue(
+            any(
+                isinstance(block, dict) and "cache_control" in block
+                for block in system_content
+            ),
+            f"Expected cache_control in system message content, got: {system_content}",
+        )
+
+    # -------------------------------------------------------------------------
+    # TC-008: pre-cached messages + flag => no double-wrap
+    # -------------------------------------------------------------------------
+
+    def test_tc008_no_double_wrap_when_messages_already_cached(self):
+        """TC-008: call_llm with pre-cached system message and cache_system_prompt=True
+        does not double-wrap the cache_control block.
+        inject_cache_metadata is NOT mocked.
+        """
+        # Arrange: system message already has cache_control (E05-F01 passthrough pattern)
+        messages = [
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "sys",
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            },
+            {"role": "user", "content": "hello"},
+        ]
+        mock_client = Mock()
+        mock_client.invoke.return_value = Mock(content="ok")
+
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            self.service.call_llm(
+                messages=messages,
+                provider="anthropic",
+                cache_system_prompt=True,
+            )
+
+        # Assert: system content list still has exactly ONE block with ONE cache_control
+        langchain_messages = mock_client.invoke.call_args.args[0]
+        system_content = langchain_messages[0].content
+        self.assertIsInstance(system_content, list)
+        self.assertEqual(len(system_content), 1, "Should have exactly 1 content block")
+        cache_control_count = sum(
+            1
+            for block in system_content
+            if isinstance(block, dict) and "cache_control" in block
+        )
+        self.assertEqual(cache_control_count, 1, "Should have exactly 1 cache_control")
+
+    # -------------------------------------------------------------------------
+    # TC-009: ask() passes cache_system_prompt=True through without error
+    # -------------------------------------------------------------------------
+
+    def test_tc009_ask_passes_cache_system_prompt_through_without_error(self):
+        """TC-009: ask(prompt=..., cache_system_prompt=True) passes the kwarg through
+        to call_llm and executes without error. No mock on call_llm — real chain runs.
+        Since ask() constructs a user-only message, injection is a no-op (no system msg).
+        """
+        # Arrange
+        mock_client = Mock()
+        mock_client.invoke.return_value = Mock(content="hello back")
+
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            # Act — no exception should be raised
+            result = self.service.ask(
+                prompt="hello",
+                provider="anthropic",
+                cache_system_prompt=True,
+            )
+
+        # Assert
+        self.assertEqual(result, "hello back")
+        # Client was called (passthrough succeeded end-to-end)
+        mock_client.invoke.assert_called_once()
+
+    # -------------------------------------------------------------------------
+    # TC-012: provider="google" + cache_system_prompt=True => LLMServiceError
+    #         before get_or_create_client
+    # -------------------------------------------------------------------------
+
+    def test_tc012_google_provider_raises_llmservice_error_before_client_creation(self):
+        """TC-012: call_llm with provider='google' and cache_system_prompt=True raises
+        LLMServiceError. The error is raised BEFORE get_or_create_client is called.
+        """
+        messages = [{"role": "user", "content": "hello"}]
+
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+        ) as mock_get_client:
+            with self.assertRaises(LLMServiceError) as ctx:
+                self.service.call_llm(
+                    messages=messages,
+                    provider="google",
+                    cache_system_prompt=True,
+                )
+
+        self.assertIn("google", str(ctx.exception).lower())
+        # Error message contains "caching" (which is the feature name in the message)
+        self.assertIn("cach", str(ctx.exception).lower())
+        mock_get_client.assert_not_called()
+
+    # -------------------------------------------------------------------------
+    # TC-013: unknown provider + cache_system_prompt=True => LLMServiceError
+    # -------------------------------------------------------------------------
+
+    def test_tc013_unknown_provider_raises_llmservice_error_not_config_error(self):
+        """TC-013: call_llm with an unknown provider and cache_system_prompt=True raises
+        LLMServiceError (not LLMConfigurationError, KeyError, or AttributeError).
+        """
+        from agentmap.exceptions import LLMConfigurationError
+
+        messages = [{"role": "user", "content": "hello"}]
+
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+        ) as mock_get_client:
+            with self.assertRaises(LLMServiceError) as ctx:
+                self.service.call_llm(
+                    messages=messages,
+                    provider="unknown_provider_xyz",
+                    cache_system_prompt=True,
+                )
+
+        # Must be LLMServiceError specifically
+        self.assertIsInstance(ctx.exception, LLMServiceError)
+        self.assertNotIsInstance(ctx.exception, LLMConfigurationError)
+        mock_get_client.assert_not_called()
+
+    # -------------------------------------------------------------------------
+    # TC-015: ask_vision + cache_system_prompt=True => LLMServiceError
+    # -------------------------------------------------------------------------
+
+    def test_tc015_ask_vision_with_cache_system_prompt_raises_llmservice_error(self):
+        """TC-015: ask_vision with cache_system_prompt=True raises LLMServiceError
+        before image resolution or client creation.
+        ask_vision is NOT mocked — called for real so the early validation fires.
+        """
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+        ) as mock_get_client:
+            with self.assertRaises(LLMServiceError) as ctx:
+                self.service.ask_vision(
+                    prompt="What is in this image?",
+                    image=b"\x89PNG\r\n",
+                    image_type="image/png",
+                    provider="anthropic",
+                    cache_system_prompt=True,
+                )
+
+        error_msg = str(ctx.exception).lower()
+        self.assertIn("ask_vision", error_msg)
+        mock_get_client.assert_not_called()
+
+    # -------------------------------------------------------------------------
+    # TC-018: call_llm without cache_system_prompt => unchanged messages
+    # -------------------------------------------------------------------------
+
+    def test_tc018_call_llm_without_cache_system_prompt_leaves_messages_unchanged(self):
+        """TC-018: call_llm without cache_system_prompt kwarg (existing callers)
+        sees NO cache_control injection. Messages at client are identical to input.
+        Counter-factual: an impl defaulting cache_system_prompt=True would inject.
+        """
+        # Arrange — NO cache_system_prompt kwarg passed
+        messages = [{"role": "user", "content": "hello"}]
+        mock_client = Mock()
+        mock_client.invoke.return_value = Mock(content="hi")
+
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = self.service.call_llm(
+                messages=messages,
+                provider="anthropic",
+            )
+
+        # Assert: messages at client have no cache_control
+        langchain_messages = mock_client.invoke.call_args.args[0]
+        # For user messages, content should be a plain string
+        self.assertIsInstance(langchain_messages[0].content, str)
+        self.assertEqual(result, "hi")
+
+
 if __name__ == "__main__":
     unittest.main()
