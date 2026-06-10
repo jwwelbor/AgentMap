@@ -308,9 +308,18 @@ class LLMService:
         routing_context: Optional[Dict[str, Any]] = None,
         *,
         execution_path: str,
+        cache_system_prompt: bool = False,
     ) -> None:
-        """Fail fast when prompt caching is requested on an unsupported path."""
-        if not self._is_prompt_caching_requested(messages, routing_context):
+        """Fail fast when prompt caching is requested on an unsupported path.
+
+        Caching is considered requested when any of these signals are present:
+        - ``cache_system_prompt=True`` kwarg (E05-F05 agnostic interface)
+        - ``routing_context["requires_prompt_caching"]`` is True (routing path)
+        - Any message content block carries a ``cache_control`` key (E05-F01 passthrough)
+        """
+        if not cache_system_prompt and not self._is_prompt_caching_requested(
+            messages, routing_context
+        ):
             return
 
         if execution_path == "ask_vision":
@@ -785,6 +794,10 @@ class LLMService:
         """
         config: Dict[str, Any] = {}
         try:
+            # Extract cache_system_prompt before forwarding kwargs to the provider.
+            # This must happen before validation so the flag triggers the support check.
+            cache_system_prompt: bool = kwargs.pop("cache_system_prompt", False)
+
             # Normalize provider name
             provider = self._provider_utils.normalize_provider(provider)
             self._validate_prompt_caching_support(
@@ -792,6 +805,7 @@ class LLMService:
                 messages,
                 routing_context,
                 execution_path="call_llm",
+                cache_system_prompt=cache_system_prompt,
             )
 
             # Get provider configuration
@@ -813,6 +827,13 @@ class LLMService:
 
             # Get or create LangChain client
             client = self._client_factory.get_or_create_client(provider, config)
+
+            # Inject provider-specific cache metadata (E05-F05).
+            # Placed after provider resolution and before LangChain conversion
+            # so the correct resolved provider drives injection (Decision 2).
+            messages = self._message_utils.inject_cache_metadata(
+                messages, provider, cache_system_prompt
+            )
 
             # Convert messages to LangChain format
             langchain_messages = self._message_utils.convert_messages_to_langchain(
@@ -981,12 +1002,17 @@ class LLMService:
         """
         current_model: str = "unknown"
         try:
+            # Extract cache_system_prompt before forwarding kwargs to the provider.
+            # Mirrors the sync path (_call_llm_direct) for NFR-F-002 parity.
+            cache_system_prompt: bool = kwargs.pop("cache_system_prompt", False)
+
             provider = self._provider_utils.normalize_provider(provider)
             self._validate_prompt_caching_support(
                 provider,
                 messages,
                 routing_context,
                 execution_path="call_llm_async",
+                cache_system_prompt=cache_system_prompt,
             )
             config = self._provider_utils.get_provider_config(provider)
 
@@ -1004,6 +1030,14 @@ class LLMService:
 
             current_model = config.get("model", "unknown")
             client = self._client_factory.get_or_create_client(provider, config)
+
+            # Inject provider-specific cache metadata (E05-F05).
+            # Placed after provider resolution and before LangChain conversion
+            # so the correct resolved provider drives injection (Decision 2).
+            messages = self._message_utils.inject_cache_metadata(
+                messages, provider, cache_system_prompt
+            )
+
             langchain_messages = self._message_utils.convert_messages_to_langchain(
                 messages
             )
@@ -1472,6 +1506,20 @@ class LLMService:
             and emitted as OTel counter metrics — use your telemetry backend
             for cost tracking rather than the return value.
         """
+        # Extract cache_system_prompt early so the validation fires before any
+        # image decoding or client creation (TC-015 contract: error before image
+        # resolution). This must be popped from kwargs before forwarding.
+        cache_system_prompt: bool = kwargs.pop("cache_system_prompt", False)
+
+        # Validate BEFORE image resolution so the error fires as early as possible.
+        self._validate_prompt_caching_support(
+            provider,
+            [],
+            routing_context,
+            execution_path="ask_vision",
+            cache_system_prompt=cache_system_prompt,
+        )
+
         image_bytes, mime = self._resolve_image(image, image_type)
         b64 = base64.b64encode(image_bytes).decode("ascii")
 
@@ -1491,13 +1539,6 @@ class LLMService:
         if routing_context is not None:
             routing_context = dict(routing_context)  # copy to avoid mutation
             routing_context["requires_vision"] = True
-
-        self._validate_prompt_caching_support(
-            provider,
-            [],
-            routing_context,
-            execution_path="ask_vision",
-        )
 
         # Default provider when routing is not active (mirrors ask() behavior)
         if provider is None and routing_context is None:

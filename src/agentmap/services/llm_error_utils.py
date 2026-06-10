@@ -49,7 +49,10 @@ def classify_llm_error(
     """
     msg = str(error).lower()
 
-    # Already one of ours — pass through
+    # Already one of ours — pass through without re-wrapping.
+    # LLMServiceError is the base; checking it last covers all typed subclasses
+    # (LLMProviderError, LLMConfigurationError, LLMDependencyError, etc.) that
+    # are not listed above but share the hierarchy.
     if isinstance(
         error,
         (
@@ -58,6 +61,7 @@ def classify_llm_error(
             LLMConfigurationError,
             LLMDependencyError,
             LLMProviderError,
+            LLMServiceError,
         ),
     ):
         return error
