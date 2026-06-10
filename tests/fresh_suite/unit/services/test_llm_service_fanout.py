@@ -356,6 +356,27 @@ class TestAC004SubmissionValidation(unittest.IsolatedAsyncioTestCase):
 
             mock_call.assert_not_called()
 
+    async def test_tc_ac4_04_cache_system_prompt_in_request_options_raises_llm_service_error(
+        self,
+    ):
+        """TC-AC4-04: cache_system_prompt in request_options raises LLMServiceError (not TypeError).
+
+        cache_system_prompt is a reserved key: passing it in both LLMRequest.cache_system_prompt
+        and request_options would produce a duplicate-kwarg TypeError at _execute_fan_out_item.
+        The collision guard must catch it and raise LLMServiceError before execution.
+        """
+        spec = LLMRequest(
+            request_id="dup-cache",
+            messages=[{"role": "user", "content": "hi"}],
+            cache_system_prompt=True,
+            request_options={"cache_system_prompt": True},
+        )
+        with patch.object(self.service, "call_llm_async", new=AsyncMock()) as mock_call:
+            with self.assertRaises(LLMServiceError):
+                await self.service.call_llm_many_async([spec], max_concurrency=1)
+
+            mock_call.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # AC-005  Concurrency cap
