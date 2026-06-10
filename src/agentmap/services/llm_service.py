@@ -2375,11 +2375,12 @@ class LLMService:
             # TypedDict), not an object attribute "cached_tokens".
             if isinstance(usage_metadata, dict):
                 details = usage_metadata.get("input_token_details")
-                nested_cached = (
-                    details.get("cache_read") if isinstance(details, dict) else None
-                )
             else:
                 details = getattr(usage_metadata, "input_token_details", None)
+
+            if isinstance(details, dict):
+                nested_cached = details.get("cache_read")
+            else:
                 nested_cached = getattr(details, "cache_read", None)
             cache_read_input_tokens = _to_int(nested_cached)
         else:

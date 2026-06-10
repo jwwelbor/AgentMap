@@ -29,6 +29,8 @@ class LLMMessageService:
             True when any structured content block includes cache metadata
         """
         for msg in messages:
+            if not isinstance(msg, dict):
+                continue
             content = msg.get("content", "")
             if not isinstance(content, list):
                 continue
@@ -56,6 +58,8 @@ class LLMMessageService:
         # Combine all user and system messages
         prompt_parts = []
         for msg in messages:
+            if not isinstance(msg, dict):
+                continue
             role = msg.get("role", "")
             content = msg.get("content", "")
             if role in ["user", "system"] and content:
@@ -104,6 +108,9 @@ class LLMMessageService:
         langchain_messages = []
 
         for msg in messages:
+            if not isinstance(msg, dict):
+                langchain_messages.append(msg)
+                continue
             role = msg.get("role", "user")
             content = msg.get("content", "")
 
@@ -163,6 +170,8 @@ class LLMMessageService:
         injected = False
 
         for msg in result:
+            if not isinstance(msg, dict):
+                continue
             if msg.get("role") != "system":
                 continue
 
