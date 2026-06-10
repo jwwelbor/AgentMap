@@ -99,7 +99,14 @@ from agentmap.services.telemetry.constants import (
 # appear in ``LLMRequest.request_options`` they would collide with the explicit
 # keyword arguments in ``_execute_fan_out_item``, causing a TypeError at runtime.
 _RESERVED_KEYS: frozenset = frozenset(
-    {"messages", "provider", "model", "temperature", "routing_context"}
+    {
+        "messages",
+        "provider",
+        "model",
+        "temperature",
+        "routing_context",
+        "cache_system_prompt",
+    }
 )
 
 
@@ -2350,7 +2357,7 @@ class LLMService:
         Anthropic-first convention already established for other cache fields.
         """
         usage_metadata = getattr(response, "usage_metadata", None)
-        if not usage_metadata:
+        if usage_metadata is None:
             return None
 
         def _to_int(val: Any) -> Optional[int]:
@@ -2454,7 +2461,7 @@ class LLMService:
         Returns (None, None) when token data is unavailable.
         """
         usage_metadata = getattr(response, "usage_metadata", None)
-        if not usage_metadata:
+        if usage_metadata is None:
             return None, None
         if isinstance(usage_metadata, dict):
             return (
