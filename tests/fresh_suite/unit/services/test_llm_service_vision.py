@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
+from agentmap.exceptions import LLMServiceError
 from agentmap.services.llm_message_utils import LLMMessageUtils
 from agentmap.services.llm_service import LLMService
 from agentmap.services.routing.types import RoutingContext
@@ -189,6 +190,20 @@ class TestAskVision(unittest.TestCase):
         # Original should not have requires_vision
         self.assertNotIn("requires_vision", original)
 
+    @patch.object(LLMService, "call_llm")
+    def test_ask_vision_rejects_prompt_caching_before_call_llm(self, mock_call_llm):
+        """Cache mode is explicitly unsupported for ask_vision()."""
+        with self.assertRaises(LLMServiceError) as ctx:
+            self.service.ask_vision(
+                prompt="Analyze.",
+                image=b"img",
+                routing_context={"requires_prompt_caching": True},
+            )
+
+        self.assertIn("prompt caching", str(ctx.exception).lower())
+        self.assertIn("ask_vision", str(ctx.exception).lower())
+        mock_call_llm.assert_not_called()
+
 
 class TestLLMMessageUtilsMultimodal(unittest.TestCase):
     """Tests for multimodal content handling in LLMMessageUtils."""
@@ -254,6 +269,29 @@ class TestLLMMessageUtilsMultimodal(unittest.TestCase):
         messages = [{"role": "user", "content": "Hello world"}]
         result = LLMMessageUtils.extract_prompt_from_messages(messages)
         self.assertEqual(result, "Hello world")
+
+    def test_detect_prompt_caching_in_structured_blocks(self):
+        """Cache-control metadata is detected without altering content."""
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "prefix",
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                    {"type": "text", "text": "question"},
+                ],
+            }
+        ]
+
+        self.assertTrue(LLMMessageUtils.has_prompt_caching(messages))
+
+    def test_detect_prompt_caching_false_for_plain_text_messages(self):
+        """Existing plain-text callers are not treated as cache mode."""
+        messages = [{"role": "user", "content": "Hello world"}]
+        self.assertFalse(LLMMessageUtils.has_prompt_caching(messages))
 
 
 class TestRoutingContextVision(unittest.TestCase):

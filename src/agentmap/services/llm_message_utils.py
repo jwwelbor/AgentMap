@@ -12,6 +12,28 @@ class LLMMessageUtils:
     """Utilities for handling LLM messages."""
 
     @staticmethod
+    def has_prompt_caching(messages: List[Dict[str, Any]]) -> bool:
+        """
+        Detect provider-native prompt-caching metadata in structured messages.
+
+        Args:
+            messages: List of message dictionaries
+
+        Returns:
+            True when any structured content block includes cache metadata
+        """
+        for msg in messages:
+            content = msg.get("content", "")
+            if not isinstance(content, list):
+                continue
+
+            for block in content:
+                if isinstance(block, dict) and "cache_control" in block:
+                    return True
+
+        return False
+
+    @staticmethod
     def extract_prompt_from_messages(messages: List[Dict[str, Any]]) -> str:
         """
         Extract the main prompt content from messages for complexity analysis.

@@ -80,6 +80,31 @@ response = llm_service.call_llm(
 )
 ```
 
+### Pattern 1b: Direct prompt-caching call
+
+Prompt caching is supported only on realtime text paths and only for providers marked cache-capable in `routing.provider_capabilities`.
+
+```python
+response = llm_service.call_llm(
+    provider="anthropic",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Reusable prefix",
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {"type": "text", "text": "Answer the follow-up question."},
+            ],
+        }
+    ],
+)
+```
+
+If prompt caching is requested for a provider not marked cache-capable, `LLMService` raises `LLMServiceError` before creating the provider client.
+
 ### Pattern 2: Simple string prompt (`ask()`)
 
 Convenience wrapper for single plain-string prompts — no messages list required:
@@ -125,6 +150,34 @@ response = llm_service.call_llm(
     routing_context={"task_type": "code_generation", "fallback_provider": "openai"}
 )
 ```
+
+### Pattern 3b: Routed prompt-caching call
+
+Use `routing_context["requires_prompt_caching"] = True` when the request must stay on cache-capable providers:
+
+```python
+response = llm_service.call_llm(
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Long shared context",
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {"type": "text", "text": "Summarize the delta."},
+            ],
+        }
+    ],
+    routing_context={
+        "task_type": "general",
+        "requires_prompt_caching": True,
+    },
+)
+```
+
+Routing filters candidates to providers whose `routing.provider_capabilities.<provider>.prompt_caching` value is `true`. If no eligible provider remains, the call fails with an explicit `LLMServiceError` instead of silently degrading to a non-cache provider.
 
 ---
 
@@ -252,6 +305,7 @@ All fields are optional. Routing is activated by passing a `routing_context` dic
 | `fallback_model` | `None` | Override fallback model for this call |
 | `retry_with_lower_complexity` | `True` | On failure, retry with lower complexity tier |
 | `max_tokens` | `None` | Max response tokens for this call. Overrides provider and activity defaults. `0` = no limit |
+| `requires_prompt_caching` | `False` | Restrict routing to providers marked cache-capable for realtime text execution |
 
 ---
 
@@ -266,6 +320,15 @@ When using routing, `max_tokens` is resolved from multiple sources in this prior
 If no source sets `max_tokens`, the provider's built-in default is used. Setting `max_tokens` to `0` at any level means "no limit" — it actively suppresses any provider default.
 
 For direct calls (no routing), `max_tokens` passed to `call_llm()` overrides the provider config default.
+
+---
+
+## Prompt-Caching Limits
+
+- Supported execution paths in this feature slice: `call_llm()`, `call_llm_async()`, `ask()`, `ask_async()`
+- Unsupported execution path in this feature slice: `ask_vision()`
+- Prompt caching is provider-gated through `routing.provider_capabilities`
+- Existing plain-text and non-cache structured requests keep their prior behavior
 
 ---
 

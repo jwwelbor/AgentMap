@@ -149,6 +149,7 @@ class TestRoutingContext(unittest.TestCase):
         self.assertIsNone(context.fallback_provider)
         self.assertIsNone(context.fallback_model)
         self.assertTrue(context.retry_with_lower_complexity)
+        self.assertFalse(context.requires_prompt_caching)
 
     def test_routing_context_custom_values(self):
         """Test RoutingContext with custom values."""
@@ -171,6 +172,7 @@ class TestRoutingContext(unittest.TestCase):
             fallback_provider="openai",
             fallback_model="gpt-4o-mini",
             retry_with_lower_complexity=False,
+            requires_prompt_caching=True,
         )
 
         # Verify all custom values
@@ -192,6 +194,7 @@ class TestRoutingContext(unittest.TestCase):
         self.assertEqual(context.fallback_provider, "openai")
         self.assertEqual(context.fallback_model, "gpt-4o-mini")
         self.assertFalse(context.retry_with_lower_complexity)
+        self.assertTrue(context.requires_prompt_caching)
 
     def test_routing_context_to_dict(self):
         """Test RoutingContext.to_dict() method."""
@@ -229,6 +232,7 @@ class TestRoutingContext(unittest.TestCase):
             "fallback_model",
             "retry_with_lower_complexity",
             "max_tokens",
+            "requires_prompt_caching",
             "requires_vision",
         }
         self.assertEqual(set(result.keys()), expected_keys)
@@ -242,6 +246,7 @@ class TestRoutingContext(unittest.TestCase):
             "provider_preference": ["anthropic", "openai"],
             "max_cost_tier": "high",
             "cost_optimization": False,
+            "requires_prompt_caching": True,
         }
 
         context = RoutingContext.from_dict(data)
@@ -253,6 +258,7 @@ class TestRoutingContext(unittest.TestCase):
         self.assertEqual(context.provider_preference, ["anthropic", "openai"])
         self.assertEqual(context.max_cost_tier, "high")
         self.assertFalse(context.cost_optimization)
+        self.assertTrue(context.requires_prompt_caching)
 
         # Verify defaults for missing fields
         self.assertTrue(context.auto_detect_complexity)  # Default

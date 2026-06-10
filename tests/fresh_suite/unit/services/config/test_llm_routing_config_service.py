@@ -61,6 +61,10 @@ class TestLlmRoutingConfigService(unittest.TestCase):
                     "default_complexity": "high",
                 },
             },
+            "provider_capabilities": {
+                "anthropic": {"prompt_caching": True},
+                "openai": {"prompt_caching": False},
+            },
             "complexity_analysis": {
                 "prompt_length_thresholds": {"low": 100, "medium": 300, "high": 800}
             },
@@ -174,6 +178,17 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         """Test getting list of available providers."""
         result = self.llm_routing_service.get_available_providers()
         self.assertEqual(set(result), {"anthropic", "openai"})
+
+    def test_supports_prompt_caching(self):
+        """Test prompt-caching capability lookups."""
+        self.assertTrue(self.llm_routing_service.supports_prompt_caching("anthropic"))
+        self.assertFalse(self.llm_routing_service.supports_prompt_caching("openai"))
+        self.assertFalse(self.llm_routing_service.supports_prompt_caching("google"))
+
+    def test_get_prompt_cache_capable_providers(self):
+        """Test listing prompt-cache-capable providers."""
+        result = self.llm_routing_service.get_prompt_cache_capable_providers()
+        self.assertEqual(result, ["anthropic"])
 
     def test_get_available_task_types(self):
         """Test getting list of available task types."""
@@ -329,6 +344,65 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         self.assertGreater(len(errors), 0)
         self.assertTrue(
             any("Missing prompt length threshold" in error for error in errors)
+        )
+
+    def test_validate_config_allows_missing_provider_capabilities(self):
+        """Prompt-caching metadata is optional for backward compatibility."""
+        self.routing_config.pop("provider_capabilities")
+        self.mock_app_config_service.get_routing_config.return_value = (
+            self.routing_config
+        )
+
+        service = LLMRoutingConfigService(
+            app_config_service=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service,
+        )
+
+        errors = service.validate_AppConfigService()
+        self.assertEqual(errors, [])
+
+    def test_validate_config_rejects_invalid_prompt_caching_type(self):
+        """Malformed prompt_caching values are rejected."""
+        self.routing_config["provider_capabilities"]["anthropic"] = {
+            "prompt_caching": "yes"
+        }
+        self.mock_app_config_service.get_routing_config.return_value = (
+            self.routing_config
+        )
+
+        service = LLMRoutingConfigService(
+            app_config_service=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service,
+        )
+
+        errors = service.validate_AppConfigService()
+        self.assertTrue(
+            any("prompt_caching must be a boolean" in error for error in errors)
+        )
+
+    def test_validate_config_rejects_unknown_provider_capability_key(self):
+        """Unknown provider capability entries are rejected."""
+        self.routing_config["provider_capabilities"]["google"] = {
+            "prompt_caching": True
+        }
+        self.mock_app_config_service.get_routing_config.return_value = (
+            self.routing_config
+        )
+
+        service = LLMRoutingConfigService(
+            app_config_service=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service,
+        )
+
+        errors = service.validate_AppConfigService()
+        self.assertTrue(
+            any(
+                "provider_capabilities references unknown provider 'google'" in error
+                for error in errors
+            )
         )
 
     def test_routing_matrix_normalization(self):

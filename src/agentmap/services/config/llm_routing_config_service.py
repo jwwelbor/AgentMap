@@ -101,6 +101,7 @@ class LLMRoutingConfigService:
         self.enabled = self.config_dict.get("enabled", False)
         self.routing_matrix = load_routing_matrix(self.config_dict, self._logger)
         self.task_types = load_task_types(self.config_dict, self._logger)
+        self.provider_capabilities = self._load_provider_capabilities()
         self.complexity_analysis = self.config_dict.get("complexity_analysis", {})
         self.cost_optimization = self.config_dict.get("cost_optimization", {})
         self.fallback = self.config_dict.get("fallback", {})
@@ -131,10 +132,24 @@ class LLMRoutingConfigService:
             List of validation error messages (empty if valid)
         """
         errors = validate_routing_config(
-            self.routing_matrix, self.task_types, self.complexity_analysis
+            self.routing_matrix,
+            self.task_types,
+            self.complexity_analysis,
+            self.config_dict.get("provider_capabilities", {}),
         )
         errors.extend(validate_activities_config(self.get_activities_config()))
         return errors
+
+    def _load_provider_capabilities(self) -> Dict[str, Dict[str, Any]]:
+        """Normalize optional provider capability metadata."""
+        capabilities = self.config_dict.get("provider_capabilities", {})
+        if not isinstance(capabilities, dict):
+            return {}
+
+        normalized: Dict[str, Dict[str, Any]] = {}
+        for provider, provider_capabilities in capabilities.items():
+            normalized[provider.lower()] = provider_capabilities
+        return normalized
 
     def get_activities_config(self) -> Dict[str, Any]:
         """
@@ -215,6 +230,34 @@ class LLMRoutingConfigService:
             List of available provider names
         """
         return _get_available_providers(self.routing_matrix)
+
+    def supports_prompt_caching(self, provider: str) -> bool:
+        """
+        Check whether a provider is configured to support prompt caching.
+
+        Args:
+            provider: Provider name to check
+
+        Returns:
+            True when prompt caching is explicitly enabled for the provider
+        """
+        capabilities = self.provider_capabilities.get(provider.lower(), {})
+        if not isinstance(capabilities, dict):
+            return False
+        return capabilities.get("prompt_caching", False) is True
+
+    def get_prompt_cache_capable_providers(self) -> List[str]:
+        """
+        Get providers explicitly marked as prompt-cache capable.
+
+        Returns:
+            Ordered list of provider names
+        """
+        return [
+            provider
+            for provider in self.get_available_providers()
+            if self.supports_prompt_caching(provider)
+        ]
 
     def get_available_task_types(self) -> List[str]:
         """

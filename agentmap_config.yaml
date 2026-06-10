@@ -138,6 +138,18 @@ routing:
       high: "gemini-2.5-pro"
       critical: "gemini-2.5-pro"
 
+  # Optional provider capability metadata.
+  # Prompt caching is currently provider-gated and supported only on
+  # realtime text execution paths (call_llm/call_llm_async/ask/ask_async).
+  # ask_vision does not support prompt caching in this feature slice.
+  provider_capabilities:
+    anthropic:
+      prompt_caching: true
+    openai:
+      prompt_caching: false
+    google:
+      prompt_caching: false
+
   # Application-Specific Task Types
   # These define the business logic for your specific application
   task_types:

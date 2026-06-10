@@ -293,6 +293,47 @@ class LLMService:
         """Backwards compatibility wrapper for extract_prompt_from_messages."""
         return self._message_utils.extract_prompt_from_messages(messages)
 
+    def _is_prompt_caching_requested(
+        self,
+        messages: List[Dict[str, Any]],
+        routing_context: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Return True when caller input requests prompt caching."""
+        if routing_context and routing_context.get("requires_prompt_caching", False):
+            return True
+        return LLMMessageUtils.has_prompt_caching(messages)
+
+    def _validate_prompt_caching_support(
+        self,
+        provider: Optional[str],
+        messages: List[Dict[str, Any]],
+        routing_context: Optional[Dict[str, Any]] = None,
+        *,
+        execution_path: str,
+    ) -> None:
+        """Fail fast when prompt caching is requested on an unsupported path."""
+        if not self._is_prompt_caching_requested(messages, routing_context):
+            return
+
+        if execution_path == "ask_vision":
+            raise LLMServiceError(
+                "Prompt caching is not supported on execution path 'ask_vision'."
+            )
+
+        normalized_provider = (
+            self._provider_utils.normalize_provider(provider) if provider else None
+        )
+        if (
+            normalized_provider is None
+            or self.routing_config is None
+            or not self.routing_config.supports_prompt_caching(normalized_provider)
+        ):
+            provider_name = normalized_provider or "unknown"
+            raise LLMServiceError(
+                "Prompt caching is not supported for provider "
+                f"'{provider_name}' on execution path '{execution_path}'."
+            )
+
     def call_llm(
         self,
         messages: List[LLMMessage],
@@ -374,6 +415,7 @@ class LLMService:
         **kwargs,
     ) -> LLMResponse:
         """Async telemetry wrapper mirroring the sync LLM span behavior."""
+        assert self._telemetry_service is not None
         initial_attributes: Dict[str, Any] = {}
         if provider:
             initial_attributes[GEN_AI_SYSTEM] = self._provider_utils.normalize_provider(
@@ -435,6 +477,7 @@ class LLMService:
         isolation).  LLM errors are re-raised directly -- only telemetry
         infrastructure failures trigger the fallback.
         """
+        assert self._telemetry_service is not None
         # Build initial attributes from known values
         initial_attributes: Dict[str, Any] = {}
         if provider:
@@ -676,6 +719,18 @@ class LLMService:
                     {GEN_AI_REQUEST_MAX_TOKENS: resolved_max_tokens}
                 )
 
+            # Make the actual LLM call with the selected provider/model
+            return self._call_llm_direct(
+                provider=decision.provider,
+                messages=messages,
+                model=decision.model,
+                temperature=temperature,
+                routing_context=routing_context,
+                **kwargs,
+            )
+
+        except LLMServiceError:
+            raise
         except Exception as e:
             self._logger.error(f"Routing failed: {e}")
             # Fall back to direct call if routing (pre-selection) fails
@@ -694,18 +749,9 @@ class LLMService:
                 messages=messages,
                 model=model,
                 temperature=temperature,
+                routing_context=routing_context,
                 **kwargs,
             )
-
-        # Make the actual LLM call outside the routing try — errors from the
-        # invocation layer propagate as-is (not relabeled as routing failures).
-        return self._call_llm_direct(
-            provider=decision.provider,
-            messages=messages,
-            model=decision.model,
-            temperature=temperature,
-            **kwargs,
-        )
 
     def _call_llm_direct(
         self,
@@ -713,6 +759,7 @@ class LLMService:
         messages: List[Dict[str, str]],
         model: Optional[str] = None,
         temperature: Optional[float] = None,
+        routing_context: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> str:
         """
@@ -726,6 +773,10 @@ class LLMService:
             messages: List of message dictionaries
             model: Optional model override
             temperature: Optional temperature override
+            routing_context: Optional routing context forwarded from the routing
+                             path so that ``requires_prompt_caching`` flags
+                             carried there are honoured even when messages contain
+                             no embedded ``cache_control`` blocks.
             **kwargs: Additional provider-specific parameters
 
         Returns:
@@ -734,9 +785,16 @@ class LLMService:
         Raises:
             LLMServiceError: On various error conditions
         """
+        config: Dict[str, Any] = {}
         try:
             # Normalize provider name
             provider = self._provider_utils.normalize_provider(provider)
+            self._validate_prompt_caching_support(
+                provider,
+                messages,
+                routing_context,
+                execution_path="call_llm",
+            )
 
             # Get provider configuration
             config = self._provider_utils.get_provider_config(provider)
@@ -866,6 +924,24 @@ class LLMService:
                     {GEN_AI_REQUEST_MAX_TOKENS: resolved_max_tokens}
                 )
 
+            return await self._call_llm_async_direct(
+                provider=decision.provider,
+                messages=messages,
+                model=decision.model,
+                temperature=temperature,
+                routing_context=routing_context,
+                **kwargs,
+            )
+
+        except LLMResolvedCallError:
+            # Post-selection provider failure — routing already resolved a concrete
+            # (provider, model) before the call failed. Preserve that identity
+            # intact; do NOT trigger the routing-fallback retry path, which would
+            # silently rewrite the resolved identity with the fallback provider.
+            # Mirrors the identical guard in _call_llm_async_direct:842.
+            raise
+        except LLMServiceError:
+            raise
         except Exception as e:
             self._logger.error(f"Routing failed: {e}")
             fallback_provider = routing_context.get("fallback_provider", "anthropic")
@@ -881,18 +957,9 @@ class LLMService:
                 messages=messages,
                 model=model,
                 temperature=temperature,
+                routing_context=routing_context,
                 **kwargs,
             )
-
-        # Make the actual LLM call outside the routing try — errors from the
-        # invocation layer propagate as-is (not relabeled as routing failures).
-        return await self._call_llm_async_direct(
-            provider=decision.provider,
-            messages=messages,
-            model=decision.model,
-            temperature=temperature,
-            **kwargs,
-        )
 
     async def _call_llm_async_direct(
         self,
@@ -900,16 +967,29 @@ class LLMService:
         messages: List[Dict[str, str]],
         model: Optional[str] = None,
         temperature: Optional[float] = None,
+        routing_context: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> LLMResponse:
         """Async direct provider invocation with resilience and fallback parity.
 
+        Args:
+            routing_context: Optional routing context forwarded from the routing
+                             path so that ``requires_prompt_caching`` flags
+                             carried there are honoured even when messages contain
+                             no embedded ``cache_control`` blocks.
+
         Returns ``LLMResponse`` carrying the resolved provider, model, and usage
         extracted from the raw provider response.
         """
-        current_model = None
+        current_model: str = "unknown"
         try:
             provider = self._provider_utils.normalize_provider(provider)
+            self._validate_prompt_caching_support(
+                provider,
+                messages,
+                routing_context,
+                execution_path="call_llm_async",
+            )
             config = self._provider_utils.get_provider_config(provider)
 
             max_tokens = kwargs.pop("max_tokens", None)
@@ -924,7 +1004,7 @@ class LLMService:
                 elif max_tokens is not None:
                     config["max_tokens"] = max_tokens
 
-            current_model = config.get("model")
+            current_model = config.get("model", "unknown")
             client = self._client_factory.get_or_create_client(provider, config)
             langchain_messages = self._message_utils.convert_messages_to_langchain(
                 messages
@@ -1272,6 +1352,10 @@ class LLMService:
                 "retry_with_lower_complexity", True
             ),
             max_tokens=routing_context.get("max_tokens"),
+            requires_prompt_caching=(
+                routing_context.get("requires_prompt_caching", False)
+                or LLMMessageUtils.has_prompt_caching(messages)
+            ),
             requires_vision=routing_context.get("requires_vision", False),
         )
 
@@ -1409,6 +1493,13 @@ class LLMService:
         if routing_context is not None:
             routing_context = dict(routing_context)  # copy to avoid mutation
             routing_context["requires_vision"] = True
+
+        self._validate_prompt_caching_support(
+            provider,
+            [],
+            routing_context,
+            execution_path="ask_vision",
+        )
 
         # Default provider when routing is not active (mirrors ask() behavior)
         if provider is None and routing_context is None:
