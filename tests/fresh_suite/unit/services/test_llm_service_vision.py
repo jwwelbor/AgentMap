@@ -2,7 +2,7 @@
 Unit tests for LLMService vision/multimodal support.
 
 Tests ask_vision(), _resolve_image(), multimodal message handling in
-LLMMessageUtils, routing context vision flag injection, and non-vision
+LLMMessageService, routing context vision flag injection, and non-vision
 model filtering in select_candidates().
 """
 
@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from agentmap.exceptions import LLMServiceError
-from agentmap.services.llm_message_utils import LLMMessageUtils
+from agentmap.services.llm_message_service import LLMMessageService
 from agentmap.services.llm_service import LLMService
 from agentmap.services.routing.types import RoutingContext
 from tests.utils.mock_service_factory import MockServiceFactory
@@ -205,8 +205,8 @@ class TestAskVision(unittest.TestCase):
         mock_call_llm.assert_not_called()
 
 
-class TestLLMMessageUtilsMultimodal(unittest.TestCase):
-    """Tests for multimodal content handling in LLMMessageUtils."""
+class TestLLMMessageServiceMultimodal(unittest.TestCase):
+    """Tests for multimodal content handling in LLMMessageService."""
 
     def test_convert_messages_multimodal(self):
         """List content blocks are passed through to HumanMessage."""
@@ -216,7 +216,7 @@ class TestLLMMessageUtilsMultimodal(unittest.TestCase):
         ]
         messages = [{"role": "user", "content": multimodal_content}]
 
-        result = LLMMessageUtils.convert_messages_to_langchain(messages)
+        result = LLMMessageService.convert_messages_to_langchain(messages)
 
         self.assertEqual(len(result), 1)
         # LangChain HumanMessage should preserve the list content
@@ -225,7 +225,7 @@ class TestLLMMessageUtilsMultimodal(unittest.TestCase):
     def test_convert_messages_text_unchanged(self):
         """String content still works as before."""
         messages = [{"role": "user", "content": "Hello"}]
-        result = LLMMessageUtils.convert_messages_to_langchain(messages)
+        result = LLMMessageService.convert_messages_to_langchain(messages)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].content, "Hello")
 
@@ -243,7 +243,7 @@ class TestLLMMessageUtilsMultimodal(unittest.TestCase):
                 ],
             }
         ]
-        result = LLMMessageUtils.extract_prompt_from_messages(messages)
+        result = LLMMessageService.extract_prompt_from_messages(messages)
         self.assertEqual(result, "What is in this image?")
 
     def test_extract_prompt_multimodal_multiple_text_blocks(self):
@@ -261,13 +261,13 @@ class TestLLMMessageUtilsMultimodal(unittest.TestCase):
                 ],
             }
         ]
-        result = LLMMessageUtils.extract_prompt_from_messages(messages)
+        result = LLMMessageService.extract_prompt_from_messages(messages)
         self.assertEqual(result, "First part. Second part.")
 
     def test_extract_prompt_text_unchanged(self):
         """String content still works as before."""
         messages = [{"role": "user", "content": "Hello world"}]
-        result = LLMMessageUtils.extract_prompt_from_messages(messages)
+        result = LLMMessageService.extract_prompt_from_messages(messages)
         self.assertEqual(result, "Hello world")
 
     def test_detect_prompt_caching_in_structured_blocks(self):
@@ -286,12 +286,12 @@ class TestLLMMessageUtilsMultimodal(unittest.TestCase):
             }
         ]
 
-        self.assertTrue(LLMMessageUtils.has_prompt_caching(messages))
+        self.assertTrue(LLMMessageService.has_prompt_caching(messages))
 
     def test_detect_prompt_caching_false_for_plain_text_messages(self):
         """Existing plain-text callers are not treated as cache mode."""
         messages = [{"role": "user", "content": "Hello world"}]
-        self.assertFalse(LLMMessageUtils.has_prompt_caching(messages))
+        self.assertFalse(LLMMessageService.has_prompt_caching(messages))
 
 
 class TestRoutingContextVision(unittest.TestCase):

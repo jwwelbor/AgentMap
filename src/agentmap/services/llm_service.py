@@ -52,7 +52,7 @@ from agentmap.services.llm_error_utils import (
     is_retryable,
 )
 from agentmap.services.llm_fallback_handler import LLMFallbackHandler
-from agentmap.services.llm_message_utils import LLMMessageUtils
+from agentmap.services.llm_message_service import LLMMessageService
 from agentmap.services.llm_provider_utils import LLMProviderUtils
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.routing.circuit_breaker import CircuitBreaker
@@ -162,7 +162,7 @@ class LLMService:
                 client, msgs, provider, model
             ),
         )
-        self._message_utils = LLMMessageUtils()
+        self._message_utils = LLMMessageService()
 
         # Resilience: retry + circuit breaker
         self._resilience_config = configuration.get_llm_resilience_config()
@@ -283,13 +283,11 @@ class LLMService:
         """Backwards compatibility wrapper for get_or_create_client."""
         return self._client_factory.get_or_create_client(provider, config)
 
-    def _convert_messages_to_langchain(
-        self, messages: List[Dict[str, str]]
-    ) -> List[Any]:
+    def _convert_messages_to_langchain(self, messages: List[LLMMessage]) -> List[Any]:
         """Backwards compatibility wrapper for convert_messages_to_langchain."""
         return self._message_utils.convert_messages_to_langchain(messages)
 
-    def _extract_prompt_from_messages(self, messages: List[Dict[str, str]]) -> str:
+    def _extract_prompt_from_messages(self, messages: List[LLMMessage]) -> str:
         """Backwards compatibility wrapper for extract_prompt_from_messages."""
         return self._message_utils.extract_prompt_from_messages(messages)
 
@@ -301,7 +299,7 @@ class LLMService:
         """Return True when caller input requests prompt caching."""
         if routing_context and routing_context.get("requires_prompt_caching", False):
             return True
-        return LLMMessageUtils.has_prompt_caching(messages)
+        return LLMMessageService.has_prompt_caching(messages)
 
     def _validate_prompt_caching_support(
         self,
@@ -407,7 +405,7 @@ class LLMService:
 
     async def _call_llm_async_with_telemetry(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         provider: Optional[str],
         model: Optional[str],
         temperature: Optional[float],
@@ -464,7 +462,7 @@ class LLMService:
 
     def _call_llm_with_telemetry(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         provider: Optional[str],
         model: Optional[str],
         temperature: Optional[float],
@@ -537,7 +535,7 @@ class LLMService:
 
     def _call_llm_core(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         provider: Optional[str],
         model: Optional[str],
         temperature: Optional[float],
@@ -584,7 +582,7 @@ class LLMService:
 
     async def _call_llm_async_core(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         provider: Optional[str],
         model: Optional[str],
         temperature: Optional[float],
@@ -632,7 +630,7 @@ class LLMService:
 
     def _call_llm_with_routing(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         routing_context: Dict[str, Any],
         temperature: Optional[float] = None,
         model: Optional[str] = None,
@@ -756,7 +754,7 @@ class LLMService:
     def _call_llm_direct(
         self,
         provider: str,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
@@ -857,7 +855,7 @@ class LLMService:
 
     async def _call_llm_async_with_routing(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         routing_context: Dict[str, Any],
         temperature: Optional[float] = None,
         model: Optional[str] = None,
@@ -964,7 +962,7 @@ class LLMService:
     async def _call_llm_async_direct(
         self,
         provider: str,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
@@ -1314,7 +1312,7 @@ class LLMService:
             pass
 
     def _create_routing_context(
-        self, routing_context: Dict[str, Any], messages: List[Dict[str, str]]
+        self, routing_context: Dict[str, Any], messages: List[LLMMessage]
     ) -> RoutingContext:
         """
         Convert routing context dictionary to RoutingContext object.
@@ -1354,7 +1352,7 @@ class LLMService:
             max_tokens=routing_context.get("max_tokens"),
             requires_prompt_caching=(
                 routing_context.get("requires_prompt_caching", False)
-                or LLMMessageUtils.has_prompt_caching(messages)
+                or LLMMessageService.has_prompt_caching(messages)
             ),
             requires_vision=routing_context.get("requires_vision", False),
         )
@@ -2438,7 +2436,7 @@ class LLMService:
     def _capture_llm_content(
         self,
         span: Any,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         result: str,
     ) -> None:
         """Optionally capture prompt/response content on the span.
