@@ -757,5 +757,196 @@ class TestLLMServiceCachePassthroughRouting(unittest.TestCase):
         self.assertIn("prompt caching", str(ctx.exception).lower())
 
 
+class TestExtractLLMUsage(unittest.TestCase):
+    """Unit tests for LLMService._extract_llm_usage() — TC-016, TC-017.
+
+    Tests drive the static method directly with fake response objects.
+    No mocking is required: _extract_llm_usage() is purely data-transformation.
+    """
+
+    # ------------------------------------------------------------------
+    # TC-016: Anthropic-style response — cache_creation_input_tokens surfaced
+    # ------------------------------------------------------------------
+
+    def test_extract_llm_usage_anthropic_cache_creation_tokens(self):
+        """TC-016: Anthropic-style dict usage_metadata with cache_creation_input_tokens=500
+        maps to LLMUsage.cache_creation_input_tokens == 500."""
+
+        class FakeResponse:
+            usage_metadata = {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cache_creation_input_tokens": 500,
+                "cache_read_input_tokens": 0,
+            }
+
+        response = FakeResponse()
+
+        result = LLMService._extract_llm_usage(response)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.input_tokens, 100)
+        self.assertEqual(result.output_tokens, 50)
+        self.assertEqual(result.cache_creation_input_tokens, 500)
+        self.assertEqual(result.cache_read_input_tokens, 0)
+
+    def test_extract_llm_usage_cache_creation_tokens_absent_returns_none_field(self):
+        """TC-016 edge: cache_creation_input_tokens absent -> field is None, no error."""
+
+        class FakeResponse:
+            usage_metadata = {
+                "input_tokens": 100,
+                "output_tokens": 50,
+            }
+
+        result = LLMService._extract_llm_usage(FakeResponse())
+
+        self.assertIsNotNone(result)
+        self.assertIsNone(result.cache_creation_input_tokens)
+
+    def test_extract_llm_usage_cache_creation_tokens_zero_returns_zero(self):
+        """TC-016 edge: cache_creation_input_tokens=0 -> returns 0, not None."""
+
+        class FakeResponse:
+            usage_metadata = {
+                "input_tokens": 50,
+                "output_tokens": 25,
+                "cache_creation_input_tokens": 0,
+            }
+
+        result = LLMService._extract_llm_usage(FakeResponse())
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.cache_creation_input_tokens, 0)
+
+    def test_extract_llm_usage_no_usage_metadata_returns_none(self):
+        """TC-016 edge: No usage_metadata -> returns None without raising."""
+
+        class FakeResponse:
+            pass
+
+        result = LLMService._extract_llm_usage(FakeResponse())
+
+        self.assertIsNone(result)
+
+    # ------------------------------------------------------------------
+    # TC-017: OpenAI-style response — nested input_token_details.cached_tokens
+    # ------------------------------------------------------------------
+
+    def test_extract_llm_usage_openai_nested_cached_tokens(self):
+        """TC-017: OpenAI-style attribute usage_metadata with flat cache_read_input_tokens=None
+        but nested input_token_details.cached_tokens=250 -> LLMUsage.cache_read_input_tokens == 250.
+
+        Counter-factual: an impl that only does flat-key lookup on usage_metadata would
+        return None for cache_read_input_tokens, failing this assertion.
+        """
+
+        class TokenDetails:
+            cached_tokens = 250
+
+        class UsageMeta:
+            input_tokens = 1500
+            output_tokens = 200
+            cache_creation_input_tokens = None
+            cache_read_input_tokens = None
+            input_token_details = TokenDetails()
+
+        class FakeOpenAIResponse:
+            usage_metadata = UsageMeta()
+
+        result = LLMService._extract_llm_usage(FakeOpenAIResponse())
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.cache_read_input_tokens, 250)
+        self.assertIsNone(result.cache_creation_input_tokens)
+
+    def test_extract_llm_usage_openai_input_token_details_absent(self):
+        """TC-017 edge: input_token_details absent -> cache_read_input_tokens is None, no AttributeError."""
+
+        class UsageMetaNoDetails:
+            input_tokens = 1000
+            output_tokens = 100
+            cache_creation_input_tokens = None
+            cache_read_input_tokens = None
+            # no input_token_details attribute
+
+        class FakeOpenAIResponse:
+            usage_metadata = UsageMetaNoDetails()
+
+        result = LLMService._extract_llm_usage(FakeOpenAIResponse())
+
+        self.assertIsNotNone(result)
+        self.assertIsNone(result.cache_read_input_tokens)
+
+    def test_extract_llm_usage_openai_nested_cached_tokens_zero(self):
+        """TC-017 edge: cached_tokens=0 in nested path -> returns 0, not None."""
+
+        class TokenDetailsZero:
+            cached_tokens = 0
+
+        class UsageMetaZero:
+            input_tokens = 500
+            output_tokens = 100
+            cache_creation_input_tokens = None
+            cache_read_input_tokens = None
+            input_token_details = TokenDetailsZero()
+
+        class FakeOpenAIResponseZero:
+            usage_metadata = UsageMetaZero()
+
+        result = LLMService._extract_llm_usage(FakeOpenAIResponseZero())
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.cache_read_input_tokens, 0)
+
+    def test_extract_llm_usage_flat_cache_read_takes_precedence_over_nested(self):
+        """TC-017 edge (precedence): when both flat cache_read_input_tokens and nested
+        input_token_details.cached_tokens are present, flat value takes precedence.
+
+        Precedence rule is documented in the implementation comment in _extract_llm_usage().
+        """
+
+        class TokenDetailsBoth:
+            cached_tokens = 999
+
+        class UsageMetaBoth:
+            input_tokens = 300
+            output_tokens = 50
+            cache_creation_input_tokens = None
+            cache_read_input_tokens = 100  # flat value present
+            input_token_details = TokenDetailsBoth()
+
+        class FakeResponseBoth:
+            usage_metadata = UsageMetaBoth()
+
+        result = LLMService._extract_llm_usage(FakeResponseBoth())
+
+        self.assertIsNotNone(result)
+        # Flat value (100) takes precedence over nested (999)
+        self.assertEqual(result.cache_read_input_tokens, 100)
+
+    def test_extract_llm_usage_input_token_details_missing_cached_tokens_attr(self):
+        """TC-017 negative: input_token_details present but has no cached_tokens attribute
+        -> cache_read_input_tokens is None without raising AttributeError."""
+
+        class TokenDetailsNoAttr:
+            pass  # no cached_tokens
+
+        class UsageMetaPartial:
+            input_tokens = 800
+            output_tokens = 150
+            cache_creation_input_tokens = None
+            cache_read_input_tokens = None
+            input_token_details = TokenDetailsNoAttr()
+
+        class FakeResponsePartial:
+            usage_metadata = UsageMetaPartial()
+
+        result = LLMService._extract_llm_usage(FakeResponsePartial())
+
+        self.assertIsNotNone(result)
+        self.assertIsNone(result.cache_read_input_tokens)
+
+
 if __name__ == "__main__":
     unittest.main()
