@@ -49,7 +49,7 @@ dependencies = [
 
 [project.optional-dependencies]
 llm = [
-    "langchain-openai>=1.0.0",
+    "langchain-openai>=0.3.17",
     "langchain-anthropic>=0.3.0",
     "langchain-google-genai",
 ]
