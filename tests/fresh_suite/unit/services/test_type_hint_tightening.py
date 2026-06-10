@@ -191,6 +191,69 @@ class TestMessagesTypeHintAllowsAny(unittest.TestCase):
             f"got: {annotation_str}",
         )
 
+    def test_llm_service_internal_message_annotations_accept_any(self):
+        """Internal LLMService helpers must use LLMMessage-compatible annotations."""
+        method_names = [
+            "_convert_messages_to_langchain",
+            "_extract_prompt_from_messages",
+            "_call_llm_async_with_telemetry",
+            "_call_llm_with_telemetry",
+            "_call_llm_core",
+            "_call_llm_async_core",
+            "_call_llm_with_routing",
+            "_call_llm_direct",
+            "_call_llm_async_with_routing",
+            "_call_llm_async_direct",
+            "_create_routing_context",
+            "_capture_llm_content",
+        ]
+
+        for method_name in method_names:
+            with self.subTest(method=method_name):
+                sig = inspect.signature(getattr(LLMService, method_name))
+                messages_param = sig.parameters.get("messages")
+                self.assertIsNotNone(
+                    messages_param,
+                    f"{method_name} must define a messages parameter",
+                )
+                annotation = messages_param.annotation
+                self.assertNotEqual(
+                    annotation,
+                    inspect.Parameter.empty,
+                    f"{method_name} messages parameter must be annotated",
+                )
+                annotation_str = str(annotation)
+                self.assertNotIn(
+                    "Dict[str, str]",
+                    annotation_str,
+                    f"{method_name} messages still annotated as Dict[str, str]; "
+                    f"got: {annotation_str}",
+                )
+
+    def test_fallback_handler_message_annotations_accept_any(self):
+        """Fallback handler public methods must use LLMMessage-compatible annotations."""
+        for method_name in ["try_with_fallback", "try_with_fallback_async"]:
+            with self.subTest(method=method_name):
+                sig = inspect.signature(getattr(LLMFallbackHandler, method_name))
+                messages_param = sig.parameters.get("messages")
+                self.assertIsNotNone(
+                    messages_param,
+                    f"{method_name} must define a messages parameter",
+                )
+                annotation = messages_param.annotation
+                self.assertNotEqual(
+                    annotation,
+                    inspect.Parameter.empty,
+                    f"{method_name} messages parameter must be annotated",
+                )
+                annotation_str = str(annotation)
+                self.assertNotIn(
+                    "Dict[str, str]",
+                    annotation_str,
+                    f"{method_name} messages still annotated as Dict[str, str]; "
+                    f"got: {annotation_str}",
+                )
+
     def test_structured_message_content_accepted_at_runtime(self):
         """LLMRequest can be constructed with structured (non-str) content values."""
         # This tests the actual data model allows structured blocks

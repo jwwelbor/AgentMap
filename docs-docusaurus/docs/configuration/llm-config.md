@@ -147,6 +147,8 @@ routing:
 - Current support is limited to realtime text calls: `call_llm()`, `call_llm_async()`, `ask()`, `ask_async()`
 - `ask_vision()` is explicitly unsupported for prompt caching
 
+**Note:** `cache_system_prompt=True` (the provider-agnostic caching parameter) uses the same `prompt_caching` capability check as manual `cache_control` passthrough. Setting `prompt_caching: false` for a provider rejects both approaches before provider invocation. There is one capability flag for both styles — you do not need separate configuration for each.
+
 ### Fallback behavior
 
 When a call fails after all retries are exhausted, the fallback system tries these tiers in order:

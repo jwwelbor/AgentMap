@@ -37,7 +37,11 @@ class LLMClientFactory:
         """
         # Create cache key based on provider and critical config
         max_tok = config.get("max_tokens")
-        cache_key = f"{provider}_{config.get('model')}_{config.get('api_key', '')[:8]}_{max_tok}"
+        temperature = config.get("temperature", 0.7)
+        cache_key = (
+            f"{provider}_{config.get('model')}_{config.get('api_key', '')[:8]}_"
+            f"{max_tok}_{temperature!r}"
+        )
 
         if cache_key in self._clients:
             return self._clients[cache_key]
@@ -49,7 +53,7 @@ class LLMClientFactory:
         # Accepted benign race: concurrent fan-out coroutines can arrive here
         # simultaneously for the same cache_key, each creating an equivalent
         # client and storing it.  The last write wins and both clients are
-        # identical (same provider, model, and API key prefix), so the race
+        # identical (same provider, model, temperature, and API key prefix), so the race
         # produces no incorrect behaviour.  An asyncio.Lock would eliminate
         # the redundant work but adds complexity not justified by the low
         # probability of simultaneous first-use of the exact same key.
