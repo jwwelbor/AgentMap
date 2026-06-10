@@ -5,9 +5,9 @@ This module provides functionality for loading and validating task type
 definitions used in the routing system.
 """
 
+import logging
 from typing import Any, Dict, List
 
-from agentmap.services.logging_service import LoggingService
 from agentmap.services.routing.types import get_valid_complexity_levels
 
 # Default task types configuration
@@ -27,7 +27,7 @@ DEFAULT_TASK_TYPES = {
 
 
 def validate_task_type_config(
-    task_name: str, task_config: Dict[str, Any], logger: LoggingService
+    task_name: str, task_config: Dict[str, Any], logger: logging.Logger
 ) -> bool:
     """
     Validate a single task type configuration.
@@ -65,7 +65,7 @@ def validate_task_type_config(
 
 
 def load_task_types(
-    config: Dict[str, Any], logger: LoggingService
+    config: Dict[str, Any], logger: logging.Logger
 ) -> Dict[str, Dict[str, Any]]:
     """
     Load task type definitions with application-configurable types.

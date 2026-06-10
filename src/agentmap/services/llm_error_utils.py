@@ -28,7 +28,7 @@ _SENSITIVE_RE = re.compile(
 )
 
 
-def _sanitize_error_message(error: Exception) -> str:
+def _sanitize_error_message(error: BaseException) -> str:
     """Return the error message with potential API keys redacted."""
     raw = str(error)
     return _SENSITIVE_RE.sub("[REDACTED]", raw)
@@ -127,7 +127,7 @@ def classify_llm_error(
     return LLMProviderError(f"Provider {provider} error: {safe_msg}")
 
 
-def is_retryable(error: Exception) -> bool:
+def is_retryable(error: BaseException) -> bool:
     """
     Determine whether an already-classified error is worth retrying.
 

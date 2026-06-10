@@ -5,13 +5,12 @@ This module provides functionality for loading and normalizing the
 provider x complexity routing matrix.
 """
 
+import logging
 from typing import Any, Dict, Optional
-
-from agentmap.services.logging_service import LoggingService
 
 
 def load_routing_matrix(
-    config: Dict[str, Any], logger: LoggingService
+    config: Dict[str, Any], logger: logging.Logger
 ) -> Dict[str, Dict[str, str]]:
     """
     Load the provider x complexity matrix.

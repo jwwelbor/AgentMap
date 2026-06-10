@@ -91,17 +91,14 @@ def validate_routing_config(
             continue
 
         if not isinstance(capability_config, dict):
-            errors.append(
-                f"provider_capabilities.{provider}: must be a dictionary"
-            )
+            errors.append(f"provider_capabilities.{provider}: must be a dictionary")
             continue
 
         if "prompt_caching" in capability_config and not isinstance(
             capability_config["prompt_caching"], bool
         ):
             errors.append(
-                "provider_capabilities."
-                f"{provider}.prompt_caching must be a boolean"
+                "provider_capabilities." f"{provider}.prompt_caching must be a boolean"
             )
 
     return errors

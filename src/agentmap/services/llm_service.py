@@ -415,6 +415,7 @@ class LLMService:
         **kwargs,
     ) -> LLMResponse:
         """Async telemetry wrapper mirroring the sync LLM span behavior."""
+        assert self._telemetry_service is not None
         initial_attributes: Dict[str, Any] = {}
         if provider:
             initial_attributes[GEN_AI_SYSTEM] = self._provider_utils.normalize_provider(
@@ -476,6 +477,7 @@ class LLMService:
         isolation).  LLM errors are re-raised directly -- only telemetry
         infrastructure failures trigger the fallback.
         """
+        assert self._telemetry_service is not None
         # Build initial attributes from known values
         initial_attributes: Dict[str, Any] = {}
         if provider:
@@ -783,6 +785,7 @@ class LLMService:
         Raises:
             LLMServiceError: On various error conditions
         """
+        config: Dict[str, Any] = {}
         try:
             # Normalize provider name
             provider = self._provider_utils.normalize_provider(provider)
@@ -978,7 +981,7 @@ class LLMService:
         Returns ``LLMResponse`` carrying the resolved provider, model, and usage
         extracted from the raw provider response.
         """
-        current_model = None
+        current_model: str = "unknown"
         try:
             provider = self._provider_utils.normalize_provider(provider)
             self._validate_prompt_caching_support(
@@ -1001,7 +1004,7 @@ class LLMService:
                 elif max_tokens is not None:
                     config["max_tokens"] = max_tokens
 
-            current_model = config.get("model")
+            current_model = config.get("model", "unknown")
             client = self._client_factory.get_or_create_client(provider, config)
             langchain_messages = self._message_utils.convert_messages_to_langchain(
                 messages
