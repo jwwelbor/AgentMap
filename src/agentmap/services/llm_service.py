@@ -1672,6 +1672,7 @@ class LLMService:
                     model=spec.model,
                     temperature=spec.temperature,
                     routing_context=spec.routing_context,
+                    cache_system_prompt=spec.cache_system_prompt,
                     **kwargs,
                 )
                 return LLMFanoutResult(

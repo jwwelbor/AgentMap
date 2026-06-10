@@ -1632,5 +1632,207 @@ class TestLLMResolvedCallErrorPublicAPI(unittest.IsolatedAsyncioTestCase):
         self.assertIs(exc.cause, underlying)
 
 
+# ---------------------------------------------------------------------------
+# TC-010/TC-011: cache_system_prompt wiring through fan-out path (E05-F05-003)
+# ---------------------------------------------------------------------------
+
+
+def _make_service_with_routing_config(supports_caching_for: set) -> LLMService:
+    """Construct LLMService with a routing_config_service stub.
+
+    ``supports_caching_for`` is the set of provider names that the stub marks
+    as cache-capable (e.g. ``{"anthropic"}``).
+    """
+    from unittest.mock import Mock
+
+    mock_logging = MockServiceFactory.create_mock_logging_service()
+    mock_config = MockServiceFactory.create_mock_app_config_service()
+    mock_config.get_llm_resilience_config.return_value = {
+        "retry": {
+            "max_attempts": 1,
+            "backoff_base": 2.0,
+            "backoff_max": 30.0,
+            "jitter": False,
+        },
+        "circuit_breaker": {"failure_threshold": 5, "reset_timeout": 60},
+    }
+    mock_config.get_llm_config.side_effect = lambda provider: {
+        "model": f"{provider}-default-model",
+        "api_key": "test-key",
+    }
+    mock_models = MockServiceFactory.create_mock_llm_models_config_service()
+    mock_routing = Mock()
+    mock_routing_config = Mock()
+    mock_routing_config.supports_prompt_caching.side_effect = (
+        lambda provider: provider in supports_caching_for
+    )
+
+    return LLMService(
+        configuration=mock_config,
+        logging_service=mock_logging,
+        routing_service=mock_routing,
+        llm_models_config_service=mock_models,
+        routing_config_service=mock_routing_config,
+    )
+
+
+class TestFanOutCacheSystemPromptWiring(unittest.IsolatedAsyncioTestCase):
+    """TC-010 and TC-011 — cache_system_prompt wiring through fan-out path.
+
+    Covers E05-F05 AC-5: LLMRequest.cache_system_prompt is forwarded from
+    _execute_fan_out_item into call_llm_async so that injection and validation
+    fire on the fan-out path, not just the single-call path.
+
+    Seam convention:
+    - Lowest allowed mock seam: LLMClientFactory.get_or_create_client
+    - Forbidden: do NOT mock _execute_fan_out_item (the real fan-out path must run)
+    """
+
+    async def test_tc010_fan_out_anthropic_cache_system_prompt_injects_cache_control(
+        self,
+    ):
+        """TC-010: call_llm_many_async with LLMRequest(cache_system_prompt=True, provider='anthropic')
+        passes the flag through the real fan-out path so inject_cache_metadata fires and the
+        mock client receives a system message with a cache_control block.
+
+        Counter-factual: an impl that omits cache_system_prompt= from the call_llm_async
+        kwargs in _execute_fan_out_item would not inject; the mock client would receive the
+        original plain-text system message and the assertion would fail.
+
+        Lowest allowed mock seam: LLMClientFactory.get_or_create_client.
+        Forbidden: do NOT mock _execute_fan_out_item.
+        """
+        service = _make_service_with_routing_config(supports_caching_for={"anthropic"})
+
+        messages = [
+            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "Hi"},
+        ]
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="Hello!"))
+
+        with patch.object(
+            service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            results = await service.call_llm_many_async(
+                requests=[
+                    LLMRequest(
+                        request_id="r1",
+                        messages=messages,
+                        provider="anthropic",
+                        cache_system_prompt=True,
+                    )
+                ],
+                max_concurrency=1,
+            )
+
+        self.assertEqual(len(results), 1)
+        result = results[0]
+        self.assertEqual(result.request_id, "r1")
+        self.assertEqual(result.status, "succeeded")
+
+        # The mock client must have received the injected messages.
+        langchain_messages = mock_client.ainvoke.call_args.args[0]
+        system_content = langchain_messages[0].content
+        self.assertIsInstance(
+            system_content,
+            list,
+            f"Expected system message content to be a list (structured blocks), got: {system_content!r}",
+        )
+        self.assertTrue(
+            any(
+                isinstance(block, dict) and "cache_control" in block
+                for block in system_content
+            ),
+            f"Expected cache_control block in system message content, got: {system_content}",
+        )
+
+    async def test_tc011_fan_out_openai_cache_system_prompt_is_noop(self):
+        """TC-011: call_llm_many_async with LLMRequest(cache_system_prompt=True, provider='openai')
+        succeeds and the mock client receives messages UNCHANGED (no cache_control blocks).
+
+        OpenAI performs caching automatically — inject_cache_metadata is a no-op for openai.
+        The routing_config marks openai as cache-capable so _validate_prompt_caching_support
+        does not raise.
+
+        Counter-factual: an impl that raises LLMServiceError for openai fan-out with
+        cache_system_prompt=True would fail this test at the await line.
+
+        Lowest allowed mock seam: LLMClientFactory.get_or_create_client.
+        Forbidden: do NOT mock _execute_fan_out_item.
+        """
+        # Mark openai as cache-capable so validation does not raise.
+        service = _make_service_with_routing_config(
+            supports_caching_for={"anthropic", "openai"}
+        )
+
+        messages = [
+            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "Hi"},
+        ]
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="Hello!"))
+
+        with patch.object(
+            service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            results = await service.call_llm_many_async(
+                requests=[
+                    LLMRequest(
+                        request_id="r1",
+                        messages=messages,
+                        provider="openai",
+                        cache_system_prompt=True,
+                    )
+                ],
+                max_concurrency=1,
+            )
+
+        self.assertEqual(len(results), 1)
+        result = results[0]
+        self.assertEqual(result.request_id, "r1")
+        self.assertEqual(result.status, "succeeded")
+
+        # The mock client must have received messages UNCHANGED (no cache_control injection for OpenAI).
+        langchain_messages = mock_client.ainvoke.call_args.args[0]
+        system_content = langchain_messages[0].content
+        # For OpenAI no-op: content stays as a plain string.
+        self.assertIsInstance(
+            system_content,
+            str,
+            f"Expected system message content to remain a plain string for OpenAI (no-op), got: {system_content!r}",
+        )
+        # Confirm no cache_control blocks were injected.
+        if isinstance(system_content, list):
+            self.assertFalse(
+                any(
+                    isinstance(block, dict) and "cache_control" in block
+                    for block in system_content
+                ),
+                f"cache_control should NOT be injected for OpenAI, got: {system_content}",
+            )
+
+    def test_tc010_tc011_llm_request_cache_system_prompt_field_defaults_to_false(self):
+        """AC-T3: LLMRequest.cache_system_prompt defaults to False — no regression for existing fan-out callers."""
+        spec = LLMRequest(
+            request_id="r1",
+            messages=[{"role": "user", "content": "hello"}],
+        )
+        self.assertFalse(spec.cache_system_prompt)
+
+    def test_tc010_tc011_llm_request_cache_system_prompt_accepts_true(self):
+        """AC-T4: LLMRequest.cache_system_prompt=True is accepted without validation error."""
+        spec = LLMRequest(
+            request_id="r1",
+            messages=[{"role": "user", "content": "hello"}],
+            cache_system_prompt=True,
+        )
+        self.assertTrue(spec.cache_system_prompt)
+
+
 if __name__ == "__main__":
     unittest.main()
