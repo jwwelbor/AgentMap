@@ -2254,6 +2254,17 @@ class LLMService:
         coercion failures return ``None`` for that field (not for the whole
         ``LLMUsage``) so that a malformed token count never converts a successful
         provider response into a failed ``LLMFanoutResult``.
+
+        Two-path extraction for ``cache_read_input_tokens`` (REQ-F-004):
+          1. Flat key: ``usage_metadata.cache_read_input_tokens`` (Anthropic-style).
+          2. Nested fallback: ``usage_metadata.input_token_details.cached_tokens``
+             (OpenAI-style, where the LangChain adapter exposes cached token
+             counts under the ``input_token_details`` object).
+
+        Precedence rule: the flat ``cache_read_input_tokens`` value is used when
+        it is non-None; the nested ``input_token_details.cached_tokens`` value is
+        used only when the flat key is absent or None. This matches the
+        Anthropic-first convention already established for other cache fields.
         """
         usage_metadata = getattr(response, "usage_metadata", None)
         if not usage_metadata:
@@ -2271,11 +2282,30 @@ class LLMService:
             except (TypeError, ValueError):
                 return None
 
+        def _to_int(val: Any) -> Optional[int]:
+            """Coerce val to int, returning None on failure."""
+            if val is None:
+                return None
+            try:
+                return int(val)
+            except (TypeError, ValueError):
+                return None
+
+        # Flat key first (Anthropic-style); fall back to OpenAI nested path.
+        flat_cache_read = _get("cache_read_input_tokens")
+        if flat_cache_read is None:
+            # OpenAI: usage_metadata.input_token_details.cached_tokens
+            details = getattr(usage_metadata, "input_token_details", None)
+            nested_cached = getattr(details, "cached_tokens", None)
+            cache_read_input_tokens = _to_int(nested_cached)
+        else:
+            cache_read_input_tokens = flat_cache_read
+
         return LLMUsage(
             input_tokens=_get("input_tokens"),
             output_tokens=_get("output_tokens"),
             cache_creation_input_tokens=_get("cache_creation_input_tokens"),
-            cache_read_input_tokens=_get("cache_read_input_tokens"),
+            cache_read_input_tokens=cache_read_input_tokens,
         )
 
     def get_available_providers(self) -> List[str]:
