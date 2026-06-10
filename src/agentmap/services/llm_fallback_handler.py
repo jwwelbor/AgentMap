@@ -338,4 +338,3 @@ class LLMFallbackHandler:
             resolved_model=last_attempted_model,
             cause=last_error,
         )
-
