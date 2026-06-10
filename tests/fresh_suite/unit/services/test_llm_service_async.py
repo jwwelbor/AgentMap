@@ -285,6 +285,7 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
                 "fallback_provider": "google",
                 "max_tokens": 64,
             },
+            cache_system_prompt=False,
             max_tokens=64,
         )
         self.assertEqual(self.service._logger.warning.call_count, 2)
@@ -327,6 +328,7 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
                 "fallback_provider": "openai",
                 "max_tokens": 128,
             },
+            cache_system_prompt=False,
             max_tokens=128,
         )
 
@@ -626,3 +628,113 @@ class TestLLMServiceCachePassthroughAsync(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertIn("prompt caching", str(ctx.exception).lower())
+
+
+class TestCacheSystemPromptAsyncWiring(unittest.IsolatedAsyncioTestCase):
+    """Async path tests for cache_system_prompt kwarg wiring.
+
+    Covers TC-006 and TC-014 from E05-F05 test plan.
+    """
+
+    def setUp(self):
+        self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        self.mock_app_config_service = (
+            MockServiceFactory.create_mock_app_config_service()
+        )
+        self.mock_app_config_service.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {
+                "failure_threshold": 3,
+                "reset_timeout": 60,
+            },
+        }
+        self.mock_app_config_service.get_llm_config.side_effect = lambda provider: {
+            "model": f"{provider}-model",
+            "api_key": "test-key",
+            "temperature": 0.7,
+        }
+        self.mock_llm_models_config_service = (
+            MockServiceFactory.create_mock_llm_models_config_service()
+        )
+        self.mock_routing_service = None  # no routing for direct calls
+        self.mock_routing_config_service = Mock()
+        # Anthropic supports caching; google and openai do not
+        self.mock_routing_config_service.supports_prompt_caching.side_effect = (
+            lambda provider: provider == "anthropic"
+        )
+
+        self.service = LLMService(
+            configuration=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            routing_service=self.mock_routing_service,
+            llm_models_config_service=self.mock_llm_models_config_service,
+            routing_config_service=self.mock_routing_config_service,
+        )
+
+    async def test_tc006_call_llm_async_anthropic_injects_cache_control(self):
+        """TC-006: call_llm_async with cache_system_prompt=True for Anthropic injects
+        cache_control on the system message -- identical to TC-005 (sync parity).
+        inject_cache_metadata is NOT mocked -- the real injection runs in async path.
+        Counter-factual: an impl wiring injection only in sync would fail this test.
+        """
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "What is 2+2?"},
+        ]
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="4"))
+
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = await self.service.call_llm_async(
+                messages=messages,
+                provider="anthropic",
+                cache_system_prompt=True,
+            )
+
+        self.assertIsInstance(result, LLMResponse)
+        self.assertEqual(result.text, "4")
+        langchain_messages = mock_client.ainvoke.call_args.args[0]
+        system_content = langchain_messages[0].content
+        self.assertIsInstance(system_content, list)
+        self.assertTrue(
+            any(
+                isinstance(block, dict) and "cache_control" in block
+                for block in system_content
+            ),
+            f"Expected cache_control in system message content, got: {system_content}",
+        )
+
+    async def test_tc014_call_llm_async_unsupported_provider_raises_llmservice_error(
+        self,
+    ):
+        """TC-014: call_llm_async with provider='google' and cache_system_prompt=True
+        raises LLMServiceError -- same as sync path (TC-012), async parity.
+        Counter-factual: an impl that only validates in sync would not raise here.
+        """
+        messages = [{"role": "user", "content": "hello"}]
+
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+        ) as mock_get_client:
+            with self.assertRaises(LLMServiceError) as ctx:
+                await self.service.call_llm_async(
+                    messages=messages,
+                    provider="google",
+                    cache_system_prompt=True,
+                )
+
+        error_msg = str(ctx.exception).lower()
+        self.assertIn("google", error_msg)
+        # Error message contains "caching" (the feature name used in the error message)
+        self.assertIn("cach", error_msg)
+        mock_get_client.assert_not_called()

@@ -49,17 +49,8 @@ def classify_llm_error(
     """
     msg = str(error).lower()
 
-    # Already one of ours — pass through
-    if isinstance(
-        error,
-        (
-            LLMTimeoutError,
-            LLMRateLimitError,
-            LLMConfigurationError,
-            LLMDependencyError,
-            LLMProviderError,
-        ),
-    ):
+    # Already one of ours — pass through without re-wrapping.
+    if isinstance(error, LLMServiceError):
         return error
 
     safe_msg = _sanitize_error_message(error)

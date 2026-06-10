@@ -52,7 +52,7 @@ from agentmap.services.llm_error_utils import (
     is_retryable,
 )
 from agentmap.services.llm_fallback_handler import LLMFallbackHandler
-from agentmap.services.llm_message_utils import LLMMessageUtils
+from agentmap.services.llm_message_service import LLMMessageService
 from agentmap.services.llm_provider_utils import LLMProviderUtils
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.routing.circuit_breaker import CircuitBreaker
@@ -162,7 +162,7 @@ class LLMService:
                 client, msgs, provider, model
             ),
         )
-        self._message_utils = LLMMessageUtils()
+        self._message_utils = LLMMessageService()
 
         # Resilience: retry + circuit breaker
         self._resilience_config = configuration.get_llm_resilience_config()
@@ -283,13 +283,11 @@ class LLMService:
         """Backwards compatibility wrapper for get_or_create_client."""
         return self._client_factory.get_or_create_client(provider, config)
 
-    def _convert_messages_to_langchain(
-        self, messages: List[Dict[str, str]]
-    ) -> List[Any]:
+    def _convert_messages_to_langchain(self, messages: List[LLMMessage]) -> List[Any]:
         """Backwards compatibility wrapper for convert_messages_to_langchain."""
         return self._message_utils.convert_messages_to_langchain(messages)
 
-    def _extract_prompt_from_messages(self, messages: List[Dict[str, str]]) -> str:
+    def _extract_prompt_from_messages(self, messages: List[LLMMessage]) -> str:
         """Backwards compatibility wrapper for extract_prompt_from_messages."""
         return self._message_utils.extract_prompt_from_messages(messages)
 
@@ -301,7 +299,13 @@ class LLMService:
         """Return True when caller input requests prompt caching."""
         if routing_context and routing_context.get("requires_prompt_caching", False):
             return True
-        return LLMMessageUtils.has_prompt_caching(messages)
+        return LLMMessageService.has_prompt_caching(messages)
+
+    # Providers where cache_system_prompt=True is a documented silent no-op.
+    # inject_cache_metadata returns messages unchanged for these providers;
+    # the capability check is skipped so callers do not receive a spurious error.
+    # E05-F05 spec: "OpenAI auto-caches at >1024 tokens — no injection needed."
+    _CACHE_SYSTEM_PROMPT_NOOP_PROVIDERS: frozenset = frozenset({"openai"})
 
     def _validate_prompt_caching_support(
         self,
@@ -310,9 +314,26 @@ class LLMService:
         routing_context: Optional[Dict[str, Any]] = None,
         *,
         execution_path: str,
+        cache_system_prompt: bool = False,
     ) -> None:
-        """Fail fast when prompt caching is requested on an unsupported path."""
-        if not self._is_prompt_caching_requested(messages, routing_context):
+        """Fail fast when prompt caching is requested on an unsupported path.
+
+        Caching is considered requested when any of these signals are present:
+        - ``cache_system_prompt=True`` kwarg (E05-F05 agnostic interface)
+        - ``routing_context["requires_prompt_caching"]`` is True (routing path)
+        - Any message content block carries a ``cache_control`` key (E05-F01 passthrough)
+
+        For providers in ``_CACHE_SYSTEM_PROMPT_NOOP_PROVIDERS`` (e.g. ``openai``),
+        ``cache_system_prompt=True`` is a documented no-op: ``inject_cache_metadata``
+        returns messages unchanged and no error is raised.  The capability flag
+        ``prompt_caching`` in config controls the E05-F01 passthrough path
+        (Anthropic-specific ``cache_control`` syntax) and is not consulted when the
+        only caching signal is the agnostic ``cache_system_prompt`` kwarg for a
+        known no-op provider.
+        """
+        if not cache_system_prompt and not self._is_prompt_caching_requested(
+            messages, routing_context
+        ):
             return
 
         if execution_path == "ask_vision":
@@ -323,6 +344,19 @@ class LLMService:
         normalized_provider = (
             self._provider_utils.normalize_provider(provider) if provider else None
         )
+
+        # When cache_system_prompt=True is the only caching signal and the provider
+        # is a known no-op (e.g. openai), injection is skipped by inject_cache_metadata
+        # and no error should be raised.  The capability check is only needed for
+        # the E05-F01 passthrough path (embedded cache_control blocks) or routing
+        # context signals, both of which require Anthropic-specific syntax.
+        if (
+            cache_system_prompt
+            and normalized_provider in self._CACHE_SYSTEM_PROMPT_NOOP_PROVIDERS
+            and not self._is_prompt_caching_requested(messages, routing_context)
+        ):
+            return
+
         if (
             normalized_provider is None
             or self.routing_config is None
@@ -341,6 +375,7 @@ class LLMService:
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
+        cache_system_prompt: bool = False,
         **kwargs,
     ) -> str:
         """
@@ -360,6 +395,9 @@ class LLMService:
             temperature: Optional temperature override
             routing_context: Optional routing context for intelligent model selection.
                              When present, routing owns all provider/model decisions.
+            cache_system_prompt: When True, inject provider-specific prompt-caching
+                                 metadata into system messages (Anthropic only; no-op
+                                 for other providers).
             **kwargs: Additional provider-specific parameters
 
         Returns:
@@ -368,6 +406,7 @@ class LLMService:
         Raises:
             LLMServiceError: On various error conditions
         """
+        kwargs["cache_system_prompt"] = cache_system_prompt
         if self._telemetry_service is not None:
             return self._call_llm_with_telemetry(
                 messages, provider, model, temperature, routing_context, **kwargs
@@ -383,6 +422,7 @@ class LLMService:
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
+        cache_system_prompt: bool = False,
         **kwargs,
     ) -> LLMResponse:
         """
@@ -396,7 +436,13 @@ class LLMService:
         When routing_context is provided, routing owns all provider and model
         selection. Explicit provider and model inputs are ignored with the same
         warnings used by the sync path.
+
+        Args:
+            cache_system_prompt: When True, inject provider-specific prompt-caching
+                                 metadata into system messages (Anthropic only; no-op
+                                 for other providers).
         """
+        kwargs["cache_system_prompt"] = cache_system_prompt
         if self._telemetry_service is not None:
             return await self._call_llm_async_with_telemetry(
                 messages, provider, model, temperature, routing_context, **kwargs
@@ -407,7 +453,7 @@ class LLMService:
 
     async def _call_llm_async_with_telemetry(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         provider: Optional[str],
         model: Optional[str],
         temperature: Optional[float],
@@ -464,7 +510,7 @@ class LLMService:
 
     def _call_llm_with_telemetry(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         provider: Optional[str],
         model: Optional[str],
         temperature: Optional[float],
@@ -537,7 +583,7 @@ class LLMService:
 
     def _call_llm_core(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         provider: Optional[str],
         model: Optional[str],
         temperature: Optional[float],
@@ -584,7 +630,7 @@ class LLMService:
 
     async def _call_llm_async_core(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         provider: Optional[str],
         model: Optional[str],
         temperature: Optional[float],
@@ -632,7 +678,7 @@ class LLMService:
 
     def _call_llm_with_routing(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         routing_context: Dict[str, Any],
         temperature: Optional[float] = None,
         model: Optional[str] = None,
@@ -756,7 +802,7 @@ class LLMService:
     def _call_llm_direct(
         self,
         provider: str,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
@@ -786,7 +832,12 @@ class LLMService:
             LLMServiceError: On various error conditions
         """
         config: Dict[str, Any] = {}
+        original_messages = messages
         try:
+            # Extract cache_system_prompt before forwarding kwargs to the provider.
+            # This must happen before validation so the flag triggers the support check.
+            cache_system_prompt: bool = kwargs.pop("cache_system_prompt", False)
+
             # Normalize provider name
             provider = self._provider_utils.normalize_provider(provider)
             self._validate_prompt_caching_support(
@@ -794,6 +845,7 @@ class LLMService:
                 messages,
                 routing_context,
                 execution_path="call_llm",
+                cache_system_prompt=cache_system_prompt,
             )
 
             # Get provider configuration
@@ -815,6 +867,13 @@ class LLMService:
 
             # Get or create LangChain client
             client = self._client_factory.get_or_create_client(provider, config)
+
+            # Inject provider-specific cache metadata (E05-F05).
+            # Placed after provider resolution and before LangChain conversion
+            # so the correct resolved provider drives injection (Decision 2).
+            messages = self._message_utils.inject_cache_metadata(
+                messages, provider, cache_system_prompt
+            )
 
             # Convert messages to LangChain format
             langchain_messages = self._message_utils.convert_messages_to_langchain(
@@ -842,7 +901,7 @@ class LLMService:
                     return self._fallback_handler.try_with_fallback(
                         provider,
                         current_model,
-                        messages,
+                        original_messages,
                         typed_error,
                         self._provider_utils.get_provider_config,
                         self._client_factory.get_or_create_client,
@@ -857,7 +916,7 @@ class LLMService:
 
     async def _call_llm_async_with_routing(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         routing_context: Dict[str, Any],
         temperature: Optional[float] = None,
         model: Optional[str] = None,
@@ -964,7 +1023,7 @@ class LLMService:
     async def _call_llm_async_direct(
         self,
         provider: str,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
@@ -982,13 +1041,19 @@ class LLMService:
         extracted from the raw provider response.
         """
         current_model: str = "unknown"
+        original_messages = messages
         try:
+            # Extract cache_system_prompt before forwarding kwargs to the provider.
+            # Mirrors the sync path (_call_llm_direct) for NFR-F-002 parity.
+            cache_system_prompt: bool = kwargs.pop("cache_system_prompt", False)
+
             provider = self._provider_utils.normalize_provider(provider)
             self._validate_prompt_caching_support(
                 provider,
                 messages,
                 routing_context,
                 execution_path="call_llm_async",
+                cache_system_prompt=cache_system_prompt,
             )
             config = self._provider_utils.get_provider_config(provider)
 
@@ -1006,6 +1071,14 @@ class LLMService:
 
             current_model = config.get("model", "unknown")
             client = self._client_factory.get_or_create_client(provider, config)
+
+            # Inject provider-specific cache metadata (E05-F05).
+            # Placed after provider resolution and before LangChain conversion
+            # so the correct resolved provider drives injection (Decision 2).
+            messages = self._message_utils.inject_cache_metadata(
+                messages, provider, cache_system_prompt
+            )
+
             langchain_messages = self._message_utils.convert_messages_to_langchain(
                 messages
             )
@@ -1028,7 +1101,7 @@ class LLMService:
                     return await self._fallback_handler.try_with_fallback_async(
                         provider,
                         current_model,
-                        messages,
+                        original_messages,
                         typed_error,
                         self._provider_utils.get_provider_config,
                         self._client_factory.get_or_create_client,
@@ -1314,7 +1387,7 @@ class LLMService:
             pass
 
     def _create_routing_context(
-        self, routing_context: Dict[str, Any], messages: List[Dict[str, str]]
+        self, routing_context: Dict[str, Any], messages: List[LLMMessage]
     ) -> RoutingContext:
         """
         Convert routing context dictionary to RoutingContext object.
@@ -1354,7 +1427,7 @@ class LLMService:
             max_tokens=routing_context.get("max_tokens"),
             requires_prompt_caching=(
                 routing_context.get("requires_prompt_caching", False)
-                or LLMMessageUtils.has_prompt_caching(messages)
+                or LLMMessageService.has_prompt_caching(messages)
             ),
             requires_vision=routing_context.get("requires_vision", False),
         )
@@ -1474,6 +1547,20 @@ class LLMService:
             and emitted as OTel counter metrics — use your telemetry backend
             for cost tracking rather than the return value.
         """
+        # Extract cache_system_prompt early so the validation fires before any
+        # image decoding or client creation (TC-015 contract: error before image
+        # resolution). This must be popped from kwargs before forwarding.
+        cache_system_prompt: bool = kwargs.pop("cache_system_prompt", False)
+
+        # Validate BEFORE image resolution so the error fires as early as possible.
+        self._validate_prompt_caching_support(
+            provider,
+            [],
+            routing_context,
+            execution_path="ask_vision",
+            cache_system_prompt=cache_system_prompt,
+        )
+
         image_bytes, mime = self._resolve_image(image, image_type)
         b64 = base64.b64encode(image_bytes).decode("ascii")
 
@@ -1493,13 +1580,6 @@ class LLMService:
         if routing_context is not None:
             routing_context = dict(routing_context)  # copy to avoid mutation
             routing_context["requires_vision"] = True
-
-        self._validate_prompt_caching_support(
-            provider,
-            [],
-            routing_context,
-            execution_path="ask_vision",
-        )
 
         # Default provider when routing is not active (mirrors ask() behavior)
         if provider is None and routing_context is None:
@@ -1633,6 +1713,7 @@ class LLMService:
                     model=spec.model,
                     temperature=spec.temperature,
                     routing_context=spec.routing_context,
+                    cache_system_prompt=spec.cache_system_prompt,
                     **kwargs,
                 )
                 return LLMFanoutResult(
@@ -2256,16 +2337,23 @@ class LLMService:
         coercion failures return ``None`` for that field (not for the whole
         ``LLMUsage``) so that a malformed token count never converts a successful
         provider response into a failed ``LLMFanoutResult``.
+
+        Two-path extraction for ``cache_read_input_tokens`` (REQ-F-004):
+          1. Flat key: ``usage_metadata.cache_read_input_tokens`` (Anthropic-style).
+          2. Nested fallback: ``usage_metadata.input_token_details.cached_tokens``
+             (OpenAI-style, where the LangChain adapter exposes cached token
+             counts under the ``input_token_details`` object).
+
+        Precedence rule: the flat ``cache_read_input_tokens`` value is used when
+        it is non-None; the nested ``input_token_details.cached_tokens`` value is
+        used only when the flat key is absent or None. This matches the
+        Anthropic-first convention already established for other cache fields.
         """
         usage_metadata = getattr(response, "usage_metadata", None)
         if not usage_metadata:
             return None
 
-        def _get(key: str) -> Optional[int]:
-            if isinstance(usage_metadata, dict):
-                val = usage_metadata.get(key)
-            else:
-                val = getattr(usage_metadata, key, None)
+        def _to_int(val: Any) -> Optional[int]:
             if val is None:
                 return None
             try:
@@ -2273,11 +2361,36 @@ class LLMService:
             except (TypeError, ValueError):
                 return None
 
+        def _get(key: str) -> Optional[int]:
+            if isinstance(usage_metadata, dict):
+                return _to_int(usage_metadata.get(key))
+            return _to_int(getattr(usage_metadata, key, None))
+
+        # Flat key first (Anthropic-style); fall back to OpenAI nested path.
+        flat_cache_read = _get("cache_read_input_tokens")
+        if flat_cache_read is None:
+            # OpenAI: usage_metadata["input_token_details"]["cache_read"]
+            # LangChain normalizes AIMessage.usage_metadata as a dict (UsageMetadata
+            # TypedDict); the nested sub-dict uses key "cache_read" (InputTokenDetails
+            # TypedDict), not an object attribute "cached_tokens".
+            if isinstance(usage_metadata, dict):
+                details = usage_metadata.get("input_token_details")
+            else:
+                details = getattr(usage_metadata, "input_token_details", None)
+
+            if isinstance(details, dict):
+                nested_cached = details.get("cache_read")
+            else:
+                nested_cached = getattr(details, "cache_read", None)
+            cache_read_input_tokens = _to_int(nested_cached)
+        else:
+            cache_read_input_tokens = flat_cache_read
+
         return LLMUsage(
             input_tokens=_get("input_tokens"),
             output_tokens=_get("output_tokens"),
             cache_creation_input_tokens=_get("cache_creation_input_tokens"),
-            cache_read_input_tokens=_get("cache_read_input_tokens"),
+            cache_read_input_tokens=cache_read_input_tokens,
         )
 
     def get_available_providers(self) -> List[str]:
@@ -2438,7 +2551,7 @@ class LLMService:
     def _capture_llm_content(
         self,
         span: Any,
-        messages: List[Dict[str, str]],
+        messages: List[LLMMessage],
         result: str,
     ) -> None:
         """Optionally capture prompt/response content on the span.

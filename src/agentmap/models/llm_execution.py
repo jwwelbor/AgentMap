@@ -59,6 +59,7 @@ class LLMRequest:
     temperature: Optional[float] = None
     routing_context: Optional[Dict[str, Any]] = None
     request_options: Dict[str, Any] = field(default_factory=dict)
+    cache_system_prompt: bool = False
 
 
 @dataclass

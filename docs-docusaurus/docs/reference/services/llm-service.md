@@ -323,6 +323,90 @@ For direct calls (no routing), `max_tokens` passed to `call_llm()` overrides the
 
 ---
 
+## Provider-Agnostic Prompt Caching
+
+The `cache_system_prompt=True` parameter lets you declare caching intent without constructing provider-native `cache_control` blocks. AgentMap injects the correct metadata before calling the provider — or silently no-ops for providers that handle caching automatically.
+
+### Per-provider behavior
+
+| Provider | Effect of `cache_system_prompt=True` |
+|---|---|
+| **Anthropic** | Injects `cache_control: {"type": "ephemeral"}` on the system message before provider invocation. Requires a system-role message in `messages`. |
+| **OpenAI** | No-op. OpenAI automatically caches prompts over 1024 tokens — no explicit metadata is needed. The call proceeds unchanged. |
+| **Google (Gemini)** | Unsupported. Raises `LLMServiceError` before provider invocation. Gemini prompt caching is out of scope for this feature. |
+
+Capability is gated through `routing.provider_capabilities` (same check as the E05-F01 manual passthrough path). Passing `cache_system_prompt=True` to a provider not marked cache-capable raises `LLMServiceError` before the client is created.
+
+### `call_llm()` example
+
+```python
+response = llm_service.call_llm(
+    provider="anthropic",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant with deep knowledge of Python."},
+        {"role": "user", "content": "Explain generator expressions."},
+    ],
+    cache_system_prompt=True,
+)
+```
+
+AgentMap wraps the system message content with `cache_control: {"type": "ephemeral"}` before calling Anthropic. On subsequent calls with the same system message the cached tokens are served from Anthropic's prompt cache.
+
+### `ask()` example
+
+`ask()` passes `cache_system_prompt=True` through to `call_llm()` via `**kwargs`. Because `ask()` constructs a user-role message only (no system message), injection is a no-op — the kwarg is forwarded without error:
+
+```python
+response = llm_service.ask(
+    "Summarize this document.",
+    provider="anthropic",
+    cache_system_prompt=True,
+)
+```
+
+To cache a system prompt with `ask()`, use `call_llm()` directly with an explicit system-role message.
+
+### `LLMRequest` fan-out example
+
+Fan-out submissions can declare caching intent per-request via the `cache_system_prompt` field on `LLMRequest`:
+
+```python
+from agentmap.models.llm_execution import LLMRequest
+
+requests = [
+    LLMRequest(
+        request_id="item-1",
+        messages=[
+            {"role": "system", "content": "You are an expert code reviewer."},
+            {"role": "user", "content": "Review this function for edge cases."},
+        ],
+        provider="anthropic",
+        cache_system_prompt=True,
+    ),
+    LLMRequest(
+        request_id="item-2",
+        messages=[
+            {"role": "system", "content": "You are an expert code reviewer."},
+            {"role": "user", "content": "Suggest a refactoring for the same function."},
+        ],
+        provider="anthropic",
+        cache_system_prompt=True,
+    ),
+]
+
+results = await llm_service.call_llm_many_async(requests=requests, max_concurrency=2)
+```
+
+Each fan-out item applies the same provider-specific injection as the single-call path. The shared system message is cached after the first request and served from cache on subsequent identical requests.
+
+### Coexistence with manual `cache_control` passthrough
+
+If you already have `cache_control` blocks in your messages (E05-F01 passthrough style) and also set `cache_system_prompt=True`, AgentMap does not double-wrap blocks that already carry `cache_control`. You can safely combine both styles — the injection is idempotent.
+
+For advanced manual `cache_control` construction see [Pattern 1b: Direct prompt-caching call](#pattern-1b-direct-prompt-caching-call) and [Pattern 3b: Routed prompt-caching call](#pattern-3b-routed-prompt-caching-call).
+
+---
+
 ## Prompt-Caching Limits
 
 - Supported execution paths in this feature slice: `call_llm()`, `call_llm_async()`, `ask()`, `ask_async()`
