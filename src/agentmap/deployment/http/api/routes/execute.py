@@ -17,7 +17,11 @@ from agentmap.exceptions.runtime_exceptions import (
     GraphNotFound,
     InvalidInputs,
 )
-from agentmap.runtime_api import ensure_initialized, resume_workflow, run_workflow
+from agentmap.runtime_api import (
+    ensure_initialized,
+    resume_workflow_async,
+    run_workflow_async,
+)
 
 
 # Simple request/response models
@@ -114,7 +118,7 @@ def _to_serializable(value: Any) -> Any:
         return None
     if isinstance(value, datetime):
         return value.isoformat()
-    if is_dataclass(value):
+    if is_dataclass(value) and not isinstance(value, type):
         return _to_serializable(asdict(value))
     if isinstance(value, dict):
         return {key: _to_serializable(val) for key, val in value.items()}
@@ -220,7 +224,7 @@ def _build_resume_response(
     )
 
 
-def _execute_workflow_internal(
+async def _execute_workflow_internal(
     graph_identifier: str,
     request_body: ExecuteRequest,
     config_file: Optional[str] = None,
@@ -236,11 +240,12 @@ def _execute_workflow_internal(
         if not graph_identifier or graph_identifier.count("::") > 1:
             raise InvalidInputs(f"Invalid graph identifier format: {graph_identifier}")
 
-        # Execute using runtime facade
-        result = run_workflow(
+        # Execute using async runtime facade
+        result = await run_workflow_async(
             graph_name=graph_identifier,
             inputs=request_body.inputs,
             force_create=request_body.force_create,
+            config_file=config_file,
         )
 
         return _build_execute_response(
@@ -269,7 +274,7 @@ async def execute_workflow(
     Also accepts: workflow/graph or URL-encoded workflow%3A%3Agraph
     """
     config_file = getattr(request.app.state, "config_file", None)
-    return _execute_workflow_internal(graph_id, request_body, config_file)
+    return await _execute_workflow_internal(graph_id, request_body, config_file)
 
 
 @router.post("/execute/{workflow}/{graph}", response_model=ExecuteResponse)
@@ -291,7 +296,7 @@ async def execute_workflow_two_param(
     # Construct graph identifier
     graph_identifier = f"{workflow}::{graph}"
     config_file = getattr(request.app.state, "config_file", None)
-    return _execute_workflow_internal(graph_identifier, request_body, config_file)
+    return await _execute_workflow_internal(graph_identifier, request_body, config_file)
 
 
 @router.post("/execute/{workflow_graph:path}", response_model=ExecuteResponse)
@@ -323,7 +328,7 @@ async def execute_workflow_single_param(
         graph_identifier = f"{workflow_graph}::{workflow_graph}"
 
     config_file = getattr(request.app.state, "config_file", None)
-    return _execute_workflow_internal(graph_identifier, request_body, config_file)
+    return await _execute_workflow_internal(graph_identifier, request_body, config_file)
 
 
 @router.post("/resume/{thread_id}", response_model=ResumeResponse)
@@ -356,8 +361,10 @@ async def resume_execution(
 
         resume_token = json.dumps(resume_payload)
 
-        # Resume using runtime facade
-        result = resume_workflow(resume_token=resume_token, config_file=config_file)
+        # Resume using async runtime facade
+        result = await resume_workflow_async(
+            resume_token=resume_token, config_file=config_file
+        )
 
         return _build_resume_response(thread_id, result)
 

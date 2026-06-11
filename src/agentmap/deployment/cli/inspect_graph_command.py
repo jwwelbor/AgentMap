@@ -9,7 +9,7 @@ from typing import Optional
 
 import typer
 
-# Lazy import: moved to function to avoid DI container init at module load
+from agentmap.runtime_api import inspect_graph
 
 
 def inspect_graph_cmd(
@@ -37,14 +37,18 @@ def inspect_graph_cmd(
     ),
 ):
     """Inspect agent service configuration for a graph."""
-    # Lazy import to avoid DI container initialization at module load
-    from agentmap.runtime_api import inspect_graph
+    if show_services or show_protocols or show_config or show_resolution:
+        typer.echo(
+            "Note: --services/--protocols/--config-details/--resolution detail flags "
+            "are not available in this runtime facade version and will be added in a "
+            "future release.",
+            err=True,
+        )
 
     typer.echo(f"🔍 Inspecting Graph: {graph_name}")
     typer.echo("=" * 50)
 
     try:
-        # Inspect using facade
         result = inspect_graph(
             graph_name,
             csv_file=csv_file,
@@ -61,80 +65,19 @@ def inspect_graph_cmd(
         typer.echo(f"   All Resolvable: {'✅' if outputs['all_resolvable'] else '❌'}")
         typer.echo(f"   Resolution Rate: {outputs['resolution_rate']:.1%}")
 
-        # Show each node/agent
-        for node_name, node_info in outputs["node_details"].items():
+        # Show each node/agent — real facade returns outputs["structure"]["nodes"]
+        # as a list of dicts with keys: name, agent_type, description
+        for node_info in outputs["structure"]["nodes"]:
+            node_name = node_info["name"]
             typer.echo(f"\n🤖 Node: {node_name}")
             typer.echo(f"   Agent Type: {node_info['agent_type']}")
             typer.echo(f"   Description: {node_info['description']}")
 
-            if show_resolution:
-                typer.echo("   🔧 Resolution:")
-                typer.echo(
-                    f"      Resolvable: {'✅' if node_info['resolvable'] else '❌'}"
-                )
-                typer.echo(f"      Source: {node_info.get('source', 'Unknown')}")
-                if not node_info["resolvable"]:
-                    typer.echo(
-                        f"      Issue: {node_info.get('resolution_error', 'Unknown error')}"
-                    )
-
-            # Show service info if available
-            if node_info["service_info"]:
-                service_info = node_info["service_info"]
-
-                if show_services and "services" in service_info:
-                    typer.echo("   📋 Services:")
-                    for service, available in service_info["services"].items():
-                        status = "✅" if available else "❌"
-                        typer.echo(f"      {service}: {status}")
-
-                if show_protocols and "protocols" in service_info:
-                    typer.echo("   🔌 Protocols:")
-                    for protocol, implemented in service_info["protocols"].items():
-                        status = "✅" if implemented else "❌"
-                        typer.echo(f"      {protocol}: {status}")
-
-                if show_config:
-                    # Show any specialized configuration
-                    for key, value in service_info.items():
-                        if key not in [
-                            "agent_name",
-                            "agent_type",
-                            "services",
-                            "protocols",
-                            "configuration",
-                        ]:
-                            typer.echo(f"   ⚙️  {key.replace('_', ' ').title()}:")
-                            if isinstance(value, dict):
-                                for sub_key, sub_value in value.items():
-                                    typer.echo(f"      {sub_key}: {sub_value}")
-                            else:
-                                typer.echo(f"      {value}")
-
-                # Show basic configuration always
-                if "configuration" in service_info:
-                    typer.echo("   📝 Configuration:")
-                    config = service_info["configuration"]
-                    typer.echo(f"      Input Fields: {config.get('input_fields', [])}")
-                    typer.echo(
-                        f"      Output Field: {config.get('output_field', 'None')}"
-                    )
-
-            elif node_info["error"]:
-                typer.secho(
-                    f"   ❌ Failed to create agent: {node_info['error']}",
-                    fg=typer.colors.RED,
-                )
-
-        # Show issues summary if any
+        # Show issues summary if any — real facade returns a list of strings
         if outputs["issues"]:
             typer.echo(f"\n⚠️  Issues Found ({len(outputs['issues'])}):")
             for issue in outputs["issues"]:
-                typer.echo(f"   {issue['node']}: {issue['issue']}")
-                if issue.get("missing_deps"):
-                    typer.echo(f"      Missing: {', '.join(issue['missing_deps'])}")
-                if issue.get("resolution_error"):
-                    typer.echo(f"      Error: {issue['resolution_error']}")
+                typer.echo(f"   {issue}")
         else:
             typer.secho(
                 "\n✅ No issues found - all agents properly configured!",

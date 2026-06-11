@@ -30,8 +30,12 @@ from agentmap.exceptions.runtime_exceptions import (
 # Models and utilities (not services)
 from agentmap.models.serverless_models import TriggerType as NewTriggerType
 
-# ✅ FACADE PATTERN: Only import from runtime facade
-from agentmap.runtime_api import ensure_initialized, run_workflow
+# ✅ FACADE PATTERN: Only import async runtime facade (sync shim kept in runtime_api for legacy callers)
+from agentmap.runtime_api import (
+    ensure_initialized,
+    resume_workflow_async,
+    run_workflow_async,
+)
 
 
 # Legacy TriggerType enum for backward compatibility
@@ -72,7 +76,7 @@ class TriggerParser:
     def parse(self, event: Dict[str, Any]) -> tuple[NewTriggerType, Dict[str, Any]]:
         """Parse event and return trigger type and normalized data."""
         for strategy in self.strategies:
-            if strategy.can_handle(event):
+            if strategy.matches(event):
                 return strategy.parse(event)
 
         # Default to HTTP if no strategy matches
@@ -118,9 +122,12 @@ class BaseHandler:
             # Log trigger information
             self._log_trigger_info(trigger_type, correlation_id, parsed_data)
 
-            # Check for resume action (auto-resume via message)
-            if parsed_data.get("action") == "resume":
-                return await self._handle_resume_action(parsed_data, correlation_id)
+            # Check for resume action (auto-resume via message).
+            # The raw event is checked because trigger strategies do not preserve
+            # the "action" key in parsed_data.
+            resume_source = event if event.get("action") == "resume" else parsed_data
+            if event.get("action") == "resume" or parsed_data.get("action") == "resume":
+                return await self._handle_resume_action(resume_source, correlation_id)
 
             # Build execution parameters
             graph_name = parsed_data.get("graph")
@@ -136,8 +143,8 @@ class BaseHandler:
             else:
                 inputs = parsed_data.get("state", {})
 
-            # ✅ FACADE PATTERN: Use only runtime facade
-            result = run_workflow(
+            # ✅ FACADE PATTERN: Use async runtime facade
+            result = await run_workflow_async(
                 graph_name=graph_name,
                 inputs=inputs,
                 config_file=self.config_file,
@@ -256,8 +263,6 @@ class BaseHandler:
         resume_value = parsed_data.get("resume_value")
 
         # Build resume token for runtime facade
-        import json
-
         resume_token = json.dumps(
             {
                 "thread_id": thread_id,
@@ -266,10 +271,8 @@ class BaseHandler:
             }
         )
 
-        # ✅ FACADE PATTERN: Use runtime facade for resume
-        from agentmap.runtime_api import resume_workflow
-
-        result = resume_workflow(
+        # ✅ FACADE PATTERN: Use async runtime facade for resume
+        result = await resume_workflow_async(
             resume_token=resume_token, config_file=self.config_file
         )
 

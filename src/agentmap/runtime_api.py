@@ -18,10 +18,15 @@ from .runtime.system_ops import (
 )
 from .runtime.workflow_ops import (
     inspect_graph,
+    inspect_graph_async,
     list_graphs,
+    list_graphs_async,
     resume_workflow,
+    resume_workflow_async,
     run_workflow,
+    run_workflow_async,
     validate_workflow,
+    validate_workflow_async,
 )
 
 # Public alias for external applications (more descriptive than ensure_initialized)
@@ -32,10 +37,15 @@ __all__ = [
     "agentmap_initialize",  # Recommended external name
     "get_container",
     "run_workflow",
+    "run_workflow_async",
     "resume_workflow",
+    "resume_workflow_async",
     "list_graphs",
+    "list_graphs_async",
     "inspect_graph",
+    "inspect_graph_async",
     "validate_workflow",
+    "validate_workflow_async",
     "update_bundle",
     "scaffold_agents",
     "refresh_cache",

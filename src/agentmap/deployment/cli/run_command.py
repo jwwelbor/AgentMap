@@ -15,8 +15,7 @@ from agentmap.deployment.cli.utils.cli_presenter import (
     print_err,
     print_json,
 )
-
-# Lazy import: moved to function to avoid DI container init at module load
+from agentmap.runtime_api import ensure_initialized, run_workflow
 
 
 def run_command(
@@ -72,9 +71,6 @@ def run_command(
     defaults to the CSV filename (without .csv extension), but you can
     specify a different graph name after the :: delimiter.
     """
-    # Lazy import to avoid DI container initialization at module load
-    from agentmap.runtime_api import ensure_initialized, run_workflow
-
     try:
         # Ensure runtime is initialized
         ensure_initialized(config_file=config_file)
@@ -110,7 +106,6 @@ def run_command(
         #         print_err("Invalid :: syntax - both filename and graph name must be non-empty")
         #         raise typer.Exit(code=2)
 
-        # Execute using runtime facade
         result = run_workflow(
             graph_name=graph_name,
             inputs=initial_state,

@@ -12,7 +12,11 @@ from agentmap.exceptions.runtime_exceptions import (
     AgentMapNotInitialized,
     GraphNotFound,
 )
-from agentmap.runtime_api import ensure_initialized, inspect_graph, list_graphs
+from agentmap.runtime_api import (
+    ensure_initialized,
+    inspect_graph_async,
+    list_graphs_async,
+)
 
 
 # Simple response models without Config classes
@@ -70,7 +74,7 @@ async def list_workflows(request: Request):
     try:
         ensure_initialized()
 
-        result = list_graphs()
+        result = await list_graphs_async()
         if not result.get("success"):
             raise HTTPException(
                 status_code=500, detail=result.get("error", "Failed to list graphs")
@@ -152,7 +156,7 @@ async def get_workflow_details(graph_id: str, request: Request):
         # Handle URL encoding and alternative separators
         graph_id = graph_id.replace("%3A%3A", "::").replace("/", "::")
 
-        result = inspect_graph(graph_id)
+        result = await inspect_graph_async(graph_id)
         if not result.get("success"):
             error = result.get("error", "")
             if "not found" in error.lower():
