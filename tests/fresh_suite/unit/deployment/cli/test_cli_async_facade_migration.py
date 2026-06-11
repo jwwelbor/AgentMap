@@ -120,7 +120,7 @@ def _make_validate_workflow_payload():
     return {
         "success": True,
         "outputs": {
-            "valid": True,
+            "csv_structure_valid": True,
             "total_nodes": 3,
             "total_edges": 2,
             "missing_declarations": [],
@@ -142,7 +142,7 @@ class TestRunCommandUsesAsyncFacade:
     """TC-003A: run_command calls run_workflow_async, not run_workflow."""
 
     @patch(
-        "agentmap.deployment.cli.run_command.run_workflow",
+        "agentmap.deployment.cli.run_command.run_workflow_async",
     )
     @patch("agentmap.deployment.cli.run_command.ensure_initialized")
     def test_run_command_calls_run_workflow_async_on_success(
@@ -171,7 +171,7 @@ class TestRunCommandUsesAsyncFacade:
         mock_ensure_initialized.assert_called_once()
 
     @patch(
-        "agentmap.deployment.cli.run_command.run_workflow",
+        "agentmap.deployment.cli.run_command.run_workflow_async",
     )
     @patch("agentmap.deployment.cli.run_command.ensure_initialized")
     def test_run_command_interrupted_exits_0_with_thread_id(
@@ -201,7 +201,7 @@ class TestRunCommandUsesAsyncFacade:
         mock_run_workflow_async.assert_called_once()
 
     @patch(
-        "agentmap.deployment.cli.run_command.run_workflow",
+        "agentmap.deployment.cli.run_command.run_workflow_async",
     )
     @patch("agentmap.deployment.cli.run_command.ensure_initialized")
     def test_run_command_invalid_json_state_exits_nonzero(
@@ -230,7 +230,7 @@ class TestRunCommandUsesAsyncFacade:
         mock_run_workflow_async.assert_not_called()
 
     @patch(
-        "agentmap.deployment.cli.run_command.run_workflow",
+        "agentmap.deployment.cli.run_command.run_workflow_async",
     )
     @patch("agentmap.deployment.cli.run_command.ensure_initialized")
     def test_run_command_missing_workflow_exits_nonzero(
@@ -257,7 +257,7 @@ class TestRunCommandUsesAsyncFacade:
         assert exc_info.value.exit_code == 2
 
     @patch(
-        "agentmap.deployment.cli.run_command.run_workflow",
+        "agentmap.deployment.cli.run_command.run_workflow_async",
     )
     @patch("agentmap.deployment.cli.run_command.ensure_initialized")
     def test_run_command_force_create_is_passed_to_async_facade(
@@ -288,17 +288,17 @@ class TestRunCommandUsesAsyncFacade:
             "True" in str(call_kwargs) or call_kwargs.kwargs.get("force_create") is True
         )
 
-    def test_run_command_does_not_import_async_run_workflow(self):
-        """TC-003A counter-factual: async run_workflow_async must not be in run_command namespace."""
+    def test_run_command_imports_async_run_workflow(self):
+        """TC-003A: run_workflow_async must be in run_command namespace (migration complete)."""
         import agentmap.deployment.cli.run_command as run_command_module
 
-        # CLI uses sync facade directly — async variant must not be imported
-        assert not hasattr(
-            run_command_module, "run_workflow_async"
-        ), "async run_workflow_async is imported in run_command.py — use sync facade for CLI"
+        assert hasattr(run_command_module, "run_workflow_async"), (
+            "run_workflow_async is NOT imported in run_command.py — "
+            "CLI must be migrated to use the async facade via asyncio.run()"
+        )
 
     @patch(
-        "agentmap.deployment.cli.run_command.run_workflow",
+        "agentmap.deployment.cli.run_command.run_workflow_async",
     )
     @patch("agentmap.deployment.cli.run_command.ensure_initialized")
     def test_run_command_pretty_verbose_do_not_change_exit_code(
@@ -335,7 +335,7 @@ class TestResumeCommandUsesAsyncFacade:
     """TC-003B: resume_command calls resume_workflow_async, not resume_workflow."""
 
     @patch(
-        "agentmap.deployment.cli.resume_command.resume_workflow",
+        "agentmap.deployment.cli.resume_command.resume_workflow_async",
     )
     @patch("agentmap.deployment.cli.resume_command.ensure_initialized")
     def test_resume_command_calls_resume_workflow_async_on_success(
@@ -361,7 +361,7 @@ class TestResumeCommandUsesAsyncFacade:
         mock_ensure_initialized.assert_called_once()
 
     @patch(
-        "agentmap.deployment.cli.resume_command.resume_workflow",
+        "agentmap.deployment.cli.resume_command.resume_workflow_async",
     )
     @patch("agentmap.deployment.cli.resume_command.ensure_initialized")
     def test_resume_command_with_json_data_calls_async_facade(
@@ -386,7 +386,7 @@ class TestResumeCommandUsesAsyncFacade:
         mock_resume_workflow_async.assert_called_once()
 
     @patch(
-        "agentmap.deployment.cli.resume_command.resume_workflow",
+        "agentmap.deployment.cli.resume_command.resume_workflow_async",
     )
     @patch("agentmap.deployment.cli.resume_command.ensure_initialized")
     def test_resume_command_invalid_json_data_exits_nonzero(
@@ -410,7 +410,7 @@ class TestResumeCommandUsesAsyncFacade:
         mock_resume_workflow_async.assert_not_called()
 
     @patch(
-        "agentmap.deployment.cli.resume_command.resume_workflow",
+        "agentmap.deployment.cli.resume_command.resume_workflow_async",
     )
     @patch("agentmap.deployment.cli.resume_command.ensure_initialized")
     def test_resume_command_missing_data_file_exits_nonzero(
@@ -434,7 +434,7 @@ class TestResumeCommandUsesAsyncFacade:
         mock_resume_workflow_async.assert_not_called()
 
     @patch(
-        "agentmap.deployment.cli.resume_command.resume_workflow",
+        "agentmap.deployment.cli.resume_command.resume_workflow_async",
     )
     @patch("agentmap.deployment.cli.resume_command.ensure_initialized")
     def test_resume_command_with_data_file_calls_async_facade(
@@ -468,7 +468,7 @@ class TestResumeCommandUsesAsyncFacade:
             os.unlink(tmp_path)
 
     @patch(
-        "agentmap.deployment.cli.resume_command.resume_workflow",
+        "agentmap.deployment.cli.resume_command.resume_workflow_async",
     )
     @patch("agentmap.deployment.cli.resume_command.ensure_initialized")
     def test_resume_command_blank_response_action_preserves_token_behavior(
@@ -492,13 +492,14 @@ class TestResumeCommandUsesAsyncFacade:
         assert exc_info.value.exit_code == 0
         mock_resume_workflow_async.assert_called_once()
 
-    def test_resume_command_does_not_import_async_resume_workflow(self):
-        """TC-003B counter-factual: async resume_workflow_async must not be in resume_command namespace."""
+    def test_resume_command_imports_async_resume_workflow(self):
+        """TC-003B: resume_workflow_async must be in resume_command namespace (migration complete)."""
         import agentmap.deployment.cli.resume_command as resume_command_module
 
-        assert not hasattr(
-            resume_command_module, "resume_workflow_async"
-        ), "async resume_workflow_async is imported in resume_command.py — use sync facade for CLI"
+        assert hasattr(resume_command_module, "resume_workflow_async"), (
+            "resume_workflow_async is NOT imported in resume_command.py — "
+            "CLI must be migrated to use the async facade via asyncio.run()"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -510,7 +511,7 @@ class TestInspectGraphCommandUsesAsyncFacade:
     """TC-003C: inspect_graph_cmd calls inspect_graph_async, not inspect_graph."""
 
     @patch(
-        "agentmap.deployment.cli.inspect_graph_command.inspect_graph",
+        "agentmap.deployment.cli.inspect_graph_command.inspect_graph_async",
     )
     def test_inspect_graph_cmd_calls_inspect_graph_async_on_success(
         self, mock_inspect_graph_async
@@ -526,17 +527,13 @@ class TestInspectGraphCommandUsesAsyncFacade:
             csv_file=None,
             config_file=None,
             node=None,
-            show_services=True,
-            show_protocols=True,
-            show_config=False,
-            show_resolution=False,
         )
 
         # Counter-factual: inspect_graph_async must be called, not inspect_graph
         mock_inspect_graph_async.assert_called_once()
 
     @patch(
-        "agentmap.deployment.cli.inspect_graph_command.inspect_graph",
+        "agentmap.deployment.cli.inspect_graph_command.inspect_graph_async",
     )
     def test_inspect_graph_cmd_node_filter_passed_to_async_facade(
         self, mock_inspect_graph_async
@@ -552,10 +549,6 @@ class TestInspectGraphCommandUsesAsyncFacade:
                 csv_file=None,
                 config_file=None,
                 node="start_node",
-                show_services=True,
-                show_protocols=True,
-                show_config=False,
-                show_resolution=False,
             )
         except typer.Exit:
             pass
@@ -566,7 +559,7 @@ class TestInspectGraphCommandUsesAsyncFacade:
         assert "start_node" in str(call_kwargs)
 
     @patch(
-        "agentmap.deployment.cli.inspect_graph_command.inspect_graph",
+        "agentmap.deployment.cli.inspect_graph_command.inspect_graph_async",
     )
     def test_inspect_graph_cmd_graph_not_found_exits_1(self, mock_inspect_graph_async):
         """TC-003C negative: graph-not-found still maps to exit code 1."""
@@ -584,24 +577,86 @@ class TestInspectGraphCommandUsesAsyncFacade:
                 csv_file=None,
                 config_file=None,
                 node=None,
-                show_services=True,
-                show_protocols=True,
-                show_config=False,
-                show_resolution=False,
             )
 
         assert exc_info.value.exit_code == 1
 
-    def test_inspect_graph_cmd_does_not_import_async_inspect_graph(self):
-        """TC-003C counter-factual: async inspect_graph_async must not be in inspect_graph_command namespace."""
+    def test_inspect_graph_cmd_imports_async_inspect_graph(self):
+        """TC-003C: inspect_graph_async must be in inspect_graph_command namespace (migration complete)."""
         import agentmap.deployment.cli.inspect_graph_command as inspect_cmd_module
 
-        assert not hasattr(
-            inspect_cmd_module, "inspect_graph_async"
-        ), "async inspect_graph_async is imported in inspect_graph_command.py — use sync facade for CLI"
+        assert hasattr(inspect_cmd_module, "inspect_graph_async"), (
+            "inspect_graph_async is NOT imported in inspect_graph_command.py — "
+            "CLI must be migrated to use the async facade via asyncio.run()"
+        )
+
+    def test_inspect_graph_cmd_no_op_flags_removed_from_signature(self):
+        """TC-003C tech-debt: --services/--protocols/--config-details/--resolution flags
+        are no-ops (facade returns only name/agent_type/description); they must be
+        removed from the function signature so callers are not misled.
+        Counter-factual: if any of the four params still exist the assert fires,
+        proving the implementation has not been cleaned up.
+        """
+        import inspect
+
+        from agentmap.deployment.cli.inspect_graph_command import inspect_graph_cmd
+
+        params = list(inspect.signature(inspect_graph_cmd).parameters.keys())
+        for dead_param in (
+            "show_services",
+            "show_protocols",
+            "show_config",
+            "show_resolution",
+        ):
+            assert dead_param not in params, (
+                f"No-op parameter '{dead_param}' is still present in inspect_graph_cmd — "
+                "remove it as part of T-E04-F03-005 tech-debt cleanup."
+            )
+
+    def test_inspect_graph_cmd_helpful_commands_no_config_details_line(self):
+        """TC-003C tech-debt: the 'Helpful Commands' block must not recommend
+        --config-details (the flag is dead and would silently no-op if kept).
+        Counter-factual: a stale recommendation string in output proves the
+        implementation has not been cleaned up.
+        """
+        from unittest.mock import patch as _patch
+
+        from agentmap.deployment.cli.inspect_graph_command import inspect_graph_cmd
+
+        with _patch(
+            "agentmap.deployment.cli.inspect_graph_command.inspect_graph_async",
+            return_value=_make_inspect_graph_payload(),
+        ):
+            captured = []
+
+            def _capturing_echo(msg="", **kwargs):
+                captured.append(str(msg))
+
+            with (
+                _patch(
+                    "agentmap.deployment.cli.inspect_graph_command.typer.echo",
+                    side_effect=_capturing_echo,
+                ),
+                _patch(
+                    "agentmap.deployment.cli.inspect_graph_command.typer.secho",
+                    side_effect=_capturing_echo,
+                ),
+            ):
+                inspect_graph_cmd(
+                    graph_name="test_graph",
+                    csv_file=None,
+                    config_file=None,
+                    node=None,
+                )
+
+        full_output = "\n".join(captured)
+        assert "--config-details" not in full_output, (
+            "Dead --config-details recommendation is still present in inspect_graph_cmd output — "
+            "remove it as part of T-E04-F03-005 tech-debt cleanup."
+        )
 
     @patch(
-        "agentmap.deployment.cli.inspect_graph_command.inspect_graph",
+        "agentmap.deployment.cli.inspect_graph_command.inspect_graph_async",
     )
     def test_inspect_graph_cmd_with_csv_file_passes_to_async_facade(
         self, mock_inspect_graph_async
@@ -617,10 +672,6 @@ class TestInspectGraphCommandUsesAsyncFacade:
                 csv_file="/tmp/test.csv",
                 config_file=None,
                 node=None,
-                show_services=True,
-                show_protocols=True,
-                show_config=False,
-                show_resolution=False,
             )
         except typer.Exit:
             pass
@@ -628,6 +679,55 @@ class TestInspectGraphCommandUsesAsyncFacade:
         call_kwargs = mock_inspect_graph_async.call_args
         assert call_kwargs is not None
         assert "/tmp/test.csv" in str(call_kwargs)
+
+    def test_inspect_graph_cmd_non_empty_issues_prints_issue_string(self):
+        """TC-003C regression guard: non-empty issues list prints each issue as a plain
+        string, not as a dict key access (issue['node']).
+
+        Counter-factual: if the implementation regressed to ``issue['node']`` dict-access
+        the printed line would be ``'n'`` (first char of 'node') or raise a TypeError,
+        not the full issue string.
+        """
+        from unittest.mock import patch as _patch
+
+        payload = _make_inspect_graph_payload()
+        payload["outputs"]["issues"] = ["Agent 'broken_node' type not resolvable"]
+
+        from agentmap.deployment.cli.inspect_graph_command import inspect_graph_cmd
+
+        with _patch(
+            "agentmap.deployment.cli.inspect_graph_command.inspect_graph_async",
+            return_value=payload,
+        ):
+            captured = []
+
+            def _capturing_echo(msg="", **kwargs):
+                captured.append(str(msg))
+
+            with (
+                _patch(
+                    "agentmap.deployment.cli.inspect_graph_command.typer.echo",
+                    side_effect=_capturing_echo,
+                ),
+                _patch(
+                    "agentmap.deployment.cli.inspect_graph_command.typer.secho",
+                    side_effect=_capturing_echo,
+                ),
+            ):
+                inspect_graph_cmd(
+                    graph_name="test_graph",
+                    csv_file=None,
+                    config_file=None,
+                    node=None,
+                )
+
+        full_output = "\n".join(captured)
+        assert "Agent 'broken_node' type not resolvable" in full_output, (
+            "Non-empty issue string was not printed — "
+            "the issues branch may have regressed to dict-access."
+        )
+        # The "no issues" success line must NOT appear when there are issues
+        assert "No issues found" not in full_output
 
 
 # ---------------------------------------------------------------------------
@@ -639,7 +739,7 @@ class TestValidateCommandUsesAsyncFacade:
     """TC-003D: validate_command calls validate_workflow_async, not validate_workflow."""
 
     @patch(
-        "agentmap.deployment.cli.validate_command.validate_workflow",
+        "agentmap.deployment.cli.validate_command.validate_workflow_async",
     )
     @patch("agentmap.deployment.cli.validate_command.resolve_csv_path")
     def test_validate_command_calls_validate_workflow_async_on_success(
@@ -666,7 +766,7 @@ class TestValidateCommandUsesAsyncFacade:
         mock_validate_workflow_async.assert_called_once()
 
     @patch(
-        "agentmap.deployment.cli.validate_command.validate_workflow",
+        "agentmap.deployment.cli.validate_command.validate_workflow_async",
     )
     @patch("agentmap.deployment.cli.validate_command.resolve_csv_path")
     def test_validate_command_positional_csv_resolves_same_as_flag(
@@ -692,7 +792,7 @@ class TestValidateCommandUsesAsyncFacade:
         mock_validate_workflow_async.assert_called_once()
 
     @patch(
-        "agentmap.deployment.cli.validate_command.validate_workflow",
+        "agentmap.deployment.cli.validate_command.validate_workflow_async",
     )
     @patch("agentmap.deployment.cli.validate_command.resolve_csv_path")
     def test_validate_command_graph_name_forwarded_to_async_facade(
@@ -721,7 +821,7 @@ class TestValidateCommandUsesAsyncFacade:
         mock_validate_workflow_async.assert_called_once()
 
     @patch(
-        "agentmap.deployment.cli.validate_command.validate_workflow",
+        "agentmap.deployment.cli.validate_command.validate_workflow_async",
     )
     @patch("agentmap.deployment.cli.validate_command.resolve_csv_path")
     def test_validate_command_missing_declarations_still_displays_output(
@@ -747,10 +847,11 @@ class TestValidateCommandUsesAsyncFacade:
 
         mock_validate_workflow_async.assert_called_once()
 
-    def test_validate_command_does_not_import_async_validate_workflow(self):
-        """TC-003D counter-factual: async validate_workflow_async must not be in validate_command namespace."""
+    def test_validate_command_imports_async_validate_workflow(self):
+        """TC-003D: validate_workflow_async must be in validate_command namespace (migration complete)."""
         import agentmap.deployment.cli.validate_command as validate_cmd_module
 
-        assert not hasattr(
-            validate_cmd_module, "validate_workflow_async"
-        ), "async validate_workflow_async is imported in validate_command.py — use sync facade for CLI"
+        assert hasattr(validate_cmd_module, "validate_workflow_async"), (
+            "validate_workflow_async is NOT imported in validate_command.py — "
+            "CLI must be migrated to use the async facade via asyncio.run()"
+        )

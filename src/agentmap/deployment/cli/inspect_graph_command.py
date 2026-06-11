@@ -5,11 +5,12 @@ This module provides the inspect-graph command for analyzing agent service
 configuration and graph structure.
 """
 
+import asyncio
 from typing import Optional
 
 import typer
 
-from agentmap.runtime_api import inspect_graph
+from agentmap.runtime_api import inspect_graph_async
 
 
 def inspect_graph_cmd(
@@ -23,37 +24,19 @@ def inspect_graph_cmd(
     node: Optional[str] = typer.Option(
         None, "--node", "-n", help="Inspect specific node only"
     ),
-    show_services: bool = typer.Option(
-        True, "--services/--no-services", help="Show service availability"
-    ),
-    show_protocols: bool = typer.Option(
-        True, "--protocols/--no-protocols", help="Show protocol implementations"
-    ),
-    show_config: bool = typer.Option(
-        False, "--config-details", help="Show detailed configuration"
-    ),
-    show_resolution: bool = typer.Option(
-        False, "--resolution", help="Show agent resolution details"
-    ),
 ):
     """Inspect agent service configuration for a graph."""
-    if show_services or show_protocols or show_config or show_resolution:
-        typer.echo(
-            "Note: --services/--protocols/--config-details/--resolution detail flags "
-            "are not available in this runtime facade version and will be added in a "
-            "future release.",
-            err=True,
-        )
-
     typer.echo(f"🔍 Inspecting Graph: {graph_name}")
     typer.echo("=" * 50)
 
     try:
-        result = inspect_graph(
-            graph_name,
-            csv_file=csv_file,
-            node=node,
-            config_file=config_file,
+        result = asyncio.run(
+            inspect_graph_async(
+                graph_name,
+                csv_file=csv_file,
+                node=node,
+                config_file=config_file,
+            )
         )
 
         outputs = result["outputs"]
@@ -89,9 +72,6 @@ def inspect_graph_cmd(
         typer.echo(
             "   agentmap diagnose                    # Check system dependencies"
         )
-        typer.echo(
-            f"   agentmap inspect-graph {graph_name} --config-details  # Show detailed config"
-        )
         if node:
             typer.echo(
                 f"   agentmap inspect-graph {graph_name}             # Inspect all nodes"
@@ -101,6 +81,8 @@ def inspect_graph_cmd(
                 f"   agentmap inspect-graph {graph_name} --node NODE_NAME  # Inspect specific node"
             )
 
+    except typer.Exit:
+        raise
     except Exception as e:
         typer.secho(f"❌ Failed to inspect graph: {e}", fg=typer.colors.RED)
         typer.echo("\n💡 Troubleshooting:")

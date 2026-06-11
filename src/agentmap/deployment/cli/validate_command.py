@@ -5,6 +5,7 @@ This module provides the validate command that checks CSV structure
 and identifies missing agent declarations using bundle analysis.
 """
 
+import asyncio
 from typing import Optional
 
 import typer
@@ -13,7 +14,7 @@ from agentmap.deployment.cli.utils.cli_utils import (
     handle_command_error,
     resolve_csv_path,
 )
-from agentmap.runtime_api import validate_workflow
+from agentmap.runtime_api import validate_workflow_async
 
 
 def validate_command(
@@ -41,7 +42,9 @@ def validate_command(
         graph_name = graph or str(csv_path)
 
         typer.echo(f"🔍 Validating CSV structure: {csv_path}")
-        result = validate_workflow(graph_name, config_file=config_file)
+        result = asyncio.run(
+            validate_workflow_async(graph_name, config_file=config_file)
+        )
 
         outputs = result["outputs"]
         metadata = result["metadata"]
@@ -65,5 +68,7 @@ def validate_command(
         else:
             typer.secho("✅ All agent types are defined", fg=typer.colors.GREEN)
 
+    except typer.Exit:
+        raise
     except Exception as e:
         handle_command_error(e, verbose=False)
