@@ -678,6 +678,55 @@ class TestInspectGraphCommandUsesAsyncFacade:
         assert call_kwargs is not None
         assert "/tmp/test.csv" in str(call_kwargs)
 
+    def test_inspect_graph_cmd_non_empty_issues_prints_issue_string(self):
+        """TC-003C regression guard: non-empty issues list prints each issue as a plain
+        string, not as a dict key access (issue['node']).
+
+        Counter-factual: if the implementation regressed to ``issue['node']`` dict-access
+        the printed line would be ``'n'`` (first char of 'node') or raise a TypeError,
+        not the full issue string.
+        """
+        from unittest.mock import patch as _patch
+
+        payload = _make_inspect_graph_payload()
+        payload["outputs"]["issues"] = ["Agent 'broken_node' type not resolvable"]
+
+        from agentmap.deployment.cli.inspect_graph_command import inspect_graph_cmd
+
+        with _patch(
+            "agentmap.deployment.cli.inspect_graph_command.inspect_graph",
+            return_value=payload,
+        ):
+            captured = []
+
+            def _capturing_echo(msg="", **kwargs):
+                captured.append(str(msg))
+
+            with (
+                _patch(
+                    "agentmap.deployment.cli.inspect_graph_command.typer.echo",
+                    side_effect=_capturing_echo,
+                ),
+                _patch(
+                    "agentmap.deployment.cli.inspect_graph_command.typer.secho",
+                    side_effect=_capturing_echo,
+                ),
+            ):
+                inspect_graph_cmd(
+                    graph_name="test_graph",
+                    csv_file=None,
+                    config_file=None,
+                    node=None,
+                )
+
+        full_output = "\n".join(captured)
+        assert "Agent 'broken_node' type not resolvable" in full_output, (
+            "Non-empty issue string was not printed — "
+            "the issues branch may have regressed to dict-access."
+        )
+        # The "no issues" success line must NOT appear when there are issues
+        assert "No issues found" not in full_output
+
 
 # ---------------------------------------------------------------------------
 # TC-003D: agentmap validate uses validate_workflow_async, not validate_workflow
