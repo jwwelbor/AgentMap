@@ -2,18 +2,20 @@
 Unit tests for FastAPI execution routes.
 
 Tests the fixed API execution endpoints to ensure they properly use
-the runtime facade pattern and call the correct runtime API functions.
+the async runtime facade pattern and call the correct runtime API functions.
+Updated to patch run_workflow_async and resume_workflow_async after the
+T-E04-F03-002 migration.
 """
 
 from unittest import TestCase
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 
 class TestExecutionRoutes(TestCase):
-    """Test the execution routes with fixed implementation."""
+    """Test the execution routes with async runtime facade."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -39,9 +41,12 @@ class TestExecutionRoutes(TestCase):
         }
 
     @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
-    @patch("agentmap.deployment.http.api.routes.execute.run_workflow")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.run_workflow_async",
+        new_callable=AsyncMock,
+    )
     def test_run_workflow_graph_success(
-        self, mock_run_workflow, mock_ensure_initialized
+        self, mock_run_workflow_async, mock_ensure_initialized
     ):
         """Test successful workflow execution via REST endpoint."""
         from fastapi import FastAPI
@@ -50,7 +55,7 @@ class TestExecutionRoutes(TestCase):
 
         # Configure mocks
         mock_ensure_initialized.return_value = None
-        mock_run_workflow.return_value = self.mock_run_workflow_success
+        mock_run_workflow_async.return_value = self.mock_run_workflow_success
 
         # Create FastAPI app and add router
         app = FastAPI()
@@ -81,16 +86,19 @@ class TestExecutionRoutes(TestCase):
 
         # Verify runtime API calls
         mock_ensure_initialized.assert_called_once()
-        mock_run_workflow.assert_called_once_with(
+        mock_run_workflow_async.assert_awaited_once_with(
             graph_name="test_workflow::TestGraph",
             inputs={"input": "test_data"},
             force_create=False,
         )
 
     @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
-    @patch("agentmap.deployment.http.api.routes.execute.run_workflow")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.run_workflow_async",
+        new_callable=AsyncMock,
+    )
     def test_run_workflow_graph_failure(
-        self, mock_run_workflow, mock_ensure_initialized
+        self, mock_run_workflow_async, mock_ensure_initialized
     ):
         """Test failed workflow execution."""
         from fastapi import FastAPI
@@ -99,7 +107,7 @@ class TestExecutionRoutes(TestCase):
 
         # Configure mocks
         mock_ensure_initialized.return_value = None
-        mock_run_workflow.return_value = self.mock_run_workflow_failure
+        mock_run_workflow_async.return_value = self.mock_run_workflow_failure
 
         # Create FastAPI app and add router
         app = FastAPI()
@@ -130,11 +138,16 @@ class TestExecutionRoutes(TestCase):
 
         # Verify runtime API calls
         mock_ensure_initialized.assert_called_once()
-        mock_run_workflow.assert_called_once()
+        mock_run_workflow_async.assert_awaited_once()
 
     @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
-    @patch("agentmap.deployment.http.api.routes.execute.run_workflow")
-    def test_legacy_run_endpoint(self, mock_run_workflow, mock_ensure_initialized):
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.run_workflow_async",
+        new_callable=AsyncMock,
+    )
+    def test_legacy_run_endpoint(
+        self, mock_run_workflow_async, mock_ensure_initialized
+    ):
         """Test the legacy /run endpoint works with new implementation."""
         from fastapi import FastAPI
 
@@ -142,7 +155,7 @@ class TestExecutionRoutes(TestCase):
 
         # Configure mocks
         mock_ensure_initialized.return_value = None
-        mock_run_workflow.return_value = {
+        mock_run_workflow_async.return_value = {
             "success": True,
             "outputs": {"legacy": "output"},
             "execution_id": None,
@@ -180,15 +193,18 @@ class TestExecutionRoutes(TestCase):
 
         # Verify runtime API calls
         mock_ensure_initialized.assert_called_once()
-        mock_run_workflow.assert_called_once_with(
+        mock_run_workflow_async.assert_awaited_once_with(
             graph_name="legacy_workflow::LegacyGraph",
             inputs={"test": "data"},
             force_create=False,
         )
 
     @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
-    @patch("agentmap.deployment.http.api.routes.execute.run_workflow")
-    def test_workflow_not_found(self, mock_run_workflow, mock_ensure_initialized):
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.run_workflow_async",
+        new_callable=AsyncMock,
+    )
+    def test_workflow_not_found(self, mock_run_workflow_async, mock_ensure_initialized):
         """Test 404 when workflow file doesn't exist."""
         from fastapi import FastAPI
 
@@ -197,7 +213,7 @@ class TestExecutionRoutes(TestCase):
 
         # Configure mocks
         mock_ensure_initialized.return_value = None
-        mock_run_workflow.side_effect = GraphNotFound(
+        mock_run_workflow_async.side_effect = GraphNotFound(
             "nonexistent/TestGraph", "Workflow file not found"
         )
 
@@ -224,9 +240,12 @@ class TestExecutionRoutes(TestCase):
         assert "not found" in data["detail"].lower()
 
     @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
-    @patch("agentmap.deployment.http.api.routes.execute.run_workflow")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.run_workflow_async",
+        new_callable=AsyncMock,
+    )
     def test_simplified_syntax_endpoint(
-        self, mock_run_workflow, mock_ensure_initialized
+        self, mock_run_workflow_async, mock_ensure_initialized
     ):
         """Test the simplified syntax endpoint."""
         from fastapi import FastAPI
@@ -235,7 +254,7 @@ class TestExecutionRoutes(TestCase):
 
         # Configure mocks
         mock_ensure_initialized.return_value = None
-        mock_run_workflow.return_value = {
+        mock_run_workflow_async.return_value = {
             "success": True,
             "outputs": {"result": "simplified_output"},
             "execution_id": None,
@@ -272,14 +291,17 @@ class TestExecutionRoutes(TestCase):
 
         # Verify runtime API calls
         mock_ensure_initialized.assert_called_once()
-        mock_run_workflow.assert_called_once_with(
+        mock_run_workflow_async.assert_awaited_once_with(
             graph_name="simple_workflow", inputs={"input": "test"}, force_create=False
         )
 
     @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
-    @patch("agentmap.deployment.http.api.routes.execute.resume_workflow")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.resume_workflow_async",
+        new_callable=AsyncMock,
+    )
     def test_resume_workflow_endpoint(
-        self, mock_resume_workflow, mock_ensure_initialized
+        self, mock_resume_workflow_async, mock_ensure_initialized
     ):
         """Test the resume workflow endpoint."""
         from fastapi import FastAPI
@@ -288,7 +310,7 @@ class TestExecutionRoutes(TestCase):
 
         # Configure mocks
         mock_ensure_initialized.return_value = None
-        mock_resume_workflow.return_value = {
+        mock_resume_workflow_async.return_value = {
             "success": True,
             "thread_id": "thread-123",
             "outputs": {"resumed": "result"},
@@ -327,7 +349,7 @@ class TestExecutionRoutes(TestCase):
 
         # Verify runtime API calls
         mock_ensure_initialized.assert_called_once()
-        mock_resume_workflow.assert_called_once()
+        mock_resume_workflow_async.assert_awaited_once()
 
 
 class TestAPIIntegration(TestCase):
@@ -335,11 +357,12 @@ class TestAPIIntegration(TestCase):
 
     @pytest.mark.integration
     def test_api_executes_workflow_correctly(self):
-        """Verify that the API now correctly uses runtime facade pattern."""
+        """Verify that the API now correctly uses async runtime facade pattern."""
         # This test verifies our fix is working by checking the key changes:
-        # 1. API routes now use runtime facade functions (ensure_initialized, run_workflow)
+        # 1. API routes now use async runtime facade functions
+        #    (ensure_initialized, run_workflow_async)
         # 2. API routes no longer directly instantiate services from container
-        # 3. All execution goes through the runtime API layer
+        # 3. All execution goes through the async runtime API layer
 
         # The unit tests above verify this behavior through mocking
         # In a real integration test, you would:
