@@ -246,7 +246,7 @@ class BaseAgent:
         Returns:
             Output value, same logical shape as process() for equivalent inputs.
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.process, inputs)
 
     async def run_async(self, state: Any) -> Dict[str, Any]:
@@ -283,6 +283,7 @@ class BaseAgent:
         """
         assert self._telemetry_service is not None
         _graph_interrupt: Optional[GraphInterrupt] = None
+        is_agent_error = False
         try:
             with self._telemetry_service.start_span(
                 AGENT_RUN_SPAN,
@@ -299,11 +300,16 @@ class BaseAgent:
                     )
                 except GraphInterrupt as gi:
                     _graph_interrupt = gi
+                except Exception:
+                    is_agent_error = True
+                    raise
             if _graph_interrupt is not None:
                 raise _graph_interrupt
         except GraphInterrupt:
             raise
         except Exception as telemetry_error:
+            if is_agent_error:
+                raise
             self.log_warning(
                 f"Telemetry error, executing async without instrumentation: "
                 f"{telemetry_error}"

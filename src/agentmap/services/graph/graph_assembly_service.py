@@ -5,6 +5,7 @@ This module provides the main GraphAssemblyService class that orchestrates
 the assembly of LangGraph StateGraph instances from Graph domain models.
 """
 
+import asyncio
 from typing import Any, Dict, Optional
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -249,13 +250,19 @@ class GraphAssemblyService:
             use_async: When True, bind agent_instance.run_async instead of
                 agent_instance.run.  Defaults to False for backwards compatibility.
         """
-        if use_async and not hasattr(agent_instance, "run_async"):
-            raise ValueError(
-                f"Agent '{name}' ({agent_instance.__class__.__name__}) does not implement "
-                "run_async() — cannot assemble async graph. Either add run_async() to the "
-                "agent class or use assemble_graph() for the sync path."
-            )
-        callable_ = agent_instance.run_async if use_async else agent_instance.run
+        if use_async:
+            if hasattr(agent_instance, "run_async"):
+                callable_ = agent_instance.run_async
+            else:
+                _sync_run = agent_instance.run
+
+                async def _async_wrapper(state: Any, _run: Any = _sync_run) -> Any:
+                    loop = asyncio.get_running_loop()
+                    return await loop.run_in_executor(None, _run, state)
+
+                callable_ = _async_wrapper
+        else:
+            callable_ = agent_instance.run
         self.builder.add_node(name, callable_)
         class_name = agent_instance.__class__.__name__
 

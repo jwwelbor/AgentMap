@@ -651,12 +651,14 @@ class TestGraphAssemblyAsync(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.assembly_service.assemble_graph_async(graph, agents)
 
-    def test_sync_only_agent_raises_value_error_on_async_assembly(self):
-        """Guard: assemble_graph_async() raises ValueError for agents without run_async.
+    def test_sync_only_agent_wrapped_in_executor_for_async_assembly(self):
+        """Fallback: assemble_graph_async() wraps sync-only agents in an async executor.
 
-        Counter-factual: without the guard, bare attribute access would raise
-        AttributeError with no diagnostic message about which agent is at fault.
+        Counter-factual: a strict guard would raise ValueError, breaking backwards
+        compatibility with legacy agents that only implement run().  The fallback
+        keeps the event loop responsive and stays compatible with all existing agents.
         """
+        import inspect
 
         class SyncOnlyAgent:
             def run(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -664,11 +666,12 @@ class TestGraphAssemblyAsync(unittest.TestCase):
 
         single_node = Node(name="Solo", agent_type="echo")
         graph = Graph(
-            name="sync_only_guard_graph",
+            name="sync_only_fallback_graph",
             entry_point="Solo",
             nodes={"Solo": single_node},
         )
-        agents = {"Solo": SyncOnlyAgent()}
+        agent_instance = SyncOnlyAgent()
+        agents = {"Solo": agent_instance}
 
         mock_builder = self._make_builder_mock()
         self.mock_state_schema_builder.get_schema_for_graph.return_value = dict
@@ -677,11 +680,16 @@ class TestGraphAssemblyAsync(unittest.TestCase):
             "agentmap.services.graph.graph_assembly_service.StateGraph"
         ) as mock_sg_cls:
             mock_sg_cls.return_value = mock_builder
-            with self.assertRaises(ValueError) as ctx:
-                self.assembly_service.assemble_graph_async(graph, agents)
+            self.assembly_service.assemble_graph_async(graph, agents)
 
-        self.assertIn("run_async", str(ctx.exception))
-        self.assertIn("Solo", str(ctx.exception))
+        # Verify add_node was called and the callable registered is a coroutine function
+        mock_builder.add_node.assert_called_once()
+        _name, registered_callable = mock_builder.add_node.call_args[0]
+        self.assertEqual(_name, "Solo")
+        self.assertTrue(
+            inspect.iscoroutinefunction(registered_callable),
+            "Sync-only agent must be wrapped in an async callable for async graph assembly",
+        )
 
 
 if __name__ == "__main__":
