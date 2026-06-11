@@ -651,6 +651,38 @@ class TestGraphAssemblyAsync(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.assembly_service.assemble_graph_async(graph, agents)
 
+    def test_sync_only_agent_raises_value_error_on_async_assembly(self):
+        """Guard: assemble_graph_async() raises ValueError for agents without run_async.
+
+        Counter-factual: without the guard, bare attribute access would raise
+        AttributeError with no diagnostic message about which agent is at fault.
+        """
+
+        class SyncOnlyAgent:
+            def run(self, state: Dict[str, Any]) -> Dict[str, Any]:
+                return {}
+
+        single_node = Node(name="Solo", agent_type="echo")
+        graph = Graph(
+            name="sync_only_guard_graph",
+            entry_point="Solo",
+            nodes={"Solo": single_node},
+        )
+        agents = {"Solo": SyncOnlyAgent()}
+
+        mock_builder = self._make_builder_mock()
+        self.mock_state_schema_builder.get_schema_for_graph.return_value = dict
+
+        with patch(
+            "agentmap.services.graph.graph_assembly_service.StateGraph"
+        ) as mock_sg_cls:
+            mock_sg_cls.return_value = mock_builder
+            with self.assertRaises(ValueError) as ctx:
+                self.assembly_service.assemble_graph_async(graph, agents)
+
+        self.assertIn("run_async", str(ctx.exception))
+        self.assertIn("Solo", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

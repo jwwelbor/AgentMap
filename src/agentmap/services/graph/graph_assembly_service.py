@@ -249,6 +249,12 @@ class GraphAssemblyService:
             use_async: When True, bind agent_instance.run_async instead of
                 agent_instance.run.  Defaults to False for backwards compatibility.
         """
+        if use_async and not hasattr(agent_instance, "run_async"):
+            raise ValueError(
+                f"Agent '{name}' ({agent_instance.__class__.__name__}) does not implement "
+                "run_async() — cannot assemble async graph. Either add run_async() to the "
+                "agent class or use assemble_graph() for the sync path."
+            )
         callable_ = agent_instance.run_async if use_async else agent_instance.run
         self.builder.add_node(name, callable_)
         class_name = agent_instance.__class__.__name__
