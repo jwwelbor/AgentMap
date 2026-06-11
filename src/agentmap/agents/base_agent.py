@@ -281,6 +281,7 @@ class BaseAgent:
         Falls back to _run_async_core if span creation fails (mirrors sync
         telemetry fallback pattern).  GraphInterrupt is re-raised directly.
         """
+        assert self._telemetry_service is not None
         _graph_interrupt: Optional[GraphInterrupt] = None
         try:
             with self._telemetry_service.start_span(
@@ -308,6 +309,7 @@ class BaseAgent:
                 f"{telemetry_error}"
             )
             return await self._run_async_core(state, execution_id, start_time)
+        return await self._run_async_core(state, execution_id, start_time)
 
     async def _run_async_core(
         self, state: Any, execution_id: str, start_time: float

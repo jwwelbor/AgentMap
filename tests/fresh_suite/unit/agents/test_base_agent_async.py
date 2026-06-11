@@ -176,9 +176,9 @@ class TestBaseAgentRunAsync_TC001(unittest.TestCase):
         run_call_count = {"n": 0}
         original_run = agent.run
 
-        def spy_run(s):
+        def spy_run(state):
             run_call_count["n"] += 1
-            return original_run(s)
+            return original_run(state)
 
         agent.run = spy_run
 
