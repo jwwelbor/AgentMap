@@ -250,7 +250,7 @@ class TestRunCommandUsesAsyncFacade:
 
             run_command(
                 workflow=None,
-                graph=None,
+                graph="",
                 state="{}",
                 validate=False,
                 config_file=None,
