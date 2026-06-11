@@ -72,7 +72,13 @@ def _make_resume_success_payload():
 
 
 def _make_inspect_graph_payload():
-    """Return a representative inspect_graph_async payload."""
+    """Return a representative inspect_graph_async payload.
+
+    Shape matches the real inspect_graph / inspect_graph_async return value
+    (see agentmap/runtime/workflow_ops.py inspect_graph):
+      outputs["structure"]["nodes"] — list of dicts with name/agent_type/description
+      outputs["issues"]             — list of strings
+    """
     return {
         "success": True,
         "outputs": {
@@ -81,37 +87,30 @@ def _make_inspect_graph_payload():
             "unique_agent_types": 1,
             "all_resolvable": True,
             "resolution_rate": 1.0,
-            "node_details": {
-                "start_node": {
-                    "agent_type": "default",
-                    "description": "Start node",
-                    "resolvable": True,
-                    "source": "registry",
-                    "service_info": {
-                        "services": {"llm": True},
-                        "protocols": {"LLMCapable": True},
-                        "configuration": {
-                            "input_fields": ["input"],
-                            "output_field": "output",
-                        },
+            "structure": {
+                "nodes": [
+                    {
+                        "name": "start_node",
+                        "agent_type": "default",
+                        "description": "Start node",
                     },
-                    "error": None,
-                },
-                "end_node": {
-                    "agent_type": "default",
-                    "description": "End node",
-                    "resolvable": True,
-                    "source": "registry",
-                    "service_info": None,
-                    "error": None,
-                },
+                    {
+                        "name": "end_node",
+                        "agent_type": "default",
+                        "description": "End node",
+                    },
+                ],
+                "entry_point": "start_node",
             },
             "issues": [],
+            "required_agents": ["default"],
+            "required_services": [],
         },
         "metadata": {
             "graph_name": "test_graph",
             "csv_file": "/tmp/test.csv",
             "inspected_node": None,
+            "csv_hash": None,
         },
     }
 
