@@ -5,6 +5,7 @@ This command follows SPEC-DEP-001 by using only the runtime facade
 and CLI presenter utilities for consistent behavior and error handling.
 """
 
+import asyncio
 import json
 from typing import Optional
 
@@ -15,7 +16,7 @@ from agentmap.deployment.cli.utils.cli_presenter import (
     print_err,
     print_json,
 )
-from agentmap.runtime_api import ensure_initialized, run_workflow
+from agentmap.runtime_api import ensure_initialized, run_workflow_async
 
 
 def run_command(
@@ -106,11 +107,13 @@ def run_command(
         #         print_err("Invalid :: syntax - both filename and graph name must be non-empty")
         #         raise typer.Exit(code=2)
 
-        result = run_workflow(
-            graph_name=graph_name,
-            inputs=initial_state,
-            config_file=config_file,
-            force_create=force_create,
+        result = asyncio.run(
+            run_workflow_async(
+                graph_name=graph_name,
+                inputs=initial_state,
+                config_file=config_file,
+                force_create=force_create,
+            )
         )
 
         # Check if execution was interrupted for human interaction

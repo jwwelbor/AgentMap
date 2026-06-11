@@ -5,11 +5,12 @@ This module provides the inspect-graph command for analyzing agent service
 configuration and graph structure.
 """
 
+import asyncio
 from typing import Optional
 
 import typer
 
-from agentmap.runtime_api import inspect_graph
+from agentmap.runtime_api import inspect_graph_async
 
 
 def inspect_graph_cmd(
@@ -29,11 +30,13 @@ def inspect_graph_cmd(
     typer.echo("=" * 50)
 
     try:
-        result = inspect_graph(
-            graph_name,
-            csv_file=csv_file,
-            node=node,
-            config_file=config_file,
+        result = asyncio.run(
+            inspect_graph_async(
+                graph_name,
+                csv_file=csv_file,
+                node=node,
+                config_file=config_file,
+            )
         )
 
         outputs = result["outputs"]
