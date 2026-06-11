@@ -310,31 +310,10 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
 
         try:
             # Initialize memory if needed (handle both direct process() calls and run() calls)
-            if self.memory_key not in inputs:
-                inputs[self.memory_key] = []
+            self._initialize_memory_if_needed(inputs)
 
-                # Add system message from resolved prompt if available
-                if self.resolved_prompt:
-                    add_system_message(inputs, self.resolved_prompt, self.memory_key)
-
-            # Get relevant input fields (excluding memory) and apply conditional formatting
-            relevant_fields = [
-                field
-                for field in self.input_fields
-                if field != self.memory_key and inputs.get(field)
-            ]
-
-            if len(relevant_fields) == 1:
-                # Single field: use value directly without prefix for cleaner LLM input
-                user_input = str(inputs.get(relevant_fields[0]))
-            elif len(relevant_fields) > 1:
-                # Multiple fields: use prefixed structure for clarity
-                input_parts = [
-                    f"{field}: {inputs.get(field)}" for field in relevant_fields
-                ]
-                user_input = "\n".join(input_parts)
-            else:
-                user_input = ""
+            # Build user input using shared helper
+            user_input = self._build_user_input(inputs)
 
             if not user_input:
                 self.log_warning("No input found in inputs")
@@ -393,6 +372,126 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
             self.log_info("LLM processing completed successfully")
 
             # Return result with memory included
+            return {"output": result, self.memory_key: inputs.get(self.memory_key, [])}
+
+        except Exception as e:
+            provider_name = (
+                self.provider_name if not self.routing_enabled else "routing"
+            )
+            self.log_error(f"Error in {provider_name} processing: {e}")
+            return {"error": str(e), "last_action_success": False}
+
+    def _build_user_input(self, inputs: Dict[str, Any]) -> str:
+        """
+        Build the user input string from relevant input fields.
+
+        Shared by sync process() and async process_async() so both paths
+        produce logically equivalent message content.
+
+        Args:
+            inputs: Dictionary of input values (memory key excluded)
+
+        Returns:
+            Formatted user input string (plain for single field, prefixed for multiple)
+        """
+        relevant_fields = [
+            field
+            for field in self.input_fields
+            if field != self.memory_key and inputs.get(field)
+        ]
+
+        if len(relevant_fields) == 1:
+            return str(inputs.get(relevant_fields[0]))
+        elif len(relevant_fields) > 1:
+            input_parts = [f"{field}: {inputs.get(field)}" for field in relevant_fields]
+            return "\n".join(input_parts)
+        return ""
+
+    def _initialize_memory_if_needed(self, inputs: Dict[str, Any]) -> None:
+        """
+        Initialize memory in inputs if not already present and add system message.
+
+        Shared by sync process() and async process_async() so both paths
+        handle memory initialization identically.
+
+        Args:
+            inputs: Dictionary of input values (mutated in place)
+        """
+        if self.memory_key not in inputs:
+            inputs[self.memory_key] = []
+            if self.resolved_prompt:
+                add_system_message(inputs, self.resolved_prompt, self.memory_key)
+
+    async def process_async(self, inputs: Dict[str, Any]) -> Any:
+        """
+        Async processing path for LLMAgent (REQ-F-003).
+
+        Reuses the same prompt, memory, and output-shaping logic as the sync
+        process() while awaiting the async LLM service contract from F01
+        (call_llm_async instead of call_llm).
+
+        This override keeps provider-specific async work isolated in the
+        concrete agent class (Key Technical Decision 3 from spec.md).
+
+        Args:
+            inputs: Dictionary of input values
+
+        Returns:
+            Response dict with output and memory fields, or error dict on failure.
+            Same logical shape as process() for equivalent inputs.
+        """
+        llm_service = self.llm_service
+
+        try:
+            self._initialize_memory_if_needed(inputs)
+
+            user_input = self._build_user_input(inputs)
+
+            if not user_input:
+                self.log_warning("No input found in inputs")
+            else:
+                self.log_info(f"Processing LLM request with input: {user_input}")
+
+            messages = get_memory(inputs, self.memory_key)
+
+            if user_input:
+                add_user_message(inputs, user_input, self.memory_key)
+                messages = get_memory(inputs, self.memory_key)
+
+            routing_context = self._prepare_routing_context(inputs)
+
+            if routing_context:
+                self.log_debug(
+                    f"Using routing mode for task_type: {routing_context.get('task_type')}"
+                )
+                response = await llm_service.call_llm_async(
+                    messages=messages,
+                    provider="auto",
+                    routing_context=routing_context,
+                )
+            else:
+                self.log_debug(f"Using legacy mode with provider: {self.provider_name}")
+                call_params: Dict[str, Any] = {
+                    "messages": messages,
+                    "provider": self.provider_name,
+                    "model": self.model,
+                    "temperature": self.temperature,
+                }
+                if self.max_tokens is not None:
+                    call_params["max_tokens"] = self.max_tokens
+
+                response = await llm_service.call_llm_async(**call_params)
+
+            # Extract the text from the LLMResponse
+            result = response.text
+
+            add_assistant_message(inputs, result, self.memory_key)
+
+            if self.max_memory_messages:
+                truncate_memory(inputs, self.max_memory_messages, self.memory_key)
+
+            self.log_info("LLM processing completed successfully")
+
             return {"output": result, self.memory_key: inputs.get(self.memory_key, [])}
 
         except Exception as e:
