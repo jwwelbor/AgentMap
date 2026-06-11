@@ -68,5 +68,7 @@ def validate_command(
         else:
             typer.secho("✅ All agent types are defined", fg=typer.colors.GREEN)
 
+    except typer.Exit:
+        raise
     except Exception as e:
         handle_command_error(e, verbose=False)

@@ -120,7 +120,7 @@ def _make_validate_workflow_payload():
     return {
         "success": True,
         "outputs": {
-            "valid": True,
+            "csv_structure_valid": True,
             "total_nodes": 3,
             "total_edges": 2,
             "missing_declarations": [],

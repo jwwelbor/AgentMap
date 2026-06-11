@@ -81,6 +81,8 @@ def inspect_graph_cmd(
                 f"   agentmap inspect-graph {graph_name} --node NODE_NAME  # Inspect specific node"
             )
 
+    except typer.Exit:
+        raise
     except Exception as e:
         typer.secho(f"❌ Failed to inspect graph: {e}", fg=typer.colors.RED)
         typer.echo("\n💡 Troubleshooting:")
