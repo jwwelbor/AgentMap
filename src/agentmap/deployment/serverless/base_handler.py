@@ -125,9 +125,7 @@ class BaseHandler:
             # Check for resume action (auto-resume via message).
             # The raw event is checked because trigger strategies do not preserve
             # the "action" key in parsed_data.
-            resume_source = (
-                parsed_data if parsed_data.get("action") == "resume" else event
-            )
+            resume_source = event if event.get("action") == "resume" else parsed_data
             if event.get("action") == "resume" or parsed_data.get("action") == "resume":
                 return await self._handle_resume_action(resume_source, correlation_id)
 

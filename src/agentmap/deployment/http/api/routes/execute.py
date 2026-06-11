@@ -245,6 +245,7 @@ async def _execute_workflow_internal(
             graph_name=graph_identifier,
             inputs=request_body.inputs,
             force_create=request_body.force_create,
+            config_file=config_file,
         )
 
         return _build_execute_response(

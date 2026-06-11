@@ -90,6 +90,7 @@ class TestExecutionRoutes(TestCase):
             graph_name="test_workflow::TestGraph",
             inputs={"input": "test_data"},
             force_create=False,
+            config_file=None,
         )
 
     @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
@@ -197,6 +198,7 @@ class TestExecutionRoutes(TestCase):
             graph_name="legacy_workflow::LegacyGraph",
             inputs={"test": "data"},
             force_create=False,
+            config_file=None,
         )
 
     @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
@@ -292,7 +294,10 @@ class TestExecutionRoutes(TestCase):
         # Verify runtime API calls
         mock_ensure_initialized.assert_called_once()
         mock_run_workflow_async.assert_awaited_once_with(
-            graph_name="simple_workflow", inputs={"input": "test"}, force_create=False
+            graph_name="simple_workflow",
+            inputs={"input": "test"},
+            force_create=False,
+            config_file=None,
         )
 
     @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
