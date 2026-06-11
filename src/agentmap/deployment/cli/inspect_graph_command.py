@@ -23,28 +23,8 @@ def inspect_graph_cmd(
     node: Optional[str] = typer.Option(
         None, "--node", "-n", help="Inspect specific node only"
     ),
-    show_services: bool = typer.Option(
-        True, "--services/--no-services", help="Show service availability"
-    ),
-    show_protocols: bool = typer.Option(
-        True, "--protocols/--no-protocols", help="Show protocol implementations"
-    ),
-    show_config: bool = typer.Option(
-        False, "--config-details", help="Show detailed configuration"
-    ),
-    show_resolution: bool = typer.Option(
-        False, "--resolution", help="Show agent resolution details"
-    ),
 ):
     """Inspect agent service configuration for a graph."""
-    if show_services or show_protocols or show_config or show_resolution:
-        typer.echo(
-            "Note: --services/--protocols/--config-details/--resolution detail flags "
-            "are not available in this runtime facade version and will be added in a "
-            "future release.",
-            err=True,
-        )
-
     typer.echo(f"🔍 Inspecting Graph: {graph_name}")
     typer.echo("=" * 50)
 
@@ -88,9 +68,6 @@ def inspect_graph_cmd(
         typer.echo("\n💡 Helpful Commands:")
         typer.echo(
             "   agentmap diagnose                    # Check system dependencies"
-        )
-        typer.echo(
-            f"   agentmap inspect-graph {graph_name} --config-details  # Show detailed config"
         )
         if node:
             typer.echo(

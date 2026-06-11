@@ -526,10 +526,6 @@ class TestInspectGraphCommandUsesAsyncFacade:
             csv_file=None,
             config_file=None,
             node=None,
-            show_services=True,
-            show_protocols=True,
-            show_config=False,
-            show_resolution=False,
         )
 
         # Counter-factual: inspect_graph_async must be called, not inspect_graph
@@ -552,10 +548,6 @@ class TestInspectGraphCommandUsesAsyncFacade:
                 csv_file=None,
                 config_file=None,
                 node="start_node",
-                show_services=True,
-                show_protocols=True,
-                show_config=False,
-                show_resolution=False,
             )
         except typer.Exit:
             pass
@@ -584,10 +576,6 @@ class TestInspectGraphCommandUsesAsyncFacade:
                 csv_file=None,
                 config_file=None,
                 node=None,
-                show_services=True,
-                show_protocols=True,
-                show_config=False,
-                show_resolution=False,
             )
 
         assert exc_info.value.exit_code == 1
@@ -599,6 +587,71 @@ class TestInspectGraphCommandUsesAsyncFacade:
         assert not hasattr(
             inspect_cmd_module, "inspect_graph_async"
         ), "async inspect_graph_async is imported in inspect_graph_command.py — use sync facade for CLI"
+
+    def test_inspect_graph_cmd_no_op_flags_removed_from_signature(self):
+        """TC-003C tech-debt: --services/--protocols/--config-details/--resolution flags
+        are no-ops (facade returns only name/agent_type/description); they must be
+        removed from the function signature so callers are not misled.
+        Counter-factual: if any of the four params still exist the assert fires,
+        proving the implementation has not been cleaned up.
+        """
+        import inspect
+
+        from agentmap.deployment.cli.inspect_graph_command import inspect_graph_cmd
+
+        params = list(inspect.signature(inspect_graph_cmd).parameters.keys())
+        for dead_param in (
+            "show_services",
+            "show_protocols",
+            "show_config",
+            "show_resolution",
+        ):
+            assert dead_param not in params, (
+                f"No-op parameter '{dead_param}' is still present in inspect_graph_cmd — "
+                "remove it as part of T-E04-F03-005 tech-debt cleanup."
+            )
+
+    def test_inspect_graph_cmd_helpful_commands_no_config_details_line(self):
+        """TC-003C tech-debt: the 'Helpful Commands' block must not recommend
+        --config-details (the flag is dead and would silently no-op if kept).
+        Counter-factual: a stale recommendation string in output proves the
+        implementation has not been cleaned up.
+        """
+        from unittest.mock import patch as _patch
+
+        from agentmap.deployment.cli.inspect_graph_command import inspect_graph_cmd
+
+        with _patch(
+            "agentmap.deployment.cli.inspect_graph_command.inspect_graph",
+            return_value=_make_inspect_graph_payload(),
+        ):
+            captured = []
+
+            def _capturing_echo(msg="", **kwargs):
+                captured.append(str(msg))
+
+            with (
+                _patch(
+                    "agentmap.deployment.cli.inspect_graph_command.typer.echo",
+                    side_effect=_capturing_echo,
+                ),
+                _patch(
+                    "agentmap.deployment.cli.inspect_graph_command.typer.secho",
+                    side_effect=_capturing_echo,
+                ),
+            ):
+                inspect_graph_cmd(
+                    graph_name="test_graph",
+                    csv_file=None,
+                    config_file=None,
+                    node=None,
+                )
+
+        full_output = "\n".join(captured)
+        assert "--config-details" not in full_output, (
+            "Dead --config-details recommendation is still present in inspect_graph_cmd output — "
+            "remove it as part of T-E04-F03-005 tech-debt cleanup."
+        )
 
     @patch(
         "agentmap.deployment.cli.inspect_graph_command.inspect_graph",
@@ -617,10 +670,6 @@ class TestInspectGraphCommandUsesAsyncFacade:
                 csv_file="/tmp/test.csv",
                 config_file=None,
                 node=None,
-                show_services=True,
-                show_protocols=True,
-                show_config=False,
-                show_resolution=False,
             )
         except typer.Exit:
             pass
