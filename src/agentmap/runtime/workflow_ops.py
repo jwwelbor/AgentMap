@@ -3,7 +3,7 @@
 import asyncio
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, NoReturn, Optional
 
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.exceptions.runtime_exceptions import (
@@ -601,21 +601,20 @@ def _graph_entry(
     }
 
 
-def _parse_resume_token(resume_token: str) -> tuple[str, str, Optional[Dict[str, Any]]]:
+def _parse_resume_token(resume_token: Any) -> tuple[str, str, Optional[Dict[str, Any]]]:
     """Parse resume token to extract thread_id, action, and data."""
-    if isinstance(resume_token, str):
-        try:
-            token_data = json.loads(resume_token)
-            thread_id = token_data.get("thread_id")
-            response_action = token_data.get("response_action", "continue")
-            response_data = token_data.get("response_data")
-        except json.JSONDecodeError:
-            # Maybe it's just a thread_id string
-            thread_id = resume_token
-            response_action = "continue"
-            response_data = None
-    else:
+    if not isinstance(resume_token, str):
         raise InvalidInputs("Resume token must be a string")
+    try:
+        token_data = json.loads(resume_token)
+        thread_id = token_data.get("thread_id")
+        response_action = token_data.get("response_action", "continue")
+        response_data = token_data.get("response_data")
+    except json.JSONDecodeError:
+        # Maybe it's just a thread_id string
+        thread_id = resume_token
+        response_action = "continue"
+        response_data = None
 
     if not thread_id:
         raise InvalidInputs("Resume token must contain a valid thread_id")
@@ -623,7 +622,7 @@ def _parse_resume_token(resume_token: str) -> tuple[str, str, Optional[Dict[str,
     return thread_id, response_action, response_data
 
 
-def _raise_mapped_error(graph_name: str, error_msg: str) -> None:
+def _raise_mapped_error(graph_name: str, error_msg: str) -> NoReturn:
     """Map execution error messages to appropriate exceptions."""
     low = error_msg.lower()
     if "not found" in low or "does not exist" in low:

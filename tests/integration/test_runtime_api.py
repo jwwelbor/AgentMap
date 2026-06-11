@@ -767,7 +767,7 @@ class TestAsyncFacadeExports:
         mock_result = ExecutionResult(
             graph_name="test_graph",
             final_state={"resumed": True},
-            execution_summary="Resumed via async",
+            execution_summary=None,
             success=True,
             total_duration=3.2,
         )
@@ -800,7 +800,7 @@ class TestAsyncFacadeExports:
         mock_result = ExecutionResult(
             graph_name="approval_flow",
             final_state={"approved": True, "__human_response": "yes"},
-            execution_summary="Human response processed",
+            execution_summary=None,
             success=True,
             total_duration=5.0,
         )

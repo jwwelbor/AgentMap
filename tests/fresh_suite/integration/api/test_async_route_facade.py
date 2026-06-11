@@ -14,6 +14,7 @@ Caller-Path Contracts (from test-plan.md):
            forbidden: inspect_graph, WorkflowDetailResponse/NodeInfo helpers
 """
 
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
@@ -38,7 +39,9 @@ def _make_app_with_auth_disabled(router):
     return app
 
 
-def _make_execute_success_payload(interrupted: bool = False, thread_id: str = None):
+def _make_execute_success_payload(
+    interrupted: bool = False, thread_id: Optional[str] = None
+):
     """Return a representative async runtime payload for execute routes."""
     if interrupted:
         return {

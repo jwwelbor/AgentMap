@@ -34,7 +34,7 @@ class TestResumeWorkflowRuntimeAPI(unittest.TestCase):
         mock_result = ExecutionResult(
             graph_name="test_graph",
             final_state={"completed": True, "result": "done"},
-            execution_summary="Workflow resumed and completed",
+            execution_summary=None,
             success=True,
             total_duration=10.5,
         )
@@ -66,7 +66,7 @@ class TestResumeWorkflowRuntimeAPI(unittest.TestCase):
         # Verify result format
         self.assertTrue(result["success"])
         self.assertEqual(result["outputs"], {"completed": True, "result": "done"})
-        self.assertEqual(result["execution_summary"], "Workflow resumed and completed")
+        self.assertIsNone(result["execution_summary"])
         self.assertEqual(result["metadata"]["thread_id"], self.thread_id)
         self.assertEqual(result["metadata"]["response_action"], self.response_action)
         self.assertEqual(result["metadata"]["profile"], "dev")
@@ -85,7 +85,7 @@ class TestResumeWorkflowRuntimeAPI(unittest.TestCase):
         mock_result = ExecutionResult(
             graph_name="test_graph",
             final_state={"status": "completed"},
-            execution_summary="Resumed",
+            execution_summary=None,
             success=True,
             total_duration=5.0,
         )
@@ -121,7 +121,7 @@ class TestResumeWorkflowRuntimeAPI(unittest.TestCase):
         mock_result = ExecutionResult(
             graph_name="test_graph",
             final_state={},
-            execution_summary="Done",
+            execution_summary=None,
             success=True,
             total_duration=1.0,
         )
@@ -193,7 +193,7 @@ class TestResumeWorkflowRuntimeAPI(unittest.TestCase):
         mock_result = ExecutionResult(
             graph_name="test_graph",
             final_state={"done": True},
-            execution_summary="Complete",
+            execution_summary=None,
             success=True,
             total_duration=1.0,
         )
@@ -353,7 +353,7 @@ class TestResumeWorkflowIntegrationPoints(unittest.TestCase):
         mock_result = ExecutionResult(
             graph_name="test",
             final_state={},
-            execution_summary="Done",
+            execution_summary=None,
             success=True,
             total_duration=1.0,
         )
@@ -391,7 +391,7 @@ class TestResumeWorkflowIntegrationPoints(unittest.TestCase):
         mock_result = ExecutionResult(
             graph_name="metadata_test",
             final_state={"key": "value", "execution_id": "exec_123"},
-            execution_summary="Test summary with details",
+            execution_summary=None,
             success=True,
             total_duration=15.75,
         )
@@ -402,7 +402,7 @@ class TestResumeWorkflowIntegrationPoints(unittest.TestCase):
         result = resume_workflow(token, profile="staging")
 
         # Verify all metadata is preserved
-        self.assertEqual(result["execution_summary"], "Test summary with details")
+        self.assertIsNone(result["execution_summary"])
         self.assertEqual(result["metadata"]["graph_name"], "metadata_test")
         self.assertEqual(result["metadata"]["duration"], 15.75)
         self.assertEqual(result["metadata"]["profile"], "staging")
@@ -432,7 +432,7 @@ class TestResumeWorkflowAsyncSyncCompatibility(unittest.TestCase):
         mock_result = ExecutionResult(
             graph_name="compat_graph",
             final_state={"ok": True},
-            execution_summary="Compat pass",
+            execution_summary=None,
             success=True,
             total_duration=1.0,
         )

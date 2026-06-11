@@ -118,7 +118,7 @@ def _to_serializable(value: Any) -> Any:
         return None
     if isinstance(value, datetime):
         return value.isoformat()
-    if is_dataclass(value):
+    if is_dataclass(value) and not isinstance(value, type):
         return _to_serializable(asdict(value))
     if isinstance(value, dict):
         return {key: _to_serializable(val) for key, val in value.items()}
