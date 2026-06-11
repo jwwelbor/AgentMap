@@ -5,11 +5,12 @@ This module provides the inspect-graph command for analyzing agent service
 configuration and graph structure.
 """
 
+import asyncio
 from typing import Optional
 
 import typer
 
-# Lazy import: moved to function to avoid DI container init at module load
+from agentmap.runtime_api import inspect_graph_async
 
 
 def inspect_graph_cmd(
@@ -37,19 +38,18 @@ def inspect_graph_cmd(
     ),
 ):
     """Inspect agent service configuration for a graph."""
-    # Lazy import to avoid DI container initialization at module load
-    from agentmap.runtime_api import inspect_graph
-
     typer.echo(f"🔍 Inspecting Graph: {graph_name}")
     typer.echo("=" * 50)
 
     try:
-        # Inspect using facade
-        result = inspect_graph(
-            graph_name,
-            csv_file=csv_file,
-            node=node,
-            config_file=config_file,
+        # Inspect using async runtime facade through sync wrapper
+        result = asyncio.run(
+            inspect_graph_async(
+                graph_name,
+                csv_file=csv_file,
+                node=node,
+                config_file=config_file,
+            )
         )
 
         outputs = result["outputs"]

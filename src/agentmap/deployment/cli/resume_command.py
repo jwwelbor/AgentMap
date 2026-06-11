@@ -5,6 +5,7 @@ This command follows SPEC-DEP-001 by using only the runtime facade
 and CLI presenter utilities for consistent behavior and error handling.
 """
 
+import asyncio
 import json
 from typing import Optional
 
@@ -15,8 +16,7 @@ from agentmap.deployment.cli.utils.cli_presenter import (
     print_err,
     print_json,
 )
-
-# Lazy import: moved to function to avoid DI container init at module load
+from agentmap.runtime_api import ensure_initialized, resume_workflow_async
 
 
 def resume_command(
@@ -35,9 +35,6 @@ def resume_command(
     ),
 ):
     """Resume an interrupted workflow by providing thread ID and response data."""
-    # Lazy import to avoid DI container initialization at module load
-    from agentmap.runtime_api import ensure_initialized, resume_workflow
-
     try:
         # Ensure runtime is initialized
         ensure_initialized(config_file=config_file)
@@ -77,10 +74,12 @@ def resume_command(
 
         resume_token = json.dumps(resume_token_data)
 
-        # Execute using runtime facade
-        result = resume_workflow(
-            resume_token=resume_token,
-            config_file=config_file,
+        # Execute using async runtime facade through sync wrapper
+        result = asyncio.run(
+            resume_workflow_async(
+                resume_token=resume_token,
+                config_file=config_file,
+            )
         )
 
         # Display result using CLI presenter for consistency
