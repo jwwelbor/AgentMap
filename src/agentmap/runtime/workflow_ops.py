@@ -1,5 +1,6 @@
 """Workflow-related operations."""
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -630,3 +631,86 @@ def _raise_mapped_error(graph_name: str, error_msg: str) -> None:
     if "invalid" in low or "validation" in low:
         raise InvalidInputs(error_msg)
     raise RuntimeError(f"Workflow execution failed: {error_msg}")
+
+
+# ---------------------------------------------------------------------------
+# Async facade — each function isolates sync-only work behind asyncio.to_thread
+# so callers on an event loop never block.
+# ---------------------------------------------------------------------------
+
+
+async def run_workflow_async(
+    graph_name: str,
+    inputs: Dict[str, Any],
+    *,
+    profile: Optional[str] = None,
+    resume_token: Optional[str] = None,
+    config_file: Optional[str] = None,
+    force_create: bool = False,
+) -> Dict[str, Any]:
+    """Async sibling of run_workflow.  Argument and return shape are identical."""
+    return await asyncio.to_thread(
+        run_workflow,
+        graph_name,
+        inputs,
+        profile=profile,
+        resume_token=resume_token,
+        config_file=config_file,
+        force_create=force_create,
+    )
+
+
+async def resume_workflow_async(
+    resume_token: str,
+    *,
+    profile: Optional[str] = None,
+    config_file: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Async sibling of resume_workflow.  Argument and return shape are identical."""
+    return await asyncio.to_thread(
+        resume_workflow,
+        resume_token,
+        profile=profile,
+        config_file=config_file,
+    )
+
+
+async def list_graphs_async(
+    *, profile: Optional[str] = None, config_file: Optional[str] = None
+) -> Dict[str, Any]:
+    """Async sibling of list_graphs.  Isolates filesystem scanning in a thread."""
+    return await asyncio.to_thread(
+        list_graphs,
+        profile=profile,
+        config_file=config_file,
+    )
+
+
+async def inspect_graph_async(
+    graph_name: str,
+    *,
+    csv_file: Optional[str] = None,
+    node: Optional[str] = None,
+    config_file: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Async sibling of inspect_graph.  Argument and return shape are identical."""
+    return await asyncio.to_thread(
+        inspect_graph,
+        graph_name,
+        csv_file=csv_file,
+        node=node,
+        config_file=config_file,
+    )
+
+
+async def validate_workflow_async(
+    graph_name: str,
+    *,
+    config_file: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Async sibling of validate_workflow.  Argument and return shape are identical."""
+    return await asyncio.to_thread(
+        validate_workflow,
+        graph_name,
+        config_file=config_file,
+    )

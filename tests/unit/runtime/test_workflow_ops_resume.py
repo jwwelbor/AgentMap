@@ -411,5 +411,57 @@ class TestResumeWorkflowIntegrationPoints(unittest.TestCase):
         self.assertIn("execution_id", result["outputs"])
 
 
+class TestResumeWorkflowAsyncSyncCompatibility(unittest.TestCase):
+    """
+    AC-T1 sync-compatibility gate: existing sync resume tests still pass when
+    the async sibling is present.  These assertions mirror the contract already
+    proven by TestResumeWorkflowRuntimeAPI so that regression is explicit.
+    """
+
+    def setUp(self):
+        self.thread_id = "compat_thread_999"
+
+    @patch("agentmap.runtime.workflow_ops.ensure_initialized")
+    @patch(
+        "agentmap.services.workflow_orchestration_service.WorkflowOrchestrationService"
+    )
+    def test_sync_resume_workflow_unchanged_after_async_addition(
+        self, mock_orchestration_service, mock_ensure_init
+    ):
+        """Sync resume_workflow callable and result shape unchanged."""
+        mock_result = ExecutionResult(
+            graph_name="compat_graph",
+            final_state={"ok": True},
+            execution_summary="Compat pass",
+            success=True,
+            total_duration=1.0,
+        )
+        mock_orchestration_service.resume_workflow.return_value = mock_result
+
+        token = json.dumps({"thread_id": self.thread_id, "response_action": "continue"})
+        result = resume_workflow(token)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["outputs"], {"ok": True})
+        self.assertEqual(result["metadata"]["thread_id"], self.thread_id)
+
+    def test_async_resume_callable_exists_without_breaking_sync_import(self):
+        """AC-T1: async sibling importable alongside sync sibling."""
+        from agentmap.runtime.workflow_ops import (
+            resume_workflow,
+            resume_workflow_async,
+        )
+
+        self.assertTrue(callable(resume_workflow))
+        self.assertTrue(callable(resume_workflow_async))
+
+    def test_async_run_workflow_callable_exists_without_breaking_sync_import(self):
+        """AC-T1: run_workflow_async importable alongside run_workflow."""
+        from agentmap.runtime.workflow_ops import run_workflow, run_workflow_async
+
+        self.assertTrue(callable(run_workflow))
+        self.assertTrue(callable(run_workflow_async))
+
+
 if __name__ == "__main__":
     unittest.main()
