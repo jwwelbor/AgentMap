@@ -356,6 +356,93 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
             failing_agent.orchestrator_service, self.mock_orchestrator_service
         )
 
+    def test_async_path_parity_orchestrator_injection(self):
+        """TC-007 parity: async assembly path injects orchestrator service identically to sync.
+
+        This test verifies that the async assembly path produces the same orchestrator
+        injection behaviour as the existing sync path, satisfying AC-005 and the
+        requirement that existing sync tests remain unchanged (AC-006).
+
+        Counter-factual: a buggy async implementation would skip injection or only
+        inject on the sync path.
+        """
+
+        class AsyncOrchestratorAgent:
+            """Orchestrator agent that exposes both run and run_async."""
+
+            def __init__(self):
+                self.node_registry: Dict[str, Any] = {}
+                self.orchestrator_service = None
+                self.configure_called = False
+
+            def run(self, state):
+                return {"result": "sync"}
+
+            async def run_async(self, state):
+                return {"result": "async"}
+
+            def configure_orchestrator_service(self, svc):
+                self.orchestrator_service = svc
+                self.configure_called = True
+
+        class BasicAsyncAgent:
+            def run(self, state):
+                return {"result": "output"}
+
+            async def run_async(self, state):
+                return {"result": "async-output"}
+
+        orch_agent = AsyncOrchestratorAgent()
+        worker_agent = BasicAsyncAgent()
+
+        orch_node = Node(name="Orchestrator", agent_type="orchestrator")
+        orch_node.add_edge("failure", "Worker")
+        worker_node = Node(name="Worker", agent_type="echo")
+        worker_node.add_edge("default", "Orchestrator")
+
+        graph = Graph(name="async_parity_graph", entry_point="Orchestrator")
+        graph.nodes = {"Orchestrator": orch_node, "Worker": worker_node}
+
+        mock_builder = Mock()
+        mock_builder.compile.return_value = Mock()
+        mock_builder.set_entry_point = Mock()
+        mock_builder.add_node = Mock()
+
+        def mock_init_builder(graph=None):
+            self.assembly_service.orchestrator_nodes = []
+            self.assembly_service.injection_stats = {
+                "orchestrators_found": 0,
+                "orchestrators_injected": 0,
+                "injection_failures": 0,
+            }
+            self.assembly_service.builder = mock_builder
+
+        self.assembly_service._initialize_builder = mock_init_builder
+        test_registry = {"Orchestrator": {}, "Worker": {}}
+
+        self.assembly_service.assemble_graph_async(
+            graph,
+            {"Orchestrator": orch_agent, "Worker": worker_agent},
+            orchestrator_node_registry=test_registry,
+        )
+
+        # Orchestrator must be identified and injected
+        self.assertIn("Orchestrator", self.assembly_service.orchestrator_nodes)
+        self.assertTrue(
+            orch_agent.configure_called,
+            "configure_orchestrator_service() must be called on async path",
+        )
+        self.assertEqual(
+            orch_agent.orchestrator_service, self.mock_orchestrator_service
+        )
+        self.assertEqual(orch_agent.node_registry, test_registry)
+        self.assertEqual(
+            self.assembly_service.injection_stats["orchestrators_found"], 1
+        )
+        self.assertEqual(
+            self.assembly_service.injection_stats["orchestrators_injected"], 1
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

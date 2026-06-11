@@ -5,6 +5,7 @@ This module provides the main GraphAssemblyService class that orchestrates
 the assembly of LangGraph StateGraph instances from Graph domain models.
 """
 
+import asyncio
 from typing import Any, Dict, Optional
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -88,7 +89,12 @@ class GraphAssemblyService:
                 f"Using pre-existing graph entry point: '{graph.entry_point}'"
             )
 
-    def _process_all_nodes(self, graph: Graph, agent_instances: Dict[str, Any]) -> None:
+    def _process_all_nodes(
+        self,
+        graph: Graph,
+        agent_instances: Dict[str, Any],
+        use_async: bool = False,
+    ) -> None:
         """Process all nodes and their edges."""
         node_names = list(graph.nodes.keys())
         self.logger.debug(f"Processing {len(node_names)} nodes: {node_names}")
@@ -97,7 +103,7 @@ class GraphAssemblyService:
             if node_name not in agent_instances:
                 raise ValueError(f"No agent instance found for node: {node_name}")
             agent_instance = agent_instances[node_name]
-            self.add_node(node_name, agent_instance)
+            self.add_node(node_name, agent_instance, use_async=use_async)
             self.edge_processor.process_node_edges(
                 self.builder, node_name, node.edges, self.orchestrator_nodes
             )
@@ -174,13 +180,14 @@ class GraphAssemblyService:
         agent_instances: Dict[str, Any],
         orchestrator_node_registry: Optional[Dict[str, Any]],
         checkpointer: Optional[BaseCheckpointSaver],
+        use_async: bool = False,
     ) -> Any:
         """Common assembly logic for both standard and checkpoint-enabled graphs."""
         self._validate_graph(graph)
         self._initialize_builder(graph)
         self.orchestrator_node_registry = orchestrator_node_registry
         self._ensure_entry_point(graph)
-        self._process_all_nodes(graph, agent_instances)
+        self._process_all_nodes(graph, agent_instances, use_async=use_async)
 
         if graph.entry_point:
             self.builder.set_entry_point(graph.entry_point)
@@ -189,9 +196,74 @@ class GraphAssemblyService:
         self._add_orchestrator_routers(graph)
         return self._compile_graph(graph, checkpointer)
 
-    def add_node(self, name: str, agent_instance: Any) -> None:
-        """Add a node to the graph with its agent instance."""
-        self.builder.add_node(name, agent_instance.run)
+    def assemble_graph_async(
+        self,
+        graph: Graph,
+        agent_instances: Dict[str, Any],
+        orchestrator_node_registry: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """Assemble an executable LangGraph from a Graph domain model, binding async callables.
+
+        This is the async sibling of assemble_graph().  All node callables are bound to
+        agent_instance.run_async so the compiled graph can be awaited by async LangGraph
+        execution (REQ-F-004, REQ-F-007).  The sync assemble_graph() path is unchanged.
+        """
+        self.logger.info(f"Starting async graph assembly: '{graph.name}'")
+        return self._assemble_graph_common(
+            graph,
+            agent_instances,
+            orchestrator_node_registry,
+            checkpointer=None,
+            use_async=True,
+        )
+
+    def assemble_with_checkpoint_async(
+        self,
+        graph: Graph,
+        agent_instances: Dict[str, Any],
+        node_definitions: Optional[Dict[str, Any]] = None,
+        checkpointer: Optional[BaseCheckpointSaver] = None,
+    ) -> Any:
+        """Assemble a checkpoint-enabled LangGraph binding async callables.
+
+        This is the async sibling of assemble_with_checkpoint().  It preserves
+        checkpointer compilation behavior and node ordering while binding
+        agent_instance.run_async for each node (REQ-F-005, REQ-F-006).
+        """
+        self.logger.info(
+            f"Starting async checkpoint-enabled graph assembly: '{graph.name}'"
+        )
+        return self._assemble_graph_common(
+            graph,
+            agent_instances,
+            node_definitions,
+            checkpointer,
+            use_async=True,
+        )
+
+    def add_node(self, name: str, agent_instance: Any, use_async: bool = False) -> None:
+        """Add a node to the graph with its agent instance.
+
+        Args:
+            name: Node name.
+            agent_instance: Agent instance to bind.
+            use_async: When True, bind agent_instance.run_async instead of
+                agent_instance.run.  Defaults to False for backwards compatibility.
+        """
+        if use_async:
+            if hasattr(agent_instance, "run_async"):
+                callable_ = agent_instance.run_async
+            else:
+                _sync_run = agent_instance.run
+
+                async def _async_wrapper(state: Any, _run: Any = _sync_run) -> Any:
+                    loop = asyncio.get_running_loop()
+                    return await loop.run_in_executor(None, _run, state)
+
+                callable_ = _async_wrapper
+        else:
+            callable_ = agent_instance.run
+        self.builder.add_node(name, callable_)
         class_name = agent_instance.__class__.__name__
 
         if isinstance(agent_instance, OrchestrationCapableAgent) and hasattr(

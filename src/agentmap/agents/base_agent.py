@@ -5,6 +5,7 @@ Updated to use protocol-based dependency injection following clean architecture 
 Infrastructure services are injected via constructor, business services via post-construction configuration.
 """
 
+import asyncio
 import logging
 import time
 import uuid
@@ -227,6 +228,239 @@ class BaseAgent:
             Output value for the output_field
         """
         raise NotImplementedError("Subclasses must implement process()")
+
+    async def process_async(self, inputs: Dict[str, Any]) -> Any:
+        """
+        Async sibling to process(). Subclasses may override this to provide
+        native async work without modifying the sync process() contract.
+
+        Default behaviour (REQ-NF-001): runs the sync process() in the default
+        executor so the event loop remains responsive for sync-only subclasses.
+        This means sync-only subclasses gain async compatibility for free, while
+        native-async subclasses can override this method to avoid the executor
+        overhead.
+
+        Args:
+            inputs: Dictionary of input values
+
+        Returns:
+            Output value, same logical shape as process() for equivalent inputs.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.process, inputs)
+
+    async def run_async(self, state: Any) -> Dict[str, Any]:
+        """
+        Async entrypoint for agent execution.  Returns the same state-update
+        contract as run() and can be awaited by LangGraph node execution
+        (REQ-F-001).
+
+        Dispatches to the instrumented or uninstrumented async path based on
+        whether a telemetry service is available, mirroring the sync run()
+        dispatch pattern.
+
+        Args:
+            state: Current state object (LangGraph node state dict)
+
+        Returns:
+            Updated state dictionary — same shape as run() for equivalent inputs
+        """
+        execution_id = str(uuid.uuid4())[:8]
+        start_time = time.time()
+        self.log_trace(f"\n*** AGENT {self.name} RUN_ASYNC START [{execution_id}] ***")
+
+        if self._telemetry_service is not None:
+            return await self._run_async_with_telemetry(state, execution_id, start_time)
+        return await self._run_async_core(state, execution_id, start_time)
+
+    async def _run_async_with_telemetry(
+        self, state: Any, execution_id: str, start_time: float
+    ) -> Dict[str, Any]:
+        """Async run lifecycle wrapped in a telemetry span.
+
+        Falls back to _run_async_core if span creation fails (mirrors sync
+        telemetry fallback pattern).  GraphInterrupt is re-raised directly.
+        """
+        assert self._telemetry_service is not None
+        _graph_interrupt: Optional[GraphInterrupt] = None
+        is_agent_error = False
+        try:
+            with self._telemetry_service.start_span(
+                AGENT_RUN_SPAN,
+                attributes={
+                    AGENT_NAME: self.name,
+                    AGENT_TYPE: self.__class__.__name__,
+                    NODE_NAME: self.name,
+                    GRAPH_NAME: self.context.get("graph_name", "unknown"),
+                },
+            ) as span:
+                try:
+                    return await self._execute_agent_lifecycle_async(
+                        state, execution_id, start_time, span
+                    )
+                except GraphInterrupt as gi:
+                    _graph_interrupt = gi
+                except Exception:
+                    is_agent_error = True
+                    raise
+            if _graph_interrupt is not None:
+                raise _graph_interrupt
+        except GraphInterrupt:
+            raise
+        except Exception as telemetry_error:
+            if is_agent_error:
+                raise
+            self.log_warning(
+                f"Telemetry error, executing async without instrumentation: "
+                f"{telemetry_error}"
+            )
+            return await self._run_async_core(state, execution_id, start_time)
+        return await self._run_async_core(state, execution_id, start_time)
+
+    async def _run_async_core(
+        self, state: Any, execution_id: str, start_time: float
+    ) -> Dict[str, Any]:
+        """Async run lifecycle without telemetry instrumentation."""
+        return await self._execute_agent_lifecycle_async(
+            state, execution_id, start_time, span=None
+        )
+
+    async def _execute_agent_lifecycle_async(
+        self,
+        state: Any,
+        execution_id: str,
+        start_time: float,
+        span: Any = None,
+    ) -> Dict[str, Any]:
+        """Execute the full agent async lifecycle with optional span instrumentation.
+
+        Mirrors _execute_agent_lifecycle() but calls process_async() instead of
+        process() so subclasses can provide native async work while the base-class
+        default keeps the event loop responsive via run_in_executor (REQ-NF-001).
+
+        GraphInterrupt propagates unchanged (REQ-F-001).
+        """
+        tracking_service = self.execution_tracking_service
+
+        tracker = self.current_execution_tracker
+        if tracker is None:
+            raise ValueError(
+                f"No ExecutionTracker set for agent '{self.name}'. "
+                "Tracker must be distributed to agents before graph execution starts."
+            )
+
+        inputs = self.state_adapter_service.get_inputs(
+            state,
+            self.input_fields,
+            expected_params=getattr(self, "expected_params", None),
+        )
+
+        tracking_service.record_node_start(tracker, self.name, inputs)
+
+        try:
+            self._record_lifecycle_event(span, "pre_process.start")
+            self.log_trace(
+                f"\n*** AGENT {self.name} ASYNC PRE-PROCESS START [{execution_id}] ***"
+            )
+            state, inputs = self._pre_process(state, inputs)
+
+            self._record_lifecycle_event(span, "process.start")
+            self.log_trace(
+                f"\n*** AGENT {self.name} ASYNC PROCESS START [{execution_id}] ***"
+            )
+            # Call async process — default implementation runs sync process in executor
+            output = await self.process_async(inputs)
+
+            self._record_lifecycle_event(span, "post_process.start")
+            self.log_trace(
+                f"\n*** AGENT {self.name} ASYNC POST-PROCESS START [{execution_id}] ***"
+            )
+            state, output = self._post_process(state, inputs, output)
+
+            self._record_lifecycle_event(span, "agent.complete")
+            self._set_span_status_ok(span)
+            tracking_service.record_node_result(tracker, self.name, True, result=output)
+
+            # State-update resolution — same logic as sync _execute_agent_lifecycle
+            if isinstance(output, dict) and "state_updates" in output:
+                state_updates = output["state_updates"]
+                self.log_debug(
+                    f"Async returning multiple state updates: {list(state_updates.keys())}"
+                )
+                end_time = time.time()
+                duration = end_time - start_time
+                self.log_trace(
+                    f"\n*** AGENT {self.name} RUN_ASYNC COMPLETED [{execution_id}] in {duration:.4f}s ***"
+                )
+                return state_updates
+
+            if self.output_fields and output is not None:
+                if len(self.output_fields) > 1:
+                    state_updates = self._validate_multi_output(output)
+                    self.log_debug(
+                        f"Async multi-output: updating fields {list(state_updates.keys())}"
+                    )
+                    end_time = time.time()
+                    duration = end_time - start_time
+                    self.log_trace(
+                        f"\n*** AGENT {self.name} RUN_ASYNC COMPLETED [{execution_id}] in {duration:.4f}s ***"
+                    )
+                    return state_updates
+                else:
+                    self.log_debug(
+                        f"Async set output field '{self.output_fields[0]}' = {output}"
+                    )
+                    end_time = time.time()
+                    duration = end_time - start_time
+                    self.log_trace(
+                        f"\n*** AGENT {self.name} RUN_ASYNC COMPLETED [{execution_id}] in {duration:.4f}s ***"
+                    )
+                    return {self.output_fields[0]: output}
+
+            end_time = time.time()
+            duration = end_time - start_time
+            self.log_trace(
+                f"\n*** AGENT {self.name} RUN_ASYNC COMPLETED [{execution_id}] in {duration:.4f}s ***"
+            )
+            return {}
+
+        except GraphInterrupt:
+            self._record_lifecycle_event(span, "agent.suspended")
+            tracking_service.record_node_result(
+                tracker, self.name, True, result={"status": "suspended"}
+            )
+            self.log_info(f"Async graph execution suspended in {self.name}")
+            raise
+
+        except Exception as e:
+            self._record_span_exception(span, e)
+
+            error_msg = f"Error in {self.name} (async): {str(e)}"
+            self.log_error(error_msg)
+
+            tracking_service.record_node_result(
+                tracker, self.name, False, error=error_msg
+            )
+            graph_success = tracking_service.update_graph_success(tracker)
+
+            error_updates = {
+                "graph_success": graph_success,
+                "last_action_success": False,
+                "errors": [error_msg],
+            }
+
+            try:
+                state, output = self._post_process(state, inputs, error_updates)
+            except Exception as post_error:
+                self.log_error(f"Error in async post-processing: {str(post_error)}")
+
+            end_time = time.time()
+            duration = end_time - start_time
+            self.log_trace(
+                f"\n*** AGENT {self.name} RUN_ASYNC FAILED [{execution_id}] in {duration:.4f}s ***"
+            )
+
+            return error_updates
 
     def run(self, state: Any) -> Dict[str, Any]:
         """
