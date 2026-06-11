@@ -408,7 +408,7 @@ class TestOrchestratorDynamicRouting(unittest.TestCase):
         mock_builder.set_entry_point = Mock()
         mock_builder.add_node = Mock()
 
-        def mock_init_builder(g=None):
+        def mock_init_builder(graph=None):
             self.assembly_service.orchestrator_nodes = []
             self.assembly_service.injection_stats = {
                 "orchestrators_found": 0,
