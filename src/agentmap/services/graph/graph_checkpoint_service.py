@@ -298,7 +298,9 @@ class GraphCheckpointService(BaseCheckpointSaver):
         new_versions: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Async variant of put. Delegates via worker-thread seam."""
-        return await asyncio.to_thread(self.put, config, checkpoint, metadata, new_versions)
+        return await asyncio.to_thread(
+            self.put, config, checkpoint, metadata, new_versions
+        )
 
     async def aput_writes(
         self,

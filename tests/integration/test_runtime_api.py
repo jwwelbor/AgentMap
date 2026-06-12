@@ -793,11 +793,15 @@ class TestAsyncFacadeExports:
         mock_interaction_handler.mark_thread_resuming.return_value = True
 
         mock_graph_runner = Mock()
-        mock_graph_runner.resume_from_checkpoint_async = AsyncMock(return_value=mock_result)
+        mock_graph_runner.resume_from_checkpoint_async = AsyncMock(
+            return_value=mock_result
+        )
 
         mock_bundle_service = Mock()
         mock_container = Mock()
-        mock_container.interaction_handler_service.return_value = mock_interaction_handler
+        mock_container.interaction_handler_service.return_value = (
+            mock_interaction_handler
+        )
         mock_container.graph_bundle_service.return_value = mock_bundle_service
         mock_container.graph_runner_service.return_value = mock_graph_runner
         mock_runtime_manager.get_container.return_value = mock_container
@@ -855,11 +859,15 @@ class TestAsyncFacadeExports:
         mock_interaction_handler.mark_thread_resuming.return_value = True
 
         mock_graph_runner = Mock()
-        mock_graph_runner.resume_from_checkpoint_async = AsyncMock(return_value=mock_result)
+        mock_graph_runner.resume_from_checkpoint_async = AsyncMock(
+            return_value=mock_result
+        )
 
         mock_bundle_service = Mock()
         mock_container = Mock()
-        mock_container.interaction_handler_service.return_value = mock_interaction_handler
+        mock_container.interaction_handler_service.return_value = (
+            mock_interaction_handler
+        )
         mock_container.graph_bundle_service.return_value = mock_bundle_service
         mock_container.graph_runner_service.return_value = mock_graph_runner
         mock_runtime_manager.get_container.return_value = mock_container

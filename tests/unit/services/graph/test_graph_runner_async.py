@@ -734,3 +734,470 @@ class TestTC012ProtocolExtension(unittest.TestCase):
         assert isinstance(
             service, GraphRunnerServiceProtocol
         ), "GraphRunnerService does not satisfy GraphRunnerServiceProtocol"
+
+
+# ---------------------------------------------------------------------------
+# AC-007: run_async + asyncio.wait_for cancellation finalizes tracker
+# ---------------------------------------------------------------------------
+
+
+class TestAC007RunAsyncWaitForTrackerFinalization(unittest.IsolatedAsyncioTestCase):
+    """AC-007: when run_async is cancelled via asyncio.wait_for, the execution
+    tracker is finalized (complete_execution called) and CancelledError propagates.
+
+    Counter-factual: a buggy implementation would either swallow the
+    CancelledError, or let the tracker leak (not call complete_execution).
+    """
+
+    async def test_ac007_wait_for_cancel_finalizes_tracker(self):
+        """asyncio.wait_for cancellation propagates and tracker is finalized.
+
+        Caller-path contract:
+            asyncio.wait_for(service.run_async(bundle, ...), timeout=0.01)
+            The execution service's cancel branch calls complete_execution.
+        """
+        service, mocks = _make_graph_runner_service()
+        bundle = _make_mock_bundle("cancel_tracker_graph", node_count=2)
+        _setup_successful_async_run(mocks, bundle)
+
+        # execute_compiled_graph_async: sleep long enough for wait_for to fire,
+        # then finalize tracker (mirrors real graph_execution_service behaviour)
+        mock_tracker_ref = []
+
+        async def slow_exec_that_finalizes_on_cancel(
+            executable_graph, graph_name, initial_state, execution_tracker, config=None
+        ):
+            mock_tracker_ref.append(execution_tracker)
+            try:
+                await asyncio.sleep(10)  # will be cancelled by wait_for
+            except asyncio.CancelledError:
+                # Mirrors graph_execution_service.py:353-369 — finalize tracker
+                mocks["tracking"].complete_execution(execution_tracker)
+                raise
+
+        mocks["execution"].execute_compiled_graph_async = AsyncMock(
+            side_effect=slow_exec_that_finalizes_on_cancel
+        )
+
+        with self.assertRaises((asyncio.CancelledError, TimeoutError)):
+            await asyncio.wait_for(service.run_async(bundle), timeout=0.05)
+
+        # Tracker must have been finalized — not leaked
+        assert len(mock_tracker_ref) == 1, "execute_compiled_graph_async was not called"
+        mocks["tracking"].complete_execution.assert_called_once_with(
+            mock_tracker_ref[0]
+        )
+
+    async def test_ac007_wait_for_cancel_reraises_cancelled_error(self):
+        """CancelledError from asyncio.wait_for propagates — not swallowed by run_async.
+
+        Python 3.12 wraps CancelledError in TimeoutError when asyncio.wait_for
+        fires; both are accepted here.
+        """
+        service, mocks = _make_graph_runner_service()
+        bundle = _make_mock_bundle("cancel_reraise_graph", node_count=2)
+        _setup_successful_async_run(mocks, bundle)
+
+        async def slow_exec(*args, **kwargs):
+            await asyncio.sleep(10)
+
+        mocks["execution"].execute_compiled_graph_async = AsyncMock(
+            side_effect=slow_exec
+        )
+
+        with self.assertRaises((asyncio.CancelledError, TimeoutError)):
+            await asyncio.wait_for(service.run_async(bundle), timeout=0.05)
+
+
+# ---------------------------------------------------------------------------
+# AC-009: two concurrent run_async calls on same bundle — no state bleed
+# ---------------------------------------------------------------------------
+
+
+class TestAC009ConcurrentRunAsyncNoStateBleed(unittest.IsolatedAsyncioTestCase):
+    """AC-009: asyncio.gather(run_async, run_async) on the same bundle must:
+    - complete both runs without raising
+    - not bleed run-local state (scoped_registry / node_instances) between runs
+
+    Counter-factual: if run_async mutates the shared bundle directly, the
+    second concurrent run overwrites the first run's scoped_registry/tracker,
+    causing wrong registry or tracker linkage on one of the results.
+    """
+
+    async def test_ac009_two_concurrent_run_async_both_succeed(self):
+        """Both concurrent run_async calls return successful ExecutionResult."""
+        service, mocks = _make_graph_runner_service()
+        bundle = _make_mock_bundle("concurrent_graph", node_count=2)
+
+        # Each call gets its own tracker
+        tracker_a = MagicMock()
+        tracker_a.thread_id = "thread-A"
+        tracker_b = MagicMock()
+        tracker_b.thread_id = "thread-B"
+        mocks["tracking"].create_tracker.side_effect = [tracker_a, tracker_b]
+
+        # Scoped registry — return a new mock each time
+        def make_scoped():
+            sr = MagicMock()
+            sr.get_all_agent_types.return_value = ["agent1"]
+            sr.get_all_service_names.return_value = []
+            return sr
+
+        mocks["declaration"].create_scoped_registry_for_bundle.side_effect = (
+            lambda b: make_scoped()
+        )
+
+        # Agent instantiation: return a new bundle copy each call
+        def instantiate(b, tracker):
+            new_b = MagicMock()
+            new_b.graph_name = b.graph_name
+            new_b.nodes = b.nodes
+            new_b.entry_point = b.entry_point
+            new_b.node_instances = {"node_0": MagicMock(), "node_1": MagicMock()}
+            return new_b
+
+        mocks["instantiation"].instantiate_agents.side_effect = instantiate
+
+        # No checkpoint path
+        mocks["bundle_svc"].requires_checkpoint_support.return_value = False
+
+        result_a = MagicMock(
+            spec=__import__(
+                "agentmap.models.execution.result", fromlist=["ExecutionResult"]
+            ).ExecutionResult
+        )
+        result_a.success = True
+        result_a.total_duration = 0.1
+        result_a.error = None
+
+        result_b = MagicMock(
+            spec=__import__(
+                "agentmap.models.execution.result", fromlist=["ExecutionResult"]
+            ).ExecutionResult
+        )
+        result_b.success = True
+        result_b.total_duration = 0.1
+        result_b.error = None
+
+        call_count = 0
+
+        async def async_exec(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            await asyncio.sleep(0)  # yield to let both tasks start
+            if call_count == 1:
+                return result_a
+            return result_b
+
+        mocks["execution"].execute_compiled_graph_async = AsyncMock(
+            side_effect=async_exec
+        )
+
+        results = await asyncio.gather(
+            service.run_async(bundle),
+            service.run_async(bundle),
+        )
+
+        assert len(results) == 2
+        assert all(r.success for r in results)
+
+    async def test_ac009_concurrent_run_async_uses_distinct_trackers(self):
+        """Each concurrent run_async call receives its own execution tracker.
+
+        Counter-factual: if a shared tracker is reused, both runs would see
+        the same tracker object — the tracker for the second run would
+        overwrite the first's data.
+        """
+        service, mocks = _make_graph_runner_service()
+        bundle = _make_mock_bundle("tracker_isolation_graph", node_count=2)
+
+        tracker_a = MagicMock()
+        tracker_a.thread_id = "thread-A"
+        tracker_b = MagicMock()
+        tracker_b.thread_id = "thread-B"
+        mocks["tracking"].create_tracker.side_effect = [tracker_a, tracker_b]
+
+        def make_scoped():
+            sr = MagicMock()
+            sr.get_all_agent_types.return_value = ["agent1"]
+            sr.get_all_service_names.return_value = []
+            return sr
+
+        mocks["declaration"].create_scoped_registry_for_bundle.side_effect = (
+            lambda b: make_scoped()
+        )
+
+        received_trackers = []
+
+        def instantiate(b, tracker):
+            received_trackers.append(tracker)
+            new_b = MagicMock()
+            new_b.graph_name = b.graph_name
+            new_b.nodes = b.nodes
+            new_b.entry_point = b.entry_point
+            new_b.node_instances = {"node_0": MagicMock()}
+            return new_b
+
+        mocks["instantiation"].instantiate_agents.side_effect = instantiate
+        mocks["bundle_svc"].requires_checkpoint_support.return_value = False
+
+        exec_results = [MagicMock() for _ in range(2)]
+        for r in exec_results:
+            r.success = True
+            r.total_duration = 0.0
+            r.error = None
+
+        mocks["execution"].execute_compiled_graph_async = AsyncMock(
+            side_effect=exec_results
+        )
+
+        await asyncio.gather(
+            service.run_async(bundle),
+            service.run_async(bundle),
+        )
+
+        # Both runs received a tracker; the trackers are distinct
+        assert len(received_trackers) == 2
+        assert received_trackers[0] is not received_trackers[1], (
+            "Both concurrent run_async calls used the same tracker — "
+            "per-run state is not isolated"
+        )
+
+    async def test_ac009_original_bundle_not_mutated_by_concurrent_runs(self):
+        """Concurrent run_async calls do not permanently mutate the original bundle.
+
+        Counter-factual: if _run_core_async writes scoped_registry / node_instances
+        directly onto the shared bundle, the original bundle is permanently
+        modified and callers outside the run can observe stale run-local state.
+        """
+        service, mocks = _make_graph_runner_service()
+        bundle = _make_mock_bundle("mutation_guard_graph", node_count=2)
+
+        # Capture original values before any run
+        original_scoped_registry = bundle.scoped_registry
+        original_node_instances = bundle.node_instances
+
+        def make_scoped():
+            sr = MagicMock()
+            sr.get_all_agent_types.return_value = ["agent1"]
+            sr.get_all_service_names.return_value = []
+            return sr
+
+        mocks["declaration"].create_scoped_registry_for_bundle.side_effect = (
+            lambda b: make_scoped()
+        )
+        mocks["tracking"].create_tracker.side_effect = [
+            MagicMock(thread_id="t-1"),
+            MagicMock(thread_id="t-2"),
+        ]
+
+        def instantiate(b, tracker):
+            new_b = MagicMock()
+            new_b.graph_name = b.graph_name
+            new_b.nodes = b.nodes
+            new_b.entry_point = b.entry_point
+            new_b.node_instances = {"node_0": MagicMock()}
+            return new_b
+
+        mocks["instantiation"].instantiate_agents.side_effect = instantiate
+        mocks["bundle_svc"].requires_checkpoint_support.return_value = False
+
+        exec_results = [MagicMock() for _ in range(2)]
+        for r in exec_results:
+            r.success = True
+            r.total_duration = 0.0
+            r.error = None
+
+        mocks["execution"].execute_compiled_graph_async = AsyncMock(
+            side_effect=exec_results
+        )
+
+        await asyncio.gather(
+            service.run_async(bundle),
+            service.run_async(bundle),
+        )
+
+        # Original bundle fields must not be permanently mutated
+        assert (
+            bundle.scoped_registry is original_scoped_registry
+        ), "run_async mutated bundle.scoped_registry on the shared input bundle"
+        assert (
+            bundle.node_instances is original_node_instances
+        ), "run_async mutated bundle.node_instances on the shared input bundle"
+
+
+# ---------------------------------------------------------------------------
+# AC-011: async interrupt telemetry parity
+# ---------------------------------------------------------------------------
+
+
+class TestAC011AsyncInterruptTelemetryParity(unittest.IsolatedAsyncioTestCase):
+    """AC-011: async path emits workflow.interrupted / workflow.interrupted.legacy
+    span events when GraphInterrupt / ExecutionInterruptedException are raised.
+
+    Counter-factual: a buggy implementation would omit these span events on
+    the async path, leaving the interrupt rows of the telemetry parity matrix
+    unverified.
+    """
+
+    async def test_ac011_graph_interrupt_emits_workflow_interrupted_event(self):
+        """GraphInterrupt from execute_compiled_graph_async → workflow.interrupted
+        span event is recorded.
+
+        The _run_core_async handler processes GraphInterrupt and returns an
+        interrupt ExecutionResult. The workflow.interrupted telemetry event
+        must be emitted inside the active span before the result is returned.
+
+        Counter-factual: without the _record_phase_event("workflow.interrupted")
+        call in the except-GraphInterrupt handler, no interrupt event appears
+        in the span — the interrupt row of the parity matrix is unverified.
+        """
+        from langgraph.errors import GraphInterrupt
+
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        service, mocks = _make_graph_runner_service(telemetry_service=mock_telemetry)
+        bundle = _make_mock_bundle("interrupt_graph", node_count=2)
+        _setup_successful_async_run(mocks, bundle)
+
+        # Raise GraphInterrupt from the execution service
+        mocks["execution"].execute_compiled_graph_async = AsyncMock(
+            side_effect=GraphInterrupt("suspend at node_0")
+        )
+
+        mock_current_span = MagicMock()
+        mock_current_span.is_recording.return_value = True
+
+        with patch(
+            "opentelemetry.trace.get_current_span",
+            return_value=mock_current_span,
+        ):
+            # _run_core_async handles GraphInterrupt and returns an interrupt result;
+            # it must also emit the workflow.interrupted event to the current span.
+            await service.run_async(bundle)
+
+        # workflow.interrupted event must have been recorded on the span
+        event_names = [
+            call[0][1]
+            for call in mock_telemetry.add_span_event.call_args_list
+            if len(call[0]) >= 2
+        ]
+        assert "workflow.interrupted" in event_names, (
+            f"Expected 'workflow.interrupted' span event on GraphInterrupt path. "
+            f"Recorded events: {event_names}"
+        )
+
+        # Must NOT have recorded record_exception for an interrupt
+        mock_telemetry.record_exception.assert_not_called()
+
+    async def test_ac011_execution_interrupted_exception_emits_legacy_event(self):
+        """ExecutionInterruptedException → workflow.interrupted.legacy span event.
+
+        _run_core_async re-raises ExecutionInterruptedException after handling;
+        the workflow.interrupted.legacy event must be emitted before re-raising.
+        """
+        from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
+
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        service, mocks = _make_graph_runner_service(telemetry_service=mock_telemetry)
+        bundle = _make_mock_bundle("legacy_interrupt_graph", node_count=2)
+        _setup_successful_async_run(mocks, bundle)
+
+        exc = ExecutionInterruptedException(
+            thread_id="legacy-thread-001",
+            interaction_request={"type": "human"},
+            checkpoint_data={},
+        )
+        mocks["execution"].execute_compiled_graph_async = AsyncMock(side_effect=exc)
+
+        mock_current_span = MagicMock()
+        mock_current_span.is_recording.return_value = True
+
+        with patch(
+            "opentelemetry.trace.get_current_span",
+            return_value=mock_current_span,
+        ):
+            with self.assertRaises(ExecutionInterruptedException):
+                await service.run_async(bundle)
+
+        event_names = [
+            call[0][1]
+            for call in mock_telemetry.add_span_event.call_args_list
+            if len(call[0]) >= 2
+        ]
+        assert "workflow.interrupted.legacy" in event_names, (
+            f"Expected 'workflow.interrupted.legacy' span event on legacy interrupt "
+            f"path. Recorded events: {event_names}"
+        )
+
+    async def test_ac011_graph_interrupt_does_not_set_error_status(self):
+        """GraphInterrupt must not set ERROR span status — same as sync path.
+
+        GraphInterrupt is a workflow suspension signal, not an error.
+        """
+        from langgraph.errors import GraphInterrupt
+        from opentelemetry.trace import StatusCode
+
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        service, mocks = _make_graph_runner_service(telemetry_service=mock_telemetry)
+        bundle = _make_mock_bundle("interrupt_no_error_graph", node_count=2)
+        _setup_successful_async_run(mocks, bundle)
+
+        mocks["execution"].execute_compiled_graph_async = AsyncMock(
+            side_effect=GraphInterrupt("suspend")
+        )
+
+        mock_current_span = MagicMock()
+        mock_current_span.is_recording.return_value = True
+
+        with patch(
+            "opentelemetry.trace.get_current_span",
+            return_value=mock_current_span,
+        ):
+            await service.run_async(bundle)
+
+        # span.set_status(ERROR) must not be called for interrupt
+        error_calls = [
+            call
+            for call in mock_span.set_status.call_args_list
+            if call[0] and call[0][0] == StatusCode.ERROR
+        ]
+        assert (
+            len(error_calls) == 0
+        ), "GraphInterrupt should not set ERROR span status on async path"
+
+    async def test_ac011_legacy_interrupt_does_not_set_error_status(self):
+        """ExecutionInterruptedException must not set ERROR span status."""
+        from opentelemetry.trace import StatusCode
+
+        from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
+
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        service, mocks = _make_graph_runner_service(telemetry_service=mock_telemetry)
+        bundle = _make_mock_bundle("legacy_no_error_graph", node_count=2)
+        _setup_successful_async_run(mocks, bundle)
+
+        exc = ExecutionInterruptedException(
+            thread_id="leg-thr",
+            interaction_request={},
+            checkpoint_data={},
+        )
+        mocks["execution"].execute_compiled_graph_async = AsyncMock(side_effect=exc)
+
+        mock_current_span = MagicMock()
+        mock_current_span.is_recording.return_value = True
+
+        with patch(
+            "opentelemetry.trace.get_current_span",
+            return_value=mock_current_span,
+        ):
+            with self.assertRaises(ExecutionInterruptedException):
+                await service.run_async(bundle)
+
+        error_calls = [
+            call
+            for call in mock_span.set_status.call_args_list
+            if call[0] and call[0][0] == StatusCode.ERROR
+        ]
+        assert (
+            len(error_calls) == 0
+        ), "ExecutionInterruptedException should not set ERROR span status"

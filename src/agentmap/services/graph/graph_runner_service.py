@@ -1088,10 +1088,19 @@ class GraphRunnerService:
                         except Exception:
                             pass
 
-                    # Set span status based on result
+                    # Set span status based on result.
+                    # Interrupt results (GraphInterrupt handled by _run_core_async)
+                    # must not set ERROR status — they are workflow suspensions, not
+                    # failures (AC-011 / telemetry parity matrix interrupt row).
+                    try:
+                        is_interrupt = isinstance(
+                            result.final_state, dict
+                        ) and result.final_state.get("__interrupted", False)
+                    except Exception:
+                        is_interrupt = False
                     if result.success:
                         self._set_span_status_ok(span)
-                    else:
+                    elif not is_interrupt:
                         try:
                             from opentelemetry.trace import StatusCode
 
@@ -1105,10 +1114,16 @@ class GraphRunnerService:
                     return result
 
                 except GraphInterrupt:
+                    # _run_core_async already emitted workflow.interrupted via
+                    # _record_phase_event, but emit here too in case GraphInterrupt
+                    # escapes _run_core_async (e.g. when no thread_id is available
+                    # and RuntimeError is suppressed).
                     self._record_span_event_safe(span, "workflow.interrupted")
                     raise
 
                 except ExecutionInterruptedException:
+                    # _run_core_async already emitted workflow.interrupted.legacy;
+                    # record here too for defence-in-depth at the telemetry seam.
                     self._record_span_event_safe(span, "workflow.interrupted.legacy")
                     raise
 
@@ -1154,7 +1169,11 @@ class GraphRunnerService:
         graph_name = bundle.graph_name
 
         try:
-            # Phase 2: Create isolated scoped registry for this run
+            # Phase 2: Create isolated scoped registry for this run.
+            # NOTE: scoped_registry is stored in a run-local variable only.
+            # Writing it back to the shared ``bundle`` object is concurrency-
+            # unsafe: two concurrent run_async calls on the same bundle would
+            # overwrite each other's registry (NB-B / AC-009 fix).
             self._record_phase_event("workflow.phase.registry_creation")
             self.logger.debug(
                 f"[GraphRunnerService] Async Phase 2: Creating scoped registry "
@@ -1163,7 +1182,7 @@ class GraphRunnerService:
             scoped_registry = (
                 self.declaration_registry.create_scoped_registry_for_bundle(bundle)
             )
-            bundle.scoped_registry = scoped_registry
+            # Do NOT write back to bundle.scoped_registry (concurrency safety).
             self.logger.debug(
                 f"[GraphRunnerService] Scoped registry created with "
                 f"{len(scoped_registry.get_all_agent_types())} agents and "
@@ -1368,6 +1387,12 @@ class GraphRunnerService:
 
         except GraphInterrupt as e:
             self.logger.info("Async graph execution interrupted (LangGraph pattern)")
+            # Emit telemetry interrupt event while the span context is still active
+            # (AC-011 / telemetry parity matrix: interrupt row).  _record_phase_event
+            # writes to the current OTel span, which is still open here because
+            # _run_async_with_telemetry's `with start_span(...)` block is an ancestor
+            # frame on the call stack.
+            self._record_phase_event("workflow.interrupted")
 
             thread_id = execution_tracker.thread_id if execution_tracker else None
             if not thread_id:
@@ -1418,6 +1443,8 @@ class GraphRunnerService:
                 f"Async graph execution interrupted (legacy pattern) "
                 f"in thread: {e.thread_id}"
             )
+            # Emit telemetry legacy-interrupt event before re-raising (AC-011).
+            self._record_phase_event("workflow.interrupted.legacy")
             if self.interaction_handler:
                 self.interaction_handler.handle_execution_interruption(
                     exception=e,

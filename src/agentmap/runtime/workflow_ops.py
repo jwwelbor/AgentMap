@@ -668,7 +668,9 @@ async def run_workflow_async(
         )
 
         graph_runner: GraphRunnerService = container.graph_runner_service()
-        result = await graph_runner.run_async(bundle, inputs, validate_agents=new_bundle)
+        result = await graph_runner.run_async(
+            bundle, inputs, validate_agents=new_bundle
+        )
 
         if result.success:
             return {
@@ -777,8 +779,9 @@ async def resume_workflow_async(
                     f"Pending interaction '{request_id}' requires a response_action"
                 )
 
-            from agentmap.models.human_interaction import HumanInteractionResponse
             from uuid import UUID
+
+            from agentmap.models.human_interaction import HumanInteractionResponse
 
             response = HumanInteractionResponse(
                 request_id=UUID(request_id),
@@ -808,7 +811,9 @@ async def resume_workflow_async(
             }
         else:
             # SuspendAgent path — no human interaction required
-            update_success = interaction_handler.mark_thread_resuming(thread_id=thread_id)
+            update_success = interaction_handler.mark_thread_resuming(
+                thread_id=thread_id
+            )
             if not update_success:
                 raise RuntimeError("Failed to update thread status to resuming")
 
