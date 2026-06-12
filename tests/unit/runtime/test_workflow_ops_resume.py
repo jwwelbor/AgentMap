@@ -337,6 +337,20 @@ class TestParseResumeToken(unittest.TestCase):
         self.assertEqual(action, "continue")  # Default
         self.assertEqual(data, {"some": "data"})  # Preserved
 
+    def test_parse_token_cli_edit_actions_accepted(self):
+        """CLI EDIT interaction advertises 'save' and 'cancel'; both must be valid."""
+        for action in ("save", "cancel"):
+            token = json.dumps({"thread_id": "t", "response_action": action})
+            _, parsed_action, _ = _parse_resume_token(token)
+            self.assertEqual(parsed_action, action, f"Action '{action}' should be accepted")
+
+    def test_parse_token_cli_conversation_actions_accepted(self):
+        """CLI CONVERSATION interaction advertises 'reply', 'continue', 'end'; all must be valid."""
+        for action in ("reply", "continue", "end"):
+            token = json.dumps({"thread_id": "t", "response_action": action})
+            _, parsed_action, _ = _parse_resume_token(token)
+            self.assertEqual(parsed_action, action, f"Action '{action}' should be accepted")
+
 
 class TestResumeWorkflowIntegrationPoints(unittest.TestCase):
     """Test integration points of resume_workflow with other systems."""

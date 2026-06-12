@@ -620,6 +620,9 @@ VALID_RESUME_ACTIONS = frozenset(
         "submit",
         "cancel",
         "text_input",
+        "save",
+        "reply",
+        "end",
     }
 )
 
