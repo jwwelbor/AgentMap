@@ -660,7 +660,8 @@ def _parse_resume_token(resume_token: Any) -> tuple[str, str, Optional[Dict[str,
     try:
         token_data = json.loads(resume_token)
         thread_id = token_data.get("thread_id")
-        response_action = token_data.get("response_action", "continue")
+        # Treat explicit null the same as absent — both default to "continue"
+        response_action = token_data.get("response_action") or "continue"
         response_data = token_data.get("response_data")
     except json.JSONDecodeError:
         # Maybe it's just a thread_id string
@@ -672,14 +673,13 @@ def _parse_resume_token(resume_token: Any) -> tuple[str, str, Optional[Dict[str,
         raise InvalidInputs("Resume token must contain a valid thread_id")
 
     # Validate action against allowlist (F-5 / NB-C)
-    if response_action is not None:
-        normalised = str(response_action).lower()
-        if normalised not in VALID_RESUME_ACTIONS:
-            raise InvalidInputs(
-                f"Invalid resume action '{response_action}'. "
-                f"Valid actions: {', '.join(sorted(VALID_RESUME_ACTIONS))}"
-            )
-        response_action = normalised
+    normalised = str(response_action).lower()
+    if normalised not in VALID_RESUME_ACTIONS:
+        raise InvalidInputs(
+            f"Invalid resume action '{response_action}'. "
+            f"Valid actions: {', '.join(sorted(VALID_RESUME_ACTIONS))}"
+        )
+    response_action = normalised
 
     # Enforce payload size bound on the data portion (F-5 / NB-C)
     if response_data is not None:
@@ -693,7 +693,7 @@ def _parse_resume_token(resume_token: Any) -> tuple[str, str, Optional[Dict[str,
                 f"{_RESUME_PAYLOAD_MAX_BYTES} bytes"
             )
 
-    return str(thread_id), str(response_action), response_data
+    return str(thread_id), response_action, response_data
 
 
 def _raise_mapped_error(graph_name: str, error_msg: str) -> NoReturn:

@@ -351,6 +351,14 @@ class TestParseResumeToken(unittest.TestCase):
             _, parsed_action, _ = _parse_resume_token(token)
             self.assertEqual(parsed_action, action, f"Action '{action}' should be accepted")
 
+    def test_parse_token_null_action_defaults_to_continue(self):
+        """Explicit null response_action must default to 'continue', not stringify to 'None'."""
+        token = json.dumps({"thread_id": "t", "response_action": None})
+        thread_id, action, data = _parse_resume_token(token)
+        self.assertEqual(thread_id, "t")
+        self.assertEqual(action, "continue")
+        self.assertIsNone(data)
+
 
 class TestResumeWorkflowIntegrationPoints(unittest.TestCase):
     """Test integration points of resume_workflow with other systems."""
