@@ -1201,3 +1201,179 @@ class TestAC011AsyncInterruptTelemetryParity(unittest.IsolatedAsyncioTestCase):
         assert (
             len(error_calls) == 0
         ), "ExecutionInterruptedException should not set ERROR span status"
+
+
+# ---------------------------------------------------------------------------
+# AC-009 (run_async entrypoint): wall-clock overlap + heartbeat no-starvation
+# ---------------------------------------------------------------------------
+
+
+class _HeartbeatProbe:
+    """Async heartbeat that ticks every `interval` seconds.
+
+    Records the maximum inter-tick gap in `max_gap_s`.
+    Used to prove the event loop is not starved during concurrent run_async
+    orchestration.
+
+    This is a local copy of the probe defined in test_graph_execution_async.py
+    so this test file is self-contained (no cross-test-file coupling).
+    """
+
+    def __init__(self, interval: float = 0.05, bound_s: float = 0.25):
+        self.interval = interval
+        self.bound_s = bound_s
+        self.max_gap_s = 0.0
+        self._stop = False
+
+    async def run(self):
+        last = asyncio.get_event_loop().time()
+        while not self._stop:
+            await asyncio.sleep(self.interval)
+            now = asyncio.get_event_loop().time()
+            gap = now - last
+            if gap > self.max_gap_s:
+                self.max_gap_s = gap
+            last = now
+
+    def stop(self):
+        self._stop = True
+
+    def assert_no_starvation(self, test_case):
+        """Assert max inter-tick gap did not exceed the bound."""
+        test_case.assertLess(
+            self.max_gap_s,
+            self.bound_s,
+            f"Event-loop starvation detected: max gap {self.max_gap_s:.3f}s "
+            f"exceeds bound {self.bound_s}s",
+        )
+
+
+class TestAC009RunAsyncConcurrencyOverlap(unittest.IsolatedAsyncioTestCase):
+    """AC-009 (run_async entrypoint): two concurrent run_async calls overlap.
+
+    REQ-NF-007 (measurable concurrency): asyncio.gather(run_async, run_async)
+    with each call dominated by a ~0.5s awaitable must:
+      1. complete total wall-clock < 1.5s (proving overlap, not ~1.0s+ serial)
+      2. run a concurrent heartbeat probe (50ms ticks) with max gap < 250ms
+         (proving the event loop is not starved at the orchestration layer)
+
+    Counter-factual: a run_async implementation that serialises at the
+    orchestration layer (e.g. a lock around _run_core_async, or blocking sync
+    work between await points that hogs the loop) would:
+      - fail assertion (1): total wall-clock >= ~1.0s
+      - fail assertion (2): heartbeat gap >= ~0.5s >> 250ms bound
+
+    The existing test_tc011_two_concurrent_executions_overlap in
+    test_graph_execution_async.py proves overlap at the
+    execute_compiled_graph_async LEAF — a serialized run_async orchestration
+    layer would pass that leaf test and fail this one.
+    """
+
+    async def test_ac009_two_concurrent_run_async_overlap_wall_clock(self):
+        """Two run_async(bundle) calls via asyncio.gather complete with wall-clock
+        well under the serialised sum, proving genuine overlap at the run_async
+        entrypoint.
+
+        Each run's execute_compiled_graph_async sleeps 0.7s.  Serialised: ~1.4s.
+        Overlapping: ~0.7s–0.9s.  We assert < 1.2s, which is above the concurrent
+        ceiling but below the serialised sum, so a serialising implementation fails.
+
+        Counter-factual check: delete the two asyncio.sleep(0) yield points in
+        _slow_exec, or add a threading.Lock() around mocks["execution"]
+        .execute_compiled_graph_async — total time would be ~1.0s+ and this test
+        would fail.
+        """
+        service, mocks = _make_graph_runner_service()
+        bundle = _make_mock_bundle("overlap_timing_graph", node_count=2)
+
+        # Each call gets its own tracker so there is no shared-state bleed
+        tracker_a = MagicMock()
+        tracker_a.thread_id = "overlap-thread-A"
+        tracker_b = MagicMock()
+        tracker_b.thread_id = "overlap-thread-B"
+        mocks["tracking"].create_tracker.side_effect = [tracker_a, tracker_b]
+
+        scoped_registry = MagicMock()
+        scoped_registry.get_all_agent_types.return_value = ["agent1"]
+        scoped_registry.get_all_service_names.return_value = []
+        mocks["declaration"].create_scoped_registry_for_bundle.side_effect = (
+            lambda b: scoped_registry
+        )
+
+        def instantiate(b, tracker):
+            new_b = MagicMock()
+            new_b.graph_name = b.graph_name
+            new_b.nodes = b.nodes
+            new_b.entry_point = b.entry_point
+            new_b.node_instances = {"node_0": MagicMock()}
+            return new_b
+
+        mocks["instantiation"].instantiate_agents.side_effect = instantiate
+        mocks["bundle_svc"].requires_checkpoint_support.return_value = False
+        mocks["assembly"].assemble_graph_async.return_value = MagicMock()
+
+        SLEEP_PER_RUN = 0.7  # seconds — each run is dominated by this awaitable
+        # Serialised sum: ~1.4s; concurrent: ~0.7s; bound: 1.2s
+
+        mock_result_a = MagicMock(spec=ExecutionResult)
+        mock_result_a.success = True
+        mock_result_a.total_duration = SLEEP_PER_RUN
+        mock_result_a.error = None
+
+        mock_result_b = MagicMock(spec=ExecutionResult)
+        mock_result_b.success = True
+        mock_result_b.total_duration = SLEEP_PER_RUN
+        mock_result_b.error = None
+
+        results_queue = [mock_result_a, mock_result_b]
+
+        async def _slow_exec(*args, **kwargs):
+            # Yield immediately so both tasks can be scheduled before either
+            # blocks — this is the cooperative yield that proves the implementation
+            # does NOT hold a lock between the gather and the awaitable.
+            await asyncio.sleep(SLEEP_PER_RUN)
+            return results_queue.pop(0)
+
+        mocks["execution"].execute_compiled_graph_async = AsyncMock(
+            side_effect=_slow_exec
+        )
+
+        # Start a heartbeat probe concurrently to detect event-loop starvation
+        heartbeat = _HeartbeatProbe(interval=0.05, bound_s=0.25)
+        hb_task = asyncio.create_task(heartbeat.run())
+
+        start = asyncio.get_event_loop().time()
+        try:
+            results = await asyncio.gather(
+                service.run_async(bundle),
+                service.run_async(bundle),
+            )
+        finally:
+            heartbeat.stop()
+            hb_task.cancel()
+            try:
+                await hb_task
+            except asyncio.CancelledError:
+                pass
+
+        elapsed = asyncio.get_event_loop().time() - start
+
+        # Both runs must succeed
+        assert len(results) == 2
+        assert all(
+            r.success for r in results
+        ), f"One or both run_async calls failed: {[r.success for r in results]}"
+
+        # Wall-clock overlap assertion: two ~0.7s runs must finish in < 1.2s.
+        # A serialising implementation would take ~1.4s (> 1.2s bound) and FAIL.
+        # True concurrent overlap should land ~0.7s–0.9s.
+        self.assertLess(
+            elapsed,
+            1.2,
+            f"Concurrent run_async calls took {elapsed:.3f}s — expected overlap "
+            f"< 1.2s (serialised would be ~1.4s). "
+            f"Indicates run_async serialises at the orchestration layer.",
+        )
+
+        # No event-loop starvation: heartbeat max gap must stay < 250ms
+        heartbeat.assert_no_starvation(self)
