@@ -680,7 +680,7 @@ def _parse_resume_token(resume_token: Any) -> tuple[str, str, Optional[Dict[str,
                 f"{_RESUME_PAYLOAD_MAX_BYTES} bytes"
             )
 
-    return thread_id, response_action, response_data
+    return str(thread_id), str(response_action), response_data
 
 
 def _raise_mapped_error(graph_name: str, error_msg: str) -> NoReturn:

@@ -140,14 +140,14 @@ class CheckpointManager:
             )
 
             graph = Graph(
-                name=bundle_with_instances.graph_name,
-                nodes=bundle_with_instances.nodes,
+                name=bundle_with_instances.graph_name or "",
+                nodes=bundle_with_instances.nodes or {},
                 entry_point=bundle_with_instances.entry_point,
             )
 
             executable_graph = self.graph_assembly.assemble_with_checkpoint(
                 graph=graph,
-                agent_instances=bundle_with_instances.node_instances,
+                agent_instances=bundle_with_instances.node_instances or {},
                 node_definitions=create_node_registry_from_bundle(
                     bundle_with_instances, self.logger
                 ),
@@ -295,6 +295,7 @@ class CheckpointManager:
         start_time = time.time()
         marked_resuming = False
         execution_tracker = None  # sentinel; set after create_tracker() succeeds
+        _thread_future: Optional[asyncio.Future] = None
 
         try:
             # Create execution tracker
@@ -320,14 +321,14 @@ class CheckpointManager:
                 "Async reassembling graph for checkpoint resume WITH checkpointer"
             )
             graph = Graph(
-                name=bundle_with_instances.graph_name,
-                nodes=bundle_with_instances.nodes,
+                name=bundle_with_instances.graph_name or "",
+                nodes=bundle_with_instances.nodes or {},
                 entry_point=bundle_with_instances.entry_point,
             )
 
             executable_graph = self.graph_assembly.assemble_with_checkpoint_async(
                 graph=graph,
-                agent_instances=bundle_with_instances.node_instances,
+                agent_instances=bundle_with_instances.node_instances or {},
                 node_definitions=create_node_registry_from_bundle(
                     bundle_with_instances, self.logger
                 ),
@@ -370,7 +371,6 @@ class CheckpointManager:
             # the cancel handler can await it before unmarking — otherwise the
             # worker thread may still be mutating checkpoint state while we
             # mark the thread as re-resumable (F-4 / NB-A).
-            _thread_future: Optional[asyncio.Future] = None
             if hasattr(executable_graph, "ainvoke"):
                 final_state = await executable_graph.ainvoke(
                     command_input, config=langgraph_config
