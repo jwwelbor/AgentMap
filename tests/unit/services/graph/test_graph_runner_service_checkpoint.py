@@ -737,8 +737,11 @@ class TestTC010CancelledResumeLeadsToReresumable(unittest.IsolatedAsyncioTestCas
 
         Counter-factual: a buggy implementation calls unmark_thread_resuming
         immediately in the CancelledError handler while the worker thread is still
-        running.  This test verifies the unmark is NOT called until after the
-        thread completes.
+        running (e.g. via asyncio.shield on an already-cancelled future, which
+        returns immediately).  This test verifies:
+          1. The unmark is NOT called immediately after cancellation while the
+             worker thread is still blocked.
+          2. The unmark IS called only after the worker thread finishes.
 
         Caller-Path Contract:
             Production entrypoint: resume_from_checkpoint_async(bundle, thread_id, ...)
@@ -750,11 +753,10 @@ class TestTC010CancelledResumeLeadsToReresumable(unittest.IsolatedAsyncioTestCas
 
         thread_started = threading.Event()
         thread_may_finish = threading.Event()
-        unmark_call_times = []
 
         def slow_sync_invoke(command_input, config=None):
             thread_started.set()
-            # Wait until the test says the thread may finish
+            # Block until the test allows the thread to finish
             thread_may_finish.wait(timeout=5.0)
             return {"result": "done"}
 
@@ -764,12 +766,6 @@ class TestTC010CancelledResumeLeadsToReresumable(unittest.IsolatedAsyncioTestCas
         self.graph_assembly.assemble_with_checkpoint_async.return_value = (
             sync_only_graph
         )
-
-        # Intercept unmark_thread_resuming to record when it is called
-        def record_unmark(thread_id):
-            unmark_call_times.append(threading.get_ident())
-
-        self.interaction_handler.unmark_thread_resuming.side_effect = record_unmark
 
         # Start the resume, then cancel it while the thread is blocked
         task = asyncio.get_event_loop().create_task(
@@ -784,17 +780,25 @@ class TestTC010CancelledResumeLeadsToReresumable(unittest.IsolatedAsyncioTestCas
         await asyncio.to_thread(thread_started.wait, 5.0)
         task.cancel()
 
-        # Allow thread to finish; then give the event loop a few cycles to run cleanup
-        thread_may_finish.set()
+        # Drain the cancellation — the task should raise CancelledError
         try:
             await task
         except BaseException:
             pass
 
-        # Give the background cleanup coroutine a chance to execute
+        # Give the event loop a few cycles — the deferred unmark background
+        # coroutine is blocked waiting for the worker thread to signal.
+        # At this point the thread is still blocked, so unmark must NOT be called.
         await asyncio.sleep(0.05)
+        self.interaction_handler.unmark_thread_resuming.assert_not_called()
 
-        # unmark_thread_resuming MUST have been called (thread settled; re-resumable)
+        # Now allow the worker thread to finish — this signals _thread_done_event
+        thread_may_finish.set()
+
+        # Give the background cleanup coroutine a chance to wake up and run
+        await asyncio.sleep(0.1)
+
+        # unmark_thread_resuming MUST have been called now (thread settled)
         self.interaction_handler.unmark_thread_resuming.assert_called_once_with(
             "cancel-thread-f4"
         )

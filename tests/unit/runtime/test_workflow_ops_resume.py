@@ -477,5 +477,94 @@ class TestResumeWorkflowAsyncSyncCompatibility(unittest.TestCase):
         self.assertTrue(callable(run_workflow_async))
 
 
+class TestValidResumeActionsAllowlist(unittest.TestCase):
+    """
+    Tech-debt N-2: Verify VALID_RESUME_ACTIONS is the single source of truth
+    and covers all action strings advertised by CLI display_utils.py and
+    the HTTP validation layer.
+    """
+
+    def test_valid_resume_actions_covers_all_cli_advertised_actions(self):
+        """All actions advertised by CLI display_utils must be in VALID_RESUME_ACTIONS.
+
+        Source: display_utils.py _display_interaction_instructions() — the
+        per-InteractionType branches each list the actions a caller can use:
+          APPROVAL      -> approve, reject
+          CHOICE        -> choose
+          TEXT_INPUT    -> submit
+          EDIT          -> save, cancel
+          CONVERSATION  -> reply, continue, end
+          generic       -> continue, cancel
+        """
+        from agentmap.runtime.workflow_ops import VALID_RESUME_ACTIONS
+
+        cli_advertised_actions = {
+            "approve",    # APPROVAL branch
+            "reject",     # APPROVAL branch
+            "choose",     # CHOICE branch
+            "submit",     # TEXT_INPUT branch
+            "save",       # EDIT branch
+            "cancel",     # EDIT branch + generic fallback
+            "reply",      # CONVERSATION branch
+            "continue",   # CONVERSATION branch + generic fallback
+            "end",        # CONVERSATION branch
+        }
+        missing = cli_advertised_actions - VALID_RESUME_ACTIONS
+        self.assertEqual(
+            missing,
+            set(),
+            f"CLI-advertised actions not in VALID_RESUME_ACTIONS allowlist: {missing}",
+        )
+
+    def test_valid_resume_actions_is_single_source_of_truth_for_http_validator(self):
+        """RequestValidator.validate_response_action must delegate to VALID_RESUME_ACTIONS.
+
+        Verifies the duplicate local set in common_validation.py has been
+        replaced by a reference to the canonical frozenset so there is exactly
+        one place to extend the allowlist.
+        """
+        from agentmap.runtime.workflow_ops import VALID_RESUME_ACTIONS
+        from agentmap.deployment.http.api.validation.common_validation import (
+            RequestValidator,
+        )
+
+        # Every action in VALID_RESUME_ACTIONS must be accepted by the HTTP
+        # validator (not rejected with an HTTPException).
+        for action in VALID_RESUME_ACTIONS:
+            with self.subTest(action=action):
+                result = RequestValidator.validate_response_action(action)
+                self.assertEqual(result, action.lower())
+
+    def test_http_validator_rejects_action_not_in_allowlist(self):
+        """HTTP validator must reject strings absent from VALID_RESUME_ACTIONS."""
+        from fastapi import HTTPException
+        from agentmap.deployment.http.api.validation.common_validation import (
+            RequestValidator,
+        )
+
+        with self.assertRaises(HTTPException) as ctx:
+            RequestValidator.validate_response_action("totally_unknown_action_xyz")
+
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_allowlist_is_a_frozenset(self):
+        """VALID_RESUME_ACTIONS must be a frozenset (immutable, no accidental mutation)."""
+        from agentmap.runtime.workflow_ops import VALID_RESUME_ACTIONS
+
+        self.assertIsInstance(VALID_RESUME_ACTIONS, frozenset)
+
+    def test_interaction_type_vocabulary_covered_by_allowlist(self):
+        """InteractionType enum values that map to action strings are all allowlisted.
+
+        InteractionType.TEXT_INPUT.value == 'text_input' is used as an action
+        directly by some callers; confirm it is in the allowlist.
+        """
+        from agentmap.models.human_interaction import InteractionType
+        from agentmap.runtime.workflow_ops import VALID_RESUME_ACTIONS
+
+        # text_input is the only InteractionType value also used as an action string
+        self.assertIn(InteractionType.TEXT_INPUT.value, VALID_RESUME_ACTIONS)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -601,11 +601,21 @@ def _graph_entry(
     }
 
 
-# Allowlist of routing-level resume actions (F-5 / NB-C).  These are the
-# values accepted for the HTTP ``ResumeRequest.action`` field and the
-# ``response_action`` key inside a JSON resume token.  Application-level
-# agent data (e.g. ``__human_response.action``) is NOT governed by this set;
-# those values are validated by the receiving agent.
+# Allowlist of routing-level resume actions (F-5 / NB-C).  This is the
+# **canonical single source of truth** for valid ``response_action`` values.
+# All other validators (HTTP request models, CLI validators, etc.) MUST
+# import and delegate to this set rather than maintaining their own copy.
+#
+# Values accepted for:
+#   - the HTTP ``ResumeRequest.action`` field (routes/execute.py)
+#   - the ``response_action`` key inside a JSON resume token
+#   - the ``RequestValidator.validate_response_action`` method (common_validation.py)
+#
+# Application-level agent data (e.g. ``__human_response.action``) is NOT
+# governed by this set; those values are validated by the receiving agent.
+#
+# To extend: add the new action string here.  Do NOT add it anywhere else.
+# All downstream validators reference this set, so one edit propagates everywhere.
 VALID_RESUME_ACTIONS = frozenset(
     {
         "approve",

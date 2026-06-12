@@ -7,6 +7,7 @@ Extracted from GraphRunnerService to improve separation of concerns.
 
 import asyncio
 import json
+import threading
 import time
 from typing import Any, Dict, Optional
 
@@ -296,6 +297,7 @@ class CheckpointManager:
         marked_resuming = False
         execution_tracker = None  # sentinel; set after create_tracker() succeeds
         _thread_future: Optional[asyncio.Future] = None
+        _thread_done_event: Optional[threading.Event] = None
 
         try:
             # Create execution tracker
@@ -376,10 +378,18 @@ class CheckpointManager:
                     command_input, config=langgraph_config
                 )
             else:
+                _thread_done_event = threading.Event()
+
+                def _invoke_and_signal():
+                    try:
+                        return executable_graph.invoke(
+                            command_input, config=langgraph_config
+                        )
+                    finally:
+                        _thread_done_event.set()
+
                 _thread_future = asyncio.ensure_future(
-                    asyncio.to_thread(
-                        executable_graph.invoke, command_input, config=langgraph_config
-                    )
+                    asyncio.to_thread(_invoke_and_signal)
                 )
                 final_state = await _thread_future
 
@@ -452,13 +462,24 @@ class CheckpointManager:
                 # CancelledError is re-raised immediately (callers must not be
                 # made to wait for the cleanup), while the cleanup itself is
                 # guaranteed to run once the thread finishes.
-                if _thread_future is not None and not _thread_future.done():
+                # Use the threading.Event sentinel (set by _invoke_and_signal's
+                # finally block) to determine whether the OS worker thread is
+                # still running.  We cannot rely on _thread_future.done() here
+                # because a cancelled asyncio Future reports done=True even while
+                # its underlying OS thread is still executing — that would cause
+                # the else branch to unmark immediately, racing with the thread.
+                if _thread_done_event is not None and not _thread_done_event.is_set():
                     async def _deferred_unmark(
-                        fut: asyncio.Future,
+                        done_event: threading.Event,
                         tid: str,
                     ) -> None:
+                        # Wait for the OS worker thread to finish (set by
+                        # _invoke_and_signal's finally block) before unmarking.
+                        # asyncio.shield would return immediately on a cancelled
+                        # future and would not actually defer the unmark until the
+                        # thread settles (F-4 / NB-A).
                         try:
-                            await asyncio.shield(fut)
+                            await asyncio.to_thread(done_event.wait)
                         except BaseException:
                             pass
                         try:
@@ -469,7 +490,9 @@ class CheckpointManager:
                                 f"state for thread '{tid}': {reset_err}"
                             )
 
-                    asyncio.ensure_future(_deferred_unmark(_thread_future, thread_id))
+                    asyncio.ensure_future(
+                        _deferred_unmark(_thread_done_event, thread_id)
+                    )
                 else:
                     try:
                         # Unmark resuming so subsequent resume attempts are not blocked
