@@ -1,0 +1,5 @@
+version: "1.0"
+namespace: "custom"
+agents:
+  slow:
+    class_path: "slow_agent.SlowAgent"

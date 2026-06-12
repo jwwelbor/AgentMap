@@ -1,0 +1,5 @@
+GraphName,Node,Edge,Context,AgentType,Success_Next,Failure_Next,Input_Fields,Output_Field,Prompt
+EchoFlow,A,B,,echo,,,msg,step_a,
+EchoFlow,B,C,,echo,,,step_a,step_b,
+EchoFlow,C,,,echo,,,step_b,final,
+SlowFlow,Step,,,slow,,,value,result,

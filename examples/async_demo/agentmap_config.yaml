@@ -1,0 +1,17 @@
+logging:
+  version: 1
+  disable_existing_loggers: false
+  handlers:
+    console:
+      class: logging.StreamHandler
+      level: WARNING
+  root:
+    level: WARNING
+    handlers: [console]
+
+paths:
+  csv_repository: "workflows"
+  cache: "agentmap_data/cache"
+  custom_agents: "custom_agents"
+  functions: "agentmap_data/custom_functions"
+  metadata_bundles: "agentmap_data/metadata_bundles"

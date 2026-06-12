@@ -1,0 +1,61 @@
+{
+  "version": "1.0.0",
+  "entries": {
+    "b9b69eb07240f0c7bd495a2e42983e8902ea0133fb47634639e1f72dfbc3625e": {
+      "EchoFlow": {
+        "graph_name": "EchoFlow",
+        "csv_hash": "b9b69eb07240f0c7bd495a2e42983e8902ea0133fb47634639e1f72dfbc3625e",
+        "bundle_path": "agentmap_data/cache/bundles/b9b69eb0_EchoFlow.json",
+        "csv_path": "workflows/echo_flow.csv",
+        "created_at": "2026-06-12T14:26:41.130802",
+        "last_accessed": "2026-06-12T14:26:41.130806",
+        "access_count": 0,
+        "bundle_size": 2785,
+        "node_count": 3
+      }
+    },
+    "5c2a54cf34d232c44579e8ac01178732a1772bb84d7aaacb113861884943bd9a": {
+      "EchoFlow": {
+        "graph_name": "EchoFlow",
+        "csv_hash": "5c2a54cf34d232c44579e8ac01178732a1772bb84d7aaacb113861884943bd9a",
+        "bundle_path": "agentmap_data/cache/bundles/5c2a54cf_EchoFlow.json",
+        "csv_path": "workflows/echo_flow.csv",
+        "created_at": "2026-06-12T14:27:56.502383",
+        "last_accessed": "2026-06-12T14:27:56.502387",
+        "access_count": 0,
+        "bundle_size": 2785,
+        "node_count": 3
+      }
+    },
+    "1ae9e8ff66bc18331a26790785e5e6ccfe7bdd9b62622d8cd8762b4f67aca5ff": {
+      "EchoFlow": {
+        "graph_name": "EchoFlow",
+        "csv_hash": "1ae9e8ff66bc18331a26790785e5e6ccfe7bdd9b62622d8cd8762b4f67aca5ff",
+        "bundle_path": "agentmap_data/cache/bundles/1ae9e8ff_EchoFlow.json",
+        "csv_path": "workflows/echo_flow.csv",
+        "created_at": "2026-06-12T14:48:20.264774",
+        "last_accessed": "2026-06-12T14:48:20.264778",
+        "access_count": 0,
+        "bundle_size": 2785,
+        "node_count": 3
+      },
+      "SlowFlow": {
+        "graph_name": "SlowFlow",
+        "csv_hash": "1ae9e8ff66bc18331a26790785e5e6ccfe7bdd9b62622d8cd8762b4f67aca5ff",
+        "bundle_path": "agentmap_data/cache/bundles/1ae9e8ff_SlowFlow.json",
+        "csv_path": "workflows/echo_flow.csv",
+        "created_at": "2026-06-12T14:48:20.309595",
+        "last_accessed": "2026-06-12T14:48:20.309599",
+        "access_count": 0,
+        "bundle_size": 2150,
+        "node_count": 1
+      }
+    }
+  },
+  "metadata": {
+    "created_at": "2026-06-12T14:26:41.126431",
+    "last_modified": "2026-06-12T14:48:20.309607",
+    "total_entries": 3,
+    "total_bundle_size": 10505
+  }
+}
