@@ -444,7 +444,7 @@ class ErrorHandler:
         error_code: str,
         status_code: int = 400,
         detail: Optional[str] = None,
-        validation_errors: List[ValidationError] = None,
+        validation_errors: Optional[List[ValidationError]] = None,
     ) -> HTTPException:
         """
         Create standardized HTTPException with error response.
