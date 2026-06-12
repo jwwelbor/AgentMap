@@ -150,6 +150,22 @@ class SuspendAgent(BaseAgent, MessagingCapableAgent):
         # Return raw resume value (not wrapped in dict)
         return resume_value
 
+    async def process_async(self, inputs: Dict[str, Any]) -> Any:
+        """Async variant of process().
+
+        LangGraph's interrupt() stores and reads its context via contextvars.
+        The default BaseAgent.process_async() delegates to run_in_executor, which
+        runs process() in a thread pool.  Worker threads do not always inherit the
+        LangGraph runnable context — interrupt() inside a thread can raise
+        "Called get_config outside of a runnable context".
+
+        SuspendAgent overrides process_async() to call process() directly on the
+        event loop (no executor) so interrupt() always has the correct LangGraph
+        context available.  The method is intentionally synchronous under the hood
+        because interrupt() is itself synchronous.
+        """
+        return self.process(inputs)
+
     # Protocol implementation (MessagingCapableAgent)
     def configure_messaging_service(
         self, messaging_service: "MessagingService"

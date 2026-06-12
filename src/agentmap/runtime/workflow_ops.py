@@ -633,8 +633,8 @@ def _raise_mapped_error(graph_name: str, error_msg: str) -> NoReturn:
 
 
 # ---------------------------------------------------------------------------
-# Async facade — each function isolates sync-only work behind asyncio.to_thread
-# so callers on an event loop never block.
+# Async facade — graph-invocation paths use native async runner methods.
+# Sync-only operations (filesystem, bundle inspection) remain in to_thread.
 # ---------------------------------------------------------------------------
 
 
@@ -647,16 +647,84 @@ async def run_workflow_async(
     config_file: Optional[str] = None,
     force_create: bool = False,
 ) -> Dict[str, Any]:
-    """Async sibling of run_workflow.  Argument and return shape are identical."""
-    return await asyncio.to_thread(
-        run_workflow,
-        graph_name,
-        inputs,
-        profile=profile,
-        resume_token=resume_token,
-        config_file=config_file,
-        force_create=force_create,
-    )
+    """Async sibling of run_workflow.
+
+    Re-pointed from the former asyncio.to_thread shim to native async graph
+    execution via GraphRunnerService.run_async (T-E04-F04-004, REQ-NF-007).
+    Argument and return shape are identical to run_workflow.
+    """
+    ensure_initialized(config_file=config_file)
+
+    try:
+        container = RuntimeManager.get_container()
+        csv_path, resolved_graph_name = _resolve_csv_path(graph_name, container)
+
+        graph_bundle_service: GraphBundleService = container.graph_bundle_service()
+        bundle, new_bundle = graph_bundle_service.get_or_create_bundle(
+            csv_path=csv_path,
+            graph_name=resolved_graph_name,
+            config_path=config_file,
+            force_create=force_create,
+        )
+
+        graph_runner: GraphRunnerService = container.graph_runner_service()
+        result = await graph_runner.run_async(bundle, inputs, validate_agents=new_bundle)
+
+        if result.success:
+            return {
+                "success": True,
+                "outputs": result.final_state,
+                "execution_id": getattr(result, "execution_id", None),
+                "execution_summary": result.execution_summary,
+                "metadata": {
+                    "graph_name": graph_name,
+                    "profile": profile,
+                },
+            }
+        else:
+            if result.final_state.get("__interrupted"):
+                thread_id = result.final_state.get("__thread_id")
+                interrupt_info = result.final_state.get("__interrupt_info", {})
+                return {
+                    "success": False,
+                    "interrupted": True,
+                    "thread_id": thread_id,
+                    "message": f"Execution interrupted in thread: {thread_id}",
+                    "interrupt_info": interrupt_info,
+                    "execution_summary": result.execution_summary,
+                    "metadata": {
+                        "graph_name": graph_name,
+                        "profile": profile,
+                        "checkpoint_available": True,
+                        "interrupt_type": interrupt_info.get("type", "unknown"),
+                        "node_name": interrupt_info.get("node_name", "unknown"),
+                    },
+                }
+
+            error_msg = str(result.error)
+            _raise_mapped_error(graph_name, error_msg)
+
+    except ExecutionInterruptedException as e:
+        return {
+            "success": False,
+            "interrupted": True,
+            "thread_id": e.thread_id,
+            "interaction_request": e.interaction_request,
+            "message": f"Execution interrupted for human interaction in thread: {e.thread_id}",
+            "metadata": {
+                "graph_name": graph_name,
+                "profile": profile,
+                "checkpoint_available": True,
+            },
+        }
+    except (GraphNotFound, InvalidInputs, AgentMapNotInitialized):
+        raise
+    except FileNotFoundError as e:
+        raise GraphNotFound(graph_name, f"Workflow file not found: {e}")
+    except ValueError as e:
+        raise InvalidInputs(str(e))
+    except Exception as e:
+        raise RuntimeError(f"Unexpected error during workflow execution: {e}")
 
 
 async def resume_workflow_async(
@@ -665,13 +733,119 @@ async def resume_workflow_async(
     profile: Optional[str] = None,
     config_file: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Async sibling of resume_workflow.  Argument and return shape are identical."""
-    return await asyncio.to_thread(
-        resume_workflow,
-        resume_token,
-        profile=profile,
-        config_file=config_file,
-    )
+    """Async sibling of resume_workflow.
+
+    Re-pointed from the former asyncio.to_thread shim to native async graph
+    execution via GraphRunnerService.resume_from_checkpoint_async
+    (T-E04-F04-004, REQ-NF-007).
+    Argument and return shape are identical to resume_workflow.
+    """
+    ensure_initialized(config_file=config_file)
+
+    try:
+        thread_id, response_action, response_data = _parse_resume_token(resume_token)
+
+        container = RuntimeManager.get_container()
+        interaction_handler = container.interaction_handler_service()
+        graph_bundle_service: GraphBundleService = container.graph_bundle_service()
+        graph_runner: GraphRunnerService = container.graph_runner_service()
+
+        thread_data = interaction_handler.get_thread_metadata(thread_id)
+        if not thread_data:
+            raise ValueError(f"Thread '{thread_id}' not found in storage")
+
+        bundle_info = thread_data.get("bundle_info", {})
+        stored_graph_name = thread_data.get("graph_name")
+
+        from agentmap.services.workflow_orchestration_service import (
+            _rehydrate_bundle_from_metadata,
+        )
+
+        bundle = _rehydrate_bundle_from_metadata(
+            bundle_info, stored_graph_name, graph_bundle_service
+        )
+        if not bundle:
+            raise RuntimeError("Failed to rehydrate GraphBundle from metadata")
+
+        checkpoint_state = dict(thread_data.get("checkpoint_data", {}))
+        request_id = thread_data.get("pending_interaction_id")
+
+        if request_id:
+            # HumanAgent path — requires a response action
+            if not response_action:
+                raise ValueError(
+                    f"Pending interaction '{request_id}' requires a response_action"
+                )
+
+            from agentmap.models.human_interaction import HumanInteractionResponse
+            from uuid import UUID
+
+            response = HumanInteractionResponse(
+                request_id=UUID(request_id),
+                action=response_action,
+                data=response_data or {},
+            )
+
+            save_success = interaction_handler.save_interaction_response(
+                response_id=str(response.request_id),
+                thread_id=thread_id,
+                action=response.action,
+                data=response.data,
+            )
+            if not save_success:
+                raise RuntimeError("Failed to save interaction response")
+
+            update_success = interaction_handler.mark_thread_resuming(
+                thread_id=thread_id, last_response_id=str(response.request_id)
+            )
+            if not update_success:
+                raise RuntimeError("Failed to update thread status to resuming")
+
+            checkpoint_state["__human_response"] = {
+                "action": response.action,
+                "data": response.data,
+                "request_id": str(response.request_id),
+            }
+        else:
+            # SuspendAgent path — no human interaction required
+            update_success = interaction_handler.mark_thread_resuming(thread_id=thread_id)
+            if not update_success:
+                raise RuntimeError("Failed to update thread status to resuming")
+
+            if response_action:
+                checkpoint_state["__resume_value"] = response_action
+            if response_data:
+                checkpoint_state["__resume_data"] = response_data
+
+        result = await graph_runner.resume_from_checkpoint_async(
+            bundle=bundle,
+            thread_id=thread_id,
+            checkpoint_state=checkpoint_state,
+            resume_node=thread_data.get("node_name"),
+        )
+
+        return {
+            "success": True,
+            "outputs": result.final_state,
+            "execution_summary": result.execution_summary,
+            "metadata": {
+                "thread_id": thread_id,
+                "response_action": response_action,
+                "profile": profile,
+                "graph_name": result.graph_name,
+                "duration": result.total_duration,
+            },
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "metadata": {
+                "resume_token": resume_token,
+                "profile": profile,
+            },
+        }
 
 
 async def list_graphs_async(
