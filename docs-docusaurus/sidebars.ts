@@ -61,9 +61,15 @@ const sidebars: SidebarsConfig = {
           ],
         },
         
+        {
+          type: 'doc',
+          id: 'guides/async-workflows',
+          label: 'Async Execution',
+        },
+
         // System Configuration
         {
-          type: 'category', 
+          type: 'category',
           label: 'Configuration',
           collapsible: true,
           collapsed: true,

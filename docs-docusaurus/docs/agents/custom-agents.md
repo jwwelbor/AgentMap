@@ -147,6 +147,55 @@ def process(self, inputs: Dict[str, Any]) -> Any:
     raise NotImplementedError("Subclasses must implement process()")
 ```
 
+## Async Agent Implementation
+
+`process()` is the only method you are required to implement. Agents that only implement `process()` are automatically compatible with async graph execution — the framework runs them in a thread pool executor, keeping the event loop responsive. No code changes required.
+
+### Overriding `process_async()`
+
+```python
+async def process_async(self, inputs: Dict[str, Any]) -> Any
+```
+
+Override this when your agent performs native async I/O — HTTP requests, database queries, or other `await`-able operations — and you want to avoid the executor overhead.
+
+**Override when:**
+- Your agent makes HTTP calls (`aiohttp`, `httpx`)
+- Your agent queries a database via an async driver
+- You are already in an event loop and want full async throughput
+
+**Do not override when:**
+- Your agent does simple sync computation — the executor fallback is free and sufficient
+- Your agent is CPU-bound — executor threads don't help with GIL contention; use `ProcessPoolExecutor` explicitly if needed
+
+```python title="Sync-only agent — works in async context automatically"
+class MySyncAgent(BaseAgent):
+    def process(self, inputs: Dict[str, Any]) -> Any:
+        # Sync work runs in executor when called via run_workflow_async()
+        return inputs.get("value", "").upper()
+```
+
+```python title="Native-async agent — overrides process_async() for HTTP calls"
+import aiohttp
+
+class MyHttpAgent(BaseAgent):
+    def process(self, inputs: Dict[str, Any]) -> Any:
+        # Kept for sync callers; async callers use process_async() below
+        import requests
+        return requests.get(inputs["url"]).json()
+
+    async def process_async(self, inputs: Dict[str, Any]) -> Any:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(inputs["url"]) as resp:
+                return await resp.json()
+```
+
+### `run_async()`
+
+`run_async()` is the framework-level async entrypoint called by the graph runner when a workflow executes via `run_workflow_async()`. It handles telemetry, state extraction, and output routing — dispatching to `process_async()` for the actual work.
+
+Agent authors do not call or override `run_async()` directly. Override `process_async()` instead.
+
 ## Service Injection Architecture
 
 ### Infrastructure Services (Constructor Injection)

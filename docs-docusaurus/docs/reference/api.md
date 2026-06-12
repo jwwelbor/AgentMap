@@ -520,6 +520,212 @@ if not result["success"] or not result["outputs"]["all_agents_defined"]:
 
 ---
 
+### Async Workflow Operations
+
+Async siblings of every sync workflow operation. Argument and return shapes are identical to the sync counterparts — swap the call and add `await`.
+
+```python
+from agentmap.runtime_api import (
+    run_workflow_async,
+    resume_workflow_async,
+    list_graphs_async,
+    inspect_graph_async,
+    validate_workflow_async,
+)
+```
+
+#### `run_workflow_async()`
+
+Execute a workflow graph natively via the async runner — not a thread wrapper.
+
+**Parameters:**
+- `graph_name` (str, required): Name or identifier of the graph to run (same formats as `run_workflow()`)
+- `inputs` (Dict[str, Any], required): Input values for the workflow
+- `profile` (str, optional): Environment profile. Default: `None`
+- `resume_token` (str, optional): Token to resume from checkpoint. Default: `None`
+- `config_file` (str, optional): Path to configuration file. Default: `None`
+- `force_create` (bool, optional): Force bundle recreation. Default: `False`
+
+**Returns:** Dict with identical structure to `run_workflow()`:
+
+```python
+{
+    "success": True,
+    "outputs": {
+        # Workflow output data
+    },
+    "execution_id": "exec-uuid-12345",
+    "execution_summary": {
+        "total_nodes": 5,
+        "duration": 2.34,
+    },
+    "metadata": {
+        "graph_name": "customer_support",
+        "profile": "production"
+    }
+}
+```
+
+**Raises:**
+- `GraphNotFound`: If the graph cannot be located
+- `InvalidInputs`: If inputs fail validation
+- `AgentMapNotInitialized`: If runtime not initialized
+
+**Example:**
+
+```python
+import asyncio
+from agentmap.runtime_api import ensure_initialized, run_workflow_async
+
+ensure_initialized()
+
+DOCUMENTS = ["doc-0", "doc-1", "doc-2", "doc-3", "doc-4"]
+
+async def main():
+    # Single run
+    result = await run_workflow_async(
+        graph_name="customer_support",
+        inputs={"message": "I need help"}
+    )
+    print(result["outputs"])
+
+    # Concurrent fan-out with asyncio.gather
+    tasks = [
+        run_workflow_async("summarizer", {"doc": doc})
+        for doc in DOCUMENTS
+    ]
+    results = await asyncio.gather(*tasks)
+
+asyncio.run(main())
+```
+
+#### `resume_workflow_async()`
+
+Async sibling of `resume_workflow()`. Resumes a previously interrupted workflow natively. `asyncio.CancelledError` propagates cleanly — do not swallow it.
+
+**Parameters:**
+- `resume_token` (str, required): Token from interrupted workflow (same format as `resume_workflow()`)
+- `profile` (str, optional): Environment profile. Default: `None`
+- `config_file` (str, optional): Path to configuration file. Default: `None`
+
+**Returns:** Dict with identical structure to `resume_workflow()`:
+
+```python
+{
+    "success": True,
+    "outputs": { ... },
+    "execution_summary": { ... },
+    "metadata": {
+        "thread_id": "thread-uuid-12345",
+        "response_action": "approve",
+        "graph_name": "approval_workflow",
+        "duration": 1.23
+    }
+}
+```
+
+**Raises:**
+- `asyncio.CancelledError`: Propagates on task cancellation — do not catch and swallow
+- `AgentMapNotInitialized`: If runtime not initialized
+
+**Example:**
+
+```python
+import asyncio, json
+from agentmap.runtime_api import resume_workflow_async
+
+async def handle_approval(thread_id: str, approved: bool):
+    token = json.dumps({
+        "thread_id": thread_id,
+        "response_action": "approve" if approved else "reject"
+    })
+    result = await resume_workflow_async(resume_token=token)
+    return result
+
+asyncio.run(handle_approval("thread-uuid-12345", approved=True))
+```
+
+#### `list_graphs_async()`
+
+Async sibling of `list_graphs()`. Runs filesystem scanning in a thread pool via `asyncio.to_thread`, keeping the event loop responsive.
+
+**Parameters:**
+- `profile` (str, optional): Environment profile. Default: `None`
+- `config_file` (str, optional): Path to configuration file. Default: `None`
+
+**Returns:** Dict with identical structure to `list_graphs()`.
+
+**Example:**
+
+```python
+import asyncio
+from agentmap.runtime_api import list_graphs_async
+
+async def main():
+    result = await list_graphs_async()
+    for graph in result["outputs"]["graphs"]:
+        print(f"  {graph['name']}: {graph['total_nodes']} nodes")
+
+asyncio.run(main())
+```
+
+#### `inspect_graph_async()`
+
+Async sibling of `inspect_graph()`. Runs graph analysis in a thread pool via `asyncio.to_thread`.
+
+**Parameters:**
+- `graph_name` (str, required): Name of the graph to inspect
+- `csv_file` (str, optional): Path to specific CSV file. Default: `None`
+- `node` (str, optional): Inspect specific node only. Default: `None`
+- `config_file` (str, optional): Path to configuration file. Default: `None`
+
+**Returns:** Dict with identical structure to `inspect_graph()`.
+
+**Example:**
+
+```python
+import asyncio
+from agentmap.runtime_api import inspect_graph_async
+
+async def main():
+    result = await inspect_graph_async("customer_support")
+    print(f"Nodes: {result['outputs']['total_nodes']}")
+
+asyncio.run(main())
+```
+
+#### `validate_workflow_async()`
+
+Async sibling of `validate_workflow()`. Runs validation in a thread pool via `asyncio.to_thread`.
+
+**Parameters:**
+- `graph_name` (str, required): Name or identifier of the graph to validate
+- `config_file` (str, optional): Path to configuration file. Default: `None`
+
+**Returns:** Dict with identical structure to `validate_workflow()`.
+
+**Example:**
+
+```python
+import asyncio
+from agentmap.runtime_api import validate_workflow_async
+
+async def pre_deploy_check(graph_name: str) -> bool:
+    result = await validate_workflow_async(graph_name)
+    return result["success"] and result["outputs"]["all_agents_defined"]
+
+asyncio.run(pre_deploy_check("production_workflow"))
+```
+
+#### Async Behavior Notes
+
+- **Sync agents work automatically.** Agents that only implement `process()` run via `loop.run_in_executor(None, ...)` in the async path — no code changes required for async compatibility.
+- **Execution model.** `run_workflow_async()` and `resume_workflow_async()` use native `ainvoke` for graph execution. `list_graphs_async()`, `inspect_graph_async()`, and `validate_workflow_async()` delegate via `asyncio.to_thread`.
+- **Never swallow `CancelledError`.** If you catch `asyncio.CancelledError` for cleanup, always re-raise so asyncio task machinery functions correctly.
+- **Import path.** `from agentmap.runtime_api import run_workflow_async, resume_workflow_async, list_graphs_async, inspect_graph_async, validate_workflow_async`
+
+---
+
 ### Bundle & Code Generation
 
 #### `scaffold_agents()`
@@ -1180,7 +1386,7 @@ class WorkflowRequest(BaseModel):
 @app.post("/workflows/{graph_name}")
 async def execute_workflow(graph_name: str, request: WorkflowRequest):
     try:
-        result = runtime_api.run_workflow(
+        result = await runtime_api.run_workflow_async(
             graph_name=graph_name,
             inputs=request.inputs,
             profile=request.profile
@@ -1202,7 +1408,7 @@ async def execute_workflow(graph_name: str, request: WorkflowRequest):
 
 @app.get("/workflows")
 async def list_workflows():
-    result = runtime_api.list_graphs()
+    result = await runtime_api.list_graphs_async()
     return result["outputs"]
 
 @app.get("/health")
