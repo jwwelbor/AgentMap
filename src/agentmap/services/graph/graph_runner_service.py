@@ -12,6 +12,7 @@ Approach is configurable via execution.use_direct_import_agents setting.
 Refactored: Large methods extracted to dedicated modules in runner/ package.
 """
 
+import asyncio
 import re
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -959,6 +960,503 @@ class GraphRunnerService:
         except Exception:
             return None
 
+    # ------------------------------------------------------------------
+    # Async runner path (REQ-F-004, REQ-F-006, REQ-F-007, REQ-F-008)
+    # ------------------------------------------------------------------
+
+    async def run_async(
+        self,
+        bundle: GraphBundle,
+        initial_state: dict = None,
+        parent_graph_name: Optional[str] = None,
+        parent_tracker: Optional[Any] = None,
+        is_subgraph: bool = False,
+        validate_agents: bool = False,
+    ) -> ExecutionResult:
+        """Run graph execution asynchronously using a prepared bundle.
+
+        Async sibling of ``run()``.  Preserves the same orchestration
+        sequence — bundle normalization, scoped registry, tracker creation,
+        subgraph bundle resolution, agent instantiation, checkpoint gating,
+        async graph assembly, async graph execution, interrupt detection, and
+        subgraph tracker linkage — while routing through async assembly and
+        async execution primitives (REQ-F-004, REQ-F-006, REQ-F-008).
+
+        Args:
+            bundle: Prepared GraphBundle with all metadata.
+            initial_state: Optional initial state for execution.
+            parent_graph_name: Name of parent graph (for subgraph execution).
+            parent_tracker: Parent execution tracker (for subgraph tracking).
+            is_subgraph: Whether this is a subgraph execution.
+            validate_agents: Whether to validate agent instantiation.
+
+        Returns:
+            ExecutionResult from graph execution.
+
+        Raises:
+            asyncio.CancelledError: Propagated without swallowing (REQ-F-009).
+        """
+        graph_name = bundle.graph_name
+        self._check_missing_services(bundle)
+
+        if is_subgraph and parent_graph_name:
+            self.logger.info(
+                f"⭐ Starting async subgraph pipeline for: {graph_name} "
+                f"(parent: {parent_graph_name})"
+            )
+        else:
+            self.logger.info(f"⭐ Starting async graph pipeline for: {graph_name}")
+
+        if initial_state is None:
+            initial_state = {}
+
+        if self._telemetry_service is not None:
+            return await self._run_async_with_telemetry(
+                bundle,
+                initial_state,
+                parent_graph_name,
+                parent_tracker,
+                is_subgraph,
+                validate_agents,
+            )
+        return await self._run_core_async(
+            bundle,
+            initial_state,
+            parent_graph_name,
+            parent_tracker,
+            is_subgraph,
+            validate_agents,
+        )
+
+    async def _run_async_with_telemetry(
+        self,
+        bundle: GraphBundle,
+        initial_state: dict,
+        parent_graph_name: Optional[str],
+        parent_tracker: Optional[Any],
+        is_subgraph: bool,
+        validate_agents: bool,
+    ) -> ExecutionResult:
+        """Run async workflow wrapped in a telemetry span.
+
+        Falls back to ``_run_core_async`` if span creation fails (same
+        Layer 1 isolation as the sync ``_run_with_telemetry``).  Workflow
+        exceptions (including GraphInterrupt and CancelledError) propagate
+        normally — only telemetry infrastructure failures trigger the
+        fallback (REQ-NF-002).
+        """
+        from agentmap.services.telemetry.constants import (
+            GRAPH_AGENT_COUNT,
+            GRAPH_NAME,
+            GRAPH_NODE_COUNT,
+            GRAPH_PARENT_NAME,
+            WORKFLOW_RUN_SPAN,
+        )
+
+        graph_name = bundle.graph_name
+        node_count = len(bundle.nodes) if bundle.nodes else 0
+
+        span_attributes: Dict[str, Any] = {
+            GRAPH_NAME: graph_name,
+            GRAPH_NODE_COUNT: node_count,
+        }
+        if parent_graph_name:
+            span_attributes[GRAPH_PARENT_NAME] = parent_graph_name
+
+        try:
+            with self._telemetry_service.start_span(
+                WORKFLOW_RUN_SPAN,
+                attributes=span_attributes,
+            ) as span:
+                try:
+                    result = await self._run_core_async(
+                        bundle,
+                        initial_state,
+                        parent_graph_name,
+                        parent_tracker,
+                        is_subgraph,
+                        validate_agents,
+                    )
+
+                    # Set agent count after instantiation (not available before)
+                    if bundle.node_instances:
+                        try:
+                            self._telemetry_service.set_span_attributes(
+                                span,
+                                {GRAPH_AGENT_COUNT: len(bundle.node_instances)},
+                            )
+                        except Exception:
+                            pass
+
+                    # Set span status based on result
+                    if result.success:
+                        self._set_span_status_ok(span)
+                    else:
+                        try:
+                            from opentelemetry.trace import StatusCode
+
+                            span.set_status(
+                                StatusCode.ERROR,
+                                result.error or "Unknown error",
+                            )
+                        except Exception:
+                            pass
+
+                    return result
+
+                except GraphInterrupt:
+                    self._record_span_event_safe(span, "workflow.interrupted")
+                    raise
+
+                except ExecutionInterruptedException:
+                    self._record_span_event_safe(span, "workflow.interrupted.legacy")
+                    raise
+
+                except asyncio.CancelledError:
+                    # CancelledError must not be swallowed by telemetry layer
+                    # (REQ-F-009); span closes without OK status.
+                    raise
+
+                except Exception as e:
+                    self._record_span_exception_safe(span, e)
+                    raise
+
+        except (GraphInterrupt, ExecutionInterruptedException, asyncio.CancelledError):
+            raise
+        except Exception as telemetry_error:
+            self.logger.warning(
+                f"Telemetry error, executing without instrumentation: "
+                f"{telemetry_error}"
+            )
+            return await self._run_core_async(
+                bundle,
+                initial_state,
+                parent_graph_name,
+                parent_tracker,
+                is_subgraph,
+                validate_agents,
+            )
+
+    async def _run_core_async(
+        self,
+        bundle: GraphBundle,
+        initial_state: dict,
+        parent_graph_name: Optional[str],
+        parent_tracker: Optional[Any],
+        is_subgraph: bool,
+        validate_agents: bool,
+    ) -> ExecutionResult:
+        """Execute the async workflow pipeline without telemetry wrapping.
+
+        Mirrors ``_run_core`` phase-by-phase, substituting async assembly
+        and async execution calls (REQ-F-004, REQ-NF-002).
+        """
+        graph_name = bundle.graph_name
+
+        try:
+            # Phase 2: Create isolated scoped registry for this run
+            self._record_phase_event("workflow.phase.registry_creation")
+            self.logger.debug(
+                f"[GraphRunnerService] Async Phase 2: Creating scoped registry "
+                f"for {graph_name}"
+            )
+            scoped_registry = (
+                self.declaration_registry.create_scoped_registry_for_bundle(bundle)
+            )
+            bundle.scoped_registry = scoped_registry
+            self.logger.debug(
+                f"[GraphRunnerService] Scoped registry created with "
+                f"{len(scoped_registry.get_all_agent_types())} agents and "
+                f"{len(scoped_registry.get_all_service_names())} services"
+            )
+
+            # Phase 3: Create execution tracker
+            self._record_phase_event("workflow.phase.tracker_creation")
+            self.logger.debug(
+                "[GraphRunnerService] Async Phase 3: Setting up execution tracking"
+            )
+            execution_tracker = self.execution_tracking.create_tracker()
+
+            # Phase 3.5: Pre-resolve subgraph bundles
+            self._resolve_subgraph_bundles(bundle, initial_state)
+
+            # Phase 4: Instantiate agents
+            self._record_phase_event("workflow.phase.agent_instantiation")
+            self.logger.debug(
+                f"[GraphRunnerService] Async Phase 4: Instantiating agents "
+                f"for {graph_name}"
+            )
+            bundle_with_instances = self.graph_instantiation.instantiate_agents(
+                bundle, execution_tracker
+            )
+
+            if validate_agents:
+                validation = self.graph_instantiation.validate_instantiation(
+                    bundle_with_instances
+                )
+                if not validation["valid"]:
+                    raise RuntimeError(
+                        f"Agent instantiation validation failed: {validation}"
+                    )
+
+            # Phase 5: Assembly — async path
+            self._record_phase_event("workflow.phase.graph_assembly")
+            self.logger.debug(
+                f"[GraphRunnerService] Async Phase 5: Assembling graph "
+                f"for {graph_name}"
+            )
+
+            from agentmap.models.graph import Graph
+
+            graph = Graph(
+                name=bundle_with_instances.graph_name,
+                nodes=bundle_with_instances.nodes,
+                entry_point=bundle_with_instances.entry_point,
+            )
+
+            if not bundle_with_instances.node_instances:
+                raise RuntimeError("No agent instances found in bundle.node_registry")
+
+            node_definitions = create_node_registry_from_bundle(
+                bundle_with_instances, self.logger
+            )
+
+            requires_checkpoint = self.graph_bundle_service.requires_checkpoint_support(
+                bundle
+            )
+
+            execution_config = None
+
+            if requires_checkpoint:
+                thread_id = getattr(execution_tracker, "thread_id", None)
+                if not thread_id:
+                    raise RuntimeError(
+                        "Checkpoint execution requires execution tracker with thread_id"
+                    )
+
+                execution_config = {"configurable": {"thread_id": thread_id}}
+                self.logger.debug(
+                    f"[GraphRunnerService] Async assembling graph '{graph_name}' "
+                    f"WITH checkpoint support (thread_id={thread_id})"
+                )
+                executable_graph = self.graph_assembly.assemble_with_checkpoint_async(
+                    graph=graph,
+                    agent_instances=bundle_with_instances.node_instances,
+                    node_definitions=node_definitions,
+                    checkpointer=self.graph_checkpoint,
+                )
+            else:
+                self.logger.debug(
+                    f"[GraphRunnerService] Async assembling graph '{graph_name}' "
+                    f"WITHOUT checkpoint support"
+                )
+                executable_graph = self.graph_assembly.assemble_graph_async(
+                    graph=graph,
+                    agent_instances=bundle_with_instances.node_instances,
+                    orchestrator_node_registry=node_definitions,
+                )
+
+            self.logger.debug("[GraphRunnerService] Async graph assembly completed")
+
+            # Phase 6: Execution — async
+            self._record_phase_event("workflow.phase.execution")
+            self.logger.debug(
+                f"[GraphRunnerService] Async Phase 6: Executing graph {graph_name}"
+            )
+            result = await self.graph_execution.execute_compiled_graph_async(
+                executable_graph=executable_graph,
+                graph_name=graph_name,
+                initial_state=initial_state,
+                execution_tracker=execution_tracker,
+                config=execution_config,
+            )
+
+            # Phase 7: Finalization
+            self._record_phase_event("workflow.phase.finalization")
+
+            # Check for suspended state when checkpoint enabled
+            if requires_checkpoint and execution_config:
+                thread_id = getattr(execution_tracker, "thread_id", None)
+                if not thread_id:
+                    self.logger.warning(
+                        "Missing thread_id after async checkpoint execution; "
+                        "cannot inspect state"
+                    )
+                else:
+                    state = executable_graph.get_state(execution_config)
+
+                    if state.tasks:
+                        interrupt_details = (
+                            self.interrupt_handler.handle_langgraph_interrupt(
+                                state=state,
+                                bundle=bundle,
+                                thread_id=thread_id,
+                                execution_tracker=execution_tracker,
+                            )
+                        )
+
+                        interrupt_type = (
+                            interrupt_details.get("type", "unknown")
+                            if interrupt_details
+                            else self.interrupt_handler.extract_interrupt_type_from_state(
+                                state
+                            )
+                        )
+
+                        self.interrupt_handler.display_resume_instructions(
+                            thread_id=thread_id,
+                            bundle=bundle,
+                            interrupt_type=interrupt_type,
+                        )
+
+                        self.interrupt_handler.log_interrupt_status(
+                            graph_name, thread_id, interrupt_type
+                        )
+
+                        return self.interrupt_handler.create_interrupt_result(
+                            graph_name=graph_name,
+                            thread_id=thread_id,
+                            state=state,
+                            interrupt_type=interrupt_type,
+                            interrupt_info=interrupt_details,
+                        )
+
+            # Link subgraph tracker to parent
+            if is_subgraph and parent_tracker:
+                self.execution_tracking.record_subgraph_execution(
+                    tracker=parent_tracker,
+                    subgraph_name=graph_name,
+                    subgraph_tracker=execution_tracker,
+                )
+                self.logger.debug(
+                    f"[GraphRunnerService] Linked async subgraph tracker to parent "
+                    f"for: {graph_name}"
+                )
+
+            if result.success:
+                if is_subgraph and parent_graph_name:
+                    self.logger.info(
+                        f"Async subgraph pipeline completed successfully for: "
+                        f"{graph_name} (parent: {parent_graph_name}, "
+                        f"duration: {result.total_duration:.2f}s)"
+                    )
+                else:
+                    self.logger.info(
+                        f"Async graph pipeline completed successfully for: "
+                        f"{graph_name} (duration: {result.total_duration:.2f}s)"
+                    )
+            else:
+                if is_subgraph and parent_graph_name:
+                    self.logger.error(
+                        f"Async subgraph pipeline failed for: {graph_name} "
+                        f"(parent: {parent_graph_name}) - {result.error}"
+                    )
+                else:
+                    self.logger.error(
+                        f"Async graph pipeline failed for: {graph_name} "
+                        f"- {result.error}"
+                    )
+
+            return result
+
+        except asyncio.CancelledError:
+            # Propagate cancellation — do not swallow (REQ-F-009)
+            self.logger.info(
+                f"[GraphRunnerService] Async run cancelled for graph '{graph_name}'"
+            )
+            raise
+
+        except GraphInterrupt as e:
+            self.logger.info("Async graph execution interrupted (LangGraph pattern)")
+
+            thread_id = execution_tracker.thread_id if execution_tracker else None
+            if not thread_id:
+                self.logger.error(
+                    "Cannot handle async interrupt: no thread_id available"
+                )
+                raise RuntimeError("Cannot handle interrupt: no thread_id") from e
+
+            config = {"configurable": {"thread_id": thread_id}}
+            state = executable_graph.get_state(config)
+
+            interrupt_details = None
+            if state.tasks:
+                interrupt_details = self.interrupt_handler.handle_langgraph_interrupt(
+                    state=state,
+                    bundle=bundle,
+                    thread_id=thread_id,
+                    execution_tracker=execution_tracker,
+                )
+                interrupt_type = (
+                    interrupt_details.get("type", "unknown")
+                    if interrupt_details
+                    else self.interrupt_handler.extract_interrupt_type_from_state(state)
+                )
+                self.interrupt_handler.display_resume_instructions(
+                    thread_id=thread_id,
+                    bundle=bundle,
+                    interrupt_type=interrupt_type,
+                )
+            else:
+                interrupt_details = None
+                interrupt_type = "unknown"
+
+            self.interrupt_handler.log_interrupt_status(
+                graph_name, thread_id, interrupt_type
+            )
+
+            return self.interrupt_handler.create_interrupt_result(
+                graph_name=graph_name,
+                thread_id=thread_id,
+                state=state,
+                interrupt_type=interrupt_type,
+                interrupt_info=interrupt_details,
+            )
+
+        except ExecutionInterruptedException as e:
+            self.logger.info(
+                f"Async graph execution interrupted (legacy pattern) "
+                f"in thread: {e.thread_id}"
+            )
+            if self.interaction_handler:
+                self.interaction_handler.handle_execution_interruption(
+                    exception=e,
+                    bundle=bundle,
+                    bundle_context=create_bundle_context(bundle),
+                )
+            else:
+                self.logger.warning(
+                    f"No interaction handler configured. Interaction "
+                    f"for thread {e.thread_id} not handled."
+                )
+            raise
+
+        except Exception as e:
+            if is_subgraph and parent_graph_name:
+                self.logger.error(
+                    f"Async subgraph pipeline failed for '{graph_name}' "
+                    f"(parent: {parent_graph_name}): {str(e)}"
+                )
+            else:
+                self.logger.error(
+                    f"Async pipeline failed for graph '{graph_name}': {str(e)}"
+                )
+
+            from agentmap.models.execution.summary import ExecutionSummary
+
+            error_summary = ExecutionSummary(
+                graph_name=graph_name, status="failed", graph_success=False
+            )
+
+            return ExecutionResult(
+                graph_name=graph_name,
+                success=False,
+                final_state=initial_state,
+                execution_summary=error_summary,
+                total_duration=0.0,
+                error=str(e),
+            )
+
     def resume_from_checkpoint(
         self,
         bundle: GraphBundle,
@@ -981,6 +1479,38 @@ class GraphRunnerService:
             ExecutionResult from resumed execution
         """
         return self.checkpoint_manager.resume_from_checkpoint(
+            bundle=bundle,
+            thread_id=thread_id,
+            checkpoint_state=checkpoint_state,
+            resume_node=resume_node,
+        )
+
+    async def resume_from_checkpoint_async(
+        self,
+        bundle: GraphBundle,
+        thread_id: str,
+        checkpoint_state: Dict[str, Any],
+        resume_node: Optional[str] = None,
+    ) -> ExecutionResult:
+        """Resume graph execution from a checkpoint asynchronously.
+
+        Async sibling of ``resume_from_checkpoint()``.  Delegates to
+        ``CheckpointManager.resume_from_checkpoint_async`` (REQ-F-005,
+        REQ-F-008).
+
+        Args:
+            bundle: Graph bundle.
+            thread_id: Thread identifier.
+            checkpoint_state: State to resume with.
+            resume_node: Optional node to resume from.
+
+        Returns:
+            ExecutionResult from resumed execution.
+
+        Raises:
+            asyncio.CancelledError: Propagated without swallowing (REQ-F-009).
+        """
+        return await self.checkpoint_manager.resume_from_checkpoint_async(
             bundle=bundle,
             thread_id=thread_id,
             checkpoint_state=checkpoint_state,
