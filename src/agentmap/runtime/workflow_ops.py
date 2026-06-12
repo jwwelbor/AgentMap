@@ -661,7 +661,9 @@ def _parse_resume_token(resume_token: Any) -> tuple[str, str, Optional[Dict[str,
         token_data = json.loads(resume_token)
         thread_id = token_data.get("thread_id")
         # Treat explicit null the same as absent — both default to "continue"
-        response_action = token_data.get("response_action") or "continue"
+        response_action = token_data.get("response_action")
+        if response_action is None:
+            response_action = "continue"
         response_data = token_data.get("response_data")
     except json.JSONDecodeError:
         # Maybe it's just a thread_id string

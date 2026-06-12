@@ -359,6 +359,12 @@ class TestParseResumeToken(unittest.TestCase):
         self.assertEqual(action, "continue")
         self.assertIsNone(data)
 
+    def test_parse_token_empty_string_action_raises(self):
+        """Empty string response_action must raise InvalidInputs (not silently default to continue)."""
+        token = json.dumps({"thread_id": "t", "response_action": ""})
+        with self.assertRaises(InvalidInputs):
+            _parse_resume_token(token)
+
 
 class TestResumeWorkflowIntegrationPoints(unittest.TestCase):
     """Test integration points of resume_workflow with other systems."""
