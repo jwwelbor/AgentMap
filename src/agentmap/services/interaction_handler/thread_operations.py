@@ -155,6 +155,21 @@ class ThreadOperationsMixin:
             fields["last_response_id"] = last_response_id
         return self._update_thread_status(thread_id, "resuming", fields)
 
+    def unmark_thread_resuming(self, thread_id: str) -> bool:
+        """Reset a thread from 'resuming' back to a re-resumable state.
+
+        Called when an async resume is cancelled after the thread was already
+        marked 'resuming'.  Resetting the status to 'suspended' ensures a
+        subsequent resume attempt is not blocked (REQ-F-009).
+
+        Args:
+            thread_id: Thread identifier to reset.
+
+        Returns:
+            True if the reset succeeded, False otherwise.
+        """
+        return self._update_thread_status(thread_id, "suspended", {})
+
     def mark_thread_completed(self, thread_id: str) -> bool:
         return self._update_thread_status(
             thread_id, "completed", {"completed_at": time.time()}
