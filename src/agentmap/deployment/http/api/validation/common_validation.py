@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Optional, Union
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, validator
 
+from agentmap.runtime.workflow_ops import VALID_RESUME_ACTIONS
+
 
 # Common Error Response Models
 class ValidationError(BaseModel):
@@ -361,36 +363,31 @@ class RequestValidator:
         """
         Validate response action for workflow resumption.
 
+        Delegates to ``VALID_RESUME_ACTIONS`` (agentmap.runtime.workflow_ops),
+        which is the canonical single source of truth for valid action strings.
+        Do NOT maintain a local set here — extend the canonical set instead.
+
         Args:
             action: Response action to validate
 
         Returns:
-            Validated action
+            Validated (lowercased) action
 
         Raises:
             HTTPException: If validation fails
         """
-        valid_actions = {
-            "approve",
-            "reject",
-            "choose",
-            "respond",
-            "edit",
-            "continue",
-            "stop",
-            "retry",
-            "skip",
-        }
-
         if not action:
             raise HTTPException(
                 status_code=400, detail="Response action cannot be empty"
             )
 
-        if action.lower() not in valid_actions:
+        if action.lower() not in VALID_RESUME_ACTIONS:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid response action: {action}. Valid actions: {', '.join(valid_actions)}",
+                detail=(
+                    f"Invalid response action: {action}. "
+                    f"Valid actions: {', '.join(sorted(VALID_RESUME_ACTIONS))}"
+                ),
             )
 
         return action.lower()
@@ -447,7 +444,7 @@ class ErrorHandler:
         error_code: str,
         status_code: int = 400,
         detail: Optional[str] = None,
-        validation_errors: List[ValidationError] = None,
+        validation_errors: Optional[List[ValidationError]] = None,
     ) -> HTTPException:
         """
         Create standardized HTTPException with error response.

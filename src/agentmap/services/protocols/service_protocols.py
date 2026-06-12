@@ -549,7 +549,11 @@ class GraphBundleServiceProtocol(Protocol):
 
 @runtime_checkable
 class GraphRunnerServiceProtocol(Protocol):
-    """Protocol for graph runner service interface used by agents."""
+    """Protocol for graph runner service interface used by agents.
+
+    Includes both sync members (compatibility shims during staged migration)
+    and async siblings introduced by E04-F04 (REQ-F-007).
+    """
 
     def run(
         self,
@@ -558,6 +562,31 @@ class GraphRunnerServiceProtocol(Protocol):
         **kwargs,
     ) -> Any:  # ExecutionResult
         """Execute a graph bundle and return the result."""
+        ...
+
+    async def run_async(
+        self,
+        bundle: Any,  # GraphBundle
+        initial_state: Optional[dict] = None,
+        parent_graph_name: Optional[str] = None,
+        parent_tracker: Optional[Any] = None,
+        is_subgraph: bool = False,
+        validate_agents: bool = False,
+    ) -> Any:  # ExecutionResult
+        """Execute a graph bundle asynchronously and return the result (REQ-F-004)."""
+        ...
+
+    async def resume_from_checkpoint_async(
+        self,
+        bundle: Any,  # GraphBundle
+        thread_id: str,
+        checkpoint_state: Dict[str, Any],
+        resume_node: Optional[str] = None,
+        _cancel_unmark_claimed: Optional[
+            Any
+        ] = None,  # threading.Event; Any to avoid import
+    ) -> Any:  # ExecutionResult
+        """Resume graph execution from a checkpoint asynchronously (REQ-F-005)."""
         ...
 
 

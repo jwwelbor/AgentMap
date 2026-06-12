@@ -8,7 +8,7 @@ import json
 import shutil
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -698,7 +698,8 @@ class TestAsyncFacadeExports:
         mock_bundle = Mock()
         mock_bundle.graph_name = "test_graph"
         mock_bundle_service.get_or_create_bundle.return_value = (mock_bundle, False)
-        mock_runner_service.run.return_value = mock_result
+        # T-E04-F04-004: run_workflow_async now awaits run_async, not run
+        mock_runner_service.run_async = AsyncMock(return_value=mock_result)
 
         mock_container.app_config_service.return_value = mock_app_config
         mock_container.graph_bundle_service.return_value = mock_bundle_service
@@ -738,7 +739,8 @@ class TestAsyncFacadeExports:
 
         mock_bundle = Mock()
         mock_bundle_service.get_or_create_bundle.return_value = (mock_bundle, False)
-        mock_runner_service.run.return_value = mock_result
+        # T-E04-F04-004: run_workflow_async now awaits run_async, not run
+        mock_runner_service.run_async = AsyncMock(return_value=mock_result)
 
         mock_container.app_config_service.return_value = mock_app_config
         mock_container.graph_bundle_service.return_value = mock_bundle_service
@@ -754,13 +756,18 @@ class TestAsyncFacadeExports:
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
     @patch("agentmap.runtime.workflow_ops.ensure_initialized")
+    @patch("agentmap.runtime.workflow_ops.RuntimeManager")
     @patch(
-        "agentmap.services.workflow_orchestration_service.WorkflowOrchestrationService.resume_workflow"
+        "agentmap.services.workflow_orchestration_service._rehydrate_bundle_from_metadata"
     )
     async def test_resume_workflow_async_suspend_style(
-        self, mock_resume_service, mock_ensure_init
+        self, mock_rehydrate, mock_runtime_manager, mock_ensure_init
     ):
-        """AC-T1/TC-006: resume_workflow_async preserves suspend-style response envelope."""
+        """AC-T1/TC-006: resume_workflow_async preserves suspend-style response envelope.
+
+        T-E04-F04-004: resume_workflow_async now inlines the orchestration logic and
+        awaits GraphRunnerService.resume_from_checkpoint_async directly.
+        """
         from agentmap.models.execution.result import ExecutionResult
         from agentmap.runtime.workflow_ops import resume_workflow_async
 
@@ -771,7 +778,33 @@ class TestAsyncFacadeExports:
             success=True,
             total_duration=3.2,
         )
-        mock_resume_service.return_value = mock_result
+
+        mock_bundle = Mock()
+        mock_rehydrate.return_value = mock_bundle
+
+        mock_interaction_handler = Mock()
+        mock_interaction_handler.get_thread_metadata.return_value = {
+            "graph_name": "test_graph",
+            "bundle_info": {"csv_path": "/fake/path.csv"},
+            "checkpoint_data": {"state": "paused"},
+            "pending_interaction_id": None,
+            "node_name": "suspend_node",
+        }
+        mock_interaction_handler.mark_thread_resuming.return_value = True
+
+        mock_graph_runner = Mock()
+        mock_graph_runner.resume_from_checkpoint_async = AsyncMock(
+            return_value=mock_result
+        )
+
+        mock_bundle_service = Mock()
+        mock_container = Mock()
+        mock_container.interaction_handler_service.return_value = (
+            mock_interaction_handler
+        )
+        mock_container.graph_bundle_service.return_value = mock_bundle_service
+        mock_container.graph_runner_service.return_value = mock_graph_runner
+        mock_runtime_manager.get_container.return_value = mock_container
 
         resume_token = json.dumps(
             {"thread_id": "thread_async_001", "response_action": "continue"}
@@ -784,16 +817,22 @@ class TestAsyncFacadeExports:
         assert result["metadata"]["thread_id"] == "thread_async_001"
         assert result["metadata"]["graph_name"] == "test_graph"
         assert result["metadata"]["profile"] == "dev"
+        mock_graph_runner.resume_from_checkpoint_async.assert_awaited_once()
 
     @pytest.mark.asyncio
     @patch("agentmap.runtime.workflow_ops.ensure_initialized")
+    @patch("agentmap.runtime.workflow_ops.RuntimeManager")
     @patch(
-        "agentmap.services.workflow_orchestration_service.WorkflowOrchestrationService.resume_workflow"
+        "agentmap.services.workflow_orchestration_service._rehydrate_bundle_from_metadata"
     )
     async def test_resume_workflow_async_human_response(
-        self, mock_resume_service, mock_ensure_init
+        self, mock_rehydrate, mock_runtime_manager, mock_ensure_init
     ):
-        """AC-T1/TC-006: resume_workflow_async preserves human-response payload."""
+        """AC-T1/TC-006: resume_workflow_async preserves human-response payload.
+
+        T-E04-F04-004: resume_workflow_async now inlines the orchestration logic and
+        awaits GraphRunnerService.resume_from_checkpoint_async directly.
+        """
         from agentmap.models.execution.result import ExecutionResult
         from agentmap.runtime.workflow_ops import resume_workflow_async
 
@@ -804,7 +843,34 @@ class TestAsyncFacadeExports:
             success=True,
             total_duration=5.0,
         )
-        mock_resume_service.return_value = mock_result
+
+        mock_bundle = Mock()
+        mock_rehydrate.return_value = mock_bundle
+
+        mock_interaction_handler = Mock()
+        mock_interaction_handler.get_thread_metadata.return_value = {
+            "graph_name": "approval_flow",
+            "bundle_info": {"csv_path": "/fake/approval.csv"},
+            "checkpoint_data": {"state": "waiting_human"},
+            "pending_interaction_id": "11111111-1111-1111-1111-111111111111",
+            "node_name": "approve_node",
+        }
+        mock_interaction_handler.save_interaction_response.return_value = True
+        mock_interaction_handler.mark_thread_resuming.return_value = True
+
+        mock_graph_runner = Mock()
+        mock_graph_runner.resume_from_checkpoint_async = AsyncMock(
+            return_value=mock_result
+        )
+
+        mock_bundle_service = Mock()
+        mock_container = Mock()
+        mock_container.interaction_handler_service.return_value = (
+            mock_interaction_handler
+        )
+        mock_container.graph_bundle_service.return_value = mock_bundle_service
+        mock_container.graph_runner_service.return_value = mock_graph_runner
+        mock_runtime_manager.get_container.return_value = mock_container
 
         resume_token = json.dumps(
             {
@@ -817,12 +883,10 @@ class TestAsyncFacadeExports:
         result = await resume_workflow_async(resume_token)
 
         assert result["success"] is True
-        mock_resume_service.assert_called_once_with(
-            thread_id="thread_human_001",
-            response_action="approve",
-            response_data={"decision": "yes"},
-            config_file=None,
-        )
+        assert result["outputs"]["approved"] is True
+        mock_graph_runner.resume_from_checkpoint_async.assert_awaited_once()
+        # Verify the human response was saved
+        mock_interaction_handler.save_interaction_response.assert_called_once()
 
     # ------------------------------------------------------------------
     # AC-T2: list_graphs_async does not block event loop
@@ -1013,10 +1077,11 @@ class TestAsyncWrapperNonBlocking:
         assert len(calls) > 0, "list_graphs_async must delegate to asyncio.to_thread"
 
     @pytest.mark.asyncio
-    async def test_run_workflow_async_uses_thread_for_sync_runner(self):
-        """AC-T2: run_workflow_async wraps the sync runner call in asyncio.to_thread."""
-        import asyncio
+    async def test_run_workflow_async_uses_native_run_async(self):
+        """AC-T2 (T-E04-F04-004): run_workflow_async awaits run_async, not asyncio.to_thread.
 
+        Counter-factual: if to_thread were still used, run_async would never be awaited.
+        """
         from agentmap.runtime.workflow_ops import run_workflow_async
 
         tmp = tempfile.mkdtemp()
@@ -1025,13 +1090,6 @@ class TestAsyncWrapperNonBlocking:
             csv_file.write_text(
                 "GraphName,NodeType,AgentName\ntest_graph,Start,TestAgent\n"
             )
-
-            calls = []
-            original_to_thread = asyncio.to_thread
-
-            async def spy_to_thread(fn, *args, **kwargs):
-                calls.append(fn.__name__ if hasattr(fn, "__name__") else str(fn))
-                return await original_to_thread(fn, *args, **kwargs)
 
             mock_container = Mock()
             mock_app_config = Mock()
@@ -1042,7 +1100,8 @@ class TestAsyncWrapperNonBlocking:
             mock_result.final_state = {}
             mock_result.execution_id = None
             mock_result.execution_summary = ""
-            mock_runner_service.run.return_value = mock_result
+            # T-E04-F04-004: native async runner, not sync run
+            mock_runner_service.run_async = AsyncMock(return_value=mock_result)
             mock_bundle_service = Mock()
             mock_bundle = Mock()
             mock_bundle.graph_name = "test_graph"
@@ -1058,12 +1117,12 @@ class TestAsyncWrapperNonBlocking:
             with (
                 patch("agentmap.runtime.workflow_ops.ensure_initialized"),
                 patch("agentmap.runtime.workflow_ops.RuntimeManager") as mock_rm,
-                patch("asyncio.to_thread", side_effect=spy_to_thread),
             ):
                 mock_rm.get_container.return_value = mock_container
                 await run_workflow_async("test_graph", {})
 
-            assert len(calls) > 0, "run_workflow_async must use asyncio.to_thread"
+            # The native async runner must have been awaited (not just called)
+            mock_runner_service.run_async.assert_awaited_once()
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 

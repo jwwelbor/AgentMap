@@ -700,3 +700,80 @@ class TestInterruptHandling:
 
         # record_exception should NOT be called for GraphInterrupt
         mock_telemetry.record_exception.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Async telemetry parity (TC-012 additions, T-E04-F04-002)
+# Verify async run() emits the same telemetry as sync run().
+# ---------------------------------------------------------------------------
+
+
+class TestAsyncTelemetryParity:
+    """Async run_async() emits the same root span and phase events as sync run()."""
+
+    def test_async_runner_has_run_async_method(self):
+        """GraphRunnerService exposes run_async as a coroutine function."""
+        import asyncio
+
+        service, _ = _make_graph_runner_service()
+        assert hasattr(service, "run_async")
+        assert asyncio.iscoroutinefunction(service.run_async)
+
+    def test_async_runner_workflow_span_same_name(self):
+        """run_async creates a span with WORKFLOW_RUN_SPAN — same constant as sync."""
+        import asyncio
+
+        from tests.unit.services.graph.test_graph_runner_async import (
+            _make_graph_runner_service as _async_factory,
+        )
+        from tests.unit.services.graph.test_graph_runner_async import (
+            _make_mock_bundle as _async_bundle,
+        )
+        from tests.unit.services.graph.test_graph_runner_async import (
+            _make_mock_telemetry,
+            _setup_successful_async_run,
+        )
+
+        mock_telemetry, mock_span = _make_mock_telemetry()
+        service, mocks = _async_factory(telemetry_service=mock_telemetry)
+        bundle = _async_bundle("parity_graph", node_count=2)
+        _setup_successful_async_run(mocks, bundle)
+
+        mock_current_span = MagicMock()
+        mock_current_span.is_recording.return_value = True
+
+        with patch(
+            "opentelemetry.trace.get_current_span",
+            return_value=mock_current_span,
+        ):
+            asyncio.run(service.run_async(bundle))
+
+        mock_telemetry.start_span.assert_called_once()
+        span_name = mock_telemetry.start_span.call_args[0][0]
+        assert (
+            span_name == WORKFLOW_RUN_SPAN
+        ), f"Async run used span name '{span_name}', expected '{WORKFLOW_RUN_SPAN}'"
+
+    def test_async_runner_telemetry_fallback_on_setup_failure(self):
+        """run_async falls back when start_span raises — same as sync fallback."""
+        import asyncio
+
+        from tests.unit.services.graph.test_graph_runner_async import (
+            _make_graph_runner_service as _async_factory,
+        )
+        from tests.unit.services.graph.test_graph_runner_async import (
+            _make_mock_bundle as _async_bundle,
+        )
+        from tests.unit.services.graph.test_graph_runner_async import (
+            _setup_successful_async_run,
+        )
+
+        mock_telemetry = create_autospec(TelemetryServiceProtocol, instance=True)
+        mock_telemetry.start_span.side_effect = RuntimeError("telemetry broken")
+
+        service, mocks = _async_factory(telemetry_service=mock_telemetry)
+        bundle = _async_bundle("fallback_graph", node_count=2)
+        _setup_successful_async_run(mocks, bundle)
+
+        result = asyncio.run(service.run_async(bundle))
+        assert result.success is True

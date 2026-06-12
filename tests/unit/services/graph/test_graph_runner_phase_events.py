@@ -177,6 +177,107 @@ class TestTC633NoDuplicateEvents:
                 f"All phase events: {phase_events}"
             )
 
+
+# ---------------------------------------------------------------------------
+# Async phase event parity (T-E04-F04-002 additions)
+# Verify async run_async() emits the same six phase events in the same order.
+# ---------------------------------------------------------------------------
+
+
+class TestAsyncPhaseEventParity:
+    """Async run_async() records the same six phase events in lifecycle order."""
+
+    def _run_async_and_collect_phase_events(self, node_count=2):
+        """Run a successful async workflow and return the list of phase event names.
+
+        Returns:
+            (event_names, service, mocks, mock_telemetry) tuple.
+        """
+        import asyncio
+        from unittest.mock import patch
+
+        from tests.unit.services.graph.test_graph_runner_async import (
+            _make_graph_runner_service,
+            _make_mock_bundle,
+            _make_mock_telemetry,
+            _setup_successful_async_run,
+        )
+
+        mock_telemetry, _mock_span = _make_mock_telemetry()
+        service, mocks = _make_graph_runner_service(telemetry_service=mock_telemetry)
+        bundle = _make_mock_bundle("async_phase_graph", node_count=node_count)
+        _setup_successful_async_run(mocks, bundle)
+
+        mock_current_span = MagicMock()
+        mock_current_span.is_recording.return_value = True
+
+        with patch(
+            "opentelemetry.trace.get_current_span",
+            return_value=mock_current_span,
+        ):
+            asyncio.run(service.run_async(bundle))
+
+        event_names = []
+        for call in mock_telemetry.add_span_event.call_args_list:
+            if len(call[0]) >= 2:
+                event_names.append(call[0][1])
+
+        return event_names, service, mocks, mock_telemetry
+
+    def test_async_all_six_phase_events_present(self):
+        """run_async records all six phase events with correct names."""
+        event_names, *_ = self._run_async_and_collect_phase_events()
+
+        for phase in ALL_PHASE_EVENTS:
+            assert phase in event_names, (
+                f"Phase event '{phase}' not found in async run. "
+                f"Recorded: {event_names}"
+            )
+
+    def test_async_phase_events_in_lifecycle_order(self):
+        """run_async records phase events in the same lifecycle order as sync run()."""
+        event_names, *_ = self._run_async_and_collect_phase_events()
+
+        phase_events = [e for e in event_names if e.startswith("workflow.phase.")]
+        for i, expected_phase in enumerate(ALL_PHASE_EVENTS):
+            assert phase_events[i] == expected_phase, (
+                f"Expected phase '{expected_phase}' at position {i}, "
+                f"got '{phase_events[i]}'. Full: {phase_events}"
+            )
+
+    def test_async_exactly_six_phase_events(self):
+        """run_async records exactly six phase events (no extra, no missing)."""
+        event_names, *_ = self._run_async_and_collect_phase_events()
+
+        phase_events = [e for e in event_names if e.startswith("workflow.phase.")]
+        assert len(phase_events) == 6, (
+            f"Expected 6 phase events from async run, got {len(phase_events)}: "
+            f"{phase_events}"
+        )
+
+    def test_async_finalization_after_execution(self):
+        """Async finalization event appears after execution event."""
+        event_names, *_ = self._run_async_and_collect_phase_events()
+
+        exec_idx = event_names.index("workflow.phase.execution")
+        final_idx = event_names.index("workflow.phase.finalization")
+        assert final_idx > exec_idx, (
+            f"Async finalization (idx={final_idx}) should come after "
+            f"execution (idx={exec_idx})"
+        )
+
+    def test_async_no_duplicate_phase_events(self):
+        """Each of the six phase event names appears exactly once in async run."""
+        event_names, *_ = self._run_async_and_collect_phase_events()
+
+        phase_events = [e for e in event_names if e.startswith("workflow.phase.")]
+        for phase in ALL_PHASE_EVENTS:
+            count = phase_events.count(phase)
+            assert count == 1, (
+                f"Async phase event '{phase}' appeared {count} times, expected 1. "
+                f"All: {phase_events}"
+            )
+
     def test_total_unique_phase_events_equals_six(self):
         """The set of unique phase event names has exactly six members."""
         event_names, *_ = _run_and_collect_phase_events()

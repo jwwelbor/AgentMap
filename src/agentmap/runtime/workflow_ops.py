@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import threading
 from pathlib import Path
 from typing import Any, Dict, NoReturn, Optional
 
@@ -601,14 +602,69 @@ def _graph_entry(
     }
 
 
+# Allowlist of routing-level resume actions (F-5 / NB-C).  This is the
+# **canonical single source of truth** for valid ``response_action`` values.
+# All other validators (HTTP request models, CLI validators, etc.) MUST
+# import and delegate to this set rather than maintaining their own copy.
+#
+# Values accepted for:
+#   - the HTTP ``ResumeRequest.action`` field (routes/execute.py)
+#   - the ``response_action`` key inside a JSON resume token
+#   - the ``RequestValidator.validate_response_action`` method (common_validation.py)
+#
+# Application-level agent data (e.g. ``__human_response.action``) is NOT
+# governed by this set; those values are validated by the receiving agent.
+#
+# To extend: add the new action string here.  Do NOT add it anywhere else.
+# All downstream validators reference this set, so one edit propagates everywhere.
+VALID_RESUME_ACTIONS = frozenset(
+    {
+        "approve",
+        "reject",
+        "choose",
+        "respond",
+        "edit",
+        "continue",
+        "stop",
+        "retry",
+        "skip",
+        "submit",
+        "cancel",
+        "text_input",
+        "save",
+        "reply",
+        "end",
+    }
+)
+
+# Maximum serialised size of the resume token / response_data payload in bytes
+# (F-5 / NB-C).  Prevents memory exhaustion via oversized payloads.
+_RESUME_PAYLOAD_MAX_BYTES = 64 * 1024  # 64 KiB
+
+
 def _parse_resume_token(resume_token: Any) -> tuple[str, str, Optional[Dict[str, Any]]]:
-    """Parse resume token to extract thread_id, action, and data."""
+    """Parse resume token to extract thread_id, action, and data.
+
+    Enforces a token size bound before deserialisation (F-5 / NB-C) to prevent
+    memory exhaustion.  The action is validated against ``VALID_RESUME_ACTIONS``
+    when it is a known routing action; unknown values are rejected.
+    """
     if not isinstance(resume_token, str):
         raise InvalidInputs("Resume token must be a string")
+
+    # Enforce token size before deserialisation to avoid memory exhaustion
+    if len(resume_token.encode("utf-8")) > _RESUME_PAYLOAD_MAX_BYTES:
+        raise InvalidInputs(
+            f"Resume token exceeds maximum allowed size of {_RESUME_PAYLOAD_MAX_BYTES} bytes"
+        )
+
     try:
         token_data = json.loads(resume_token)
         thread_id = token_data.get("thread_id")
-        response_action = token_data.get("response_action", "continue")
+        # Treat explicit null the same as absent — both default to "continue"
+        response_action = token_data.get("response_action")
+        if response_action is None:
+            response_action = "continue"
         response_data = token_data.get("response_data")
     except json.JSONDecodeError:
         # Maybe it's just a thread_id string
@@ -619,7 +675,28 @@ def _parse_resume_token(resume_token: Any) -> tuple[str, str, Optional[Dict[str,
     if not thread_id:
         raise InvalidInputs("Resume token must contain a valid thread_id")
 
-    return thread_id, response_action, response_data
+    # Validate action against allowlist (F-5 / NB-C)
+    normalised = str(response_action).lower()
+    if normalised not in VALID_RESUME_ACTIONS:
+        raise InvalidInputs(
+            f"Invalid resume action '{response_action}'. "
+            f"Valid actions: {', '.join(sorted(VALID_RESUME_ACTIONS))}"
+        )
+    response_action = normalised
+
+    # Enforce payload size bound on the data portion (F-5 / NB-C)
+    if response_data is not None:
+        try:
+            encoded_size = len(json.dumps(response_data).encode("utf-8"))
+        except (TypeError, ValueError):
+            raise InvalidInputs("Resume response_data must be JSON-serialisable")
+        if encoded_size > _RESUME_PAYLOAD_MAX_BYTES:
+            raise InvalidInputs(
+                f"Resume response_data exceeds maximum allowed size of "
+                f"{_RESUME_PAYLOAD_MAX_BYTES} bytes"
+            )
+
+    return str(thread_id), response_action, response_data
 
 
 def _raise_mapped_error(graph_name: str, error_msg: str) -> NoReturn:
@@ -633,8 +710,8 @@ def _raise_mapped_error(graph_name: str, error_msg: str) -> NoReturn:
 
 
 # ---------------------------------------------------------------------------
-# Async facade — each function isolates sync-only work behind asyncio.to_thread
-# so callers on an event loop never block.
+# Async facade — graph-invocation paths use native async runner methods.
+# Sync-only operations (filesystem, bundle inspection) remain in to_thread.
 # ---------------------------------------------------------------------------
 
 
@@ -647,16 +724,86 @@ async def run_workflow_async(
     config_file: Optional[str] = None,
     force_create: bool = False,
 ) -> Dict[str, Any]:
-    """Async sibling of run_workflow.  Argument and return shape are identical."""
-    return await asyncio.to_thread(
-        run_workflow,
-        graph_name,
-        inputs,
-        profile=profile,
-        resume_token=resume_token,
-        config_file=config_file,
-        force_create=force_create,
-    )
+    """Async sibling of run_workflow.
+
+    Re-pointed from the former asyncio.to_thread shim to native async graph
+    execution via GraphRunnerService.run_async (T-E04-F04-004, REQ-NF-007).
+    Argument and return shape are identical to run_workflow.
+    """
+    ensure_initialized(config_file=config_file)
+
+    try:
+        container = RuntimeManager.get_container()
+        csv_path, resolved_graph_name = _resolve_csv_path(graph_name, container)
+
+        graph_bundle_service: GraphBundleService = container.graph_bundle_service()
+        bundle, new_bundle = graph_bundle_service.get_or_create_bundle(
+            csv_path=csv_path,
+            graph_name=resolved_graph_name,
+            config_path=config_file,
+            force_create=force_create,
+        )
+
+        graph_runner: GraphRunnerService = container.graph_runner_service()
+        result = await graph_runner.run_async(
+            bundle, inputs, validate_agents=new_bundle
+        )
+
+        if result.success:
+            return {
+                "success": True,
+                "outputs": result.final_state,
+                "execution_id": getattr(result, "execution_id", None),
+                "execution_summary": result.execution_summary,
+                "metadata": {
+                    "graph_name": graph_name,
+                    "profile": profile,
+                },
+            }
+        else:
+            if result.final_state.get("__interrupted"):
+                thread_id = result.final_state.get("__thread_id")
+                interrupt_info = result.final_state.get("__interrupt_info", {})
+                return {
+                    "success": False,
+                    "interrupted": True,
+                    "thread_id": thread_id,
+                    "message": f"Execution interrupted in thread: {thread_id}",
+                    "interrupt_info": interrupt_info,
+                    "execution_summary": result.execution_summary,
+                    "metadata": {
+                        "graph_name": graph_name,
+                        "profile": profile,
+                        "checkpoint_available": True,
+                        "interrupt_type": interrupt_info.get("type", "unknown"),
+                        "node_name": interrupt_info.get("node_name", "unknown"),
+                    },
+                }
+
+            error_msg = str(result.error)
+            _raise_mapped_error(graph_name, error_msg)
+
+    except ExecutionInterruptedException as e:
+        return {
+            "success": False,
+            "interrupted": True,
+            "thread_id": e.thread_id,
+            "interaction_request": e.interaction_request,
+            "message": f"Execution interrupted for human interaction in thread: {e.thread_id}",
+            "metadata": {
+                "graph_name": graph_name,
+                "profile": profile,
+                "checkpoint_available": True,
+            },
+        }
+    except (GraphNotFound, InvalidInputs, AgentMapNotInitialized):
+        raise
+    except FileNotFoundError as e:
+        raise GraphNotFound(graph_name, f"Workflow file not found: {e}")
+    except ValueError as e:
+        raise InvalidInputs(str(e))
+    except Exception as e:
+        raise RuntimeError(f"Unexpected error during workflow execution: {e}")
 
 
 async def resume_workflow_async(
@@ -665,13 +812,180 @@ async def resume_workflow_async(
     profile: Optional[str] = None,
     config_file: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Async sibling of resume_workflow.  Argument and return shape are identical."""
-    return await asyncio.to_thread(
-        resume_workflow,
-        resume_token,
-        profile=profile,
-        config_file=config_file,
-    )
+    """Async sibling of resume_workflow.
+
+    Re-pointed from the former asyncio.to_thread shim to native async graph
+    execution via GraphRunnerService.resume_from_checkpoint_async
+    (T-E04-F04-004, REQ-NF-007).
+    Argument and return shape are identical to resume_workflow.
+    """
+    ensure_initialized(config_file=config_file)
+
+    # Sentinel: tracks whether THIS facade call performed the mark_thread_resuming
+    # transition.  Needed so the CancelledError handler below can safely undo
+    # only the mark it owns — the checkpoint manager owns its own mark (T-003),
+    # and we must not double-unmark.  See B-1 in the UAT rejection (AC-008).
+    _facade_marked: bool = False
+    _interaction_handler = None
+    _thread_id: Optional[str] = None
+    # Pre-initialised so the except block can reference it even if cancel fires
+    # before the manager call is reached inside the try block (B-3 fix).
+    _manager_claimed_unmark = threading.Event()
+
+    try:
+        _thread_id, response_action, response_data = _parse_resume_token(resume_token)
+
+        container = RuntimeManager.get_container()
+        _interaction_handler = container.interaction_handler_service()
+        graph_bundle_service: GraphBundleService = container.graph_bundle_service()
+        graph_runner: GraphRunnerService = container.graph_runner_service()
+
+        thread_data = _interaction_handler.get_thread_metadata(_thread_id)
+        if not thread_data:
+            raise ValueError(f"Thread '{_thread_id}' not found in storage")
+
+        bundle_info = thread_data.get("bundle_info", {})
+        stored_graph_name = thread_data.get("graph_name")
+
+        from agentmap.services.workflow_orchestration_service import (
+            _rehydrate_bundle_from_metadata,
+        )
+
+        bundle = _rehydrate_bundle_from_metadata(
+            bundle_info, stored_graph_name, graph_bundle_service
+        )
+        if not bundle:
+            raise RuntimeError("Failed to rehydrate GraphBundle from metadata")
+
+        checkpoint_state = dict(thread_data.get("checkpoint_data", {}))
+        request_id = thread_data.get("pending_interaction_id")
+
+        if request_id:
+            # HumanAgent path — requires a response action
+            if not response_action:
+                raise ValueError(
+                    f"Pending interaction '{request_id}' requires a response_action"
+                )
+
+            from uuid import UUID
+
+            from agentmap.models.human_interaction import HumanInteractionResponse
+
+            response = HumanInteractionResponse(
+                request_id=UUID(request_id),
+                action=response_action,
+                data=response_data or {},
+            )
+
+            save_success = _interaction_handler.save_interaction_response(
+                response_id=str(response.request_id),
+                thread_id=_thread_id,
+                action=response.action,
+                data=response.data,
+            )
+            if not save_success:
+                raise RuntimeError("Failed to save interaction response")
+
+            update_success = _interaction_handler.mark_thread_resuming(
+                thread_id=_thread_id, last_response_id=str(response.request_id)
+            )
+            if not update_success:
+                raise RuntimeError("Failed to update thread status to resuming")
+            _facade_marked = True
+
+            checkpoint_state["__human_response"] = {
+                "action": response.action,
+                "data": response.data,
+                "request_id": str(response.request_id),
+            }
+        else:
+            # SuspendAgent path — no human interaction required
+            update_success = _interaction_handler.mark_thread_resuming(
+                thread_id=_thread_id
+            )
+            if not update_success:
+                raise RuntimeError("Failed to update thread status to resuming")
+            _facade_marked = True
+
+            if response_action:
+                checkpoint_state["__resume_value"] = response_action
+            if response_data:
+                checkpoint_state["__resume_data"] = response_data
+
+        # Delegate to the native async resume path.  The checkpoint manager
+        # (resume_from_checkpoint_async) will re-mark `resuming` and owns its
+        # own cancel-reset for everything AFTER its mark.  The facade owns the
+        # cancel-reset for the window BETWEEN the facade mark (above) and the
+        # manager's internal mark — caught by the except clause below (B-1 fix).
+        #
+        # _manager_claimed_unmark: once the manager sets marked_resuming=True
+        # it claims full ownership of the cancel-unmark.  The facade's handler
+        # must check this before calling unmark to avoid racing with the
+        # manager's deferred-unmark background task (B-3 fix).
+        result = await graph_runner.resume_from_checkpoint_async(
+            bundle=bundle,
+            thread_id=_thread_id,
+            checkpoint_state=checkpoint_state,
+            resume_node=thread_data.get("node_name"),
+            _cancel_unmark_claimed=_manager_claimed_unmark,
+        )
+
+        return {
+            "success": True,
+            "outputs": result.final_state,
+            "execution_summary": result.execution_summary,
+            "metadata": {
+                "thread_id": _thread_id,
+                "response_action": response_action,
+                "profile": profile,
+                "graph_name": result.graph_name,
+                "duration": result.total_duration,
+            },
+        }
+
+    except asyncio.CancelledError:
+        # B-1 fix (AC-008): if the facade marked the thread `resuming` but
+        # the delegate was cancelled before the checkpoint manager set its own
+        # `marked_resuming` flag, the manager's cancel-reset handler is a no-op
+        # (marked_resuming=False).  We are the sole owner of this mark, so we
+        # must undo it here to leave the thread re-resumable.
+        #
+        # B-3 fix: if the manager set `marked_resuming=True` it claims full
+        # unmark ownership via `_cancel_unmark_claimed`.  In that case the
+        # manager handles the unmark — either immediately (ainvoke path) or via
+        # a deferred background task (to_thread path).  The facade must NOT call
+        # unmark when the claim flag is set, or it races with the deferred task
+        # and can unmark while the worker thread is still mutating state.
+        if (
+            _facade_marked
+            and not _manager_claimed_unmark.is_set()
+            and _interaction_handler is not None
+            and _thread_id is not None
+        ):
+            try:
+                _interaction_handler.unmark_thread_resuming(thread_id=_thread_id)
+            except Exception as reset_err:
+                # Log but do not suppress — re-raise the original CancelledError
+                # regardless so asyncio task machinery works correctly.
+                import logging
+
+                logging.getLogger("agentmap.runtime.workflow").warning(
+                    "[resume_workflow_async] Failed to unmark thread '%s' on "
+                    "cancellation: %s",
+                    _thread_id,
+                    reset_err,
+                )
+        raise
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "metadata": {
+                "resume_token": resume_token,
+                "profile": profile,
+            },
+        }
 
 
 async def list_graphs_async(

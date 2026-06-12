@@ -13,6 +13,7 @@ Storage: Uses SystemStorageManager with FileStorageService for file-based storag
 in cache/checkpoints/ namespace. Checkpoint documents are pickled for fast I/O.
 """
 
+import asyncio
 import pickle
 from datetime import datetime
 from typing import Any, Dict, Optional, Sequence, Tuple
@@ -278,6 +279,38 @@ class GraphCheckpointService(BaseCheckpointSaver):
     # Note: We use self.serde (JsonPlusSerializer by default from BaseCheckpointSaver)
     # for all serialization/deserialization. This handles sets and other complex
     # types properly through dumps_typed/loads_typed methods.
+
+    # ===== Async LangGraph interface (T-E04-F04-004) =====
+    # LangGraph's ainvoke() calls aget_tuple / aput / aput_writes.
+    # BaseCheckpointSaver raises NotImplementedError for all three.
+    # We delegate to the sync variants via asyncio.to_thread so the file I/O
+    # stays off the event loop without blocking it.
+
+    async def aget_tuple(self, config: Dict[str, Any]) -> Optional[CheckpointTuple]:
+        """Async variant of get_tuple. Delegates via worker-thread seam."""
+        return await asyncio.to_thread(self.get_tuple, config)
+
+    async def aput(
+        self,
+        config: Dict[str, Any],
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Async variant of put. Delegates via worker-thread seam."""
+        return await asyncio.to_thread(
+            self.put, config, checkpoint, metadata, new_versions
+        )
+
+    async def aput_writes(
+        self,
+        config: Dict[str, Any],
+        writes: Sequence[Tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
+    ) -> None:
+        """Async variant of put_writes. Delegates via worker-thread seam."""
+        await asyncio.to_thread(self.put_writes, config, writes, task_id, task_path)
 
     # ===== GraphCheckpointServiceProtocol Implementation =====
 

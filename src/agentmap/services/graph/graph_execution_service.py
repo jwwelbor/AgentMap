@@ -5,6 +5,7 @@ Service that executes pre-assembled graphs and manages execution tracking.
 Simplified to focus on execution rather than graph building.
 """
 
+import asyncio
 import time
 from typing import Any, Dict, Optional
 
@@ -203,6 +204,214 @@ class GraphExecutionService:
             )
 
             return result
+
+    async def _invoke_compiled_graph_in_thread(
+        self,
+        executable_graph: Any,
+        initial_state: Dict[str, Any],
+        config: Optional[Dict[str, Any]],
+    ) -> Any:
+        """Execute a sync-only compiled graph in a worker thread.
+
+        This is the named, patchable seam required by REQ-NF-008.  Any
+        compiled graph that does not expose a native async surface (``ainvoke``)
+        is routed through this helper so blocking ``invoke`` never runs directly
+        on the event loop.
+
+        Args:
+            executable_graph: The compiled graph (sync-only; no ainvoke).
+            initial_state: Initial state dictionary.
+            config: Optional LangGraph config forwarded to invoke.
+
+        Returns:
+            The final state returned by ``executable_graph.invoke``.
+        """
+        return await asyncio.to_thread(
+            executable_graph.invoke, initial_state, config=config
+        )
+
+    async def execute_compiled_graph_async(
+        self,
+        executable_graph: Any,
+        graph_name: str,
+        initial_state: Dict[str, Any],
+        execution_tracker: Any,
+        config: Optional[Dict[str, Any]] = None,
+    ) -> ExecutionResult:
+        """Execute a pre-compiled/assembled graph asynchronously.
+
+        Prefers the compiled graph's native async invocation surface
+        (``ainvoke``) when available.  When the compiled graph is sync-only,
+        the blocking ``invoke`` call is isolated behind the named worker-thread
+        seam ``_invoke_compiled_graph_in_thread`` (REQ-NF-008) so the event
+        loop is never blocked.
+
+        The result shape, metadata injection, policy evaluation, and error
+        handling are identical to ``execute_compiled_graph`` (AC-001, AC-002).
+
+        Args:
+            executable_graph: The compiled graph ready for execution.
+            graph_name: Name of the graph for tracking.
+            initial_state: Initial state dictionary.
+            execution_tracker: Pre-created execution tracker with agents configured.
+            config: Optional LangGraph config (for checkpoint support with thread_id).
+
+        Returns:
+            ExecutionResult with complete execution details.
+
+        Raises:
+            GraphInterrupt: Re-raised without wrapping (same as sync path).
+            asyncio.CancelledError: Re-raised without swallowing (REQ-F-009).
+        """
+        self.logger.info(
+            f"[GraphExecutionService] Executing graph (async): {graph_name}"
+        )
+
+        start_time = time.time()
+        execution_summary = None
+
+        try:
+            self.logger.debug(
+                f"[GraphExecutionService] Starting async graph invocation: {graph_name}"
+            )
+            self.logger.debug(
+                f"[GraphExecutionService] Initial state keys: {list(initial_state.keys())}"
+            )
+
+            # Prefer native async surface; fall back to worker-thread seam for
+            # sync-only graphs (REQ-F-003, REQ-NF-001, REQ-NF-008).
+            if hasattr(executable_graph, "ainvoke"):
+                try:
+                    final_state = await executable_graph.ainvoke(
+                        initial_state, config=config
+                    )
+                except ExecutionInterruptedException as e:
+                    self.logger.info(
+                        f"[GraphExecutionService] Async execution interrupted "
+                        f"for human interaction in thread: {e.thread_id}"
+                    )
+                    raise
+            else:
+                try:
+                    final_state = await self._invoke_compiled_graph_in_thread(
+                        executable_graph, initial_state, config
+                    )
+                except ExecutionInterruptedException as e:
+                    self.logger.info(
+                        f"[GraphExecutionService] Async fallback execution "
+                        f"interrupted in thread: {e.thread_id}"
+                    )
+                    raise
+
+            self.logger.debug(
+                f"[GraphExecutionService] Async final state type: {type(final_state)}"
+            )
+            self.logger.debug(
+                f"[GraphExecutionService] Async final state keys: "
+                f"{list(final_state.keys()) if hasattr(final_state, 'keys') else 'N/A'}"
+            )
+
+            # Reuse the same tracking, policy, and metadata-injection path as
+            # the sync method (AC-001 parity requirement).
+            self.execution_tracking.complete_execution(execution_tracker)
+            execution_summary = self.execution_tracking.to_summary(
+                execution_tracker, graph_name, final_state
+            )
+
+            execution_time = time.time() - start_time
+            graph_success = self.execution_policy.evaluate_success_policy(
+                execution_summary
+            )
+
+            final_state = self.state_adapter.set_value(
+                final_state, "__execution_summary", execution_summary
+            )
+            final_state = self.state_adapter.set_value(
+                final_state, "__policy_success", graph_success
+            )
+
+            result = ExecutionResult(
+                graph_name=graph_name,
+                success=graph_success,
+                final_state=final_state,
+                execution_summary=execution_summary,
+                total_duration=execution_time,
+                error=None,
+            )
+
+            self.logger.info(
+                f"✅ Async graph execution completed: '{graph_name}' "
+                f"in {execution_time:.2f}s"
+            )
+
+            return result
+
+        except GraphInterrupt:
+            # Re-raise intentional interrupts without wrapping (same as sync).
+            raise
+
+        except asyncio.CancelledError:
+            # Propagate cancellation; finalize tracker so it is not leaked
+            # (REQ-F-009).
+            execution_time = time.time() - start_time
+            self.logger.info(
+                f"[GraphExecutionService] Async execution cancelled: '{graph_name}' "
+                f"after {execution_time:.2f}s — finalizing tracker"
+            )
+            try:
+                if execution_tracker is not None:
+                    self.execution_tracking.complete_execution(execution_tracker)
+            except Exception as finalize_err:
+                self.logger.warning(
+                    f"[GraphExecutionService] Tracker finalization failed on "
+                    f"cancellation: {finalize_err}"
+                )
+            raise
+
+        except Exception as e:
+            execution_time = time.time() - start_time
+
+            self.logger.error(
+                f"❌ Async graph execution failed: '{graph_name}' "
+                f"after {execution_time:.2f}s"
+            )
+            self.logger.error(f"[GraphExecutionService] Error: {str(e)}")
+
+            import traceback
+
+            self.logger.error(
+                f"[GraphExecutionService] Full traceback:\n{traceback.format_exc()}"
+            )
+
+            # Mirror the sync error-summary path (same error taxonomy).
+            try:
+                if execution_tracker is not None:
+                    self.logger.debug(
+                        "[GraphExecutionService] Creating async error execution summary"
+                    )
+                    self.execution_tracking.complete_execution(execution_tracker)
+                    execution_summary = self.execution_tracking.to_summary(
+                        execution_tracker, graph_name, initial_state
+                    )
+            except Exception as summary_error:
+                self.logger.error(
+                    f"[GraphExecutionService] Failed to create async error summary: "
+                    f"{summary_error}"
+                )
+                from agentmap.models.execution.summary import ExecutionSummary
+
+                execution_summary = ExecutionSummary(
+                    graph_name=graph_name, status="failed", graph_success=False
+                )
+
+            return ExecutionResult(
+                graph_name=graph_name,
+                success=False,
+                final_state=initial_state,
+                execution_summary=execution_summary,
+                total_duration=execution_time,
+                error=str(e),
+            )
 
     def get_service_info(self) -> Dict[str, Any]:
         """
