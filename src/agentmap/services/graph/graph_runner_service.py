@@ -217,7 +217,9 @@ class GraphRunnerService:
         Workflow exceptions (including GraphInterrupt) propagate normally --
         only telemetry infrastructure failures trigger the fallback.
         """
-        assert self._telemetry_service is not None  # only called when telemetry is active
+        assert (
+            self._telemetry_service is not None
+        )  # only called when telemetry is active
         from agentmap.services.telemetry.constants import (
             GRAPH_AGENT_COUNT,
             GRAPH_NAME,
@@ -580,7 +582,9 @@ class GraphRunnerService:
 
             # Get graph state to extract interrupt metadata
             if executable_graph is None:
-                raise RuntimeError("Cannot handle interrupt: graph not assembled") from e
+                raise RuntimeError(
+                    "Cannot handle interrupt: graph not assembled"
+                ) from e
             config = {"configurable": {"thread_id": thread_id}}
             state = executable_graph.get_state(config)
 
@@ -1051,7 +1055,9 @@ class GraphRunnerService:
         normally — only telemetry infrastructure failures trigger the
         fallback (REQ-NF-002).
         """
-        assert self._telemetry_service is not None  # only called when telemetry is active
+        assert (
+            self._telemetry_service is not None
+        )  # only called when telemetry is active
         from agentmap.services.telemetry.constants import (
             GRAPH_AGENT_COUNT,
             GRAPH_NAME,
@@ -1410,7 +1416,9 @@ class GraphRunnerService:
                 )
                 raise RuntimeError("Cannot handle interrupt: no thread_id") from e
             if executable_graph is None:
-                raise RuntimeError("Cannot handle interrupt: graph not assembled") from e
+                raise RuntimeError(
+                    "Cannot handle interrupt: graph not assembled"
+                ) from e
 
             config = {"configurable": {"thread_id": thread_id}}
             state = executable_graph.get_state(config)

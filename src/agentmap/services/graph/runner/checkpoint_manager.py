@@ -479,6 +479,7 @@ class CheckpointManager:
                 # its underlying OS thread is still executing — that would cause
                 # the else branch to unmark immediately, racing with the thread.
                 if _thread_done_event is not None and not _thread_done_event.is_set():
+
                     async def _deferred_unmark(
                         done_event: threading.Event,
                         tid: str,

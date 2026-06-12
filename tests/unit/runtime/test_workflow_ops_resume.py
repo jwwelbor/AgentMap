@@ -342,14 +342,18 @@ class TestParseResumeToken(unittest.TestCase):
         for action in ("save", "cancel"):
             token = json.dumps({"thread_id": "t", "response_action": action})
             _, parsed_action, _ = _parse_resume_token(token)
-            self.assertEqual(parsed_action, action, f"Action '{action}' should be accepted")
+            self.assertEqual(
+                parsed_action, action, f"Action '{action}' should be accepted"
+            )
 
     def test_parse_token_cli_conversation_actions_accepted(self):
         """CLI CONVERSATION interaction advertises 'reply', 'continue', 'end'; all must be valid."""
         for action in ("reply", "continue", "end"):
             token = json.dumps({"thread_id": "t", "response_action": action})
             _, parsed_action, _ = _parse_resume_token(token)
-            self.assertEqual(parsed_action, action, f"Action '{action}' should be accepted")
+            self.assertEqual(
+                parsed_action, action, f"Action '{action}' should be accepted"
+            )
 
     def test_parse_token_null_action_defaults_to_continue(self):
         """Explicit null response_action must default to 'continue', not stringify to 'None'."""
@@ -513,15 +517,15 @@ class TestValidResumeActionsAllowlist(unittest.TestCase):
         from agentmap.runtime.workflow_ops import VALID_RESUME_ACTIONS
 
         cli_advertised_actions = {
-            "approve",    # APPROVAL branch
-            "reject",     # APPROVAL branch
-            "choose",     # CHOICE branch
-            "submit",     # TEXT_INPUT branch
-            "save",       # EDIT branch
-            "cancel",     # EDIT branch + generic fallback
-            "reply",      # CONVERSATION branch
-            "continue",   # CONVERSATION branch + generic fallback
-            "end",        # CONVERSATION branch
+            "approve",  # APPROVAL branch
+            "reject",  # APPROVAL branch
+            "choose",  # CHOICE branch
+            "submit",  # TEXT_INPUT branch
+            "save",  # EDIT branch
+            "cancel",  # EDIT branch + generic fallback
+            "reply",  # CONVERSATION branch
+            "continue",  # CONVERSATION branch + generic fallback
+            "end",  # CONVERSATION branch
         }
         missing = cli_advertised_actions - VALID_RESUME_ACTIONS
         self.assertEqual(
@@ -537,10 +541,10 @@ class TestValidResumeActionsAllowlist(unittest.TestCase):
         replaced by a reference to the canonical frozenset so there is exactly
         one place to extend the allowlist.
         """
-        from agentmap.runtime.workflow_ops import VALID_RESUME_ACTIONS
         from agentmap.deployment.http.api.validation.common_validation import (
             RequestValidator,
         )
+        from agentmap.runtime.workflow_ops import VALID_RESUME_ACTIONS
 
         # Every action in VALID_RESUME_ACTIONS must be accepted by the HTTP
         # validator (not rejected with an HTTPException).
@@ -552,6 +556,7 @@ class TestValidResumeActionsAllowlist(unittest.TestCase):
     def test_http_validator_rejects_action_not_in_allowlist(self):
         """HTTP validator must reject strings absent from VALID_RESUME_ACTIONS."""
         from fastapi import HTTPException
+
         from agentmap.deployment.http.api.validation.common_validation import (
             RequestValidator,
         )

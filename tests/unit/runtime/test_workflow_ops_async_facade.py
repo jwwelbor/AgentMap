@@ -915,7 +915,11 @@ class TestResumeWorkflowAsyncB3FacadeDefersUnmarkToManager:
         import json
 
         async def _manager_claims_then_cancels(
-            bundle, thread_id, checkpoint_state, resume_node=None, _cancel_unmark_claimed=None
+            bundle,
+            thread_id,
+            checkpoint_state,
+            resume_node=None,
+            _cancel_unmark_claimed=None,
         ):
             # Simulate the manager claiming unmark ownership immediately after
             # its own mark_thread_resuming() (mirrors the real code path).
