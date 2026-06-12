@@ -485,7 +485,7 @@ class CheckpointManager:
                         # future and would not actually defer the unmark until the
                         # thread settles (F-4 / NB-A).
                         try:
-                            await asyncio.to_thread(done_event.wait)
+                            await asyncio.to_thread(lambda: done_event.wait(timeout=30))
                         except BaseException:
                             pass
                         try:
