@@ -853,3 +853,126 @@ class _noop_context:
 
     def __exit__(self, *args):
         pass
+
+
+# ---------------------------------------------------------------------------
+# TC-F04-004-007: B-3 — facade must not race with manager's deferred unmark
+# ---------------------------------------------------------------------------
+
+
+class TestResumeWorkflowAsyncB3FacadeDefersUnmarkToManager:
+    """UAT B-3 fix: facade CancelledError handler must not call unmark_thread_resuming
+    when the manager has already claimed ownership via _cancel_unmark_claimed.
+
+    Background (B-3): T-E04-F04-006 introduced a deferred-unmark background task
+    in the to_thread path of resume_from_checkpoint_async.  The manager only calls
+    unmark AFTER the OS worker thread settles.  If the facade's CancelledError
+    handler also calls unmark (when _facade_marked=True), the two paths race.
+    The fix: the manager sets a threading.Event (_cancel_unmark_claimed) immediately
+    after its own mark_thread_resuming(), signalling to the facade that it must
+    not touch unmark.
+
+    Counter-factual: without the fix, unmark_thread_resuming would be called by
+    the facade even when the manager has claimed ownership, causing a double-unmark
+    (or a race against the deferred background task).
+    """
+
+    def _make_resume_container_b3(self, graph_runner):
+        """Build a minimal DI container wired for the B-3 cancel scenario."""
+        container = MagicMock()
+
+        interaction_handler = MagicMock()
+        thread_data = {
+            "graph_name": "test_graph",
+            "bundle_info": {"csv_path": "/fake/path.csv"},
+            "checkpoint_data": {"state": "paused"},
+            "pending_interaction_id": None,
+            "node_name": "resume_node",
+        }
+        interaction_handler.get_thread_metadata.return_value = thread_data
+        interaction_handler.mark_thread_resuming.return_value = True
+        interaction_handler.unmark_thread_resuming.return_value = True
+        container.interaction_handler_service.return_value = interaction_handler
+
+        bundle = MagicMock()
+        bundle.graph_name = "test_graph"
+        graph_bundle_service = MagicMock()
+        graph_bundle_service.get_or_create_bundle.return_value = (bundle, False)
+        container.graph_bundle_service.return_value = graph_bundle_service
+        container.graph_runner_service.return_value = graph_runner
+
+        return container, interaction_handler
+
+    @pytest.mark.asyncio
+    async def test_facade_does_not_unmark_when_manager_claimed_ownership(self):
+        """B-3: when the manager sets _cancel_unmark_claimed before raising
+        CancelledError, the facade's cancel handler must NOT call unmark.
+
+        Counter-factual: without the B-3 guard in workflow_ops.py the facade
+        would call unmark_thread_resuming even after the manager claimed it,
+        creating a double-unmark race with the deferred background task.
+        """
+        import json
+
+        async def _manager_claims_then_cancels(
+            bundle, thread_id, checkpoint_state, resume_node=None, _cancel_unmark_claimed=None
+        ):
+            # Simulate the manager claiming unmark ownership immediately after
+            # its own mark_thread_resuming() (mirrors the real code path).
+            if _cancel_unmark_claimed is not None:
+                _cancel_unmark_claimed.set()
+            raise asyncio.CancelledError("cancelled after manager claimed unmark")
+
+        graph_runner = MagicMock()
+        graph_runner.resume_from_checkpoint_async = _manager_claims_then_cancels
+        container, interaction_handler = self._make_resume_container_b3(graph_runner)
+
+        resume_token = json.dumps(
+            {"thread_id": "thread-b3-001", "response_action": "continue"}
+        )
+
+        with (
+            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=container,
+            ),
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await resume_workflow_async(resume_token)
+
+        # Facade must NOT have called unmark — the manager claimed ownership.
+        interaction_handler.unmark_thread_resuming.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_facade_still_unmarks_when_manager_did_not_claim(self):
+        """B-1 regression guard: when manager cancels WITHOUT claiming ownership,
+        the facade's handler MUST still call unmark (B-1 fix remains intact).
+        """
+        import json
+
+        graph_runner = MagicMock()
+        # Manager raises CancelledError WITHOUT setting _cancel_unmark_claimed
+        graph_runner.resume_from_checkpoint_async = AsyncMock(
+            side_effect=asyncio.CancelledError("cancelled before manager mark")
+        )
+        container, interaction_handler = self._make_resume_container_b3(graph_runner)
+
+        resume_token = json.dumps(
+            {"thread_id": "thread-b3-002", "response_action": "continue"}
+        )
+
+        with (
+            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=container,
+            ),
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await resume_workflow_async(resume_token)
+
+        # B-1 contract: facade MUST call unmark when manager hasn't claimed it
+        interaction_handler.unmark_thread_resuming.assert_called_once_with(
+            thread_id="thread-b3-002"
+        )

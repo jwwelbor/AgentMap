@@ -14,6 +14,7 @@ Refactored: Large methods extracted to dedicated modules in runner/ package.
 
 import asyncio
 import re
+import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -136,7 +137,7 @@ class GraphRunnerService:
     def run(
         self,
         bundle: GraphBundle,
-        initial_state: dict = None,
+        initial_state: Optional[dict] = None,
         parent_graph_name: Optional[str] = None,
         parent_tracker: Optional[Any] = None,
         is_subgraph: bool = False,
@@ -216,6 +217,7 @@ class GraphRunnerService:
         Workflow exceptions (including GraphInterrupt) propagate normally --
         only telemetry infrastructure failures trigger the fallback.
         """
+        assert self._telemetry_service is not None  # only called when telemetry is active
         from agentmap.services.telemetry.constants import (
             GRAPH_AGENT_COUNT,
             GRAPH_NAME,
@@ -325,7 +327,9 @@ class GraphRunnerService:
         Contains the original ``run()`` body, unchanged except for phase
         event recording calls.
         """
-        graph_name = bundle.graph_name
+        graph_name = bundle.graph_name or ""
+        execution_tracker = None
+        executable_graph = None
 
         try:
             # Phase 2: Create isolated scoped registry for this run (thread-safe)
@@ -401,8 +405,8 @@ class GraphRunnerService:
             from agentmap.models.graph import Graph
 
             graph = Graph(
-                name=bundle_with_instances.graph_name,
-                nodes=bundle_with_instances.nodes,
+                name=bundle_with_instances.graph_name or "",
+                nodes=bundle_with_instances.nodes or {},
                 entry_point=bundle_with_instances.entry_point,
             )
 
@@ -575,6 +579,8 @@ class GraphRunnerService:
                 raise RuntimeError("Cannot handle interrupt: no thread_id") from e
 
             # Get graph state to extract interrupt metadata
+            if executable_graph is None:
+                raise RuntimeError("Cannot handle interrupt: graph not assembled") from e
             config = {"configurable": {"thread_id": thread_id}}
             state = executable_graph.get_state(config)
 
@@ -967,7 +973,7 @@ class GraphRunnerService:
     async def run_async(
         self,
         bundle: GraphBundle,
-        initial_state: dict = None,
+        initial_state: Optional[dict] = None,
         parent_graph_name: Optional[str] = None,
         parent_tracker: Optional[Any] = None,
         is_subgraph: bool = False,
@@ -1045,6 +1051,7 @@ class GraphRunnerService:
         normally — only telemetry infrastructure failures trigger the
         fallback (REQ-NF-002).
         """
+        assert self._telemetry_service is not None  # only called when telemetry is active
         from agentmap.services.telemetry.constants import (
             GRAPH_AGENT_COUNT,
             GRAPH_NAME,
@@ -1166,7 +1173,9 @@ class GraphRunnerService:
         Mirrors ``_run_core`` phase-by-phase, substituting async assembly
         and async execution calls (REQ-F-004, REQ-NF-002).
         """
-        graph_name = bundle.graph_name
+        graph_name = bundle.graph_name or ""
+        execution_tracker = None
+        executable_graph = None
 
         try:
             # Phase 2: Create isolated scoped registry for this run.
@@ -1228,8 +1237,8 @@ class GraphRunnerService:
             from agentmap.models.graph import Graph
 
             graph = Graph(
-                name=bundle_with_instances.graph_name,
-                nodes=bundle_with_instances.nodes,
+                name=bundle_with_instances.graph_name or "",
+                nodes=bundle_with_instances.nodes or {},
                 entry_point=bundle_with_instances.entry_point,
             )
 
@@ -1400,6 +1409,8 @@ class GraphRunnerService:
                     "Cannot handle async interrupt: no thread_id available"
                 )
                 raise RuntimeError("Cannot handle interrupt: no thread_id") from e
+            if executable_graph is None:
+                raise RuntimeError("Cannot handle interrupt: graph not assembled") from e
 
             config = {"configurable": {"thread_id": thread_id}}
             state = executable_graph.get_state(config)
@@ -1518,6 +1529,7 @@ class GraphRunnerService:
         thread_id: str,
         checkpoint_state: Dict[str, Any],
         resume_node: Optional[str] = None,
+        _cancel_unmark_claimed: Optional[threading.Event] = None,
     ) -> ExecutionResult:
         """Resume graph execution from a checkpoint asynchronously.
 
@@ -1530,6 +1542,9 @@ class GraphRunnerService:
             thread_id: Thread identifier.
             checkpoint_state: State to resume with.
             resume_node: Optional node to resume from.
+            _cancel_unmark_claimed: Event set by the manager once it has claimed
+                ownership of the cancel-unmark.  The caller (facade) uses this to
+                avoid racing with the manager's deferred-unmark task (B-3 fix).
 
         Returns:
             ExecutionResult from resumed execution.
@@ -1542,4 +1557,5 @@ class GraphRunnerService:
             thread_id=thread_id,
             checkpoint_state=checkpoint_state,
             resume_node=resume_node,
+            _cancel_unmark_claimed=_cancel_unmark_claimed,
         )

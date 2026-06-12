@@ -582,6 +582,7 @@ class GraphRunnerServiceProtocol(Protocol):
         thread_id: str,
         checkpoint_state: Dict[str, Any],
         resume_node: Optional[str] = None,
+        _cancel_unmark_claimed: Optional[Any] = None,  # threading.Event; Any to avoid import
     ) -> Any:  # ExecutionResult
         """Resume graph execution from a checkpoint asynchronously (REQ-F-005)."""
         ...

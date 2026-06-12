@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import threading
 from pathlib import Path
 from typing import Any, Dict, NoReturn, Optional
 
@@ -827,6 +828,9 @@ async def resume_workflow_async(
     _facade_marked: bool = False
     _interaction_handler = None
     _thread_id: Optional[str] = None
+    # Pre-initialised so the except block can reference it even if cancel fires
+    # before the manager call is reached inside the try block (B-3 fix).
+    _manager_claimed_unmark = threading.Event()
 
     try:
         _thread_id, response_action, response_data = _parse_resume_token(resume_token)
@@ -913,11 +917,17 @@ async def resume_workflow_async(
         # own cancel-reset for everything AFTER its mark.  The facade owns the
         # cancel-reset for the window BETWEEN the facade mark (above) and the
         # manager's internal mark — caught by the except clause below (B-1 fix).
+        #
+        # _manager_claimed_unmark: once the manager sets marked_resuming=True
+        # it claims full ownership of the cancel-unmark.  The facade's handler
+        # must check this before calling unmark to avoid racing with the
+        # manager's deferred-unmark background task (B-3 fix).
         result = await graph_runner.resume_from_checkpoint_async(
             bundle=bundle,
             thread_id=_thread_id,
             checkpoint_state=checkpoint_state,
             resume_node=thread_data.get("node_name"),
+            _cancel_unmark_claimed=_manager_claimed_unmark,
         )
 
         return {
@@ -940,12 +950,15 @@ async def resume_workflow_async(
         # (marked_resuming=False).  We are the sole owner of this mark, so we
         # must undo it here to leave the thread re-resumable.
         #
-        # If the cancellation happened AFTER the manager set its flag, the
-        # manager already called unmark_thread_resuming; calling it again is a
-        # safe idempotent write (sets status to 'suspended' again).  We prefer
-        # the slight duplication over a missing unmark that wedges the thread.
+        # B-3 fix: if the manager set `marked_resuming=True` it claims full
+        # unmark ownership via `_cancel_unmark_claimed`.  In that case the
+        # manager handles the unmark — either immediately (ainvoke path) or via
+        # a deferred background task (to_thread path).  The facade must NOT call
+        # unmark when the claim flag is set, or it races with the deferred task
+        # and can unmark while the worker thread is still mutating state.
         if (
             _facade_marked
+            and not _manager_claimed_unmark.is_set()
             and _interaction_handler is not None
             and _thread_id is not None
         ):

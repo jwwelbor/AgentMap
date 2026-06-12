@@ -258,6 +258,7 @@ class CheckpointManager:
         thread_id: str,
         checkpoint_state: Dict[str, Any],
         resume_node: Optional[str] = None,
+        _cancel_unmark_claimed: Optional[threading.Event] = None,
     ) -> ExecutionResult:
         """Resume graph execution from a checkpoint asynchronously.
 
@@ -340,6 +341,11 @@ class CheckpointManager:
             # Mark thread resuming (state transition)
             self.interaction_handler.mark_thread_resuming(thread_id)
             marked_resuming = True
+            # Signal to the caller (facade) that we now own the cancel-unmark.
+            # Must happen immediately after marked_resuming=True so the facade's
+            # CancelledError handler can't race between the two (B-3 fix).
+            if _cancel_unmark_claimed is not None:
+                _cancel_unmark_claimed.set()
 
             langgraph_config = {"configurable": {"thread_id": thread_id}}
 
