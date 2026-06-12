@@ -6,6 +6,7 @@ Extracted from GraphRunnerService to improve separation of concerns.
 """
 
 import asyncio
+import json
 import time
 from typing import Any, Dict, Optional
 
@@ -20,6 +21,35 @@ from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
 from agentmap.services.graph.graph_checkpoint_service import GraphCheckpointService
 from agentmap.services.interaction_handler_service import InteractionHandlerService
 from agentmap.services.logging_service import LoggingService
+
+# Maximum serialised size (bytes) for any single resume payload (F-5 / NB-C).
+_RESUME_PAYLOAD_MAX_BYTES: int = 64 * 1024  # 64 KiB
+
+
+def _validate_resume_payload(resume_payload: Any) -> None:
+    """Guard resume payload before it is forwarded to LangGraph Command(resume=...).
+
+    Validates that the serialised payload does not exceed the configured size
+    bound (F-5 / NB-C).  The ``action`` field inside ``__human_response`` is
+    application-level agent data (e.g. "submit", "approve") whose allowlisting
+    is the responsibility of the receiving agent; we only guard size here.
+    The routing-level ``response_action`` allowlist is enforced upstream at
+    ``workflow_ops._parse_resume_token`` before the payload reaches this layer.
+
+    Raises:
+        ValueError: if the payload is not JSON-serialisable or exceeds the size
+            bound.
+    """
+    try:
+        payload_size = len(json.dumps(resume_payload).encode("utf-8"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Resume payload is not JSON-serialisable: {exc}") from exc
+
+    if payload_size > _RESUME_PAYLOAD_MAX_BYTES:
+        raise ValueError(
+            f"Resume payload exceeds maximum allowed size of "
+            f"{_RESUME_PAYLOAD_MAX_BYTES} bytes (got {payload_size} bytes)"
+        )
 
 
 class CheckpointManager:
@@ -150,6 +180,10 @@ class CheckpointManager:
                 resume_payload = {"__resume_marker": True}
             else:
                 resume_payload = resume_value
+
+            # Guard against unconstrained action/payload before forwarding to
+            # LangGraph (F-5 / NB-C).
+            _validate_resume_payload(resume_payload)
 
             command_input = Command(resume=resume_payload)
 
@@ -325,17 +359,29 @@ class CheckpointManager:
             else:
                 resume_payload = resume_value
 
+            # Guard against unconstrained action/payload before forwarding to
+            # LangGraph (F-5 / NB-C).
+            _validate_resume_payload(resume_payload)
+
             command_input = Command(resume=resume_payload)
 
-            # Prefer native async invoke; fall back to worker thread
+            # Prefer native async invoke; fall back to worker thread.
+            # For the to_thread path, keep a reference to the thread future so
+            # the cancel handler can await it before unmarking — otherwise the
+            # worker thread may still be mutating checkpoint state while we
+            # mark the thread as re-resumable (F-4 / NB-A).
+            _thread_future: Optional[asyncio.Future] = None
             if hasattr(executable_graph, "ainvoke"):
                 final_state = await executable_graph.ainvoke(
                     command_input, config=langgraph_config
                 )
             else:
-                final_state = await asyncio.to_thread(
-                    executable_graph.invoke, command_input, config=langgraph_config
+                _thread_future = asyncio.ensure_future(
+                    asyncio.to_thread(
+                        executable_graph.invoke, command_input, config=langgraph_config
+                    )
                 )
+                final_state = await _thread_future
 
             # Build execution result (same as sync path)
             summary_final_output = (
@@ -398,14 +444,41 @@ class CheckpointManager:
                         f"{finalize_err}"
                     )
             if marked_resuming:
-                try:
-                    # Unmark resuming so subsequent resume attempts are not blocked
-                    self.interaction_handler.unmark_thread_resuming(thread_id)
-                except Exception as reset_err:
-                    self.logger.warning(
-                        f"[CheckpointManager] Failed to reset resuming state for "
-                        f"thread '{thread_id}': {reset_err}"
-                    )
+                # F-4 / NB-A: If the to_thread worker is still running, defer
+                # unmark_thread_resuming until the thread settles.  Calling
+                # unmark while the thread is mutating checkpoint state creates
+                # a race that allows a concurrent resume to start prematurely.
+                # We schedule the cleanup as a background task so the
+                # CancelledError is re-raised immediately (callers must not be
+                # made to wait for the cleanup), while the cleanup itself is
+                # guaranteed to run once the thread finishes.
+                if _thread_future is not None and not _thread_future.done():
+                    async def _deferred_unmark(
+                        fut: asyncio.Future,
+                        tid: str,
+                    ) -> None:
+                        try:
+                            await asyncio.shield(fut)
+                        except BaseException:
+                            pass
+                        try:
+                            self.interaction_handler.unmark_thread_resuming(tid)
+                        except Exception as reset_err:
+                            self.logger.warning(
+                                f"[CheckpointManager] Failed to reset resuming "
+                                f"state for thread '{tid}': {reset_err}"
+                            )
+
+                    asyncio.ensure_future(_deferred_unmark(_thread_future, thread_id))
+                else:
+                    try:
+                        # Unmark resuming so subsequent resume attempts are not blocked
+                        self.interaction_handler.unmark_thread_resuming(thread_id)
+                    except Exception as reset_err:
+                        self.logger.warning(
+                            f"[CheckpointManager] Failed to reset resuming state for "
+                            f"thread '{thread_id}': {reset_err}"
+                        )
             raise
 
         except Exception as e:

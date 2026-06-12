@@ -568,7 +568,10 @@ class GraphRunnerServiceProtocol(Protocol):
         self,
         bundle: Any,  # GraphBundle
         initial_state: Optional[dict] = None,
-        **kwargs,
+        parent_graph_name: Optional[str] = None,
+        parent_tracker: Optional[Any] = None,
+        is_subgraph: bool = False,
+        validate_agents: bool = False,
     ) -> Any:  # ExecutionResult
         """Execute a graph bundle asynchronously and return the result (REQ-F-004)."""
         ...

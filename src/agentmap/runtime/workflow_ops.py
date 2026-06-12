@@ -601,10 +601,49 @@ def _graph_entry(
     }
 
 
+# Allowlist of routing-level resume actions (F-5 / NB-C).  These are the
+# values accepted for the HTTP ``ResumeRequest.action`` field and the
+# ``response_action`` key inside a JSON resume token.  Application-level
+# agent data (e.g. ``__human_response.action``) is NOT governed by this set;
+# those values are validated by the receiving agent.
+VALID_RESUME_ACTIONS = frozenset(
+    {
+        "approve",
+        "reject",
+        "choose",
+        "respond",
+        "edit",
+        "continue",
+        "stop",
+        "retry",
+        "skip",
+        "submit",
+        "cancel",
+        "text_input",
+    }
+)
+
+# Maximum serialised size of the resume token / response_data payload in bytes
+# (F-5 / NB-C).  Prevents memory exhaustion via oversized payloads.
+_RESUME_PAYLOAD_MAX_BYTES = 64 * 1024  # 64 KiB
+
+
 def _parse_resume_token(resume_token: Any) -> tuple[str, str, Optional[Dict[str, Any]]]:
-    """Parse resume token to extract thread_id, action, and data."""
+    """Parse resume token to extract thread_id, action, and data.
+
+    Enforces a token size bound before deserialisation (F-5 / NB-C) to prevent
+    memory exhaustion.  The action is validated against ``VALID_RESUME_ACTIONS``
+    when it is a known routing action; unknown values are rejected.
+    """
     if not isinstance(resume_token, str):
         raise InvalidInputs("Resume token must be a string")
+
+    # Enforce token size before deserialisation to avoid memory exhaustion
+    if len(resume_token.encode("utf-8")) > _RESUME_PAYLOAD_MAX_BYTES:
+        raise InvalidInputs(
+            f"Resume token exceeds maximum allowed size of {_RESUME_PAYLOAD_MAX_BYTES} bytes"
+        )
+
     try:
         token_data = json.loads(resume_token)
         thread_id = token_data.get("thread_id")
@@ -618,6 +657,28 @@ def _parse_resume_token(resume_token: Any) -> tuple[str, str, Optional[Dict[str,
 
     if not thread_id:
         raise InvalidInputs("Resume token must contain a valid thread_id")
+
+    # Validate action against allowlist (F-5 / NB-C)
+    if response_action is not None:
+        normalised = str(response_action).lower()
+        if normalised not in VALID_RESUME_ACTIONS:
+            raise InvalidInputs(
+                f"Invalid resume action '{response_action}'. "
+                f"Valid actions: {', '.join(sorted(VALID_RESUME_ACTIONS))}"
+            )
+        response_action = normalised
+
+    # Enforce payload size bound on the data portion (F-5 / NB-C)
+    if response_data is not None:
+        try:
+            encoded_size = len(json.dumps(response_data).encode("utf-8"))
+        except (TypeError, ValueError):
+            raise InvalidInputs("Resume response_data must be JSON-serialisable")
+        if encoded_size > _RESUME_PAYLOAD_MAX_BYTES:
+            raise InvalidInputs(
+                f"Resume response_data exceeds maximum allowed size of "
+                f"{_RESUME_PAYLOAD_MAX_BYTES} bytes"
+            )
 
     return thread_id, response_action, response_data
 

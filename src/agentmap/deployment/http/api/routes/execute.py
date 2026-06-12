@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agentmap.deployment.http.api.dependencies import requires_auth
 from agentmap.exceptions.runtime_exceptions import (
@@ -17,6 +17,7 @@ from agentmap.exceptions.runtime_exceptions import (
     GraphNotFound,
     InvalidInputs,
 )
+from agentmap.runtime.workflow_ops import VALID_RESUME_ACTIONS
 from agentmap.runtime_api import (
     ensure_initialized,
     resume_workflow_async,
@@ -79,6 +80,20 @@ class ResumeRequest(BaseModel):
         default_factory=dict,
         description="Additional data associated with the resume action",
     )
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, v: Optional[str]) -> Optional[str]:
+        """Enforce action allowlist (F-5 / NB-C)."""
+        if v is None:
+            return v
+        normalised = v.lower()
+        if normalised not in VALID_RESUME_ACTIONS:
+            raise ValueError(
+                f"Invalid resume action '{v}'. "
+                f"Valid actions: {', '.join(sorted(VALID_RESUME_ACTIONS))}"
+            )
+        return normalised
 
 
 class ResumeResponse(BaseModel):

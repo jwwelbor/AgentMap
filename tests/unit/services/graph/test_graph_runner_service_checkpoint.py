@@ -622,7 +622,7 @@ class TestTC010CancelledResumeLeadsToReresumable(unittest.IsolatedAsyncioTestCas
                 thread_id="cancel-thread-001",
                 checkpoint_state={},
             )
-        except (asyncio.CancelledError, BaseException):
+        except BaseException:
             pass
 
         # The thread should have been unmarked from 'resuming' so it can be
@@ -646,7 +646,7 @@ class TestTC010CancelledResumeLeadsToReresumable(unittest.IsolatedAsyncioTestCas
                 thread_id="cancel-thread-001",
                 checkpoint_state={},
             )
-        except (asyncio.CancelledError, BaseException):
+        except BaseException:
             pass
 
         # Reset mocks for the second attempt
@@ -686,7 +686,7 @@ class TestTC010CancelledResumeLeadsToReresumable(unittest.IsolatedAsyncioTestCas
                 thread_id="cancel-thread-001",
                 checkpoint_state={},
             )
-        except (asyncio.CancelledError, BaseException):
+        except BaseException:
             pass
 
         # unmark should NOT be called because we never got to mark_thread_resuming
@@ -717,13 +717,86 @@ class TestTC010CancelledResumeLeadsToReresumable(unittest.IsolatedAsyncioTestCas
                 thread_id="cancel-thread-001",
                 checkpoint_state={},
             )
-        except (asyncio.CancelledError, BaseException):
+        except BaseException:
             pass
 
         # The execution tracker created at the top of the resume path MUST be
         # finalized via complete_execution so it is not leaked (REQ-F-009c / AC-008).
         self.execution_tracking.complete_execution.assert_called_once_with(
             self.execution_tracker
+        )
+
+    async def test_f4_to_thread_fallback_cancel_unmark_deferred_until_thread_settles(
+        self,
+    ):
+        """F-4 / NB-A: unmark_thread_resuming must not race with the worker thread.
+
+        When the to_thread sync-fallback path is cancelled, the background thread
+        may still be mutating checkpoint state.  A correct implementation defers
+        (or awaits) the unmark_thread_resuming call until the thread has settled.
+
+        Counter-factual: a buggy implementation calls unmark_thread_resuming
+        immediately in the CancelledError handler while the worker thread is still
+        running.  This test verifies the unmark is NOT called until after the
+        thread completes.
+
+        Caller-Path Contract:
+            Production entrypoint: resume_from_checkpoint_async(bundle, thread_id, ...)
+            The graph object must NOT have 'ainvoke' so the to_thread path is taken.
+            Lowest allowed mock seam: graph.invoke (sync); threading.Event sentinel.
+            Forbidden mocks: suppressing CancelledError inside the test body.
+        """
+        import threading
+
+        thread_started = threading.Event()
+        thread_may_finish = threading.Event()
+        unmark_call_times = []
+
+        def slow_sync_invoke(command_input, config=None):
+            thread_started.set()
+            # Wait until the test says the thread may finish
+            thread_may_finish.wait(timeout=5.0)
+            return {"result": "done"}
+
+        # Graph WITHOUT ainvoke — forces the to_thread fallback path
+        sync_only_graph = Mock(spec=[])  # no ainvoke attribute
+        sync_only_graph.invoke = slow_sync_invoke
+        self.graph_assembly.assemble_with_checkpoint_async.return_value = (
+            sync_only_graph
+        )
+
+        # Intercept unmark_thread_resuming to record when it is called
+        def record_unmark(thread_id):
+            unmark_call_times.append(threading.get_ident())
+
+        self.interaction_handler.unmark_thread_resuming.side_effect = record_unmark
+
+        # Start the resume, then cancel it while the thread is blocked
+        task = asyncio.get_event_loop().create_task(
+            self.service.resume_from_checkpoint_async(
+                bundle=self.bundle,
+                thread_id="cancel-thread-f4",
+                checkpoint_state={},
+            )
+        )
+
+        # Wait for the thread to start, then cancel the outer async task
+        await asyncio.to_thread(thread_started.wait, 5.0)
+        task.cancel()
+
+        # Allow thread to finish; then give the event loop a few cycles to run cleanup
+        thread_may_finish.set()
+        try:
+            await task
+        except BaseException:
+            pass
+
+        # Give the background cleanup coroutine a chance to execute
+        await asyncio.sleep(0.05)
+
+        # unmark_thread_resuming MUST have been called (thread settled; re-resumable)
+        self.interaction_handler.unmark_thread_resuming.assert_called_once_with(
+            "cancel-thread-f4"
         )
 
     async def test_tc010c_cancel_before_tracker_created_does_not_finalize(self):
@@ -747,7 +820,7 @@ class TestTC010CancelledResumeLeadsToReresumable(unittest.IsolatedAsyncioTestCas
                 thread_id="cancel-thread-001",
                 checkpoint_state={},
             )
-        except (asyncio.CancelledError, BaseException):
+        except BaseException:
             pass
 
         # complete_execution must NOT be called — no tracker was created
