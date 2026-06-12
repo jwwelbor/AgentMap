@@ -693,6 +693,66 @@ class TestTC010CancelledResumeLeadsToReresumable(unittest.IsolatedAsyncioTestCas
         self.interaction_handler.unmark_thread_resuming.assert_not_called()
         self.interaction_handler.mark_thread_resuming.assert_not_called()
 
+    async def test_tc010b_cancelled_resume_finalizes_execution_tracker(self):
+        """TC-010 / B-2: cancelled resume must call complete_execution on the tracker.
+
+        Counter-factual: without the complete_execution call in the CancelledError
+        branch, the tracker created at the start of resume_from_checkpoint_async is
+        leaked in-progress.  This test would pass against a correct implementation
+        and FAIL against the buggy implementation described in B-2.
+
+        Caller-Path Contract:
+            Production entrypoint: resume_from_checkpoint_async(bundle, thread_id, ...)
+            Lowest allowed mock seam: compiled graph ainvoke and execution_tracking
+            Forbidden mocks: do not suppress CancelledError inside the test body
+        """
+        # Compiled graph whose ainvoke raises CancelledError after mark_thread_resuming
+        slow_graph = Mock()
+        slow_graph.ainvoke = AsyncMock(side_effect=asyncio.CancelledError())
+        self.graph_assembly.assemble_with_checkpoint_async.return_value = slow_graph
+
+        try:
+            await self.service.resume_from_checkpoint_async(
+                bundle=self.bundle,
+                thread_id="cancel-thread-001",
+                checkpoint_state={},
+            )
+        except (asyncio.CancelledError, BaseException):
+            pass
+
+        # The execution tracker created at the top of the resume path MUST be
+        # finalized via complete_execution so it is not leaked (REQ-F-009c / AC-008).
+        self.execution_tracking.complete_execution.assert_called_once_with(
+            self.execution_tracker
+        )
+
+    async def test_tc010c_cancel_before_tracker_created_does_not_finalize(self):
+        """TC-010 / B-2: if cancel happens before tracker is created, no finalization.
+
+        The tracker is created at the very first line of the try block.  If a
+        CancelledError fires *before* that line (e.g. Python cancels the task
+        before entry), complete_execution must NOT be called because there is
+        nothing to finalize.  This test guards against an over-eager finalization
+        that would crash with AttributeError/TypeError on a None tracker.
+
+        Caller-Path Contract: same as test_tc010b.
+        """
+        # Patch create_tracker to simulate task cancellation before tracker creation
+        # by making create_tracker itself raise CancelledError.
+        self.execution_tracking.create_tracker.side_effect = asyncio.CancelledError()
+
+        try:
+            await self.service.resume_from_checkpoint_async(
+                bundle=self.bundle,
+                thread_id="cancel-thread-001",
+                checkpoint_state={},
+            )
+        except (asyncio.CancelledError, BaseException):
+            pass
+
+        # complete_execution must NOT be called — no tracker was created
+        self.execution_tracking.complete_execution.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -260,6 +260,7 @@ class CheckpointManager:
 
         start_time = time.time()
         marked_resuming = False
+        execution_tracker = None  # sentinel; set after create_tracker() succeeds
 
         try:
             # Create execution tracker
@@ -382,6 +383,20 @@ class CheckpointManager:
                 f"[CheckpointManager] Async resume cancelled for thread "
                 f"'{thread_id}' after {execution_time:.2f}s — resetting state"
             )
+            # Finalize the execution tracker so it is not leaked in-progress
+            # (REQ-F-009c / AC-008 / B-2).  Mirror the pattern in
+            # graph_execution_service.py:361-363.  The tracker variable is
+            # defined with a None sentinel before the try block so this guard
+            # is safe even when CancelledError fires before create_tracker().
+            if execution_tracker is not None:
+                try:
+                    self.execution_tracking.complete_execution(execution_tracker)
+                except Exception as finalize_err:
+                    self.logger.warning(
+                        f"[CheckpointManager] Tracker finalization failed on "
+                        f"resume cancellation for thread '{thread_id}': "
+                        f"{finalize_err}"
+                    )
             if marked_resuming:
                 try:
                     # Unmark resuming so subsequent resume attempts are not blocked

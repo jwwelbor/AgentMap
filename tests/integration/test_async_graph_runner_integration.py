@@ -20,6 +20,25 @@ Caller-Path Contract (TC-007):
     Counter-factual:
         A buggy implementation would pass unit tests but fail when the real
         DI wiring, checkpoint store, or graph assembly stack is exercised together.
+
+Caller-Path Contract (TC-007f — async suspend→resume round trip):
+    Production entrypoints:
+        1. GraphRunnerService.run_async(bundle, initial_state=...)  [suspend leg]
+        2. GraphRunnerService.resume_from_checkpoint_async(         [resume leg]
+               bundle, thread_id, checkpoint_state, resume_node=None)
+        Both reached through the real DI container.
+    Lowest allowed mock seam:
+        display_resume_instructions (CLI display side-effect only).
+        The checkpoint store, checkpoint manager, graph assembly, and
+        execution tracking must all be real.
+    Forbidden mocks:
+        GraphRunnerService, CheckpointManager, GraphAssemblyService,
+        GraphExecutionService, GraphCheckpointService.
+    Counter-factual:
+        A buggy implementation (e.g. resume_from_checkpoint_async that always
+        raises, or checkpoint manager that never writes state) would allow
+        unit tests to pass while this test fails because the real checkpoint
+        store is exercised.
 """
 
 import asyncio
@@ -297,6 +316,223 @@ class TestAsyncGraphRunnerIntegration(unittest.TestCase):
             GraphRunnerServiceProtocol,
             "real GraphRunnerService must satisfy GraphRunnerServiceProtocol "
             "including async members",
+        )
+
+
+class TestAsyncSuspendResumeRoundTrip(unittest.TestCase):
+    """TC-007f: real-DI async suspend → resume round trip (AC-005).
+
+    Exercises the full checkpoint boundary through the real DI container:
+      1. run_async() suspends at a SuspendAgent node and returns an interrupt
+         result with a thread_id embedded in the final state.
+      2. resume_from_checkpoint_async() picks up from the stored checkpoint
+         and runs the graph to completion.
+
+    All services in the production execution boundary are real
+    (GraphRunnerService, CheckpointManager, GraphAssemblyService,
+    GraphCheckpointService, ExecutionTrackingService).  Only the CLI
+    display side-effect is patched to prevent terminal output.
+    """
+
+    def setUp(self):
+        """Set up the real DI container with a suspend-capable workflow CSV."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.user_storage_dir = os.path.join(self.temp_dir, "user_storage")
+        self.cache_dir = os.path.join(self.temp_dir, "cache")
+        self.examples_dir = os.path.join(self.temp_dir, "examples")
+
+        os.makedirs(self.user_storage_dir, exist_ok=True)
+        os.makedirs(self.cache_dir, exist_ok=True)
+        os.makedirs(self.examples_dir, exist_ok=True)
+
+        self._create_suspend_workflow_csv()
+        self._create_test_config_files()
+
+        self.container = ApplicationContainer()
+        self.container.config.from_dict(
+            {"path": os.path.join(self.temp_dir, "config.yaml")}
+        )
+        self.container.wire(modules=[])
+
+    def tearDown(self):
+        """Clean up test fixtures."""
+        self.container.unwire()
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _create_suspend_workflow_csv(self):
+        """Create a two-phase workflow: entry → suspend node → finalize node.
+
+        The suspend node uses the built-in 'suspend' AgentType which calls
+        LangGraph's interrupt(), causing the graph to pause and return a
+        checkpoint that can be resumed.
+        """
+        csv_content = (
+            "GraphName,Node,AgentType,Prompt,Description,"
+            "Input_Fields,Output_Field,Edge,Context,Success_Next,Failure_Next\n"
+            "SuspendResumeGraph,EntryNode,default,Seeding workflow,"
+            "Entry point,seed_input,request_id,SuspendNode,,,\n"
+            "SuspendResumeGraph,SuspendNode,suspend,Waiting for external signal,"
+            "Suspend point,request_id,resume_payload,FinalizeNode,"
+            '"{""reason"": ""test_suspend""}",,'
+            "\n"
+            "SuspendResumeGraph,FinalizeNode,default,Workflow completed after resume,"
+            "Final node,resume_payload,final_message,,,,\n"
+        )
+        self.suspend_csv_path = os.path.join(
+            self.examples_dir, "suspend_resume_graph.csv"
+        )
+        with open(self.suspend_csv_path, "w") as f:
+            f.write(csv_content)
+
+    def _create_test_config_files(self):
+        """Create YAML config files required by the DI container."""
+        storage_config_path = os.path.join(self.temp_dir, "storage.yaml").replace(
+            "\\", "/"
+        )
+        cache_path = self.cache_dir.replace("\\", "/")
+        examples_path = self.examples_dir.replace("\\", "/")
+        config_content = (
+            f'storage_config_path: "{storage_config_path}"\n'
+            f"paths:\n"
+            f'  cache: "{cache_path}"\n'
+            f'  examples: "{examples_path}"\n'
+            "logging:\n"
+            "  level: WARNING\n"
+            "execution:\n"
+            "  success_policy: any_end_node\n"
+        )
+        config_path = os.path.join(self.temp_dir, "config.yaml")
+        with open(config_path, "w") as f:
+            f.write(config_content)
+
+        user_storage_path = self.user_storage_dir.replace("\\", "/")
+        storage_content = (
+            f'base_directory: "{user_storage_path}"\n'
+            "providers:\n"
+            "  json:\n"
+            "    enabled: true\n"
+            "    settings:\n"
+            "      indent: 2\n"
+            "  csv:\n"
+            "    enabled: true\n"
+        )
+        storage_path = os.path.join(self.temp_dir, "storage.yaml")
+        with open(storage_path, "w") as f:
+            f.write(storage_content)
+
+    def _get_graph_runner_service(self):
+        """Return the real GraphRunnerService from the container."""
+        return self.container.graph_runner_service()
+
+    def _get_bundle_service(self):
+        """Return the real GraphBundleService from the container."""
+        return self.container.graph_bundle_service()
+
+    def _load_suspend_bundle(self):
+        """Load a GraphBundle for the suspend/resume graph."""
+        bundle_service = self._get_bundle_service()
+        bundle, _ = bundle_service.get_or_create_bundle(
+            csv_path=Path(self.suspend_csv_path),
+            graph_name="SuspendResumeGraph",
+        )
+        return bundle
+
+    # ------------------------------------------------------------------
+    # TC-007f: async suspend → resume round trip (AC-005)
+    # ------------------------------------------------------------------
+
+    def test_tc007f_async_suspend_then_resume_round_trip(self):
+        """TC-007f / AC-005: run_async() suspends; resume_from_checkpoint_async()
+        completes the workflow through the real DI container.
+
+        Counter-factual: a buggy implementation whose resume_from_checkpoint_async
+        is a stub, always errors, or uses a disconnected checkpoint store would
+        cause this test to fail even if all unit-level mocks pass.  The test
+        drives both production entrypoints in sequence and asserts the final
+        result is successful — proving the full checkpoint round trip is wired.
+        """
+        from unittest.mock import patch
+
+        graph_runner = self._get_graph_runner_service()
+        initial_state = {"seed_input": "integration-test-seed-value"}
+
+        # --- Leg 1: run_async() → should suspend at SuspendNode ---
+        with patch(
+            "agentmap.services.graph.runner.interrupt_handler."
+            "GraphInterruptHandler.display_resume_instructions"
+        ):
+            suspend_result = asyncio.run(
+                graph_runner.run_async(
+                    self._load_suspend_bundle(), initial_state=initial_state
+                )
+            )
+
+        # The graph must have suspended (not completed) at the SuspendNode
+        self.assertIsNotNone(
+            suspend_result,
+            "run_async() must return an ExecutionResult even when the graph suspends",
+        )
+        self.assertFalse(
+            suspend_result.success,
+            "run_async() must return success=False when the graph is suspended",
+        )
+        self.assertIsNotNone(
+            suspend_result.final_state,
+            "suspended result must carry final_state with thread metadata",
+        )
+
+        thread_id = suspend_result.final_state.get("__thread_id")
+        self.assertIsNotNone(
+            thread_id,
+            "suspended result must embed __thread_id in final_state for resume",
+        )
+
+        # Verify the result signals an interrupted/suspended state
+        self.assertTrue(
+            suspend_result.final_state.get("__interrupted"),
+            "suspended result must set __interrupted=True",
+        )
+
+        # --- Leg 2: resume_from_checkpoint_async() → should complete ---
+        # checkpoint_state is empty for a SuspendAgent (no human response needed)
+        checkpoint_state = {}
+
+        resume_result = asyncio.run(
+            graph_runner.resume_from_checkpoint_async(
+                bundle=self._load_suspend_bundle(),
+                thread_id=thread_id,
+                checkpoint_state=checkpoint_state,
+            )
+        )
+
+        self.assertIsNotNone(
+            resume_result,
+            "resume_from_checkpoint_async() must return an ExecutionResult",
+        )
+        self.assertEqual(
+            resume_result.graph_name,
+            "SuspendResumeGraph",
+            "resumed result must carry the correct graph_name",
+        )
+        self.assertTrue(
+            resume_result.success,
+            f"resumed workflow must complete successfully; "
+            f"got success={resume_result.success}, error={resume_result.error}",
+        )
+        self.assertIsNotNone(
+            resume_result.execution_summary,
+            "resumed result must include an execution_summary",
+        )
+        self.assertIsNotNone(
+            resume_result.final_state,
+            "resumed result must carry final_state",
+        )
+
+        # The final_state must record the thread_id and resume origin
+        self.assertEqual(
+            resume_result.final_state.get("__thread_id"),
+            thread_id,
+            "resumed final_state must preserve the original thread_id",
         )
 
 
