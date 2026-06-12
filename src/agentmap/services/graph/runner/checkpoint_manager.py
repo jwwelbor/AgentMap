@@ -26,6 +26,10 @@ from agentmap.services.logging_service import LoggingService
 # Maximum serialised size (bytes) for any single resume payload (F-5 / NB-C).
 _RESUME_PAYLOAD_MAX_BYTES: int = 64 * 1024  # 64 KiB
 
+# Strong references to fire-and-forget background tasks so the GC cannot collect
+# them before they complete (asyncio GC-collection risk, NB-1).
+_BACKGROUND_TASKS: set = set()
+
 
 def _validate_resume_payload(resume_payload: Any) -> None:
     """Guard resume payload before it is forwarded to LangGraph Command(resume=...).
@@ -486,8 +490,11 @@ class CheckpointManager:
                         # thread settles (F-4 / NB-A).
                         try:
                             await asyncio.to_thread(lambda: done_event.wait(timeout=30))
-                        except BaseException:
-                            pass
+                        except Exception as wait_err:
+                            self.logger.warning(
+                                f"[CheckpointManager] Deferred unmark wait failed "
+                                f"for thread '{tid}': {wait_err}"
+                            )
                         try:
                             self.interaction_handler.unmark_thread_resuming(tid)
                         except Exception as reset_err:
@@ -496,9 +503,11 @@ class CheckpointManager:
                                 f"state for thread '{tid}': {reset_err}"
                             )
 
-                    asyncio.ensure_future(
+                    _bg_task = asyncio.ensure_future(
                         _deferred_unmark(_thread_done_event, thread_id)
                     )
+                    _BACKGROUND_TASKS.add(_bg_task)
+                    _bg_task.add_done_callback(_BACKGROUND_TASKS.discard)
                 else:
                     try:
                         # Unmark resuming so subsequent resume attempts are not blocked

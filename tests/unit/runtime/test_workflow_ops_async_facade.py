@@ -976,3 +976,150 @@ class TestResumeWorkflowAsyncB3FacadeDefersUnmarkToManager:
         interaction_handler.unmark_thread_resuming.assert_called_once_with(
             thread_id="thread-b3-002"
         )
+
+
+# ---------------------------------------------------------------------------
+# F-5 / NB-C: Size-boundary tests for _parse_resume_token
+# ---------------------------------------------------------------------------
+
+
+class TestParseResumeTokenSizeBoundary:
+    """Verify _parse_resume_token enforces the 64 KiB size limit (BLOCKER-1 fix).
+
+    The guard is security-relevant (prevents memory exhaustion via oversized
+    payloads). These tests cover the exact boundary conditions.
+    """
+
+    def _make_token(self, thread_id: str, response_data=None) -> str:
+        import json
+
+        payload: dict = {"thread_id": thread_id, "response_action": "continue"}
+        if response_data is not None:
+            payload["response_data"] = response_data
+        return json.dumps(payload)
+
+    def test_token_at_exact_limit_passes(self):
+        """A token whose byte-length equals _RESUME_PAYLOAD_MAX_BYTES must pass."""
+        import json
+
+        from agentmap.runtime.workflow_ops import (
+            _RESUME_PAYLOAD_MAX_BYTES,
+            _parse_resume_token,
+        )
+
+        # Build a token whose raw UTF-8 encoding is exactly at the limit.
+        # We pad thread_id with 'a' characters to hit the boundary.
+        base = json.dumps({"thread_id": "", "response_action": "continue"})
+        overhead = len(base.encode("utf-8"))
+        padding_len = _RESUME_PAYLOAD_MAX_BYTES - overhead
+        padded_id = "a" * padding_len
+        token = json.dumps({"thread_id": padded_id, "response_action": "continue"})
+        assert len(token.encode("utf-8")) == _RESUME_PAYLOAD_MAX_BYTES
+
+        thread_id, action, data = _parse_resume_token(token)
+        assert thread_id == padded_id
+        assert action == "continue"
+
+    def test_token_one_byte_over_limit_raises(self):
+        """A token one byte over the limit must raise InvalidInputs."""
+        import json
+
+        from agentmap.exceptions import InvalidInputs
+        from agentmap.runtime.workflow_ops import (
+            _RESUME_PAYLOAD_MAX_BYTES,
+            _parse_resume_token,
+        )
+
+        base = json.dumps({"thread_id": "", "response_action": "continue"})
+        overhead = len(base.encode("utf-8"))
+        padding_len = _RESUME_PAYLOAD_MAX_BYTES - overhead + 1  # one byte over
+        padded_id = "a" * padding_len
+        token = json.dumps({"thread_id": padded_id, "response_action": "continue"})
+        assert len(token.encode("utf-8")) == _RESUME_PAYLOAD_MAX_BYTES + 1
+
+        with pytest.raises(InvalidInputs, match="maximum allowed size"):
+            _parse_resume_token(token)
+
+    def test_token_with_response_data_within_limit_passes(self):
+        """A token containing response_data that fits within the overall limit must pass."""
+        from agentmap.runtime.workflow_ops import _parse_resume_token
+
+        # Use a small response_data dict — well inside the 64 KiB limit.
+        data = {"action": "submit", "form_id": "f001", "values": {"answer": "yes"}}
+        token = self._make_token("thread-size-003", response_data=data)
+        thread_id, action, response_data = _parse_resume_token(token)
+        assert thread_id == "thread-size-003"
+        assert action == "continue"
+        assert response_data == data
+
+    def test_non_string_token_raises(self):
+        """Non-string resume token must raise InvalidInputs."""
+        from agentmap.exceptions import InvalidInputs
+        from agentmap.runtime.workflow_ops import _parse_resume_token
+
+        with pytest.raises(InvalidInputs, match="must be a string"):
+            _parse_resume_token({"thread_id": "t1"})  # dict, not str
+
+    def test_malformed_json_treated_as_thread_id(self):
+        """A non-JSON string is treated as a raw thread_id with action='continue'."""
+        from agentmap.runtime.workflow_ops import _parse_resume_token
+
+        thread_id, action, data = _parse_resume_token("plain-thread-id-001")
+        assert thread_id == "plain-thread-id-001"
+        assert action == "continue"
+        assert data is None
+
+
+# ---------------------------------------------------------------------------
+# F-5 / NB-C: Size-boundary tests for _validate_resume_payload
+# ---------------------------------------------------------------------------
+
+
+class TestValidateResumePayloadSizeBoundary:
+    """Verify _validate_resume_payload enforces the 64 KiB size limit (BLOCKER-1 fix).
+
+    This function guards the payload before it is forwarded to LangGraph's
+    Command(resume=...).  Tests cover pass, fail, and non-serialisable cases.
+    """
+
+    def test_payload_at_exact_limit_passes(self):
+        """A payload whose JSON encoding equals _RESUME_PAYLOAD_MAX_BYTES must pass."""
+        import json
+
+        from agentmap.services.graph.runner.checkpoint_manager import (
+            _RESUME_PAYLOAD_MAX_BYTES,
+            _validate_resume_payload,
+        )
+
+        base_overhead = len(json.dumps({"k": ""}).encode("utf-8"))
+        padding_len = _RESUME_PAYLOAD_MAX_BYTES - base_overhead
+        payload = {"k": "a" * padding_len}
+        assert len(json.dumps(payload).encode("utf-8")) == _RESUME_PAYLOAD_MAX_BYTES
+
+        _validate_resume_payload(payload)  # must not raise
+
+    def test_payload_one_byte_over_limit_raises(self):
+        """A payload one byte over the limit must raise ValueError."""
+        import json
+
+        from agentmap.services.graph.runner.checkpoint_manager import (
+            _RESUME_PAYLOAD_MAX_BYTES,
+            _validate_resume_payload,
+        )
+
+        base_overhead = len(json.dumps({"k": ""}).encode("utf-8"))
+        padding_len = _RESUME_PAYLOAD_MAX_BYTES - base_overhead + 1
+        payload = {"k": "a" * padding_len}
+        assert len(json.dumps(payload).encode("utf-8")) == _RESUME_PAYLOAD_MAX_BYTES + 1
+
+        with pytest.raises(ValueError, match="maximum allowed size"):
+            _validate_resume_payload(payload)
+
+    def test_non_serialisable_payload_raises(self):
+        """A payload that cannot be JSON-serialised must raise ValueError."""
+        from agentmap.services.graph.runner.checkpoint_manager import (
+            _validate_resume_payload,
+        )
+
+        with pytest.raises(ValueError, match="not JSON-serialisable"):
+            _validate_resume_payload({"bad": object()})
