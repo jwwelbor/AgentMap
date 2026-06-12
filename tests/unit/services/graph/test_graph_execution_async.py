@@ -26,6 +26,7 @@ Caller-path contract (from test plan):
 """
 
 import asyncio
+import time
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -510,3 +511,115 @@ class TestExecuteCompiledGraphAsyncConcurrency(unittest.IsolatedAsyncioTestCase)
         self.assertTrue(good_result.success)
         self.assertFalse(bad_result.success)
         self.assertIsNotNone(bad_result.error)
+
+
+# ---------------------------------------------------------------------------
+# AC-010: Heartbeat / no-starvation assertion during real seam execution
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteCompiledGraphAsyncFallbackNoStarvation(
+    unittest.IsolatedAsyncioTestCase
+):
+    """AC-010: Named worker-thread seam keeps the event loop unstarved.
+
+    The seam `_invoke_compiled_graph_in_thread` offloads the blocking
+    ``invoke`` to a worker thread via ``asyncio.to_thread``.  This class
+    proves the loop-liveness property: a heartbeat coroutine ticking every
+    50ms should never observe a gap >= 250ms while a blocking sync ``invoke``
+    (real ``time.sleep``) runs through the real (unpatched) seam.
+
+    Counter-factual: if ``invoke`` ran directly on the event loop (i.e., the
+    seam were removed or bypassed), the heartbeat would record a gap equal to
+    the sleep duration (~0.35s > 250ms bound) and the assertion would fail.
+    """
+
+    async def test_ac010_real_seam_does_not_starve_event_loop(self):
+        """Blocking sync invoke inside real _invoke_compiled_graph_in_thread
+        seam does not starve the event loop.
+
+        A blocking time.sleep(0.35s) runs inside the sync-only graph's
+        ``invoke`` method.  The real (unpatched) seam routes this through
+        ``asyncio.to_thread``, so the event-loop heartbeat should continue
+        ticking within the 250ms gap bound.
+        """
+        service, mocks = _make_graph_execution_service()
+
+        # Sync-only graph: invoke blocks for 0.35s using time.sleep.
+        # This is long enough that if run on the loop directly (not in a
+        # thread) the heartbeat probe (250ms bound) would detect starvation.
+        BLOCK_DURATION = 0.35
+
+        def _blocking_invoke(state, config=None):
+            time.sleep(BLOCK_DURATION)
+            return {"output": "sync_done"}
+
+        # Build a graph object that ONLY has invoke (no ainvoke), so
+        # execute_compiled_graph_async routes through the fallback seam.
+        graph = MagicMock(name="blocking_sync_graph", spec=["invoke"])
+        graph.invoke.side_effect = _blocking_invoke
+
+        heartbeat = _HeartbeatProbe(interval=0.05, bound_s=0.25)
+        hb_task = asyncio.create_task(heartbeat.run())
+
+        try:
+            result = await service.execute_compiled_graph_async(
+                executable_graph=graph,
+                graph_name="blocking_fallback_graph",
+                initial_state={"x": 1},
+                execution_tracker=mocks["tracker"],
+            )
+        finally:
+            heartbeat.stop()
+            hb_task.cancel()
+            try:
+                await hb_task
+            except asyncio.CancelledError:
+                pass
+
+        # Result must be a valid ExecutionResult (seam ran, invoke completed)
+        self.assertIsInstance(result, ExecutionResult)
+        self.assertEqual(result.graph_name, "blocking_fallback_graph")
+        self.assertIsNone(result.error)
+
+        # graph.invoke must have been called (blocking work actually ran)
+        graph.invoke.assert_called_once()
+
+        # The critical AC-010 assertion: the event loop was NOT starved while
+        # the blocking sync invoke ran inside the worker-thread seam.
+        heartbeat.assert_no_starvation(self)
+
+    async def test_ac010_real_seam_returns_correct_execution_result(self):
+        """Blocking sync invoke through the real seam produces a correct
+        ExecutionResult envelope — final state, success flag, no error.
+
+        This complements the heartbeat test: confirms the seam both preserves
+        loop-liveness AND delivers the correct result shape.
+        """
+        service, mocks = _make_graph_execution_service()
+
+        BLOCK_DURATION = 0.05  # Short block — just enough to verify threading
+
+        def _blocking_invoke(state, config=None):
+            time.sleep(BLOCK_DURATION)
+            return {"output": "thread_result", "processed": True}
+
+        graph = MagicMock(name="blocking_sync_graph_envelope", spec=["invoke"])
+        graph.invoke.side_effect = _blocking_invoke
+
+        result = await service.execute_compiled_graph_async(
+            executable_graph=graph,
+            graph_name="envelope_fallback_graph",
+            initial_state={"input": "data"},
+            execution_tracker=mocks["tracker"],
+        )
+
+        self.assertIsInstance(result, ExecutionResult)
+        self.assertEqual(result.graph_name, "envelope_fallback_graph")
+        self.assertTrue(result.success)
+        self.assertIsNone(result.error)
+        self.assertIsNotNone(result.execution_summary)
+        self.assertGreaterEqual(result.total_duration, 0.0)
+        # Metadata keys must be injected just like sync and native-async paths
+        self.assertIn("__execution_summary", result.final_state)
+        self.assertIn("__policy_success", result.final_state)
