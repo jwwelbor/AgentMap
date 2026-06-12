@@ -606,7 +606,190 @@ class TestResumeWorkflowAsyncUsesNativeRunner:
 
 
 # ---------------------------------------------------------------------------
-# TC-F04-004-005: sync facade methods remain callable (regression gate)
+# TC-F04-004-005: B-1 cancellation window — thread must not be wedged
+# ---------------------------------------------------------------------------
+
+
+class TestResumeWorkflowAsyncCancelledErrorNotWedged:
+    """AC-008 — B-1 fix: CancelledError at ANY point during resume leaves
+    the thread re-resumable (never wedged in `resuming`).
+
+    Counter-factual: without the fix, a CancelledError raised BEFORE the
+    checkpoint manager sets its own `marked_resuming` flag is never caught by
+    the facade's ``except Exception`` handler (CancelledError is not an
+    Exception subclass in Python 3.8+), so the thread stays in `resuming` and
+    a subsequent resume call cannot proceed.
+    """
+
+    def _make_resume_container(self, graph_runner):
+        """Build a minimal DI container wired for resume_workflow_async."""
+        container = MagicMock()
+
+        interaction_handler = MagicMock()
+        thread_data = {
+            "graph_name": "test_graph",
+            "bundle_info": {"csv_path": "/fake/path.csv"},
+            "checkpoint_data": {"state": "paused"},
+            "pending_interaction_id": None,  # SuspendAgent path
+            "node_name": "resume_node",
+        }
+        interaction_handler.get_thread_metadata.return_value = thread_data
+        interaction_handler.mark_thread_resuming.return_value = True
+        interaction_handler.unmark_thread_resuming.return_value = True
+        container.interaction_handler_service.return_value = interaction_handler
+
+        bundle = MagicMock()
+        bundle.graph_name = "test_graph"
+        graph_bundle_service = MagicMock()
+        graph_bundle_service.get_or_create_bundle.return_value = (bundle, False)
+        container.graph_bundle_service.return_value = graph_bundle_service
+
+        container.graph_runner_service.return_value = graph_runner
+
+        return container, interaction_handler
+
+    @pytest.mark.asyncio
+    async def test_cancelled_error_in_pre_manager_window_unmarks_thread(self):
+        """CancelledError raised by resume_from_checkpoint_async must not leave
+        the thread wedged in `resuming`.
+
+        Counter-factual: before the fix, the facade only had ``except Exception``
+        which does not catch CancelledError, so the thread stayed in `resuming`
+        and a subsequent resume would fail.
+
+        The test drives ``resume_workflow_async`` at the production caller
+        signature, injects a CancelledError from the delegate, and asserts that:
+        1. CancelledError propagates out of the facade (re-raised, not swallowed).
+        2. ``unmark_thread_resuming`` is called exactly once — the facade-level
+           mark made before the delegate is undone.
+        """
+        import json
+
+        # Make resume_from_checkpoint_async raise CancelledError
+        # (simulating cancellation in the pre-manager-mark window)
+        graph_runner = MagicMock()
+        graph_runner.resume_from_checkpoint_async = AsyncMock(
+            side_effect=asyncio.CancelledError("cancelled in pre-mark window")
+        )
+
+        container, interaction_handler = self._make_resume_container(graph_runner)
+
+        resume_token = json.dumps(
+            {"thread_id": "thread-cancel-001", "response_action": "continue"}
+        )
+
+        with (
+            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=container,
+            ),
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await resume_workflow_async(resume_token)
+
+        # The facade must have attempted to unmark the thread it marked
+        interaction_handler.unmark_thread_resuming.assert_called_once_with(
+            thread_id="thread-cancel-001"
+        )
+
+    @pytest.mark.asyncio
+    async def test_second_resume_succeeds_after_first_is_cancelled(self):
+        """After a cancelled resume, a subsequent resume must succeed.
+
+        This is the AC-008 liveness proof: the thread is never permanently
+        wedged in `resuming`.
+
+        Counter-factual: without the fix the second resume_workflow_async call
+        would either fail validation (thread in wrong state) or return an error
+        envelope instead of success.
+        """
+        import json
+
+        cancel_error = asyncio.CancelledError("first attempt cancelled")
+
+        call_count = 0
+        resume_result = _make_execution_result(graph_name="test_graph", success=True)
+
+        async def _resume_once_then_succeed(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise cancel_error
+            return resume_result
+
+        graph_runner = MagicMock()
+        graph_runner.resume_from_checkpoint_async = _resume_once_then_succeed
+
+        container, interaction_handler = self._make_resume_container(graph_runner)
+
+        resume_token = json.dumps(
+            {"thread_id": "thread-cancel-002", "response_action": "continue"}
+        )
+
+        with (
+            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=container,
+            ),
+        ):
+            # First attempt — cancelled
+            with pytest.raises(asyncio.CancelledError):
+                await resume_workflow_async(resume_token)
+
+            # Second attempt — must succeed
+            result = await resume_workflow_async(resume_token)
+
+        assert result["success"] is True, (
+            "Second resume failed after first was cancelled — "
+            "thread may have been wedged in `resuming`"
+        )
+
+    @pytest.mark.asyncio
+    async def test_cancelled_error_is_not_swallowed_as_error_envelope(self):
+        """CancelledError must propagate (re-raised), never converted to an
+        error envelope by ``except Exception``.
+
+        Counter-factual: the old code had only ``except Exception`` at the
+        bottom of the function; adding a bare ``except BaseException`` that
+        returns an error dict would be wrong — cancellation must propagate so
+        asyncio can honour it.
+        """
+        import json
+
+        graph_runner = MagicMock()
+        graph_runner.resume_from_checkpoint_async = AsyncMock(
+            side_effect=asyncio.CancelledError("must propagate")
+        )
+
+        container, interaction_handler = self._make_resume_container(graph_runner)
+
+        resume_token = json.dumps(
+            {"thread_id": "thread-cancel-003", "response_action": "continue"}
+        )
+
+        with (
+            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=container,
+            ),
+        ):
+            result_or_raise = None
+            try:
+                result_or_raise = await resume_workflow_async(resume_token)
+            except asyncio.CancelledError:
+                result_or_raise = "RAISED_AS_EXPECTED"
+
+        assert result_or_raise == "RAISED_AS_EXPECTED", (
+            "resume_workflow_async swallowed CancelledError instead of re-raising it. "
+            "Cancellation must propagate so asyncio task machinery works correctly."
+        )
+
+
+# ---------------------------------------------------------------------------
+# TC-F04-004-006: sync facade methods remain callable (regression gate)
 # ---------------------------------------------------------------------------
 
 

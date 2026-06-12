@@ -744,17 +744,25 @@ async def resume_workflow_async(
     """
     ensure_initialized(config_file=config_file)
 
+    # Sentinel: tracks whether THIS facade call performed the mark_thread_resuming
+    # transition.  Needed so the CancelledError handler below can safely undo
+    # only the mark it owns — the checkpoint manager owns its own mark (T-003),
+    # and we must not double-unmark.  See B-1 in the UAT rejection (AC-008).
+    _facade_marked: bool = False
+    _interaction_handler = None
+    _thread_id: Optional[str] = None
+
     try:
-        thread_id, response_action, response_data = _parse_resume_token(resume_token)
+        _thread_id, response_action, response_data = _parse_resume_token(resume_token)
 
         container = RuntimeManager.get_container()
-        interaction_handler = container.interaction_handler_service()
+        _interaction_handler = container.interaction_handler_service()
         graph_bundle_service: GraphBundleService = container.graph_bundle_service()
         graph_runner: GraphRunnerService = container.graph_runner_service()
 
-        thread_data = interaction_handler.get_thread_metadata(thread_id)
+        thread_data = _interaction_handler.get_thread_metadata(_thread_id)
         if not thread_data:
-            raise ValueError(f"Thread '{thread_id}' not found in storage")
+            raise ValueError(f"Thread '{_thread_id}' not found in storage")
 
         bundle_info = thread_data.get("bundle_info", {})
         stored_graph_name = thread_data.get("graph_name")
@@ -789,20 +797,21 @@ async def resume_workflow_async(
                 data=response_data or {},
             )
 
-            save_success = interaction_handler.save_interaction_response(
+            save_success = _interaction_handler.save_interaction_response(
                 response_id=str(response.request_id),
-                thread_id=thread_id,
+                thread_id=_thread_id,
                 action=response.action,
                 data=response.data,
             )
             if not save_success:
                 raise RuntimeError("Failed to save interaction response")
 
-            update_success = interaction_handler.mark_thread_resuming(
-                thread_id=thread_id, last_response_id=str(response.request_id)
+            update_success = _interaction_handler.mark_thread_resuming(
+                thread_id=_thread_id, last_response_id=str(response.request_id)
             )
             if not update_success:
                 raise RuntimeError("Failed to update thread status to resuming")
+            _facade_marked = True
 
             checkpoint_state["__human_response"] = {
                 "action": response.action,
@@ -811,20 +820,26 @@ async def resume_workflow_async(
             }
         else:
             # SuspendAgent path — no human interaction required
-            update_success = interaction_handler.mark_thread_resuming(
-                thread_id=thread_id
+            update_success = _interaction_handler.mark_thread_resuming(
+                thread_id=_thread_id
             )
             if not update_success:
                 raise RuntimeError("Failed to update thread status to resuming")
+            _facade_marked = True
 
             if response_action:
                 checkpoint_state["__resume_value"] = response_action
             if response_data:
                 checkpoint_state["__resume_data"] = response_data
 
+        # Delegate to the native async resume path.  The checkpoint manager
+        # (resume_from_checkpoint_async) will re-mark `resuming` and owns its
+        # own cancel-reset for everything AFTER its mark.  The facade owns the
+        # cancel-reset for the window BETWEEN the facade mark (above) and the
+        # manager's internal mark — caught by the except clause below (B-1 fix).
         result = await graph_runner.resume_from_checkpoint_async(
             bundle=bundle,
-            thread_id=thread_id,
+            thread_id=_thread_id,
             checkpoint_state=checkpoint_state,
             resume_node=thread_data.get("node_name"),
         )
@@ -834,13 +849,44 @@ async def resume_workflow_async(
             "outputs": result.final_state,
             "execution_summary": result.execution_summary,
             "metadata": {
-                "thread_id": thread_id,
+                "thread_id": _thread_id,
                 "response_action": response_action,
                 "profile": profile,
                 "graph_name": result.graph_name,
                 "duration": result.total_duration,
             },
         }
+
+    except asyncio.CancelledError:
+        # B-1 fix (AC-008): if the facade marked the thread `resuming` but
+        # the delegate was cancelled before the checkpoint manager set its own
+        # `marked_resuming` flag, the manager's cancel-reset handler is a no-op
+        # (marked_resuming=False).  We are the sole owner of this mark, so we
+        # must undo it here to leave the thread re-resumable.
+        #
+        # If the cancellation happened AFTER the manager set its flag, the
+        # manager already called unmark_thread_resuming; calling it again is a
+        # safe idempotent write (sets status to 'suspended' again).  We prefer
+        # the slight duplication over a missing unmark that wedges the thread.
+        if (
+            _facade_marked
+            and _interaction_handler is not None
+            and _thread_id is not None
+        ):
+            try:
+                _interaction_handler.unmark_thread_resuming(thread_id=_thread_id)
+            except Exception as reset_err:
+                # Log but do not suppress — re-raise the original CancelledError
+                # regardless so asyncio task machinery works correctly.
+                import logging
+
+                logging.getLogger("agentmap.runtime.workflow").warning(
+                    "[resume_workflow_async] Failed to unmark thread '%s' on "
+                    "cancellation: %s",
+                    _thread_id,
+                    reset_err,
+                )
+        raise
 
     except Exception as e:
         return {
