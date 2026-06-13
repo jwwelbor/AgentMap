@@ -27,7 +27,7 @@ warnings.warn(
     "agentmap.models.workflow_execution_models is a retired prototype module. "
     "Use agentmap.deployment.http.api.routes.workflows or agentmap.runtime_api instead.",
     DeprecationWarning,
-    stacklevel=2,
+    stacklevel=1,
 )
 
 # ==========================================
