@@ -5,6 +5,7 @@ Tests the FastAPI workflow routes for managing workflows in the CSV repository,
 using real DI container and service implementations.
 """
 
+import sys
 import unittest
 from pathlib import Path
 
@@ -780,6 +781,189 @@ edge_graph,node-with-dashes,default,Test dashes in names,Node with dashes,output
                 self.assertEqual(status_code, 200)
 
         self.run_with_admin_auth(run_test)
+
+    # ==========================================
+    # TC-001 / TC-002: Prototype Route Retirement Regression Coverage
+    # ==========================================
+
+    def test_prototype_workflow_routes_absent_from_app(self):
+        """
+        TC-001: Production app route surface excludes the prototype workflow router.
+
+        Build the FastAPI app with the normal create_fastapi_app() path and verify
+        that no /workflow prototype routes appear in app.routes or the OpenAPI schema.
+        The canonical /workflows and /execute routes must be present.
+        """
+        route_paths = [r.path for r in self.app.routes if hasattr(r, "path")]
+
+        # AC-T1: The prototype /workflow prefix routes must be absent
+        prototype_routes = [
+            p
+            for p in route_paths
+            if p.startswith("/workflow") and not p.startswith("/workflows")
+        ]
+        self.assertEqual(
+            prototype_routes,
+            [],
+            f"Prototype /workflow routes found in app: {prototype_routes}. "
+            "These must be absent from the production app.",
+        )
+
+        # The canonical routes must be present (sanity check)
+        canonical_prefixes = ["/workflows", "/execute"]
+        for prefix in canonical_prefixes:
+            matching = [p for p in route_paths if p.startswith(prefix)]
+            self.assertTrue(
+                len(matching) > 0,
+                f"Canonical route prefix '{prefix}' not found in app routes: {route_paths}",
+            )
+
+    def test_prototype_workflow_routes_absent_from_openapi_schema(self):
+        """
+        TC-001 (OpenAPI variant): OpenAPI paths exclude the prototype /workflow surface.
+
+        Inspect the OpenAPI schema produced by the running app to verify no
+        /workflow/* prototype paths appear. Edge cases: URL-encoded paths,
+        duplicate registrations.
+        """
+        response = self.client.get("/openapi.json")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Could not retrieve OpenAPI schema: {response.text}",
+        )
+
+        schema = response.json()
+        openapi_paths = list(schema.get("paths", {}).keys())
+
+        # AC-T1: No /workflow prototype paths in OpenAPI schema
+        prototype_paths = [
+            p
+            for p in openapi_paths
+            if p.startswith("/workflow") and not p.startswith("/workflows")
+        ]
+        self.assertEqual(
+            prototype_paths,
+            [],
+            f"Prototype /workflow paths found in OpenAPI schema: {prototype_paths}. "
+            "These must be absent from the production API surface.",
+        )
+
+        # Canonical /workflows and /execute paths must be present
+        canonical_present = [
+            p
+            for p in openapi_paths
+            if p.startswith("/workflows") or p.startswith("/execute")
+        ]
+        self.assertTrue(
+            len(canonical_present) > 0,
+            f"No canonical workflow or execution paths found in OpenAPI schema: {openapi_paths}",
+        )
+
+    def test_canonical_imports_do_not_require_prototype_module(self):
+        """
+        TC-002: Canonical runtime import surfaces do not require the prototype module.
+
+        Ensure the prototype module is absent from sys.modules (clean slate), then
+        build a fresh app via create_fastapi_app() and assert the prototype module is
+        still absent afterwards.  This test FAILS if any code path reached by canonical
+        startup imports agentmap.models.workflow_execution_models as a side effect.
+
+        Strategy: we cannot re-execute agentmap.runtime's init code because it is
+        already cached in sys.modules from setUp.  Instead we (a) guarantee proto is
+        absent going in and (b) call create_fastapi_app() — which is never cached —
+        to trigger any lazy imports that canonical startup exercises.  If proto appears
+        after that call, a regression has been introduced.
+        """
+        proto = "agentmap.models.workflow_execution_models"
+
+        # Guarantee a clean slate: remove any previously-loaded copy of the
+        # prototype module so the assertNotIn below is meaningful.
+        original = sys.modules.pop(proto, None)
+        self.addCleanup(
+            lambda: (
+                sys.modules.update({proto: original})
+                if original is not None
+                else sys.modules.pop(proto, None)
+            )
+        )
+
+        # The canonical surfaces (agentmap.runtime, agentmap.runtime_api) are
+        # already loaded from setUp — confirm the expected callables are present.
+        import agentmap.runtime_api  # noqa: F401
+
+        self.assertTrue(
+            hasattr(agentmap.runtime_api, "ensure_initialized"),
+            "agentmap.runtime_api must export ensure_initialized",
+        )
+        self.assertTrue(
+            hasattr(agentmap.runtime_api, "get_container"),
+            "agentmap.runtime_api must export get_container",
+        )
+
+        # Build a fresh app — do NOT reuse self.app (built in setUp before this
+        # test ran).  create_fastapi_app() is never cached; calling it here
+        # exercises every import that canonical app construction triggers.
+        from agentmap.deployment.http.api.server import create_fastapi_app
+
+        fresh_app = create_fastapi_app()
+
+        # AC-002 / REQ-NF-001: the prototype module must NOT have appeared in
+        # sys.modules as a side-effect of canonical runtime surfaces or app
+        # construction.  If it does, a re-coupling regression has been introduced.
+        self.assertNotIn(
+            proto,
+            sys.modules,
+            "Canonical runtime/app surfaces must not import the retired prototype module.",
+        )
+
+        # Sanity check: canonical routes must be present in the fresh app.
+        route_paths = [r.path for r in fresh_app.routes if hasattr(r, "path")]
+        self.assertTrue(
+            any(p.startswith("/workflows") for p in route_paths),
+            f"Canonical /workflows routes must be present in fresh app. Routes: {route_paths}",
+        )
+        self.assertTrue(
+            any(p.startswith("/execute") for p in route_paths),
+            f"Canonical /execute routes must be present in fresh app. Routes: {route_paths}",
+        )
+
+    def test_retired_module_emits_deprecation_warning_on_import(self):
+        """TC-003: Importing the retired module emits a DeprecationWarning pointing to canonical surfaces."""
+        proto = "agentmap.models.workflow_execution_models"
+        original = sys.modules.pop(proto, None)
+        self.addCleanup(
+            lambda: (
+                sys.modules.update({proto: original})
+                if original is not None
+                else sys.modules.pop(proto, None)
+            )
+        )
+        import warnings
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            import agentmap.models.workflow_execution_models  # noqa: F401
+        self.assertEqual(
+            len(caught), 1, f"Expected exactly 1 DeprecationWarning, got: {caught}"
+        )
+        self.assertIs(caught[0].category, DeprecationWarning)
+        self.assertIn("retired prototype", str(caught[0].message).lower())
+
+    def test_tombstoned_functions_raise_runtime_error(self):
+        """TC-004: All tombstoned router functions raise RuntimeError immediately."""
+        from agentmap.models.workflow_execution_models import (
+            create_workflow_router,
+            execute_workflow_from_cli_pattern,
+            integrate_workflow_routes,
+        )
+
+        with self.assertRaises(RuntimeError):
+            create_workflow_router()
+        with self.assertRaises(RuntimeError):
+            integrate_workflow_routes(None)
+        with self.assertRaises(RuntimeError):
+            execute_workflow_from_cli_pattern("w", "g", {})
 
 
 if __name__ == "__main__":
