@@ -863,24 +863,29 @@ edge_graph,node-with-dashes,default,Test dashes in names,Node with dashes,output
         """
         TC-002: Canonical runtime import surfaces do not require the prototype module.
 
-        Import agentmap.runtime and agentmap.runtime_api, then verify app creation
-        succeeds without the prototype module being a transitive dependency for
-        supported workflows.
+        Ensure the prototype module is absent from sys.modules (clean slate), then
+        build a fresh app via create_fastapi_app() and assert the prototype module is
+        still absent afterwards.  This test FAILS if any code path reached by canonical
+        startup imports agentmap.models.workflow_execution_models as a side effect.
+
+        Strategy: we cannot re-execute agentmap.runtime's init code because it is
+        already cached in sys.modules from setUp.  Instead we (a) guarantee proto is
+        absent going in and (b) call create_fastapi_app() — which is never cached —
+        to trigger any lazy imports that canonical startup exercises.  If proto appears
+        after that call, a regression has been introduced.
         """
         import sys
 
-        # The prototype module must NOT be imported by canonical surfaces.
-        # Clear it from the module cache to simulate a fresh import check.
-        prototype_module_name = "agentmap.models.workflow_execution_models"
+        proto = "agentmap.models.workflow_execution_models"
 
-        # Record whether prototype was already loaded (it may be from earlier tests)
-        was_loaded_before = prototype_module_name in sys.modules
+        # Guarantee a clean slate: remove any previously-loaded copy of the
+        # prototype module so the assertNotIn below is meaningful.
+        sys.modules.pop(proto, None)
 
-        # Import canonical surfaces - these should work independently
-        import agentmap.runtime  # noqa: F401
+        # The canonical surfaces (agentmap.runtime, agentmap.runtime_api) are
+        # already loaded from setUp — confirm the expected callables are present.
         import agentmap.runtime_api  # noqa: F401
 
-        # Verify canonical surfaces are importable and provide expected callables
         self.assertTrue(
             hasattr(agentmap.runtime_api, "ensure_initialized"),
             "agentmap.runtime_api must export ensure_initialized",
@@ -890,28 +895,32 @@ edge_graph,node-with-dashes,default,Test dashes in names,Node with dashes,output
             "agentmap.runtime_api must export get_container",
         )
 
-        # The app was already created in setUp without importing the prototype module.
-        # Confirm the canonical app routes are intact.
-        route_paths = [
-            route.path for route in self.app.routes if hasattr(route, "path")
-        ]
-        canonical_routes = [
-            p
-            for p in route_paths
-            if p.startswith("/workflows") or p.startswith("/execute")
-        ]
-        self.assertTrue(
-            len(canonical_routes) > 0,
-            "Canonical routes must be present even without prototype module import.",
+        # Build a fresh app — do NOT reuse self.app (built in setUp before this
+        # test ran).  create_fastapi_app() is never cached; calling it here
+        # exercises every import that canonical app construction triggers.
+        from agentmap.deployment.http.api.server import create_fastapi_app
+
+        fresh_app = create_fastapi_app()
+
+        # AC-002 / REQ-NF-001: the prototype module must NOT have appeared in
+        # sys.modules as a side-effect of canonical runtime surfaces or app
+        # construction.  If it does, a re-coupling regression has been introduced.
+        self.assertNotIn(
+            proto,
+            sys.modules,
+            "Canonical runtime/app surfaces must not import the retired prototype module.",
         )
 
-        # If the prototype module was NOT loaded before, it should still not be
-        # loaded now (canonical surfaces don't require it).
-        if not was_loaded_before:
-            # Note: if it was loaded later by some other import, that is outside
-            # the scope of this test — we only check the canonical surfaces don't
-            # pull it in transitively during setUp.
-            pass  # The setUp created the app; prototype module was not needed.
+        # Sanity check: canonical routes must be present in the fresh app.
+        route_paths = [r.path for r in fresh_app.routes if hasattr(r, "path")]
+        self.assertTrue(
+            any(p.startswith("/workflows") for p in route_paths),
+            f"Canonical /workflows routes must be present in fresh app. Routes: {route_paths}",
+        )
+        self.assertTrue(
+            any(p.startswith("/execute") for p in route_paths),
+            f"Canonical /execute routes must be present in fresh app. Routes: {route_paths}",
+        )
 
 
 if __name__ == "__main__":
