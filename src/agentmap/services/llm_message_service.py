@@ -61,6 +61,44 @@ class LLMMessageService:
         return False
 
     @staticmethod
+    def strip_cache_control(
+        messages: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Return a copy of *messages* with all ``cache_control`` blocks removed.
+
+        ``cache_control`` is an Anthropic-specific content-block extension. When a
+        request fails over to a non-Anthropic provider, reusing the original
+        Anthropic-tagged messages can be rejected at that provider's API boundary.
+        Fallback tiers are recovery calls where prompt-cache savings are moot, so
+        the tier ladder strips the marker to guarantee cross-provider
+        compatibility. Messages without any ``cache_control`` are returned as-is
+        (no copy) — this is a no-op for the common case.
+
+        Args:
+            messages: List of message dictionaries (content may be a str or a
+                list of structured content blocks).
+
+        Returns:
+            A new message list with ``cache_control`` stripped from every content
+            block, or the original list when nothing needed stripping.
+        """
+        if not LLMMessageService.has_prompt_caching(messages):
+            return messages
+
+        sanitized: List[Dict[str, Any]] = []
+        for msg in messages:
+            if not isinstance(msg, dict) or not isinstance(msg.get("content"), list):
+                sanitized.append(msg)
+                continue
+            new_content = []
+            for block in msg["content"]:
+                if isinstance(block, dict) and "cache_control" in block:
+                    block = {k: v for k, v in block.items() if k != "cache_control"}
+                new_content.append(block)
+            sanitized.append({**msg, "content": new_content})
+        return sanitized
+
+    @staticmethod
     def extract_prompt_from_messages(messages: List[Dict[str, Any]]) -> str:
         """
         Extract the main prompt content from messages for complexity analysis.

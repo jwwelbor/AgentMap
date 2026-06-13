@@ -10,9 +10,10 @@ import base64
 import os
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from agentmap.exceptions import LLMServiceError
+from agentmap.models.llm_execution import LLMResponse, LLMUsage
 from agentmap.services.llm_message_service import LLMMessageService
 from agentmap.services.llm_service import LLMService
 from agentmap.services.routing.types import RoutingContext
@@ -383,6 +384,161 @@ class TestSelectCandidatesVisionFiltering(unittest.TestCase):
         ctx = RoutingContext(requires_vision=False)
         # Just verify the field is False — full integration tested above
         self.assertFalse(ctx.requires_vision)
+
+
+class TestAskVisionAsync(unittest.IsolatedAsyncioTestCase):
+    """Tests for LLMService.ask_vision_async() — rich LLMResponse return."""
+
+    def setUp(self):
+        self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        self.mock_app_config_service = (
+            MockServiceFactory.create_mock_app_config_service()
+        )
+        self.mock_llm_models_config_service = (
+            MockServiceFactory.create_mock_llm_models_config_service()
+        )
+        self.mock_routing_service = Mock()
+        self.service = LLMService(
+            configuration=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            routing_service=self.mock_routing_service,
+            llm_models_config_service=self.mock_llm_models_config_service,
+        )
+        self._response = LLMResponse(
+            text="Extracted text.",
+            resolved_provider="anthropic",
+            resolved_model="claude-haiku-4-5-20251001",
+            usage=LLMUsage(input_tokens=120, output_tokens=44),
+            finish_reason="end_turn",
+        )
+
+    async def test_returns_rich_llm_response(self):
+        """Returns the LLMResponse from call_llm_async unchanged."""
+        with patch.object(
+            LLMService, "call_llm_async", new=AsyncMock(return_value=self._response)
+        ) as mock_async:
+            result = await self.service.ask_vision_async(
+                prompt="Extract text.",
+                image=b"\x89PNG\r\n\x1a\n",
+                image_type="image/png",
+                provider="anthropic",
+            )
+
+        self.assertIsInstance(result, LLMResponse)
+        self.assertEqual(result.text, "Extracted text.")
+        self.assertEqual(result.usage.input_tokens, 120)
+        self.assertEqual(result.finish_reason, "end_turn")
+        mock_async.assert_awaited_once()
+
+    async def test_builds_multimodal_message(self):
+        """Constructs an image_url + text user message (non-cache path)."""
+        raw = b"img-bytes"
+        with patch.object(
+            LLMService, "call_llm_async", new=AsyncMock(return_value=self._response)
+        ) as mock_async:
+            await self.service.ask_vision_async(prompt="Describe.", image=raw)
+
+        messages = mock_async.await_args[1]["messages"]
+        self.assertEqual(messages[0]["role"], "user")
+        content = messages[0]["content"]
+        self.assertEqual(content[0]["type"], "image_url")
+        self.assertEqual(content[1]["type"], "text")
+        self.assertEqual(content[1]["text"], "Describe.")
+        expected_b64 = base64.b64encode(raw).decode("ascii")
+        self.assertIn(expected_b64, content[0]["image_url"]["url"])
+
+    async def test_injects_requires_vision_and_preserves_routing_context(self):
+        """requires_vision is added; the caller's dict is not mutated."""
+        original = {"activity": "ocr_extraction"}
+        with patch.object(
+            LLMService, "call_llm_async", new=AsyncMock(return_value=self._response)
+        ) as mock_async:
+            await self.service.ask_vision_async(
+                prompt="Extract.",
+                image=b"img",
+                routing_context=original,
+            )
+
+        rc = mock_async.await_args[1]["routing_context"]
+        self.assertTrue(rc["requires_vision"])
+        self.assertEqual(rc["activity"], "ocr_extraction")
+        self.assertNotIn("requires_vision", original)  # no mutation
+
+    async def test_cache_prompt_attaches_cache_control_and_routing_signal(self):
+        """cache_prompt marks the prompt block and requests cache-aware routing."""
+        with patch.object(
+            LLMService, "call_llm_async", new=AsyncMock(return_value=self._response)
+        ) as mock_async:
+            await self.service.ask_vision_async(
+                prompt="Long static OCR instructions.",
+                image=b"img",
+                routing_context={"activity": "ocr_extraction"},
+                cache_prompt=True,
+            )
+
+        kwargs = mock_async.await_args[1]
+        text_block = kwargs["messages"][0]["content"][1]
+        self.assertEqual(text_block["cache_control"], {"type": "ephemeral"})
+        rc = kwargs["routing_context"]
+        self.assertTrue(rc["requires_prompt_caching"])
+        self.assertTrue(rc["requires_vision"])
+
+    async def test_no_cache_control_when_cache_prompt_false(self):
+        """Default path carries no cache_control or caching routing signal."""
+        with patch.object(
+            LLMService, "call_llm_async", new=AsyncMock(return_value=self._response)
+        ) as mock_async:
+            await self.service.ask_vision_async(
+                prompt="x",
+                image=b"img",
+                routing_context={"activity": "ocr_extraction"},
+            )
+
+        kwargs = mock_async.await_args[1]
+        self.assertNotIn("cache_control", kwargs["messages"][0]["content"][1])
+        self.assertNotIn("requires_prompt_caching", kwargs["routing_context"])
+
+    async def test_default_provider_only_without_routing(self):
+        """Defaults to anthropic with no routing; stays None when routing active."""
+        with patch.object(
+            LLMService, "call_llm_async", new=AsyncMock(return_value=self._response)
+        ) as mock_async:
+            await self.service.ask_vision_async(prompt="x", image=b"img")
+        self.assertEqual(mock_async.await_args[1]["provider"], "anthropic")
+
+        with patch.object(
+            LLMService, "call_llm_async", new=AsyncMock(return_value=self._response)
+        ) as mock_async:
+            await self.service.ask_vision_async(
+                prompt="x", image=b"img", routing_context={"activity": "ocr_extraction"}
+            )
+        self.assertIsNone(mock_async.await_args[1]["provider"])
+
+
+class TestExtractFinishReason(unittest.TestCase):
+    """Tests for LLMService._extract_finish_reason()."""
+
+    def test_anthropic_stop_reason(self):
+        resp = Mock(response_metadata={"stop_reason": "max_tokens"})
+        self.assertEqual(LLMService._extract_finish_reason(resp), "max_tokens")
+
+    def test_openai_finish_reason(self):
+        resp = Mock(response_metadata={"finish_reason": "length"})
+        self.assertEqual(LLMService._extract_finish_reason(resp), "length")
+
+    def test_stop_reason_precedence_over_finish_reason(self):
+        resp = Mock(
+            response_metadata={"stop_reason": "end_turn", "finish_reason": "stop"}
+        )
+        self.assertEqual(LLMService._extract_finish_reason(resp), "end_turn")
+
+    def test_none_when_absent(self):
+        resp = Mock(response_metadata={})
+        self.assertIsNone(LLMService._extract_finish_reason(resp))
+
+    def test_none_when_metadata_not_dict(self):
+        resp = Mock(response_metadata=None)
+        self.assertIsNone(LLMService._extract_finish_reason(resp))
 
 
 if __name__ == "__main__":

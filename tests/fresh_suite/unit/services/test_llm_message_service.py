@@ -402,5 +402,54 @@ class TestLLMMessageServiceRenameVerification(unittest.TestCase):
         self.assertTrue(callable(svc.inject_cache_metadata))
 
 
+class TestStripCacheControl(unittest.TestCase):
+    """strip_cache_control removes Anthropic-only cache_control for failover."""
+
+    def test_strips_cache_control_from_structured_block(self):
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": "data:..."}},
+                    {
+                        "type": "text",
+                        "text": "extract",
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                ],
+            }
+        ]
+        out = LLMMessageService.strip_cache_control(messages)
+        self.assertFalse(LLMMessageService.has_prompt_caching(out))
+        # Original is not mutated.
+        self.assertTrue(LLMMessageService.has_prompt_caching(messages))
+        # Non-cache fields preserved.
+        text_block = out[0]["content"][1]
+        self.assertEqual(text_block["text"], "extract")
+        self.assertEqual(text_block["type"], "text")
+
+    def test_no_cache_control_returns_same_object(self):
+        messages = [{"role": "user", "content": "plain"}]
+        self.assertIs(LLMMessageService.strip_cache_control(messages), messages)
+
+    def test_handles_plain_string_content(self):
+        messages = [
+            {"role": "system", "content": "sys"},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "hi",
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            },
+        ]
+        out = LLMMessageService.strip_cache_control(messages)
+        self.assertFalse(LLMMessageService.has_prompt_caching(out))
+        self.assertEqual(out[0]["content"], "sys")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -15,6 +15,7 @@ from agentmap.exceptions.service_exceptions import LLMResolvedCallError
 from agentmap.models.llm_execution import LLMMessage, LLMResponse
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
+from agentmap.services.llm_message_service import LLMMessageService
 from agentmap.services.logging_service import LoggingService
 
 
@@ -216,7 +217,10 @@ class LLMFallbackHandler:
         )
 
         attempted_fallbacks = []
-        langchain_msgs = convert_messages_fn(messages)
+        # Strip Anthropic-only cache_control before failover (see async variant).
+        langchain_msgs = convert_messages_fn(
+            LLMMessageService.strip_cache_control(messages)
+        )
 
         # Use shared tier plan — keeps sync/async ladders in sync (DRY).
         for fallback_provider, fallback_model in self._build_tier_plan(
@@ -279,7 +283,12 @@ class LLMFallbackHandler:
         )
 
         attempted_fallbacks = []
-        langchain_msgs = convert_messages_fn(messages)
+        # Strip Anthropic-only cache_control before failover — non-Anthropic
+        # fallback providers can reject it at their API boundary, and prompt-cache
+        # savings are moot on a recovery call.
+        langchain_msgs = convert_messages_fn(
+            LLMMessageService.strip_cache_control(messages)
+        )
         # Last tier actually invoked.
         # Updated immediately before _invoke_client_async so it only reflects providers
         # where an actual network call was attempted (MEDIUM-2 fix).

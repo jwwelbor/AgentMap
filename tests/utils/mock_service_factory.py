@@ -1122,6 +1122,15 @@ class MockServiceFactory:
             )
         )
         mock_service.ask_async = AsyncMock(return_value="Mock LLM response")
+        mock_service.ask_vision_async = AsyncMock(
+            return_value=LLMResponse(
+                text="Mock LLM response",
+                resolved_provider="mock-provider",
+                resolved_model="mock-model",
+                usage=None,
+                finish_reason="end_turn",
+            )
+        )
         mock_service.call_llm_many_async = AsyncMock(return_value=[])
         mock_service.get_model_name = Mock(return_value="mock-model")
         mock_service.is_available = Mock(return_value=True)
