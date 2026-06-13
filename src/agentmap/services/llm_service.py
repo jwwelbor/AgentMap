@@ -1309,6 +1309,7 @@ class LLMService:
                     resolved_provider=provider,
                     resolved_model=model,
                     usage=self._extract_llm_usage(response),
+                    finish_reason=self._extract_finish_reason(response),
                 )
             except Exception as e:
                 typed_error = classify_llm_error(e, provider)
@@ -1593,6 +1594,99 @@ class LLMService:
             provider = "anthropic"
 
         return self.call_llm(
+            messages=messages,
+            provider=provider,
+            model=model,
+            temperature=temperature,
+            routing_context=routing_context,
+            **kwargs,
+        )
+
+    async def ask_vision_async(
+        self,
+        prompt: str,
+        image: Union[str, bytes],
+        image_type: str = "image/png",
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        routing_context: Optional[Dict[str, Any]] = None,
+        cache_prompt: bool = False,
+        **kwargs,
+    ) -> LLMResponse:
+        """Async vision call returning a rich ``LLMResponse``.
+
+        Async counterpart of :meth:`ask_vision`. Constructs the multimodal
+        messages list and routes through :meth:`call_llm_async`, so it inherits
+        intelligent routing, tiered provider fallback, resilience (retry +
+        circuit breaker), and prompt caching — and returns the full
+        ``LLMResponse`` (``.text``, ``.resolved_provider``, ``.resolved_model``,
+        ``.usage``, ``.finish_reason``) rather than a bare string. Callers that
+        need per-call token usage or truncation detection should use this method
+        instead of the string-returning :meth:`ask_vision`.
+
+        Prompt caching: vision messages are a single user turn (image + text),
+        so the agnostic ``cache_system_prompt`` (which only marks *system*
+        messages) does not apply. Instead, ``cache_prompt=True`` attaches an
+        Anthropic ``cache_control`` block to the prompt text block (manual
+        passthrough) and sets ``routing_context["requires_prompt_caching"]`` so
+        routing selects a cache-capable provider (and excludes providers whose
+        ``routing.provider_capabilities.<p>.prompt_caching`` is false). For long,
+        static extraction/OCR prompts this caches the prompt's input tokens
+        across calls — a substantial cost saving. The capability gate is enforced
+        downstream against the *resolved* provider, so no pre-validation here.
+
+        Args:
+            prompt: Text prompt describing what to analyze.
+            image: Image as a file path (str) or raw bytes. Prefer ``bytes`` in
+                distributed/containerized environments.
+            image_type: MIME type when *image* is bytes (default ``image/png``).
+            provider: Optional provider name (defaults to ``'anthropic'`` only
+                when routing is not active).
+            model: Optional model override (ignored when routing_context is set).
+            temperature: Optional temperature override.
+            routing_context: Optional routing context for intelligent routing.
+                ``requires_vision=True`` is injected automatically; when
+                ``cache_prompt`` is set, ``requires_prompt_caching=True`` is too.
+            cache_prompt: When True, mark the prompt text block with
+                ``cache_control`` and request cache-aware routing.
+            **kwargs: Additional provider-specific parameters (e.g. ``max_tokens``).
+
+        Returns:
+            ``LLMResponse`` from the provider that actually handled the request.
+        """
+        image_bytes, mime = self._resolve_image(image, image_type)
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+
+        text_block: Dict[str, Any] = {"type": "text", "text": prompt}
+        if cache_prompt:
+            text_block["cache_control"] = {"type": "ephemeral"}
+
+        messages: List[Dict[str, Any]] = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{b64}"},
+                    },
+                    text_block,
+                ],
+            }
+        ]
+
+        # Inject vision/caching routing signals on a copy (never mutate caller's).
+        if routing_context is not None or cache_prompt:
+            routing_context = dict(routing_context or {})
+            routing_context["requires_vision"] = True
+            if cache_prompt:
+                routing_context["requires_prompt_caching"] = True
+
+        # Default provider only when routing is not active (mirrors ask_vision).
+        if provider is None and routing_context is None:
+            provider = "anthropic"
+
+        return await self.call_llm_async(
             messages=messages,
             provider=provider,
             model=model,
@@ -2399,6 +2493,23 @@ class LLMService:
             cache_creation_input_tokens=_get("cache_creation_input_tokens"),
             cache_read_input_tokens=cache_read_input_tokens,
         )
+
+    @staticmethod
+    def _extract_finish_reason(response: Any) -> Optional[str]:
+        """Extract the provider's normalized stop/finish reason, if any.
+
+        Reads ``response.response_metadata`` and returns the first of
+        ``stop_reason`` (Anthropic) or ``finish_reason`` (OpenAI / Google)
+        that is present. Returns ``None`` when metadata is absent or carries
+        no recognized key. Used by callers for truncation detection.
+        """
+        resp_meta = getattr(response, "response_metadata", None)
+        if not isinstance(resp_meta, dict):
+            return None
+        value = resp_meta.get("stop_reason")
+        if value is None:
+            value = resp_meta.get("finish_reason")
+        return str(value) if value is not None else None
 
     def get_available_providers(self) -> List[str]:
         """

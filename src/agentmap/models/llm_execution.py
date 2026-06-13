@@ -35,12 +35,18 @@ class LLMResponse:
 
     ``usage`` is ``None`` only when the underlying provider did not return
     ``usage_metadata`` on the response.
+
+    ``finish_reason`` is the provider's normalized stop reason when available
+    (e.g. Anthropic ``stop_reason`` / OpenAI/Google ``finish_reason``), read
+    from the response metadata. It is ``None`` when the provider did not report
+    one. Callers use it to detect truncation (``"max_tokens"`` / ``"length"``).
     """
 
     text: str
     resolved_provider: str
     resolved_model: str
     usage: Optional["LLMUsage"] = None
+    finish_reason: Optional[str] = None
 
 
 @dataclass

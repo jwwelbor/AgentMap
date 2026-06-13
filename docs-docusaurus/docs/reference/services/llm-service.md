@@ -181,6 +181,30 @@ Routing filters candidates to providers whose `routing.provider_capabilities.<pr
 
 ---
 
+### Pattern 4: Async vision (`ask_vision_async()`)
+
+`ask_vision_async()` sends an image plus a text prompt through the full async stack — intelligent routing, tiered fallback, and resilience — and returns a rich `LLMResponse` (text, `resolved_provider`, `resolved_model`, `usage`, and `finish_reason`). It builds the multimodal message for you, so callers pass raw bytes (or a path) and a prompt, not hand-built content blocks. `requires_vision=True` is injected into the routing context automatically.
+
+```python
+response = await llm_service.ask_vision_async(
+    prompt="Transcribe the page as JSON.",
+    image=image_bytes,                       # bytes (preferred) or a file path
+    image_type="image/png",
+    routing_context={"activity": "ocr_extraction"},
+    cache_prompt=True,                        # opt-in prompt caching, see below
+    max_tokens=4096,
+)
+text = response.text
+provider = response.resolved_provider         # the provider that actually answered
+truncated = response.finish_reason == "max_tokens"
+```
+
+- **`cache_prompt`** (default `False`): when `True`, AgentMap attaches `cache_control` to the prompt text block and sets `routing_context["requires_prompt_caching"] = True`, so routing keeps the **primary** pick on a cache-capable provider (see [Pattern 3b](#pattern-3b-routed-prompt-caching-call)). Caching is a happy-path optimization — it does not weaken failover (see [Tiered Fallback](#tiered-fallback)).
+- **`finish_reason`** on the returned `LLMResponse` exposes the provider stop reason (e.g. `"max_tokens"` for a truncated response), extracted from the provider response metadata.
+- The synchronous `ask_vision()` remains available and returns the response text as a `str`; prefer `ask_vision_async()` when you need routing/fallback metadata or token usage.
+
+---
+
 ## Resilience & Retries
 
 Every LLM call is automatically protected by retry with exponential backoff and a circuit breaker. No additional configuration is required to get these protections — they are on by default.
@@ -228,6 +252,8 @@ When a call fails after all retries are exhausted, a tiered fallback strategy ki
 | 4 | All fallbacks exhausted — raises `LLMServiceError` with full context | — |
 
 Dependency errors (missing packages) and configuration errors (bad API key) skip fallback entirely. Only transient provider errors trigger the fallback chain.
+
+The `requires_prompt_caching` filter (Pattern 3b) constrains only the **primary** routing pick — it does **not** restrict the fallback ladder, so failover still reaches non-caching providers when the cache-capable primary is down. Because Anthropic `cache_control` is provider-specific and can be rejected at another provider's API boundary, the fallback handler strips `cache_control` from the messages before invoking each fallback tier. Prompt-cache savings apply on the primary; recovery calls run un-cached but compatible.
 
 ---
 
@@ -409,9 +435,10 @@ For advanced manual `cache_control` construction see [Pattern 1b: Direct prompt-
 
 ## Prompt-Caching Limits
 
-- Supported execution paths in this feature slice: `call_llm()`, `call_llm_async()`, `ask()`, `ask_async()`
-- Unsupported execution path in this feature slice: `ask_vision()`
+- Supported execution paths: `call_llm()`, `call_llm_async()`, `ask()`, `ask_async()`, and `ask_vision_async(cache_prompt=True)`
+- The synchronous `ask_vision()` does not request prompt caching; use `ask_vision_async(cache_prompt=True)` for cache-aware vision
 - Prompt caching is provider-gated through `routing.provider_capabilities`
+- On failover, `cache_control` is stripped before non-primary tiers (see [Tiered Fallback](#tiered-fallback)), so caching never blocks recovery
 - Existing plain-text and non-cache structured requests keep their prior behavior
 
 ---

@@ -144,8 +144,8 @@ routing:
 - Omit `provider_capabilities` entirely if you do not need prompt caching
 - `prompt_caching: true` means the provider may be selected for cache-aware realtime text requests
 - `prompt_caching: false` means direct cache-mode requests fail before provider invocation, and routed cache-mode requests exclude that provider
-- Current support is limited to realtime text calls: `call_llm()`, `call_llm_async()`, `ask()`, `ask_async()`
-- `ask_vision()` is explicitly unsupported for prompt caching
+- Supported on realtime text calls — `call_llm()`, `call_llm_async()`, `ask()`, `ask_async()` — and on vision via `ask_vision_async(cache_prompt=True)`
+- The synchronous `ask_vision()` does not request prompt caching; on failover the cache marker is stripped before non-primary tiers, so a non-caching fallback provider is never rejected for it
 
 **Note:** `cache_system_prompt=True` (the provider-agnostic caching parameter) uses the `prompt_caching` capability check for most providers, with one exception: OpenAI is always a no-op (automatic server-side caching) and is never rejected regardless of the `prompt_caching` setting. For all other providers, `prompt_caching: false` rejects both `cache_system_prompt=True` and manual `cache_control` passthrough before provider invocation. There is one capability flag for both styles — you do not need separate configuration for each, except that OpenAI requires no configuration to use `cache_system_prompt=True`.
 

@@ -220,6 +220,43 @@ class LLMServiceProtocol(Protocol):
         """
         ...
 
+    async def ask_vision_async(
+        self,
+        prompt: str,
+        image: Union[str, bytes],
+        image_type: str = "image/png",
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        routing_context: Optional[Dict[str, Any]] = None,
+        cache_prompt: bool = False,
+        **kwargs,
+    ) -> LLMResponse:
+        """
+        Ask the LLM about an image asynchronously, returning a rich response.
+
+        Async counterpart of ``ask_vision`` that routes through
+        ``call_llm_async`` (routing, fallback, resilience, prompt caching) and
+        returns the full ``LLMResponse`` (text, resolved provider/model, usage,
+        finish_reason) instead of a bare string.
+
+        Args:
+            prompt: The prompt text describing what to analyze
+            image: Image as file path (str) or raw bytes
+            image_type: MIME type when image is bytes (default: image/png)
+            provider: Optional provider name
+            model: Optional model override
+            temperature: Optional temperature override
+            routing_context: Optional routing context for intelligent routing
+            cache_prompt: When True, attach cache_control to the prompt text
+                block and request cache-aware routing (prompt-token caching)
+            **kwargs: Additional provider-specific parameters (e.g. max_tokens)
+
+        Returns:
+            LLMResponse with text, resolved provider/model, usage, finish_reason
+        """
+        ...
+
     async def call_llm_many_async(
         self,
         requests: List[LLMRequest],
