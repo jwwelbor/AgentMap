@@ -19,7 +19,7 @@ are preserved for reference but are not required by any canonical entrypoint.
 """
 
 import warnings
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NoReturn, Optional
 
 from pydantic import BaseModel
 
@@ -76,7 +76,7 @@ class WorkflowListResponse(BaseModel):
 # ==========================================
 
 
-def create_workflow_router(_container=None):  # type: ignore[return]
+def create_workflow_router(_container=None) -> NoReturn:
     """
     TOMBSTONED — this prototype router is retired.
 
@@ -102,12 +102,12 @@ def create_workflow_router(_container=None):  # type: ignore[return]
 # ==========================================
 
 
-def execute_workflow_from_cli_pattern(  # type: ignore[return]
+def execute_workflow_from_cli_pattern(
     _workflow_name: str,
     _graph_name: str,
     _initial_state: Dict[str, Any],
     _config_path: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> NoReturn:
     """
     TOMBSTONED — use agentmap.runtime_api.run_workflow or the CLI instead.
 
@@ -120,7 +120,7 @@ def execute_workflow_from_cli_pattern(  # type: ignore[return]
     )
 
 
-def integrate_workflow_routes(_app, _container=None) -> None:  # type: ignore[return]
+def integrate_workflow_routes(_app, _container=None) -> NoReturn:
     """
     TOMBSTONED — do not call this function.
 

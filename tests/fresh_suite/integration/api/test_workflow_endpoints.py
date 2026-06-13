@@ -5,6 +5,7 @@ Tests the FastAPI workflow routes for managing workflows in the CSV repository,
 using real DI container and service implementations.
 """
 
+import sys
 import unittest
 from pathlib import Path
 
@@ -793,15 +794,13 @@ edge_graph,node-with-dashes,default,Test dashes in names,Node with dashes,output
         that no /workflow prototype routes appear in app.routes or the OpenAPI schema.
         The canonical /workflows and /execute routes must be present.
         """
-        # Collect all registered route paths
-        route_paths = []
-        for route in self.app.routes:
-            if hasattr(route, "path"):
-                route_paths.append(route.path)
+        route_paths = [r.path for r in self.app.routes if hasattr(r, "path")]
 
         # AC-T1: The prototype /workflow prefix routes must be absent
         prototype_routes = [
-            p for p in route_paths if p.startswith("/workflow/") or p == "/workflow"
+            p
+            for p in route_paths
+            if p.startswith("/workflow") and not p.startswith("/workflows")
         ]
         self.assertEqual(
             prototype_routes,
@@ -839,7 +838,9 @@ edge_graph,node-with-dashes,default,Test dashes in names,Node with dashes,output
 
         # AC-T1: No /workflow prototype paths in OpenAPI schema
         prototype_paths = [
-            p for p in openapi_paths if p.startswith("/workflow/") or p == "/workflow"
+            p
+            for p in openapi_paths
+            if p.startswith("/workflow") and not p.startswith("/workflows")
         ]
         self.assertEqual(
             prototype_paths,
@@ -874,13 +875,18 @@ edge_graph,node-with-dashes,default,Test dashes in names,Node with dashes,output
         to trigger any lazy imports that canonical startup exercises.  If proto appears
         after that call, a regression has been introduced.
         """
-        import sys
-
         proto = "agentmap.models.workflow_execution_models"
 
         # Guarantee a clean slate: remove any previously-loaded copy of the
         # prototype module so the assertNotIn below is meaningful.
-        sys.modules.pop(proto, None)
+        original = sys.modules.pop(proto, None)
+        self.addCleanup(
+            lambda: (
+                sys.modules.update({proto: original})
+                if original is not None
+                else sys.modules.pop(proto, None)
+            )
+        )
 
         # The canonical surfaces (agentmap.runtime, agentmap.runtime_api) are
         # already loaded from setUp — confirm the expected callables are present.
@@ -921,6 +927,43 @@ edge_graph,node-with-dashes,default,Test dashes in names,Node with dashes,output
             any(p.startswith("/execute") for p in route_paths),
             f"Canonical /execute routes must be present in fresh app. Routes: {route_paths}",
         )
+
+    def test_retired_module_emits_deprecation_warning_on_import(self):
+        """TC-003: Importing the retired module emits a DeprecationWarning pointing to canonical surfaces."""
+        proto = "agentmap.models.workflow_execution_models"
+        original = sys.modules.pop(proto, None)
+        self.addCleanup(
+            lambda: (
+                sys.modules.update({proto: original})
+                if original is not None
+                else sys.modules.pop(proto, None)
+            )
+        )
+        import warnings
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            import agentmap.models.workflow_execution_models  # noqa: F401
+        self.assertEqual(
+            len(caught), 1, f"Expected exactly 1 DeprecationWarning, got: {caught}"
+        )
+        self.assertIs(caught[0].category, DeprecationWarning)
+        self.assertIn("retired prototype", str(caught[0].message).lower())
+
+    def test_tombstoned_functions_raise_runtime_error(self):
+        """TC-004: All tombstoned router functions raise RuntimeError immediately."""
+        from agentmap.models.workflow_execution_models import (
+            create_workflow_router,
+            execute_workflow_from_cli_pattern,
+            integrate_workflow_routes,
+        )
+
+        with self.assertRaises(RuntimeError):
+            create_workflow_router()
+        with self.assertRaises(RuntimeError):
+            integrate_workflow_routes(None)
+        with self.assertRaises(RuntimeError):
+            execute_workflow_from_cli_pattern("w", "g", {})
 
 
 if __name__ == "__main__":
