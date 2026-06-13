@@ -67,6 +67,18 @@ const sidebars: SidebarsConfig = {
           label: 'Async Execution',
         },
 
+        // Workflow Execution
+        {
+          type: 'category',
+          label: 'Workflow Execution',
+          collapsible: true,
+          collapsed: true,
+          items: [
+            'workflow/index',
+            'workflow/checkpoint-resume',
+          ],
+        },
+
         // System Configuration
         {
           type: 'category',

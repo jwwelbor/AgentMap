@@ -19,24 +19,24 @@ The AgentMap CLI follows a **consistent facade pattern** as defined in SPEC-DEP-
 
 ### Facade Pattern Implementation
 
-All CLI commands use the `runtime_api.py` module as a unified facade to the underlying business logic:
+All CLI commands use the `runtime_api.py` module as a unified facade to the underlying business logic. Workflow commands use the **async facade** internally — `asyncio.run()` bridges the sync CLI surface to native async execution, so the event loop is never blocked regardless of how many agent nodes a workflow contains:
 
 ```python
-# CLI commands follow this pattern
-from agentmap.runtime_api import ensure_initialized, specific_function
+import asyncio
+from agentmap.runtime_api import ensure_initialized, specific_function_async
 from agentmap.deployment.cli.utils.cli_presenter import print_json, print_err, map_exception_to_exit_code
 
 def command_function(args):
     try:
-        # Ensure runtime is initialized
         ensure_initialized(config_file=args.config)
-        
-        # Use runtime facade for business logic
-        result = specific_function(args...)
-        
-        # Use CLI presenter for consistent output
+
+        # Workflow commands call the async facade via asyncio.run()
+        result = asyncio.run(specific_function_async(args...))
+
         print_json(result)
-        
+
+    except typer.Exit:
+        raise  # Preserve exit codes
     except Exception as e:
         print_err(str(e))
         exit_code = map_exception_to_exit_code(e)
@@ -50,9 +50,11 @@ The `runtime_api.py` serves as a facade to split runtime modules:
 | Function Category | Functions | Commands Using |
 |------------------|-----------|----------------|
 | **Initialization** | `ensure_initialized()`, `get_container()` | Most commands |
-| **Workflow Operations** | `run_workflow()`, `resume_workflow()`, `validate_workflow()` | `run`, `resume`, `validate` |
+| **Workflow Operations** | `run_workflow_async()`, `resume_workflow_async()`, `validate_workflow_async()`, `inspect_graph_async()` | `run`, `resume`, `validate`, `inspect-graph` |
 | **Bundle Operations** | `scaffold_agents()`, `update_bundle()` | `scaffold`, `update-bundle` |
 | **System Operations** | `diagnose_system()`, `get_config()`, `refresh_cache()` | `diagnose`, `config`, `refresh` |
+
+> **Note:** `run_workflow_async()` and `resume_workflow_async()` use native `ainvoke` for graph execution — sync-only agent nodes run in a thread pool executor, so they never block the event loop. `validate_workflow_async()` and `inspect_graph_async()` delegate to `asyncio.to_thread`. The sync equivalents (`run_workflow()`, `resume_workflow()`, etc.) remain available for programmatic use in non-async contexts.
 
 ### CLI Presenter Architecture
 
@@ -186,15 +188,25 @@ pip install agentmap
 ### Run a Graph
 
 ```bash
-agentmap run --graph graph_name --state '{"input": "value"}'
+# Positional workflow name (preferred)
+agentmap run my_workflow --state '{"input": "value"}'
+
+# :: syntax to specify a graph within a CSV file
+agentmap run workflows::CustomerSupport --state '{"customer": "Alice"}'
+
+# Option form
+agentmap run --workflow my_workflow --state '{"input": "value"}'
 ```
 
 Options:
-- `--graph`, `-g`: Name of the graph to run
-- `--state`, `-s`: Initial state as JSON string
-- `--csv`: Optional path to CSV file
-- `--autocompile`, `-a`: Automatically compile the graph
+- `workflow` (positional arg): Workflow file name, `file/graph_name`, or `filename::graph_name`
+- `--workflow`, `-w`: Alternative option form for the workflow name
+- `--state`, `-s`: Initial state as JSON string (default `{}`)
+- `--validate`: Validate CSV structure before running
 - `--config`, `-c`: Path to custom config file
+- `--pretty`, `-p`: Format output for readability
+- `--verbose`, `-v`: Show detailed execution info (with `--pretty`)
+- `--force-create`: Force bundle recreation even if cached
 
 ### View Configuration
 
@@ -692,25 +704,22 @@ agentmap run --graph MyWorkflow --monitor
 ### Troubleshooting Commands
 
 ```bash
-# Inspect graph structure
-agentmap inspect --graph MyWorkflow
+# Validate graph structure and check for missing agent declarations
+agentmap validate MyWorkflow
 # Expected output:
-# 📊 Graph Structure: MyWorkflow
-# Nodes: 5
-# next_nodes: 4
-# Entry points: 1 (start_node)
-# Exit points: 1 (end_node)
-# 
-# Flow diagram:
-# start_node → validate_input → process_data → generate_output → end_node
+# 🔍 Validating CSV structure: /path/to/my_workflow.csv
+# ✅ CSV structure validation passed
+# 📦 Analyzing graph dependencies...
+#    Total nodes: 5
+#    Total edges: 4
+# ✅ All agent types are defined
 
-# Check dependencies
-agentmap validate-dependencies --graph MyWorkflow
+# Check system dependencies and configuration
+agentmap diagnose
 # Expected output:
-# ✅ All required agents available
-# ✅ All custom functions found
-# ⚠️  Warning: WeatherAgent uses deprecated API
-# ℹ️  Suggestion: Update to use WeatherService v2
+# ✅ Core dependencies available
+# ✅ Configuration loaded
+# ✅ Agent registry accessible
 
 # Clear cache and rebuild
 agentmap refresh

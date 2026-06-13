@@ -17,34 +17,32 @@ AgentMap provides functionality to resume interrupted workflows using the **runt
 
 ### Facade Pattern Implementation
 
-The resume command follows AgentMap's consistent facade pattern, using `runtime_api.py` for workflow management:
+The resume command uses `runtime_api.py` as a unified facade. Like all workflow commands, it calls the **async** facade via `asyncio.run()` so the event loop is never blocked during graph execution:
 
 ```python
-# Resume command pattern
-from agentmap.runtime_api import ensure_initialized, resume_workflow
+import asyncio
+from agentmap.runtime_api import ensure_initialized, resume_workflow_async
 from agentmap.deployment.cli.utils.cli_presenter import print_json, print_err, map_exception_to_exit_code
 
 def resume_command(thread_id, response, args):
     try:
-        # Ensure runtime is initialized
         ensure_initialized(config_file=args.config)
-        
-        # Use runtime facade for resume logic
-        result = resume_workflow(
-            thread_id=thread_id,
-            response=response,
-            data=args.data,
-            config_file=args.config
+
+        result = asyncio.run(
+            resume_workflow_async(resume_token=thread_id)
         )
-        
-        # Use CLI presenter for consistent output
+
         print_json(result)
-        
+
+    except typer.Exit:
+        raise  # Preserve exit codes
     except Exception as e:
         print_err(str(e))
         exit_code = map_exception_to_exit_code(e)
         raise typer.Exit(code=exit_code)
 ```
+
+`asyncio.CancelledError` propagates cleanly through `resume_workflow_async`. If the task is cancelled, the framework unmarks the checkpoint's `resuming` state so the workflow can be safely retried — no manual cleanup required.
 
 ### Runtime API Integration
 
@@ -52,7 +50,8 @@ The resume command uses these runtime facade functions:
 
 | Function | Purpose | Usage |
 |----------|---------|--------|
-| `resume_workflow()` | Resume interrupted workflow execution | Primary resume functionality |
+| `resume_workflow_async()` | Resume interrupted workflow natively via async graph execution | Primary resume functionality |
+| `resume_workflow()` | Sync alternative for non-async contexts | Programmatic use outside CLI |
 | `ensure_initialized()` | Verify runtime system is ready | Called before resume operations |
 
 ### CLI Presenter Integration
@@ -68,28 +67,24 @@ Resume commands benefit from standardized CLI presenter utilities:
 The resume functionality leverages the runtime facade for sophisticated state management:
 
 ```python
+import asyncio
+
 # Resume command implementation
 def resume_command(thread_id, response, data, config_file):
     try:
-        # Ensure runtime system is ready
         ensure_initialized(config_file=config_file)
-        
-        # Parse response data using CLI utilities
-        parsed_data = parse_json_state(data) if data else {}
-        
-        # Use runtime facade for workflow resumption
-        result = resume_workflow(
-            thread_id=thread_id,
-            response=response,
-            data=parsed_data,
-            config_file=config_file
-        )
-        
-        # Runtime facade handles:
+
+        # Build resume token from thread_id + optional response_action
+        resume_token = thread_id  # or JSON: '{"thread_id": "...", "response_action": "approve"}'
+
+        result = asyncio.run(resume_workflow_async(resume_token=resume_token))
+
+        # resume_workflow_async handles:
         # - Thread ID validation
-        # - State deserialization 
+        # - State deserialization
         # - Response data integration
-        # - Workflow continuation
+        # - Workflow continuation (native async, non-blocking)
+        # - CancelledError cleanup (unmarks resuming state on cancel)
         # - Result serialization
         
         print_json(result)
