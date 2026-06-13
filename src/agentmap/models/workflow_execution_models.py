@@ -40,7 +40,7 @@ class WorkflowExecutionRequest(BaseModel):
 
     state: Dict[str, Any] = {}
     config: Optional[Dict[str, Any]] = None
-    validate: bool = False
+    validate_only: bool = False
 
 
 class WorkflowExecutionResponse(BaseModel):
@@ -76,7 +76,7 @@ class WorkflowListResponse(BaseModel):
 # ==========================================
 
 
-def create_workflow_router(container=None):  # type: ignore[return]
+def create_workflow_router(_container=None):  # type: ignore[return]
     """
     TOMBSTONED — this prototype router is retired.
 
@@ -103,10 +103,10 @@ def create_workflow_router(container=None):  # type: ignore[return]
 
 
 def execute_workflow_from_cli_pattern(  # type: ignore[return]
-    workflow_name: str,
-    graph_name: str,
-    initial_state: Dict[str, Any],
-    config_path: Optional[str] = None,
+    _workflow_name: str,
+    _graph_name: str,
+    _initial_state: Dict[str, Any],
+    _config_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     TOMBSTONED — use agentmap.runtime_api.run_workflow or the CLI instead.
@@ -120,7 +120,7 @@ def execute_workflow_from_cli_pattern(  # type: ignore[return]
     )
 
 
-def integrate_workflow_routes(app, container=None) -> None:  # type: ignore[return]
+def integrate_workflow_routes(_app, _container=None) -> None:  # type: ignore[return]
     """
     TOMBSTONED — do not call this function.
 
