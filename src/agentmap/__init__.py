@@ -37,8 +37,15 @@ _LAZY_IMPORTS = {
         "agentmap_initialize",
         "ensure_initialized",
         "run_workflow",
+        "run_workflow_async",
         "list_graphs",
+        "list_graphs_async",
         "resume_workflow",
+        "resume_workflow_async",
+        "inspect_graph",
+        "inspect_graph_async",
+        "validate_workflow",
+        "validate_workflow_async",
     ],
 }
 
@@ -75,8 +82,15 @@ __all__ = [
     "agentmap_initialize",  # Recommended for external apps
     "ensure_initialized",  # Internal/legacy name
     "run_workflow",
+    "run_workflow_async",
     "list_graphs",
+    "list_graphs_async",
     "resume_workflow",
+    "resume_workflow_async",
+    "inspect_graph",
+    "inspect_graph_async",
+    "validate_workflow",
+    "validate_workflow_async",
     # Runtime API exceptions
     "AgentMapError",
     "AgentMapNotInitialized",

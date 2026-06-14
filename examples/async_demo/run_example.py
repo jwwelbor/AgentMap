@@ -25,7 +25,7 @@ import time
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-from agentmap.runtime_api import ensure_initialized, run_workflow, run_workflow_async
+from agentmap import ensure_initialized, run_workflow, run_workflow_async
 
 CONFIG = "agentmap_config.yaml"
 GRAPH = "echo_flow::EchoFlow"

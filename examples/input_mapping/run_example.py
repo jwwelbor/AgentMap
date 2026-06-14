@@ -21,7 +21,7 @@ import os
 # Run from the example directory so config paths resolve
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-from agentmap.runtime_api import run_workflow
+from agentmap import run_workflow
 
 # ── Workflow 1: Positional binding ──────────────────────────────────────────
 # AdderAgent.expected_params = ["addend_a", "addend_b"]

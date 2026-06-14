@@ -29,7 +29,7 @@ def main() -> int:
 
     # Step 1: Initialize
     print("Initializing AgentMap with host service config...")
-    from agentmap.runtime_api import ensure_initialized, run_workflow
+    from agentmap import ensure_initialized, run_workflow
 
     ensure_initialized(config_file=config_file)
     print("Runtime ready.")

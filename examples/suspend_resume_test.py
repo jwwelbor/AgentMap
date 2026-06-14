@@ -16,7 +16,7 @@ import json
 import sys
 from typing import Any, Dict, Optional
 
-from agentmap.runtime_api import ensure_initialized, resume_workflow, run_workflow
+from agentmap import ensure_initialized, resume_workflow, run_workflow
 
 
 def parse_args() -> argparse.Namespace:

@@ -21,7 +21,7 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(SCRIPT_DIR)
 
-from agentmap.runtime_api import run_workflow
+from agentmap import run_workflow
 
 IMAGE_PATH = os.path.join(SCRIPT_DIR, "visual-table-test.png")
 

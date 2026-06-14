@@ -30,7 +30,7 @@ def main() -> int:
     # Step 1: Initialize AgentMap with the example config
     print("[1/3] Initializing AgentMap runtime...")
     try:
-        from agentmap.runtime_api import ensure_initialized
+        from agentmap import ensure_initialized
 
         ensure_initialized(config_file=config_file)
         print("      OK - Runtime initialized")
@@ -42,7 +42,7 @@ def main() -> int:
     # Step 2: Run the workflow
     print("[2/3] Running HostIntegrationDemo workflow...")
     try:
-        from agentmap.runtime_api import run_workflow
+        from agentmap import run_workflow
 
         result = run_workflow(
             "example_workflow::HostIntegrationDemo",

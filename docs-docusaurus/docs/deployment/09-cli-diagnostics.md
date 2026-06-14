@@ -21,7 +21,8 @@ The diagnostic commands follow AgentMap's consistent facade pattern, using `runt
 
 ```python
 # Diagnostic command pattern
-from agentmap.runtime_api import ensure_initialized, diagnose_system
+from agentmap import ensure_initialized
+from agentmap.runtime_api import diagnose_system
 from agentmap.deployment.cli.utils.cli_presenter import print_json, print_err, map_exception_to_exit_code
 
 def diagnose_command(args):
