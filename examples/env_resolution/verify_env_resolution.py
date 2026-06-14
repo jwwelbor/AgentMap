@@ -72,10 +72,11 @@ try:
 
     all_passed = True
     for label, actual, expected in checks:
-        status = "PASS" if actual == expected else "FAIL"
-        if status == "FAIL":
+        if actual == expected:
+            print(f"  [PASS] {label}")
+        else:
             all_passed = False
-        print(f"  [{status}] {label}: {actual!r} == {expected!r}")
+            print(f"  [FAIL] {label}: expected {expected!r}, got {actual!r}")
 
     print()
     if all_passed:
