@@ -17,15 +17,13 @@ from agentmap.exceptions.service_exceptions import (
 )
 
 # Matches common API key patterns (sk-..., key-..., AIza..., etc.)
-_SENSITIVE_RE = re.compile(
-    r"""(?x)
+_SENSITIVE_RE = re.compile(r"""(?x)
     (?:sk-[a-zA-Z0-9]{20,})           |  # OpenAI-style
     (?:key-[a-zA-Z0-9]{20,})          |  # Generic key-prefixed
     (?:AIza[a-zA-Z0-9_-]{30,})        |  # Google-style
     (?:ant-api[a-zA-Z0-9_-]{20,})     |  # Anthropic-style
     (?:[a-zA-Z0-9_-]{32,})               # Long opaque tokens
-    """
-)
+    """)
 
 
 def _sanitize_error_message(error: BaseException) -> str:

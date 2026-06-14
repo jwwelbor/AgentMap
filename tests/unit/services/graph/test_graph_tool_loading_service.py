@@ -396,16 +396,14 @@ def top_tool() -> str:
         )
         sub = Path(self.test_dir) / "nested"
         sub.mkdir()
-        (sub / "nested_tools.py").write_text(
-            '''
+        (sub / "nested_tools.py").write_text('''
 from langchain_core.tools import tool
 
 @tool
 def nested_tool() -> str:
     """Nested tool."""
     return "nested"
-'''
-        )
+''')
 
         tools = self.service.load_tools_from_module(self.test_dir)
         tool_names = [t.name for t in tools]

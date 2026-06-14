@@ -30,8 +30,7 @@ class TestGraphRegistryServiceIntegration(unittest.TestCase):
 
         # Create storage config file
         storage_config_file = Path(self.temp_dir.name) / "storage_config.yaml"
-        storage_config_file.write_text(
-            """
+        storage_config_file.write_text("""
 json:
   default_provider: "local"
   collections: {}
@@ -43,11 +42,9 @@ vector:
 kv:
   default_provider: "local"
   collections: {}
-"""
-        )
+""")
 
-        self.test_config_path.write_text(
-            """
+        self.test_config_path.write_text("""
 app:
   cache_path: "{cache_dir}"
 
@@ -55,10 +52,7 @@ logging:
   level: INFO
 
 storage_config_path: "{storage_config_path}"
-""".format(
-                cache_dir=cache_dir, storage_config_path=storage_config_path
-            )
-        )
+""".format(cache_dir=cache_dir, storage_config_path=storage_config_path))
 
         # Override config path in container
         self.container.config.path.override(str(self.test_config_path))
@@ -427,8 +421,7 @@ class TestGraphRegistryServiceWithGraphRunner(unittest.TestCase):
 
         # Create storage config file
         storage_config_file = Path(self.temp_dir.name) / "storage_config.yaml"
-        storage_config_file.write_text(
-            """
+        storage_config_file.write_text("""
 json:
   default_provider: "local"
   collections: {{}}
@@ -440,11 +433,9 @@ vector:
 kv:
   default_provider: "local"
   collections: {{}}
-"""
-        )
+""")
 
-        test_config_path.write_text(
-            """
+        test_config_path.write_text("""
 app:
   cache_path: "{cache_dir}"
 
@@ -452,10 +443,7 @@ logging:
   level: INFO
 
 storage_config_path: "{storage_config_path}"
-""".format(
-                cache_dir=cache_dir, storage_config_path=storage_config_path
-            )
-        )
+""".format(cache_dir=cache_dir, storage_config_path=storage_config_path))
 
         self.container.config.path.override(str(test_config_path))
         self.container.wire(modules=["agentmap.services"])

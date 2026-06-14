@@ -5,6 +5,7 @@ Internal module for path resolution in StorageConfigService.
 This module handles all path-related operations including base directory
 resolution, storage type directory handling, and full path resolution.
 """
+
 import logging
 import os
 from pathlib import Path

@@ -196,8 +196,7 @@ class ResumeWorkflowUpdatedDiagnosisTest(unittest.TestCase):
         print("\n📝 Correct API Endpoint Implementation")
         print("=" * 50)
 
-        print(
-            """
+        print("""
 @app.post("/workflows/resume")
 async def resume_workflow_endpoint(request: ResumeRequest):
     try:
@@ -233,8 +232,7 @@ async def resume_workflow_endpoint(request: ResumeRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-"""
-        )
+""")
 
         print("✅ This implementation would fix the 500 errors!")
 

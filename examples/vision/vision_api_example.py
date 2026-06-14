@@ -59,8 +59,8 @@ print("=" * 70)
 
 result_markdown = llm_service.ask_vision(
     prompt=PROMPT_MARKDOWN,
-    image=IMAGE_PATH,          # pass the path — service reads & encodes it
-    provider="anthropic",      # or "openai", "google"
+    image=IMAGE_PATH,  # pass the path — service reads & encodes it
+    provider="anthropic",  # or "openai", "google"
 )
 
 print(result_markdown)
@@ -78,8 +78,8 @@ with open(IMAGE_PATH, "rb") as f:
 
 result_csv = llm_service.ask_vision(
     prompt=PROMPT_CSV,
-    image=image_bytes,         # pass bytes directly
-    image_type="image/png",    # must specify MIME when using bytes
+    image=image_bytes,  # pass bytes directly
+    image_type="image/png",  # must specify MIME when using bytes
     provider="anthropic",
 )
 

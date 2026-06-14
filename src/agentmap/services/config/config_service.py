@@ -5,6 +5,7 @@ Infrastructure service for loading configuration files with bootstrap logging.
 Provides singleton ConfigService for efficient file loading, YAML parsing,
 and configuration merging across the application.
 """
+
 import logging
 import os
 import threading

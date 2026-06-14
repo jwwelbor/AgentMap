@@ -2,6 +2,7 @@
 """
 Pydantic models for validating CSV and configuration files.
 """
+
 from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator

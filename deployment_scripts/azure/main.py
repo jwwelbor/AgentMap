@@ -12,12 +12,14 @@ from agentmap.deployment.serverless.azure_functions import (
     azure_http_handler,
 )
 
+
 def servicebus_entry(msg: func.ServiceBusMessage) -> None:
     """Service Bus-triggered function entry.
     The message body should be a JSON string:
        {"graph":"MyGraph","state":{...},"action":"run"}
     """
     return azure_servicebus_handler(msg)
+
 
 def http_entry(req: func.HttpRequest) -> func.HttpResponse:
     """HTTP-triggered function entry for local testing/webhooks."""

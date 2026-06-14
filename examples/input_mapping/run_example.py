@@ -56,6 +56,12 @@ result2 = run_workflow(
 )
 
 out2 = result2.get("outputs", {})
-print(f"  DirectAdd: 10 + 20 = {out2.get('direct_sum')}   (direct: addend_a, addend_b match agent params)")
-print(f"  MappedAdd: 30 + 5  = {out2.get('mapped_sum')}   (mapped: direct_sum:addend_a, extra:addend_b)")
-print(f"  MixedAdd:  35 + 20 = {out2.get('mixed_sum')}   (mixed: mapped_sum:addend_a + direct addend_b)")
+print(
+    f"  DirectAdd: 10 + 20 = {out2.get('direct_sum')}   (direct: addend_a, addend_b match agent params)"
+)
+print(
+    f"  MappedAdd: 30 + 5  = {out2.get('mapped_sum')}   (mapped: direct_sum:addend_a, extra:addend_b)"
+)
+print(
+    f"  MixedAdd:  35 + 20 = {out2.get('mixed_sum')}   (mixed: mapped_sum:addend_a + direct addend_b)"
+)

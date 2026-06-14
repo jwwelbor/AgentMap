@@ -8,6 +8,7 @@ import logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+
 def handler(event, context):
     """AWS Lambda entrypoint.
 
@@ -19,7 +20,7 @@ def handler(event, context):
       {"graph":"MyGraph","state":{...},"action":"run"}
     """
     logger.info(f"Received event: {json.dumps(event, default=str)}")
-    
+
     try:
         # Try to import AgentMap's AWS handlers
         from agentmap.deployment.serverless.aws_lambda import (
@@ -41,10 +42,12 @@ def handler(event, context):
                     aws_http_handler,
                 )
             except ImportError:
-                logger.error("Could not find AgentMap AWS handlers in any expected location")
+                logger.error(
+                    "Could not find AgentMap AWS handlers in any expected location"
+                )
                 return {
                     "statusCode": 500,
-                    "body": json.dumps({"error": "AgentMap AWS handlers not found"})
+                    "body": json.dumps({"error": "AgentMap AWS handlers not found"}),
                 }
 
     try:
@@ -55,33 +58,31 @@ def handler(event, context):
         else:
             logger.info("Routing to event handler")
             return aws_event_handler(event, context)
-            
+
     except Exception as e:
         logger.error(f"Error processing event: {e}", exc_info=True)
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": str(e)})
-        }
+        return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
+
 
 def _is_http_event(event):
     """Detect if this is an HTTP event from API Gateway or ALB."""
     if not isinstance(event, dict):
         return False
-        
+
     # API Gateway v2
     if "requestContext" in event and "http" in event.get("requestContext", {}):
         return True
-        
+
     # API Gateway v1
     if "httpMethod" in event and "path" in event:
         return True
-        
+
     # ALB
     if "requestContext" in event and "elb" in event.get("requestContext", {}):
         return True
-        
+
     # Lambda Function URLs
     if "rawPath" in event and "requestContext" in event:
         return True
-        
+
     return False

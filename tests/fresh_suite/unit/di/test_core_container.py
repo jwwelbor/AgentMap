@@ -340,16 +340,14 @@ kv:
         # Arrange - Use config without storage configuration
         minimal_config_path = Path(self.temp_dir) / "minimal_config.yaml"
         with open(minimal_config_path, "w") as f:
-            f.write(
-                """logging:
+            f.write("""logging:
   level: DEBUG
 
 llm:
   anthropic:
     api_key: "test_key"
     model: "claude-sonnet-4-6"
-"""
-            )
+""")
 
         # Act - Container should still initialize even without storage config
         container = initialize_di(str(minimal_config_path))
