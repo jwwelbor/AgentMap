@@ -1067,10 +1067,10 @@ from agentmap import (
     run_workflow,
     resume_workflow,
     list_graphs,
+    inspect_graph,
     GraphNotFound,
-    InvalidInputs
+    InvalidInputs,
 )
-from agentmap import inspect_graph
 from agentmap.runtime_api import diagnose_system
 
 app = FastAPI(title="AgentMap API")

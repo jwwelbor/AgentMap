@@ -1038,6 +1038,28 @@ class TestAsyncFacadeExports:
                 getattr(rapi, name)
             ), f"agentmap.runtime_api.{name} not callable"
 
+    def test_new_symbols_importable_from_agentmap_root(self):
+        """New async/sync symbols added to agentmap.__init__ are importable from the package root."""
+        import agentmap
+
+        for name in (
+            "run_workflow_async",
+            "list_graphs_async",
+            "resume_workflow_async",
+            "inspect_graph",
+            "inspect_graph_async",
+            "validate_workflow",
+            "validate_workflow_async",
+        ):
+            assert callable(getattr(agentmap, name)), f"agentmap.{name} not callable"
+
+    def test_diagnose_system_and_get_config_not_in_agentmap_root(self):
+        """diagnose_system and get_config are intentionally absent from the agentmap package root."""
+        import agentmap
+
+        assert not hasattr(agentmap, "diagnose_system")
+        assert not hasattr(agentmap, "get_config")
+
 
 class TestAsyncWrapperNonBlocking:
     """
