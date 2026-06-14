@@ -149,14 +149,12 @@ def multiply(a: int, b: int) -> int:
         with tempfile.NamedTemporaryFile(
             mode="w", suffix="_empty.py", delete=False
         ) as f:
-            f.write(
-                '''"""Empty module with no tools."""
+            f.write('''"""Empty module with no tools."""
 
 def regular_function():
     """Not a tool."""
     return "Not decorated"
-'''
-            )
+''')
             temp_path = f.name
 
         try:

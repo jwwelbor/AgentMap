@@ -25,7 +25,7 @@ import time
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-from agentmap.runtime_api import ensure_initialized, run_workflow, run_workflow_async
+from agentmap import ensure_initialized, run_workflow, run_workflow_async
 
 CONFIG = "agentmap_config.yaml"
 GRAPH = "echo_flow::EchoFlow"
@@ -64,7 +64,9 @@ async_final = async_result.get("outputs", {}).get("final")
 
 print(f"  Input:  msg='hello'")
 print(f"  Output: final='{async_final}'")
-assert async_final == sync_final, f"Parity failure: sync={sync_final!r} async={async_final!r}"
+assert (
+    async_final == sync_final
+), f"Parity failure: sync={sync_final!r} async={async_final!r}"
 print("  PASS — async output matches sync output\n")
 
 
@@ -97,7 +99,9 @@ for i, (payload, result) in enumerate(zip(PAYLOADS, all_results)):
     final = result.get("outputs", {}).get("final")
     status = "PASS" if final == payload else f"FAIL (got {final!r})"
     print(f"  [{i}] msg='{payload}' → final='{final}'  {status}")
-    assert final == payload, f"Concurrent run {i} failed: expected {payload!r}, got {final!r}"
+    assert (
+        final == payload
+    ), f"Concurrent run {i} failed: expected {payload!r}, got {final!r}"
 
 print(f"\n  All {len(PAYLOADS)} concurrent runs correct.")
 
@@ -148,13 +152,17 @@ from custom_agents.slow_agent import DELAY  # noqa: E402
 SLOW_GRAPH = "echo_flow::SlowFlow"
 N = 5
 
+
 # Serial baseline using async but sequential awaits (no gather)
 async def run_serial():
     results = []
     for i in range(N):
-        r = await run_workflow_async(SLOW_GRAPH, {"value": f"item-{i}"}, config_file=CONFIG)
+        r = await run_workflow_async(
+            SLOW_GRAPH, {"value": f"item-{i}"}, config_file=CONFIG
+        )
         results.append(r)
     return results
+
 
 # Concurrent using asyncio.gather
 async def run_concurrent():
@@ -170,12 +178,16 @@ print(f"  SlowAgent sleeps {DELAY}s per node.  Running {N} graphs each way.\n")
 t0 = time.perf_counter()
 serial_results = asyncio.run(run_serial())
 serial_time = time.perf_counter() - t0
-print(f"  Serial   (sequential awaits): {serial_time:.2f}s  (expected ~{N * DELAY:.1f}s)")
+print(
+    f"  Serial   (sequential awaits): {serial_time:.2f}s  (expected ~{N * DELAY:.1f}s)"
+)
 
 t0 = time.perf_counter()
 concurrent_results = asyncio.run(run_concurrent())
 concurrent_time = time.perf_counter() - t0
-print(f"  Parallel (asyncio.gather):    {concurrent_time:.2f}s  (expected ~{DELAY:.1f}s)")
+print(
+    f"  Parallel (asyncio.gather):    {concurrent_time:.2f}s  (expected ~{DELAY:.1f}s)"
+)
 
 speedup = serial_time / concurrent_time
 print(f"\n  Speedup: {speedup:.1f}×")

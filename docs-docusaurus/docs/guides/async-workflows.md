@@ -28,7 +28,7 @@ The primary reason to reach for the async API is fan-out — running many workfl
 
 ```python
 import asyncio
-from agentmap.runtime_api import ensure_initialized, run_workflow_async
+from agentmap import ensure_initialized, run_workflow_async
 
 ensure_initialized()
 
@@ -57,7 +57,7 @@ Inside an `async def` endpoint, always use `run_workflow_async` — calling the 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Dict, Any
-from agentmap.runtime_api import ensure_initialized, run_workflow_async
+from agentmap import ensure_initialized, run_workflow_async
 
 app = FastAPI()
 
@@ -91,7 +91,7 @@ For production FastAPI patterns including middleware, background tasks, and resu
 
 ```python
 import asyncio
-from agentmap.runtime_api import run_workflow_async
+from agentmap import run_workflow_async
 
 async def run_with_timeout(graph_name: str, inputs: dict, timeout: float):
     task = asyncio.create_task(

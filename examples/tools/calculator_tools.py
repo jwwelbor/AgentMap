@@ -103,4 +103,4 @@ def power(base: float, exponent: float) -> float:
     Example:
         power(2, 3) -> 8.0
     """
-    return base ** exponent
+    return base**exponent

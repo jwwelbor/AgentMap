@@ -8,12 +8,14 @@ from agentmap.deployment.serverless.gcp_functions import (
     gcp_http_handler,
 )
 
+
 def pubsub_entry(event, context):
     """Pub/Sub-triggered Cloud Function entrypoint.
     Expects event['data'] to be a base64-encoded JSON of the form:
         {"graph":"MyGraph","state":{...},"action":"run"}
     """
     return gcp_pubsub_handler(event, context)
+
 
 def http_entry(request):
     """HTTP-triggered Cloud Function entrypoint.

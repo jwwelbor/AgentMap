@@ -560,7 +560,7 @@ def inspect_graph(
 **Example:**
 
 ```python
-from agentmap.runtime_api import ensure_initialized, inspect_graph
+from agentmap import ensure_initialized, inspect_graph
 
 ensure_initialized()
 
@@ -1067,10 +1067,11 @@ from agentmap import (
     run_workflow,
     resume_workflow,
     list_graphs,
+    inspect_graph,
     GraphNotFound,
-    InvalidInputs
+    InvalidInputs,
 )
-from agentmap.runtime_api import inspect_graph, diagnose_system
+from agentmap.runtime_api import diagnose_system
 
 app = FastAPI(title="AgentMap API")
 
@@ -1328,12 +1329,8 @@ logging:
 ### Diagnostic Commands
 
 ```python
-from agentmap.runtime_api import (
-    diagnose_system,
-    get_config,
-    validate_workflow,
-    inspect_graph
-)
+from agentmap import inspect_graph, validate_workflow
+from agentmap.runtime_api import diagnose_system, get_config
 
 # Full system diagnosis (auto-initializes)
 diagnosis = diagnose_system()

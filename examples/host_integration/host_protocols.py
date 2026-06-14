@@ -15,16 +15,16 @@ from abc import abstractmethod
 class DatabaseServiceProtocol(Protocol):
     """
     Protocol for database service capabilities.
-    
+
     Agents implementing this protocol can be automatically configured with
     database services when the host application registers a database service.
     """
-    
+
     @abstractmethod
     def configure_database_service(self, database_service: Any) -> None:
         """
         Configure the agent with a database service.
-        
+
         Args:
             database_service: Database service instance providing data access
         """
@@ -35,16 +35,16 @@ class DatabaseServiceProtocol(Protocol):
 class EmailServiceProtocol(Protocol):
     """
     Protocol for email service capabilities.
-    
+
     Agents implementing this protocol can send emails, notifications,
     and handle email-based workflows through the host application's email service.
     """
-    
+
     @abstractmethod
     def configure_email_service(self, email_service: Any) -> None:
         """
         Configure the agent with an email service.
-        
+
         Args:
             email_service: Email service instance for sending communications
         """
@@ -55,16 +55,16 @@ class EmailServiceProtocol(Protocol):
 class NotificationServiceProtocol(Protocol):
     """
     Protocol for notification service capabilities.
-    
+
     Agents implementing this protocol can send notifications through
     various channels (Slack, Teams, webhooks, etc.) managed by the host application.
     """
-    
+
     @abstractmethod
     def configure_notification_service(self, notification_service: Any) -> None:
         """
         Configure the agent with a notification service.
-        
+
         Args:
             notification_service: Notification service for multi-channel messaging
         """
@@ -75,16 +75,16 @@ class NotificationServiceProtocol(Protocol):
 class FileServiceProtocol(Protocol):
     """
     Protocol for file service capabilities.
-    
+
     Agents implementing this protocol can interact with the host application's
     file management system for document processing, uploads, downloads, etc.
     """
-    
+
     @abstractmethod
     def configure_file_service(self, file_service: Any) -> None:
         """
         Configure the agent with a file service.
-        
+
         Args:
             file_service: File service for document and file operations
         """
@@ -95,16 +95,16 @@ class FileServiceProtocol(Protocol):
 class WorkflowServiceProtocol(Protocol):
     """
     Protocol for workflow service capabilities.
-    
+
     Agents implementing this protocol can trigger and participate in
     host application workflows, business processes, and integrations.
     """
-    
+
     @abstractmethod
     def configure_workflow_service(self, workflow_service: Any) -> None:
         """
         Configure the agent with a workflow service.
-        
+
         Args:
             workflow_service: Workflow service for business process integration
         """
@@ -116,31 +116,31 @@ class WorkflowServiceProtocol(Protocol):
 class AdvancedDatabaseServiceProtocol(Protocol):
     """
     Advanced database protocol with additional capabilities.
-    
+
     This demonstrates how protocols can include multiple methods
     and more sophisticated service integration patterns.
     """
-    
+
     @abstractmethod
     def configure_database_service(self, database_service: Any) -> None:
         """Configure the agent with a database service."""
         ...
-    
+
     @abstractmethod
     def get_database_status(self) -> Dict[str, Any]:
         """
         Get current database service status.
-        
+
         Returns:
             Dictionary with database connection and operation status
         """
         ...
-    
+
     @abstractmethod
     def validate_database_operations(self) -> List[str]:
         """
         Validate that database operations are working correctly.
-        
+
         Returns:
             List of validation errors (empty if all valid)
         """
@@ -149,13 +149,16 @@ class AdvancedDatabaseServiceProtocol(Protocol):
 
 # Protocol composition example
 @runtime_checkable
-class FullServiceAgentProtocol(DatabaseServiceProtocol, EmailServiceProtocol, NotificationServiceProtocol, Protocol):
+class FullServiceAgentProtocol(
+    DatabaseServiceProtocol, EmailServiceProtocol, NotificationServiceProtocol, Protocol
+):
     """
     Example of protocol composition for agents that need multiple services.
-    
+
     Agents implementing this protocol will automatically receive all
     configured services: database, email, and notification services.
     """
+
     pass
 
 

@@ -47,10 +47,26 @@ try:
     result = service.load_config(tmp_path)
 
     checks = [
-        ("env:VAR (present)", result["llm"]["openai"]["api_key"], "sk-test-openai-12345"),
-        ("env:VAR (present)", result["llm"]["anthropic"]["api_key"], "sk-ant-test-anthropic-67890"),
-        ("env:VAR:default (missing var)", result["llm"]["google"]["api_key"], "default-google-key"),
-        ("env:VAR:default (missing var)", result["llm"]["google"]["model"], "gemini-2.5-flash"),
+        (
+            "env:VAR (present)",
+            result["llm"]["openai"]["api_key"],
+            "sk-test-openai-12345",
+        ),
+        (
+            "env:VAR (present)",
+            result["llm"]["anthropic"]["api_key"],
+            "sk-ant-test-anthropic-67890",
+        ),
+        (
+            "env:VAR:default (missing var)",
+            result["llm"]["google"]["api_key"],
+            "default-google-key",
+        ),
+        (
+            "env:VAR:default (missing var)",
+            result["llm"]["google"]["model"],
+            "gemini-2.5-flash",
+        ),
         ("plain string (no env:)", result["llm"]["openai"]["model"], "gpt-4.1-mini"),
     ]
 

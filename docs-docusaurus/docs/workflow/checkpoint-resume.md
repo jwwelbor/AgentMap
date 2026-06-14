@@ -22,7 +22,7 @@ AgentMap supports suspending a workflow mid-execution and resuming it later with
 
 ```python
 import json
-from agentmap.runtime_api import ensure_initialized, run_workflow_async, resume_workflow_async
+from agentmap import ensure_initialized, run_workflow_async, resume_workflow_async
 
 ensure_initialized()
 
@@ -117,7 +117,7 @@ Options:
 
 ```python
 import asyncio
-from agentmap.runtime_api import resume_workflow_async
+from agentmap import resume_workflow_async
 
 async def resume_with_timeout(thread_id: str, timeout: float = 30.0):
     task = asyncio.create_task(

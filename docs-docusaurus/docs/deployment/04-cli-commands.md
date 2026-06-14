@@ -23,7 +23,7 @@ All CLI commands use the `runtime_api.py` module as a unified facade to the unde
 
 ```python
 import asyncio
-from agentmap.runtime_api import ensure_initialized, specific_function_async
+from agentmap import ensure_initialized, specific_function_async
 from agentmap.deployment.cli.utils.cli_presenter import print_json, print_err, map_exception_to_exit_code
 
 def command_function(args):
@@ -101,7 +101,7 @@ Commands follow consistent import patterns:
 
 **Facade-based commands:**
 ```python
-from agentmap.runtime_api import ensure_initialized, specific_function
+from agentmap import ensure_initialized, specific_function
 from agentmap.deployment.cli.utils.cli_presenter import print_json, print_err, map_exception_to_exit_code
 ```
 

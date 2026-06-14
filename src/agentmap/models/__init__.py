@@ -5,6 +5,7 @@ Domain models for AgentMap.
 This module contains simple domain entities that represent core business concepts.
 All models are data containers with minimal behavior - business logic belongs in services.
 """
+
 from .agent_registry import AgentRegistry
 from .execution.result import ExecutionResult
 from .execution.summary import ExecutionSummary, NodeExecution

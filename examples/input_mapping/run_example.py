@@ -21,7 +21,7 @@ import os
 # Run from the example directory so config paths resolve
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-from agentmap.runtime_api import run_workflow
+from agentmap import run_workflow
 
 # ── Workflow 1: Positional binding ──────────────────────────────────────────
 # AdderAgent.expected_params = ["addend_a", "addend_b"]
@@ -56,6 +56,12 @@ result2 = run_workflow(
 )
 
 out2 = result2.get("outputs", {})
-print(f"  DirectAdd: 10 + 20 = {out2.get('direct_sum')}   (direct: addend_a, addend_b match agent params)")
-print(f"  MappedAdd: 30 + 5  = {out2.get('mapped_sum')}   (mapped: direct_sum:addend_a, extra:addend_b)")
-print(f"  MixedAdd:  35 + 20 = {out2.get('mixed_sum')}   (mixed: mapped_sum:addend_a + direct addend_b)")
+print(
+    f"  DirectAdd: 10 + 20 = {out2.get('direct_sum')}   (direct: addend_a, addend_b match agent params)"
+)
+print(
+    f"  MappedAdd: 30 + 5  = {out2.get('mapped_sum')}   (mapped: direct_sum:addend_a, extra:addend_b)"
+)
+print(
+    f"  MixedAdd:  35 + 20 = {out2.get('mixed_sum')}   (mixed: mapped_sum:addend_a + direct addend_b)"
+)

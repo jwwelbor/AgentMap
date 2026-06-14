@@ -5,6 +5,7 @@ Base test classes and utilities for consistent testing patterns.
 This module provides base classes and utilities that ensure consistent
 testing patterns across the entire test suite.
 """
+
 import shutil
 import tempfile
 from pathlib import Path

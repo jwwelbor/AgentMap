@@ -1078,15 +1078,13 @@ New data available in JSON format for modern applications.
 
         # Executive Summary
         totals = memory_analytics["totals"]
-        report_sections.append(
-            f"""EXECUTIVE SUMMARY
+        report_sections.append(f"""EXECUTIVE SUMMARY
 Total Revenue: ${totals["total_revenue"]:,.2f}
 Total Transactions: {totals["total_transactions"]}
 Unique Customers: {totals["unique_customers"]}
 Categories: {totals["unique_categories"]}
 Average Transaction: ${totals["total_revenue"] / totals["total_transactions"]:,.2f}
-"""
-        )
+""")
 
         # Customer Analysis
         report_sections.append("CUSTOMER ANALYSIS")

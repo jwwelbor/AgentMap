@@ -6,6 +6,7 @@ Provides business logic layer for application configuration, using ConfigService
 for infrastructure concerns while maintaining backward compatibility with the
 existing Configuration class interface.
 """
+
 import logging
 import os
 from pathlib import Path

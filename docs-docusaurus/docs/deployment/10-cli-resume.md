@@ -21,7 +21,7 @@ The resume command uses `runtime_api.py` as a unified facade. Like all workflow 
 
 ```python
 import asyncio
-from agentmap.runtime_api import ensure_initialized, resume_workflow_async
+from agentmap import ensure_initialized, resume_workflow_async
 from agentmap.deployment.cli.utils.cli_presenter import print_json, print_err, map_exception_to_exit_code
 
 def resume_command(thread_id, response, args):

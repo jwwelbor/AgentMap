@@ -156,7 +156,7 @@ The pretty output feature is integrated into the runtime facade pattern:
 
 ```python
 # In run_command.py
-from agentmap.runtime_api import run_workflow
+from agentmap import run_workflow
 from agentmap.deployment.cli.utils.cli_presenter import print_json
 
 def run_command(pretty: bool = False, verbose: bool = False, **kwargs):

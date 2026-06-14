@@ -6,6 +6,7 @@ Provides business logic layer for storage configuration, using ConfigService
 for infrastructure concerns while implementing graceful degradation through
 exception-based failure when storage configuration is unavailable.
 """
+
 import logging
 import os
 from pathlib import Path

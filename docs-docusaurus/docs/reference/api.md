@@ -525,7 +525,7 @@ if not result["success"] or not result["outputs"]["all_agents_defined"]:
 Async siblings of every sync workflow operation. Argument and return shapes are identical to the sync counterparts — swap the call and add `await`.
 
 ```python
-from agentmap.runtime_api import (
+from agentmap import (
     run_workflow_async,
     resume_workflow_async,
     list_graphs_async,
@@ -575,7 +575,7 @@ Execute a workflow graph natively via the async runner — not a thread wrapper.
 
 ```python
 import asyncio
-from agentmap.runtime_api import ensure_initialized, run_workflow_async
+from agentmap import ensure_initialized, run_workflow_async
 
 ensure_initialized()
 
@@ -632,7 +632,7 @@ Async sibling of `resume_workflow()`. Resumes a previously interrupted workflow 
 
 ```python
 import asyncio, json
-from agentmap.runtime_api import resume_workflow_async
+from agentmap import resume_workflow_async
 
 async def handle_approval(thread_id: str, approved: bool):
     token = json.dumps({
@@ -659,7 +659,7 @@ Async sibling of `list_graphs()`. Runs filesystem scanning in a thread pool via 
 
 ```python
 import asyncio
-from agentmap.runtime_api import list_graphs_async
+from agentmap import list_graphs_async
 
 async def main():
     result = await list_graphs_async()
@@ -685,7 +685,7 @@ Async sibling of `inspect_graph()`. Runs graph analysis in a thread pool via `as
 
 ```python
 import asyncio
-from agentmap.runtime_api import inspect_graph_async
+from agentmap import inspect_graph_async
 
 async def main():
     result = await inspect_graph_async("customer_support")
@@ -708,7 +708,7 @@ Async sibling of `validate_workflow()`. Runs validation in a thread pool via `as
 
 ```python
 import asyncio
-from agentmap.runtime_api import validate_workflow_async
+from agentmap import validate_workflow_async
 
 async def pre_deploy_check(graph_name: str) -> bool:
     result = await validate_workflow_async(graph_name)
@@ -722,7 +722,7 @@ asyncio.run(pre_deploy_check("production_workflow"))
 - **Sync agents work automatically.** Agents that only implement `process()` run via `loop.run_in_executor(None, ...)` in the async path — no code changes required for async compatibility.
 - **Execution model.** `run_workflow_async()` and `resume_workflow_async()` use native `ainvoke` for graph execution. `list_graphs_async()`, `inspect_graph_async()`, and `validate_workflow_async()` delegate via `asyncio.to_thread`.
 - **Never swallow `CancelledError`.** If you catch `asyncio.CancelledError` for cleanup, always re-raise so asyncio task machinery functions correctly.
-- **Import path.** `from agentmap.runtime_api import run_workflow_async, resume_workflow_async, list_graphs_async, inspect_graph_async, validate_workflow_async`
+- **Import path.** `from agentmap import run_workflow_async, resume_workflow_async, list_graphs_async, inspect_graph_async, validate_workflow_async`
 
 ---
 

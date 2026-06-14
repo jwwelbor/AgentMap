@@ -21,7 +21,7 @@ All validation commands follow AgentMap's facade pattern, using `runtime_api.py`
 
 ```python
 # Standard validation command pattern
-from agentmap.runtime_api import validate_workflow
+from agentmap import validate_workflow
 from agentmap.deployment.cli.utils.cli_presenter import print_json, print_err, map_exception_to_exit_code
 
 def validate_command(args):
