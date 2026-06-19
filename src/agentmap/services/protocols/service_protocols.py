@@ -8,6 +8,7 @@ These protocols define what services must provide.
 from typing import (
     TYPE_CHECKING,
     Any,
+    AsyncIterator,
     Dict,
     Iterator,
     List,
@@ -26,6 +27,7 @@ from agentmap.models.llm_execution import (
     LLMMessage,
     LLMRequest,
     LLMResponse,
+    LLMStreamChunk,
 )
 
 # Declaration system imports
@@ -109,6 +111,46 @@ class BatchAdapterProtocol(Protocol):
         ``output_file_id``).  Adapters that fetch by ``provider_batch_id``
         (e.g. Anthropic) ignore it.  Adapters that serve inline results (e.g.
         Gemini) may also ignore it.
+        """
+        ...
+
+
+@runtime_checkable
+class StreamSeamProtocol(Protocol):
+    """
+    Protocol for the provider streaming seam.
+
+    Given normalized messages and resolved parameters, yields normalized
+    ``LLMStreamChunk`` objects. One narrow substrate boundary: the service
+    (E06-F03) depends only on this interface, never on a provider client
+    library inline. Per-provider event parsing lives behind this interface.
+
+    ``stream()`` is an async generator: it yields ``LLMStreamChunk`` instances
+    lazily as provider events arrive. Exactly one terminal chunk with
+    ``is_final=True`` is emitted as the last item.
+    """
+
+    provider_name: str
+
+    def stream(
+        self,
+        messages: List[LLMMessage],
+        params: Dict[str, Any],
+        *,
+        client: Optional[Any] = None,
+        credentials: Optional[Dict[str, Any]] = None,
+    ) -> AsyncIterator[LLMStreamChunk]:
+        """
+        Yield normalized ``LLMStreamChunk`` objects for the given messages.
+
+        ``messages`` is a list of normalized message dicts (role + content).
+        ``params`` carries resolved call parameters (model, max_tokens, etc.).
+        ``client`` is an optional pre-constructed provider client.
+        ``credentials`` is an optional dict of provider credentials.
+
+        The last yielded chunk has ``is_final=True``; all prior chunks have
+        ``is_final=False``.  ``chunk_index`` is zero-based and increases by 1
+        per emitted chunk.
         """
         ...
 
