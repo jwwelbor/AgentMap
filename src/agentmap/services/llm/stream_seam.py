@@ -404,13 +404,24 @@ class LangChainFallbackStreamSeam:
     (``AIMessageChunk`` → ``LLMStreamChunk``).
     """
 
-    # Default provider_name for the fallback seam.  The actual runtime provider
-    # identity comes from the resolved model string on the terminal chunk
-    # (populated by T-005 from the LangChain client's response metadata).
+    # Default provider_name for the fallback seam.  The dispatch caller should
+    # pass the canonical provider key (e.g. "google", "anthropic-lc") so that
+    # the terminal chunk's resolved_provider reflects the wrapped provider, not
+    # the substrate.  The default "langchain" is retained for direct
+    # construction without a key (e.g. legacy tests, REPL usage).
     provider_name: str = "langchain"
 
-    def __init__(self) -> None:
-        pass  # No SDK gating needed; LangChain manages its own dependencies.
+    def __init__(self, provider_name: str = "langchain") -> None:
+        """Initialise the seam, optionally overriding the provider identity.
+
+        Args:
+            provider_name: The canonical provider key whose LangChain client
+                will be supplied at ``.stream()`` call time.  Passed through
+                to the terminal chunk's ``resolved_provider`` field so that
+                callers (e.g. F03 LLMResponse reconstruction) see the wrapped
+                provider, not the LangChain substrate label.
+        """
+        self.provider_name = provider_name
 
     async def stream(
         self,
@@ -591,7 +602,12 @@ async def stream_provider(
     if seam_cls is not None:
         seam = seam_cls()
     else:
-        seam = LangChainFallbackStreamSeam()
+        # Pass the dispatch key so the terminal chunk's resolved_provider
+        # reflects the wrapped provider (e.g. "google") rather than the
+        # LangChain substrate label.  This is required for F03 LLMResponse
+        # identity reconstruction on the Gemini-via-LangChain fallback path
+        # (AC-10/AC-11, SC-1).
+        seam = LangChainFallbackStreamSeam(provider_name=provider)
 
     async for chunk in seam.stream(
         messages,

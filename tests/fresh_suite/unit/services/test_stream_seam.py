@@ -250,33 +250,42 @@ class TestStreamProviderDispatch(unittest.IsolatedAsyncioTestCase):
         assert chunks[1].resolved_provider == "openai"
 
     async def test_disp3_unknown_provider_falls_back_to_langchain(self):
-        """TC-F01-DISP-3: unknown provider key falls back to LangChainFallbackStreamSeam."""
+        """TC-F01-DISP-3: unknown provider key falls back to LangChainFallbackStreamSeam.
+
+        Exercises the REAL LangChainFallbackStreamSeam (not mocked) via
+        stream_provider("google", ...) with a real async-gen fake client so
+        that the dispatch key flows through to the terminal chunk's
+        resolved_provider.  The test would fail if the seam's provider_name
+        were hardcoded to "langchain" instead of the dispatch key.
+        """
         from agentmap.services.llm.stream_seam import stream_provider
 
-        terminal = LLMStreamChunk(
-            text_delta="",
-            chunk_index=0,
-            is_final=True,
-            finish_reason="stop",
-            resolved_provider="google",
-            resolved_model="gemini-pro",
+        lc_chunks = [
+            _make_lc_content_chunk("hello from gemini"),
+            _make_lc_terminal_chunk(
+                content="",
+                finish_reason="stop",
+                input_tokens=5,
+                output_tokens=10,
+            ),
+        ]
+        fake_client = _make_fake_lc_client(lc_chunks)
+        messages = [{"role": "user", "content": "hi"}]
+        params = {"model": "gemini-pro", "max_tokens": 100}
+        chunks = []
+        async for chunk in stream_provider(
+            "google", messages, params, client=fake_client
+        ):
+            chunks.append(chunk)
+
+        terminal = chunks[-1]
+        assert terminal.is_final is True
+        # The dispatch key "google" must appear on the terminal chunk —
+        # NOT the seam's hardcoded default "langchain".
+        assert terminal.resolved_provider == "google", (
+            f"Expected resolved_provider='google', got '{terminal.resolved_provider}'. "
+            "The dispatch key must be threaded into LangChainFallbackStreamSeam."
         )
-
-        async def fake_lc_stream(messages, params, *, client=None, credentials=None):
-            yield terminal
-
-        with patch(
-            "agentmap.services.llm.stream_seam.LangChainFallbackStreamSeam.stream",
-            side_effect=fake_lc_stream,
-        ) as mock_stream:
-            messages = [{"role": "user", "content": "hi"}]
-            chunks = []
-            async for chunk in stream_provider("google", messages, {}):
-                chunks.append(chunk)
-
-        mock_stream.assert_called_once()
-        assert len(chunks) == 1
-        assert chunks[0].is_final is True
 
     async def test_dispatch_passes_messages_and_params(self):
         """Dispatch passes messages and params through to the seam unchanged."""
@@ -1315,11 +1324,15 @@ def _make_fake_lc_client(chunks):
 class TestLangChainFallbackStreamSeam(unittest.IsolatedAsyncioTestCase):
     """LangChain fallback seam: AIMessageChunk → LLMStreamChunk mapping (Section 4)."""
 
-    def _make_seam(self):
-        """Construct LangChainFallbackStreamSeam (no SDK gating needed)."""
+    def _make_seam(self, provider_name: str = "langchain"):
+        """Construct LangChainFallbackStreamSeam with an optional provider_name.
+
+        Pass provider_name to verify the seam threads the dispatch key through
+        to the terminal chunk's resolved_provider field.
+        """
         from agentmap.services.llm.stream_seam import LangChainFallbackStreamSeam
 
-        return LangChainFallbackStreamSeam()
+        return LangChainFallbackStreamSeam(provider_name=provider_name)
 
     async def _collect_chunks(self, seam, fake_client, params=None):
         """Drive seam.stream() with the given fake client and collect all chunks."""
@@ -1359,8 +1372,13 @@ class TestLangChainFallbackStreamSeam(unittest.IsolatedAsyncioTestCase):
     async def test_lc2_terminal_chunk_reads_finish_reason_usage_and_resolved_fields(
         self,
     ):
-        """TC-F01-LC-2: terminal chunk reads finish_reason, usage, resolved_provider/model."""
-        seam = self._make_seam()
+        """TC-F01-LC-2: terminal chunk reads finish_reason, usage, resolved_provider/model.
+
+        Constructs the seam with provider_name="google" to verify the wrapped
+        provider key flows through to the terminal chunk.  A seam with the
+        hardcoded default "langchain" would cause this test to fail.
+        """
+        seam = self._make_seam(provider_name="google")
         lc_chunks = [
             _make_lc_content_chunk("Some text"),
             _make_lc_terminal_chunk(
@@ -1382,8 +1400,12 @@ class TestLangChainFallbackStreamSeam(unittest.IsolatedAsyncioTestCase):
         assert terminal.usage is not None, "terminal chunk must carry usage"
         assert terminal.usage.input_tokens == 15
         assert terminal.usage.output_tokens == 25
-        assert terminal.resolved_provider is not None
-        assert isinstance(terminal.resolved_provider, str)
+        # Must reflect the wrapped provider key passed at construction ("google"),
+        # not the seam's hardcoded default "langchain".
+        assert terminal.resolved_provider == "google", (
+            f"Expected resolved_provider='google', got '{terminal.resolved_provider}'. "
+            "LangChainFallbackStreamSeam must use the provider_name set at construction."
+        )
         assert terminal.resolved_model == "gemini-pro"
 
     async def test_lc3_absent_usage_metadata_yields_terminal_with_none_usage(self):
