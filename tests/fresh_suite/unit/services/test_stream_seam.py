@@ -1182,15 +1182,33 @@ class TestOpenAIStreamSeam(unittest.IsolatedAsyncioTestCase):
 
 # ---------------------------------------------------------------------------
 # Helpers — fake LangChain AIMessageChunk objects
+#
+# IMPORTANT: these helpers use REAL SDK shapes, not MagicMock attributes.
+#
+# 1. astream is an async-generator function (NOT AsyncMock / awaitable).
+#    inspect.isasyncgenfunction(BaseChatModel.astream) == True.
+#    So client.astream must be a plain async-def function that yields.
+#    Tests that mock it as AsyncMock(return_value=...) would incorrectly
+#    support "await client.astream()" — hiding the no-await bug.
+#
+# 2. AIMessageChunk.usage_metadata is a dict at runtime (UsageMetadata is
+#    a TypedDict).  Using MagicMock() and accessing .input_tokens as an
+#    attribute would always return a non-None Mock object, hiding the
+#    getattr-on-dict bug.  We use real dicts here.
 # ---------------------------------------------------------------------------
 
 
 def _make_lc_content_chunk(content: str):
-    """Build a fake AIMessageChunk with content text and no metadata."""
+    """
+    Build a fake AIMessageChunk with content text and no metadata.
+
+    usage_metadata is None (no dict, no object) — real shape when the provider
+    does not embed usage in mid-stream chunks.
+    """
     chunk = MagicMock()
     chunk.content = content
     chunk.response_metadata = {}
-    chunk.usage_metadata = None
+    chunk.usage_metadata = None  # real: absent on mid-stream chunks
     return chunk
 
 
@@ -1200,13 +1218,49 @@ def _make_lc_terminal_chunk(
     input_tokens: int = 10,
     output_tokens: int = 20,
 ):
-    """Build a fake final AIMessageChunk with response_metadata and usage_metadata."""
+    """
+    Build a fake final AIMessageChunk with response_metadata and usage_metadata.
+
+    usage_metadata is a real dict (UsageMetadata TypedDict shape) — NOT a
+    MagicMock object.  getattr(a_dict, "input_tokens", None) always returns
+    None; a test that asserts usage.input_tokens != None would catch the bug
+    only when we pass a real dict here.
+
+    Also covers "stop_reason" key variant (Anthropic-via-LangChain): the seam
+    must fall back to "stop_reason" when "finish_reason" is absent.
+    """
     chunk = MagicMock()
     chunk.content = content
     chunk.response_metadata = {"finish_reason": finish_reason}
-    chunk.usage_metadata = MagicMock()
-    chunk.usage_metadata.input_tokens = input_tokens
-    chunk.usage_metadata.output_tokens = output_tokens
+    # Real shape: dict, not object — getattr won't work on this
+    chunk.usage_metadata = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
+    return chunk
+
+
+def _make_lc_terminal_chunk_stop_reason(
+    content: str = "",
+    stop_reason: str = "end_turn",
+    input_tokens: int = 10,
+    output_tokens: int = 20,
+):
+    """
+    Build a fake final AIMessageChunk using "stop_reason" key in response_metadata
+    (Anthropic-via-LangChain provider variant) instead of "finish_reason".
+
+    This verifies the cross-provider finish_reason extraction falls back correctly.
+    """
+    chunk = MagicMock()
+    chunk.content = content
+    chunk.response_metadata = {"stop_reason": stop_reason}
+    chunk.usage_metadata = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
     return chunk
 
 
@@ -1224,18 +1278,31 @@ def _make_lc_terminal_chunk_no_usage(
 
 def _make_fake_lc_client(chunks):
     """
-    Build a fake LangChain chat client whose astream(messages) returns a scripted
-    async iterator of the given chunks.
+    Build a fake LangChain chat client whose astream(messages) is a real
+    async-generator function yielding the given chunks.
 
-    The fake client has:
-      - astream: an AsyncMock returning an _AsyncIteratorFake over chunks
-      - ainvoke: an AsyncMock (must NOT be called by the seam)
+    CRITICAL: astream must be a plain async-def function that yields (async
+    generator), NOT an AsyncMock.  An AsyncMock is awaitable — meaning
+    ``await client.astream(messages)`` would silently succeed and produce an
+    _AsyncIteratorFake, hiding the blocker-1 bug (``await`` on an async
+    generator raises TypeError at runtime).
+
+    By making astream a real async-gen function, ``await client.astream(...)``
+    raises ``TypeError: object async_generator can't be used in 'await'`` —
+    which is exactly the bug the test must catch.
     """
     from unittest.mock import AsyncMock
 
+    # Capture the chunks list so the nested async-gen closes over it.
+    _chunks = list(chunks)
+
+    async def _astream_gen(messages):  # noqa: RUF029 — async generator, not coroutine
+        for c in _chunks:
+            yield c
+
     fake_client = MagicMock()
-    # astream must be an AsyncMock that returns an async iterator
-    fake_client.astream = AsyncMock(return_value=_AsyncIteratorFake(chunks))
+    # Assign a real async-generator function — NOT AsyncMock.
+    fake_client.astream = _astream_gen
     fake_client.ainvoke = AsyncMock()
     return fake_client
 
@@ -1368,12 +1435,35 @@ class TestLangChainFallbackStreamSeam(unittest.IsolatedAsyncioTestCase):
         ), f"Terminal text_delta must be '', got {chunks[-1].text_delta!r}"
 
     async def test_lc5_astream_called_not_ainvoke_and_messages_passed_through(self):
-        """TC-F01-LC-5: seam calls client.astream(messages), not ainvoke; messages passed through."""
+        """
+        TC-F01-LC-5: seam calls client.astream(messages), not ainvoke; messages passed
+        through.
+
+        Because astream is a real async-generator function (not AsyncMock), we
+        cannot call assert_called_once().  Instead we capture the call via a
+        wrapping async-gen that records its argument, then verify:
+          - astream was called (via the captured_messages list)
+          - ainvoke was NOT called (via AsyncMock on fake_client.ainvoke)
+          - the correct messages object was passed
+        """
+        from unittest.mock import AsyncMock
+
         seam = self._make_seam()
         lc_chunks = [
             _make_lc_terminal_chunk(content="", finish_reason="stop"),
         ]
-        fake_client = _make_fake_lc_client(lc_chunks)
+
+        # Wrap the real async-gen to capture call args.
+        _captured_messages = []
+
+        async def _capturing_astream(messages):
+            _captured_messages.append(messages)
+            for c in lc_chunks:
+                yield c
+
+        fake_client = MagicMock()
+        fake_client.astream = _capturing_astream
+        fake_client.ainvoke = AsyncMock()
 
         messages = [{"role": "user", "content": "test message"}]
         params = {"model": "gemini-pro"}
@@ -1383,19 +1473,187 @@ class TestLangChainFallbackStreamSeam(unittest.IsolatedAsyncioTestCase):
         ):
             chunks.append(chunk)
 
-        # astream must have been called (not ainvoke)
-        fake_client.astream.assert_called_once()
+        # astream must have been called exactly once with the original messages.
+        assert (
+            len(_captured_messages) == 1
+        ), f"astream must be called exactly once; called {len(_captured_messages)} times"
+        assert (
+            _captured_messages[0] is messages
+        ), "messages must be passed through to client.astream()"
+        # ainvoke must NOT have been called.
         fake_client.ainvoke.assert_not_called()
 
-        # messages must have been passed through to astream
-        call_args = fake_client.astream.call_args
-        # astream(messages) — positional or keyword
-        called_messages = (
-            call_args[0][0] if call_args[0] else call_args[1].get("messages")
+    async def test_lc6_no_await_on_astream_real_async_gen_shape(self):
+        """
+        BLOCKER-1 regression: astream is an async-generator function, NOT a
+        coroutine.  ``await client.astream(messages)`` raises TypeError at
+        runtime.  The seam must iterate directly: ``async for chunk in
+        client.astream(messages):``.
+
+        This test uses a real async-generator function for astream.  If the
+        production code does ``await client.astream(...)``, Python will raise:
+          TypeError: object async_generator can't be used in 'await' expression
+        and this test will fail with that TypeError (not with an assertion).
+
+        Counter-factual: revert stream_seam.py line 489 to
+        ``async for lc_chunk in await client.astream(messages):``
+        and this test fails immediately.
+        """
+        seam = self._make_seam()
+        lc_chunks = [
+            _make_lc_content_chunk("hello"),
+            _make_lc_terminal_chunk(
+                content="", finish_reason="stop", input_tokens=5, output_tokens=10
+            ),
+        ]
+        fake_client = _make_fake_lc_client(lc_chunks)
+
+        # If the seam incorrectly awaits astream(), this raises TypeError.
+        # The test would then fail with TypeError rather than AssertionError.
+        chunks, _ = await self._collect_chunks(seam, fake_client)
+
+        non_final = [c for c in chunks if not c.is_final]
+        terminal_list = [c for c in chunks if c.is_final]
+        assert (
+            len(non_final) == 2
+        ), f"Expected 2 non-final chunks (hello + ''); got {len(non_final)}"
+        assert len(terminal_list) == 1, "Expected exactly 1 terminal chunk"
+        assert non_final[0].text_delta == "hello"
+
+    async def test_lc7_dict_usage_metadata_extracted_correctly(self):
+        """
+        BLOCKER-2 regression: AIMessageChunk.usage_metadata is a dict at
+        runtime (UsageMetadata TypedDict).  ``getattr(a_dict, 'input_tokens',
+        None)`` always returns None — usage is silently dropped.  The seam
+        must use dict-style access: ``usage_metadata.get('input_tokens')``.
+
+        This test supplies usage_metadata as a real dict.  If the production
+        code uses ``getattr(raw_usage_metadata, 'input_tokens', None)``, then
+        ``terminal.usage.input_tokens`` will be None and this assertion fails.
+
+        Counter-factual: change the production code to use
+        ``getattr(raw_usage_metadata, 'input_tokens', None)`` and this test
+        fails with AssertionError (usage.input_tokens is None).
+        """
+        seam = self._make_seam()
+        # _make_lc_terminal_chunk uses a real dict for usage_metadata.
+        lc_chunks = [
+            _make_lc_content_chunk("answer text"),
+            _make_lc_terminal_chunk(
+                content="",
+                finish_reason="stop",
+                input_tokens=42,
+                output_tokens=17,
+            ),
+        ]
+        fake_client = _make_fake_lc_client(lc_chunks)
+
+        chunks, _ = await self._collect_chunks(
+            seam, fake_client, params={"model": "gemini-2.0-flash", "max_tokens": 100}
+        )
+
+        terminal = chunks[-1]
+        assert terminal.is_final is True
+        assert terminal.usage is not None, (
+            "usage must not be None when usage_metadata dict is present; "
+            "getattr() on a dict always returns None — use .get() instead"
+        )
+        assert terminal.usage.input_tokens == 42, (
+            f"input_tokens must be 42; got {terminal.usage.input_tokens}. "
+            "getattr(dict, 'input_tokens', None) always returns None — use dict.get()"
         )
         assert (
-            called_messages is messages
-        ), "messages must be passed through to client.astream()"
+            terminal.usage.output_tokens == 17
+        ), f"output_tokens must be 17; got {terminal.usage.output_tokens}"
+
+    async def test_lc8_cross_provider_finish_reason_stop_reason_fallback(self):
+        """
+        MEDIUM: cross-provider finish_reason extraction.
+
+        OpenAI-via-LangChain uses ``response_metadata["finish_reason"]``.
+        Anthropic-via-LangChain uses ``response_metadata["stop_reason"]``.
+
+        The seam must check "finish_reason" first, then fall back to
+        "stop_reason", so both providers produce a non-None finish_reason
+        in the terminal chunk.
+
+        Counter-factual: a seam that only reads ``response_metadata.get(
+        "finish_reason")`` will return None for Anthropic-via-LangChain
+        chunks, causing this assertion to fail.
+        """
+        seam = self._make_seam()
+        # Use the Anthropic-via-LangChain variant: "stop_reason" key only.
+        lc_chunks = [
+            _make_lc_content_chunk("anthropic response"),
+            _make_lc_terminal_chunk_stop_reason(
+                content="",
+                stop_reason="end_turn",
+                input_tokens=8,
+                output_tokens=5,
+            ),
+        ]
+        fake_client = _make_fake_lc_client(lc_chunks)
+
+        chunks, _ = await self._collect_chunks(seam, fake_client)
+
+        terminal = chunks[-1]
+        assert terminal.is_final is True
+        assert terminal.finish_reason == "end_turn", (
+            f"finish_reason must be 'end_turn' from stop_reason key; "
+            f"got {terminal.finish_reason!r}. "
+            "Seam must fall back to response_metadata['stop_reason'] when "
+            "'finish_reason' is absent (cross-provider support)."
+        )
+
+    async def test_lc9_finish_reason_prefers_finish_reason_over_stop_reason(self):
+        """
+        Cross-provider: when both "finish_reason" and "stop_reason" are present,
+        "finish_reason" takes precedence.
+        """
+        seam = self._make_seam()
+
+        # Chunk with both keys present — finish_reason should win.
+        chunk = MagicMock()
+        chunk.content = ""
+        chunk.response_metadata = {"finish_reason": "stop", "stop_reason": "end_turn"}
+        chunk.usage_metadata = {
+            "input_tokens": 3,
+            "output_tokens": 2,
+            "total_tokens": 5,
+        }
+        lc_chunks = [chunk]
+        fake_client = _make_fake_lc_client(lc_chunks)
+
+        chunks, _ = await self._collect_chunks(seam, fake_client)
+
+        terminal = chunks[-1]
+        assert terminal.finish_reason == "stop", (
+            f"finish_reason must prefer 'finish_reason' key over 'stop_reason'; "
+            f"got {terminal.finish_reason!r}"
+        )
+
+    async def test_lc10_absent_finish_reason_and_stop_reason_yields_none(self):
+        """
+        Cross-provider: when neither "finish_reason" nor "stop_reason" is in
+        response_metadata, terminal finish_reason must be None (not crash).
+        """
+        seam = self._make_seam()
+        lc_chunks = [
+            _make_lc_content_chunk("text"),
+            _make_lc_terminal_chunk_no_usage(content="", finish_reason=None),
+        ]
+        # Override response_metadata to have no finish_reason or stop_reason.
+        lc_chunks[1].response_metadata = {}
+        fake_client = _make_fake_lc_client(lc_chunks)
+
+        chunks, _ = await self._collect_chunks(seam, fake_client)
+
+        terminal = chunks[-1]
+        assert terminal.is_final is True
+        assert terminal.finish_reason is None, (
+            f"finish_reason must be None when absent from response_metadata; "
+            f"got {terminal.finish_reason!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1635,15 +1893,15 @@ class TestMessageFeaturePassThrough(unittest.IsolatedAsyncioTestCase):
         ]
 
         # Build a fake LangChain client — it must NEVER be called if rejection fires
-        # before iteration begins.
+        # before iteration begins.  Use a real async-gen function for astream
+        # (consistent with real SDK shape; rejection fires before astream is touched).
         from unittest.mock import AsyncMock
 
+        async def _never_called_astream(messages):  # pragma: no cover
+            yield _make_lc_terminal_chunk(content="", finish_reason="stop")
+
         fake_client = MagicMock()
-        fake_client.astream = AsyncMock(
-            return_value=_AsyncIteratorFake(
-                [_make_lc_terminal_chunk(content="", finish_reason="stop")]
-            )
-        )
+        fake_client.astream = _never_called_astream
         fake_client.ainvoke = AsyncMock()
 
         # The seam must raise LLMServiceError before yielding any chunk.
@@ -1685,14 +1943,11 @@ class TestMessageFeaturePassThrough(unittest.IsolatedAsyncioTestCase):
             }
         ]
 
-        from unittest.mock import AsyncMock
+        async def _never_called_astream_feat5(messages):  # pragma: no cover
+            yield _make_lc_terminal_chunk(content="", finish_reason="stop")
 
         fake_client = MagicMock()
-        fake_client.astream = AsyncMock(
-            return_value=_AsyncIteratorFake(
-                [_make_lc_terminal_chunk(content="", finish_reason="stop")]
-            )
-        )
+        fake_client.astream = _never_called_astream_feat5
 
         chunks_before_error = []
         raised = False
@@ -1799,8 +2054,14 @@ class TestNFRHygiene(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import AsyncMock
 
         fake_client = MagicMock()
-        # Wrap our counting iterator in an AsyncMock that returns it directly.
-        fake_client.astream = AsyncMock(return_value=counting_iter)
+
+        # astream must be a real async-generator function (not AsyncMock).
+        # We wrap the counting_iter by having the async-gen delegate to it.
+        async def _astream_counting(messages):
+            async for item in counting_iter:
+                yield item
+
+        fake_client.astream = _astream_counting
         fake_client.ainvoke = AsyncMock()
 
         messages = [{"role": "user", "content": "test"}]
@@ -1876,8 +2137,14 @@ class TestNFRHygiene(unittest.IsolatedAsyncioTestCase):
 
         from unittest.mock import AsyncMock
 
+        _lc_chunks_nf2 = lc_chunks
+
+        async def _astream_nf2(messages):
+            for c in _lc_chunks_nf2:
+                yield c
+
         fake_client = MagicMock()
-        fake_client.astream = AsyncMock(return_value=_AsyncIteratorFake(lc_chunks))
+        fake_client.astream = _astream_nf2
         fake_client.ainvoke = AsyncMock()
 
         messages = [{"role": "user", "content": "What is the sentinel?"}]

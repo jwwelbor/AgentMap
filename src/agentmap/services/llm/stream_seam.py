@@ -486,7 +486,11 @@ class LangChainFallbackStreamSeam:
         usage: Optional[LLMUsage] = None
         chunk_index: int = 0
 
-        async for lc_chunk in await client.astream(messages):
+        # FIX (BLOCKER-1): astream() is an async-generator function, NOT a
+        # coroutine.  inspect.isasyncgenfunction(BaseChatModel.astream) == True.
+        # ``await client.astream(...)`` raises TypeError at runtime.
+        # Iterate directly without await.
+        async for lc_chunk in client.astream(messages):
             content: str = getattr(lc_chunk, "content", "") or ""
 
             # Capture the latest response_metadata and usage_metadata so the
@@ -494,15 +498,32 @@ class LangChainFallbackStreamSeam:
             response_metadata = getattr(lc_chunk, "response_metadata", None) or {}
             raw_usage_metadata = getattr(lc_chunk, "usage_metadata", None)
 
-            # Update finish_reason and usage from this chunk; the last update wins.
+            # Update finish_reason from this chunk; the last update wins.
+            # FIX (MEDIUM): check "finish_reason" first (OpenAI-via-LangChain),
+            # then fall back to "stop_reason" (Anthropic-via-LangChain), so
+            # finish_reason is populated across all underlying providers.
             raw_finish = response_metadata.get("finish_reason")
+            if raw_finish is None:
+                raw_finish = response_metadata.get("stop_reason")
             if raw_finish is not None:
                 finish_reason = raw_finish
 
+            # FIX (BLOCKER-2): AIMessageChunk.usage_metadata is a dict at
+            # runtime (UsageMetadata is a TypedDict).  getattr(a_dict, key,
+            # None) always returns None — use dict.get() instead.
+            # Defensive: handle both dict (real runtime shape) and object
+            # (hypothetical subclass / other LangChain integrations), mirroring
+            # the pattern in llm_service.py:2465-2468.
             if raw_usage_metadata is not None:
+                if isinstance(raw_usage_metadata, dict):
+                    in_tok = raw_usage_metadata.get("input_tokens")
+                    out_tok = raw_usage_metadata.get("output_tokens")
+                else:
+                    in_tok = getattr(raw_usage_metadata, "input_tokens", None)
+                    out_tok = getattr(raw_usage_metadata, "output_tokens", None)
                 usage = LLMUsage(
-                    input_tokens=getattr(raw_usage_metadata, "input_tokens", None),
-                    output_tokens=getattr(raw_usage_metadata, "output_tokens", None),
+                    input_tokens=in_tok,
+                    output_tokens=out_tok,
                 )
 
             yield LLMStreamChunk(
