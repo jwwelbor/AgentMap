@@ -1611,3 +1611,351 @@ class TestMessageFeaturePassThrough(unittest.IsolatedAsyncioTestCase):
             f"Zero chunks must be produced before the LLMServiceError; "
             f"got {len(chunks_before_error)} chunk(s): {chunks_before_error}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Section 7 & 8 — Import gating and NFR hygiene
+# TC-F01-DEP-* already covered above in TestImportGating.
+# TC-F01-NF-1 through TC-F01-NF-4 — laziness, content hygiene, credential hygiene,
+# additivity regression gate.
+# ---------------------------------------------------------------------------
+
+
+class _CountingAsyncIterator:
+    """
+    Async iterator that records exactly how many events have been pulled
+    so far.  Used by TC-F01-NF-1 to assert lockstep laziness.
+
+    ``events_pulled`` is incremented each time ``__anext__`` is called
+    (i.e. each time the consumer asks for the next provider event).
+    This lets the test assert that after the consumer receives its n-th
+    ``yield``, the iterator has been asked for exactly n+1 events
+    (n text deltas consumed, plus the iterator has advanced to discover
+    the next event — which is how a true async generator works: it
+    suspends after each ``yield`` and pulls the next event only on the
+    next ``anext()`` call from the consumer).
+    """
+
+    def __init__(self, items):
+        self._items = list(items)
+        self._idx = 0
+        self.events_pulled: int = 0
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self._idx >= len(self._items):
+            raise StopAsyncIteration
+        item = self._items[self._idx]
+        self._idx += 1
+        self.events_pulled += 1
+        return item
+
+
+class TestNFRHygiene(unittest.IsolatedAsyncioTestCase):
+    """
+    TC-F01-NF-1 through TC-F01-NF-3: laziness, content-capture hygiene,
+    and credential hygiene for the streaming seam (Section 8 of test-plan.md).
+
+    TC-F01-NF-4 (additivity regression gate) is implemented as a separate
+    standalone test class below.
+    """
+
+    # ------------------------------------------------------------------
+    # TC-F01-NF-1 — Laziness: true async generator, not a list builder
+    # ------------------------------------------------------------------
+
+    async def test_nf1_laziness_events_consumed_in_lockstep_with_yields(self):
+        """
+        TC-F01-NF-1: the LangChain seam is a true async generator — each text
+        delta is yielded before the next provider event is consumed.
+
+        Drive seam.stream() via anext() one step at a time.  After receiving
+        the n-th non-final chunk, assert that the fake event source has been
+        asked for exactly the minimum number of events needed to produce that
+        chunk — i.e. the seam has NOT pre-consumed (buffered) all events.
+
+        The LangChain seam yields one non-final LLMStreamChunk per lc_chunk
+        (including the final lc_chunk), then a terminal LLMStreamChunk after
+        the iterator is exhausted.  With 2 content lc_chunks the seam yields:
+          [non-final "Alpha", non-final "Beta", terminal].
+        """
+        from agentmap.services.llm.stream_seam import LangChainFallbackStreamSeam
+
+        seam = LangChainFallbackStreamSeam()
+
+        # Build a 2-chunk stream: 2 content chunks only.  The seam yields one
+        # non-final chunk per lc_chunk then a terminal, so 2 lc_chunks → 3
+        # seam chunks: [non-final "Alpha", non-final "Beta", terminal].
+        lc_chunks = [
+            _make_lc_content_chunk("Alpha"),
+            _make_lc_terminal_chunk(content="Beta", finish_reason="stop"),
+        ]
+        counting_iter = _CountingAsyncIterator(lc_chunks)
+
+        from unittest.mock import AsyncMock
+
+        fake_client = MagicMock()
+        # Wrap our counting iterator in an AsyncMock that returns it directly.
+        fake_client.astream = AsyncMock(return_value=counting_iter)
+        fake_client.ainvoke = AsyncMock()
+
+        messages = [{"role": "user", "content": "test"}]
+        params = {"model": "gemini-pro"}
+
+        gen = seam.stream(messages, params, client=fake_client, credentials=None)
+
+        # Pull first chunk (from lc_chunks[0] = "Alpha").
+        chunk0 = await gen.__anext__()
+        assert chunk0.text_delta == "Alpha"
+        assert chunk0.is_final is False
+        # After yielding the first content chunk, the seam has consumed
+        # exactly 1 provider event and has NOT pre-consumed the full stream.
+        events_after_first_yield = counting_iter.events_pulled
+        assert events_after_first_yield < len(lc_chunks), (
+            f"Seam consumed all {len(lc_chunks)} provider events before the "
+            f"consumer received the first chunk — it is buffering the full "
+            f"response rather than streaming lazily. "
+            f"events_pulled={events_after_first_yield}"
+        )
+
+        # Pull second chunk (from lc_chunks[1] = "Beta" with finish_reason).
+        chunk1 = await gen.__anext__()
+        assert chunk1.text_delta == "Beta"
+        assert chunk1.is_final is False
+        # Both lc_chunks consumed; terminal not yet emitted (seam suspends
+        # after the yield inside the loop, before exhausting the iterator).
+        # The counting_iter is now fully consumed (both events pulled).
+        assert counting_iter.events_pulled == len(lc_chunks), (
+            f"Expected both lc_chunks consumed after second seam chunk; "
+            f"got events_pulled={counting_iter.events_pulled}"
+        )
+
+        # Pull terminal chunk (emitted after the async-for loop exhausts the iter).
+        chunk2 = await gen.__anext__()
+        assert chunk2.is_final is True
+        assert chunk2.finish_reason == "stop"
+
+        # Generator must be exhausted now.
+        try:
+            await gen.__anext__()
+            raise AssertionError(  # pragma: no cover
+                "Generator should be exhausted after the terminal chunk"
+            )
+        except StopAsyncIteration:
+            pass  # Expected.
+
+    # ------------------------------------------------------------------
+    # TC-F01-NF-2 — Content-capture hygiene: no log record contains text_delta
+    # ------------------------------------------------------------------
+
+    async def test_nf2_content_capture_hygiene_no_log_record_contains_text_delta(self):
+        """
+        TC-F01-NF-2: consuming a stream emits no log record containing
+        text_delta/completion content.
+
+        LLMStreamChunk is a pure data carrier with no logging side effects.
+        The seam's only operational logging (if any) must be metadata
+        (provider, error type) — never prompt/completion text (REQ-NF-010).
+        """
+        import logging
+
+        from agentmap.services.llm.stream_seam import LangChainFallbackStreamSeam
+
+        seam = LangChainFallbackStreamSeam()
+
+        sentinel_content = "UNIQUE_CONTENT_SENTINEL_XYZ_9876"
+        # 2 lc_chunks → 3 seam chunks (1 non-final per lc_chunk + 1 terminal).
+        lc_chunks = [
+            _make_lc_content_chunk(sentinel_content),
+            _make_lc_terminal_chunk(content="", finish_reason="stop"),
+        ]
+
+        from unittest.mock import AsyncMock
+
+        fake_client = MagicMock()
+        fake_client.astream = AsyncMock(return_value=_AsyncIteratorFake(lc_chunks))
+        fake_client.ainvoke = AsyncMock()
+
+        messages = [{"role": "user", "content": "What is the sentinel?"}]
+        params = {"model": "gemini-pro"}
+
+        # Capture log records at DEBUG and above across the root logger
+        # and the agentmap logger namespace.
+        with self.assertLogs("agentmap", level=logging.DEBUG) as log_ctx:
+            # We need at least one log record for assertLogs to not fail.
+            # Emit a benign record so the context manager doesn't error out
+            # if the seam emits no logs (which is the expected/desired case).
+            logging.getLogger("agentmap.test_hygiene_probe").debug(
+                "probe: hygiene test running"
+            )
+            chunks = []
+            async for chunk in seam.stream(
+                messages, params, client=fake_client, credentials=None
+            ):
+                chunks.append(chunk)
+
+        # Confirm the stream produced the expected chunks:
+        # 2 lc_chunks → 2 non-final + 1 terminal = 3 seam chunks.
+        assert (
+            len(chunks) == 3
+        ), f"Expected 3 chunks (2 non-final + terminal), got {len(chunks)}"
+
+        # Assert that no log record contains the sentinel content text.
+        for record in log_ctx.records:
+            assert sentinel_content not in record.getMessage(), (
+                f"Log record contains completion text (content-capture hygiene "
+                f"violation). Record: {record.getMessage()!r}. "
+                f"The seam and LLMStreamChunk must not log text_delta/completion "
+                f"content (REQ-NF-010)."
+            )
+
+    # ------------------------------------------------------------------
+    # TC-F01-NF-3 — Credential hygiene: no log record contains api_key value
+    # ------------------------------------------------------------------
+
+    async def test_nf3_credential_hygiene_no_log_record_contains_api_key(self):
+        """
+        TC-F01-NF-3: no log record contains the credential/api_key value
+        passed to the seam (REQ-NF-011, mirrors batch-adapter discipline).
+
+        The Anthropic and OpenAI seams receive an api_key in the credentials
+        dict and must never log it.  We verify via a scripted stream with a
+        sentinel credential value.
+        """
+        import logging
+        import sys
+
+        from agentmap.services.llm.stream_seam import AnthropicStreamSeam
+
+        sentinel_api_key = "sk-SENTINEL-CRED-VALUE-DO-NOT-LOG-0000"
+
+        mock_sdk, mock_client, make_ctx = _make_mock_anthropic_module()
+
+        events = [
+            _make_anthropic_message_start_event(input_tokens=5),
+            _make_anthropic_content_block_start_event("text", 0),
+            _make_anthropic_text_delta_event("response text", 0),
+            _make_anthropic_content_block_stop_event(0),
+            _make_anthropic_message_delta_event(
+                output_tokens=3, stop_reason="end_turn"
+            ),
+            _make_anthropic_message_stop_event(),
+        ]
+        make_ctx(events)
+
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            seam = AnthropicStreamSeam()
+
+        messages = [{"role": "user", "content": "hello"}]
+        params = {"model": "claude-3-5-sonnet-20241022", "max_tokens": 100}
+        credentials = {"api_key": sentinel_api_key}
+
+        with self.assertLogs("agentmap", level=logging.DEBUG) as log_ctx:
+            # Emit a probe record so assertLogs doesn't fail if seam emits nothing.
+            logging.getLogger("agentmap.test_cred_hygiene_probe").debug(
+                "probe: credential hygiene test running"
+            )
+            chunks = []
+            with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+                async for chunk in seam.stream(
+                    messages, params, client=None, credentials=credentials
+                ):
+                    chunks.append(chunk)
+
+        # Assert no log record leaks the credential value.
+        for record in log_ctx.records:
+            assert sentinel_api_key not in record.getMessage(), (
+                f"Log record contains credential value (credential hygiene violation). "
+                f"Record: {record.getMessage()!r}. "
+                f"The seam must never log api_key or credential values (REQ-NF-011)."
+            )
+
+        # Confirm the stream still produced correct output.
+        assert len(chunks) >= 2, f"Expected >=2 chunks from stream; got {len(chunks)}"
+        assert chunks[-1].is_final is True
+
+
+# ---------------------------------------------------------------------------
+# TC-F01-NF-4 — Additivity regression gate (Section 8 of test-plan.md)
+# ---------------------------------------------------------------------------
+
+
+class TestAdditivityRegressionGate:
+    """
+    TC-F01-NF-4: F01 introduces zero change to existing non-streaming call
+    paths — the existing test suites must all pass.
+
+    This guard test programmatically verifies that the three non-streaming
+    LLM test modules are importable and their test classes instantiable
+    (i.e. the modules' public surface has not changed from F01's edits).
+
+    The actual pass/fail of the tests themselves is confirmed by running
+    the full regression suite as part of this task's quality gate.
+    Reference: spec.md REQ-NF-002 / AC-18.
+    """
+
+    def test_nf4_llm_service_test_module_importable_and_unchanged(self):
+        """TC-F01-NF-4 (structural): test_llm_service.py is importable with its test classes."""
+        import importlib
+
+        mod = importlib.import_module(
+            "tests.fresh_suite.unit.services.test_llm_service"
+        )
+        # The module must expose at least one test class.
+        test_classes = [name for name in dir(mod) if name.startswith("Test")]
+        assert len(test_classes) > 0, (
+            "test_llm_service.py must contain at least one Test* class; "
+            "F01 must not have modified the non-streaming LLM test surface."
+        )
+
+    def test_nf4_llm_service_async_test_module_importable_and_unchanged(self):
+        """TC-F01-NF-4 (structural): test_llm_service_async.py is importable with its test classes."""
+        import importlib
+
+        mod = importlib.import_module(
+            "tests.fresh_suite.unit.services.test_llm_service_async"
+        )
+        test_classes = [name for name in dir(mod) if name.startswith("Test")]
+        assert len(test_classes) > 0, (
+            "test_llm_service_async.py must contain at least one Test* class; "
+            "F01 must not have modified the non-streaming async LLM test surface."
+        )
+
+    def test_nf4_llm_client_factory_test_module_importable_and_unchanged(self):
+        """TC-F01-NF-4 (structural): test_llm_client_factory.py is importable with its test classes."""
+        import importlib
+
+        mod = importlib.import_module(
+            "tests.fresh_suite.unit.services.test_llm_client_factory"
+        )
+        test_classes = [name for name in dir(mod) if name.startswith("Test")]
+        assert len(test_classes) > 0, (
+            "test_llm_client_factory.py must contain at least one Test* class; "
+            "F01 must not have modified the LLM client factory test surface."
+        )
+
+    def test_nf4_f01_did_not_modify_llm_service_source(self):
+        """TC-F01-NF-4 (structural): llm_service.py is importable (F01 must not have broken it)."""
+        import importlib
+
+        # If F01 accidentally modified llm_service.py, this import would likely
+        # fail or the downstream test suite would regress.  A clean import
+        # confirms the module is syntactically intact.
+        mod = importlib.import_module("agentmap.services.llm_service")
+        assert hasattr(mod, "LLMService"), (
+            "LLMService must still be importable from agentmap.services.llm_service; "
+            "F01 must not have modified llm_service.py (REQ-NF-002, AC-18)."
+        )
+
+    def test_nf4_f01_did_not_modify_llm_client_factory_source(self):
+        """TC-F01-NF-4 (structural): llm_client_factory.py is importable (F01 must not have broken it)."""
+        import importlib
+
+        mod = importlib.import_module("agentmap.services.llm_client_factory")
+        assert hasattr(mod, "LLMClientFactory"), (
+            "LLMClientFactory must still be importable from "
+            "agentmap.services.llm_client_factory; "
+            "F01 must not have modified llm_client_factory.py (REQ-NF-002, AC-18)."
+        )

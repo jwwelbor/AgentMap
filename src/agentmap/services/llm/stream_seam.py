@@ -453,6 +453,12 @@ class LangChainFallbackStreamSeam:
         """
         model: str = params.get("model", "")
 
+        # credentials is accepted for interface uniformity with the native seams
+        # (StreamSeamProtocol symmetry) but LangChain manages its own provider
+        # credentials inside the client object — there is nothing to extract here.
+        # The parameter is intentionally unused in this seam implementation.
+        del credentials  # suppress "unused variable" linters (REQ-NF-011)
+
         # The LangChain fallback seam requires a pre-constructed client — there is
         # no provider-SDK construction path here (client construction is F02's scope,
         # per spec.md §9 ADR-3).  A missing client is a caller error.
