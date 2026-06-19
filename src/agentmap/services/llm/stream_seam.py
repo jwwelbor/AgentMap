@@ -21,8 +21,44 @@ Credentials are NOT retained as module-level state and are never logged
 
 from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Optional
 
-from agentmap.exceptions import LLMDependencyError
+from agentmap.exceptions import LLMDependencyError, LLMServiceError
 from agentmap.models.llm_execution import LLMMessage, LLMStreamChunk, LLMUsage
+
+# ---------------------------------------------------------------------------
+# Message feature helpers (Constraint C4 / REQ-F-012, REQ-F-013 / TD-6)
+# ---------------------------------------------------------------------------
+
+
+def _messages_contain_cache_control(messages: List[LLMMessage]) -> bool:
+    """Return True if any content block in *messages* carries a ``cache_control`` key.
+
+    Checks both string-content messages (no blocks) and list-content messages
+    (multimodal / structured content blocks).
+    """
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and "cache_control" in block:
+                    return True
+    return False
+
+
+def _reject_unsupported_cache_control(seam_name: str, provider_name: str) -> None:
+    """Raise ``LLMServiceError`` describing that ``cache_control`` is not supported.
+
+    Called by seam implementations that cannot carry ``cache_control`` in
+    streaming (REQ-F-013, TD-6, Constraint C4).  Raising here — before any
+    ``yield`` — guarantees zero chunks are produced before the error.
+    """
+    raise LLMServiceError(
+        f"The '{seam_name}' streaming seam (provider='{provider_name}') does not "
+        "support 'cache_control' blocks in streaming mode.  Remove the "
+        "'cache_control' block from your messages, or use the Anthropic native "
+        "seam which carries 'cache_control' in streaming.  "
+        "(spec.md REQ-F-013, Constraint C4)"
+    )
+
 
 # ---------------------------------------------------------------------------
 # Anthropic native seam
@@ -424,6 +460,16 @@ class LangChainFallbackStreamSeam:
             raise ValueError(
                 "LangChainFallbackStreamSeam.stream() requires a pre-constructed "
                 "LangChain client (client=...).  Client construction is handled by F02."
+            )
+
+        # REQ-F-013 / Constraint C4 (TD-6): The LangChain fallback seam does NOT
+        # carry ``cache_control`` blocks — LangChain's .astream() interface has no
+        # native support for Anthropic prompt-caching control keys in streaming.
+        # Reject explicitly before yielding any chunk so callers learn immediately
+        # rather than silently losing the cache_control semantics.
+        if _messages_contain_cache_control(messages):
+            _reject_unsupported_cache_control(
+                "LangChainFallbackStreamSeam", self.provider_name
             )
 
         # Accumulate terminal fields as we consume the iterator.

@@ -1294,3 +1294,320 @@ class TestLangChainFallbackStreamSeam(unittest.IsolatedAsyncioTestCase):
         assert (
             called_messages is messages
         ), "messages must be passed through to client.astream()"
+
+
+# ---------------------------------------------------------------------------
+# Section 6 — Message Feature Pass-Through & Explicit Rejection (Constraint C4)
+# TC-F01-FEAT-1 through TC-F01-FEAT-5
+# ---------------------------------------------------------------------------
+
+
+class TestMessageFeaturePassThrough(unittest.IsolatedAsyncioTestCase):
+    """
+    TC-F01-FEAT-1 through TC-F01-FEAT-5: vision/multimodal pass-through
+    and cache_control carry-or-reject (spec.md REQ-F-012, REQ-F-013, AC-12,
+    AC-13, AC-14, Constraint C4, TD-6).
+
+    Assertions are on the **mock's recorded call args** — no real API calls.
+    """
+
+    # ------------------------------------------------------------------
+    # TC-F01-FEAT-1: Vision pass-through (Anthropic)
+    # ------------------------------------------------------------------
+
+    async def test_feat1_vision_passthrough_anthropic(self):
+        """TC-F01-FEAT-1: image block present in messages arg passed to native Anthropic SDK call."""
+        from agentmap.services.llm.stream_seam import AnthropicStreamSeam
+
+        mock_sdk, mock_client, make_ctx = _make_mock_anthropic_module()
+
+        # Messages containing a structured image block (vision/multimodal)
+        image_block = {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": "iVBORw0KGgo=",
+            },
+        }
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    image_block,
+                    {"type": "text", "text": "What is in this image?"},
+                ],
+            }
+        ]
+
+        events = [
+            _make_anthropic_message_start_event(input_tokens=5),
+            _make_anthropic_content_block_start_event("text", 0),
+            _make_anthropic_text_delta_event("A cat.", 0),
+            _make_anthropic_content_block_stop_event(0),
+            _make_anthropic_message_delta_event(
+                output_tokens=3, stop_reason="end_turn"
+            ),
+            _make_anthropic_message_stop_event(),
+        ]
+        make_ctx(events)
+
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            seam = AnthropicStreamSeam()
+            params = {"model": "claude-3-5-sonnet-20241022", "max_tokens": 100}
+            chunks = []
+            with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+                async for chunk in seam.stream(
+                    messages, params, client=None, credentials=None
+                ):
+                    chunks.append(chunk)
+
+        # The image block must reach the SDK call unchanged — not stripped.
+        mock_client.messages.stream.assert_called_once()
+        call_kwargs = mock_client.messages.stream.call_args.kwargs
+        sdk_messages = call_kwargs.get("messages", call_kwargs.get("messages"))
+        assert sdk_messages is not None, "messages kwarg must be present in SDK call"
+        # The messages list passed to the SDK must equal what we sent in.
+        assert sdk_messages == messages, (
+            "Vision messages must pass through unchanged to the Anthropic SDK call; "
+            f"got {sdk_messages!r}"
+        )
+        # Explicitly confirm the image block is present in the SDK call.
+        user_content = sdk_messages[0]["content"]
+        image_blocks = [b for b in user_content if b.get("type") == "image"]
+        assert (
+            len(image_blocks) == 1
+        ), "The image block must not be dropped from the Anthropic SDK call"
+
+    # ------------------------------------------------------------------
+    # TC-F01-FEAT-2: Vision pass-through (OpenAI)
+    # ------------------------------------------------------------------
+
+    async def test_feat2_vision_passthrough_openai(self):
+        """TC-F01-FEAT-2: image_url content block present in messages arg passed to native OpenAI SDK call."""
+        from agentmap.services.llm.stream_seam import OpenAIStreamSeam
+
+        mock_sdk, mock_client = _make_mock_openai_module()
+
+        # Messages containing an image_url content block (OpenAI vision format)
+        image_url_block = {
+            "type": "image_url",
+            "image_url": {"url": "https://example.com/image.png"},
+        }
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    image_url_block,
+                    {"type": "text", "text": "Describe this image."},
+                ],
+            }
+        ]
+
+        oai_chunks = [
+            _make_openai_content_chunk("A landscape."),
+            _make_openai_finish_reason_chunk("stop"),
+            _make_openai_usage_chunk(),
+        ]
+        mock_client.chat.completions.create.return_value = _AsyncIteratorFake(
+            oai_chunks
+        )
+
+        with patch.dict(sys.modules, {"openai": mock_sdk}):
+            seam = OpenAIStreamSeam()
+            params = {"model": "gpt-4o", "max_tokens": 100}
+            chunks = []
+            with patch.dict(sys.modules, {"openai": mock_sdk}):
+                async for chunk in seam.stream(
+                    messages, params, client=None, credentials=None
+                ):
+                    chunks.append(chunk)
+
+        # The image_url block must reach the SDK call unchanged.
+        mock_client.chat.completions.create.assert_called_once()
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        sdk_messages = call_kwargs.get("messages")
+        assert sdk_messages is not None, "messages kwarg must be present in SDK call"
+        assert sdk_messages == messages, (
+            "Vision messages must pass through unchanged to the OpenAI SDK call; "
+            f"got {sdk_messages!r}"
+        )
+        user_content = sdk_messages[0]["content"]
+        image_url_blocks = [b for b in user_content if b.get("type") == "image_url"]
+        assert (
+            len(image_url_blocks) == 1
+        ), "The image_url block must not be dropped from the OpenAI SDK call"
+
+    # ------------------------------------------------------------------
+    # TC-F01-FEAT-3: cache_control pass-through (Anthropic native, supported)
+    # ------------------------------------------------------------------
+
+    async def test_feat3_cache_control_passthrough_anthropic_native(self):
+        """TC-F01-FEAT-3: cache_control block for Anthropic native reaches the SDK call unchanged."""
+        from agentmap.services.llm.stream_seam import AnthropicStreamSeam
+
+        mock_sdk, mock_client, make_ctx = _make_mock_anthropic_module()
+
+        # Messages with cache_control block (Anthropic prompt-caching format)
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "You are a helpful assistant." * 50,
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                    {"type": "text", "text": "What is 2+2?"},
+                ],
+            }
+        ]
+
+        events = [
+            _make_anthropic_message_start_event(
+                input_tokens=30,
+                cache_creation_input_tokens=100,
+                cache_read_input_tokens=0,
+            ),
+            _make_anthropic_content_block_start_event("text", 0),
+            _make_anthropic_text_delta_event("4", 0),
+            _make_anthropic_content_block_stop_event(0),
+            _make_anthropic_message_delta_event(
+                output_tokens=1, stop_reason="end_turn"
+            ),
+            _make_anthropic_message_stop_event(),
+        ]
+        make_ctx(events)
+
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            seam = AnthropicStreamSeam()
+            params = {"model": "claude-3-5-sonnet-20241022", "max_tokens": 100}
+            chunks = []
+            with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+                async for chunk in seam.stream(
+                    messages, params, client=None, credentials=None
+                ):
+                    chunks.append(chunk)
+
+        # The cache_control key must remain in the messages arg passed to the SDK.
+        mock_client.messages.stream.assert_called_once()
+        call_kwargs = mock_client.messages.stream.call_args.kwargs
+        sdk_messages = call_kwargs.get("messages")
+        assert sdk_messages is not None, "messages kwarg must be present in SDK call"
+        assert sdk_messages == messages, (
+            "Messages with cache_control must pass through unchanged to Anthropic SDK; "
+            f"got {sdk_messages!r}"
+        )
+        user_content = sdk_messages[0]["content"]
+        # The first content block must still carry cache_control
+        first_block = user_content[0]
+        assert (
+            "cache_control" in first_block
+        ), "cache_control must not be stripped from messages passed to Anthropic SDK"
+
+    # ------------------------------------------------------------------
+    # TC-F01-FEAT-4: Explicit rejection — cache_control targeting unsupported mode
+    # ------------------------------------------------------------------
+
+    async def test_feat4_explicit_rejection_cache_control_unsupported_mode(self):
+        """TC-F01-FEAT-4: cache_control on LangChain fallback raises LLMServiceError before any chunk."""
+        from agentmap.exceptions import LLMServiceError
+        from agentmap.services.llm.stream_seam import LangChainFallbackStreamSeam
+
+        seam = LangChainFallbackStreamSeam()
+
+        # Messages with a cache_control block — LangChain fallback does not carry
+        # cache_control natively in streaming (spec.md REQ-F-013, TD-6).
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Long system context..." * 20,
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                    {"type": "text", "text": "Tell me a joke."},
+                ],
+            }
+        ]
+
+        # Build a fake LangChain client — it must NEVER be called if rejection fires
+        # before iteration begins.
+        from unittest.mock import AsyncMock
+
+        fake_client = MagicMock()
+        fake_client.astream = AsyncMock(
+            return_value=_AsyncIteratorFake(
+                [_make_lc_terminal_chunk(content="", finish_reason="stop")]
+            )
+        )
+        fake_client.ainvoke = AsyncMock()
+
+        # The seam must raise LLMServiceError before yielding any chunk.
+        # Per TC-F01-FEAT-4, the exception fires before the first anext().
+        gen = seam.stream(
+            messages, {"model": "gemini-pro"}, client=fake_client, credentials=None
+        )
+        with pytest.raises(LLMServiceError):
+            # Either the generator raises immediately or on the first anext().
+            # Both are valid "before any chunk" — we must not receive a chunk first.
+            try:
+                await gen.__anext__()
+            except StopAsyncIteration:
+                pytest.fail(
+                    "Generator stopped cleanly — LLMServiceError was not raised"
+                )
+
+    # ------------------------------------------------------------------
+    # TC-F01-FEAT-5: No silent drop — zero chunks before the exception
+    # ------------------------------------------------------------------
+
+    async def test_feat5_no_silent_drop_zero_chunks_before_exception(self):
+        """TC-F01-FEAT-5: zero chunks produced before the LLMServiceError in a rejection scenario."""
+        from agentmap.exceptions import LLMServiceError
+        from agentmap.services.llm.stream_seam import LangChainFallbackStreamSeam
+
+        seam = LangChainFallbackStreamSeam()
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Cached context",
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                ],
+            }
+        ]
+
+        from unittest.mock import AsyncMock
+
+        fake_client = MagicMock()
+        fake_client.astream = AsyncMock(
+            return_value=_AsyncIteratorFake(
+                [_make_lc_terminal_chunk(content="", finish_reason="stop")]
+            )
+        )
+
+        chunks_before_error = []
+        raised = False
+        gen = seam.stream(
+            messages, {"model": "gemini-pro"}, client=fake_client, credentials=None
+        )
+        try:
+            async for chunk in gen:
+                chunks_before_error.append(chunk)
+        except LLMServiceError:
+            raised = True
+
+        assert raised, (
+            "LLMServiceError must be raised for cache_control on unsupported mode; "
+            "none was raised"
+        )
+        assert len(chunks_before_error) == 0, (
+            f"Zero chunks must be produced before the LLMServiceError; "
+            f"got {len(chunks_before_error)} chunk(s): {chunks_before_error}"
+        )
