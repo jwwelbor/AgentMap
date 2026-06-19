@@ -525,5 +525,341 @@ class TestLLMClientFactoryStreamingCacheKey(unittest.TestCase):
         self.assertIs(got2, s_client)
 
 
+class TestLLMClientFactoryStreamingConstruction(unittest.TestCase):
+    """
+    T-E06-F02-002: per-provider streaming usage opt-in flags.
+
+    Covers: AC-4, AC-5, AC-6, AC-7, AC-10, AC-11 (CON and BND-1 tests).
+    Mocking layer 2: patch the LangChain wrapper class at its import module
+    and assert on constructor kwargs via mock_cls.call_args.kwargs.
+    No real network calls; api_key values are dummy strings only.
+    """
+
+    def setUp(self):
+        self.logging_service = MockServiceFactory.create_mock_logging_service()
+        self.factory = LLMClientFactory(self.logging_service)
+        self._config = {
+            "api_key": "test_key_123456",
+            "model": "claude-3-haiku-20240307",
+            "temperature": 0.4,
+            "max_tokens": 256,
+        }
+        self._openai_config = {
+            "api_key": "test_key_123456",
+            "model": "gpt-4o-mini",
+            "temperature": 0.4,
+            "max_tokens": 256,
+        }
+        self._google_config = {
+            "api_key": "test_key_123456",
+            "model": "gemini-pro",
+            "temperature": 0.4,
+            "max_tokens": 256,
+        }
+
+    def test_streaming_anthropic_sets_stream_usage_true(self):
+        """TC-F02-CON-1: streaming Anthropic — stream_usage=True + existing kwargs.
+
+        AC-4, AC-7.
+        """
+        with patch("langchain_anthropic.ChatAnthropic") as mock_cls:
+            self.factory.get_or_create_client("anthropic", self._config, streaming=True)
+
+        mock_cls.assert_called_once()
+        kwargs = mock_cls.call_args.kwargs
+        self.assertTrue(
+            kwargs.get("stream_usage"),
+            "Streaming Anthropic must pass stream_usage=True to ChatAnthropic",
+        )
+        # Existing kwargs preserved (AC-7)
+        self.assertEqual(kwargs.get("model"), self._config["model"])
+        self.assertAlmostEqual(kwargs.get("temperature"), self._config["temperature"])
+        self.assertEqual(kwargs.get("anthropic_api_key"), self._config["api_key"])
+        self.assertEqual(kwargs.get("max_tokens"), self._config["max_tokens"])
+
+    def test_streaming_openai_sets_stream_options_include_usage(self):
+        """TC-F02-CON-2: streaming OpenAI — stream_options={"include_usage": True} + existing kwargs.
+
+        AC-5, AC-7.
+        """
+        with patch("langchain_openai.ChatOpenAI") as mock_cls:
+            self.factory.get_or_create_client(
+                "openai", self._openai_config, streaming=True
+            )
+
+        mock_cls.assert_called_once()
+        kwargs = mock_cls.call_args.kwargs
+        self.assertEqual(
+            kwargs.get("stream_options"),
+            {"include_usage": True},
+            "Streaming OpenAI must pass stream_options={'include_usage': True} to ChatOpenAI",
+        )
+        # Existing kwargs preserved (AC-7)
+        self.assertEqual(kwargs.get("model_name"), self._openai_config["model"])
+        self.assertAlmostEqual(
+            kwargs.get("temperature"), self._openai_config["temperature"]
+        )
+        self.assertEqual(kwargs.get("openai_api_key"), self._openai_config["api_key"])
+        self.assertEqual(kwargs.get("max_tokens"), self._openai_config["max_tokens"])
+
+    def test_non_streaming_anthropic_omits_stream_usage(self):
+        """TC-F02-CON-3: non-streaming Anthropic — stream_usage absent from kwargs.
+
+        AC-6.
+        """
+        with patch("langchain_anthropic.ChatAnthropic") as mock_cls:
+            self.factory.get_or_create_client("anthropic", self._config)
+
+        mock_cls.assert_called_once()
+        kwargs = mock_cls.call_args.kwargs
+        self.assertNotIn(
+            "stream_usage",
+            kwargs,
+            "Non-streaming Anthropic must NOT pass stream_usage to ChatAnthropic",
+        )
+
+    def test_non_streaming_openai_omits_stream_options(self):
+        """TC-F02-CON-4: non-streaming OpenAI — stream_options absent from kwargs.
+
+        AC-6.
+        """
+        with patch("langchain_openai.ChatOpenAI") as mock_cls:
+            self.factory.get_or_create_client("openai", self._openai_config)
+
+        mock_cls.assert_called_once()
+        kwargs = mock_cls.call_args.kwargs
+        self.assertNotIn(
+            "stream_options",
+            kwargs,
+            "Non-streaming OpenAI must NOT pass stream_options to ChatOpenAI",
+        )
+
+    def test_streaming_kwargs_equal_non_streaming_plus_opt_in_only(self):
+        """TC-F02-CON-5: streaming kwargs == non-streaming kwargs + one opt-in flag.
+
+        Tests both OpenAI and Anthropic. Removing the streaming-only key from
+        streaming kwargs must yield exactly the non-streaming kwargs (AC-7, AC-6).
+        """
+        # -- OpenAI --
+        openai_factory = LLMClientFactory(self.logging_service)
+        with patch("langchain_openai.ChatOpenAI") as mock_cls:
+            openai_factory.get_or_create_client(
+                "openai", self._openai_config, streaming=False
+            )
+            ns_kwargs = dict(mock_cls.call_args.kwargs)
+            # Clear cache so second call reconstructs
+            openai_factory.clear_cache()
+            openai_factory.get_or_create_client(
+                "openai", self._openai_config, streaming=True
+            )
+            s_kwargs = dict(mock_cls.call_args.kwargs)
+
+        stripped = {k: v for k, v in s_kwargs.items() if k != "stream_options"}
+        self.assertEqual(
+            ns_kwargs,
+            stripped,
+            "Streaming OpenAI kwargs minus stream_options must equal non-streaming kwargs",
+        )
+        self.assertIn("stream_options", s_kwargs)
+        self.assertNotIn("stream_options", ns_kwargs)
+        # max_tokens present and equal in both
+        self.assertEqual(ns_kwargs.get("max_tokens"), s_kwargs.get("max_tokens"))
+
+        # -- Anthropic --
+        anthropic_factory = LLMClientFactory(self.logging_service)
+        with patch("langchain_anthropic.ChatAnthropic") as mock_cls:
+            anthropic_factory.get_or_create_client(
+                "anthropic", self._config, streaming=False
+            )
+            ns_kwargs = dict(mock_cls.call_args.kwargs)
+            anthropic_factory.clear_cache()
+            anthropic_factory.get_or_create_client(
+                "anthropic", self._config, streaming=True
+            )
+            s_kwargs = dict(mock_cls.call_args.kwargs)
+
+        stripped = {k: v for k, v in s_kwargs.items() if k != "stream_usage"}
+        self.assertEqual(
+            ns_kwargs,
+            stripped,
+            "Streaming Anthropic kwargs minus stream_usage must equal non-streaming kwargs",
+        )
+        self.assertIn("stream_usage", s_kwargs)
+        self.assertNotIn("stream_usage", ns_kwargs)
+        self.assertEqual(ns_kwargs.get("max_tokens"), s_kwargs.get("max_tokens"))
+
+    def test_streaming_google_sets_no_opt_in_flags(self):
+        """TC-F02-CON-6: streaming Google — no stream_usage, no stream_options.
+
+        Streaming and non-streaming Google kwargs must be equal. The Google
+        kwargs use max_output_tokens (not max_tokens) sourced from config['max_tokens'].
+        AC-10, AC-7.
+        """
+        google_factory = LLMClientFactory(self.logging_service)
+        with patch("langchain_google_genai.ChatGoogleGenerativeAI") as mock_cls:
+            google_factory.get_or_create_client(
+                "google", self._google_config, streaming=False
+            )
+            ns_kwargs = dict(mock_cls.call_args.kwargs)
+            google_factory.clear_cache()
+            google_factory.get_or_create_client(
+                "google", self._google_config, streaming=True
+            )
+            s_kwargs = dict(mock_cls.call_args.kwargs)
+
+        self.assertNotIn(
+            "stream_usage",
+            s_kwargs,
+            "Streaming Google must not pass stream_usage",
+        )
+        self.assertNotIn(
+            "stream_options",
+            s_kwargs,
+            "Streaming Google must not pass stream_options",
+        )
+        self.assertEqual(
+            ns_kwargs,
+            s_kwargs,
+            "Streaming Google kwargs must equal non-streaming Google kwargs",
+        )
+        # Google uses max_output_tokens (not max_tokens)
+        self.assertIn("max_output_tokens", s_kwargs)
+        self.assertNotIn("max_tokens", s_kwargs)
+        self.assertEqual(
+            s_kwargs["max_output_tokens"], self._google_config["max_tokens"]
+        )
+
+    def test_streaming_anthropic_without_max_tokens(self):
+        """TC-F02-CON-7: streaming Anthropic without max_tokens in config.
+
+        stream_usage=True present; no max_tokens key in kwargs.
+        AC-7, REQ-F-006.
+        """
+        config_no_max = {
+            "api_key": "test_key_123456",
+            "model": "claude-3-haiku-20240307",
+            "temperature": 0.4,
+        }
+        with patch("langchain_anthropic.ChatAnthropic") as mock_cls:
+            self.factory.get_or_create_client(
+                "anthropic", config_no_max, streaming=True
+            )
+
+        mock_cls.assert_called_once()
+        kwargs = mock_cls.call_args.kwargs
+        self.assertTrue(
+            kwargs.get("stream_usage"),
+            "stream_usage=True must be present even when max_tokens is absent from config",
+        )
+        self.assertNotIn(
+            "max_tokens",
+            kwargs,
+            "max_tokens must be absent from kwargs when not in config",
+        )
+
+    def test_f03_handoff_contract(self):
+        """TC-F02-CON-8: F03 hand-off contract — get_or_create_client caches streaming client.
+
+        (a) First streaming call returns the patched LangChain instance.
+        (b) Second identical call returns the same cached instance (no re-construction).
+        (c) Non-streaming call returns a distinct instance.
+        REQ-F-007, AC-3, AC-4.
+        """
+        with patch("langchain_anthropic.ChatAnthropic") as mock_cls:
+            first_instance = Mock(name="langchain_instance")
+            mock_cls.return_value = first_instance
+
+            result_a = self.factory.get_or_create_client(
+                "anthropic", self._config, streaming=True
+            )
+            result_b = self.factory.get_or_create_client(
+                "anthropic", self._config, streaming=True
+            )
+
+        # (a) returns the LangChain mock instance
+        self.assertIs(
+            result_a,
+            first_instance,
+            "First streaming call must return the constructed LangChain instance",
+        )
+        # (b) second call is cached — no second construction
+        mock_cls.assert_called_once()
+        self.assertIs(
+            result_b,
+            result_a,
+            "Second streaming call must return the same cached instance",
+        )
+
+        # (c) non-streaming returns a distinct instance
+        with patch("langchain_anthropic.ChatAnthropic") as mock_cls2:
+            ns_instance = Mock(name="ns_instance")
+            mock_cls2.return_value = ns_instance
+            result_c = self.factory.get_or_create_client(
+                "anthropic", self._config, streaming=False
+            )
+
+        self.assertIs(result_c, ns_instance)
+        self.assertIsNot(
+            result_c,
+            result_a,
+            "Non-streaming call must return a distinct instance from the streaming one",
+        )
+
+    def test_bnd1_factory_contains_no_native_sdk_construction(self):
+        """TC-F02-BND-1: structural guard.
+
+        (a) stream_seam.py is unmodified — still contains stream_options at line 332.
+        (b) llm_client_factory.py imports no native SDK client classes.
+        AC-11, REQ-F-008.
+        """
+        import os
+
+        seam_path = os.path.join(
+            os.path.dirname(__file__),
+            "../../../../src/agentmap/services/llm/stream_seam.py",
+        )
+        seam_path = os.path.normpath(seam_path)
+        with open(seam_path) as f:
+            seam_src = f.read()
+
+        # (a) stream_seam.py still has the native OpenAI opt-in at its call site
+        self.assertIn(
+            'stream_options={"include_usage": True}',
+            seam_src,
+            "stream_seam.py must still contain the native OpenAI stream_options opt-in",
+        )
+
+        # (b) factory source contains no native SDK client construction
+        factory_path = os.path.join(
+            os.path.dirname(__file__),
+            "../../../../src/agentmap/services/llm_client_factory.py",
+        )
+        factory_path = os.path.normpath(factory_path)
+        with open(factory_path) as f:
+            factory_src = f.read()
+
+        self.assertNotIn(
+            "openai.AsyncOpenAI",
+            factory_src,
+            "Factory must not import or instantiate openai.AsyncOpenAI",
+        )
+        self.assertNotIn(
+            "anthropic.AsyncAnthropic",
+            factory_src,
+            "Factory must not import or instantiate anthropic.AsyncAnthropic",
+        )
+        # Neither a bare "AsyncOpenAI(" nor "AsyncAnthropic(" in the factory
+        self.assertNotIn(
+            "AsyncOpenAI(",
+            factory_src,
+            "Factory must not construct native AsyncOpenAI",
+        )
+        self.assertNotIn(
+            "AsyncAnthropic(",
+            factory_src,
+            "Factory must not construct native AsyncAnthropic",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
