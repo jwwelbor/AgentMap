@@ -3129,6 +3129,70 @@ class LLMService:
             ):
                 yield chunk
 
+    def _validate_streaming_support(
+        self,
+        provider: str,
+        messages: List[Dict[str, Any]],
+        routing_context: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Service-boundary unsupported-mode gate for streaming requests.
+
+        Rejects three classes of bad requests **before any chunk is delivered**,
+        mirroring the placement of ``_validate_prompt_caching_support`` at :1058:
+
+        1. **Gemini token streaming**: ``provider == "google"`` — not implemented
+           in this epic (E06 Open Question 3 / out-of-scope item 4); callers should
+           use ``call_llm_async`` instead.
+        2. **Batch-incompatible streaming param**: ``"stream"`` present in ``kwargs``
+           (per ``_BATCH_INCOMPATIBLE_PARAMS`` in ``_param_resolution.py:115``) —
+           consistent with the existing batch rejection ("Batch submissions do not
+           support streaming").
+        3. **Unverified prompt-caching**: delegates to
+           ``_validate_prompt_caching_support`` with
+           ``execution_path="call_llm_stream_async"`` so the proven caching gate
+           applies before first chunk.
+
+        Args:
+            provider: Already-normalized provider string (called after
+                ``normalize_provider``; must equal ``"google"`` for Gemini guard).
+            messages: Message list forwarded to ``_validate_prompt_caching_support``.
+            routing_context: Optional routing context forwarded to the caching
+                validator so routing-level ``requires_prompt_caching`` flags are
+                honoured.
+            **kwargs: Caller kwargs forwarded from ``call_llm_stream_async``; must
+                include ``cache_system_prompt`` when supplied by the caller.
+
+        Raises:
+            LLMServiceError: On any of the three rejection conditions above.
+
+        REQ-F-007; Constraint C4; Scenarios 7 & 10.
+        """
+        # 1. Gemini / Google token streaming — not supported in this epic.
+        if provider == "google":
+            raise LLMServiceError(
+                "Token streaming is not supported for provider 'google' "
+                "(E06 Open Question 3 / out-of-scope item 4). "
+                "Use call_llm_async instead."
+            )
+
+        # 2. Batch-incompatible streaming param: 'stream' in kwargs.
+        if "stream" in kwargs:
+            raise LLMServiceError(
+                "Streaming entry point received batch-incompatible parameter 'stream'. "
+                "Batch submissions do not support streaming."
+            )
+
+        # 3. Unverified prompt-caching — reuse the existing caching gate.
+        cache_system_prompt: bool = kwargs.get("cache_system_prompt", False)
+        self._validate_prompt_caching_support(
+            provider=provider,
+            messages=messages,
+            routing_context=routing_context,
+            execution_path="call_llm_stream_async",
+            cache_system_prompt=cache_system_prompt,
+        )
+
     async def _call_llm_stream_async_direct(
         self,
         provider: str,
@@ -3144,9 +3208,17 @@ class LLMService:
         fallback materialization will be filled by later tasks. Raises
         ``LLMServiceError`` to indicate the body is not yet implemented.
         """
-        # Skeleton body — implementation added in later tasks (T-E06-F03-002+).
+        # Normalize provider then apply the unsupported-mode gate (T-E06-F03-003).
+        # Gate fires AFTER normalize_provider and BEFORE get_or_create_client /
+        # _invoke_with_resilience_stream_async (mirrors _validate_prompt_caching_support
+        # placement at :1058 in _call_llm_async_direct).
+        normalized = self._provider_utils.normalize_provider(provider)
+        self._validate_streaming_support(
+            normalized, messages, routing_context, **kwargs
+        )
+        # Remaining skeleton body — implementation added in later tasks (T-E06-F03-005+).
         raise LLMServiceError(
-            "Streaming direct invocation is not yet implemented (E06-F03 T-002+)."
+            "Streaming direct invocation is not yet implemented (E06-F03 T-005+)."
         )
         # Unreachable yield — required to make this an async generator.
         yield  # type: ignore[misc]

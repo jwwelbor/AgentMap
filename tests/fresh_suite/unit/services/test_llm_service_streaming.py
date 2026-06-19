@@ -671,3 +671,291 @@ class TestLLMServiceProtocolDeclaresStreamAsync(unittest.TestCase):
             LLMServiceProtocol,
             "LLMService must satisfy LLMServiceProtocol after F03 extension",
         )
+
+
+# ---------------------------------------------------------------------------
+# Group E — Unsupported-mode validation gate (TC-F03-022 through TC-F03-025)
+# REQ-F-007; Constraint C4; Scenarios 7 & 10; AC-9, AC-10, AC-11
+# ---------------------------------------------------------------------------
+
+
+class TestValidateStreamingSupportGate(unittest.IsolatedAsyncioTestCase):
+    """TC-F03-022 through TC-F03-025: _validate_streaming_support gate.
+
+    All tests drive call_llm_stream_async (the public production entrypoint)
+    and collect chunks via async-for in try/except LLMServiceError — which is
+    the production caller pattern.  stream_provider is patched to an AsyncMock
+    at the seam so we can assert it was never called.
+    """
+
+    def _make_svc(self):
+        """Return a service with routing_config that refuses prompt caching."""
+        svc = _make_llm_service(telemetry_service=None)
+        # routing_config.supports_prompt_caching → False by default in
+        # _make_llm_service (mock_routing_config is already set this way)
+        return svc
+
+    def _spy_on_client_factory(self, svc):
+        """Install a call-recorder on _client_factory.get_or_create_client.
+
+        Returns the MagicMock so tests can assert it was (or was not) called.
+        Rejection-path tests assert it is never reached — proving the gate
+        fires BEFORE the factory (and hence before stream_provider).
+        """
+        from unittest.mock import MagicMock
+
+        factory_spy = MagicMock(name="get_or_create_client_spy")
+        svc._client_factory.get_or_create_client = factory_spy
+        return factory_spy
+
+    # ------------------------------------------------------------------
+    # TC-F03-022: Gemini token streaming rejected before any chunk
+    # ------------------------------------------------------------------
+
+    async def test_google_provider_raises_before_any_chunk(self):
+        """TC-F03-022: call_llm_stream_async with provider='google' raises
+        LLMServiceError; no chunks received; get_or_create_client (i.e., the
+        streaming seam) never called.
+        """
+        from agentmap.services.llm_service import LLMServiceError
+
+        svc = self._make_svc()
+        factory_spy = self._spy_on_client_factory(svc)
+
+        chunks = []
+        with self.assertRaises(LLMServiceError) as ctx:
+            async for chunk in svc.call_llm_stream_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="google",
+                model="gemini-pro",
+            ):
+                chunks.append(chunk)
+
+        self.assertEqual(
+            chunks,
+            [],
+            "Zero chunks must be received before LLMServiceError is raised for 'google'",
+        )
+        error_msg = str(ctx.exception)
+        self.assertIn(
+            "google",
+            error_msg.lower(),
+            f"Error message must mention 'google'. Got: {error_msg!r}",
+        )
+        # get_or_create_client (and hence stream_provider) must never be called.
+        factory_spy.assert_not_called()
+
+    async def test_google_provider_error_names_call_llm_async_alternative(self):
+        """TC-F03-022: Gemini rejection message names call_llm_async as the
+        supported alternative (REQ-F-007, documented unsupported-mode message)."""
+        from agentmap.services.llm_service import LLMServiceError
+
+        svc = self._make_svc()
+        self._spy_on_client_factory(svc)
+
+        with self.assertRaises(LLMServiceError) as ctx:
+            async for _ in svc.call_llm_stream_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="google",
+            ):
+                pass
+
+        error_msg = str(ctx.exception)
+        self.assertIn(
+            "call_llm_async",
+            error_msg,
+            f"Rejection message must name 'call_llm_async'. Got: {error_msg!r}",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F03-023: Batch streaming param rejected before any chunk
+    # ------------------------------------------------------------------
+
+    async def test_stream_kwarg_raises_before_any_chunk(self):
+        """TC-F03-023: 'stream' in kwargs raises LLMServiceError; no chunks
+        received; message consistent with batch-rejection text; factory (i.e.,
+        the streaming seam entry) never called.
+        """
+        from agentmap.services.llm_service import LLMServiceError
+
+        svc = self._make_svc()
+        factory_spy = self._spy_on_client_factory(svc)
+
+        chunks = []
+        with self.assertRaises(LLMServiceError) as ctx:
+            async for chunk in svc.call_llm_stream_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+                model="claude-3-sonnet",
+                stream=True,
+            ):
+                chunks.append(chunk)
+
+        self.assertEqual(
+            chunks,
+            [],
+            "Zero chunks must be received before LLMServiceError is raised for 'stream' kwarg",
+        )
+        error_msg = str(ctx.exception)
+        # Message must be consistent with existing batch rejection at
+        # _param_resolution.py:300: "Batch submissions do not support streaming."
+        self.assertIn(
+            "Batch submissions do not support streaming",
+            error_msg,
+            f"Error message must contain batch-rejection text. Got: {error_msg!r}",
+        )
+        factory_spy.assert_not_called()
+
+    async def test_stream_false_kwarg_still_rejected(self):
+        """TC-F03-023 variant: stream=False is also a batch-incompatible param
+        presence (the key itself is disallowed, not the value)."""
+        from agentmap.services.llm_service import LLMServiceError
+
+        svc = self._make_svc()
+        self._spy_on_client_factory(svc)
+
+        with self.assertRaises(LLMServiceError):
+            async for _ in svc.call_llm_stream_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+                stream=False,
+            ):
+                pass
+
+    # ------------------------------------------------------------------
+    # TC-F03-024: Unverified prompt-caching rejected before any chunk
+    # ------------------------------------------------------------------
+
+    async def test_cache_system_prompt_unsupported_provider_raises(self):
+        """TC-F03-024: cache_system_prompt=True on a provider that does not
+        support caching raises LLMServiceError; no chunks; factory (i.e., the
+        streaming seam entry) not called; _validate_prompt_caching_support
+        invoked with execution_path='call_llm_stream_async'.
+        """
+        from agentmap.services.llm_service import LLMServiceError
+
+        svc = self._make_svc()
+        factory_spy = self._spy_on_client_factory(svc)
+
+        caching_calls = []
+
+        original_validate = svc._validate_prompt_caching_support
+
+        def spy_validate_caching(*args, **kwargs):
+            caching_calls.append(kwargs.get("execution_path"))
+            return original_validate(*args, **kwargs)
+
+        svc._validate_prompt_caching_support = spy_validate_caching
+
+        chunks = []
+        with self.assertRaises(LLMServiceError):
+            async for chunk in svc.call_llm_stream_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+                model="claude-3-sonnet",
+                cache_system_prompt=True,
+            ):
+                chunks.append(chunk)
+
+        self.assertEqual(
+            chunks,
+            [],
+            "Zero chunks must be received before caching rejection",
+        )
+        # _validate_prompt_caching_support must have been called with
+        # execution_path='call_llm_stream_async' (AC-11).
+        self.assertIn(
+            "call_llm_stream_async",
+            caching_calls,
+            f"_validate_prompt_caching_support must be called with "
+            f"execution_path='call_llm_stream_async'. Got calls: {caching_calls!r}",
+        )
+        factory_spy.assert_not_called()
+
+    # ------------------------------------------------------------------
+    # TC-F03-025: Gate fires AFTER normalize_provider, BEFORE resilience
+    # ------------------------------------------------------------------
+
+    async def test_gate_fires_after_normalize_provider_before_factory(self):
+        """TC-F03-025: _validate_streaming_support runs after normalize_provider
+        and before get_or_create_client / _invoke_with_resilience_stream_async.
+
+        Spy on call order: normalize_provider → _validate_streaming_support →
+        (if gate passes) get_or_create_client.  For a rejected call (google),
+        get_or_create_client must NOT be called.
+        """
+        from agentmap.services.llm_service import LLMServiceError
+
+        svc = self._make_svc()
+
+        call_order = []
+
+        # Spy on normalize_provider
+        original_normalize = svc._provider_utils.normalize_provider
+
+        def spy_normalize(provider):
+            call_order.append("normalize_provider")
+            return original_normalize(provider)
+
+        svc._provider_utils.normalize_provider = spy_normalize
+
+        # Spy on _validate_streaming_support
+        original_validate = svc._validate_streaming_support
+
+        def spy_validate(provider, messages, routing_context=None, **kwargs):
+            call_order.append("_validate_streaming_support")
+            return original_validate(provider, messages, routing_context, **kwargs)
+
+        svc._validate_streaming_support = spy_validate
+
+        # Spy on get_or_create_client — must NOT be called for rejected request
+        factory_calls = []
+        original_factory = svc._client_factory.get_or_create_client
+
+        def spy_factory(*args, **kwargs):
+            factory_calls.append(True)
+            return original_factory(*args, **kwargs)
+
+        svc._client_factory.get_or_create_client = spy_factory
+
+        chunks = []
+        with self.assertRaises(LLMServiceError):
+            async for chunk in svc.call_llm_stream_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="google",
+                model="gemini-pro",
+            ):
+                chunks.append(chunk)
+
+        # normalize_provider must fire before _validate_streaming_support
+        self.assertIn("normalize_provider", call_order)
+        self.assertIn("_validate_streaming_support", call_order)
+        normalize_idx = call_order.index("normalize_provider")
+        validate_idx = call_order.index("_validate_streaming_support")
+        self.assertLess(
+            normalize_idx,
+            validate_idx,
+            f"normalize_provider must fire before _validate_streaming_support. "
+            f"Order: {call_order!r}",
+        )
+        # get_or_create_client must NOT be called (gate blocked before factory)
+        self.assertEqual(
+            factory_calls,
+            [],
+            "get_or_create_client must NOT be called when gate rejects the request",
+        )
+        self.assertEqual(chunks, [], "No chunks for rejected request")
+
+    async def test_gate_method_exists_on_llm_service(self):
+        """TC-F03-025 (structural): _validate_streaming_support is defined on
+        LLMService as a standalone method (not inlined in _call_llm_stream_async_direct).
+        """
+        svc = self._make_svc()
+        self.assertTrue(
+            hasattr(svc, "_validate_streaming_support"),
+            "_validate_streaming_support must be a named method on LLMService",
+        )
+        self.assertTrue(
+            callable(svc._validate_streaming_support),
+            "_validate_streaming_support must be callable",
+        )
