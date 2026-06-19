@@ -19,10 +19,10 @@ Credentials are NOT retained as module-level state and are never logged
 (REQ-NF-011, Constraint C9).
 """
 
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Optional
 
 from agentmap.exceptions import LLMDependencyError
-from agentmap.models.llm_execution import LLMMessage, LLMStreamChunk
+from agentmap.models.llm_execution import LLMMessage, LLMStreamChunk, LLMUsage
 
 # ---------------------------------------------------------------------------
 # Anthropic native seam
@@ -37,9 +37,23 @@ class AnthropicStreamSeam:
     The ``anthropic`` import is deferred to ``__init__`` and gated so a missing
     optional dependency raises ``LLMDependencyError`` (REQ-F-014).
 
-    The ``.stream()`` body is a stub; the full Anthropic event-to-chunk mapping
-    (message_start → content_block_delta → message_delta → message_stop) is
-    implemented by T-003.
+    Event-to-chunk mapping (spec.md §7.2):
+      - ``message_start``: capture input_tokens + cache token fields from
+        ``message.usage``; no chunk emitted.
+      - ``content_block_delta`` with ``delta.type == "text_delta"``: emit a
+        non-final ``LLMStreamChunk`` carrying ``delta.text`` and incrementing
+        ``chunk_index``.
+      - ``content_block_delta`` with any other ``delta.type`` (e.g. tool_use
+        ``input_json_delta``): ignored — no chunk emitted (spec.md TD-4).
+      - ``message_delta``: capture ``usage.output_tokens`` and
+        ``delta.stop_reason``; no chunk emitted.
+      - ``message_stop``: emit the terminal ``LLMStreamChunk`` (``is_final=True``,
+        ``text_delta=""``) carrying accumulated ``LLMUsage``, ``finish_reason``,
+        ``resolved_provider``, and ``resolved_model`` (spec.md REQ-F-006).
+      - All other event types (``content_block_start``, ``content_block_stop``,
+        ``ping``, etc.) are ignored.
+
+    Credentials are consumed at call time and never logged (REQ-NF-011).
     """
 
     provider_name: str = "anthropic"
@@ -60,19 +74,120 @@ class AnthropicStreamSeam:
         *,
         client: Optional[Any] = None,
         credentials: Optional[Dict[str, Any]] = None,
-    ) -> AsyncIterator[LLMStreamChunk]:
+    ) -> AsyncGenerator[LLMStreamChunk, None]:
         """
         Yield normalized ``LLMStreamChunk`` objects from the Anthropic native
         streaming API.
 
-        Stub — full implementation in T-003.  Credentials are consumed at call
-        time; they are never logged (REQ-NF-011).
+        Credentials are consumed at call time and never logged (REQ-NF-011).
+        Completion content (``text_delta``) is never logged (REQ-NF-010).
+
+        Args:
+            messages: Normalized message list (role + content dicts).
+            params: Resolved call parameters; must include ``"model"``.
+            client: Optional pre-constructed ``anthropic.AsyncAnthropic`` client.
+                    If ``None``, a fresh client is constructed from ``credentials``.
+            credentials: Optional dict with ``"api_key"`` and related fields.
+                         Values are never logged.
+
+        Yields:
+            Non-final ``LLMStreamChunk`` objects for each text delta, then a
+            single terminal chunk (``is_final=True``) with accumulated usage and
+            metadata.
         """
-        raise NotImplementedError(
-            "AnthropicStreamSeam.stream() will be implemented by T-003."
-        )
-        # Needed to satisfy the async-generator type (unreachable but required).
-        yield  # type: ignore[misc]
+        import anthropic  # noqa: PLC0415
+
+        # Build or reuse the client — credentials consumed here, never logged.
+        if client is None:
+            api_key = (credentials or {}).get("api_key")
+            if api_key is not None:
+                sdk_client = anthropic.AsyncAnthropic(api_key=api_key)
+            else:
+                sdk_client = anthropic.AsyncAnthropic()
+        else:
+            sdk_client = client
+
+        model: str = params.get("model", "")
+        call_params = {k: v for k, v in params.items() if k != "model"}
+
+        # Accumulate token counts across message_start and message_delta events.
+        input_tokens: Optional[int] = None
+        output_tokens: Optional[int] = None
+        cache_creation_tokens: Optional[int] = None
+        cache_read_tokens: Optional[int] = None
+        stop_reason: Optional[str] = None
+
+        chunk_index: int = 0
+
+        async with sdk_client.messages.stream(
+            model=model,
+            messages=messages,  # type: ignore[arg-type]
+            **call_params,
+        ) as stream:
+            async for event in stream:
+                event_type = getattr(event, "type", None)
+
+                if event_type == "message_start":
+                    # Capture input usage from message.usage (spec.md §7.2).
+                    msg_usage = getattr(getattr(event, "message", None), "usage", None)
+                    if msg_usage is not None:
+                        input_tokens = getattr(msg_usage, "input_tokens", None)
+                        raw_creation = getattr(
+                            msg_usage, "cache_creation_input_tokens", None
+                        )
+                        raw_read = getattr(msg_usage, "cache_read_input_tokens", None)
+                        # Only carry cache fields when they are non-zero; the
+                        # SDK may return 0 for non-cached requests.
+                        cache_creation_tokens = raw_creation if raw_creation else None
+                        cache_read_tokens = raw_read if raw_read else None
+
+                elif event_type == "content_block_delta":
+                    delta = getattr(event, "delta", None)
+                    if (
+                        delta is not None
+                        and getattr(delta, "type", None) == "text_delta"
+                    ):
+                        text = getattr(delta, "text", "") or ""
+                        yield LLMStreamChunk(
+                            text_delta=text,
+                            chunk_index=chunk_index,
+                            is_final=False,
+                        )
+                        chunk_index += 1
+                    # Non-text deltas (input_json_delta, etc.) are silently ignored
+                    # per spec.md TD-4 (non-text block filtering rationale).
+
+                elif event_type == "message_delta":
+                    # Capture output tokens and stop_reason (spec.md §7.2).
+                    delta_usage = getattr(event, "usage", None)
+                    if delta_usage is not None:
+                        output_tokens = getattr(delta_usage, "output_tokens", None)
+                    delta_obj = getattr(event, "delta", None)
+                    if delta_obj is not None:
+                        stop_reason = getattr(delta_obj, "stop_reason", None)
+
+                elif event_type == "message_stop":
+                    # Emit the terminal chunk with accumulated usage and metadata.
+                    usage = LLMUsage(
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cache_creation_input_tokens=cache_creation_tokens,
+                        cache_read_input_tokens=cache_read_tokens,
+                    )
+                    yield LLMStreamChunk(
+                        text_delta="",
+                        chunk_index=chunk_index,
+                        is_final=True,
+                        usage=usage,
+                        finish_reason=stop_reason,
+                        resolved_provider=self.provider_name,
+                        resolved_model=model,
+                    )
+                    # Terminal chunk emitted; stop iterating.
+                    return
+
+                # content_block_start, content_block_stop, ping, and any other
+                # event types are intentionally ignored.
 
 
 # ---------------------------------------------------------------------------

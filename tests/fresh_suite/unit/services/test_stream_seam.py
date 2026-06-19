@@ -421,3 +421,393 @@ class TestImportGating:
     def test_dependency_error_is_subclass_of_llm_service_error(self):
         """LLMDependencyError is a subclass of LLMServiceError (hierarchy check)."""
         assert issubclass(LLMDependencyError, LLMServiceError)
+
+
+# ---------------------------------------------------------------------------
+# Helpers — fake Anthropic SDK events
+# ---------------------------------------------------------------------------
+
+
+def _make_anthropic_text_delta_event(text: str, index: int = 0):
+    """Build a fake content_block_delta event with text_delta."""
+    event = MagicMock()
+    event.type = "content_block_delta"
+    event.index = index
+    event.delta = MagicMock()
+    event.delta.type = "text_delta"
+    event.delta.text = text
+    return event
+
+
+def _make_anthropic_tool_use_delta_event(index: int = 1):
+    """Build a fake content_block_delta event with tool_use delta (non-text)."""
+    event = MagicMock()
+    event.type = "content_block_delta"
+    event.index = index
+    event.delta = MagicMock()
+    event.delta.type = "input_json_delta"
+    event.delta.partial_json = '{"arg":'
+    return event
+
+
+def _make_anthropic_message_start_event(
+    input_tokens: int = 10,
+    cache_creation_input_tokens: int = 0,
+    cache_read_input_tokens: int = 0,
+):
+    """Build a fake message_start event carrying input usage."""
+    event = MagicMock()
+    event.type = "message_start"
+    event.message = MagicMock()
+    event.message.usage = MagicMock()
+    event.message.usage.input_tokens = input_tokens
+    event.message.usage.cache_creation_input_tokens = cache_creation_input_tokens
+    event.message.usage.cache_read_input_tokens = cache_read_input_tokens
+    return event
+
+
+def _make_anthropic_message_delta_event(
+    output_tokens: int = 20, stop_reason: str = "end_turn"
+):
+    """Build a fake message_delta event carrying output usage + stop_reason."""
+    event = MagicMock()
+    event.type = "message_delta"
+    event.usage = MagicMock()
+    event.usage.output_tokens = output_tokens
+    event.delta = MagicMock()
+    event.delta.stop_reason = stop_reason
+    return event
+
+
+def _make_anthropic_message_stop_event():
+    """Build a fake message_stop event."""
+    event = MagicMock()
+    event.type = "message_stop"
+    return event
+
+
+def _make_anthropic_content_block_start_event(block_type: str = "text", index: int = 0):
+    """Build a fake content_block_start event."""
+    event = MagicMock()
+    event.type = "content_block_start"
+    event.index = index
+    event.content_block = MagicMock()
+    event.content_block.type = block_type
+    return event
+
+
+def _make_anthropic_content_block_stop_event(index: int = 0):
+    """Build a fake content_block_stop event."""
+    event = MagicMock()
+    event.type = "content_block_stop"
+    event.index = index
+    return event
+
+
+def _make_mock_anthropic_module(model: str = "claude-3-5-sonnet-20241022"):
+    """
+    Build a minimal fake anthropic module with an async context-manager stream.
+
+    Returns (mock_sdk, mock_client, scripted_stream_fn) where scripted_stream_fn
+    is a callable that accepts an events list and wires the mock appropriately.
+    """
+    mock_sdk = MagicMock()
+    mock_client = MagicMock()
+    mock_sdk.AsyncAnthropic.return_value = mock_client
+
+    # The stream() context manager: `async with client.messages.stream(...) as stream:`
+    # yields the stream object; iterating the stream object yields events.
+    def make_stream_context(events):
+        stream_obj = MagicMock()
+        stream_obj.__aiter__ = MagicMock(return_value=_AsyncIteratorFake(events))
+
+        async def _aenter(_):
+            return stream_obj
+
+        async def _aexit(_, *args):
+            pass
+
+        stream_cm = MagicMock()
+        stream_cm.__aenter__ = _aenter
+        stream_cm.__aexit__ = _aexit
+        mock_client.messages.stream.return_value = stream_cm
+        return stream_obj
+
+    return mock_sdk, mock_client, make_stream_context
+
+
+# ---------------------------------------------------------------------------
+# TC-F01-ANTH-1 through TC-F01-ANTH-8 — Anthropic native seam
+# ---------------------------------------------------------------------------
+
+
+class TestAnthropicStreamSeam(unittest.IsolatedAsyncioTestCase):
+    """Anthropic native seam: event → chunk mapping (Section 2 of test-plan.md)."""
+
+    def _make_seam(self, mock_sdk, mock_client):
+        """Construct AnthropicStreamSeam with fake anthropic module injected."""
+        from agentmap.services.llm.stream_seam import AnthropicStreamSeam
+
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            seam = AnthropicStreamSeam()
+        return seam
+
+    async def _collect_chunks(self, seam, mock_sdk, events, params=None):
+        """Drive seam.stream() with patched anthropic and collect all chunks."""
+        if params is None:
+            params = {"model": "claude-3-5-sonnet-20241022", "max_tokens": 100}
+        messages = [{"role": "user", "content": "hello"}]
+        chunks = []
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            async for chunk in seam.stream(
+                messages, params, client=None, credentials=None
+            ):
+                chunks.append(chunk)
+        return chunks
+
+    async def test_anth1_scripted_sequence_yields_3_text_chunks_then_terminal(self):
+        """TC-F01-ANTH-1: 3 text_delta events → 3 non-final chunks + 1 terminal chunk."""
+        mock_sdk, mock_client, make_ctx = _make_mock_anthropic_module()
+
+        events = [
+            _make_anthropic_message_start_event(input_tokens=5),
+            _make_anthropic_content_block_start_event("text", 0),
+            _make_anthropic_text_delta_event("Hello", 0),
+            _make_anthropic_text_delta_event(" world", 0),
+            _make_anthropic_text_delta_event("!", 0),
+            _make_anthropic_content_block_stop_event(0),
+            _make_anthropic_message_delta_event(
+                output_tokens=3, stop_reason="end_turn"
+            ),
+            _make_anthropic_message_stop_event(),
+        ]
+        make_ctx(events)
+
+        seam = self._make_seam(mock_sdk, mock_client)
+        chunks = await self._collect_chunks(seam, mock_sdk, events)
+
+        non_final = [c for c in chunks if not c.is_final]
+        terminal = [c for c in chunks if c.is_final]
+
+        assert len(non_final) == 3, f"Expected 3 non-final chunks, got {len(non_final)}"
+        assert len(terminal) == 1, f"Expected 1 terminal chunk, got {len(terminal)}"
+        assert non_final[0].text_delta == "Hello"
+        assert non_final[1].text_delta == " world"
+        assert non_final[2].text_delta == "!"
+
+    async def test_anth2_terminal_chunk_usage_and_metadata(self):
+        """TC-F01-ANTH-2: terminal chunk carries correct usage, finish_reason, resolved fields."""
+        mock_sdk, mock_client, make_ctx = _make_mock_anthropic_module()
+
+        events = [
+            _make_anthropic_message_start_event(input_tokens=15),
+            _make_anthropic_content_block_start_event("text", 0),
+            _make_anthropic_text_delta_event("Hi", 0),
+            _make_anthropic_content_block_stop_event(0),
+            _make_anthropic_message_delta_event(
+                output_tokens=25, stop_reason="end_turn"
+            ),
+            _make_anthropic_message_stop_event(),
+        ]
+        make_ctx(events)
+
+        seam = self._make_seam(mock_sdk, mock_client)
+        chunks = await self._collect_chunks(
+            seam,
+            mock_sdk,
+            events,
+            params={"model": "claude-3-opus-20240229", "max_tokens": 100},
+        )
+
+        terminal = chunks[-1]
+        assert terminal.is_final is True
+        assert terminal.usage is not None
+        assert terminal.usage.input_tokens == 15
+        assert terminal.usage.output_tokens == 25
+        assert terminal.finish_reason == "end_turn"
+        assert terminal.resolved_provider == "anthropic"
+        assert terminal.resolved_model == "claude-3-opus-20240229"
+
+    async def test_anth3_cache_token_fields_carried_into_terminal_usage(self):
+        """TC-F01-ANTH-3: cache token fields from message_start appear in terminal LLMUsage."""
+        mock_sdk, mock_client, make_ctx = _make_mock_anthropic_module()
+
+        events = [
+            _make_anthropic_message_start_event(
+                input_tokens=10,
+                cache_creation_input_tokens=50,
+                cache_read_input_tokens=20,
+            ),
+            _make_anthropic_content_block_start_event("text", 0),
+            _make_anthropic_text_delta_event("ok", 0),
+            _make_anthropic_content_block_stop_event(0),
+            _make_anthropic_message_delta_event(
+                output_tokens=5, stop_reason="end_turn"
+            ),
+            _make_anthropic_message_stop_event(),
+        ]
+        make_ctx(events)
+
+        seam = self._make_seam(mock_sdk, mock_client)
+        chunks = await self._collect_chunks(seam, mock_sdk, events)
+
+        terminal = chunks[-1]
+        assert terminal.is_final is True
+        assert terminal.usage is not None
+        assert terminal.usage.cache_creation_input_tokens == 50
+        assert terminal.usage.cache_read_input_tokens == 20
+
+    async def test_anth4_non_text_block_deltas_produce_no_chunk(self):
+        """TC-F01-ANTH-4: tool_use deltas are ignored; only text_delta events produce chunks."""
+        mock_sdk, mock_client, make_ctx = _make_mock_anthropic_module()
+
+        events = [
+            _make_anthropic_message_start_event(input_tokens=8),
+            _make_anthropic_content_block_start_event("text", 0),
+            _make_anthropic_text_delta_event("answer", 0),
+            _make_anthropic_content_block_stop_event(0),
+            _make_anthropic_content_block_start_event("tool_use", 1),
+            _make_anthropic_tool_use_delta_event(index=1),
+            _make_anthropic_tool_use_delta_event(index=1),
+            _make_anthropic_content_block_stop_event(1),
+            _make_anthropic_message_delta_event(
+                output_tokens=10, stop_reason="tool_use"
+            ),
+            _make_anthropic_message_stop_event(),
+        ]
+        make_ctx(events)
+
+        seam = self._make_seam(mock_sdk, mock_client)
+        chunks = await self._collect_chunks(seam, mock_sdk, events)
+
+        non_final = [c for c in chunks if not c.is_final]
+        # Only 1 text chunk — the 2 tool_use deltas must NOT produce chunks
+        assert len(non_final) == 1, (
+            f"Expected 1 non-final chunk (text only), got {len(non_final)}: "
+            f"{[c.text_delta for c in non_final]}"
+        )
+        assert non_final[0].text_delta == "answer"
+
+    async def test_anth5_chunk_index_continuous_across_two_text_blocks(self):
+        """TC-F01-ANTH-5: chunk_index continues across two text blocks with no gap or repeat."""
+        mock_sdk, mock_client, make_ctx = _make_mock_anthropic_module()
+
+        events = [
+            _make_anthropic_message_start_event(input_tokens=5),
+            _make_anthropic_content_block_start_event("text", 0),
+            _make_anthropic_text_delta_event("A", 0),
+            _make_anthropic_text_delta_event("B", 0),
+            _make_anthropic_content_block_stop_event(0),
+            _make_anthropic_content_block_start_event("text", 1),
+            _make_anthropic_text_delta_event("C", 1),
+            _make_anthropic_text_delta_event("D", 1),
+            _make_anthropic_content_block_stop_event(1),
+            _make_anthropic_message_delta_event(
+                output_tokens=4, stop_reason="end_turn"
+            ),
+            _make_anthropic_message_stop_event(),
+        ]
+        make_ctx(events)
+
+        seam = self._make_seam(mock_sdk, mock_client)
+        chunks = await self._collect_chunks(seam, mock_sdk, events)
+
+        non_final = [c for c in chunks if not c.is_final]
+        assert len(non_final) == 4
+        indices = [c.chunk_index for c in non_final]
+        assert indices == [0, 1, 2, 3], f"Expected [0,1,2,3], got {indices}"
+
+    async def test_anth6_chunk_index_monotonic_exactly_one_terminal(self):
+        """TC-F01-ANTH-6: chunk_index 0..N-1 across full stream; exactly one is_final=True, last."""
+        mock_sdk, mock_client, make_ctx = _make_mock_anthropic_module()
+
+        events = [
+            _make_anthropic_message_start_event(input_tokens=5),
+            _make_anthropic_content_block_start_event("text", 0),
+            _make_anthropic_text_delta_event("X", 0),
+            _make_anthropic_text_delta_event("Y", 0),
+            _make_anthropic_content_block_stop_event(0),
+            _make_anthropic_message_delta_event(
+                output_tokens=2, stop_reason="end_turn"
+            ),
+            _make_anthropic_message_stop_event(),
+        ]
+        make_ctx(events)
+
+        seam = self._make_seam(mock_sdk, mock_client)
+        chunks = await self._collect_chunks(seam, mock_sdk, events)
+
+        indices = [c.chunk_index for c in chunks]
+        assert indices == list(
+            range(len(chunks))
+        ), f"chunk_index must be 0..N-1, got {indices}"
+
+        final_chunks = [c for c in chunks if c.is_final]
+        assert (
+            len(final_chunks) == 1
+        ), f"Exactly one is_final=True, got {len(final_chunks)}"
+        assert chunks[-1].is_final is True, "The last chunk must be the terminal one"
+
+    async def test_anth7_terminal_chunk_text_delta_is_empty_string(self):
+        """TC-F01-ANTH-7: terminal chunk text_delta == '' (not None)."""
+        mock_sdk, mock_client, make_ctx = _make_mock_anthropic_module()
+
+        events = [
+            _make_anthropic_message_start_event(input_tokens=3),
+            _make_anthropic_content_block_start_event("text", 0),
+            _make_anthropic_text_delta_event("hi", 0),
+            _make_anthropic_content_block_stop_event(0),
+            _make_anthropic_message_delta_event(
+                output_tokens=1, stop_reason="end_turn"
+            ),
+            _make_anthropic_message_stop_event(),
+        ]
+        make_ctx(events)
+
+        seam = self._make_seam(mock_sdk, mock_client)
+        chunks = await self._collect_chunks(seam, mock_sdk, events)
+
+        terminal = chunks[-1]
+        assert terminal.is_final is True
+        assert (
+            terminal.text_delta == ""
+        ), f"terminal text_delta must be '', got {terminal.text_delta!r}"
+        assert isinstance(terminal.text_delta, str)
+
+    async def test_anth8_single_block_stream_produces_at_least_two_deltas_plus_terminal(
+        self,
+    ):
+        """TC-F01-ANTH-8: text-only single-block stream produces >=2 ordered deltas + terminal."""
+        mock_sdk, mock_client, make_ctx = _make_mock_anthropic_module()
+
+        events = [
+            _make_anthropic_message_start_event(input_tokens=7),
+            _make_anthropic_content_block_start_event("text", 0),
+            _make_anthropic_text_delta_event("First ", 0),
+            _make_anthropic_text_delta_event("second ", 0),
+            _make_anthropic_text_delta_event("third.", 0),
+            _make_anthropic_content_block_stop_event(0),
+            _make_anthropic_message_delta_event(
+                output_tokens=6, stop_reason="end_turn"
+            ),
+            _make_anthropic_message_stop_event(),
+        ]
+        make_ctx(events)
+
+        seam = self._make_seam(mock_sdk, mock_client)
+        chunks = await self._collect_chunks(seam, mock_sdk, events)
+
+        non_final = [c for c in chunks if not c.is_final]
+        terminal_list = [c for c in chunks if c.is_final]
+
+        assert (
+            len(non_final) >= 2
+        ), f"Expected >=2 non-final chunks, got {len(non_final)}"
+        assert len(terminal_list) == 1
+
+        # Verify ordering: non-final chunks in order, terminal last
+        for i, chunk in enumerate(non_final):
+            assert (
+                chunk.chunk_index == i
+            ), f"chunk {i} has chunk_index {chunk.chunk_index}"
+        assert terminal_list[0].chunk_index == len(non_final)
