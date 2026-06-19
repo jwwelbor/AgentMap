@@ -1076,3 +1076,221 @@ class TestOpenAIStreamSeam(unittest.IsolatedAsyncioTestCase):
             terminal.usage is None
         ), f"usage must be None when no usage chunk arrived, got {terminal.usage}"
         assert terminal.finish_reason == "stop"
+
+
+# ---------------------------------------------------------------------------
+# Helpers — fake LangChain AIMessageChunk objects
+# ---------------------------------------------------------------------------
+
+
+def _make_lc_content_chunk(content: str):
+    """Build a fake AIMessageChunk with content text and no metadata."""
+    chunk = MagicMock()
+    chunk.content = content
+    chunk.response_metadata = {}
+    chunk.usage_metadata = None
+    return chunk
+
+
+def _make_lc_terminal_chunk(
+    content: str = "",
+    finish_reason: str = "stop",
+    input_tokens: int = 10,
+    output_tokens: int = 20,
+):
+    """Build a fake final AIMessageChunk with response_metadata and usage_metadata."""
+    chunk = MagicMock()
+    chunk.content = content
+    chunk.response_metadata = {"finish_reason": finish_reason}
+    chunk.usage_metadata = MagicMock()
+    chunk.usage_metadata.input_tokens = input_tokens
+    chunk.usage_metadata.output_tokens = output_tokens
+    return chunk
+
+
+def _make_lc_terminal_chunk_no_usage(
+    content: str = "",
+    finish_reason: str = "stop",
+):
+    """Build a fake final AIMessageChunk with response_metadata but no usage_metadata."""
+    chunk = MagicMock()
+    chunk.content = content
+    chunk.response_metadata = {"finish_reason": finish_reason}
+    chunk.usage_metadata = None
+    return chunk
+
+
+def _make_fake_lc_client(chunks):
+    """
+    Build a fake LangChain chat client whose astream(messages) returns a scripted
+    async iterator of the given chunks.
+
+    The fake client has:
+      - astream: an AsyncMock returning an _AsyncIteratorFake over chunks
+      - ainvoke: an AsyncMock (must NOT be called by the seam)
+    """
+    from unittest.mock import AsyncMock
+
+    fake_client = MagicMock()
+    # astream must be an AsyncMock that returns an async iterator
+    fake_client.astream = AsyncMock(return_value=_AsyncIteratorFake(chunks))
+    fake_client.ainvoke = AsyncMock()
+    return fake_client
+
+
+# ---------------------------------------------------------------------------
+# TC-F01-LC-1 through TC-F01-LC-5 — LangChain fallback seam
+# ---------------------------------------------------------------------------
+
+
+class TestLangChainFallbackStreamSeam(unittest.IsolatedAsyncioTestCase):
+    """LangChain fallback seam: AIMessageChunk → LLMStreamChunk mapping (Section 4)."""
+
+    def _make_seam(self):
+        """Construct LangChainFallbackStreamSeam (no SDK gating needed)."""
+        from agentmap.services.llm.stream_seam import LangChainFallbackStreamSeam
+
+        return LangChainFallbackStreamSeam()
+
+    async def _collect_chunks(self, seam, fake_client, params=None):
+        """Drive seam.stream() with the given fake client and collect all chunks."""
+        if params is None:
+            params = {"model": "gemini-pro", "max_tokens": 100}
+        messages = [{"role": "user", "content": "hello"}]
+        chunks = []
+        async for chunk in seam.stream(
+            messages, params, client=fake_client, credentials=None
+        ):
+            chunks.append(chunk)
+        return chunks, messages
+
+    async def test_lc1_3_content_chunks_yield_3_non_final_then_1_terminal(self):
+        """TC-F01-LC-1: fake astream yields 3 AIMessageChunks → 3 non-final + 1 terminal."""
+        seam = self._make_seam()
+        lc_chunks = [
+            _make_lc_content_chunk("Hello"),
+            _make_lc_content_chunk(" world"),
+            _make_lc_terminal_chunk("!", finish_reason="stop"),
+        ]
+        fake_client = _make_fake_lc_client(lc_chunks)
+
+        chunks, _ = await self._collect_chunks(seam, fake_client)
+
+        non_final = [c for c in chunks if not c.is_final]
+        terminal_list = [c for c in chunks if c.is_final]
+
+        assert len(non_final) == 3, f"Expected 3 non-final chunks, got {len(non_final)}"
+        assert (
+            len(terminal_list) == 1
+        ), f"Expected exactly 1 terminal chunk, got {len(terminal_list)}"
+        assert non_final[0].text_delta == "Hello"
+        assert non_final[1].text_delta == " world"
+        assert non_final[2].text_delta == "!"
+
+    async def test_lc2_terminal_chunk_reads_finish_reason_usage_and_resolved_fields(
+        self,
+    ):
+        """TC-F01-LC-2: terminal chunk reads finish_reason, usage, resolved_provider/model."""
+        seam = self._make_seam()
+        lc_chunks = [
+            _make_lc_content_chunk("Some text"),
+            _make_lc_terminal_chunk(
+                content="",
+                finish_reason="stop",
+                input_tokens=15,
+                output_tokens=25,
+            ),
+        ]
+        fake_client = _make_fake_lc_client(lc_chunks)
+
+        chunks, _ = await self._collect_chunks(
+            seam, fake_client, params={"model": "gemini-pro", "max_tokens": 100}
+        )
+
+        terminal = chunks[-1]
+        assert terminal.is_final is True
+        assert terminal.finish_reason == "stop"
+        assert terminal.usage is not None, "terminal chunk must carry usage"
+        assert terminal.usage.input_tokens == 15
+        assert terminal.usage.output_tokens == 25
+        assert terminal.resolved_provider is not None
+        assert isinstance(terminal.resolved_provider, str)
+        assert terminal.resolved_model == "gemini-pro"
+
+    async def test_lc3_absent_usage_metadata_yields_terminal_with_none_usage(self):
+        """TC-F01-LC-3: when usage_metadata is absent, terminal chunk carries usage=None."""
+        seam = self._make_seam()
+        lc_chunks = [
+            _make_lc_content_chunk("answer"),
+            _make_lc_terminal_chunk_no_usage(content="", finish_reason="stop"),
+        ]
+        fake_client = _make_fake_lc_client(lc_chunks)
+
+        chunks, _ = await self._collect_chunks(seam, fake_client)
+
+        terminal = chunks[-1]
+        assert terminal.is_final is True
+        assert (
+            terminal.usage is None
+        ), f"usage must be None when usage_metadata absent, got {terminal.usage}"
+        assert terminal.finish_reason == "stop"
+
+    async def test_lc4_chunk_index_monotonic_exactly_one_terminal_last(self):
+        """TC-F01-LC-4: chunk_index is 0,1,...,N-1; exactly one is_final=True last; terminal text_delta==''."""
+        seam = self._make_seam()
+        lc_chunks = [
+            _make_lc_content_chunk("A"),
+            _make_lc_content_chunk("B"),
+            _make_lc_terminal_chunk(content="", finish_reason="stop"),
+        ]
+        fake_client = _make_fake_lc_client(lc_chunks)
+
+        chunks, _ = await self._collect_chunks(seam, fake_client)
+
+        # chunk_index must be 0..N-1
+        indices = [c.chunk_index for c in chunks]
+        assert indices == list(
+            range(len(chunks))
+        ), f"chunk_index must be 0..N-1, got {indices}"
+
+        # exactly one terminal, last
+        final_chunks = [c for c in chunks if c.is_final]
+        assert (
+            len(final_chunks) == 1
+        ), f"Exactly one is_final=True, got {len(final_chunks)}"
+        assert chunks[-1].is_final is True, "Last chunk must be the terminal one"
+
+        # terminal text_delta is empty string
+        assert (
+            chunks[-1].text_delta == ""
+        ), f"Terminal text_delta must be '', got {chunks[-1].text_delta!r}"
+
+    async def test_lc5_astream_called_not_ainvoke_and_messages_passed_through(self):
+        """TC-F01-LC-5: seam calls client.astream(messages), not ainvoke; messages passed through."""
+        seam = self._make_seam()
+        lc_chunks = [
+            _make_lc_terminal_chunk(content="", finish_reason="stop"),
+        ]
+        fake_client = _make_fake_lc_client(lc_chunks)
+
+        messages = [{"role": "user", "content": "test message"}]
+        params = {"model": "gemini-pro"}
+        chunks = []
+        async for chunk in seam.stream(
+            messages, params, client=fake_client, credentials=None
+        ):
+            chunks.append(chunk)
+
+        # astream must have been called (not ainvoke)
+        fake_client.astream.assert_called_once()
+        fake_client.ainvoke.assert_not_called()
+
+        # messages must have been passed through to astream
+        call_args = fake_client.astream.call_args
+        # astream(messages) — positional or keyword
+        called_messages = (
+            call_args[0][0] if call_args[0] else call_args[1].get("messages")
+        )
+        assert (
+            called_messages is messages
+        ), "messages must be passed through to client.astream()"

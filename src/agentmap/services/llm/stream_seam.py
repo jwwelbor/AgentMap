@@ -380,19 +380,93 @@ class LangChainFallbackStreamSeam:
         *,
         client: Optional[Any] = None,
         credentials: Optional[Dict[str, Any]] = None,
-    ) -> AsyncIterator[LLMStreamChunk]:
+    ) -> AsyncGenerator[LLMStreamChunk, None]:
         """
         Yield normalized ``LLMStreamChunk`` objects via a LangChain client's
         ``.astream(messages)`` async iterator.
 
-        Stub — full implementation in T-005.  ``client`` is the pre-constructed
-        LangChain chat model; credentials are consumed at call time and never
-        logged (REQ-NF-011).
+        Maps ``AIMessageChunk`` objects (spec.md §7.2 LangChain fallback table):
+          - Each chunk's ``.content`` → a non-final ``LLMStreamChunk`` with
+            ``text_delta=content`` and incrementing ``chunk_index``.
+          - After the iterator is exhausted, emit the single terminal
+            ``LLMStreamChunk`` (``is_final=True``, ``text_delta=""``) carrying:
+            - ``finish_reason`` from the last chunk's ``response_metadata``
+              (key ``"finish_reason"``), if present.
+            - ``usage`` from the last chunk's ``usage_metadata`` when present;
+              ``None`` when ``usage_metadata`` is absent (REQ-F-010, TC-F01-LC-3).
+            - ``resolved_provider`` = ``self.provider_name``.
+            - ``resolved_model`` from ``params["model"]``.
+
+        Credentials are consumed at call time and never logged (REQ-NF-011).
+        Completion content (``text_delta``) is never logged (REQ-NF-010).
+
+        Args:
+            messages: Normalized message list (role + content dicts).
+            params: Resolved call parameters; ``"model"`` is used for the
+                    terminal chunk's ``resolved_model``.
+            client: Pre-constructed LangChain chat model (must expose
+                    ``.astream(messages)`` returning an async iterator of
+                    ``AIMessageChunk``-like objects).
+            credentials: Optional credentials dict (not used by this seam —
+                         LangChain manages its own provider credentials inside
+                         the client; included for interface uniformity).
+
+        Yields:
+            Non-final ``LLMStreamChunk`` objects for each content chunk, then
+            a single terminal chunk (``is_final=True``) with usage and metadata.
         """
-        raise NotImplementedError(
-            "LangChainFallbackStreamSeam.stream() will be implemented by T-005."
+        model: str = params.get("model", "")
+
+        # The LangChain fallback seam requires a pre-constructed client — there is
+        # no provider-SDK construction path here (client construction is F02's scope,
+        # per spec.md §9 ADR-3).  A missing client is a caller error.
+        if client is None:
+            raise ValueError(
+                "LangChainFallbackStreamSeam.stream() requires a pre-constructed "
+                "LangChain client (client=...).  Client construction is handled by F02."
+            )
+
+        # Accumulate terminal fields as we consume the iterator.
+        finish_reason: Optional[str] = None
+        usage: Optional[LLMUsage] = None
+        chunk_index: int = 0
+
+        async for lc_chunk in await client.astream(messages):
+            content: str = getattr(lc_chunk, "content", "") or ""
+
+            # Capture the latest response_metadata and usage_metadata so the
+            # terminal chunk can read them from the last chunk in the stream.
+            response_metadata = getattr(lc_chunk, "response_metadata", None) or {}
+            raw_usage_metadata = getattr(lc_chunk, "usage_metadata", None)
+
+            # Update finish_reason and usage from this chunk; the last update wins.
+            raw_finish = response_metadata.get("finish_reason")
+            if raw_finish is not None:
+                finish_reason = raw_finish
+
+            if raw_usage_metadata is not None:
+                usage = LLMUsage(
+                    input_tokens=getattr(raw_usage_metadata, "input_tokens", None),
+                    output_tokens=getattr(raw_usage_metadata, "output_tokens", None),
+                )
+
+            yield LLMStreamChunk(
+                text_delta=content,
+                chunk_index=chunk_index,
+                is_final=False,
+            )
+            chunk_index += 1
+
+        # Emit the single terminal chunk after the iterator is exhausted.
+        yield LLMStreamChunk(
+            text_delta="",
+            chunk_index=chunk_index,
+            is_final=True,
+            usage=usage,
+            finish_reason=finish_reason,
+            resolved_provider=self.provider_name,
+            resolved_model=model,
         )
-        yield  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
