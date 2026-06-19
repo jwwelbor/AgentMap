@@ -1535,3 +1535,626 @@ class TestInvokeWithResilienceStreamNonRetryable(unittest.IsolatedAsyncioTestCas
             1,
             "_record_circuit_breaker_metric_on_open must be called once on retry exhaustion",
         )
+
+
+# ---------------------------------------------------------------------------
+# Helpers for TC-F03-002, TC-F03-010, TC-F03-016, TC-F03-026, TC-F03-027
+# Tests for _call_llm_stream_async_direct (T-E06-F03-005)
+# ---------------------------------------------------------------------------
+
+
+def _make_svc_for_direct(max_attempts: int = 2):
+    """Build a minimal LLMService suitable for _call_llm_stream_async_direct tests.
+
+    Returns ``(svc, cb_mock)`` with:
+    - Mock config returning provider config with model/temperature/api_key.
+    - Mock client factory with a sentinel streaming_client.
+    - Mock circuit breaker defaulting to closed.
+    - features_registry and routing_config set to truthy Mocks so that
+      fallback eligibility tests can set them independently.
+    """
+    from agentmap.services.llm_service import LLMService
+
+    mock_logging = MagicMock()
+    mock_logging.get_class_logger.return_value = MagicMock()
+
+    mock_config = MagicMock()
+    mock_config.get_llm_resilience_config.return_value = {
+        "retry": {
+            "max_attempts": max_attempts,
+            "backoff_base": 2.0,
+            "backoff_max": 30.0,
+            "jitter": False,
+        },
+        "circuit_breaker": {
+            "failure_threshold": 3,
+            "reset_timeout": 60,
+        },
+    }
+    mock_config.get_llm_config.return_value = {
+        "model": "test-model",
+        "temperature": 0.7,
+        "max_tokens": 1024,
+        "api_key": "test-key",
+    }
+
+    mock_models_config = MagicMock()
+    mock_routing_service = MagicMock()
+    mock_routing_config = MagicMock()
+    mock_routing_config.supports_prompt_caching.return_value = False
+
+    # features_registry_service is passed as a keyword arg so that
+    # ``self.features_registry and self.routing_config`` is truthy (fallback eligible).
+    mock_features_registry = MagicMock()
+
+    svc = LLMService(
+        configuration=mock_config,
+        logging_service=mock_logging,
+        routing_service=mock_routing_service,
+        llm_models_config_service=mock_models_config,
+        routing_config_service=mock_routing_config,
+        telemetry_service=None,
+        features_registry_service=mock_features_registry,
+    )
+
+    # Replace circuit breaker with a mock that defaults to closed
+    cb_mock = MagicMock()
+    cb_mock.is_open.return_value = False
+    cb_mock.reset = 60
+    svc._circuit_breaker = cb_mock
+
+    return svc, cb_mock
+
+
+def make_stream_with_provider(
+    *text_deltas: str,
+    resolved_provider: str = "anthropic",
+    resolved_model: str = "test-model",
+):
+    """Like make_stream() but with configurable terminal chunk identity."""
+
+    async def _gen():
+        for idx, delta in enumerate(text_deltas):
+            yield LLMStreamChunk(text_delta=delta, chunk_index=idx, is_final=False)
+        yield LLMStreamChunk(
+            text_delta="",
+            chunk_index=len(text_deltas),
+            is_final=True,
+            resolved_provider=resolved_provider,
+            resolved_model=resolved_model,
+            usage=None,
+            finish_reason="stop",
+        )
+
+    return _gen()
+
+
+# ---------------------------------------------------------------------------
+# TC-F03-002: Terminal chunk reconstructs LLMResponse; _extract_* not invoked
+# ---------------------------------------------------------------------------
+
+
+class TestCallLLMStreamAsyncDirectTerminalReconstruction(
+    unittest.IsolatedAsyncioTestCase
+):
+    """TC-F03-002: Terminal chunk fields drive LLMResponse reconstruction.
+
+    _extract_llm_usage and _extract_finish_reason must NOT be invoked on the
+    streaming path — the seam already normalizes these into the terminal chunk.
+    """
+
+    async def test_terminal_chunk_fields_not_passed_through_extract_helpers(self):
+        """TC-F03-002: Patch _extract_llm_usage and _extract_finish_reason to
+        raise AssertionError; assert neither fires during call_llm_stream_async.
+        The terminal chunk itself carries the correct fields.
+        """
+        svc, _cb = _make_svc_for_direct(max_attempts=1)
+
+        # Patch both extractors to raise if called — streaming must NOT use them
+        svc._extract_llm_usage = lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError("_extract_llm_usage must NOT be called on streaming path")
+        )
+        svc._extract_finish_reason = lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError(
+                "_extract_finish_reason must NOT be called on streaming path"
+            )
+        )
+
+        async def fake_stream_provider(
+            provider, messages, params, *, client, credentials
+        ):
+            async for chunk in make_stream_with_provider(
+                "Hello",
+                " world",
+                resolved_provider="anthropic",
+                resolved_model="claude-3-sonnet",
+            ):
+                yield chunk
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider",
+            side_effect=fake_stream_provider,
+        ):
+            collected = []
+            async for chunk in svc._call_llm_stream_async_direct(
+                "anthropic",
+                [{"role": "user", "content": "hi"}],
+                model="claude-3-sonnet",
+            ):
+                collected.append(chunk)
+
+        # 2 non-final + 1 terminal
+        self.assertEqual(
+            len(collected), 3, "Must receive 2 non-final + 1 terminal chunk"
+        )
+        terminal = collected[-1]
+        self.assertTrue(terminal.is_final, "Last chunk must be terminal")
+        # Terminal fields come from the seam, not from _extract_* helpers
+        self.assertEqual(terminal.resolved_provider, "anthropic")
+        self.assertEqual(terminal.resolved_model, "claude-3-sonnet")
+        self.assertEqual(terminal.finish_reason, "stop")
+
+    async def test_terminal_chunk_reconstructs_accumulated_text(self):
+        """TC-F03-002: The terminal chunk's fields are sufficient to reconstruct
+        LLMResponse — text accumulation from non-final deltas is available to callers.
+        """
+        svc, _cb = _make_svc_for_direct(max_attempts=1)
+
+        async def fake_stream_provider(
+            provider, messages, params, *, client, credentials
+        ):
+            async for chunk in make_stream_with_provider(
+                "Hel",
+                "lo",
+                " world",
+                resolved_provider="openai",
+                resolved_model="gpt-4o",
+            ):
+                yield chunk
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider",
+            side_effect=fake_stream_provider,
+        ):
+            collected = []
+            async for chunk in svc._call_llm_stream_async_direct(
+                "openai",
+                [{"role": "user", "content": "q"}],
+            ):
+                collected.append(chunk)
+
+        non_final = [c for c in collected if not c.is_final]
+        terminal = next(c for c in collected if c.is_final)
+
+        # Accumulated text from non-final deltas
+        accumulated = "".join(c.text_delta for c in non_final)
+        self.assertEqual(accumulated, "Hello world")
+
+        # Terminal chunk carries provider/model identity for LLMResponse reconstruction
+        self.assertEqual(terminal.resolved_provider, "openai")
+        self.assertEqual(terminal.resolved_model, "gpt-4o")
+        self.assertEqual(terminal.text_delta, "")
+
+
+# ---------------------------------------------------------------------------
+# TC-F03-010: Retries exhausted + fallback eligible → synthetic terminal chunk
+# TC-F03-016: Fallback synthetic chunk carries fallback's resolved_provider/model
+# ---------------------------------------------------------------------------
+
+
+class TestCallLLMStreamAsyncDirectFallback(unittest.IsolatedAsyncioTestCase):
+    """TC-F03-010 + TC-F03-016: Pre-first-chunk fallback materialization."""
+
+    def _make_svc_with_fallback_handler(self, max_attempts: int = 2):
+        """Return a service with a mocked fallback handler ready for assertion."""
+        svc, cb_mock = _make_svc_for_direct(max_attempts=max_attempts)
+        # Replace the fallback handler with a mock
+        svc._fallback_handler = MagicMock()
+        return svc, cb_mock
+
+    async def test_retries_exhausted_fallback_yields_synthetic_terminal_chunk(self):
+        """TC-F03-010: When all max_attempts raise before any chunk and fallback
+        is eligible, try_with_fallback_async is called exactly once and its
+        LLMResponse is materialized as a single synthetic terminal LLMStreamChunk
+        (is_final=True, text_delta="").
+        """
+        from agentmap.exceptions import LLMRateLimitError
+        from agentmap.models.llm_execution import LLMResponse
+
+        svc, _cb = self._make_svc_with_fallback_handler(max_attempts=2)
+
+        fallback_resp = LLMResponse(
+            text="fallback text",
+            resolved_provider="openai",
+            resolved_model="gpt-4o",
+            finish_reason="stop",
+            usage=None,
+        )
+        svc._fallback_handler.try_with_fallback_async = AsyncMock(
+            return_value=fallback_resp
+        )
+
+        async def always_fails(provider, messages, params, *, client, credentials):
+            raise LLMRateLimitError("rate limited")
+            yield  # make it a generator
+
+        with (
+            patch(
+                "agentmap.services.llm_service.stream_provider",
+                side_effect=always_fails,
+            ),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            collected = []
+            async for chunk in svc._call_llm_stream_async_direct(
+                "anthropic",
+                [{"role": "user", "content": "hi"}],
+                model="test-model",
+            ):
+                collected.append(chunk)
+
+        # try_with_fallback_async called exactly once
+        svc._fallback_handler.try_with_fallback_async.assert_called_once()
+
+        # Caller receives exactly one chunk — the synthetic terminal chunk
+        self.assertEqual(
+            len(collected), 1, "Must receive exactly one synthetic terminal chunk"
+        )
+        synthetic = collected[0]
+        self.assertTrue(
+            synthetic.is_final, "Synthetic chunk must be terminal (is_final=True)"
+        )
+        self.assertEqual(
+            synthetic.text_delta, "", "Synthetic terminal chunk must have text_delta=''"
+        )
+
+    async def test_fallback_synthetic_chunk_carries_fallback_provider_model(self):
+        """TC-F03-016: Synthetic terminal chunk carries the fallback's resolved
+        provider/model, NOT the original request's provider/model.
+        """
+        from agentmap.exceptions import LLMRateLimitError
+        from agentmap.models.llm_execution import LLMResponse
+
+        svc, _cb = self._make_svc_with_fallback_handler(max_attempts=2)
+
+        # Fallback uses a different provider/model than the original request
+        fallback_resp = LLMResponse(
+            text="fallback text",
+            resolved_provider="openai",  # different from "anthropic" request
+            resolved_model="gpt-4o",  # different from "test-model" request
+            finish_reason="stop",
+            usage=None,
+        )
+        svc._fallback_handler.try_with_fallback_async = AsyncMock(
+            return_value=fallback_resp
+        )
+
+        async def always_fails(provider, messages, params, *, client, credentials):
+            raise LLMRateLimitError("rate limited")
+            yield  # make it a generator
+
+        with (
+            patch(
+                "agentmap.services.llm_service.stream_provider",
+                side_effect=always_fails,
+            ),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            collected = []
+            async for chunk in svc._call_llm_stream_async_direct(
+                "anthropic",  # original provider
+                [{"role": "user", "content": "hi"}],
+                model="test-model",  # original model
+            ):
+                collected.append(chunk)
+
+        self.assertEqual(len(collected), 1)
+        synthetic = collected[0]
+        # Must carry fallback's identity, not the original request's
+        self.assertEqual(
+            synthetic.resolved_provider,
+            "openai",
+            "Synthetic chunk must carry fallback's resolved_provider, not original",
+        )
+        self.assertEqual(
+            synthetic.resolved_model,
+            "gpt-4o",
+            "Synthetic chunk must carry fallback's resolved_model, not original",
+        )
+
+    async def test_fallback_synthetic_chunk_carries_fallback_usage_and_finish_reason(
+        self,
+    ):
+        """TC-F03-016 extension: Synthetic terminal chunk copies usage/finish_reason from
+        the fallback LLMResponse.
+        """
+        from agentmap.exceptions import LLMRateLimitError
+        from agentmap.models.llm_execution import LLMResponse, LLMUsage
+
+        svc, _cb = self._make_svc_with_fallback_handler(max_attempts=2)
+
+        fallback_usage = LLMUsage(input_tokens=10, output_tokens=20)
+        fallback_resp = LLMResponse(
+            text="fallback text",
+            resolved_provider="openai",
+            resolved_model="gpt-4o",
+            finish_reason="length",
+            usage=fallback_usage,
+        )
+        svc._fallback_handler.try_with_fallback_async = AsyncMock(
+            return_value=fallback_resp
+        )
+
+        async def always_fails(provider, messages, params, *, client, credentials):
+            raise LLMRateLimitError("rate limited")
+            yield  # make it a generator
+
+        with (
+            patch(
+                "agentmap.services.llm_service.stream_provider",
+                side_effect=always_fails,
+            ),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            collected = []
+            async for chunk in svc._call_llm_stream_async_direct(
+                "anthropic",
+                [{"role": "user", "content": "hi"}],
+            ):
+                collected.append(chunk)
+
+        synthetic = collected[0]
+        self.assertEqual(synthetic.usage, fallback_usage)
+        self.assertEqual(synthetic.finish_reason, "length")
+
+    async def test_no_fallback_when_ineligible(self):
+        """Pre-first-chunk error without fallback eligibility raises the error."""
+        from agentmap.exceptions import LLMRateLimitError
+
+        svc, _cb = _make_svc_for_direct(max_attempts=2)
+        # Make fallback ineligible by clearing features_registry and routing_config
+        svc.features_registry = None
+
+        async def always_fails(provider, messages, params, *, client, credentials):
+            raise LLMRateLimitError("rate limited")
+            yield  # make it a generator
+
+        with (
+            patch(
+                "agentmap.services.llm_service.stream_provider",
+                side_effect=always_fails,
+            ),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            with self.assertRaises(Exception):
+                async for _ in svc._call_llm_stream_async_direct(
+                    "anthropic",
+                    [{"role": "user", "content": "hi"}],
+                ):
+                    pass
+
+
+# ---------------------------------------------------------------------------
+# TC-F03-026: get_or_create_client called with streaming=True
+# ---------------------------------------------------------------------------
+
+
+class TestCallLLMStreamAsyncDirectClientFactory(unittest.IsolatedAsyncioTestCase):
+    """TC-F03-026: _call_llm_stream_async_direct calls get_or_create_client with streaming=True."""
+
+    async def test_get_or_create_client_called_with_streaming_true(self):
+        """TC-F03-026: Assert get_or_create_client is invoked with streaming=True
+        (proving F03 requests the F02 streaming-aware client).
+        """
+        svc, _cb = _make_svc_for_direct(max_attempts=1)
+
+        sentinel_client = MagicMock(name="streaming_client")
+
+        # Spy on the client factory
+        factory_calls = []
+
+        def spy_factory(provider, config, streaming=False):
+            factory_calls.append({"provider": provider, "streaming": streaming})
+            return sentinel_client
+
+        svc._client_factory.get_or_create_client = spy_factory
+
+        async def fake_stream_provider(
+            provider, messages, params, *, client, credentials
+        ):
+            async for chunk in make_stream("ok"):
+                yield chunk
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider",
+            side_effect=fake_stream_provider,
+        ):
+            async for _ in svc._call_llm_stream_async_direct(
+                "anthropic",
+                [{"role": "user", "content": "hi"}],
+                model="claude-3-sonnet",
+            ):
+                pass
+
+        # Must have called get_or_create_client with streaming=True
+        self.assertTrue(
+            factory_calls,
+            "get_or_create_client must be called at least once",
+        )
+        streaming_calls = [c for c in factory_calls if c["streaming"] is True]
+        self.assertTrue(
+            streaming_calls,
+            f"get_or_create_client must be called with streaming=True. "
+            f"Actual calls: {factory_calls!r}",
+        )
+
+    async def test_client_passed_to_stream_provider(self):
+        """TC-F03-026 extension: the client from get_or_create_client is forwarded
+        to stream_provider as the ``client=`` kwarg.
+        """
+        svc, _cb = _make_svc_for_direct(max_attempts=1)
+
+        sentinel_client = MagicMock(name="sentinel_streaming_client")
+        svc._client_factory.get_or_create_client = MagicMock(
+            return_value=sentinel_client
+        )
+
+        received_client = []
+
+        async def capturing_stream_provider(
+            provider, messages, params, *, client, credentials
+        ):
+            received_client.append(client)
+            async for chunk in make_stream("hi"):
+                yield chunk
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider",
+            side_effect=capturing_stream_provider,
+        ):
+            async for _ in svc._call_llm_stream_async_direct(
+                "anthropic",
+                [{"role": "user", "content": "hi"}],
+            ):
+                pass
+
+        self.assertEqual(len(received_client), 1)
+        self.assertIs(
+            received_client[0],
+            sentinel_client,
+            "Streaming client from factory must be forwarded to stream_provider",
+        )
+
+
+# ---------------------------------------------------------------------------
+# TC-F03-027: stream_provider called with normalized LLMMessage dicts + resolved params
+# ---------------------------------------------------------------------------
+
+
+class TestCallLLMStreamAsyncDirectSeamArgs(unittest.IsolatedAsyncioTestCase):
+    """TC-F03-027: _call_llm_stream_async_direct drives stream_provider with
+    normalized LLMMessage dicts (not LangChain objects), params with resolved
+    model/max_tokens/temperature, and client=/credentials= as keyword args.
+    """
+
+    async def test_stream_provider_called_with_normalized_message_dicts(self):
+        """TC-F03-027: stream_provider receives the normalized LLMMessage list
+        (plain dicts), NOT the output of convert_messages_to_langchain.
+        """
+        svc, _cb = _make_svc_for_direct(max_attempts=1)
+
+        # Spy on convert_messages_to_langchain — it must NOT be called on this path
+        convert_calls = []
+        original_convert = svc._message_utils.convert_messages_to_langchain
+
+        def spy_convert(messages):
+            convert_calls.append(messages)
+            return original_convert(messages)
+
+        svc._message_utils.convert_messages_to_langchain = spy_convert
+
+        received_messages = []
+
+        async def capturing_sp(provider, messages, params, *, client, credentials):
+            received_messages.append(messages)
+            async for chunk in make_stream("hi"):
+                yield chunk
+
+        input_messages = [{"role": "user", "content": "hello"}]
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider",
+            side_effect=capturing_sp,
+        ):
+            async for _ in svc._call_llm_stream_async_direct(
+                "anthropic",
+                input_messages,
+                model="claude-3-sonnet",
+            ):
+                pass
+
+        # convert_messages_to_langchain must NOT be called on the streaming path
+        self.assertEqual(
+            convert_calls,
+            [],
+            "convert_messages_to_langchain must NOT be called on the streaming path "
+            f"(AC-13 / research-report §2.1). Actual calls: {convert_calls!r}",
+        )
+
+        # stream_provider must receive normalized dicts
+        self.assertEqual(len(received_messages), 1)
+        msgs = received_messages[0]
+        # Each message must be a plain dict with 'role' and 'content'
+        self.assertIsInstance(
+            msgs, list, "stream_provider must receive a list of messages"
+        )
+        for msg in msgs:
+            self.assertIsInstance(
+                msg, dict, f"Each message must be a dict; got {type(msg)}"
+            )
+            self.assertIn("role", msg)
+            self.assertIn("content", msg)
+
+    async def test_stream_provider_called_with_resolved_params(self):
+        """TC-F03-027: params passed to stream_provider contains resolved
+        model/temperature (and max_tokens if present in config).
+        """
+        svc, _cb = _make_svc_for_direct(max_attempts=1)
+
+        received_params = []
+
+        async def capturing_sp(provider, messages, params, *, client, credentials):
+            received_params.append(dict(params))
+            async for chunk in make_stream("hi"):
+                yield chunk
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider",
+            side_effect=capturing_sp,
+        ):
+            async for _ in svc._call_llm_stream_async_direct(
+                "anthropic",
+                [{"role": "user", "content": "q"}],
+                model="claude-3-sonnet",
+                temperature=0.5,
+            ):
+                pass
+
+        self.assertEqual(len(received_params), 1)
+        params = received_params[0]
+        # model override must be in params
+        self.assertEqual(params.get("model"), "claude-3-sonnet")
+        # temperature override must be in params
+        self.assertEqual(params.get("temperature"), 0.5)
+
+    async def test_stream_provider_called_with_client_and_credentials_as_kwargs(self):
+        """TC-F03-027: stream_provider is called with client= and credentials=
+        as keyword arguments (not positionally).
+        """
+        svc, _cb = _make_svc_for_direct(max_attempts=1)
+
+        received_kwargs = []
+
+        async def capturing_sp(provider, messages, params, *, client, credentials):
+            received_kwargs.append({"client": client, "credentials": credentials})
+            async for chunk in make_stream("hi"):
+                yield chunk
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider",
+            side_effect=capturing_sp,
+        ):
+            async for _ in svc._call_llm_stream_async_direct(
+                "anthropic",
+                [{"role": "user", "content": "q"}],
+            ):
+                pass
+
+        self.assertEqual(len(received_kwargs), 1)
+        kw = received_kwargs[0]
+        # client must be present (not None — we set up a mock factory)
+        self.assertIn("client", kw, "stream_provider must receive 'client' kwarg")
+        # credentials must be present (may be None or a dict)
+        self.assertIn(
+            "credentials", kw, "stream_provider must receive 'credentials' kwarg"
+        )

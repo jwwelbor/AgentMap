@@ -3330,24 +3330,128 @@ class LLMService:
     ) -> AsyncGenerator[LLMStreamChunk, None]:
         """Direct streaming provider invocation with resilience and fallback.
 
-        Skeleton: provider resolution, validation gate, resilience body, and
-        fallback materialization will be filled by later tasks. Raises
-        ``LLMServiceError`` to indicate the body is not yet implemented.
+        Mirrors ``_call_llm_async_direct`` (:1048) but is an async generator that
+        yields ``LLMStreamChunk`` instances from ``_invoke_with_resilience_stream_async``.
+
+        Key differences from the non-streaming sibling:
+        - Obtains a streaming-aware client via ``get_or_create_client(..., streaming=True)``.
+        - Passes normalized ``LLMMessage`` dicts directly to ``stream_provider`` —
+          no LangChain conversion (research-report §2.1; AC-13).
+        - Pre-first-chunk fallback: on error before any chunk is delivered with
+          fallback eligible, calls ``try_with_fallback_async`` and materializes
+          its ``LLMResponse`` into a single synthetic terminal ``LLMStreamChunk``
+          (AC-18; REQ-F-006).
+        - ``_extract_llm_usage`` / ``_extract_finish_reason`` are NOT called —
+          the seam already normalizes these into the terminal chunk (AC-2).
+
+        Signature is **provider-first** to mirror the call site in
+        ``_call_llm_stream_async_core`` (positional: provider, messages, model,
+        temperature, **kwargs), matching how ``_call_llm_async_core`` (:678) calls
+        ``_call_llm_async_direct``.
+
+        ``cache_system_prompt`` travels in ``**kwargs`` and is popped here (mirrors
+        ``_call_llm_async_direct`` :1073) so its caller-supplied value reaches
+        ``_validate_streaming_support`` correctly (AC-11 cache-rejection gate must
+        not silently see False).
         """
+        original_messages = messages
+
+        # Pop cache_system_prompt BEFORE forwarding kwargs to the provider/validator.
+        # Mirrors _call_llm_async_direct :1073.
+        cache_system_prompt: bool = kwargs.pop("cache_system_prompt", False)
+
         # Normalize provider then apply the unsupported-mode gate (T-E06-F03-003).
         # Gate fires AFTER normalize_provider and BEFORE get_or_create_client /
         # _invoke_with_resilience_stream_async (mirrors _validate_prompt_caching_support
         # placement at :1058 in _call_llm_async_direct).
-        normalized = self._provider_utils.normalize_provider(provider)
+        provider = self._provider_utils.normalize_provider(provider)
         self._validate_streaming_support(
-            normalized, messages, routing_context, **kwargs
+            provider,
+            messages,
+            routing_context,
+            cache_system_prompt=cache_system_prompt,
+            **kwargs,
         )
-        # Remaining skeleton body — implementation added in later tasks (T-E06-F03-005+).
-        raise LLMServiceError(
-            "Streaming direct invocation is not yet implemented (E06-F03 T-005+)."
+
+        config = self._provider_utils.get_provider_config(provider)
+
+        max_tokens = kwargs.pop("max_tokens", None)
+        if model or temperature is not None or max_tokens is not None:
+            config = config.copy()
+            if model:
+                config["model"] = model
+            if temperature is not None:
+                config["temperature"] = temperature
+            if max_tokens == 0:
+                config.pop("max_tokens", None)
+            elif max_tokens is not None:
+                config["max_tokens"] = max_tokens
+
+        current_model = config.get("model", "unknown")
+
+        # Build the params dict: everything from config except api_key
+        # (credentials are forwarded separately so the seam can build its own SDK
+        # client when needed — REQ-NF-004, AC-13).
+        params: Dict[str, Any] = {k: v for k, v in config.items() if k != "api_key"}
+
+        # Obtain the F02 streaming-aware client (AC-12).
+        streaming_client = self._client_factory.get_or_create_client(
+            provider, config, streaming=True
         )
-        # Unreachable yield — required to make this an async generator.
-        yield  # type: ignore[misc]
+
+        # Extract credentials from config for the seam (REQ-NF-004).
+        api_key = config.get("api_key")
+        credentials: Optional[Dict[str, Any]] = (
+            {"api_key": api_key} if api_key else None
+        )
+
+        # Track whether any chunk has been delivered to the caller.
+        # Only pre-first-chunk errors are eligible for fallback (REQ-F-006).
+        first_chunk_delivered = False
+
+        try:
+            async for chunk in self._invoke_with_resilience_stream_async(
+                messages,
+                params,
+                provider,
+                current_model,
+                streaming_client,
+                credentials,
+            ):
+                first_chunk_delivered = True
+                yield chunk
+
+        except Exception as e:
+            if first_chunk_delivered:
+                # Post-first-chunk error: terminal, no retry, no fallback (REQ-F-004).
+                raise
+
+            # Pre-first-chunk error: check fallback eligibility (mirrors :1124).
+            if self.features_registry and self.routing_config:
+                resp = await self._fallback_handler.try_with_fallback_async(
+                    provider,
+                    current_model,
+                    original_messages,
+                    e,
+                    self._provider_utils.get_provider_config,
+                    self._client_factory.get_or_create_client,
+                    self._message_utils.convert_messages_to_langchain,
+                    **kwargs,
+                )
+                # Materialize the fallback LLMResponse as a single synthetic
+                # terminal LLMStreamChunk carrying the fallback's identity (AC-18).
+                yield LLMStreamChunk(
+                    text_delta="",
+                    chunk_index=0,
+                    is_final=True,
+                    usage=resp.usage,
+                    finish_reason=resp.finish_reason,
+                    resolved_provider=resp.resolved_provider,
+                    resolved_model=resp.resolved_model,
+                )
+                return
+
+            raise
 
     def _record_ttft_metric(self, ttft: float, provider: str, model: str) -> None:
         """Record LLM streaming time-to-first-token on the TTFT histogram.
