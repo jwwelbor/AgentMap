@@ -5,13 +5,21 @@ Covers TC-F03-007 and TC-F03-017 — the two test cases owned by T-E06-F03-001:
   - TC-F03-007: __init__ creates _metric_ttft histogram; instrument not None.
   - TC-F03-017 (constant assertion portion): METRIC_LLM_TTFT value and distinctness.
 
+Also covers TC-F03-009 through TC-F03-015 — the test cases owned by T-E06-F03-004:
+  - TC-F03-009: Pre-first-chunk retryable error; seam invoked twice; caller receives full stream.
+  - TC-F03-011: Post-first-chunk error; 2 chunks delivered; seam invoked once; no fallback.
+  - TC-F03-012: Post-first-chunk failure records circuit-breaker failure; no record_success.
+  - TC-F03-013: Clean completion records circuit-breaker success once; CB metric on close.
+  - TC-F03-014: Circuit-breaker open raises LLMProviderError before any chunk; stream_provider never called.
+  - TC-F03-015: Non-retryable pre-first-chunk error; seam invoked once; record_failure + CB metric on open.
+
 Framework: unittest.IsolatedAsyncioTestCase for async tests; plain unittest.TestCase
 for sync assertions. No real network calls. asyncio_mode NOT auto.
 """
 
 import unittest
-from typing import get_type_hints
-from unittest.mock import MagicMock, Mock
+from typing import AsyncIterator, get_type_hints
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from agentmap.models.llm_execution import LLMStreamChunk
 from agentmap.services.telemetry.constants import (
@@ -958,4 +966,572 @@ class TestValidateStreamingSupportGate(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             callable(svc._validate_streaming_support),
             "_validate_streaming_support must be callable",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Helpers for TC-F03-009 – TC-F03-015
+# ---------------------------------------------------------------------------
+
+
+def make_stream(*text_deltas: str) -> AsyncIterator:
+    """Build a real async generator yielding LLMStreamChunk instances.
+
+    Produces ``len(text_deltas)`` non-final chunks followed by one terminal
+    chunk (is_final=True, text_delta=""). ``resolved_provider`` and
+    ``resolved_model`` are set on the terminal chunk to "anthropic" / "test-model"
+    by default so callers can reconstruct an LLMResponse.
+    """
+
+    async def _gen():
+        for idx, delta in enumerate(text_deltas):
+            yield LLMStreamChunk(text_delta=delta, chunk_index=idx, is_final=False)
+        yield LLMStreamChunk(
+            text_delta="",
+            chunk_index=len(text_deltas),
+            is_final=True,
+            resolved_provider="anthropic",
+            resolved_model="test-model",
+        )
+
+    return _gen()
+
+
+def make_failing_stream(after: int, exc: Exception) -> AsyncIterator:
+    """Build a real async generator that yields ``after`` non-final chunks then raises ``exc``."""
+
+    async def _gen():
+        for idx in range(after):
+            yield LLMStreamChunk(
+                text_delta=f"chunk{idx}", chunk_index=idx, is_final=False
+            )
+        raise exc
+
+    return _gen()
+
+
+def _make_svc_for_resilience(max_attempts: int = 2):
+    """Build a minimal LLMService with resilience config + mocked circuit breaker.
+
+    Returns ``(svc, circuit_breaker_mock)`` so tests can configure CB behaviour.
+    """
+    from agentmap.services.llm_service import LLMService
+
+    mock_logging = MagicMock()
+    mock_logging.get_class_logger.return_value = MagicMock()
+
+    mock_config = MagicMock()
+    mock_config.get_llm_resilience_config.return_value = {
+        "retry": {
+            "max_attempts": max_attempts,
+            "backoff_base": 2.0,
+            "backoff_max": 30.0,
+            "jitter": False,
+        },
+        "circuit_breaker": {
+            "failure_threshold": 3,
+            "reset_timeout": 60,
+        },
+    }
+    mock_config.get_llm_config.return_value = {
+        "model": "test-model",
+        "temperature": 0.7,
+        "api_key": "test-key",
+    }
+
+    mock_models_config = MagicMock()
+    mock_routing_service = MagicMock()
+    mock_routing_config = MagicMock()
+    mock_routing_config.supports_prompt_caching.return_value = False
+
+    svc = LLMService(
+        configuration=mock_config,
+        logging_service=mock_logging,
+        routing_service=mock_routing_service,
+        llm_models_config_service=mock_models_config,
+        routing_config_service=mock_routing_config,
+        telemetry_service=None,
+    )
+
+    # Replace circuit breaker with a mock that defaults to "open = False"
+    cb_mock = MagicMock()
+    cb_mock.is_open.return_value = False
+    cb_mock.reset = 60
+    svc._circuit_breaker = cb_mock
+
+    return svc, cb_mock
+
+
+# ---------------------------------------------------------------------------
+# TC-F03-009: Pre-first-chunk retryable error → retry engaged
+# ---------------------------------------------------------------------------
+
+
+class TestInvokeWithResilienceStreamRetry(unittest.IsolatedAsyncioTestCase):
+    """TC-F03-009: Pre-first-chunk retryable error retries; caller receives full stream."""
+
+    async def test_pre_first_chunk_retryable_error_retries_and_succeeds(self):
+        """First stream_provider attempt raises retryable error before any yield;
+        second attempt yields a full stream. Seam invoked twice. No error surfaces.
+        asyncio.sleep patched.
+        """
+        from agentmap.exceptions import LLMRateLimitError
+
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=2)
+
+        # First attempt raises before yielding; second returns a real stream.
+        call_count = 0
+
+        async def fake_stream_provider(
+            provider, messages, params, *, client, credentials
+        ):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise LLMRateLimitError("rate limited — retryable")
+            # Second attempt: yield a real stream
+            async for chunk in make_stream("Hello", " world"):
+                yield chunk
+
+        with (
+            patch(
+                "agentmap.services.llm_service.stream_provider",
+                side_effect=fake_stream_provider,
+            ),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            collected = []
+            async for chunk in svc._invoke_with_resilience_stream_async(
+                messages=[{"role": "user", "content": "hi"}],
+                params={"model": "test-model"},
+                provider="anthropic",
+                model="test-model",
+                streaming_client=MagicMock(),
+                credentials={},
+            ):
+                collected.append(chunk)
+
+        # Seam called twice
+        self.assertEqual(call_count, 2, "stream_provider must be invoked twice")
+        # Received 2 non-final + 1 terminal chunk from successful second attempt
+        non_final = [c for c in collected if not c.is_final]
+        terminal = [c for c in collected if c.is_final]
+        self.assertEqual(len(non_final), 2)
+        self.assertEqual(len(terminal), 1)
+        self.assertFalse(terminal[0].text_delta)
+
+    async def test_record_success_called_after_clean_stream_on_retry(self):
+        """After a successful second attempt, record_success is called once."""
+        from agentmap.exceptions import LLMRateLimitError
+
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=2)
+        call_count = 0
+
+        async def fake_sp(provider, messages, params, *, client, credentials):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise LLMRateLimitError("rate limited — retryable")
+            async for chunk in make_stream("ok"):
+                yield chunk
+
+        with (
+            patch("agentmap.services.llm_service.stream_provider", side_effect=fake_sp),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            async for _ in svc._invoke_with_resilience_stream_async(
+                messages=[{"role": "user", "content": "x"}],
+                params={"model": "test-model"},
+                provider="anthropic",
+                model="test-model",
+                streaming_client=MagicMock(),
+                credentials={},
+            ):
+                pass
+
+        cb_mock.record_success.assert_called_once_with("anthropic", "test-model")
+        cb_mock.record_failure.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TC-F03-011: Post-first-chunk error → terminal, no retry, no fallback
+# ---------------------------------------------------------------------------
+
+
+class TestInvokeWithResilienceStreamPostFirstChunk(unittest.IsolatedAsyncioTestCase):
+    """TC-F03-011 + TC-F03-012: Post-first-chunk failure is terminal."""
+
+    async def test_post_first_chunk_error_delivers_chunks_then_raises(self):
+        """After 2 chunks yielded, stream raises. 2 chunks received; error re-raised;
+        seam invoked exactly once (no retry).
+        """
+        from agentmap.exceptions import LLMProviderError
+
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=3)
+
+        exc = LLMProviderError("mid-stream error")
+        call_count = 0
+
+        async def fake_sp(provider, messages, params, *, client, credentials):
+            nonlocal call_count
+            call_count += 1
+            async for chunk in make_failing_stream(after=2, exc=exc):
+                yield chunk
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider", side_effect=fake_sp
+        ):
+            collected = []
+            raised = None
+            try:
+                async for chunk in svc._invoke_with_resilience_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    params={"model": "test-model"},
+                    provider="anthropic",
+                    model="test-model",
+                    streaming_client=MagicMock(),
+                    credentials={},
+                ):
+                    collected.append(chunk)
+            except LLMProviderError as e:
+                raised = e
+
+        # 2 chunks received before error
+        self.assertEqual(
+            len(collected), 2, "Must receive exactly 2 chunks before error"
+        )
+        # Error re-raised to caller
+        self.assertIsNotNone(raised, "Error must propagate to caller")
+        # Seam invoked exactly once — no retry
+        self.assertEqual(
+            call_count, 1, "stream_provider must be invoked exactly once (no retry)"
+        )
+
+    async def test_post_first_chunk_error_records_failure_not_success(self):
+        """TC-F03-012: record_failure called on post-first-chunk error; record_success not called;
+        _record_circuit_breaker_metric_on_open NOT called (CB already knows via record_failure).
+        """
+        from agentmap.exceptions import LLMProviderError
+
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=3)
+
+        exc = LLMProviderError("mid-stream")
+
+        async def fake_sp(provider, messages, params, *, client, credentials):
+            async for chunk in make_failing_stream(after=2, exc=exc):
+                yield chunk
+
+        # Spy on _record_circuit_breaker_metric_on_open to assert NOT called
+        cb_open_calls = []
+        original_cb_open = svc._record_circuit_breaker_metric_on_open
+
+        def spy_cb_open(provider, model):
+            cb_open_calls.append((provider, model))
+            return original_cb_open(provider, model)
+
+        svc._record_circuit_breaker_metric_on_open = spy_cb_open
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider", side_effect=fake_sp
+        ):
+            try:
+                async for _ in svc._invoke_with_resilience_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    params={"model": "test-model"},
+                    provider="anthropic",
+                    model="test-model",
+                    streaming_client=MagicMock(),
+                    credentials={},
+                ):
+                    pass
+            except LLMProviderError:
+                pass
+
+        cb_mock.record_failure.assert_called_once_with("anthropic", "test-model")
+        cb_mock.record_success.assert_not_called()
+        # _record_circuit_breaker_metric_on_open must NOT be called on post-first-chunk path
+        self.assertEqual(
+            cb_open_calls,
+            [],
+            "_record_circuit_breaker_metric_on_open must NOT be called on post-first-chunk terminal path",
+        )
+
+
+# ---------------------------------------------------------------------------
+# TC-F03-013: Clean completion records circuit-breaker success
+# ---------------------------------------------------------------------------
+
+
+class TestInvokeWithResilienceStreamCleanCompletion(unittest.IsolatedAsyncioTestCase):
+    """TC-F03-013: Clean stream completion calls record_success once; CB metric on close."""
+
+    async def test_clean_completion_calls_record_success_once(self):
+        """Happy path: record_success(provider, model) called exactly once after terminal chunk;
+        record_failure not called; _record_circuit_breaker_metric_on_close invoked.
+        """
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=2)
+
+        async def fake_sp(provider, messages, params, *, client, credentials):
+            async for chunk in make_stream("Hello", " world"):
+                yield chunk
+
+        # Spy on _record_circuit_breaker_metric_on_close
+        cb_close_calls = []
+        original_close = svc._record_circuit_breaker_metric_on_close
+
+        def spy_cb_close(was_open, provider, model):
+            cb_close_calls.append((was_open, provider, model))
+            return original_close(was_open, provider, model)
+
+        svc._record_circuit_breaker_metric_on_close = spy_cb_close
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider", side_effect=fake_sp
+        ):
+            collected = []
+            async for chunk in svc._invoke_with_resilience_stream_async(
+                messages=[{"role": "user", "content": "hi"}],
+                params={"model": "test-model"},
+                provider="anthropic",
+                model="test-model",
+                streaming_client=MagicMock(),
+                credentials={},
+            ):
+                collected.append(chunk)
+
+        cb_mock.record_success.assert_called_once_with("anthropic", "test-model")
+        cb_mock.record_failure.assert_not_called()
+        self.assertTrue(
+            cb_close_calls,
+            "_record_circuit_breaker_metric_on_close must be called on clean completion",
+        )
+        # Verify received full stream (2 non-final + 1 terminal)
+        self.assertEqual(len(collected), 3)
+        self.assertTrue(collected[-1].is_final)
+
+
+# ---------------------------------------------------------------------------
+# TC-F03-014: Circuit-breaker open → reject before any chunk
+# ---------------------------------------------------------------------------
+
+
+class TestInvokeWithResilienceStreamCircuitBreakerOpen(
+    unittest.IsolatedAsyncioTestCase
+):
+    """TC-F03-014: CB open raises LLMProviderError before any chunk; stream_provider never called."""
+
+    async def test_circuit_breaker_open_raises_before_any_chunk(self):
+        """When is_open returns True, LLMProviderError is raised immediately;
+        stream_provider is never invoked.
+        """
+        from agentmap.exceptions import LLMProviderError
+
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=2)
+        cb_mock.is_open.return_value = True  # CB is open
+
+        stream_provider_calls = []
+
+        async def fake_sp(provider, messages, params, *, client, credentials):
+            stream_provider_calls.append(True)
+            yield LLMStreamChunk(
+                text_delta="should not appear", chunk_index=0, is_final=True
+            )
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider", side_effect=fake_sp
+        ):
+            collected = []
+            raised = None
+            try:
+                async for chunk in svc._invoke_with_resilience_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    params={"model": "test-model"},
+                    provider="anthropic",
+                    model="test-model",
+                    streaming_client=MagicMock(),
+                    credentials={},
+                ):
+                    collected.append(chunk)
+            except LLMProviderError as e:
+                raised = e
+
+        self.assertIsNotNone(raised, "LLMProviderError must be raised when CB is open")
+        self.assertEqual(collected, [], "No chunks must be delivered when CB is open")
+        self.assertEqual(
+            stream_provider_calls,
+            [],
+            "stream_provider must NOT be invoked when CB is open",
+        )
+
+    async def test_circuit_breaker_open_error_message_contains_reset(self):
+        """LLMProviderError message mentions the reset timeout (mirrors line 1282)."""
+        from agentmap.exceptions import LLMProviderError
+
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=2)
+        cb_mock.is_open.return_value = True
+        cb_mock.reset = 60
+
+        async def fake_sp(provider, messages, params, *, client, credentials):
+            yield LLMStreamChunk(text_delta="x", chunk_index=0, is_final=True)
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider", side_effect=fake_sp
+        ):
+            with self.assertRaises(LLMProviderError) as ctx:
+                async for _ in svc._invoke_with_resilience_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    params={"model": "test-model"},
+                    provider="anthropic",
+                    model="test-model",
+                    streaming_client=MagicMock(),
+                    credentials={},
+                ):
+                    pass
+
+        error_msg = str(ctx.exception)
+        self.assertIn(
+            "60",
+            error_msg,
+            f"Error message must mention reset timeout (60s). Got: {error_msg!r}",
+        )
+
+
+# ---------------------------------------------------------------------------
+# TC-F03-015: Non-retryable pre-first-chunk error short-circuits retry loop
+# ---------------------------------------------------------------------------
+
+
+class TestInvokeWithResilienceStreamNonRetryable(unittest.IsolatedAsyncioTestCase):
+    """TC-F03-015: Non-retryable error before first chunk; seam invoked once; CB metrics called."""
+
+    async def test_non_retryable_pre_first_chunk_error_no_second_attempt(self):
+        """Non-retryable error: seam invoked exactly once (no retry); error propagates."""
+        from agentmap.exceptions import LLMConfigurationError
+
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=3)
+
+        call_count = 0
+
+        async def fake_sp(provider, messages, params, *, client, credentials):
+            nonlocal call_count
+            call_count += 1
+            raise LLMConfigurationError("bad config — non retryable")
+            yield  # make it a generator
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider", side_effect=fake_sp
+        ):
+            raised = None
+            try:
+                async for _ in svc._invoke_with_resilience_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    params={"model": "test-model"},
+                    provider="anthropic",
+                    model="test-model",
+                    streaming_client=MagicMock(),
+                    credentials={},
+                ):
+                    pass
+            except Exception as e:
+                raised = e
+
+        self.assertIsNotNone(raised, "Non-retryable error must propagate")
+        self.assertEqual(
+            call_count,
+            1,
+            "stream_provider must be invoked exactly once on non-retryable error",
+        )
+
+    async def test_non_retryable_pre_first_chunk_calls_record_failure_and_cb_metric_on_open(
+        self,
+    ):
+        """TC-F03-015: record_failure called; _record_circuit_breaker_metric_on_open called once
+        (mirrors _invoke_with_resilience_async line 1319–1322).
+        """
+        from agentmap.exceptions import LLMConfigurationError
+
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=3)
+
+        cb_open_calls = []
+        original_cb_open = svc._record_circuit_breaker_metric_on_open
+
+        def spy_cb_open(provider, model):
+            cb_open_calls.append((provider, model))
+            return original_cb_open(provider, model)
+
+        svc._record_circuit_breaker_metric_on_open = spy_cb_open
+
+        async def fake_sp(provider, messages, params, *, client, credentials):
+            raise LLMConfigurationError("bad config")
+            yield  # make it a generator
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider", side_effect=fake_sp
+        ):
+            try:
+                async for _ in svc._invoke_with_resilience_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    params={"model": "test-model"},
+                    provider="anthropic",
+                    model="test-model",
+                    streaming_client=MagicMock(),
+                    credentials={},
+                ):
+                    pass
+            except Exception:
+                pass
+
+        cb_mock.record_failure.assert_called_once_with("anthropic", "test-model")
+        self.assertEqual(
+            len(cb_open_calls),
+            1,
+            "_record_circuit_breaker_metric_on_open must be called exactly once on non-retryable path",
+        )
+        cb_mock.record_success.assert_not_called()
+
+    async def test_retryable_exhaustion_calls_record_failure_and_cb_metric_on_open(
+        self,
+    ):
+        """After max_attempts retryable errors, record_failure + _record_circuit_breaker_metric_on_open
+        called (mirrors _invoke_with_resilience_async line 1338–1341).
+        """
+        from agentmap.exceptions import LLMRateLimitError
+
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=2)
+
+        cb_open_calls = []
+        original_cb_open = svc._record_circuit_breaker_metric_on_open
+
+        def spy_cb_open(provider, model):
+            cb_open_calls.append((provider, model))
+            return original_cb_open(provider, model)
+
+        svc._record_circuit_breaker_metric_on_open = spy_cb_open
+
+        async def fake_sp(provider, messages, params, *, client, credentials):
+            raise LLMRateLimitError("rate limited — always fails")
+            yield  # make it a generator
+
+        with (
+            patch("agentmap.services.llm_service.stream_provider", side_effect=fake_sp),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            try:
+                async for _ in svc._invoke_with_resilience_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    params={"model": "test-model"},
+                    provider="anthropic",
+                    model="test-model",
+                    streaming_client=MagicMock(),
+                    credentials={},
+                ):
+                    pass
+            except Exception:
+                pass
+
+        cb_mock.record_failure.assert_called_once_with("anthropic", "test-model")
+        self.assertEqual(
+            len(cb_open_calls),
+            1,
+            "_record_circuit_breaker_metric_on_open must be called once on retry exhaustion",
         )

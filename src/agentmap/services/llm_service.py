@@ -49,6 +49,7 @@ from agentmap.services.config import AppConfigService
 from agentmap.services.config.llm_models_config_service import LLMModelsConfigService
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
+from agentmap.services.llm.stream_seam import stream_provider
 from agentmap.services.llm_batch_errors import (
     LLMBatchCancelNotSupportedError,
     LLMBatchExpiredError,
@@ -1352,6 +1353,131 @@ class LLMService:
                 )
                 await asyncio.sleep(delay)
 
+        self._circuit_breaker.record_failure(provider, model)
+        self._record_error_metric(last_error, provider, model)
+        self._record_circuit_breaker_metric_on_open(provider, model)
+        raise last_error  # type: ignore[misc]
+
+    async def _invoke_with_resilience_stream_async(
+        self,
+        messages: List[Any],
+        params: Dict[str, Any],
+        provider: str,
+        model: str,
+        streaming_client: Any,
+        credentials: Optional[Dict[str, Any]],
+    ) -> AsyncGenerator["LLMStreamChunk", None]:
+        """Streaming resilience generator: retry loop + circuit breaker + first-chunk cut point.
+
+        Mirrors ``_invoke_with_resilience_async`` (:1263) but is an **async generator**
+        that yields ``LLMStreamChunk`` instances.  Key design decisions:
+
+        - ``first_chunk_delivered`` is **per-attempt** (reset on each retry) so that a
+          transient pre-first-chunk failure is correctly identified as retryable even if a
+          previous attempt had already delivered a chunk.
+        - Errors **before** the first chunk → retryable: retry loop + circuit-breaker
+          failure + ``_record_circuit_breaker_metric_on_open`` on non-retryable or
+          exhaustion.
+        - Errors **after** the first chunk → terminal: ``record_failure`` + re-raise;
+          ``_record_circuit_breaker_metric_on_open`` is NOT called because the CB already
+          captures the failure via ``record_failure`` and post-first-chunk errors must not
+          influence fallback eligibility (REQ-F-004, REQ-F-005).
+        - Clean completion → ``record_success`` + ``_record_circuit_breaker_metric_on_close``.
+
+        Args:
+            messages: Normalized ``LLMMessage`` dicts (not LangChain objects).
+            params: Resolved call parameters (model, max_tokens, temperature, …).
+            provider: Canonical provider key used for circuit-breaker keying.
+            model: Model name used for circuit-breaker keying.
+            streaming_client: Pre-constructed streaming-aware client (from F02 factory).
+            credentials: Provider credentials dict forwarded to the seam.
+
+        Yields:
+            ``LLMStreamChunk`` objects from the provider seam.
+
+        Raises:
+            ``LLMProviderError``: When the circuit breaker is open (before any chunk).
+            Provider-specific errors: Re-raised after circuit-breaker recording.
+        """
+        # Record circuit-breaker state on current span (mirrors :1277)
+        self._record_circuit_breaker_state(provider, model)
+
+        if self._circuit_breaker.is_open(provider, model):
+            raise LLMProviderError(
+                f"Circuit breaker open for {provider}:{model} -- "
+                f"skipping call (resets after "
+                f"{self._circuit_breaker.reset}s)"
+            )
+
+        retry_cfg = self._resilience_config.get("retry", {})
+        max_attempts = retry_cfg.get("max_attempts", 3)
+        backoff_base = retry_cfg.get("backoff_base", 2.0)
+        backoff_max = retry_cfg.get("backoff_max", 30.0)
+        jitter = retry_cfg.get("jitter", True)
+
+        last_error: Optional[Exception] = None
+
+        for attempt in range(1, max_attempts + 1):
+            # first_chunk_delivered is per-attempt — reset at the top of each retry
+            first_chunk_delivered = False
+            try:
+                self._logger.debug(
+                    f"LLM streaming call to {provider}:{model} "
+                    f"(attempt {attempt}/{max_attempts})"
+                )
+                async for chunk in stream_provider(
+                    provider,
+                    messages,
+                    params,
+                    client=streaming_client,
+                    credentials=credentials,
+                ):
+                    # Cut point: once the first chunk is yielded, errors are terminal
+                    first_chunk_delivered = True
+                    yield chunk
+
+                # Clean completion
+                was_open = self._circuit_breaker.is_open(provider, model)
+                self._circuit_breaker.record_success(provider, model)
+                self._record_circuit_breaker_metric_on_close(was_open, provider, model)
+                return
+
+            except Exception as e:
+                if first_chunk_delivered:
+                    # Post-first-chunk error: terminal, no retry, no fallback.
+                    # CB still records the failure (REQ-F-005); no _on_open metric
+                    # (the failure is already accounted for, post-first-chunk path
+                    # must not trigger fallback eligibility tracking).
+                    self._circuit_breaker.record_failure(provider, model)
+                    self._record_error_metric(e, provider, model)
+                    raise
+
+                # Pre-first-chunk error: classify and decide retry vs immediate fail
+                typed_error = classify_llm_error(e, provider)
+                last_error = typed_error
+
+                if not is_retryable(typed_error):
+                    # Non-retryable: fail immediately (mirrors :1335–1339)
+                    self._circuit_breaker.record_failure(provider, model)
+                    self._record_error_metric(typed_error, provider, model)
+                    self._record_circuit_breaker_metric_on_open(provider, model)
+                    raise typed_error
+
+                if attempt == max_attempts:
+                    break
+
+                delay = min(backoff_base ** (attempt - 1), backoff_max)
+                if jitter:
+                    delay = delay * (0.5 + random.random())
+
+                self._logger.warning(
+                    f"Retryable streaming error on {provider}:{model} "
+                    f"(attempt {attempt}/{max_attempts}): {typed_error}. "
+                    f"Retrying in {delay:.1f}s"
+                )
+                await asyncio.sleep(delay)
+
+        # All retries exhausted (mirrors :1355–1358)
         self._circuit_breaker.record_failure(provider, model)
         self._record_error_metric(last_error, provider, model)
         self._record_circuit_breaker_metric_on_open(provider, model)
