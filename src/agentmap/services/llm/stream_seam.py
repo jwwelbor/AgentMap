@@ -202,28 +202,31 @@ class AnthropicStreamSeam:
                     if delta_obj is not None:
                         stop_reason = getattr(delta_obj, "stop_reason", None)
 
-                elif event_type == "message_stop":
-                    # Emit the terminal chunk with accumulated usage and metadata.
-                    usage = LLMUsage(
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                        cache_creation_input_tokens=cache_creation_tokens,
-                        cache_read_input_tokens=cache_read_tokens,
-                    )
-                    yield LLMStreamChunk(
-                        text_delta="",
-                        chunk_index=chunk_index,
-                        is_final=True,
-                        usage=usage,
-                        finish_reason=stop_reason,
-                        resolved_provider=self.provider_name,
-                        resolved_model=model,
-                    )
-                    # Terminal chunk emitted; stop iterating.
-                    return
+                # message_stop, content_block_start, content_block_stop, ping,
+                # and any other event types are intentionally ignored here.
+                # The terminal chunk is emitted after the iterator is exhausted
+                # (terminal-after-exhaust pattern) so that an empty or truncated
+                # stream (no message_stop) still satisfies AC-5.
 
-                # content_block_start, content_block_stop, ping, and any other
-                # event types are intentionally ignored.
+        # Emit the single terminal chunk after the event iterator is fully
+        # exhausted.  This fires whether message_stop arrived, was absent (empty
+        # stream), or the stream was truncated before message_stop — ensuring
+        # exactly one is_final=True chunk is always emitted (AC-5).
+        usage = LLMUsage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_creation_input_tokens=cache_creation_tokens,
+            cache_read_input_tokens=cache_read_tokens,
+        )
+        yield LLMStreamChunk(
+            text_delta="",
+            chunk_index=chunk_index,
+            is_final=True,
+            usage=usage,
+            finish_reason=stop_reason,
+            resolved_provider=self.provider_name,
+            resolved_model=model,
+        )
 
 
 # ---------------------------------------------------------------------------

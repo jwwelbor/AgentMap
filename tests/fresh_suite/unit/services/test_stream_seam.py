@@ -812,6 +812,108 @@ class TestAnthropicStreamSeam(unittest.IsolatedAsyncioTestCase):
             ), f"chunk {i} has chunk_index {chunk.chunk_index}"
         assert terminal_list[0].chunk_index == len(non_final)
 
+    async def test_anth9_empty_stream_yields_exactly_one_terminal_chunk(self):
+        """
+        TC-F01-ANTH-9: EMPTY stream (no events at all) must yield exactly ONE
+        is_final=True chunk.
+
+        AC-5 requires exactly one terminal chunk per stream invocation.  When
+        Anthropic returns an empty event iterator (e.g. network truncation before
+        the first byte), the seam must still emit the terminal chunk — it cannot
+        emit zero is_final chunks.
+
+        This test is the AC-5 red-team case: the current code emits the terminal
+        chunk ONLY inside the ``message_stop`` branch, so an empty stream produces
+        0 chunks.  The fix must emit terminal-after-exhaust.
+        """
+        mock_sdk, mock_client, make_ctx = _make_mock_anthropic_module()
+
+        # Empty event list — no events at all.
+        make_ctx([])
+
+        seam = self._make_seam(mock_sdk, mock_client)
+        chunks = await self._collect_chunks(seam, mock_sdk, [])
+
+        final_chunks = [c for c in chunks if c.is_final]
+        non_final_chunks = [c for c in chunks if not c.is_final]
+
+        assert len(final_chunks) == 1, (
+            f"AC-5 violation: expected exactly 1 is_final=True chunk from an empty "
+            f"stream, got {len(final_chunks)}. "
+            f"All chunks: {chunks}"
+        )
+        assert (
+            len(non_final_chunks) == 0
+        ), f"Expected 0 non-final chunks from empty stream, got {len(non_final_chunks)}"
+
+        terminal = final_chunks[0]
+        assert (
+            terminal.text_delta == ""
+        ), f"terminal text_delta must be '', got {terminal.text_delta!r}"
+        assert (
+            terminal.chunk_index == 0
+        ), f"terminal chunk_index must be 0 for empty stream, got {terminal.chunk_index}"
+        assert terminal.resolved_provider == "anthropic"
+
+    async def test_anth10_truncated_stream_no_message_stop_yields_terminal_chunk(self):
+        """
+        TC-F01-ANTH-10: TRUNCATED stream (message_start + text delta, NO message_stop)
+        must still yield a terminal is_final=True chunk with whatever usage/text
+        was accumulated before truncation.
+
+        AC-5 requires exactly one terminal chunk.  When the stream is cut after
+        some text deltas but before ``message_stop`` arrives (e.g. API timeout,
+        connection reset), the seam must emit the terminal chunk on iterator
+        exhaustion — not only on ``message_stop``.
+        """
+        mock_sdk, mock_client, make_ctx = _make_mock_anthropic_module()
+
+        # Truncated: message_start + one text delta — no message_delta, no message_stop.
+        events = [
+            _make_anthropic_message_start_event(input_tokens=8),
+            _make_anthropic_content_block_start_event("text", 0),
+            _make_anthropic_text_delta_event("partial text", 0),
+            # Stream ends here — message_delta and message_stop never arrive.
+        ]
+        make_ctx(events)
+
+        seam = self._make_seam(mock_sdk, mock_client)
+        chunks = await self._collect_chunks(seam, mock_sdk, events)
+
+        final_chunks = [c for c in chunks if c.is_final]
+        non_final_chunks = [c for c in chunks if not c.is_final]
+
+        assert len(final_chunks) == 1, (
+            f"AC-5 violation: expected exactly 1 is_final=True chunk from a truncated "
+            f"stream, got {len(final_chunks)}. "
+            f"All chunks: {chunks}"
+        )
+        assert len(non_final_chunks) == 1, (
+            f"Expected 1 non-final chunk (the partial text delta), "
+            f"got {len(non_final_chunks)}"
+        )
+        assert non_final_chunks[0].text_delta == "partial text"
+
+        terminal = final_chunks[0]
+        assert (
+            terminal.text_delta == ""
+        ), f"terminal text_delta must be '', got {terminal.text_delta!r}"
+        # usage.input_tokens must carry the value from message_start (8)
+        # even though message_delta never arrived (output_tokens will be None).
+        assert (
+            terminal.usage is not None
+        ), "terminal chunk must carry LLMUsage even from a truncated stream"
+        assert terminal.usage.input_tokens == 8, (
+            f"input_tokens from message_start must be preserved; "
+            f"got {terminal.usage.input_tokens}"
+        )
+        # output_tokens is None because message_delta never arrived — that is correct.
+        assert terminal.usage.output_tokens is None, (
+            f"output_tokens must be None (message_delta never arrived); "
+            f"got {terminal.usage.output_tokens}"
+        )
+        assert terminal.resolved_provider == "anthropic"
+
 
 # ---------------------------------------------------------------------------
 # Helpers — fake OpenAI SDK chunks (ChatCompletionChunk shape)
