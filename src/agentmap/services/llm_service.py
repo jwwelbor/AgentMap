@@ -3028,18 +3028,106 @@ class LLMService:
     ) -> AsyncGenerator[LLMStreamChunk, None]:
         """Streaming routing variant — sibling of ``_call_llm_async_with_routing`` (:924).
 
-        Resolves the routing decision then delegates to the streaming direct method.
-        Skeleton: routing resolution logic will be filled by later tasks; currently
-        raises ``LLMServiceError`` to indicate routing is not yet wired for streaming.
+        Resolves the routing decision (identical logic to the non-streaming sibling)
+        then delegates to ``_call_llm_stream_async_direct`` with the resolved
+        provider/model.  The routing resolution block is byte-equivalent to
+        ``_call_llm_async_with_routing``; only the terminal delegate call differs
+        (``_call_llm_stream_async_direct`` instead of ``_call_llm_async_direct``).
         """
         if not self.routing_service:
             raise LLMServiceError("Routing requested but no routing service available")
-        # Routing resolution body is filled by later tasks (T-E06-F03-002+).
-        raise LLMServiceError(
-            "Streaming with routing_context is not yet implemented (E06-F03 T-002)."
-        )
-        # Unreachable yield — required to make this an async generator.
-        yield  # type: ignore[misc]
+
+        # Narrow try to routing decision only — _call_llm_stream_async_direct errors
+        # must propagate as-is; the broad except was re-labeling downstream errors as
+        # routing failures and silently swapping to fallback_provider.
+        try:
+            context = self._create_routing_context(routing_context, messages)
+            available_providers = self._provider_utils.get_available_providers()
+
+            if not available_providers:
+                raise LLMServiceError("No providers configured")
+
+            prompt = self._message_utils.extract_prompt_from_messages(messages)
+            decision = self.routing_service.route_request(
+                prompt=prompt,
+                task_type=context.task_type,
+                available_providers=available_providers,
+                routing_context=context,
+            )
+
+            self._logger.info(
+                f"Routing decision: {decision.provider}:{decision.model} "
+                f"(complexity: {decision.complexity}, "
+                f"confidence: {decision.confidence:.2f})"
+            )
+
+            self._record_routing_attributes(decision)
+
+            node_max_tokens = routing_context.get("max_tokens")
+            if node_max_tokens is None:
+                node_max_tokens = kwargs.pop("max_tokens", None)
+
+            resolved_max_tokens = (
+                node_max_tokens if node_max_tokens is not None else decision.max_tokens
+            )
+            if resolved_max_tokens == 0:
+                self._logger.debug(
+                    "max_tokens=0 resolved to no limit (provider default)"
+                )
+                kwargs["max_tokens"] = 0
+                resolved_max_tokens = None
+            elif resolved_max_tokens is not None:
+                source = (
+                    "node context" if node_max_tokens is not None else "activity config"
+                )
+                self._logger.debug(
+                    f"max_tokens={resolved_max_tokens} (source: {source})"
+                )
+                kwargs["max_tokens"] = resolved_max_tokens
+
+            if resolved_max_tokens is not None:
+                self._set_current_span_attributes(
+                    {GEN_AI_REQUEST_MAX_TOKENS: resolved_max_tokens}
+                )
+
+            async for chunk in self._call_llm_stream_async_direct(
+                provider=decision.provider,
+                messages=messages,
+                model=decision.model,
+                temperature=temperature,
+                routing_context=routing_context,
+                **kwargs,
+            ):
+                yield chunk
+
+        except LLMResolvedCallError:
+            # Post-selection provider failure — routing already resolved a concrete
+            # (provider, model) before the call failed. Preserve that identity
+            # intact; do NOT trigger the routing-fallback retry path, which would
+            # silently rewrite the resolved identity with the fallback provider.
+            # Mirrors the identical guard in _call_llm_async_with_routing:1019.
+            raise
+        except LLMServiceError:
+            raise
+        except Exception as e:
+            self._logger.error(f"Routing failed: {e}")
+            fallback_provider = routing_context.get("fallback_provider", "anthropic")
+            self._logger.warning(
+                f"Falling back to {fallback_provider} due to pre-selection routing failure"
+            )
+            self._record_fallback_metric("routing_fallback")
+            fallback_max_tokens = routing_context.get("max_tokens")
+            if fallback_max_tokens is not None and "max_tokens" not in kwargs:
+                kwargs["max_tokens"] = fallback_max_tokens
+            async for chunk in self._call_llm_stream_async_direct(
+                provider=fallback_provider,
+                messages=messages,
+                model=model,
+                temperature=temperature,
+                routing_context=routing_context,
+                **kwargs,
+            ):
+                yield chunk
 
     async def _call_llm_stream_async_direct(
         self,

@@ -10,6 +10,7 @@ for sync assertions. No real network calls. asyncio_mode NOT auto.
 """
 
 import unittest
+from typing import get_type_hints
 from unittest.mock import MagicMock, Mock
 
 from agentmap.models.llm_execution import LLMStreamChunk
@@ -341,3 +342,332 @@ class TestCallLLMStreamAsyncDispatch(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(chunks), 1)
         self.assertTrue(chunks[0].is_final)
+
+
+# ---------------------------------------------------------------------------
+# TC-F03-005: Routing dispatch mirrors the non-streaming core
+# ---------------------------------------------------------------------------
+
+
+class TestCallLLMStreamAsyncCoreRoutingDispatch(unittest.IsolatedAsyncioTestCase):
+    """TC-F03-005: _call_llm_stream_async_core routing dispatch.
+
+    With routing_context + routing service → routes to _call_llm_stream_async_with_routing.
+    Without routing_context and no provider → raises LLMServiceError.
+    """
+
+    def _make_svc_with_routing(self):
+        """Return a service whose routing_service is a real mock."""
+        svc = _make_llm_service(telemetry_service=None)
+        # routing_service is already a MagicMock from _make_llm_service
+        return svc
+
+    async def test_routing_context_dispatches_to_with_routing(self):
+        """With routing_context set and routing service present, _call_llm_stream_async_core
+        must route through _call_llm_stream_async_with_routing."""
+        svc = self._make_svc_with_routing()
+
+        terminal = LLMStreamChunk(
+            text_delta="",
+            chunk_index=0,
+            is_final=True,
+            resolved_provider="anthropic",
+            resolved_model="claude-3-sonnet",
+        )
+
+        dispatched_to_routing = []
+
+        async def fake_with_routing(
+            messages, routing_context, temperature=None, model=None, **kwargs
+        ):
+            dispatched_to_routing.append(True)
+            yield terminal
+
+        svc._call_llm_stream_async_with_routing = fake_with_routing
+
+        routing_context = {"task_type": "qa"}
+        chunks = []
+        async for chunk in svc._call_llm_stream_async_core(
+            messages=[{"role": "user", "content": "hi"}],
+            provider=None,
+            model=None,
+            temperature=None,
+            routing_context=routing_context,
+        ):
+            chunks.append(chunk)
+
+        self.assertTrue(
+            dispatched_to_routing,
+            "_call_llm_stream_async_core must dispatch to _call_llm_stream_async_with_routing "
+            "when routing_context is set and routing_service is present",
+        )
+        self.assertEqual(len(chunks), 1)
+        self.assertTrue(chunks[0].is_final)
+
+    async def test_no_routing_context_no_provider_raises_llm_service_error(self):
+        """Without routing_context and no provider, _call_llm_stream_async_core must
+        raise LLMServiceError (mirrors _call_llm_async_core @675 guard)."""
+        from agentmap.services.llm_service import LLMServiceError
+
+        svc = self._make_svc_with_routing()
+
+        with self.assertRaises(LLMServiceError):
+            async for _chunk in svc._call_llm_stream_async_core(
+                messages=[{"role": "user", "content": "hi"}],
+                provider=None,
+                model=None,
+                temperature=None,
+                routing_context=None,
+            ):
+                pass
+
+    async def test_no_routing_context_with_provider_dispatches_to_direct(self):
+        """Without routing_context but with a provider, _call_llm_stream_async_core
+        must dispatch to _call_llm_stream_async_direct (PROVIDER-FIRST positional)."""
+        svc = self._make_svc_with_routing()
+
+        terminal = LLMStreamChunk(
+            text_delta="",
+            chunk_index=0,
+            is_final=True,
+            resolved_provider="openai",
+            resolved_model="gpt-4o",
+        )
+
+        dispatched_provider = []
+
+        async def fake_direct(
+            provider, messages, model=None, temperature=None, **kwargs
+        ):
+            dispatched_provider.append(provider)
+            yield terminal
+
+        svc._call_llm_stream_async_direct = fake_direct
+
+        chunks = []
+        async for chunk in svc._call_llm_stream_async_core(
+            messages=[{"role": "user", "content": "hi"}],
+            provider="openai",
+            model="gpt-4o",
+            temperature=0.5,
+            routing_context=None,
+        ):
+            chunks.append(chunk)
+
+        self.assertEqual(
+            dispatched_provider,
+            ["openai"],
+            "_call_llm_stream_async_core must call _call_llm_stream_async_direct "
+            "with provider as first positional arg",
+        )
+        self.assertEqual(len(chunks), 1)
+
+
+class TestCallLLMStreamAsyncWithRouting(unittest.IsolatedAsyncioTestCase):
+    """TC-F03-005 extension: _call_llm_stream_async_with_routing resolves routing
+    and delegates to _call_llm_stream_async_direct."""
+
+    def _make_svc_with_routing_decision(
+        self, provider="anthropic", model="claude-3-sonnet"
+    ):
+        """Return a service whose routing_service produces a scripted decision."""
+        svc = _make_llm_service(telemetry_service=None)
+
+        # Script the routing decision
+        decision = type(
+            "RoutingDecision",
+            (),
+            {
+                "provider": provider,
+                "model": model,
+                "complexity": "low",
+                "confidence": 0.9,
+                "max_tokens": 512,
+            },
+        )()
+        svc.routing_service.route_request.return_value = decision
+
+        # _provider_utils and _message_utils are real instances; patch via Mock replacement
+        from unittest.mock import MagicMock
+
+        mock_provider_utils = MagicMock()
+        mock_provider_utils.get_available_providers.return_value = [provider]
+        mock_provider_utils.normalize_provider.return_value = provider
+        svc._provider_utils = mock_provider_utils
+
+        mock_message_utils = MagicMock()
+        mock_message_utils.extract_prompt_from_messages.return_value = "hi"
+        svc._message_utils = mock_message_utils
+
+        # Script _create_routing_context to return a mock context
+        svc._create_routing_context = lambda routing_context, messages: type(
+            "RoutingContext", (), {"task_type": "qa"}
+        )()
+
+        # _record_routing_attributes is a real method; patch to no-op
+        svc._record_routing_attributes = lambda decision: None
+
+        return svc, decision
+
+    async def test_with_routing_delegates_to_direct_with_resolved_provider(self):
+        """_call_llm_stream_async_with_routing must resolve the routing decision
+        then delegate to _call_llm_stream_async_direct with the resolved provider."""
+        svc, decision = self._make_svc_with_routing_decision(
+            provider="anthropic", model="claude-3-sonnet"
+        )
+
+        terminal = LLMStreamChunk(
+            text_delta="",
+            chunk_index=0,
+            is_final=True,
+            resolved_provider="anthropic",
+            resolved_model="claude-3-sonnet",
+        )
+
+        direct_calls = []
+
+        async def fake_direct(
+            provider, messages, model=None, temperature=None, **kwargs
+        ):
+            direct_calls.append({"provider": provider, "model": model})
+            yield terminal
+
+        svc._call_llm_stream_async_direct = fake_direct
+
+        routing_context = {"task_type": "qa"}
+        chunks = []
+        async for chunk in svc._call_llm_stream_async_with_routing(
+            messages=[{"role": "user", "content": "hi"}],
+            routing_context=routing_context,
+            temperature=None,
+            model=None,
+        ):
+            chunks.append(chunk)
+
+        self.assertEqual(
+            len(direct_calls),
+            1,
+            "_call_llm_stream_async_with_routing must call _call_llm_stream_async_direct once",
+        )
+        self.assertEqual(
+            direct_calls[0]["provider"],
+            "anthropic",
+            "resolved provider from routing decision must be passed to direct",
+        )
+        self.assertEqual(
+            direct_calls[0]["model"],
+            "claude-3-sonnet",
+            "resolved model from routing decision must be passed to direct",
+        )
+        self.assertEqual(len(chunks), 1)
+        self.assertTrue(chunks[0].is_final)
+
+    async def test_with_routing_raises_when_no_routing_service(self):
+        """_call_llm_stream_async_with_routing raises LLMServiceError if routing_service
+        is absent (mirrors the non-streaming guard)."""
+        from agentmap.services.llm_service import LLMServiceError
+
+        svc, _ = self._make_svc_with_routing_decision()
+        svc.routing_service = None  # remove routing service
+
+        with self.assertRaises(LLMServiceError):
+            async for _chunk in svc._call_llm_stream_async_with_routing(
+                messages=[{"role": "user", "content": "hi"}],
+                routing_context={"task_type": "qa"},
+            ):
+                pass
+
+
+# ---------------------------------------------------------------------------
+# TC-F03-008: LLMServiceProtocol declares call_llm_stream_async
+# ---------------------------------------------------------------------------
+
+
+class TestLLMServiceProtocolDeclaresStreamAsync(unittest.TestCase):
+    """TC-F03-008: LLMServiceProtocol must declare call_llm_stream_async with
+    the REQ-F-001 signature and AsyncIterator[LLMStreamChunk] return annotation.
+    LLMService must satisfy the protocol."""
+
+    def test_protocol_declares_call_llm_stream_async(self):
+        """LLMServiceProtocol must have call_llm_stream_async as a declared method."""
+        from agentmap.services.protocols.service_protocols import LLMServiceProtocol
+
+        self.assertTrue(
+            hasattr(LLMServiceProtocol, "call_llm_stream_async"),
+            "LLMServiceProtocol must declare call_llm_stream_async",
+        )
+
+    def test_protocol_method_has_async_iterator_return_annotation(self):
+        """call_llm_stream_async return annotation must be AsyncIterator[LLMStreamChunk]."""
+        from agentmap.services.protocols.service_protocols import LLMServiceProtocol
+
+        method = LLMServiceProtocol.call_llm_stream_async
+        hints = get_type_hints(method)
+        return_hint = hints.get("return")
+        self.assertIsNotNone(
+            return_hint,
+            "call_llm_stream_async must have a return type annotation",
+        )
+        # Check that it is AsyncIterator[LLMStreamChunk]
+        hint_str = str(return_hint)
+        self.assertIn(
+            "AsyncIterator",
+            hint_str,
+            f"Return annotation must be AsyncIterator[...], got {hint_str}",
+        )
+        self.assertIn(
+            "LLMStreamChunk",
+            hint_str,
+            f"Return annotation must include LLMStreamChunk, got {hint_str}",
+        )
+
+    def test_protocol_method_signature_matches_req_f001(self):
+        """call_llm_stream_async parameter list must match REQ-F-001:
+        messages, provider=None, model=None, temperature=None,
+        routing_context=None, cache_system_prompt=False, **kwargs."""
+        import inspect
+
+        from agentmap.services.protocols.service_protocols import LLMServiceProtocol
+
+        sig = inspect.signature(LLMServiceProtocol.call_llm_stream_async)
+        params = dict(sig.parameters)
+
+        # Remove 'self' from comparison
+        params.pop("self", None)
+
+        self.assertIn("messages", params, "Parameter 'messages' must be declared")
+        self.assertIn("provider", params, "Parameter 'provider' must be declared")
+        self.assertIn("model", params, "Parameter 'model' must be declared")
+        self.assertIn("temperature", params, "Parameter 'temperature' must be declared")
+        self.assertIn(
+            "routing_context", params, "Parameter 'routing_context' must be declared"
+        )
+        self.assertIn(
+            "cache_system_prompt",
+            params,
+            "Parameter 'cache_system_prompt' must be declared",
+        )
+
+        self.assertIsNone(params["provider"].default, "provider must default to None")
+        self.assertIsNone(params["model"].default, "model must default to None")
+        self.assertIsNone(
+            params["temperature"].default, "temperature must default to None"
+        )
+        self.assertIsNone(
+            params["routing_context"].default, "routing_context must default to None"
+        )
+        self.assertFalse(
+            params["cache_system_prompt"].default,
+            "cache_system_prompt must default to False",
+        )
+
+    def test_llm_service_satisfies_protocol(self):
+        """LLMService must satisfy LLMServiceProtocol (isinstance check)."""
+        from agentmap.services.protocols.service_protocols import LLMServiceProtocol
+
+        svc = _make_llm_service(telemetry_service=None)
+        self.assertIsInstance(
+            svc,
+            LLMServiceProtocol,
+            "LLMService must satisfy LLMServiceProtocol after F03 extension",
+        )

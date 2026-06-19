@@ -243,6 +243,52 @@ class LLMServiceProtocol(Protocol):
         """
         ...
 
+    async def call_llm_stream_async(
+        self,
+        messages: List[LLMMessage],
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        routing_context: Optional[Dict[str, Any]] = None,
+        cache_system_prompt: bool = False,
+        **kwargs,
+    ) -> AsyncIterator[LLMStreamChunk]:
+        """
+        Call LLM asynchronously and return an async iterator of streaming chunks.
+
+        Mirrors ``call_llm_async`` with the same parameter list. Yields ordered
+        non-final ``LLMStreamChunk`` objects (``is_final=False``, increasing
+        ``chunk_index``, non-empty ``text_delta``) followed by exactly one terminal
+        chunk (``is_final=True``, ``text_delta=""``) carrying normalized
+        ``usage``, ``finish_reason``, ``resolved_provider``, and ``resolved_model``.
+
+        The terminal chunk's fields reconstruct the full ``LLMResponse`` contract
+        (text = Σ text_delta; usage/finish_reason/resolved_provider/resolved_model
+        copied directly from the terminal chunk).  First-chunk resilience applies:
+        retry + provider fallback before the first delivered chunk; after the first
+        chunk a provider error surfaces as a terminal stream error with no replay.
+
+        Args:
+            messages: List of message dictionaries with role and content
+            provider: Optional LLM provider ("openai", "anthropic", "google", etc.)
+            model: Optional model override
+            temperature: Optional temperature override
+            routing_context: Optional routing context for intelligent routing
+            cache_system_prompt: When True, inject provider-specific prompt-caching
+                                 metadata into system messages (Anthropic only)
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            AsyncIterator[LLMStreamChunk] — ordered non-final chunks then one
+            terminal chunk with is_final=True.
+
+        Raises:
+            LLMServiceError: For unsupported streaming modes (Gemini, batch
+                             streaming, unverified prompt-caching) — raised before
+                             any chunk is delivered.
+        """
+        ...
+
     async def ask_async(
         self,
         prompt: str,
