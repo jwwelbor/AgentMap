@@ -811,3 +811,268 @@ class TestAnthropicStreamSeam(unittest.IsolatedAsyncioTestCase):
                 chunk.chunk_index == i
             ), f"chunk {i} has chunk_index {chunk.chunk_index}"
         assert terminal_list[0].chunk_index == len(non_final)
+
+
+# ---------------------------------------------------------------------------
+# Helpers — fake OpenAI SDK chunks (ChatCompletionChunk shape)
+# ---------------------------------------------------------------------------
+
+
+def _make_openai_content_chunk(text: str, model: str = "gpt-4o"):
+    """Build a fake ChatCompletionChunk with a choice delta carrying text content."""
+    chunk = MagicMock()
+    chunk.model = model
+    chunk.choices = [MagicMock()]
+    chunk.choices[0].delta = MagicMock()
+    chunk.choices[0].delta.content = text
+    chunk.choices[0].finish_reason = None
+    chunk.usage = None
+    return chunk
+
+
+def _make_openai_finish_reason_chunk(
+    finish_reason: str = "stop", model: str = "gpt-4o"
+):
+    """Build a fake ChatCompletionChunk carrying a finish_reason (no content delta)."""
+    chunk = MagicMock()
+    chunk.model = model
+    chunk.choices = [MagicMock()]
+    chunk.choices[0].delta = MagicMock()
+    chunk.choices[0].delta.content = None
+    chunk.choices[0].finish_reason = finish_reason
+    chunk.usage = None
+    return chunk
+
+
+def _make_openai_usage_chunk(
+    prompt_tokens: int = 10,
+    completion_tokens: int = 20,
+    model: str = "gpt-4o",
+):
+    """Build a fake final usage-bearing chunk (choices==[], usage set)."""
+    chunk = MagicMock()
+    chunk.model = model
+    # Final usage chunk has empty choices list (spec §7.2)
+    chunk.choices = []
+    chunk.usage = MagicMock()
+    chunk.usage.prompt_tokens = prompt_tokens
+    chunk.usage.completion_tokens = completion_tokens
+    return chunk
+
+
+def _make_mock_openai_module(model: str = "gpt-4o"):
+    """
+    Build a minimal fake openai module with an AsyncOpenAI client.
+
+    Returns (mock_sdk, mock_client) where mock_client.chat.completions.create
+    is an AsyncMock whose return value can be set to an async iterator of chunks.
+    """
+    from unittest.mock import AsyncMock
+
+    mock_sdk = MagicMock()
+    mock_client = MagicMock()
+    mock_sdk.AsyncOpenAI.return_value = mock_client
+
+    # chat.completions.create is an async call that returns an async iterator
+    mock_client.chat = MagicMock()
+    mock_client.chat.completions = MagicMock()
+    mock_client.chat.completions.create = AsyncMock()
+
+    return mock_sdk, mock_client
+
+
+# ---------------------------------------------------------------------------
+# TC-F01-OAI-1 through TC-F01-OAI-6 — OpenAI native seam
+# ---------------------------------------------------------------------------
+
+
+class TestOpenAIStreamSeam(unittest.IsolatedAsyncioTestCase):
+    """OpenAI native seam: ChatCompletionChunk → LLMStreamChunk mapping (Section 3)."""
+
+    def _make_seam(self, mock_sdk):
+        """Construct OpenAIStreamSeam with fake openai module injected."""
+        from agentmap.services.llm.stream_seam import OpenAIStreamSeam
+
+        with patch.dict(sys.modules, {"openai": mock_sdk}):
+            seam = OpenAIStreamSeam()
+        return seam
+
+    async def _collect_chunks(self, seam, mock_sdk, oai_chunks, params=None):
+        """
+        Drive seam.stream() with a scripted chunk list and collect all results.
+
+        The mock_sdk.AsyncOpenAI().chat.completions.create is wired to return
+        an async iterator over oai_chunks.
+        """
+        if params is None:
+            params = {"model": "gpt-4o", "max_tokens": 100}
+        messages = [{"role": "user", "content": "hello"}]
+
+        mock_client = mock_sdk.AsyncOpenAI.return_value
+        mock_client.chat.completions.create.return_value = _AsyncIteratorFake(
+            oai_chunks
+        )
+
+        chunks = []
+        with patch.dict(sys.modules, {"openai": mock_sdk}):
+            async for chunk in seam.stream(
+                messages, params, client=None, credentials=None
+            ):
+                chunks.append(chunk)
+        return chunks
+
+    async def test_oai1_scripted_sequence_yields_2_text_chunks_then_terminal(self):
+        """TC-F01-OAI-1: 2 content chunks + finish chunk + usage chunk → 2 non-final + terminal."""
+        mock_sdk, mock_client = _make_mock_openai_module()
+
+        oai_chunks = [
+            _make_openai_content_chunk("Hello"),
+            _make_openai_content_chunk(" world"),
+            _make_openai_finish_reason_chunk("stop"),
+            _make_openai_usage_chunk(prompt_tokens=10, completion_tokens=5),
+        ]
+
+        seam = self._make_seam(mock_sdk)
+        chunks = await self._collect_chunks(seam, mock_sdk, oai_chunks)
+
+        non_final = [c for c in chunks if not c.is_final]
+        terminal_list = [c for c in chunks if c.is_final]
+
+        assert len(non_final) == 2, f"Expected 2 non-final chunks, got {len(non_final)}"
+        assert (
+            len(terminal_list) == 1
+        ), f"Expected exactly 1 terminal chunk, got {len(terminal_list)}"
+        assert non_final[0].text_delta == "Hello"
+        assert non_final[1].text_delta == " world"
+
+    async def test_oai2_none_content_yields_empty_string_text_delta(self):
+        """TC-F01-OAI-2: chunk with choices[0].delta.content=None yields text_delta=='' (no crash)."""
+        mock_sdk, mock_client = _make_mock_openai_module()
+
+        oai_chunks = [
+            _make_openai_content_chunk("Hello"),
+            _make_openai_finish_reason_chunk("stop"),
+            _make_openai_usage_chunk(),
+        ]
+        # Force the finish-reason chunk's content to None (already the case, but explicit)
+        oai_chunks[1].choices[0].delta.content = None
+
+        seam = self._make_seam(mock_sdk)
+        chunks = await self._collect_chunks(seam, mock_sdk, oai_chunks)
+
+        # The finish-reason chunk has None content; it must not crash and must
+        # yield text_delta=="" if it yields at all, but typically it yields nothing
+        # since it only carries finish_reason and content=None → ""
+        all_text_deltas = [c.text_delta for c in chunks if not c.is_final]
+        for delta in all_text_deltas:
+            assert delta is not None, "text_delta must never be None"
+            assert isinstance(delta, str), "text_delta must be a str"
+
+    async def test_oai3_terminal_chunk_usage_finish_reason_provider_model(self):
+        """TC-F01-OAI-3: terminal chunk has correct usage, finish_reason, resolved fields."""
+        mock_sdk, mock_client = _make_mock_openai_module()
+
+        oai_chunks = [
+            _make_openai_content_chunk("response text", model="gpt-4o-mini"),
+            _make_openai_finish_reason_chunk("stop", model="gpt-4o-mini"),
+            _make_openai_usage_chunk(
+                prompt_tokens=12, completion_tokens=7, model="gpt-4o-mini"
+            ),
+        ]
+
+        seam = self._make_seam(mock_sdk)
+        chunks = await self._collect_chunks(
+            seam,
+            mock_sdk,
+            oai_chunks,
+            params={"model": "gpt-4o-mini", "max_tokens": 50},
+        )
+
+        terminal = chunks[-1]
+        assert terminal.is_final is True
+        assert terminal.usage is not None, "terminal chunk must carry usage"
+        assert terminal.usage.input_tokens == 12
+        assert terminal.usage.output_tokens == 7
+        assert terminal.finish_reason == "stop"
+        assert terminal.resolved_provider == "openai"
+        assert terminal.resolved_model == "gpt-4o-mini"
+
+    async def test_oai4_include_usage_set_unconditionally_in_create_call(self):
+        """TC-F01-OAI-4: chat.completions.create is called with stream=True and stream_options."""
+        mock_sdk, mock_client = _make_mock_openai_module()
+
+        oai_chunks = [
+            _make_openai_content_chunk("hi"),
+            _make_openai_finish_reason_chunk("stop"),
+            _make_openai_usage_chunk(),
+        ]
+
+        seam = self._make_seam(mock_sdk)
+        await self._collect_chunks(seam, mock_sdk, oai_chunks)
+
+        # Assert the seam called create with stream=True and stream_options include_usage
+        mock_client.chat.completions.create.assert_called_once()
+        _, call_kwargs = mock_client.chat.completions.create.call_args
+        assert (
+            call_kwargs.get("stream") is True
+        ), "create() must be called with stream=True"
+        stream_options = call_kwargs.get("stream_options")
+        assert stream_options is not None, "create() must be called with stream_options"
+        assert (
+            stream_options.get("include_usage") is True
+        ), "stream_options must include include_usage=True (REQ-F-009)"
+
+    async def test_oai5_chunk_index_monotonic_exactly_one_terminal_last(self):
+        """TC-F01-OAI-5: chunk_index is 0,1,...,N-1; exactly one is_final=True, last; terminal text_delta==''."""
+        mock_sdk, mock_client = _make_mock_openai_module()
+
+        oai_chunks = [
+            _make_openai_content_chunk("A"),
+            _make_openai_content_chunk("B"),
+            _make_openai_content_chunk("C"),
+            _make_openai_finish_reason_chunk("stop"),
+            _make_openai_usage_chunk(),
+        ]
+
+        seam = self._make_seam(mock_sdk)
+        chunks = await self._collect_chunks(seam, mock_sdk, oai_chunks)
+
+        # chunk_index must be 0..N-1
+        indices = [c.chunk_index for c in chunks]
+        assert indices == list(
+            range(len(chunks))
+        ), f"chunk_index must be 0..N-1, got {indices}"
+
+        # exactly one terminal, last
+        final_chunks = [c for c in chunks if c.is_final]
+        assert (
+            len(final_chunks) == 1
+        ), f"Exactly one is_final=True, got {len(final_chunks)}"
+        assert chunks[-1].is_final is True, "Last chunk must be the terminal one"
+
+        # terminal text_delta is empty string
+        assert (
+            chunks[-1].text_delta == ""
+        ), f"Terminal text_delta must be '', got {chunks[-1].text_delta!r}"
+
+    async def test_oai6_stream_without_usage_chunk_yields_terminal_with_none_usage(
+        self,
+    ):
+        """TC-F01-OAI-6: no usage chunk → terminal chunk usage=None (not fabricated), finish_reason populated."""
+        mock_sdk, mock_client = _make_mock_openai_module()
+
+        # No usage-bearing chunk — just content + finish_reason
+        oai_chunks = [
+            _make_openai_content_chunk("hello"),
+            _make_openai_finish_reason_chunk("stop"),
+        ]
+
+        seam = self._make_seam(mock_sdk)
+        chunks = await self._collect_chunks(seam, mock_sdk, oai_chunks)
+
+        terminal = chunks[-1]
+        assert terminal.is_final is True
+        assert (
+            terminal.usage is None
+        ), f"usage must be None when no usage chunk arrived, got {terminal.usage}"
+        assert terminal.finish_reason == "stop"

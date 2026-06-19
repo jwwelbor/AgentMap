@@ -202,9 +202,23 @@ class OpenAIStreamSeam:
     The ``openai`` import is deferred to ``__init__`` and gated so a missing
     optional dependency raises ``LLMDependencyError`` (REQ-F-014).
 
-    The ``.stream()`` body is a stub; the full OpenAI chunk-to-stream mapping
-    (including ``stream_options={"include_usage": True}``, REQ-F-009) is
-    implemented by T-004.
+    Event-to-chunk mapping (spec.md §7.2):
+      - ``chunk.choices[0].delta.content`` (non-None): emit a non-final
+        ``LLMStreamChunk`` carrying the text delta; ``None`` content →
+        ``text_delta=""`` (no crash, no ``None`` propagation).
+      - ``chunk.choices[0].finish_reason`` (non-null): capture as accumulating
+        ``finish_reason``; no chunk emitted at this step.
+      - Final usage chunk (``choices == []``, ``chunk.usage`` set): capture
+        ``usage`` into terminal fields.
+      - End of iterator: emit the single terminal ``LLMStreamChunk``
+        (``is_final=True``, ``text_delta=""``) carrying accumulated ``LLMUsage``
+        (or ``None`` if no usage chunk arrived), ``finish_reason``,
+        ``resolved_provider="openai"``, and ``resolved_model`` (REQ-F-008).
+
+    ``stream_options={"include_usage": True}`` is passed unconditionally to the
+    SDK call so the final usage-bearing chunk is emitted (REQ-F-009, TD-5).
+
+    Credentials are consumed at call time and never logged (REQ-NF-011).
     """
 
     provider_name: str = "openai"
@@ -225,19 +239,108 @@ class OpenAIStreamSeam:
         *,
         client: Optional[Any] = None,
         credentials: Optional[Dict[str, Any]] = None,
-    ) -> AsyncIterator[LLMStreamChunk]:
+    ) -> AsyncGenerator[LLMStreamChunk, None]:
         """
         Yield normalized ``LLMStreamChunk`` objects from the OpenAI native
         streaming API.
 
-        Stub — full implementation in T-004 (including unconditional
-        ``stream_options={"include_usage": True}``, REQ-F-009).  Credentials
-        are consumed at call time; they are never logged (REQ-NF-011).
+        Passes ``stream_options={"include_usage": True}`` unconditionally so
+        the final usage-bearing chunk is emitted by OpenAI (REQ-F-009).
+        Credentials are consumed at call time and never logged (REQ-NF-011).
+        Completion content (``text_delta``) is never logged (REQ-NF-010).
+
+        Args:
+            messages: Normalized message list (role + content dicts).
+            params: Resolved call parameters; must include ``"model"``.
+            client: Optional pre-constructed ``openai.AsyncOpenAI`` client.
+                    If ``None``, a fresh client is constructed from
+                    ``credentials``.
+            credentials: Optional dict with ``"api_key"`` and related fields.
+                         Values are never logged.
+
+        Yields:
+            Non-final ``LLMStreamChunk`` objects for each text delta, then a
+            single terminal chunk (``is_final=True``) with accumulated usage
+            and metadata.
         """
-        raise NotImplementedError(
-            "OpenAIStreamSeam.stream() will be implemented by T-004."
+        import openai  # noqa: PLC0415
+
+        # Build or reuse the client — credentials consumed here, never logged.
+        if client is None:
+            api_key = (credentials or {}).get("api_key")
+            if api_key is not None:
+                sdk_client = openai.AsyncOpenAI(api_key=api_key)
+            else:
+                sdk_client = openai.AsyncOpenAI()
+        else:
+            sdk_client = client
+
+        model: str = params.get("model", "")
+        call_params = {k: v for k, v in params.items() if k != "model"}
+
+        # Accumulate finish_reason and usage across chunks.
+        finish_reason: Optional[str] = None
+        usage: Optional[LLMUsage] = None
+
+        chunk_index: int = 0
+
+        # REQ-F-009: stream_options={"include_usage": True} is set unconditionally
+        # at this native call-site so OpenAI emits a final usage-bearing chunk.
+        async for oai_chunk in await sdk_client.chat.completions.create(  # type: ignore[call-overload]
+            model=model,
+            messages=messages,  # type: ignore[arg-type]
+            stream=True,
+            stream_options={"include_usage": True},
+            **call_params,
+        ):
+            choices = getattr(oai_chunk, "choices", None) or []
+
+            # Final usage chunk: choices == [], chunk.usage set (spec.md §7.2).
+            if not choices:
+                raw_usage = getattr(oai_chunk, "usage", None)
+                if raw_usage is not None:
+                    usage = LLMUsage(
+                        input_tokens=getattr(raw_usage, "prompt_tokens", None),
+                        output_tokens=getattr(raw_usage, "completion_tokens", None),
+                    )
+                # No chunk emitted for the usage-only event.
+                continue
+
+            # Regular chunk with choices: extract content and finish_reason.
+            choice = choices[0]
+            delta = getattr(choice, "delta", None)
+
+            raw_content = getattr(delta, "content", None) if delta is not None else None
+            # Treat None content as "" (REQ-F-008 / TC-F01-OAI-2).
+            text = raw_content if raw_content is not None else ""
+
+            raw_finish = getattr(choice, "finish_reason", None)
+            if raw_finish is not None:
+                # Capture finish_reason; it does not force an immediate chunk yield.
+                finish_reason = raw_finish
+
+            # Emit a non-final chunk only when there is actual text content or
+            # when content was explicitly present (even as "").  A chunk that
+            # carries only a finish_reason and no content (content=None) does
+            # not produce a text-delta emission per spec §7.2 mapping table.
+            if raw_content is not None:
+                yield LLMStreamChunk(
+                    text_delta=text,
+                    chunk_index=chunk_index,
+                    is_final=False,
+                )
+                chunk_index += 1
+
+        # Emit the single terminal chunk after the iterator is exhausted.
+        yield LLMStreamChunk(
+            text_delta="",
+            chunk_index=chunk_index,
+            is_final=True,
+            usage=usage,
+            finish_reason=finish_reason,
+            resolved_provider=self.provider_name,
+            resolved_model=model,
         )
-        yield  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
