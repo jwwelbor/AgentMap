@@ -8,8 +8,8 @@ interface (one async-generator method + ``provider_name``).
 Architecture reference: spec.md §7.1, TD-1 (mirror batch-adapter pattern,
 lighter — no submit/poll/cancel/fetch lifecycle).
 
-Three implementations are provided as class stubs; their ``.stream()`` bodies
-will be filled in by T-003 (Anthropic), T-004 (OpenAI), and T-005 (LangChain).
+Three implementations are provided: native Anthropic and OpenAI seams plus a
+LangChain ``.astream()`` fallback for all other providers.
 
 The native SDK imports (``anthropic``, ``openai``) are deferred to ``__init__``
 and gated in ``try/except ImportError`` blocks that raise ``LLMDependencyError``
@@ -400,8 +400,8 @@ class LangChainFallbackStreamSeam:
     No native SDK gating is needed here — LangChain itself handles the
     provider SDK dependency.
 
-    The ``.stream()`` body is a stub; the full LangChain chunk-to-stream
-    mapping (``AIMessageChunk`` → ``LLMStreamChunk``) is implemented by T-005.
+    The ``.stream()`` body maps the LangChain ``.astream()`` output
+    (``AIMessageChunk`` → ``LLMStreamChunk``).
     """
 
     # Default provider_name for the fallback seam.  The actual runtime provider
