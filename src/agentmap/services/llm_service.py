@@ -13,7 +13,16 @@ import mimetypes
 import random
 import re
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import (
+    Any,
+    AsyncGenerator,
+    AsyncIterator,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 from uuid import uuid4
 
 from agentmap.exceptions import (
@@ -33,6 +42,7 @@ from agentmap.models.llm_execution import (
     LLMMessage,
     LLMRequest,
     LLMResponse,
+    LLMStreamChunk,
     LLMUsage,
 )
 from agentmap.services.config import AppConfigService
@@ -86,6 +96,7 @@ from agentmap.services.telemetry.constants import (
     METRIC_LLM_ROUTING_CACHE_HIT,
     METRIC_LLM_TOKENS_INPUT,
     METRIC_LLM_TOKENS_OUTPUT,
+    METRIC_LLM_TTFT,
     ROUTING_CACHE_HIT,
     ROUTING_CIRCUIT_BREAKER_STATE,
     ROUTING_COMPLEXITY,
@@ -194,12 +205,18 @@ class LLMService:
         self._metric_batch_poll = None
         self._metric_batch_results_fetched = None
         self._metric_batch_cancel = None
+        self._metric_ttft = None  # E06-F03: streaming time-to-first-token histogram
         if telemetry_service is not None:
             try:
                 self._metric_duration = telemetry_service.create_histogram(
                     METRIC_LLM_DURATION,
                     unit="s",
                     description="LLM call duration",
+                )
+                self._metric_ttft = telemetry_service.create_histogram(
+                    METRIC_LLM_TTFT,
+                    unit="s",
+                    description="LLM streaming time-to-first-token",
                 )
                 self._metric_tokens_input = telemetry_service.create_counter(
                     METRIC_LLM_TOKENS_INPUT,
@@ -2842,5 +2859,224 @@ class LLMService:
         try:
             if was_open and not self._circuit_breaker.is_open(provider, model):
                 self._metric_circuit_breaker.add(-1)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # E06-F03: Streaming entry point skeleton
+    # Five sibling methods mirroring the non-streaming async chain.
+    # Non-streaming methods are byte-untouched (REQ-NF-001, SC-2c).
+    # ------------------------------------------------------------------
+
+    async def call_llm_stream_async(
+        self,
+        messages: List[LLMMessage],
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        routing_context: Optional[Dict[str, Any]] = None,
+        cache_system_prompt: bool = False,
+        **kwargs: Any,
+    ) -> AsyncIterator[LLMStreamChunk]:
+        """Return an async iterator of ``LLMStreamChunk`` for token-streaming.
+
+        Mirrors ``call_llm_async`` (:425) with the same parameter list. Dispatches
+        to the telemetry wrapper when ``_telemetry_service`` is set; otherwise
+        iterates ``_call_llm_stream_async_core`` directly (REQ-F-001).
+
+        The caller iterates the result with ``async for chunk in ...``. Non-final
+        chunks carry ``text_delta`` and ``chunk_index``; exactly one terminal chunk
+        (``is_final=True``) closes the stream with accumulated usage/finish_reason
+        and reconstructed provider/model identity (REQ-F-011, SC-1).
+        """
+        kwargs["cache_system_prompt"] = cache_system_prompt
+        if self._telemetry_service is not None:
+            async for chunk in self._call_llm_stream_async_with_telemetry(
+                messages, provider, model, temperature, routing_context, **kwargs
+            ):
+                yield chunk
+        else:
+            async for chunk in self._call_llm_stream_async_core(
+                messages, provider, model, temperature, routing_context, **kwargs
+            ):
+                yield chunk
+
+    async def _call_llm_stream_async_with_telemetry(
+        self,
+        messages: List[LLMMessage],
+        provider: Optional[str],
+        model: Optional[str],
+        temperature: Optional[float],
+        routing_context: Optional[Dict[str, Any]],
+        **kwargs: Any,
+    ) -> AsyncGenerator[LLMStreamChunk, None]:
+        """Streaming telemetry wrapper — explicit span management (REQ-F-010).
+
+        Opens the span via ``__enter__``/``try-finally __exit__`` (NOT a ``with``
+        block) so the span survives across all ``yield`` suspension points and is
+        guaranteed to close on completion, error, or ``GeneratorExit`` (caller
+        abandonment / asyncio cancellation).
+
+        Records TTFT once on the first delivered chunk, total duration on clean
+        completion (REQ-F-009). Captures content once at completion (REQ-NF-002, C9).
+
+        This is the sibling of ``_call_llm_async_with_telemetry`` (:461).
+        """
+        assert self._telemetry_service is not None
+
+        initial_attributes: Dict[str, Any] = {}
+        if provider:
+            initial_attributes[GEN_AI_SYSTEM] = self._provider_utils.normalize_provider(
+                provider
+            )
+        if model:
+            initial_attributes[GEN_AI_REQUEST_MODEL] = model
+
+        # Explicit span open — must NOT use `with` so the span survives yields.
+        span_cm = self._telemetry_service.start_span(
+            LLM_CALL_SPAN, attributes=initial_attributes
+        )
+        span = span_cm.__enter__()
+
+        t0 = time.monotonic()
+        ttft_recorded = False
+        accumulated_text: List[str] = []
+
+        try:
+            async for chunk in self._call_llm_stream_async_core(
+                messages, provider, model, temperature, routing_context, **kwargs
+            ):
+                if not ttft_recorded:
+                    self._record_ttft_metric(
+                        time.monotonic() - t0, provider or "", model or ""
+                    )
+                    ttft_recorded = True
+                if chunk.text_delta:
+                    accumulated_text.append(chunk.text_delta)
+                yield chunk
+
+            # Clean completion — capture content once, record total duration.
+            self._capture_llm_content(span, messages, "".join(accumulated_text))
+            self._set_span_status_ok(span)
+            self._record_duration_metric(
+                time.monotonic() - t0, provider or "", model or ""
+            )
+        except Exception as e:
+            self._record_span_exception_safe(span, e)
+            raise
+        finally:
+            span_cm.__exit__(None, None, None)
+
+    async def _call_llm_stream_async_core(
+        self,
+        messages: List[LLMMessage],
+        provider: Optional[str],
+        model: Optional[str],
+        temperature: Optional[float],
+        routing_context: Optional[Dict[str, Any]],
+        **kwargs: Any,
+    ) -> AsyncGenerator[LLMStreamChunk, None]:
+        """Routing dispatch for the streaming path (REQ-F-002).
+
+        Mirrors ``_call_llm_async_core`` (:638): routes through the streaming
+        routing variant when a routing_context and routing service are present;
+        raises ``LLMServiceError`` when no provider and no routing_context.
+        """
+        if routing_context is not None and self.routing_service:
+            if model is not None:
+                self._logger.warning(
+                    "[LLMService] 'model' parameter is ignored when routing_context "
+                    "is provided. Use routing_context['model_override'] to force a "
+                    "specific model."
+                )
+            if provider is not None:
+                self._logger.warning(
+                    "[LLMService] 'provider' parameter is ignored when routing_context "
+                    "is provided. Use routing_context['provider_preference'] to "
+                    "influence provider selection or "
+                    "routing_context['fallback_provider'] to set the fallback."
+                )
+            async for chunk in self._call_llm_stream_async_with_routing(
+                messages,
+                routing_context,
+                temperature=temperature,
+                model=model,
+                **kwargs,
+            ):
+                yield chunk
+            return
+        if not provider:
+            raise LLMServiceError(
+                "provider is required when routing_context is not provided."
+            )
+        async for chunk in self._call_llm_stream_async_direct(
+            provider,
+            messages,
+            model,
+            temperature,
+            **kwargs,
+        ):
+            yield chunk
+
+    async def _call_llm_stream_async_with_routing(
+        self,
+        messages: List[LLMMessage],
+        routing_context: Dict[str, Any],
+        temperature: Optional[float] = None,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[LLMStreamChunk, None]:
+        """Streaming routing variant — sibling of ``_call_llm_async_with_routing`` (:924).
+
+        Resolves the routing decision then delegates to the streaming direct method.
+        Skeleton: routing resolution logic will be filled by later tasks; currently
+        raises ``LLMServiceError`` to indicate routing is not yet wired for streaming.
+        """
+        if not self.routing_service:
+            raise LLMServiceError("Routing requested but no routing service available")
+        # Routing resolution body is filled by later tasks (T-E06-F03-002+).
+        raise LLMServiceError(
+            "Streaming with routing_context is not yet implemented (E06-F03 T-002)."
+        )
+        # Unreachable yield — required to make this an async generator.
+        yield  # type: ignore[misc]
+
+    async def _call_llm_stream_async_direct(
+        self,
+        provider: str,
+        messages: List[LLMMessage],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        routing_context: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[LLMStreamChunk, None]:
+        """Direct streaming provider invocation with resilience and fallback.
+
+        Skeleton: provider resolution, validation gate, resilience body, and
+        fallback materialization will be filled by later tasks. Raises
+        ``LLMServiceError`` to indicate the body is not yet implemented.
+        """
+        # Skeleton body — implementation added in later tasks (T-E06-F03-002+).
+        raise LLMServiceError(
+            "Streaming direct invocation is not yet implemented (E06-F03 T-002+)."
+        )
+        # Unreachable yield — required to make this an async generator.
+        yield  # type: ignore[misc]
+
+    def _record_ttft_metric(self, ttft: float, provider: str, model: str) -> None:
+        """Record LLM streaming time-to-first-token on the TTFT histogram.
+
+        Mirrors ``_record_duration_metric`` (:2705). No-op when ``_metric_ttft``
+        or ``_telemetry_service`` is None. Error-isolated (never raises).
+
+        REQ-F-008, REQ-F-009.
+        """
+        if self._telemetry_service is None or self._metric_ttft is None:
+            return
+        try:
+            self._metric_ttft.record(
+                ttft,
+                {METRIC_DIM_PROVIDER: provider, METRIC_DIM_MODEL: model},
+            )
         except Exception:
             pass
