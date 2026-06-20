@@ -862,8 +862,15 @@ async def run_workflow_stream_async(
         )
 
         graph_runner: GraphRunnerService = container.graph_runner_service()
+        # Thread the raw caller ``graph_name`` (not the resolved bundle name) so the
+        # streaming terminal's ``metadata.graph_name`` echoes the caller identifier,
+        # matching ``run_workflow_async`` for ``workflow::graph``-form names (NB-1).
         async for event in graph_runner.run_stream_async(
-            bundle, inputs, validate_agents=new_bundle, profile=profile
+            bundle,
+            inputs,
+            validate_agents=new_bundle,
+            profile=profile,
+            graph_name=graph_name,
         ):
             yield event
 
