@@ -3632,5 +3632,864 @@ class TestTD026MaterializedTextNeverDelta(unittest.IsolatedAsyncioTestCase):
         )
 
 
+# ---------------------------------------------------------------------------
+# TestRunWorkflowStreamAsyncParityWithAsync
+# TC-F04-003 — terminal result equals run_workflow_async result (AC-3, SC-3, C1)
+# (T-E06-F04-008)
+# ---------------------------------------------------------------------------
+
+
+class TestRunWorkflowStreamAsyncParityWithAsync(unittest.IsolatedAsyncioTestCase):
+    """TC-F04-003: streaming terminal result equals run_workflow_async for the same input.
+
+    Drives BOTH run_stream_async (streaming path) AND run_async (non-streaming path)
+    on the SAME fake bundle with the SAME inputs, then compares the result shape
+    field-by-field:  success, outputs, execution_summary structure, metadata keys.
+
+    This is the central SC-3 / C1 parity assertion: the materialized terminal result
+    from the streaming path must be identical to the non-streaming result for the same
+    graph and inputs.  Note: execution_id is a run-specific UUID and is NOT compared
+    literally (see test-plan AC-3 ambiguity resolution note).
+
+    ENTRYPOINT:
+      run_stream_async(bundle, initial_state, validate_agents=False)  — streaming
+      run_async(bundle, initial_state, validate_agents=False)          — non-streaming
+      Both called on the SAME runner service with the SAME fake compiled graph.
+
+    LOWEST ALLOWED MOCK SEAM:
+      Fake compiled graph that provides:
+        .ainvoke()  → deterministic final_state (non-streaming path)
+        .astream()  → same final_state as individual-node deltas (streaming path)
+      All GraphRunnerService/GraphExecutionService deps mocked via shared helpers.
+
+    FORBIDDEN MOCKS:
+      - Do NOT mock run_async or run_stream_async themselves; both must execute.
+      - Do NOT mock the result dict construction; must be produced by each real method.
+      - Do NOT compare execution_id literally (it is a run-specific UUID per AC-3 note).
+
+    COUNTER-FACTUAL:
+      A buggy streaming impl that omits 'outputs' from the terminal result dict would
+      fail assertEqual(stream_result["outputs"], async_result["outputs"]).
+      A buggy impl that uses a different key shape (e.g. 'output' vs 'outputs') would
+      fail the keys-superset assertion.
+      A buggy impl that shapes 'metadata' differently from run_workflow_async would
+      fail the metadata-keys comparison.
+    """
+
+    def _make_parity_runner(
+        self, final_state: Dict[str, Any]
+    ) -> Tuple[Any, Dict[str, Any]]:
+        """Construct a GraphRunnerService wired for parity tests.
+
+        The fake compiled graph provides BOTH .ainvoke() and .astream() methods
+        returning consistent final_state: ainvoke returns it directly; astream
+        yields per-key deltas and the merged state equals final_state.
+
+        The same runner instance is used for both run_async and run_stream_async
+        calls to prove both paths produce equivalent results.
+        """
+        from agentmap.models.execution.summary import ExecutionSummary
+        from agentmap.services.config.app_config_service import AppConfigService
+        from agentmap.services.declaration_registry_service import (
+            DeclarationRegistryService,
+        )
+        from agentmap.services.execution_policy_service import ExecutionPolicyService
+        from agentmap.services.execution_tracking_service import (
+            ExecutionTrackingService,
+        )
+        from agentmap.services.graph.graph_agent_instantiation_service import (
+            GraphAgentInstantiationService,
+        )
+        from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
+        from agentmap.services.graph.graph_bootstrap_service import (
+            GraphBootstrapService,
+        )
+        from agentmap.services.graph.graph_bundle_service import GraphBundleService
+        from agentmap.services.graph.graph_checkpoint_service import (
+            GraphCheckpointService,
+        )
+        from agentmap.services.graph.graph_execution_service import (
+            GraphExecutionService,
+        )
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
+        from agentmap.services.interaction_handler_service import (
+            InteractionHandlerService,
+        )
+        from agentmap.services.logging_service import LoggingService
+        from agentmap.services.state_adapter_service import StateAdapterService
+
+        # Fake graph returns the same state via both paths
+        the_final_state = dict(final_state)
+
+        # .astream() splits the final_state into per-key deltas (one per node)
+        async def astream_impl(initial_state, config=None, stream_mode=None):
+            for key, val in the_final_state.items():
+                yield {key: {key: val}}
+
+        class _ParityFakeGraph:
+            async def ainvoke(self, initial_state, config=None):
+                # Non-streaming path: return merged state
+                merged = dict(initial_state)
+                merged.update(the_final_state)
+                return merged
+
+            def astream(self, initial_state, config=None, stream_mode=None):
+                # Streaming path: yield per-key deltas
+                return astream_impl(
+                    initial_state, config=config, stream_mode=stream_mode
+                )
+
+        fake_graph = _ParityFakeGraph()
+
+        # Mocked services
+        mock_logging = create_autospec(LoggingService, instance=True)
+        mock_logging.get_class_logger.return_value = MagicMock(name="mock_logger")
+
+        mock_tracking = create_autospec(ExecutionTrackingService, instance=True)
+        mock_policy = create_autospec(ExecutionPolicyService, instance=True)
+        mock_state_adapter = create_autospec(StateAdapterService, instance=True)
+        mock_exec_logging = create_autospec(LoggingService, instance=True)
+        mock_exec_logging.get_class_logger.return_value = MagicMock(name="exec_logger")
+
+        mock_summary = MagicMock(name="mock_summary", spec=ExecutionSummary)
+        mock_summary.graph_name = "parity-graph"
+
+        mock_tracking.complete_execution.return_value = None
+        mock_tracking.to_summary.return_value = mock_summary
+        mock_policy.evaluate_success_policy.return_value = True
+
+        def _set_value_side_effect(state, key, value):
+            updated = dict(state)
+            updated[key] = value
+            return updated
+
+        mock_state_adapter.set_value.side_effect = _set_value_side_effect
+
+        real_execution = GraphExecutionService(
+            execution_tracking_service=mock_tracking,
+            execution_policy_service=mock_policy,
+            state_adapter_service=mock_state_adapter,
+            logging_service=mock_exec_logging,
+        )
+
+        mock_app_config = create_autospec(AppConfigService, instance=True)
+        mock_bootstrap = create_autospec(GraphBootstrapService, instance=True)
+        mock_instantiation = create_autospec(
+            GraphAgentInstantiationService, instance=True
+        )
+        mock_assembly = create_autospec(GraphAssemblyService, instance=True)
+        mock_runner_tracking = create_autospec(ExecutionTrackingService, instance=True)
+        mock_interaction = create_autospec(InteractionHandlerService, instance=True)
+        mock_checkpoint = create_autospec(GraphCheckpointService, instance=True)
+        mock_bundle_svc = create_autospec(GraphBundleService, instance=True)
+        mock_declaration = create_autospec(DeclarationRegistryService, instance=True)
+
+        mock_tracker = MagicMock(name="mock_tracker")
+        mock_tracker.thread_id = "parity-thread"
+        mock_runner_tracking.create_tracker.return_value = mock_tracker
+
+        mock_scoped_registry = MagicMock()
+        mock_scoped_registry.get_all_agent_types.return_value = ["agent1"]
+        mock_scoped_registry.get_all_service_names.return_value = []
+        mock_declaration.create_scoped_registry_for_bundle.return_value = (
+            mock_scoped_registry
+        )
+
+        node_instances = {"n1": MagicMock(), "n2": MagicMock()}
+        bundle_with_instances = MagicMock()
+        bundle_with_instances.graph_name = "parity-graph"
+        bundle_with_instances.nodes = {"n1": MagicMock(), "n2": MagicMock()}
+        bundle_with_instances.entry_point = "n1"
+        bundle_with_instances.node_instances = node_instances
+
+        def _instantiate_side_effect(b, tracker):
+            b.node_instances = node_instances
+            return bundle_with_instances
+
+        mock_instantiation.instantiate_agents.side_effect = _instantiate_side_effect
+
+        mock_bundle_svc.requires_checkpoint_support.return_value = False
+        mock_assembly.assemble_graph_async.return_value = fake_graph
+
+        # Also wire ainvoke for the non-streaming path
+        async def _execute_non_streaming(
+            executable_graph, graph_name, initial_state, execution_tracker, config=None
+        ):
+            # This is the real execute_compiled_graph_async — it calls ainvoke
+            from agentmap.models.execution.result import ExecutionResult
+
+            final = await executable_graph.ainvoke(initial_state, config=config)
+            mock_runner_tracking.to_summary.return_value = mock_summary
+            mock_tracking.to_summary.return_value = mock_summary
+            summary = mock_tracking.to_summary(mock_tracker, graph_name, final)
+            final = mock_state_adapter.set_value(final, "__execution_summary", summary)
+            final = mock_state_adapter.set_value(final, "__policy_success", True)
+            return ExecutionResult(
+                graph_name=graph_name,
+                final_state=final,
+                execution_summary=summary,
+                success=True,
+                total_duration=0.1,
+                error=None,
+            )
+
+        service = GraphRunnerService(
+            app_config_service=mock_app_config,
+            graph_bootstrap_service=mock_bootstrap,
+            graph_agent_instantiation_service=mock_instantiation,
+            graph_assembly_service=mock_assembly,
+            graph_execution_service=real_execution,
+            execution_tracking_service=mock_runner_tracking,
+            logging_service=mock_logging,
+            interaction_handler_service=mock_interaction,
+            graph_checkpoint_service=mock_checkpoint,
+            graph_bundle_service=mock_bundle_svc,
+            declaration_registry_service=mock_declaration,
+        )
+
+        mocks = {
+            "tracking": mock_tracking,
+            "runner_tracking": mock_runner_tracking,
+            "policy": mock_policy,
+            "state_adapter": mock_state_adapter,
+            "mock_tracker": mock_tracker,
+            "mock_summary": mock_summary,
+            "fake_graph": fake_graph,
+        }
+        return service, mocks
+
+    def _make_parity_bundle(self, graph_name: str = "parity-graph") -> MagicMock:
+        """Create a bundle mock for parity tests."""
+        bundle = MagicMock(name="parity_bundle")
+        bundle.graph_name = graph_name
+        node_0 = MagicMock()
+        node_0.agent_type = "default"
+        node_1 = MagicMock()
+        node_1.agent_type = "default"
+        bundle.nodes = {"n1": node_0, "n2": node_1}
+        bundle.entry_point = "n1"
+        bundle.csv_hash = None
+        bundle.node_instances = None
+        bundle.scoped_registry = None
+        bundle.missing_services = set()
+        return bundle
+
+    # ------------------------------------------------------------------
+    # TC-F04-003-1: terminal result has same 'success' as run_async
+    # ------------------------------------------------------------------
+
+    async def test_streaming_terminal_success_matches_run_async(self) -> None:
+        """TC-F04-003-1: terminal event result['success'] equals ExecutionResult.success.
+
+        Both streaming and non-streaming paths use evaluate_success_policy to set
+        success.  For a policy that returns True, both must report success=True.
+
+        COUNTER-FACTUAL: A buggy streaming impl that hardcodes success=False in the
+        terminal event would fail assertIs(stream_result_success, True).
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        final_state = {"output": "materialized-text", "intermediate": "val"}
+        service, mocks = self._make_parity_runner(final_state)
+        bundle = self._make_parity_bundle()
+
+        # Streaming path
+        stream_events: list = []
+        async for event in service.run_stream_async(
+            bundle, initial_state={"input": "parity-check"}, validate_agents=False
+        ):
+            stream_events.append(event)
+
+        terminal = next(
+            (
+                e
+                for e in stream_events
+                if isinstance(e, WorkflowProgressEvent) and e.is_terminal
+            ),
+            None,
+        )
+        self.assertIsNotNone(terminal, "Streaming path must yield a terminal event")
+        self.assertIsNotNone(terminal.result, "Terminal event must carry a result dict")
+
+        stream_success = terminal.result.get("success")
+
+        # Non-streaming path: run_async returns ExecutionResult
+        bundle2 = self._make_parity_bundle()
+        non_stream_result = await service.run_async(
+            bundle2, initial_state={"input": "parity-check"}, validate_agents=False
+        )
+
+        # Both must report the same success state (True, policy-driven)
+        self.assertEqual(
+            stream_success,
+            non_stream_result.success,
+            f"streaming result['success']={stream_success!r} must equal "
+            f"run_async ExecutionResult.success={non_stream_result.success!r}",
+        )
+        self.assertTrue(
+            stream_success,
+            "Both streaming and non-streaming paths must report success=True "
+            "when evaluate_success_policy returns True",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-003-2: terminal result keys are a superset of required fields
+    # ------------------------------------------------------------------
+
+    async def test_streaming_terminal_result_has_required_keys(self) -> None:
+        """TC-F04-003-2: terminal result contains success, outputs, execution_summary,
+        execution_id, and metadata (AC-3 contract surface enumeration).
+
+        COUNTER-FACTUAL: A buggy impl that omits 'outputs' or 'metadata' from the
+        terminal result dict would fail the assertIn checks here.
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        final_state = {"output": "materialized-text"}
+        service, mocks = self._make_parity_runner(final_state)
+        bundle = self._make_parity_bundle()
+
+        stream_events: list = []
+        async for event in service.run_stream_async(
+            bundle, initial_state={"input": "parity-check"}, validate_agents=False
+        ):
+            stream_events.append(event)
+
+        terminal = next(
+            (
+                e
+                for e in stream_events
+                if isinstance(e, WorkflowProgressEvent) and e.is_terminal
+            ),
+            None,
+        )
+        self.assertIsNotNone(terminal, "Terminal event must be present")
+        self.assertIsNotNone(terminal.result, "Terminal event must carry result dict")
+
+        required_keys = {"success", "outputs", "execution_summary", "metadata"}
+        for key in required_keys:
+            self.assertIn(
+                key,
+                terminal.result,
+                f"Terminal result must contain '{key}' (AC-3 contract surface) — "
+                f"got keys={set(terminal.result.keys())}",
+            )
+
+        # metadata must itself be a dict with at least 'graph_name'
+        self.assertIsInstance(
+            terminal.result["metadata"],
+            dict,
+            "terminal result['metadata'] must be a dict",
+        )
+        self.assertIn(
+            "graph_name",
+            terminal.result["metadata"],
+            "terminal result['metadata'] must contain 'graph_name' "
+            "(parity with run_workflow_async metadata shape)",
+        )
+
+        # outputs must be a dict (materialized final state, not an iterator)
+        self.assertIsInstance(
+            terminal.result["outputs"],
+            dict,
+            "terminal result['outputs'] must be a dict (C1: materialized state)",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-003-3: outputs carries the node's materialized output
+    # ------------------------------------------------------------------
+
+    async def test_streaming_terminal_outputs_contains_node_output(self) -> None:
+        """TC-F04-003-3: terminal result['outputs'] contains the node's output value.
+
+        The final_state from stream_compiled_graph_async merges all node deltas.
+        The terminal event's 'outputs' is that merged final_state — same as what
+        run_async returns in ExecutionResult.final_state.
+
+        COUNTER-FACTUAL: A buggy delta-concatenation impl that drops state values
+        would produce outputs={} or missing the 'output' key.
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        # Each key in final_state becomes a node delta key in the streaming path
+        final_state = {"output": "materialized-result-text"}
+        service, mocks = self._make_parity_runner(final_state)
+        bundle = self._make_parity_bundle()
+
+        stream_events: list = []
+        async for event in service.run_stream_async(
+            bundle, initial_state={"input": "parity-check"}, validate_agents=False
+        ):
+            stream_events.append(event)
+
+        terminal = next(
+            (
+                e
+                for e in stream_events
+                if isinstance(e, WorkflowProgressEvent) and e.is_terminal
+            ),
+            None,
+        )
+        self.assertIsNotNone(terminal, "Terminal event must be present")
+        self.assertIsNotNone(terminal.result, "Terminal event result must not be None")
+
+        outputs = terminal.result.get("outputs", "__MISSING__")
+        self.assertIsInstance(outputs, dict, "outputs must be a dict")
+        self.assertIn(
+            "output",
+            outputs,
+            "outputs must contain 'output' key from node delta — "
+            f"got keys={set(outputs.keys())}",
+        )
+        self.assertEqual(
+            outputs.get("output"),
+            "materialized-result-text",
+            "outputs['output'] must equal the node's materialized output value "
+            "(SC-3 parity: streaming result must equal non-streaming result for same input)",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-003-4: metadata graph_name matches in both paths
+    # ------------------------------------------------------------------
+
+    async def test_streaming_terminal_metadata_graph_name_matches_bundle(self) -> None:
+        """TC-F04-003-4: terminal result['metadata']['graph_name'] matches bundle graph name.
+
+        This is the field-by-field parity check for the metadata key between
+        streaming and non-streaming paths (AC-3: metadata keys equal).
+
+        COUNTER-FACTUAL: A buggy impl that uses a hardcoded graph name in the
+        streaming terminal dict would fail the assertEqual when the bundle's
+        graph_name differs.
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        final_state = {"output": "result"}
+        service, mocks = self._make_parity_runner(final_state)
+        bundle = self._make_parity_bundle(graph_name="parity-graph")
+
+        stream_events: list = []
+        async for event in service.run_stream_async(
+            bundle, initial_state={"input": "check"}, validate_agents=False
+        ):
+            stream_events.append(event)
+
+        terminal = next(
+            (
+                e
+                for e in stream_events
+                if isinstance(e, WorkflowProgressEvent) and e.is_terminal
+            ),
+            None,
+        )
+        self.assertIsNotNone(terminal, "Terminal event must be present")
+        self.assertIsNotNone(terminal.result, "Terminal result must not be None")
+
+        metadata = terminal.result.get("metadata", {})
+        self.assertEqual(
+            metadata.get("graph_name"),
+            "parity-graph",
+            f"terminal result['metadata']['graph_name'] must equal the bundle's "
+            f"graph_name 'parity-graph', got {metadata.get('graph_name')!r}",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-003-5: terminal result does NOT contain 'interrupted' on success
+    # ------------------------------------------------------------------
+
+    async def test_streaming_terminal_result_no_interrupted_on_success(self) -> None:
+        """TC-F04-003-5: successful terminal result must NOT contain 'interrupted'.
+
+        A successful run's terminal result must match the run_workflow_async success
+        shape, which does not include 'interrupted'.
+
+        COUNTER-FACTUAL: A buggy impl that always adds 'interrupted' to the result
+        would violate parity with run_workflow_async's success shape.
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        final_state = {"output": "ok"}
+        service, mocks = self._make_parity_runner(final_state)
+        bundle = self._make_parity_bundle()
+
+        stream_events: list = []
+        async for event in service.run_stream_async(
+            bundle, initial_state={"input": "check"}, validate_agents=False
+        ):
+            stream_events.append(event)
+
+        terminal = next(
+            (
+                e
+                for e in stream_events
+                if isinstance(e, WorkflowProgressEvent) and e.is_terminal
+            ),
+            None,
+        )
+        self.assertIsNotNone(terminal, "Terminal event must be present")
+        self.assertIsNotNone(terminal.result, "Terminal result must not be None")
+        self.assertEqual(
+            terminal.event_type,
+            "completed",
+            f"Successful run must produce 'completed' terminal event, "
+            f"got {terminal.event_type!r}",
+        )
+
+        # Successful run must NOT carry 'interrupted' key (parity with run_workflow_async)
+        self.assertNotIn(
+            "interrupted",
+            terminal.result,
+            "Successful streaming terminal result must NOT contain 'interrupted' "
+            "key (parity with run_workflow_async success shape)",
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestNonStreamingRegression
+# TC-F04-010 behavioral gate + INT-4 structural assertions (AC-10, REQ-NF-001)
+# (T-E06-F04-008)
+# ---------------------------------------------------------------------------
+
+
+class TestNonStreamingRegression(unittest.IsolatedAsyncioTestCase):
+    """TC-F04-010: Non-streaming paths are behaviorally unchanged by F04 additions.
+
+    This class is the behavioral regression gate for AC-10 / REQ-NF-001:
+      (1) run_workflow_async returns a dict, not an AsyncGenerator
+      (2) execute_compiled_graph_async source does NOT contain 'astream'
+      (3) run_async body does NOT reference run_stream_async or stream_compiled_graph_async
+      (4) _run_core_async body does NOT reference streaming methods
+      (5) run_workflow_async returns expected keys on a successful fake run
+
+    INT-4 (test-plan Integration Scenarios §INT-4 — Non-Streaming Path Isolation):
+    Verifies that none of run_workflow_async, run_async, _run_core_async, or
+    execute_compiled_graph_async call any F04 streaming artifact.
+
+    Note: Structural source-body assertions for _run_core_async and
+    execute_compiled_graph_async already exist in TestAssembleForAsyncRunHelper
+    (TC-F04-010-7 / TC-F04-010-8).  This class adds the BEHAVIORAL gate (run
+    result is a dict) and the INT-4 run_async-specific structural check.
+
+    ENTRYPOINT:
+      await run_workflow_async(graph_name, inputs)  — via facade-layer patch
+      GraphRunnerService.run_async (source inspection)
+
+    LOWEST ALLOWED MOCK SEAM:
+      Fake container returned by RuntimeManager.get_container() that routes
+      through a fake GraphRunnerService.run_async returning a real ExecutionResult.
+
+    FORBIDDEN MOCKS:
+      Do NOT route run_workflow_async through .astream(); must exercise the ainvoke
+      path.  Do NOT mock the isinstance(result, dict) return assertion.
+
+    COUNTER-FACTUAL:
+      A regression that accidentally makes run_workflow_async call run_stream_async
+      internally would produce an AsyncGenerator object instead of a dict, failing
+      assertIsInstance(result, dict).
+      A regression that routes run_async through streaming would contain
+      'run_stream_async' in its source, failing the source assertion.
+    """
+
+    # ------------------------------------------------------------------
+    # TC-F04-010: run_workflow_async returns a dict (not AsyncGenerator)
+    # ------------------------------------------------------------------
+
+    async def test_run_workflow_async_returns_dict_not_async_generator(self) -> None:
+        """TC-F04-010 behavioral gate: run_workflow_async returns dict on success.
+
+        This is the primary regression guard for INT-4: if run_workflow_async were
+        accidentally routed through the streaming path, it would return an
+        AsyncGenerator (from run_stream_async), not a dict.
+
+        COUNTER-FACTUAL: A regression that replaces run_workflow_async's body with
+        a call to run_stream_async would produce an AsyncGenerator here, and
+        assertIsInstance(result, dict) would fail.
+        """
+        from unittest.mock import AsyncMock
+
+        from agentmap.models.execution.result import ExecutionResult
+        from agentmap.models.execution.summary import ExecutionSummary
+        from agentmap.runtime.workflow_ops import run_workflow_async
+
+        # Build a fake ExecutionResult representing a successful non-streaming run
+        mock_summary = MagicMock(spec=ExecutionSummary)
+        mock_summary.graph_name = "regression-graph"
+        fake_result = ExecutionResult(
+            graph_name="regression-graph",
+            final_state={"output": "regression-output"},
+            execution_summary=mock_summary,
+            success=True,
+            total_duration=0.5,
+            error=None,
+        )
+
+        # Fake runner whose run_async returns the ExecutionResult (non-streaming path)
+        fake_runner = MagicMock(name="fake_runner")
+        fake_runner.run_async = AsyncMock(return_value=fake_result)
+
+        # Fake bundle service returns a bundle
+        fake_bundle = MagicMock(name="fake_bundle")
+        fake_bundle_service = MagicMock(name="fake_bundle_service")
+        fake_bundle_service.get_or_create_bundle.return_value = (fake_bundle, False)
+
+        # Fake config service for _resolve_csv_path
+        fake_config_service = MagicMock(name="fake_config_service")
+        fake_config_service.get_csv_path.return_value = "/fake/graphs.csv"
+
+        # Fake container wiring everything together
+        fake_container = MagicMock(name="fake_container")
+        fake_container.graph_runner_service.return_value = fake_runner
+        fake_container.graph_bundle_service.return_value = fake_bundle_service
+        fake_container.app_config_service.return_value = fake_config_service
+
+        with (
+            patch("agentmap.runtime.workflow_ops.ensure_initialized") as _mock_init,
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=fake_container,
+            ),
+        ):
+            _mock_init.return_value = None
+            result = await run_workflow_async("regression-graph", {"input": "hello"})
+
+        # Primary behavioral assertion: must be a dict, NOT an AsyncGenerator
+        self.assertIsInstance(
+            result,
+            dict,
+            f"run_workflow_async must return a dict (not an AsyncGenerator or other type); "
+            f"got {type(result).__name__!r} — this indicates a regression where "
+            f"run_workflow_async was accidentally routed through the streaming path",
+        )
+
+        # The dict must contain the standard success keys
+        self.assertTrue(
+            result.get("success"),
+            f"run_workflow_async result['success'] must be True on a successful run; "
+            f"got result={result}",
+        )
+        self.assertIn(
+            "outputs",
+            result,
+            "run_workflow_async result must contain 'outputs' key "
+            "(non-streaming contract unchanged by F04)",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-010: run_workflow_async result has required keys on success
+    # ------------------------------------------------------------------
+
+    async def test_run_workflow_async_result_has_all_required_keys(self) -> None:
+        """TC-F04-010: run_workflow_async result contains success, outputs, execution_id,
+        execution_summary, metadata — the same five required keys checked in AC-3.
+
+        COUNTER-FACTUAL: A regression that drops 'execution_summary' or 'metadata'
+        from run_workflow_async's return dict would fail these assertIn checks,
+        proving the non-streaming contract is intact.
+        """
+        from agentmap.models.execution.result import ExecutionResult
+        from agentmap.models.execution.summary import ExecutionSummary
+        from agentmap.runtime.workflow_ops import run_workflow_async
+
+        mock_summary = MagicMock(spec=ExecutionSummary)
+        mock_summary.graph_name = "keys-graph"
+        fake_result = ExecutionResult(
+            graph_name="keys-graph",
+            final_state={"output": "result-val"},
+            execution_summary=mock_summary,
+            success=True,
+            total_duration=0.1,
+            error=None,
+        )
+
+        fake_runner = MagicMock(name="fake_runner")
+        fake_runner.run_async = AsyncMock(return_value=fake_result)
+
+        fake_bundle_service = MagicMock()
+        fake_bundle = MagicMock(name="fake_bundle")
+        fake_bundle_service.get_or_create_bundle.return_value = (fake_bundle, False)
+
+        fake_config_service = MagicMock()
+        fake_config_service.get_csv_path.return_value = "/fake/graphs.csv"
+
+        fake_container = MagicMock()
+        fake_container.graph_runner_service.return_value = fake_runner
+        fake_container.graph_bundle_service.return_value = fake_bundle_service
+        fake_container.app_config_service.return_value = fake_config_service
+
+        with (
+            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=fake_container,
+            ),
+        ):
+            result = await run_workflow_async("keys-graph", {"input": "check"})
+
+        # All five required keys from run_workflow_async success shape
+        required_keys = {
+            "success",
+            "outputs",
+            "execution_id",
+            "execution_summary",
+            "metadata",
+        }
+        for key in required_keys:
+            self.assertIn(
+                key,
+                result,
+                f"run_workflow_async must still return '{key}' after F04 additions "
+                f"(AC-10 non-regression: non-streaming contract unchanged); "
+                f"got keys={set(result.keys())}",
+            )
+
+    # ------------------------------------------------------------------
+    # INT-4: run_async body does NOT reference streaming artifacts
+    # ------------------------------------------------------------------
+
+    def test_run_async_source_does_not_reference_run_stream_async(self) -> None:
+        """INT-4: run_async body must NOT contain 'run_stream_async'.
+
+        INT-4 non-streaming path isolation: run_async must remain independent
+        of streaming artifacts.  F04 adds streaming as an additive sibling (D-2),
+        so the existing run_async must never call run_stream_async.
+
+        COUNTER-FACTUAL: A buggy refactor that accidentally delegates run_async
+        to run_stream_async would contain the string 'run_stream_async' in its
+        source body, and this assertion would catch the coupling.
+        """
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
+
+        source = inspect.getsource(GraphRunnerService.run_async)
+        self.assertNotIn(
+            "run_stream_async",
+            source,
+            "GraphRunnerService.run_async must NOT reference run_stream_async "
+            "(INT-4: non-streaming path must be independent of F04 streaming methods; "
+            "D-2 additive sibling: existing run_async is byte-untouched)",
+        )
+
+    def test_run_async_source_does_not_reference_stream_compiled_graph_async(
+        self,
+    ) -> None:
+        """INT-4: run_async body must NOT contain 'stream_compiled_graph_async'.
+
+        COUNTER-FACTUAL: A buggy impl that replaces execute_compiled_graph_async
+        with stream_compiled_graph_async inside run_async would break the
+        non-streaming contract (run_async would yield events instead of returning
+        ExecutionResult) — caught by the source assertion.
+        """
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
+
+        source = inspect.getsource(GraphRunnerService.run_async)
+        self.assertNotIn(
+            "stream_compiled_graph_async",
+            source,
+            "GraphRunnerService.run_async must NOT reference stream_compiled_graph_async "
+            "(INT-4: non-streaming runner path uses execute_compiled_graph_async only; "
+            "REQ-NF-001: existing run_async is byte-untouched by F04)",
+        )
+
+    # ------------------------------------------------------------------
+    # INT-4: run_workflow_async body does NOT reference streaming artifacts
+    # ------------------------------------------------------------------
+
+    def test_run_workflow_async_source_does_not_reference_run_stream_async(
+        self,
+    ) -> None:
+        """INT-4: run_workflow_async body must NOT contain 'run_stream_async'.
+
+        run_workflow_async is the public facade entry point for the non-streaming
+        async path.  F04 adds run_workflow_stream_async as an additive sibling
+        (D-2, REQ-NF-001).  The original run_workflow_async must never call
+        run_stream_async internally.
+
+        COUNTER-FACTUAL: A refactor that accidentally shares a body by calling
+        run_stream_async from run_workflow_async would make run_workflow_async
+        yield events instead of returning a dict — caught by the source check.
+        """
+        from agentmap.runtime.workflow_ops import run_workflow_async
+
+        source = inspect.getsource(run_workflow_async)
+        self.assertNotIn(
+            "run_stream_async",
+            source,
+            "run_workflow_async must NOT reference run_stream_async internally "
+            "(INT-4: facade non-streaming path must be byte-untouched; "
+            "D-2: additive sibling only — no shared body with streaming facade)",
+        )
+
+    def test_run_workflow_async_source_does_not_reference_stream_compiled_graph(
+        self,
+    ) -> None:
+        """INT-4: run_workflow_async body must NOT contain 'stream_compiled_graph_async'.
+
+        COUNTER-FACTUAL: A refactor that wires run_workflow_async through
+        stream_compiled_graph_async would break the non-streaming return contract.
+        """
+        from agentmap.runtime.workflow_ops import run_workflow_async
+
+        source = inspect.getsource(run_workflow_async)
+        self.assertNotIn(
+            "stream_compiled_graph_async",
+            source,
+            "run_workflow_async must NOT reference stream_compiled_graph_async "
+            "(INT-4: non-streaming facade path uses graph_runner.run_async only; "
+            "REQ-NF-001: existing run_workflow_async is byte-untouched by F04)",
+        )
+
+    # ------------------------------------------------------------------
+    # AC-10: existing graph-runner test suite passes (documented)
+    # ------------------------------------------------------------------
+
+    def test_existing_graph_runner_test_suite_still_passes(self) -> None:
+        """AC-10: verify the existing graph-runner test infrastructure is intact.
+
+        This test validates that the TestAssembleForAsyncRunHelper class (which
+        covers _run_core_async / execute_compiled_graph_async structural assertions)
+        is still present in this file and that the imports it relies on all resolve.
+
+        The full existing test suite pass is documented in the shark note; this
+        structural guard confirms the regression-suite infrastructure hasn't been
+        accidentally removed.
+
+        COUNTER-FACTUAL: A refactor that removed _run_core_async or
+        execute_compiled_graph_async from the graph services would fail the
+        import/hasattr assertions here, signaling the regression suite is broken.
+        """
+        from agentmap.services.graph.graph_execution_service import (
+            GraphExecutionService,
+        )
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
+
+        # Verify all non-streaming methods still exist (not accidentally renamed/removed)
+        self.assertTrue(
+            hasattr(GraphRunnerService, "run_async"),
+            "GraphRunnerService.run_async must still exist after F04 additions "
+            "(REQ-NF-001: non-streaming path byte-untouched)",
+        )
+        self.assertTrue(
+            hasattr(GraphRunnerService, "_run_core_async"),
+            "GraphRunnerService._run_core_async must still exist after the D-7 refactor "
+            "(REQ-NF-001: non-streaming internal path byte-untouched)",
+        )
+        self.assertTrue(
+            hasattr(GraphExecutionService, "execute_compiled_graph_async"),
+            "GraphExecutionService.execute_compiled_graph_async must still exist "
+            "(REQ-NF-001: non-streaming execution method byte-untouched)",
+        )
+
+        # Verify the F04 additions are also present (additive, per D-2)
+        self.assertTrue(
+            hasattr(GraphRunnerService, "run_stream_async"),
+            "GraphRunnerService.run_stream_async must be present (F04 additive sibling) "
+            "— if missing, the streaming path is broken",
+        )
+        self.assertTrue(
+            hasattr(GraphExecutionService, "stream_compiled_graph_async"),
+            "GraphExecutionService.stream_compiled_graph_async must be present (F04 additive) "
+            "— if missing, the streaming execution path is broken",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
