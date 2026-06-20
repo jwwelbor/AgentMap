@@ -16,7 +16,7 @@ import asyncio
 import re
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, AsyncGenerator, Dict, Optional
 
 from langgraph.errors import GraphInterrupt
 
@@ -1570,6 +1570,261 @@ class GraphRunnerService:
                 total_duration=0.0,
                 error=str(e),
             )
+
+    async def run_stream_async(
+        self,
+        bundle: GraphBundle,
+        initial_state: Optional[dict] = None,
+        *,
+        validate_agents: bool = False,
+    ) -> AsyncGenerator[Any, None]:
+        """Stream graph execution as ordered WorkflowProgressEvents (E06-F04, T-005).
+
+        Streaming sibling of ``run_async``.  Reuses ``_assemble_for_async_run``
+        (D-7) for identical assembly, then drives
+        ``GraphExecutionService.stream_compiled_graph_async`` instead of
+        ``execute_compiled_graph_async`` (D-2, D-3).
+
+        Yields:
+            ``WorkflowProgressEvent`` — one per completed node with
+            ``event_type="node_progress"`` and ``is_terminal=False``, followed
+            by exactly one terminal event (``is_terminal=True``) with
+            ``event_type`` one of ``"completed"``, ``"failed"``, or
+            ``"suspended"``.
+
+        Terminal result dict shape is identical to ``run_workflow_async``
+        for the same input (SC-3, C1, D-4).
+
+        Raises:
+            asyncio.CancelledError: Propagated without swallowing (REQ-F-006).
+            GeneratorExit: Not swallowed — propagates to cancel the upstream
+                ``.astream()`` loop (REQ-F-006).
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+        from agentmap.services.graph.graph_execution_service import (
+            _TerminalStreamResult,
+        )
+
+        graph_name = bundle.graph_name or ""
+        self._check_missing_services(bundle)
+        self.logger.info(f"⭐ Starting async streaming pipeline for: {graph_name}")
+
+        if initial_state is None:
+            initial_state = {}
+
+        sequence = 0
+        # Pre-declare so the GeneratorExit/CancelledError handlers can reference it
+        # even if assembly has not yet completed (to avoid NameError on cancel).
+        execution_tracker: Any = None
+
+        # Telemetry: open span explicitly before the iteration so it wraps
+        # the full stream lifetime.  Use explicit open/close (not a `with` block)
+        # to avoid closing the span before the stream drains (spec §3.6 telemetry
+        # note; AC-11).
+        span = None
+        if self._telemetry_service is not None:
+            try:
+                from agentmap.services.telemetry.constants import (
+                    GRAPH_NAME,
+                    WORKFLOW_RUN_SPAN,
+                )
+
+                span = self._telemetry_service.start_span(
+                    WORKFLOW_RUN_SPAN,
+                    attributes={GRAPH_NAME: graph_name},
+                )
+                # Enter the context manager manually
+                span.__enter__()
+            except Exception:
+                span = None
+
+        try:
+            # Phases 2–5: shared assembly (D-7, D-3)
+            (
+                executable_graph,
+                execution_tracker,
+                execution_config,
+                requires_checkpoint,
+            ) = await self._assemble_for_async_run(
+                bundle=bundle,
+                initial_state=initial_state,
+                validate_agents=validate_agents,
+            )
+
+            # Phase 6: drive streaming execution
+            self._record_phase_event("workflow.phase.execution")
+            self.logger.debug(
+                f"[GraphRunnerService] Streaming Phase 6: Executing graph {graph_name}"
+            )
+
+            async for item in self.graph_execution.stream_compiled_graph_async(
+                executable_graph=executable_graph,
+                graph_name=graph_name,
+                initial_state=initial_state,
+                execution_tracker=execution_tracker,
+                config=execution_config,
+            ):
+                if isinstance(item, _TerminalStreamResult):
+                    # D-8: terminal ExecutionResult — build and yield terminal event
+                    result = item.result
+                    result_dict = self._shape_streaming_result(
+                        result,
+                        graph_name,
+                        requires_checkpoint,
+                        executable_graph,
+                        execution_config,
+                    )
+                    event_type = "completed" if result.success else "failed"
+                    yield WorkflowProgressEvent(
+                        event_type=event_type,
+                        sequence=sequence,
+                        is_terminal=True,
+                        result=result_dict,
+                        error=result.error if not result.success else None,
+                    )
+                    return
+                else:
+                    # (node_name, state_delta) tuple from stream_compiled_graph_async
+                    node_name, state_delta = item
+                    yield WorkflowProgressEvent(
+                        event_type="node_progress",
+                        sequence=sequence,
+                        is_terminal=False,
+                        node_name=node_name,
+                        state_delta=state_delta,
+                    )
+                    sequence += 1
+
+        except GraphInterrupt:
+            # Suspension: yield a suspended terminal event (REQ-F-007, AC-8b).
+            self.logger.info(
+                f"[GraphRunnerService] Streaming graph interrupted: {graph_name}"
+            )
+            result_dict: Dict[str, Any] = {
+                "success": False,
+                "interrupted": True,
+                "thread_id": None,
+                "interrupt_info": {},
+                "metadata": {"graph_name": graph_name},
+            }
+            yield WorkflowProgressEvent(
+                event_type="suspended",
+                sequence=sequence,
+                is_terminal=True,
+                result=result_dict,
+            )
+            return
+
+        except GeneratorExit:
+            # Consumer called aclose() — finalize tracker to avoid leaks (AC-6, AC-11),
+            # then propagate (REQ-F-006: GeneratorExit must not be swallowed).
+            self._finalize_tracker_safe(execution_tracker)
+            raise
+
+        except asyncio.CancelledError:
+            # Task cancellation — finalize tracker, then propagate (REQ-F-006).
+            self._finalize_tracker_safe(execution_tracker)
+            raise
+
+        except Exception as exc:
+            # Mid-run failure: yield a failed terminal event (REQ-F-005, AC-5).
+            # No exception propagates out of the generator.
+            self.logger.error(
+                f"[GraphRunnerService] Streaming graph failed: {graph_name} — {exc}"
+            )
+            error_str = str(exc)
+            yield WorkflowProgressEvent(
+                event_type="failed",
+                sequence=sequence,
+                is_terminal=True,
+                result={
+                    "success": False,
+                    "outputs": initial_state,
+                    "execution_id": None,
+                    "execution_summary": None,
+                    "metadata": {"graph_name": graph_name},
+                    "error": error_str,
+                },
+                error=error_str,
+            )
+
+        finally:
+            # Close the telemetry span on every terminal path including GeneratorExit.
+            if span is not None:
+                try:
+                    span.__exit__(None, None, None)
+                except Exception:
+                    pass
+
+    def _finalize_tracker_safe(self, execution_tracker: Any) -> None:
+        """Finalize the execution tracker without raising (best-effort).
+
+        Called from the GeneratorExit / CancelledError handlers of
+        ``run_stream_async`` to ensure the tracker is not leaked when the
+        consumer cancels the stream (AC-6, AC-11).
+        """
+        if execution_tracker is None:
+            return
+        try:
+            self.execution_tracking.complete_execution(execution_tracker)
+        except Exception as finalize_err:
+            self.logger.warning(
+                f"[GraphRunnerService] Tracker finalization failed on "
+                f"stream cancellation: {finalize_err}"
+            )
+
+    def _shape_streaming_result(
+        self,
+        result: ExecutionResult,
+        graph_name: str,
+        requires_checkpoint: bool,
+        executable_graph: Any,
+        execution_config: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Map ExecutionResult to a result dict identical to run_workflow_async (D-4).
+
+        This is the single source of truth for terminal-event result shaping
+        in the streaming path (spec §3.6 terminal-result shaping).
+        """
+        if result.success:
+            return {
+                "success": True,
+                "outputs": result.final_state,
+                "execution_id": getattr(result, "execution_id", None),
+                "execution_summary": result.execution_summary,
+                "metadata": {"graph_name": graph_name},
+            }
+
+        # Check for suspended/interrupted state
+        if isinstance(result.final_state, dict) and result.final_state.get(
+            "__interrupted"
+        ):
+            thread_id = result.final_state.get("__thread_id")
+            interrupt_info = result.final_state.get("__interrupt_info", {})
+            return {
+                "success": False,
+                "interrupted": True,
+                "thread_id": thread_id,
+                "message": f"Execution interrupted in thread: {thread_id}",
+                "interrupt_info": interrupt_info,
+                "execution_summary": result.execution_summary,
+                "metadata": {
+                    "graph_name": graph_name,
+                    "checkpoint_available": True,
+                    "interrupt_type": interrupt_info.get("type", "unknown"),
+                    "node_name": interrupt_info.get("node_name", "unknown"),
+                },
+            }
+
+        # Standard failure
+        return {
+            "success": False,
+            "outputs": result.final_state,
+            "execution_id": getattr(result, "execution_id", None),
+            "execution_summary": result.execution_summary,
+            "metadata": {"graph_name": graph_name},
+            "error": result.error,
+        }
 
     def resume_from_checkpoint(
         self,

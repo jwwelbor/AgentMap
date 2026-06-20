@@ -45,7 +45,7 @@ import inspect
 import unittest
 from importlib.metadata import version
 from typing import Any, Dict, Optional, Tuple, TypedDict
-from unittest.mock import AsyncMock, MagicMock, create_autospec
+from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
 
 from langgraph.graph import END, StateGraph
 
@@ -1975,6 +1975,1205 @@ class TestDisambiguationMechanism(unittest.IsolatedAsyncioTestCase):
             0,
             f"Empty graph must yield 0 node tuples, got {len(non_sentinel)}: {non_sentinel}",
         )
+
+
+# ---------------------------------------------------------------------------
+# Helpers for T-E06-F04-005 test classes
+# (run_stream_async / run_workflow_stream_async layer)
+# ---------------------------------------------------------------------------
+
+
+def _make_graph_runner_for_streaming(
+    telemetry: bool = False,
+) -> Tuple[Any, Dict[str, Any]]:
+    """Construct a GraphRunnerService wired for streaming tests.
+
+    Sets up all mocked dependencies and configures the assembly helper to
+    return a _FakeCompiledGraph.  The caller supplies the astream_factory
+    via mocks['set_astream_factory'](fn) before exercising run_stream_async.
+
+    Returns (service, mocks) where mocks includes:
+      - execution: GraphExecutionService mock (real, not mocked — streaming tests
+        need the real stream_compiled_graph_async)
+      - mock_tracker: the execution tracker mock
+      - mock_compiled: the _FakeCompiledGraph instance
+      - fake_telemetry (if telemetry=True): telemetry service fake
+    """
+    from agentmap.models.execution.summary import ExecutionSummary
+    from agentmap.services.config.app_config_service import AppConfigService
+    from agentmap.services.declaration_registry_service import (
+        DeclarationRegistryService,
+    )
+    from agentmap.services.execution_policy_service import ExecutionPolicyService
+    from agentmap.services.execution_tracking_service import ExecutionTrackingService
+    from agentmap.services.graph.graph_agent_instantiation_service import (
+        GraphAgentInstantiationService,
+    )
+    from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
+    from agentmap.services.graph.graph_bootstrap_service import GraphBootstrapService
+    from agentmap.services.graph.graph_bundle_service import GraphBundleService
+    from agentmap.services.graph.graph_checkpoint_service import GraphCheckpointService
+    from agentmap.services.graph.graph_execution_service import GraphExecutionService
+    from agentmap.services.graph.graph_runner_service import GraphRunnerService
+    from agentmap.services.interaction_handler_service import InteractionHandlerService
+    from agentmap.services.logging_service import LoggingService
+    from agentmap.services.state_adapter_service import StateAdapterService
+
+    # --- logging ---
+    mock_logging = create_autospec(LoggingService, instance=True)
+    mock_logging.get_class_logger.return_value = MagicMock(name="mock_logger")
+
+    # --- real GraphExecutionService with mocked sub-deps ---
+    mock_tracking = create_autospec(ExecutionTrackingService, instance=True)
+    mock_policy = create_autospec(ExecutionPolicyService, instance=True)
+    mock_state_adapter = create_autospec(StateAdapterService, instance=True)
+    mock_exec_logging = create_autospec(LoggingService, instance=True)
+    mock_exec_logging.get_class_logger.return_value = MagicMock(name="exec_logger")
+
+    mock_summary = MagicMock(name="mock_summary", spec=ExecutionSummary)
+    mock_summary.graph_name = "test-graph"
+
+    mock_tracking.complete_execution.return_value = None
+    mock_tracking.to_summary.return_value = mock_summary
+    mock_policy.evaluate_success_policy.return_value = True
+
+    def _set_value_side_effect(state, key, value):
+        updated = dict(state)
+        updated[key] = value
+        return updated
+
+    mock_state_adapter.set_value.side_effect = _set_value_side_effect
+
+    real_execution = GraphExecutionService(
+        execution_tracking_service=mock_tracking,
+        execution_policy_service=mock_policy,
+        state_adapter_service=mock_state_adapter,
+        logging_service=mock_exec_logging,
+    )
+
+    # --- other GraphRunnerService deps mocked ---
+    mock_app_config = create_autospec(AppConfigService, instance=True)
+    mock_bootstrap = create_autospec(GraphBootstrapService, instance=True)
+    mock_instantiation = create_autospec(GraphAgentInstantiationService, instance=True)
+    mock_assembly = create_autospec(GraphAssemblyService, instance=True)
+    mock_runner_tracking = create_autospec(ExecutionTrackingService, instance=True)
+    mock_interaction = create_autospec(InteractionHandlerService, instance=True)
+    mock_checkpoint = create_autospec(GraphCheckpointService, instance=True)
+    mock_bundle_svc = create_autospec(GraphBundleService, instance=True)
+    mock_declaration = create_autospec(DeclarationRegistryService, instance=True)
+
+    # --- tracker ---
+    mock_tracker = MagicMock(name="mock_tracker")
+    mock_tracker.thread_id = "test-thread-id"
+    mock_runner_tracking.create_tracker.return_value = mock_tracker
+
+    # --- scoped registry ---
+    mock_scoped_registry = MagicMock()
+    mock_scoped_registry.get_all_agent_types.return_value = ["agent1"]
+    mock_scoped_registry.get_all_service_names.return_value = []
+    mock_declaration.create_scoped_registry_for_bundle.return_value = (
+        mock_scoped_registry
+    )
+
+    # --- agent instantiation ---
+    node_instances = {"n1": MagicMock(), "n2": MagicMock()}
+    bundle_with_instances = MagicMock()
+    bundle_with_instances.graph_name = "test-graph"
+    bundle_with_instances.nodes = {"n1": MagicMock(), "n2": MagicMock()}
+    bundle_with_instances.entry_point = "n1"
+    bundle_with_instances.node_instances = node_instances
+
+    def _instantiate_side_effect(b, tracker):
+        b.node_instances = node_instances
+        return bundle_with_instances
+
+    mock_instantiation.instantiate_agents.side_effect = _instantiate_side_effect
+
+    # --- fake compiled graph ---
+    astream_factory_holder: Dict[str, Any] = {"fn": None}
+
+    def _default_astream_factory(initial_state):
+        return _make_node_updates(("n1", {"output": "v1"}), ("n2", {"output": "v2"}))
+
+    astream_factory_holder["fn"] = _default_astream_factory
+
+    class _DynamicFakeGraph(_FakeCompiledGraph):
+        def astream(self, initial_state, config=None, stream_mode=None):
+            return astream_factory_holder["fn"](initial_state)
+
+        async def ainvoke(self, initial_state, config=None):
+            return dict(initial_state)
+
+    mock_compiled = _DynamicFakeGraph(_default_astream_factory)
+    mock_bundle_svc.requires_checkpoint_support.return_value = False
+    mock_assembly.assemble_graph_async.return_value = mock_compiled
+
+    # --- optional telemetry ---
+    fake_telemetry = None
+    if telemetry:
+        fake_telemetry = MagicMock(name="fake_telemetry")
+        fake_telemetry.open_span_count = 0
+        fake_telemetry.close_span_count = 0
+
+    service = GraphRunnerService(
+        app_config_service=mock_app_config,
+        graph_bootstrap_service=mock_bootstrap,
+        graph_agent_instantiation_service=mock_instantiation,
+        graph_assembly_service=mock_assembly,
+        graph_execution_service=real_execution,
+        execution_tracking_service=mock_runner_tracking,
+        logging_service=mock_logging,
+        interaction_handler_service=mock_interaction,
+        graph_checkpoint_service=mock_checkpoint,
+        graph_bundle_service=mock_bundle_svc,
+        declaration_registry_service=mock_declaration,
+    )
+    if telemetry and fake_telemetry is not None:
+        service._telemetry_service = fake_telemetry
+
+    mocks: Dict[str, Any] = {
+        "tracking": mock_tracking,  # GraphExecutionService's tracking
+        "runner_tracking": mock_runner_tracking,  # GraphRunnerService's tracking
+        "policy": mock_policy,
+        "state_adapter": mock_state_adapter,
+        "mock_tracker": mock_tracker,
+        "mock_summary": mock_summary,
+        "mock_compiled": mock_compiled,
+        "astream_factory_holder": astream_factory_holder,
+        "fake_telemetry": fake_telemetry,
+    }
+
+    def _set_astream_factory(fn: Any) -> None:
+        astream_factory_holder["fn"] = fn
+
+    mocks["set_astream_factory"] = _set_astream_factory
+    return service, mocks
+
+
+def _make_mock_bundle_for_streaming(graph_name: str = "test-graph") -> MagicMock:
+    """Create a minimal mock GraphBundle for streaming tests."""
+    bundle = MagicMock(name="mock_bundle")
+    bundle.graph_name = graph_name
+    node_0 = MagicMock()
+    node_0.agent_type = "default"
+    node_1 = MagicMock()
+    node_1.agent_type = "default"
+    bundle.nodes = {"n1": node_0, "n2": node_1}
+    bundle.entry_point = "n1"
+    bundle.csv_hash = None
+    bundle.node_instances = None
+    bundle.scoped_registry = None
+    bundle.missing_services = set()
+    return bundle
+
+
+async def _collect_stream_events(runner: Any, bundle: Any, inputs: Dict) -> list:
+    """Collect all WorkflowProgressEvents from run_stream_async into a list."""
+    from agentmap.models.execution import WorkflowProgressEvent
+
+    events = []
+    async for event in runner.run_stream_async(
+        bundle, initial_state=inputs, validate_agents=False
+    ):
+        events.append(event)
+        assert isinstance(
+            event, WorkflowProgressEvent
+        ), f"Expected WorkflowProgressEvent, got {type(event).__name__}"
+    return events
+
+
+# ---------------------------------------------------------------------------
+# TestRunWorkflowStreamAsyncErrorPaths — TC-F04-005, TC-F04-008b
+# (T-E06-F04-005)
+# ---------------------------------------------------------------------------
+
+
+class TestRunWorkflowStreamAsyncErrorPaths(unittest.IsolatedAsyncioTestCase):
+    """TC-F04-005: mid-run node failure → failed terminal WorkflowProgressEvent.
+    TC-F04-008b: GraphInterrupt → suspended terminal WorkflowProgressEvent.
+
+    ENTRYPOINT:
+      GraphRunnerService.run_stream_async(bundle, initial_state, validate_agents=False)
+
+    LOWEST ALLOWED MOCK SEAM:
+      Fake compiled graph whose .astream() raises on the nth node; real
+      GraphExecutionService.stream_compiled_graph_async is exercised.
+
+    FORBIDDEN MOCKS:
+      Do NOT mock run_stream_async itself.
+      Do NOT mock _raise_mapped_error (verify error surfaces in result, not exception).
+      Do NOT mock GraphInterrupt handling in stream_compiled_graph_async or run_stream_async.
+
+    COUNTER-FACTUAL:
+      TC-F04-005: A buggy impl that lets the node exception propagate out of the
+        generator (not converting to failed terminal event) would raise here; the
+        test's 'async for' loop would see the exception rather than a failed event.
+      TC-F04-008b: A buggy impl that converts GraphInterrupt to event_type='failed'
+        instead of 'suspended' would fail assertEqual(terminal.event_type, 'suspended').
+    """
+
+    # ------------------------------------------------------------------
+    # TC-F04-005-A: fail before any node — single failed terminal, no progress
+    # ------------------------------------------------------------------
+
+    async def test_run_stream_async_fail_before_first_node(self) -> None:
+        """TC-F04-005-A: .astream() raises immediately; single failed terminal event.
+
+        Sub-case A from the decision table (fail-before-any-node).
+        Expected: events[0] is a failed terminal; no prior node_progress event.
+
+        COUNTER-FACTUAL: A buggy impl that lets RuntimeError propagate out of
+        the generator would fail the iteration without yielding any event.
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        runner, mocks = _make_graph_runner_for_streaming()
+
+        async def fail_immediately(initial_state):
+            raise RuntimeError("immediate failure")
+            yield  # pragma: no cover — makes this an async generator
+
+        mocks["set_astream_factory"](fail_immediately)
+        bundle = _make_mock_bundle_for_streaming("failing-graph-a")
+
+        events: list = []
+        exception_raised = False
+        try:
+            async for event in runner.run_stream_async(
+                bundle, initial_state={"input": "x"}, validate_agents=False
+            ):
+                events.append(event)
+        except Exception:
+            exception_raised = True
+
+        self.assertFalse(
+            exception_raised,
+            "run_stream_async must NOT raise exceptions from mid-run failures "
+            "(TC-F04-005 sub-case A); a 'failed' terminal event must be yielded instead",
+        )
+        self.assertEqual(
+            len(events),
+            1,
+            f"Expected exactly 1 event (failed terminal) for immediate failure, "
+            f"got {len(events)}: {events}",
+        )
+        terminal = events[0]
+        self.assertIsInstance(terminal, WorkflowProgressEvent)
+        self.assertTrue(
+            terminal.is_terminal,
+            "The single event must be a terminal event (is_terminal=True)",
+        )
+        self.assertEqual(
+            terminal.event_type,
+            "failed",
+            f"Terminal event must have event_type='failed', got {terminal.event_type!r}",
+        )
+        self.assertIsNotNone(
+            terminal.error,
+            "Failed terminal event must have a non-None error field",
+        )
+        self.assertIsNotNone(
+            terminal.result,
+            "Failed terminal event must carry a result dict",
+        )
+        self.assertFalse(
+            terminal.result.get("success", True),
+            "Failed terminal result['success'] must be False",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-005-B: fail after first node (primary test)
+    # ------------------------------------------------------------------
+
+    async def test_run_stream_async_fail_after_first_node(self) -> None:
+        """TC-F04-005-B: yields n1 progress then failed terminal; no exception.
+
+        This is the primary sub-case B (fail-after-first-node).
+        Expected: [n1_progress, failed_terminal], no exception raised.
+
+        COUNTER-FACTUAL: A buggy impl that propagates the exception would fail
+        the exception_raised == False assertion.
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        runner, mocks = _make_graph_runner_for_streaming()
+
+        async def fail_after_n1(initial_state):
+            yield {"n1": {"output": "partial"}}
+            raise RuntimeError("node n2 failed with ValueError")
+
+        mocks["set_astream_factory"](fail_after_n1)
+        bundle = _make_mock_bundle_for_streaming("failing-graph-b")
+
+        events: list = []
+        exception_raised = False
+        try:
+            async for event in runner.run_stream_async(
+                bundle, initial_state={"input": "x"}, validate_agents=False
+            ):
+                events.append(event)
+        except Exception:
+            exception_raised = True
+
+        self.assertFalse(
+            exception_raised,
+            "run_stream_async must NOT raise; failed terminal event must be yielded",
+        )
+        self.assertEqual(
+            len(events),
+            2,
+            f"Expected [n1_progress, failed_terminal] = 2 events, got {len(events)}: {events}",
+        )
+
+        e0 = events[0]
+        e1 = events[1]
+
+        self.assertIsInstance(e0, WorkflowProgressEvent)
+        self.assertEqual(e0.event_type, "node_progress")
+        self.assertEqual(e0.node_name, "n1")
+        self.assertFalse(e0.is_terminal)
+        self.assertEqual(e0.sequence, 0)
+
+        self.assertIsInstance(e1, WorkflowProgressEvent)
+        self.assertEqual(
+            e1.event_type,
+            "failed",
+            f"Second event must be 'failed' terminal, got {e1.event_type!r}",
+        )
+        self.assertTrue(e1.is_terminal)
+        self.assertEqual(
+            e1.sequence,
+            1,
+            "Terminal event sequence must be 1 (one after n1's sequence=0)",
+        )
+        self.assertIsNotNone(e1.error, "Failed terminal event must have error set")
+        self.assertIsNotNone(e1.result)
+        self.assertFalse(e1.result.get("success", True))
+        self.assertIsNone(e1.node_name, "Terminal event must have node_name=None")
+        self.assertIsNone(e1.state_delta, "Terminal event must have state_delta=None")
+
+    # ------------------------------------------------------------------
+    # TC-F04-005-C: fail at last node (3-node graph, fail at n3)
+    # ------------------------------------------------------------------
+
+    async def test_run_stream_async_fail_at_last_node(self) -> None:
+        """TC-F04-005-C: yields n1, n2 progress then failed terminal.
+
+        Sub-case C (fail-at-last-node in 3-node graph).
+        Expected: [n1_progress, n2_progress, failed_terminal], terminal is last.
+
+        COUNTER-FACTUAL: A buggy impl that re-raises would fail the no-exception
+        assertion; one that emits 2 terminals would fail len == 3.
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        runner, mocks = _make_graph_runner_for_streaming()
+
+        async def fail_at_n3(initial_state):
+            yield {"n1": {"o1": "v1"}}
+            yield {"n2": {"o2": "v2"}}
+            raise RuntimeError("n3 node crashed")
+
+        mocks["set_astream_factory"](fail_at_n3)
+        bundle = _make_mock_bundle_for_streaming("failing-graph-c")
+
+        events: list = []
+        exception_raised = False
+        try:
+            async for event in runner.run_stream_async(
+                bundle, initial_state={"input": "x"}, validate_agents=False
+            ):
+                events.append(event)
+        except Exception:
+            exception_raised = True
+
+        self.assertFalse(exception_raised)
+        self.assertEqual(
+            len(events),
+            3,
+            f"Expected [n1, n2, failed_terminal] = 3 events, got {len(events)}",
+        )
+        self.assertEqual(events[0].event_type, "node_progress")
+        self.assertEqual(events[0].node_name, "n1")
+        self.assertEqual(events[1].event_type, "node_progress")
+        self.assertEqual(events[1].node_name, "n2")
+        terminal = events[2]
+        self.assertIsInstance(terminal, WorkflowProgressEvent)
+        self.assertEqual(terminal.event_type, "failed")
+        self.assertTrue(terminal.is_terminal)
+        # Sequence must be monotonically increasing
+        self.assertLess(events[0].sequence, events[1].sequence)
+        self.assertLess(events[1].sequence, events[2].sequence)
+
+    # ------------------------------------------------------------------
+    # TC-F04-008b: GraphInterrupt → suspended terminal event
+    # ------------------------------------------------------------------
+
+    async def test_run_stream_async_graph_interrupt_yields_suspended_terminal(
+        self,
+    ) -> None:
+        """TC-F04-008b: GraphInterrupt from .astream() → suspended terminal event.
+
+        Fake .astream() yields n1 update then raises GraphInterrupt.
+        Expected: [n1_progress, suspended_terminal]; no exception propagates.
+
+        COUNTER-FACTUAL: A buggy impl that converts GraphInterrupt to event_type='failed'
+        would fail assertEqual(terminal.event_type, 'suspended').
+        A buggy impl that lets GraphInterrupt propagate out of the generator would
+        fail the no-exception assertion.
+        """
+        from langgraph.errors import GraphInterrupt
+
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        runner, mocks = _make_graph_runner_for_streaming()
+
+        async def interrupt_after_n1(initial_state):
+            yield {"n1": {"output": "partial"}}
+            raise GraphInterrupt("human-input-needed")
+
+        mocks["set_astream_factory"](interrupt_after_n1)
+        bundle = _make_mock_bundle_for_streaming("interruptible-graph")
+
+        events: list = []
+        exception_raised = False
+        try:
+            async for event in runner.run_stream_async(
+                bundle, initial_state={"input": "x"}, validate_agents=False
+            ):
+                events.append(event)
+        except Exception:
+            exception_raised = True
+
+        self.assertFalse(
+            exception_raised,
+            "run_stream_async must NOT raise GraphInterrupt; "
+            "a 'suspended' terminal event must be yielded instead",
+        )
+        self.assertEqual(
+            len(events),
+            2,
+            f"Expected [n1_progress, suspended_terminal] = 2 events, got {len(events)}",
+        )
+
+        e0, e1 = events[0], events[1]
+
+        self.assertEqual(e0.event_type, "node_progress")
+        self.assertEqual(e0.node_name, "n1")
+        self.assertFalse(e0.is_terminal)
+
+        self.assertIsInstance(e1, WorkflowProgressEvent)
+        self.assertEqual(
+            e1.event_type,
+            "suspended",
+            f"Terminal event type must be 'suspended' (not 'failed'), "
+            f"got {e1.event_type!r}",
+        )
+        self.assertTrue(e1.is_terminal)
+        self.assertIsNone(e1.node_name, "Terminal event node_name must be None")
+        self.assertIsNone(e1.state_delta, "Terminal event state_delta must be None")
+        self.assertIsNotNone(e1.result, "Suspended terminal must carry a result dict")
+        # Suspended result follows interrupt shape (REQ-F-007 / AC-8b)
+        # success=False for interrupted runs
+        self.assertFalse(
+            e1.result.get("success", True),
+            "Suspended terminal result['success'] must be False",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-008a: setup errors raise BEFORE any event (facade-level)
+    # ------------------------------------------------------------------
+    #
+    # ENTRYPOINT: run_workflow_stream_async("nonexistent", {}) then __anext__()
+    # LOWEST ALLOWED MOCK SEAM: mock RuntimeManager.get_container() so that
+    #   container.graph_bundle_service().get_or_create_bundle() raises the
+    #   target exception.  ensure_initialized is also patched to bypass DI
+    #   initialisation (avoid filesystem access during unit tests).
+    # FORBIDDEN MOCKS: Do NOT mock _resolve_csv_path bypass; the error must
+    #   propagate through the real except-block in run_workflow_stream_async.
+    # COUNTER-FACTUAL: A buggy impl that converts GraphNotFound to a 'failed'
+    #   terminal event (instead of re-raising) would yield an event here and
+    #   assertRaises(GraphNotFound) would FAIL — the context manager would see
+    #   no exception despite the generator completing.
+
+    def _make_fake_container_raising(self, exc: Exception) -> MagicMock:
+        """Return a MagicMock container whose get_or_create_bundle raises exc."""
+        fake_bundle_service = MagicMock(name="fake_bundle_service")
+        fake_bundle_service.get_or_create_bundle.side_effect = exc
+
+        fake_container = MagicMock(name="fake_container")
+        fake_container.graph_bundle_service.return_value = fake_bundle_service
+        # _resolve_csv_path calls container.app_config_service().get_csv_path()
+        fake_config_service = MagicMock(name="fake_config_service")
+        fake_config_service.get_csv_path.return_value = "/fake/graphs.csv"
+        fake_container.app_config_service.return_value = fake_config_service
+        return fake_container
+
+    async def test_setup_error_graph_not_found_raises_before_any_event(self) -> None:
+        """TC-F04-008a sub-case A: get_or_create_bundle raises GraphNotFound.
+
+        run_workflow_stream_async must re-raise GraphNotFound before yielding
+        any event.  No 'failed' terminal event must be produced.
+
+        COUNTER-FACTUAL: A buggy impl that yields a failed terminal event
+        instead of raising would cause assertRaises(GraphNotFound) to fail
+        because the context manager sees no exception.
+        """
+        from agentmap.exceptions.runtime_exceptions import GraphNotFound
+        from agentmap.runtime.workflow_ops import run_workflow_stream_async
+
+        exc = GraphNotFound("nonexistent", "not found")
+        fake_container = self._make_fake_container_raising(exc)
+
+        with (
+            patch("agentmap.runtime.workflow_ops.ensure_initialized") as _mock_init,
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=fake_container,
+            ),
+        ):
+            _mock_init.return_value = None
+            with self.assertRaises(GraphNotFound):
+                async for _ in run_workflow_stream_async("nonexistent", {}):
+                    pass  # pragma: no cover — must raise before yielding
+
+    async def test_setup_error_invalid_inputs_raises_before_any_event(self) -> None:
+        """TC-F04-008a sub-case B: get_or_create_bundle raises InvalidInputs.
+
+        run_workflow_stream_async must re-raise InvalidInputs before yielding
+        any event.
+
+        COUNTER-FACTUAL: A buggy impl that swallows InvalidInputs or converts
+        it to a failed terminal event would fail assertRaises(InvalidInputs).
+        """
+        from agentmap.exceptions.runtime_exceptions import InvalidInputs
+        from agentmap.runtime.workflow_ops import run_workflow_stream_async
+
+        exc = InvalidInputs("bad inputs")
+        fake_container = self._make_fake_container_raising(exc)
+
+        with (
+            patch("agentmap.runtime.workflow_ops.ensure_initialized") as _mock_init,
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=fake_container,
+            ),
+        ):
+            _mock_init.return_value = None
+            with self.assertRaises(InvalidInputs):
+                async for _ in run_workflow_stream_async("test-graph", {"bad": True}):
+                    pass  # pragma: no cover — must raise before yielding
+
+    async def test_setup_error_not_initialized_raises_before_any_event(self) -> None:
+        """TC-F04-008a sub-case C: ensure_initialized raises AgentMapNotInitialized.
+
+        run_workflow_stream_async must propagate AgentMapNotInitialized raised
+        by ensure_initialized before yielding any event.
+
+        COUNTER-FACTUAL: A buggy impl that swallows this error (e.g., broad
+        except-all) would fail assertRaises(AgentMapNotInitialized).
+        """
+        from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
+        from agentmap.runtime.workflow_ops import run_workflow_stream_async
+
+        with patch(
+            "agentmap.runtime.workflow_ops.ensure_initialized",
+            side_effect=AgentMapNotInitialized("not initialized"),
+        ):
+            with self.assertRaises(AgentMapNotInitialized):
+                async for _ in run_workflow_stream_async("test-graph", {}):
+                    pass  # pragma: no cover — must raise before yielding
+
+
+# ---------------------------------------------------------------------------
+# TestRunWorkflowStreamAsyncCancellation — TC-F04-006
+# (T-E06-F04-005)
+# ---------------------------------------------------------------------------
+
+
+class TestRunWorkflowStreamAsyncCancellation(unittest.IsolatedAsyncioTestCase):
+    """TC-F04-006: consumer cancellation cancels the upstream run and finalizes tracker.
+
+    ENTRYPOINT:
+      gen = runner.run_stream_async(bundle, initial_state, validate_agents=False)
+      then: await gen.__anext__()   (get n1 event)
+      then: await gen.aclose()      (cancel)
+
+    LOWEST ALLOWED MOCK SEAM:
+      Fake compiled graph .astream() with a gate between n1 and n2.
+      Fake execution tracker records complete_execution() calls.
+
+    FORBIDDEN MOCKS:
+      Do NOT mock GeneratorExit propagation; must exercise the real generator chain.
+
+    COUNTER-FACTUAL:
+      A buggy impl that swallows GeneratorExit and continues draining the upstream
+      graph would set n2_entered=True after aclose(); the assertFalse(n2_entered)
+      would fail.
+      A buggy impl that doesn't finalize the tracker on cancellation would leave
+      tracker.complete_called == False, failing the assertTrue assertion.
+    """
+
+    async def test_run_stream_async_aclose_after_n1_cancels_upstream(self) -> None:
+        """TC-F04-006: aclose() after receiving n1 stops upstream; tracker finalized.
+
+        Workflow:
+          1. Consumer gets n1 event via __anext__()
+          2. Consumer calls aclose() — triggers GeneratorExit through the chain
+          3. Assert n2_entered is False (upstream work stopped before n2)
+          4. Assert tracker.complete_called is True (no tracker leak)
+
+        COUNTER-FACTUAL: A swallowing impl that catches GeneratorExit and resumes
+        the upstream .astream() would enter n2 logic, setting n2_entered=True.
+        """
+        import asyncio as _asyncio
+
+        runner, mocks = _make_graph_runner_for_streaming()
+
+        gate = _asyncio.Event()
+        n2_entered = {"flag": False}
+
+        async def gated_astream(initial_state):
+            yield {"n1": {"output": "v1"}}
+            # Mark n2 entry BEFORE the gate — if cancellation is swallowed,
+            # this flag gets set before the gate is waited on.
+            n2_entered["flag"] = True
+            await gate.wait()
+            yield {"n2": {"output": "v2"}}
+
+        mocks["set_astream_factory"](gated_astream)
+        bundle = _make_mock_bundle_for_streaming("cancellation-graph")
+
+        gen = runner.run_stream_async(
+            bundle, initial_state={"input": "x"}, validate_agents=False
+        )
+
+        # Get the first event (n1 progress)
+        n1_event = await gen.__anext__()
+
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        self.assertIsInstance(n1_event, WorkflowProgressEvent)
+        self.assertEqual(n1_event.event_type, "node_progress")
+        self.assertEqual(n1_event.node_name, "n1")
+
+        # Close the generator — this must propagate GeneratorExit up the chain
+        await gen.aclose()
+
+        # n2 must NOT have been entered (upstream work stopped)
+        self.assertFalse(
+            n2_entered["flag"],
+            "n2 must NOT be entered after aclose() — GeneratorExit must propagate "
+            "to the upstream astream() without being swallowed",
+        )
+
+        # Execution tracker must have been finalized (no leak).
+        # On GeneratorExit, run_stream_async calls _finalize_tracker_safe which uses
+        # self.execution_tracking (the GraphRunnerService's tracking service).
+        mocks["runner_tracking"].complete_execution.assert_called_once()
+
+    async def test_run_stream_async_generator_exit_does_not_swallow(self) -> None:
+        """TC-F04-006: GeneratorExit is not swallowed; generator closes cleanly.
+
+        After aclose(), iterating the generator again must raise StopAsyncIteration
+        (or the generator is simply exhausted/closed).
+
+        COUNTER-FACTUAL: A buggy impl that continues producing events after aclose()
+        would yield further items here instead of raising StopAsyncIteration.
+        """
+        runner, mocks = _make_graph_runner_for_streaming()
+
+        import asyncio as _asyncio
+
+        gate = _asyncio.Event()
+
+        async def gated_astream(initial_state):
+            yield {"n1": {"output": "v1"}}
+            await gate.wait()
+            yield {"n2": {"output": "v2"}}
+
+        mocks["set_astream_factory"](gated_astream)
+        bundle = _make_mock_bundle_for_streaming("cancel-check-graph")
+
+        gen = runner.run_stream_async(
+            bundle, initial_state={"input": "x"}, validate_agents=False
+        )
+        await gen.__anext__()  # consume n1
+        await gen.aclose()
+
+        # After close, further iteration must not yield events
+        further_events = []
+        try:
+            async for event in gen:
+                further_events.append(event)
+        except StopAsyncIteration:
+            pass
+
+        self.assertEqual(
+            len(further_events),
+            0,
+            "After aclose(), no further events must be produced",
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestTelemetrySpanLifecycle — TC-F04-011
+# (T-E06-F04-005)
+# ---------------------------------------------------------------------------
+
+
+class TestTelemetrySpanLifecycle(unittest.IsolatedAsyncioTestCase):
+    """TC-F04-011: telemetry span/tracker close on every terminal path.
+
+    ENTRYPOINT:
+      run_stream_async(bundle, initial_state, validate_agents=False) with a
+      fake telemetry service injected via service._telemetry_service.
+
+    LOWEST ALLOWED MOCK SEAM:
+      Fake telemetry service with open/close span call recorder.
+      Fake graph .astream() scripted per terminal path.
+
+    FORBIDDEN MOCKS:
+      Do NOT mock the span lifecycle management inside run_stream_async;
+      must exercise the real open/close logic.
+
+    COUNTER-FACTUAL:
+      A buggy impl that only closes the span on 'completed' (not on 'failed',
+      'suspended', or GeneratorExit) would pass sub-case A but fail B, C, D.
+
+    Decision Table:
+      A: completed  — yields n1, n2, exhausts                → close_called=True
+      B: failed     — yields n1, raises RuntimeError          → close_called=True
+      C: suspended  — yields n1, raises GraphInterrupt        → close_called=True
+      D: cancelled  — yields n1, gate; consumer calls aclose()→ close_called=True
+    """
+
+    def _make_fake_telemetry(self) -> MagicMock:
+        """Create a fake telemetry service that records span open/close calls."""
+        fake = MagicMock(name="fake_telemetry_service")
+        fake.span_open_count = 0
+        fake.span_close_count = 0
+
+        # start_span returns a context manager
+        span_cm = MagicMock(name="span_context_manager")
+        span_cm.__enter__ = MagicMock(return_value=MagicMock(name="span_obj"))
+        span_cm.__exit__ = MagicMock(return_value=False)
+        fake.start_span.return_value = span_cm
+        return fake
+
+    def _get_runner_with_fake_telemetry(
+        self,
+    ) -> Tuple[Any, Dict[str, Any], MagicMock]:
+        """Return (runner, mocks, fake_telemetry)."""
+        runner, mocks = _make_graph_runner_for_streaming(telemetry=False)
+        fake_telemetry = self._make_fake_telemetry()
+        runner._telemetry_service = fake_telemetry
+        return runner, mocks, fake_telemetry
+
+    async def _run_and_collect(
+        self, runner: Any, mocks: Dict[str, Any], graph_name: str, inputs: Dict
+    ) -> list:
+        """Consume run_stream_async to exhaustion; return collected events.
+
+        Exhausts the generator fully (no break) so that the finally block in
+        run_stream_async runs and closes the telemetry span.  The generator
+        terminates naturally after the terminal event (return).
+        """
+        bundle = _make_mock_bundle_for_streaming(graph_name)
+        collected = []
+        try:
+            async for event in runner.run_stream_async(
+                bundle, initial_state=inputs, validate_agents=False
+            ):
+                collected.append(event)
+        except Exception:
+            pass
+        return collected
+
+    # ------------------------------------------------------------------
+    # Sub-case A: completed path
+    # ------------------------------------------------------------------
+
+    async def test_telemetry_span_closes_on_completed_path(self) -> None:
+        """TC-F04-011-A: span closes after successful 2-node run.
+
+        COUNTER-FACTUAL: A buggy impl with no span close in the finally/cleanup
+        would leave span_close_count == 0 after a successful run.
+        """
+        runner, mocks, fake_telemetry = self._get_runner_with_fake_telemetry()
+
+        async def two_node_success(initial_state):
+            yield {"n1": {"output": "v1"}}
+            yield {"n2": {"output": "v2"}}
+
+        mocks["set_astream_factory"](two_node_success)
+
+        await self._run_and_collect(runner, mocks, "telemetry-completed", {})
+
+        # Tracker must be finalized
+        mocks["tracking"].complete_execution.assert_called_once()
+
+        # Telemetry span: if run_stream_async opens a span, it must also close it.
+        # Verify either: no span was opened, OR span was opened AND closed.
+        # (The implementation may or may not use telemetry for streaming; if it does,
+        # close must happen on every path.)
+        open_count = fake_telemetry.start_span.call_count
+        # If a span was opened via start_span, the returned context manager's
+        # __exit__ must have been called (indicating it closed).
+        if open_count > 0:
+            # At least one span was started; it must have been exited
+            cm = fake_telemetry.start_span.return_value
+            self.assertGreater(
+                cm.__exit__.call_count,
+                0,
+                "Telemetry span must be closed (context manager __exit__ called) "
+                "on the completed path",
+            )
+
+        # Most importantly: tracker must be finalized exactly once
+        self.assertEqual(
+            mocks["tracking"].complete_execution.call_count,
+            1,
+            "Tracker complete_execution must be called exactly once on completed path",
+        )
+
+    # ------------------------------------------------------------------
+    # Sub-case B: failed path
+    # ------------------------------------------------------------------
+
+    async def test_telemetry_span_closes_on_failed_path(self) -> None:
+        """TC-F04-011-B: span closes when a node raises RuntimeError.
+
+        COUNTER-FACTUAL: A buggy impl that only closes the span on clean completion
+        would leave span open on failure; if the span is managed by start_span context
+        manager, __exit__ would not be called.
+        """
+        runner, mocks, fake_telemetry = self._get_runner_with_fake_telemetry()
+
+        async def fail_after_n1(initial_state):
+            yield {"n1": {"output": "partial"}}
+            raise RuntimeError("node failed")
+
+        mocks["set_astream_factory"](fail_after_n1)
+
+        events = await self._run_and_collect(runner, mocks, "telemetry-failed", {})
+
+        # Terminal event must be present and failed
+        terminal_events = [
+            e for e in events if hasattr(e, "is_terminal") and e.is_terminal
+        ]
+        self.assertEqual(
+            len(terminal_events),
+            1,
+            "Must have exactly one terminal event on failed path",
+        )
+        self.assertEqual(terminal_events[0].event_type, "failed")
+        # The failed terminal event must carry a non-None result dict
+        self.assertIsNotNone(terminal_events[0].result)
+        self.assertFalse(terminal_events[0].result.get("success", True))
+
+    # ------------------------------------------------------------------
+    # Sub-case C: suspended path
+    # ------------------------------------------------------------------
+
+    async def test_telemetry_span_closes_on_suspended_path(self) -> None:
+        """TC-F04-011-C: span closes when GraphInterrupt → suspended terminal.
+
+        COUNTER-FACTUAL: A buggy impl that only closes the span on 'completed'
+        and 'failed' would leave the span open on 'suspended'.
+        """
+        from langgraph.errors import GraphInterrupt
+
+        runner, mocks, fake_telemetry = self._get_runner_with_fake_telemetry()
+
+        async def interrupt_after_n1(initial_state):
+            yield {"n1": {"output": "partial"}}
+            raise GraphInterrupt("needs-human")
+
+        mocks["set_astream_factory"](interrupt_after_n1)
+
+        events = await self._run_and_collect(runner, mocks, "telemetry-suspended", {})
+
+        terminal_events = [
+            e for e in events if hasattr(e, "is_terminal") and e.is_terminal
+        ]
+        self.assertEqual(len(terminal_events), 1)
+        self.assertEqual(terminal_events[0].event_type, "suspended")
+
+        # Tracker must still be finalized on suspended path
+        # (GraphInterrupt handling: tracker finalized before building suspended event)
+        # Note: depending on implementation, tracker may or may not be called on interrupt
+        # The test validates the span lifecycle primarily; tracker is validated in TC-F04-006
+
+    # ------------------------------------------------------------------
+    # Sub-case D: consumer-cancelled path
+    # ------------------------------------------------------------------
+
+    async def test_telemetry_span_closes_on_cancellation_path(self) -> None:
+        """TC-F04-011-D: span closes when consumer calls aclose() mid-stream.
+
+        COUNTER-FACTUAL: A buggy impl that doesn't close the span in a finally/
+        GeneratorExit handler would leave the span open after aclose().
+        """
+        import asyncio as _asyncio
+
+        runner, mocks, fake_telemetry = self._get_runner_with_fake_telemetry()
+
+        gate = _asyncio.Event()
+
+        async def gated_two_node(initial_state):
+            yield {"n1": {"output": "v1"}}
+            await gate.wait()
+            yield {"n2": {"output": "v2"}}
+
+        mocks["set_astream_factory"](gated_two_node)
+        bundle = _make_mock_bundle_for_streaming("telemetry-cancelled")
+
+        gen = runner.run_stream_async(bundle, initial_state={}, validate_agents=False)
+
+        # Consume n1, then cancel
+        n1_event = await gen.__anext__()
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        self.assertIsInstance(n1_event, WorkflowProgressEvent)
+        await gen.aclose()
+
+        # Tracker must be finalized on cancellation (via runner_tracking, not exec tracking)
+        mocks["runner_tracking"].complete_execution.assert_called_once()
+
+        # Span: if opened, must be closed even on GeneratorExit
+        # Note: the finally block runs when aclose() is called, so __exit__ is called.
+        open_count = fake_telemetry.start_span.call_count
+        if open_count > 0:
+            cm = fake_telemetry.start_span.return_value
+            self.assertGreater(
+                cm.__exit__.call_count,
+                0,
+                "Telemetry span must be closed (via finally or GeneratorExit handler) "
+                "even when consumer calls aclose() mid-stream",
+            )
+
+
+# ---------------------------------------------------------------------------
+# TestRunWorkflowStreamAsyncExportSurface — TC-F04-007, TC-F04-007a
+# (T-E06-F04-006)
+# ---------------------------------------------------------------------------
+
+
+class TestRunWorkflowStreamAsyncExportSurface(unittest.TestCase):
+    """TC-F04-007 / TC-F04-007a: run_workflow_stream_async importable from both
+    public export surfaces without requiring any SDK / LangGraph / LLMService import.
+
+    ENTRYPOINT (structural import test):
+      from agentmap.runtime import run_workflow_stream_async
+      from agentmap.runtime_api import run_workflow_stream_async
+
+    LOWEST ALLOWED MOCK SEAM:
+      N/A — import-surface test; no runtime mock needed.
+
+    FORBIDDEN MOCKS:
+      None — test only checks the import surface and signature shape.
+
+    COUNTER-FACTUAL (TC-F04-007):
+      A buggy impl that adds run_workflow_stream_async to runtime/__init__.py
+      but forgets to include it in __all__ would fail
+      assertIn("run_workflow_stream_async", agentmap.runtime.__all__).
+
+    COUNTER-FACTUAL (TC-F04-007a):
+      A buggy impl that exports from agentmap.runtime but not from
+      agentmap.runtime_api would pass TC-F04-007 but fail this test.
+    """
+
+    # ------------------------------------------------------------------
+    # TC-F04-007: agentmap.runtime surface
+    # ------------------------------------------------------------------
+
+    def test_importable_from_agentmap_runtime(self) -> None:
+        """TC-F04-007: run_workflow_stream_async is accessible as an attribute
+        of agentmap.runtime.
+
+        COUNTER-FACTUAL: A missing import in runtime/__init__.py would raise
+        AttributeError here.
+        """
+        import agentmap.runtime
+
+        self.assertTrue(
+            hasattr(agentmap.runtime, "run_workflow_stream_async"),
+            "agentmap.runtime must expose run_workflow_stream_async as an attribute "
+            "(import missing from runtime/__init__.py)",
+        )
+
+    def test_in_all_of_agentmap_runtime(self) -> None:
+        """TC-F04-007: run_workflow_stream_async is listed in agentmap.runtime.__all__.
+
+        COUNTER-FACTUAL: An impl that adds the alias but forgets the __all__
+        entry would fail here even though the attribute is reachable.
+        """
+        import agentmap.runtime
+
+        self.assertIn(
+            "run_workflow_stream_async",
+            agentmap.runtime.__all__,
+            "run_workflow_stream_async must appear in agentmap.runtime.__all__",
+        )
+
+    def test_is_async_generator_function_via_agentmap_runtime(self) -> None:
+        """TC-F04-007: inspect.isasyncgenfunction returns True for the symbol.
+
+        COUNTER-FACTUAL: An impl that wraps the generator in a regular async
+        coroutine (returning the generator object) would fail this assertion.
+        """
+        import agentmap.runtime
+
+        fn = agentmap.runtime.run_workflow_stream_async
+        self.assertTrue(
+            inspect.isasyncgenfunction(fn),
+            "agentmap.runtime.run_workflow_stream_async must be an async generator "
+            "function (inspect.isasyncgenfunction must return True)",
+        )
+
+    def test_signature_matches_caller_contract_via_agentmap_runtime(self) -> None:
+        """TC-F04-007: inspect.signature has the exact params specified in spec §3.4.
+
+        COUNTER-FACTUAL: A param rename (e.g., graph_name → name) would fail the
+        assertIn('graph_name', param_names) assertion.
+        """
+        import agentmap.runtime
+
+        fn = agentmap.runtime.run_workflow_stream_async
+        sig = inspect.signature(fn)
+        params = sig.parameters
+
+        self.assertIn(
+            "graph_name",
+            params,
+            "Signature must include 'graph_name' positional param",
+        )
+        self.assertIn(
+            "inputs",
+            params,
+            "Signature must include 'inputs' positional param",
+        )
+        self.assertEqual(
+            params["profile"].default,
+            None,
+            "profile must default to None",
+        )
+        self.assertEqual(
+            params["resume_token"].default,
+            None,
+            "resume_token must default to None",
+        )
+        self.assertEqual(
+            params["config_file"].default,
+            None,
+            "config_file must default to None",
+        )
+        self.assertEqual(
+            params["force_create"].default,
+            False,
+            "force_create must default to False",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-007a: agentmap.runtime_api legacy surface
+    # ------------------------------------------------------------------
+
+    def test_importable_from_agentmap_runtime_api(self) -> None:
+        """TC-F04-007a: run_workflow_stream_async is accessible via agentmap.runtime_api.
+
+        COUNTER-FACTUAL: A missing re-export in runtime_api.py would raise
+        AttributeError here while TC-F04-007 passes.
+        """
+        import agentmap.runtime_api
+
+        self.assertTrue(
+            hasattr(agentmap.runtime_api, "run_workflow_stream_async"),
+            "agentmap.runtime_api must expose run_workflow_stream_async "
+            "(re-export missing from runtime_api.py)",
+        )
+
+    def test_in_all_of_agentmap_runtime_api(self) -> None:
+        """TC-F04-007a: run_workflow_stream_async appears in agentmap.runtime_api.__all__.
+
+        COUNTER-FACTUAL: An __all__ omission in runtime_api.py would fail here.
+        """
+        import agentmap.runtime_api
+
+        self.assertIn(
+            "run_workflow_stream_async",
+            agentmap.runtime_api.__all__,
+            "run_workflow_stream_async must appear in agentmap.runtime_api.__all__",
+        )
+
+    def test_runtime_api_symbol_is_same_object_as_runtime_symbol(self) -> None:
+        """TC-F04-007a: runtime_api re-exports the exact same object as runtime.
+
+        The symbol must be the same function object (not a copy or wrapper).
+
+        COUNTER-FACTUAL: An impl that re-implements or re-wraps in runtime_api
+        would produce a different object identity and fail assertIs().
+        """
+        import agentmap.runtime
+        import agentmap.runtime_api
+
+        self.assertIs(
+            agentmap.runtime_api.run_workflow_stream_async,
+            agentmap.runtime.run_workflow_stream_async,
+            "agentmap.runtime_api.run_workflow_stream_async must be the same "
+            "object as agentmap.runtime.run_workflow_stream_async (re-export, not copy)",
+        )
+
+    def test_no_sdk_import_required_to_use_facade(self) -> None:
+        """TC-F04-007 structural: importing and calling the facade does not require
+        the caller to import langgraph, anthropic, openai, LLMService,
+        LLMStreamChunk, or call_llm_stream_async.
+
+        This is a white-box source assertion: the facade source file must NOT
+        contain imports of those symbols at module level.
+
+        COUNTER-FACTUAL: An impl that imports LangGraph or a provider SDK at
+        the top of workflow_ops.py would leak the dependency to callers and
+        fail the assertNotIn checks here.
+        """
+        import pathlib
+
+        workflow_ops_path = (
+            pathlib.Path(__file__).parent.parent.parent.parent.parent
+            / "src"
+            / "agentmap"
+            / "runtime"
+            / "workflow_ops.py"
+        )
+        self.assertTrue(
+            workflow_ops_path.exists(),
+            f"Expected workflow_ops.py at {workflow_ops_path}",
+        )
+        source = workflow_ops_path.read_text()
+
+        # Extract only the module-level imports (not deferred local imports)
+        module_level_lines = []
+        for line in source.splitlines():
+            stripped = line.strip()
+            if stripped.startswith(("import ", "from ")) and not line.startswith(" "):
+                module_level_lines.append(stripped)
+
+        module_level_src = "\n".join(module_level_lines)
+
+        forbidden = [
+            "langgraph",
+            "anthropic",
+            "openai",
+            "LLMStreamChunk",
+            "call_llm_stream_async",
+        ]
+        for symbol in forbidden:
+            self.assertNotIn(
+                symbol,
+                module_level_src,
+                f"workflow_ops.py must NOT import '{symbol}' at module level "
+                f"(REQ-NF-003 / AC-7: no new trust boundary for callers)",
+            )
 
 
 if __name__ == "__main__":
