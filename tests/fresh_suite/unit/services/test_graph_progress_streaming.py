@@ -4048,7 +4048,12 @@ class TestRunWorkflowStreamAsyncParityWithAsync(unittest.IsolatedAsyncioTestCase
     """
 
     def _make_parity_runner(
-        self, final_state: Dict[str, Any]
+        self,
+        final_state: Dict[str, Any],
+        *,
+        suspend: bool = False,
+        interrupt_state: Any = None,
+        success_policy: bool = True,
     ) -> Tuple[Any, Dict[str, Any]]:
         """Construct a GraphRunnerService wired for parity tests.
 
@@ -4058,6 +4063,18 @@ class TestRunWorkflowStreamAsyncParityWithAsync(unittest.IsolatedAsyncioTestCase
 
         The same runner instance is used for both run_async and run_stream_async
         calls to prove both paths produce equivalent results.
+
+        Suspension parameters (default: completed-path behaviour, unchanged):
+          suspend: when True, ``requires_checkpoint_support`` returns True so
+            assembly produces a real ``execution_config`` and both facades run
+            their checkpoint post-execution suspension check.
+          interrupt_state: the ``get_state(config)`` return for both paths — pass
+            a ``_make_interrupt_state(...)`` snapshot with pending ``.tasks`` to
+            drive the SAME real ``create_interrupt_result`` on streaming and
+            non-streaming, so the suspended terminal is identical by construction.
+          success_policy: ``evaluate_success_policy`` return (default True). Set
+            False to prove a checkpoint interrupt streams 'suspended' even when
+            the success policy fails (Blocker #1 — the gate is success-uncondit.).
         """
         from agentmap.models.execution.summary import ExecutionSummary
         from agentmap.services.config.app_config_service import AppConfigService
@@ -4110,6 +4127,15 @@ class TestRunWorkflowStreamAsyncParityWithAsync(unittest.IsolatedAsyncioTestCase
                     initial_state, config=config, stream_mode=stream_mode
                 )
 
+            def get_state(self, config=None):
+                # Checkpoint suspension path. BOTH the non-streaming
+                # post-execution check (_run_core_async :1380) and the streaming
+                # post-stream check (_detect_post_stream_suspension) call
+                # get_state(execution_config). Returning a state with pending
+                # .tasks drives the SAME real create_interrupt_result on both
+                # facades, so any suspended-dict divergence is a real one.
+                return interrupt_state
+
         fake_graph = _ParityFakeGraph()
 
         # Mocked services
@@ -4127,7 +4153,7 @@ class TestRunWorkflowStreamAsyncParityWithAsync(unittest.IsolatedAsyncioTestCase
 
         mock_tracking.complete_execution.return_value = None
         mock_tracking.to_summary.return_value = mock_summary
-        mock_policy.evaluate_success_policy.return_value = True
+        mock_policy.evaluate_success_policy.return_value = success_policy
 
         def _set_value_side_effect(state, key, value):
             updated = dict(state)
@@ -4179,30 +4205,14 @@ class TestRunWorkflowStreamAsyncParityWithAsync(unittest.IsolatedAsyncioTestCase
 
         mock_instantiation.instantiate_agents.side_effect = _instantiate_side_effect
 
-        mock_bundle_svc.requires_checkpoint_support.return_value = False
+        # ``suspend`` flips checkpoint support on so assembly builds a real
+        # execution_config (graph_runner_service.py :1289-1296) and both facades
+        # run their post-execution suspension check. Wire BOTH assembly methods:
+        # the non-checkpoint path uses assemble_graph_async, the checkpoint path
+        # uses assemble_with_checkpoint_async — both return the same fake graph.
+        mock_bundle_svc.requires_checkpoint_support.return_value = suspend
         mock_assembly.assemble_graph_async.return_value = fake_graph
-
-        # Also wire ainvoke for the non-streaming path
-        async def _execute_non_streaming(
-            executable_graph, graph_name, initial_state, execution_tracker, config=None
-        ):
-            # This is the real execute_compiled_graph_async — it calls ainvoke
-            from agentmap.models.execution.result import ExecutionResult
-
-            final = await executable_graph.ainvoke(initial_state, config=config)
-            mock_runner_tracking.to_summary.return_value = mock_summary
-            mock_tracking.to_summary.return_value = mock_summary
-            summary = mock_tracking.to_summary(mock_tracker, graph_name, final)
-            final = mock_state_adapter.set_value(final, "__execution_summary", summary)
-            final = mock_state_adapter.set_value(final, "__policy_success", True)
-            return ExecutionResult(
-                graph_name=graph_name,
-                final_state=final,
-                execution_summary=summary,
-                success=True,
-                total_duration=0.1,
-                error=None,
-            )
+        mock_assembly.assemble_with_checkpoint_async.return_value = fake_graph
 
         service = GraphRunnerService(
             app_config_service=mock_app_config,
@@ -4682,6 +4692,368 @@ class TestRunWorkflowStreamAsyncParityWithAsync(unittest.IsolatedAsyncioTestCase
             profile,
             "B-5: metadata.profile must carry the caller's profile argument "
             f"({profile!r}), not None or a default",
+        )
+
+    # ------------------------------------------------------------------
+    # SUSPENDED-path counter-factuals (root-cause refactor: Blockers #1/#2/#3,
+    # NB-1). Each is proven to FAIL against the pre-fix hand-mirror / gate.
+    # ------------------------------------------------------------------
+
+    async def test_facade_run_twice_suspended_terminal_equals_non_streaming_result(
+        self,
+    ) -> None:
+        """AC-3 / AC-8b / D-4 (Blockers #2+#3): run the SAME graph + inputs +
+        profile through BOTH public facades on a CHECKPOINT-SUSPENDED run and
+        assert the streaming terminal dict EQUALS the non-streaming dict — full
+        dict, no subset.
+
+        This is the suspended-path counterpart of
+        ``test_facade_run_twice_streaming_terminal_equals_non_streaming_result``
+        (which only exercises the COMPLETED path). It is the test that was never
+        written: the streaming suspended dict was hand-mirrored in
+        ``_build_suspended_result`` and silently dropped the top-level
+        ``execution_summary`` (Blocker #2) and ``interrupt_info.thread_id``
+        (Blocker #3). After the subtractive refactor the streaming path derives
+        the suspended dict through the canonical ``create_interrupt_result`` →
+        ``_shape_streaming_result``, so it is identical to the non-streaming
+        facade by construction.
+
+        ENTRYPOINT (public facade pair):
+          await run_workflow_async(graph_name, inputs, profile=...)   → dict
+          run_workflow_stream_async(graph_name, inputs, profile=...)  → events
+        Both run on the SAME real GraphRunnerService + same bundle + same
+        get_state() interrupt snapshot, so the SAME real interrupt handler and
+        SAME real create_interrupt_result fire on both paths.
+
+        FORBIDDEN MOCKS: run_workflow_async / run_workflow_stream_async /
+        run_async / run_stream_async / _shape_streaming_result / the interrupt
+        handler. Lowest seam is the fake compiled graph
+        (ainvoke/astream/get_state) + RuntimeManager.get_container.
+
+        COUNTER-FACTUAL (proven against pre-fix code): the old hand-mirrored
+        suspended dict had NO 'execution_summary' key and its 'interrupt_info'
+        lacked 'thread_id', so assertEqual(stream_result, non_stream_result)
+        FAILS (the non-streaming dict carries both). With the refactor both are
+        equal.
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+        from agentmap.runtime.workflow_ops import (
+            run_workflow_async,
+            run_workflow_stream_async,
+        )
+
+        graph_name = "parity-graph"
+        inputs = {"input": "suspend-equivalence-check"}
+        profile = "prod"
+
+        interrupt_state = _make_interrupt_state(
+            interrupt_type="human_interaction", node_name="n1"
+        )
+        # ONE real runner services both facades; checkpoint suspension is active
+        # and get_state() returns the SAME pending-interrupt snapshot for both.
+        service, _mocks = self._make_parity_runner(
+            {"output": "materialized-text"},
+            suspend=True,
+            interrupt_state=interrupt_state,
+        )
+        bundle = self._make_parity_bundle(graph_name=graph_name)
+
+        fake_bundle_service = MagicMock(name="fake_bundle_service")
+        fake_bundle_service.get_or_create_bundle.return_value = (bundle, False)
+        fake_config_service = MagicMock(name="fake_config_service")
+        fake_config_service.get_csv_path.return_value = "/fake/graphs.csv"
+        fake_container = MagicMock(name="fake_container")
+        fake_container.graph_runner_service.return_value = service
+        fake_container.graph_bundle_service.return_value = fake_bundle_service
+        fake_container.app_config_service.return_value = fake_config_service
+
+        with (
+            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=fake_container,
+            ),
+        ):
+            non_stream_result = await run_workflow_async(
+                graph_name, inputs, profile=profile
+            )
+            stream_events: list = []
+            async for event in run_workflow_stream_async(
+                graph_name, inputs, profile=profile
+            ):
+                stream_events.append(event)
+
+        terminal = next(
+            (
+                e
+                for e in stream_events
+                if isinstance(e, WorkflowProgressEvent) and e.is_terminal
+            ),
+            None,
+        )
+        self.assertIsNotNone(terminal, "Streaming facade must yield a terminal event")
+        self.assertEqual(
+            terminal.event_type,
+            "suspended",
+            "A checkpoint interrupt must stream a 'suspended' terminal",
+        )
+        stream_result = terminal.result
+
+        # Sanity: the non-streaming facade really did take the suspended branch.
+        self.assertTrue(
+            non_stream_result.get("interrupted"),
+            "Non-streaming facade must return an interrupted result for parity",
+        )
+
+        # interrupt_info.interaction_id is a per-invocation UUID minted by the
+        # real interrupt handler: it legitimately differs between the two
+        # independent facade runs (in production one run mints exactly one).
+        # Assert structural presence on BOTH paths, then normalize it out before
+        # the byte-equivalence compare (the completed-path test documents this
+        # per-run-id normalization) — EVERYTHING else must be byte-equal.
+        for res in (stream_result, non_stream_result):
+            self.assertIn(
+                "interaction_id",
+                res["interrupt_info"],
+                "interrupt_info must carry a resume interaction_id on both paths",
+            )
+            res["interrupt_info"].pop("interaction_id")
+
+        # Full-dict equality — the suspended-path analogue of the completed-path
+        # byte-equivalence test. NO subset compare (subset weakening = B-4).
+        self.assertEqual(
+            stream_result,
+            non_stream_result,
+            "AC-3 / AC-8b: the streaming SUSPENDED terminal dict must be byte-"
+            "equal to run_workflow_async's interrupted return for the same input."
+            f"\nstreaming  = {stream_result}\nnon-stream = {non_stream_result}",
+        )
+
+        # Belt-and-suspenders, named so the regressions are unmistakable:
+        # Blocker #2 — execution_summary present + non-None on the streamed dict.
+        self.assertIn(
+            "execution_summary",
+            stream_result,
+            "Blocker #2: streaming suspended terminal must include "
+            "execution_summary (the hand-mirror dropped it)",
+        )
+        self.assertIsNotNone(
+            stream_result["execution_summary"],
+            "Blocker #2: streaming suspended execution_summary must be non-None",
+        )
+        # Blocker #3 — interrupt_info.thread_id present for resumability.
+        self.assertIn(
+            "thread_id",
+            stream_result["interrupt_info"],
+            "Blocker #3: streaming suspended interrupt_info must carry thread_id "
+            "(the hand-mirror dropped it)",
+        )
+
+    async def test_streaming_checkpoint_interrupt_with_failing_policy_is_suspended(
+        self,
+    ) -> None:
+        """Blocker #1: a checkpoint interrupt whose success policy evaluates
+        False must stream a 'suspended' terminal, NOT 'failed'.
+
+        The pre-fix gate was ``if result.success and requires_checkpoint and
+        execution_config:`` — so when the policy failed (result.success False)
+        the post-stream suspension check was SKIPPED and the run fell through to
+        the 'failed' terminal, even though the checkpoint state held a pending
+        interrupt. The fix drops ``result.success and`` to match the
+        success-unconditional non-streaming reference (``_run_core_async`` :1380).
+
+        ENTRYPOINT: GraphRunnerService.run_stream_async (the gate lives in the
+        runner, not the facade).
+
+        COUNTER-FACTUAL (proven against pre-fix code): restoring the
+        ``result.success and`` gate makes this assert see 'failed' and FAIL.
+        With the fix it is 'suspended'.
+        """
+        interrupt_state = _make_interrupt_state(
+            interrupt_type="human_interaction", node_name="n1"
+        )
+        service, _mocks = self._make_parity_runner(
+            {"output": "x"},
+            suspend=True,
+            interrupt_state=interrupt_state,
+            success_policy=False,  # the run's success policy FAILS
+        )
+        bundle = self._make_parity_bundle(graph_name="parity-graph")
+
+        events: list = []
+        async for event in service.run_stream_async(
+            bundle, initial_state={"input": "policy-fails-but-interrupted"}
+        ):
+            events.append(event)
+
+        terminal = next((e for e in events if e.is_terminal), None)
+        self.assertIsNotNone(terminal, "Must yield a terminal event")
+        self.assertEqual(
+            terminal.event_type,
+            "suspended",
+            "Blocker #1: a checkpoint interrupt with a failing success policy "
+            "must stream 'suspended', not 'failed' — the gate must be "
+            "unconditional of result.success",
+        )
+
+    async def test_streaming_suspended_terminal_carries_execution_summary(
+        self,
+    ) -> None:
+        """Blocker #2 (consumer view): the streaming suspended terminal must
+        expose a non-None ``execution_summary`` carrying a suspended/interrupted
+        status, so a consumer reading the terminal sees the same summary the
+        non-streaming caller gets.
+
+        The hand-mirrored ``_build_suspended_result`` omitted the
+        ``execution_summary`` key entirely; deriving the dict through
+        ``create_interrupt_result`` → ``_shape_streaming_result`` restores it.
+
+        COUNTER-FACTUAL (proven against pre-fix code): the old suspended dict had
+        no 'execution_summary' key, so this ``assertIn`` FAILS.
+        """
+        from agentmap.models.execution.summary import ExecutionSummary
+
+        interrupt_state = _make_interrupt_state(
+            interrupt_type="human_interaction", node_name="n1"
+        )
+        service, _mocks = self._make_parity_runner(
+            {"output": "x"}, suspend=True, interrupt_state=interrupt_state
+        )
+        bundle = self._make_parity_bundle(graph_name="parity-graph")
+
+        events: list = []
+        async for event in service.run_stream_async(
+            bundle, initial_state={"input": "summary-check"}
+        ):
+            events.append(event)
+
+        terminal = next((e for e in events if e.is_terminal), None)
+        self.assertIsNotNone(terminal)
+        self.assertEqual(terminal.event_type, "suspended")
+        result = terminal.result
+
+        self.assertIn(
+            "execution_summary",
+            result,
+            "Blocker #2: streaming suspended terminal must include "
+            "execution_summary",
+        )
+        summary = result["execution_summary"]
+        self.assertIsNotNone(summary, "Blocker #2: execution_summary must be non-None")
+        self.assertIsInstance(summary, ExecutionSummary)
+        self.assertIn(
+            summary.status,
+            {"suspended", "interrupted"},
+            "execution_summary.status must reflect the suspension",
+        )
+
+    async def test_facade_suspended_workflow_colon_graph_name_parity(self) -> None:
+        """NB-1: for a ``workflow::graph``-form caller identifier, the streaming
+        suspended terminal's ``metadata.graph_name`` must equal the non-streaming
+        facade's — both echo the RAW caller identifier, not the resolved short
+        bundle name.
+
+        Non-streaming ``run_workflow_async`` puts the raw caller ``graph_name``
+        into ``metadata.graph_name`` (workflow_ops.py). The streaming runner
+        previously used ``bundle.graph_name`` (the RESOLVED short token), which
+        diverges for ``::``-form names. The fix threads the raw caller
+        ``graph_name`` into ``run_stream_async`` for the terminal metadata while
+        keeping the resolved name for ``execution_summary`` — so the FULL dict
+        matches too.
+
+        COUNTER-FACTUAL (proven against pre-fix code): with the raw graph_name
+        NOT threaded, streaming metadata.graph_name == 'parity-graph' (resolved)
+        while non-streaming == 'orders::parity-graph' (raw) → assertEqual FAILS.
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+        from agentmap.runtime.workflow_ops import (
+            run_workflow_async,
+            run_workflow_stream_async,
+        )
+
+        # ``::``-form caller identifier; _resolve_csv_path resolves the bundle
+        # graph_name to the short token 'parity-graph', so raw != resolved.
+        caller_graph_name = "orders::parity-graph"
+        inputs = {"input": "nb1-parity"}
+        profile = "prod"
+
+        interrupt_state = _make_interrupt_state(
+            interrupt_type="human_interaction", node_name="n1"
+        )
+        service, _mocks = self._make_parity_runner(
+            {"output": "x"}, suspend=True, interrupt_state=interrupt_state
+        )
+        # bundle.graph_name is the RESOLVED short token (what the runner sees on
+        # the bundle); the caller identifier carries the workflow:: prefix.
+        bundle = self._make_parity_bundle(graph_name="parity-graph")
+
+        fake_bundle_service = MagicMock(name="fake_bundle_service")
+        fake_bundle_service.get_or_create_bundle.return_value = (bundle, False)
+        fake_config_service = MagicMock(name="fake_config_service")
+        fake_config_service.get_csv_path.return_value = "/fake/graphs.csv"
+        fake_container = MagicMock(name="fake_container")
+        fake_container.graph_runner_service.return_value = service
+        fake_container.graph_bundle_service.return_value = fake_bundle_service
+        fake_container.app_config_service.return_value = fake_config_service
+
+        with (
+            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=fake_container,
+            ),
+        ):
+            non_stream_result = await run_workflow_async(
+                caller_graph_name, inputs, profile=profile
+            )
+            stream_events: list = []
+            async for event in run_workflow_stream_async(
+                caller_graph_name, inputs, profile=profile
+            ):
+                stream_events.append(event)
+
+        terminal = next(
+            (
+                e
+                for e in stream_events
+                if isinstance(e, WorkflowProgressEvent) and e.is_terminal
+            ),
+            None,
+        )
+        self.assertIsNotNone(terminal)
+        stream_result = terminal.result
+
+        # Both must echo the RAW caller identifier (NB-1).
+        self.assertEqual(
+            non_stream_result["metadata"]["graph_name"],
+            caller_graph_name,
+            "non-streaming metadata.graph_name must be the raw caller identifier",
+        )
+        self.assertEqual(
+            stream_result["metadata"]["graph_name"],
+            caller_graph_name,
+            "NB-1: streaming suspended metadata.graph_name must be the raw caller "
+            "identifier (orders::parity-graph), not the resolved bundle name",
+        )
+        self.assertEqual(
+            stream_result["metadata"]["graph_name"],
+            non_stream_result["metadata"]["graph_name"],
+            "NB-1: streaming and non-streaming metadata.graph_name must match for "
+            "a workflow::graph-form caller name",
+        )
+        # NB-1 done right keeps the FULL dict equal too: execution_summary.graph_name
+        # stays the RESOLVED bundle name on both paths (the caller name only shapes
+        # metadata), so byte-equivalence holds even for ::-form identifiers.
+        # Normalize the per-invocation interaction_id UUID first (see the
+        # suspended run-twice test for the rationale).
+        for res in (stream_result, non_stream_result):
+            res["interrupt_info"].pop("interaction_id", None)
+        self.assertEqual(
+            stream_result,
+            non_stream_result,
+            "NB-1 must not introduce any other drift: the full suspended dicts "
+            f"must stay byte-equal.\nstreaming  = {stream_result}\n"
+            f"non-stream = {non_stream_result}",
         )
 
 
