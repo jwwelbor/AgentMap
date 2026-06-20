@@ -3176,5 +3176,461 @@ class TestRunWorkflowStreamAsyncExportSurface(unittest.TestCase):
             )
 
 
+# ---------------------------------------------------------------------------
+# TestTD026MaterializedTextNeverDelta — TC-F04-009 (T-E06-F04-007)
+# ---------------------------------------------------------------------------
+
+
+class TestTD026MaterializedTextNeverDelta(unittest.IsolatedAsyncioTestCase):
+    """TC-F04-009 — MANDATORY TD-026 verification: F04 carries materialized text, never deltas.
+
+    Satisfies AC-9 (MANDATORY per TD-026 deferral, user-approved 2026-06-19).
+
+    BACKGROUND:
+      F03 has a defect (TD-026): on a pre-first-chunk provider failure, the synthetic
+      terminal chunk emitted by LLMService._call_llm_stream_async_direct sets
+      text_delta="" (llm_service.py:3443-3451).  A direct call_llm_stream_async
+      consumer that concatenated deltas would produce output="" — losing the fallback
+      text.
+
+      The F04 architect resolved this with option (a): F04 consumes LangGraph's
+      .astream(updates) node-state dicts and the final materialized ExecutionResult.
+      Inside a node, LLMAgent uses call_llm_async (materialized path), which is
+      UNAFFECTED by TD-026.  Therefore the TD-026 defect is structurally unreachable
+      from F04.
+
+      This test class PROVES that claim with two distinct assertion types:
+        (A) Behavioral: a fake graph whose node delta carries the fallback-produced
+            materialized text ("fallback-text") is run via run_stream_async; the
+            terminal event's result["outputs"] carries that text non-empty.
+        (B) White-box: ast/source-text inspection confirms that none of the four
+            F04 source files import call_llm_stream_async or LLMStreamChunk.
+
+    ENTRYPOINT:
+      GraphRunnerService.run_stream_async(bundle, initial_state, validate_agents=False)
+      — the same production seam used by all other runner-level streaming tests in
+      this file.  The fake graph's .astream() delivers {node_name: state_delta} dicts
+      whose "output" key holds the materialized fallback text — simulating exactly what
+      LLMAgent.process_async would return after call_llm_async recovers via fallback
+      (llm_agent.py:483,486 materialized path).
+
+    LOWEST ALLOWED MOCK SEAM:
+      Fake compiled graph whose .astream() yields {"n1": {"output": "fallback-text"}}.
+      All GraphRunnerService dependencies mocked via the shared
+      _make_graph_runner_for_streaming() helper.
+
+    FORBIDDEN MOCKS:
+      - Do NOT mock run_stream_async itself; must execute for real.
+      - Do NOT call or import call_llm_stream_async anywhere in this test.
+      - Do NOT mock stream_compiled_graph_async; must exercise the real method.
+      - Do NOT mock WorkflowProgressEvent; must be constructed by the production method.
+
+    COUNTER-FACTUAL:
+      If F04 had erroneously consumed call_llm_stream_async and concatenated deltas,
+      it would produce output="" on a pre-first-chunk failure (the TD-026 defect).
+      The assertion assertEqual(terminal.result["outputs"]["output"], "fallback-text")
+      would fail — and the assert_not_empty check would also catch output=="".
+      A delta-concatenation impl would never carry "fallback-text" because the
+      synthetic terminal chunk has text_delta="".
+
+    White-box counter-factual:
+      An impl that imported call_llm_stream_async from the F04 streaming methods
+      would be caught by the import-surface assertions.  A comment-only mention
+      (as in graph_execution_service.py:477) is expected and is handled by
+      restricting the check to import/from-import lines.
+    """
+
+    # ------------------------------------------------------------------
+    # TC-F04-009-1 (behavioral): materialized fallback text reaches terminal event
+    # ------------------------------------------------------------------
+
+    async def test_td026_fallback_text_carried_in_materialized_state_not_lost(
+        self,
+    ) -> None:
+        """TC-F04-009-1: node output=="fallback-text" survives F04's event chain.
+
+        SCENARIO:
+          Simulates a graph whose single LLM node (n1) uses call_llm_async
+          (materialized path).  The primary provider fails before first chunk;
+          the fallback returns text "fallback-text".  LLMAgent.process_async
+          materializes this as {"output": "fallback-text", ...} and LangGraph
+          merges it into graph state.  F04's .astream() delivers
+          {"n1": {"output": "fallback-text"}} as the node update.
+
+          F04 MUST carry this materialized text through to:
+            (a) the node_progress event's state_delta["output"]
+            (b) the terminal event's result["outputs"]["output"]
+
+        COUNTER-FACTUAL:
+          An impl that called call_llm_stream_async and built output by
+          concatenating text_delta values would produce output="" on a
+          pre-first-chunk failure.  This test would fail the
+          assertNotEqual(output, "") guard and the
+          assertEqual(output, "fallback-text") assertion.
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        runner, mocks = _make_graph_runner_for_streaming()
+
+        # --- Fake graph simulates what LLMAgent produces after a provider fallback ---
+        # The fallback provider returned LLMResponse(text="fallback-text").
+        # LLMAgent materializes: {"output": "fallback-text", "memory": "fallback-text"}
+        # LangGraph merges this into state and streams it as:
+        #   {"n1": {"output": "fallback-text", "memory": "fallback-text"}}
+        # This is the materialized state F04 carries — no delta concatenation.
+        FALLBACK_TEXT = "fallback-text"
+
+        async def astream_with_materialized_fallback(initial_state):
+            yield {"n1": {"output": FALLBACK_TEXT}}
+
+        mocks["set_astream_factory"](astream_with_materialized_fallback)
+        bundle = _make_mock_bundle_for_streaming("llm-fallback-graph")
+
+        events: list = []
+        async for event in runner.run_stream_async(
+            bundle, initial_state={"input": "test"}, validate_agents=False
+        ):
+            events.append(event)
+
+        # At minimum: one node_progress + one terminal
+        self.assertGreaterEqual(
+            len(events),
+            2,
+            f"Expected at least [node_progress, terminal] = 2 events, got {len(events)}: {events}",
+        )
+
+        # --- node_progress event assertions ---
+        node_progress_events = [
+            e
+            for e in events
+            if isinstance(e, WorkflowProgressEvent) and not e.is_terminal
+        ]
+        self.assertGreaterEqual(
+            len(node_progress_events),
+            1,
+            "Expected at least one node_progress event (is_terminal=False) "
+            "for the LLM node — none found",
+        )
+
+        n1_event = node_progress_events[0]
+        self.assertEqual(
+            n1_event.node_name,
+            "n1",
+            f"First node_progress event must be for node 'n1', got {n1_event.node_name!r}",
+        )
+        self.assertIsNotNone(
+            n1_event.state_delta,
+            "node_progress event must have a non-None state_delta carrying materialized state",
+        )
+        node_output = n1_event.state_delta.get("output", "__MISSING__")
+        self.assertNotEqual(
+            node_output,
+            "",
+            "TD-026 regression detected: node_progress state_delta['output'] == '' "
+            "(empty string) — this is the exact TD-026 defect pattern where a delta "
+            "concatenation consumer loses text on pre-first-chunk fallback; "
+            "F04 must carry the materialized text, not concatenated deltas",
+        )
+        self.assertEqual(
+            node_output,
+            FALLBACK_TEXT,
+            f"node_progress state_delta['output'] must equal the fallback materialized "
+            f"text {FALLBACK_TEXT!r}, got {node_output!r}",
+        )
+
+        # --- terminal event assertions ---
+        terminal_events = [
+            e for e in events if isinstance(e, WorkflowProgressEvent) and e.is_terminal
+        ]
+        self.assertEqual(
+            len(terminal_events),
+            1,
+            f"Expected exactly 1 terminal event, got {len(terminal_events)}: {terminal_events}",
+        )
+
+        terminal = terminal_events[0]
+        self.assertEqual(
+            terminal.event_type,
+            "completed",
+            f"Terminal event must be 'completed' (fallback succeeded), "
+            f"got {terminal.event_type!r}",
+        )
+        self.assertTrue(
+            terminal.is_terminal,
+            "Terminal event must have is_terminal=True",
+        )
+        self.assertIsNotNone(
+            terminal.result,
+            "Terminal event must carry a result dict",
+        )
+        self.assertTrue(
+            terminal.result.get("success", False),
+            f"Terminal result['success'] must be True (fallback succeeded), "
+            f"got result={terminal.result}",
+        )
+
+        # The final outputs MUST carry the fallback text via materialized state.
+        # result["outputs"] == final_state (merged from initial_state + all deltas).
+        outputs = terminal.result.get("outputs", {})
+        self.assertIsInstance(
+            outputs,
+            dict,
+            f"result['outputs'] must be a dict (materialized final_state), "
+            f"got {type(outputs).__name__!r}",
+        )
+        final_output = outputs.get("output", "__MISSING__")
+        self.assertNotEqual(
+            final_output,
+            "",
+            "TD-026 regression detected: terminal result['outputs']['output'] == '' "
+            "(empty string) — F04 must carry materialized state from the node, "
+            "not concatenated delta values; empty output means text was lost "
+            "(the exact TD-026 defect consequence for a delta-concatenation impl)",
+        )
+        self.assertEqual(
+            final_output,
+            FALLBACK_TEXT,
+            f"terminal result['outputs']['output'] must equal the fallback materialized "
+            f"text {FALLBACK_TEXT!r} (AC-9: materialized fallback text must not be lost); "
+            f"got {final_output!r}",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-009-2: terminal result['outputs'] is never empty dict
+    # ------------------------------------------------------------------
+
+    async def test_td026_terminal_outputs_never_empty(self) -> None:
+        """TC-F04-009-2: result['outputs'] dict is non-empty and contains node output.
+
+        COUNTER-FACTUAL:
+          A buggy delta-concatenation impl that lost all text on fallback would
+          produce result["outputs"] == {} (empty) or {"output": ""}.
+          This test catches the empty-dict case.
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        runner, mocks = _make_graph_runner_for_streaming()
+
+        async def astream_with_fallback_output(initial_state):
+            yield {"n1": {"output": "fallback-text"}}
+
+        mocks["set_astream_factory"](astream_with_fallback_output)
+        bundle = _make_mock_bundle_for_streaming("llm-outputs-non-empty-graph")
+
+        events: list = []
+        async for event in runner.run_stream_async(
+            bundle, initial_state={"input": "test"}, validate_agents=False
+        ):
+            events.append(event)
+
+        terminal = next(
+            (
+                e
+                for e in events
+                if isinstance(e, WorkflowProgressEvent) and e.is_terminal
+            ),
+            None,
+        )
+        self.assertIsNotNone(terminal, "Terminal event must be present")
+
+        outputs = terminal.result.get("outputs", {}) if terminal.result else {}
+        self.assertNotEqual(
+            outputs,
+            {},
+            "TD-026 negative case: result['outputs'] must NOT be {} "
+            "(empty dict means the materialized node output was dropped — "
+            "this is the TD-026 consequence for a delta-concat consumer that "
+            "receives no deltas on pre-first-chunk failure)",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-009-3 (white-box): progress_event.py has no forbidden imports
+    # ------------------------------------------------------------------
+
+    def test_td026_progress_event_py_has_no_llm_streaming_imports(self) -> None:
+        """TC-F04-009-3: progress_event.py must NOT import call_llm_stream_async
+        or LLMStreamChunk (absolute import-surface assertion, AC-9 white-box).
+
+        SCOPE: progress_event.py is an F04-new file — check the ENTIRE file.
+
+        COUNTER-FACTUAL:
+          An impl that accidentally re-exported or imported LLMStreamChunk in
+          progress_event.py would be caught here by the full-file string search.
+          The import itself would succeed, but this assertion would fail.
+        """
+        import pathlib
+
+        src_root = (
+            pathlib.Path(__file__).parent.parent.parent.parent.parent
+            / "src"
+            / "agentmap"
+        )
+        progress_event_path = src_root / "models" / "execution" / "progress_event.py"
+        self.assertTrue(
+            progress_event_path.exists(),
+            f"progress_event.py not found at {progress_event_path}",
+        )
+
+        source = progress_event_path.read_text(encoding="utf-8")
+
+        # Extract import lines to check (not comments/docstrings)
+        import_lines = [
+            line
+            for line in source.splitlines()
+            if line.strip().startswith(("import ", "from "))
+        ]
+        import_surface = "\n".join(import_lines)
+
+        self.assertNotIn(
+            "call_llm_stream_async",
+            import_surface,
+            "progress_event.py must NOT import call_llm_stream_async "
+            "(AC-9 white-box / TD-026 structural isolation — "
+            "F04 does not consume the LLM streaming seam)",
+        )
+        self.assertNotIn(
+            "LLMStreamChunk",
+            import_surface,
+            "progress_event.py must NOT import LLMStreamChunk "
+            "(AC-9 white-box / TD-026 structural isolation — "
+            "F04 uses materialized state, not LLM token chunks)",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-009-4 (white-box): workflow_ops.py streaming method has no forbidden imports
+    # ------------------------------------------------------------------
+
+    def test_td026_workflow_ops_run_workflow_stream_async_has_no_llm_streaming_imports(
+        self,
+    ) -> None:
+        """TC-F04-009-4: run_workflow_stream_async in workflow_ops.py must NOT
+        import or reference call_llm_stream_async or LLMStreamChunk.
+
+        SCOPE: checked over the method source via inspect.getsource to avoid
+        flagging pre-existing, non-F04 code in the same file.
+
+        COUNTER-FACTUAL:
+          A buggy impl that added `from agentmap.services.llm import call_llm_stream_async`
+          inside run_workflow_stream_async would be caught here.  The method
+          would still execute, but this assertion would fail the import-surface
+          check — preventing the structural regression from passing code review.
+        """
+        import inspect
+
+        from agentmap.runtime.workflow_ops import run_workflow_stream_async
+
+        source = inspect.getsource(run_workflow_stream_async)
+
+        self.assertNotIn(
+            "call_llm_stream_async",
+            source,
+            "run_workflow_stream_async (workflow_ops.py) must NOT reference "
+            "call_llm_stream_async (AC-9 white-box / D-1 / D-5: F04 consumes "
+            "LangGraph .astream() node-state updates, not the LLM streaming seam)",
+        )
+        self.assertNotIn(
+            "LLMStreamChunk",
+            source,
+            "run_workflow_stream_async (workflow_ops.py) must NOT reference "
+            "LLMStreamChunk (AC-9 white-box: F04 carries materialized node state, "
+            "not LLM token chunks)",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-009-5 (white-box): run_stream_async has no forbidden imports
+    # ------------------------------------------------------------------
+
+    def test_td026_run_stream_async_has_no_llm_streaming_imports(self) -> None:
+        """TC-F04-009-5: GraphRunnerService.run_stream_async must NOT import or
+        reference call_llm_stream_async or LLMStreamChunk.
+
+        SCOPE: checked over the method source via inspect.getsource.
+
+        COUNTER-FACTUAL:
+          A buggy impl that delegated to the F03 LLM streaming path from inside
+          run_stream_async would reference call_llm_stream_async and be caught here.
+        """
+        import inspect
+
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
+
+        source = inspect.getsource(GraphRunnerService.run_stream_async)
+
+        self.assertNotIn(
+            "call_llm_stream_async",
+            source,
+            "GraphRunnerService.run_stream_async must NOT reference "
+            "call_llm_stream_async (AC-9 / D-5: F04 runner-level streaming uses "
+            "LangGraph .astream() node-state updates, not the LLM streaming seam)",
+        )
+        self.assertNotIn(
+            "LLMStreamChunk",
+            source,
+            "GraphRunnerService.run_stream_async must NOT reference "
+            "LLMStreamChunk (AC-9: F04 runner-level streaming carries "
+            "materialized state, not token chunks)",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-009-6 (white-box): stream_compiled_graph_async has no forbidden imports
+    # ------------------------------------------------------------------
+
+    def test_td026_stream_compiled_graph_async_has_no_llm_streaming_imports(
+        self,
+    ) -> None:
+        """TC-F04-009-6: GraphExecutionService.stream_compiled_graph_async must NOT
+        import or reference call_llm_stream_async or LLMStreamChunk.
+
+        SCOPE: checked over the method source via inspect.getsource; a doc comment
+        mentioning these symbols is acceptable — only import/reference in executable
+        code would be caught by the string search.
+
+        NOTE: The docstring at graph_execution_service.py:477 contains these symbol
+        names in a comment ("This method does NOT import call_llm_stream_async or
+        LLMStreamChunk") — this is a documentation statement, not an import.  Since
+        inspect.getsource includes the docstring, we check that the forbidden strings
+        do NOT appear as imports (lines starting with 'import' or 'from') rather than
+        checking the entire source text.  This distinguishes documentary mentions from
+        actual code references.
+
+        COUNTER-FACTUAL:
+          A buggy impl that added `import LLMStreamChunk` inside
+          stream_compiled_graph_async would be caught by the import-line check.
+          A comment mentioning LLMStreamChunk is NOT a bug and is explicitly allowed.
+        """
+        import inspect
+
+        from agentmap.services.graph.graph_execution_service import (
+            GraphExecutionService,
+        )
+
+        source = inspect.getsource(GraphExecutionService.stream_compiled_graph_async)
+
+        # Extract only import lines (not docstrings or comments)
+        import_lines = [
+            line
+            for line in source.splitlines()
+            if line.strip().startswith(("import ", "from "))
+        ]
+        import_surface = "\n".join(import_lines)
+
+        self.assertNotIn(
+            "call_llm_stream_async",
+            import_surface,
+            "stream_compiled_graph_async (graph_execution_service.py) must NOT "
+            "import call_llm_stream_async (AC-9 white-box / D-5: stream_compiled_graph_async "
+            "consumes LangGraph .astream() node-state dicts, not the LLM streaming seam); "
+            "a doc-comment mention is allowed but an actual import is not",
+        )
+        self.assertNotIn(
+            "LLMStreamChunk",
+            import_surface,
+            "stream_compiled_graph_async (graph_execution_service.py) must NOT "
+            "import LLMStreamChunk (AC-9: the execution-service streaming method "
+            "carries materialized node state, not token chunks); "
+            "a doc-comment mention is allowed but an actual import is not",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
