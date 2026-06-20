@@ -1696,10 +1696,12 @@ class GraphRunnerService:
                     sequence += 1
 
         except GraphInterrupt:
-            # Suspension: yield a suspended terminal event (REQ-F-007, AC-8b).
+            # Suspension: finalize tracker (AC-11), then yield a suspended terminal
+            # event (REQ-F-007, AC-8b).
             self.logger.info(
                 f"[GraphRunnerService] Streaming graph interrupted: {graph_name}"
             )
+            self._finalize_tracker_safe(execution_tracker)
             result_dict: Dict[str, Any] = {
                 "success": False,
                 "interrupted": True,
@@ -1727,11 +1729,12 @@ class GraphRunnerService:
             raise
 
         except Exception as exc:
-            # Mid-run failure: yield a failed terminal event (REQ-F-005, AC-5).
-            # No exception propagates out of the generator.
+            # Mid-run failure: finalize tracker (AC-11), then yield a failed terminal
+            # event (REQ-F-005, AC-5).  No exception propagates out of the generator.
             self.logger.error(
                 f"[GraphRunnerService] Streaming graph failed: {graph_name} — {exc}"
             )
+            self._finalize_tracker_safe(execution_tracker)
             error_str = str(exc)
             yield WorkflowProgressEvent(
                 event_type="failed",
