@@ -13,18 +13,19 @@ Design decisions (spec.md E06-F05):
   DEC-5  — Cancellation via async-generator lifecycle; rely on F04 finalization only.
   DEC-6  — Module-level asyncio.Semaphore for concurrency admission.
 
-T-002 scope: SSE framing helpers, concurrency semaphore, APIRouter declaration.
-T-003 scope: Route handler body — happy path, terminal events, router registration.
-T-004 scope: Client-disconnect cancel, duration cap, concurrency 503 gate.
-T-005 scope: Idle heartbeat, incremental delivery assurance.
+Scope by task: T-002 framing helpers + semaphore + router; T-003 handler happy
+path + terminal events + registration; T-004 disconnect cancel + duration cap +
+incremental delivery; T-005 idle heartbeat (AC-7) + concurrency 503 pre-open gate
+(AC-6) + auth rejection (AC-8), with pre-open ordering auth -> concurrency ->
+[unsupported-mode validation, added by T-006].
 """
 
 import asyncio
 import logging
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from agentmap.deployment.http.api.dependencies import (
     get_app_config_service,
@@ -32,19 +33,21 @@ from agentmap.deployment.http.api.dependencies import (
 )
 from agentmap.deployment.http.api.routes.execute import ExecuteRequest
 
-# SSE wire helpers + concurrency limiter live in sse.py so this module stays
-# under the 350-line limit (spec.md §A.1).  Re-aliased to the private names the
-# rest of this module — and the T-002 unit tests — reference.  _format_sse_heartbeat
-# and _stream_semaphore are re-exported here for the T-002 tests and T-005's
-# heartbeat/concurrency wiring (noqa F401: re-export, not dead code).
+# SSE wire helpers + projection + semaphore live in sse.py so this module stays
+# under the 350-line limit (spec.md §A.1), re-aliased to the private names this
+# module and the unit tests reference.  _to_serializable is a test-only re-export
+# (TestSSEModuleScaffold) — the projection that used it now lives in sse.py.
 from agentmap.deployment.http.api.sse import format_sse_event as _format_sse_event
-from agentmap.deployment.http.api.sse import (  # noqa: F401
+from agentmap.deployment.http.api.sse import (
     format_sse_heartbeat as _format_sse_heartbeat,
 )
-from agentmap.deployment.http.api.sse import (  # noqa: F401
-    stream_semaphore as _stream_semaphore,
+from agentmap.deployment.http.api.sse import (
+    project_event_to_sse as _project_event_to_sse,
 )
-from agentmap.deployment.http.api.sse import to_serializable as _to_serializable
+from agentmap.deployment.http.api.sse import stream_semaphore as _stream_semaphore
+from agentmap.deployment.http.api.sse import (  # noqa: F401
+    to_serializable as _to_serializable,
+)
 from agentmap.exceptions.runtime_exceptions import (
     AgentMapNotInitialized,
     GraphNotFound,
@@ -60,62 +63,23 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Streaming"])
 
-# Documented duration-cap error code surfaced as a terminal ``event: failed``
+# Documented duration-cap error code, surfaced as a terminal ``event: failed``
 # payload when the wall-clock cap is reached (spec.md §A.3 / §A.4, AC-5).
 _DURATION_EXCEEDED_ERROR = "stream_duration_exceeded"
 
-# Maximum time the read loop blocks on a single upstream event before waking to
-# re-check the disconnect flag and the wall-clock deadline.  This bounds how
-# promptly the duration cap and client-disconnect are observed; it is also the
-# seam T-005's idle heartbeat composes into (LOW-1 / INT-F05-3): the same wake
-# point that re-checks the deadline will emit a ``:keepalive`` comment when idle.
-# A timeout here does NOT cancel the in-flight upstream event (it is shielded) —
-# the loop simply wakes, re-checks, and resumes waiting on the same event.
+# Max time the loop blocks on one upstream event before waking to re-check the
+# disconnect flag, the deadline, and the heartbeat tick.  A timeout does NOT
+# cancel the in-flight event (it is shielded) — the loop wakes and resumes.
 _EVENT_POLL_INTERVAL_SECONDS = 1.0
 
-
-# ---------------------------------------------------------------------------
-# Graph identifier normalisation (mirrors execute.py pattern)
-# ---------------------------------------------------------------------------
+# Floor for the per-iteration wait budget (heartbeat_interval may be 0 in tests);
+# clamps ``asyncio.wait_for`` so it cannot busy-spin.
+_MIN_WAIT_BUDGET_SECONDS = 0.01
 
 
 def _normalize_graph_identifier(identifier: str) -> str:
-    """Normalize graph identifier to standard :: format."""
+    """Normalize graph identifier to standard :: format (mirrors execute.py)."""
     return identifier.replace("%3A%3A", "::").replace("/", "::")
-
-
-# ---------------------------------------------------------------------------
-# SSE event-stream generator
-# ---------------------------------------------------------------------------
-
-
-def _project_event_to_sse(event: Any) -> str:
-    """Project a WorkflowProgressEvent onto its SSE-framed wire string.
-
-    Maps the WorkflowProgressEvent.event_type directly to the SSE ``event:``
-    name (node_progress, completed, failed, suspended) and serialises the
-    populated fields as the compact ``data:`` JSON (spec.md §A.3).
-
-    _to_serializable handles dataclasses and datetime objects so the result
-    dict can always be JSON-serialised without further processing.
-    """
-    payload: Dict[str, Any] = {
-        "sequence": event.sequence,
-        "is_terminal": event.is_terminal,
-    }
-
-    if event.node_name is not None:
-        payload["node_name"] = event.node_name
-    if event.state_delta is not None:
-        payload["state_delta"] = _to_serializable(event.state_delta)
-    if event.node_duration is not None:
-        payload["node_duration"] = event.node_duration
-    if event.result is not None:
-        payload["result"] = _to_serializable(event.result)
-    if event.error is not None:
-        payload["error"] = event.error
-
-    return _format_sse_event(event.event_type, payload)
 
 
 async def _sse_generator(
@@ -124,32 +88,28 @@ async def _sse_generator(
     config_file: Optional[str],
     request: Request,
     max_stream_duration_seconds: float,
+    idle_timeout_seconds: float,
+    heartbeat_interval_seconds: float,
+    semaphore: Optional["asyncio.Semaphore"] = None,
 ) -> AsyncGenerator[str, None]:
     """Drive run_workflow_stream_async and frame output as SSE, with envelope.
 
-    The read loop is structured as per-event timed waits (LOW-1 / INT-F05-3):
-    each upstream event is awaited under ``asyncio.wait_for`` bounded by
-    ``_EVENT_POLL_INTERVAL_SECONDS``, so the loop wakes periodically to:
+    Per-event timed-wait loop (LOW-1 / INT-F05-3): each upstream event is awaited
+    under ``asyncio.wait_for`` (the in-flight ``__anext__`` is shielded so an idle
+    wake never cancels it), so the loop wakes periodically to (1) check
+    ``request.is_disconnected()`` and emit a best-effort ``cancelled`` (DRIFT-02:
+    the hard contract is upstream cancel + F04 finalization via aclose(), not the
+    wire event), (2) enforce the monotonic duration cap → terminal ``failed`` with
+    ``stream_duration_exceeded`` (AC-5 / DRIFT-03: ``failed``, not ``cancelled``),
+    and (3) emit an idle ``:keepalive`` SSE *comment* — never a typed event — once
+    ``idle_timeout_seconds`` has elapsed, at ``heartbeat_interval_seconds`` cadence
+    (AC-7); the duration deadline stays authoritative (heartbeats never extend it).
 
-      * check ``request.is_disconnected()`` — on client disconnect, stop pulling
-        from the upstream and emit a best-effort ``event: cancelled`` (DRIFT-02:
-        the hard contract is upstream cancellation + F04 tracker finalization,
-        which the ``finally`` aclose() guarantees, NOT the wire event); and
-      * enforce the wall-clock duration cap against a monotonic deadline
-        (``loop.time()``-based, never wall-clock now()) — on exceed, emit a
-        terminal ``event: failed`` with ``error: stream_duration_exceeded``
-        (AC-5 / DRIFT-03: ``failed``, not ``cancelled``).
-
-    A poll-interval timeout does NOT cancel the in-flight upstream event — the
-    pending ``__anext__`` is shielded so an idle interval (and, in T-005, a
-    heartbeat) never tears down the upstream generator.
-
-    Cancellation propagation (client disconnect surfaced as task cancellation,
-    or the StreamingResponse generator being closed) is re-raised after cleanup
-    — ``CancelledError``/``GeneratorExit`` must NOT be swallowed (F04-lesson).
-    On every exit path the ``finally`` block closes the upstream generator via
-    ``aclose()`` so F04's existing finalizer runs (DEC-5); F05 adds no third
-    finalization call.
+    ``CancelledError``/``GeneratorExit`` are re-raised after cleanup, never
+    swallowed (F04-lesson).  The ``finally`` closes the upstream via ``aclose()``
+    so F04's finalizer runs (DEC-5; F05 adds no third finalize) and releases the
+    pre-open concurrency ``semaphore`` slot exactly once on every exit path
+    (normal, disconnect, duration-cap, error) (DEC-6).
     """
     upstream = run_workflow_stream_async(
         graph_name=graph_name,
@@ -159,14 +119,19 @@ async def _sse_generator(
     )
 
     loop = asyncio.get_running_loop()
-    deadline = loop.time() + max_stream_duration_seconds
+    start = loop.time()
+    deadline = start + max_stream_duration_seconds
     pending: Optional["asyncio.Future[Any]"] = None
+
+    # Heartbeat bookkeeping (AC-7): idle window is measured from the last event
+    # (not stream start); last_heartbeat_time paces the keepalive cadence.
+    last_event_time = start
+    last_heartbeat_time = start
 
     try:
         while True:
-            # (1) Client-disconnect gate — checked BEFORE pulling the next event
-            #     so a disconnect stops the upstream rather than letting one more
-            #     node start (no orphaned work — AC-2).
+            # (1) Disconnect gate — checked BEFORE pulling the next event so a
+            #     disconnect stops the upstream, not one more node (no orphan, AC-2).
             if await request.is_disconnected():
                 logger.info(
                     "SSE stream cancelled: %s reason=client_disconnect", graph_name
@@ -197,19 +162,34 @@ async def _sse_generator(
                 )
                 return
 
-            # (3) Await the next upstream event, bounded so we wake to re-check
-            #     (1) and (2).  ``pending`` survives a timeout (shielded), so the
-            #     in-flight event is never cancelled by an idle wake.
+            # (3) Await the next event, bounded so we wake to re-check (1)/(2) and
+            #     pace heartbeats.  ``pending`` is shielded so it survives a wake.
             if pending is None:
                 pending = asyncio.ensure_future(upstream.__anext__())
 
+            # Wake at the soonest of: the deadline, the poll interval, and the
+            # next heartbeat tick (clamped to a positive floor for forward
+            # progress when heartbeat_interval is 0).
             budget = min(remaining, _EVENT_POLL_INTERVAL_SECONDS)
+            if heartbeat_interval_seconds > 0:
+                budget = min(budget, heartbeat_interval_seconds)
+            budget = max(budget, _MIN_WAIT_BUDGET_SECONDS)
+
             try:
                 event = await asyncio.wait_for(asyncio.shield(pending), budget)
             except asyncio.TimeoutError:
-                # Idle wake: re-loop to re-check disconnect + deadline. The
-                # shielded ``pending`` keeps running. (T-005 emits a heartbeat
-                # here when the idle window has elapsed.)
+                # Idle wake: emit a heartbeat comment if the idle window has
+                # elapsed and the cadence is due, then re-loop (pending survives).
+                now = loop.time()
+                idle_elapsed = now - last_event_time
+                since_last_heartbeat = now - last_heartbeat_time
+                if (
+                    idle_elapsed >= idle_timeout_seconds
+                    and since_last_heartbeat >= heartbeat_interval_seconds
+                ):
+                    last_heartbeat_time = now
+                    # AC-7: keepalive is an SSE *comment*, never a typed event.
+                    yield _format_sse_heartbeat()
                 continue
             except StopAsyncIteration:
                 # Upstream exhausted — F04 already emitted its terminal event.
@@ -217,6 +197,9 @@ async def _sse_generator(
                 return
 
             pending = None
+            # Reset the idle/heartbeat window: a real event just flowed.
+            last_event_time = loop.time()
+            last_heartbeat_time = last_event_time
             yield _project_event_to_sse(event)
 
     except asyncio.CancelledError:
@@ -225,22 +208,23 @@ async def _sse_generator(
         # finalizes the tracker (F04-lesson / REQ-F-003).
         raise
     finally:
-        # Close the upstream generator so F04's existing handler finalizes the
-        # execution tracker (DEC-5 — F05 adds no third finalize).
-        #
-        # If an event pull is still in flight (e.g. the duration cap fired while
-        # ``__anext__`` was awaiting), it must be cancelled AND awaited to
-        # completion first: aclose() raises "generator is already running" if a
-        # __anext__ coroutine for the same generator is still executing. Awaiting
-        # the cancelled future lets that __anext__ unwind (running the upstream's
-        # finally) before we aclose().
-        if pending is not None and not pending.done():
-            pending.cancel()
-            try:
-                await pending
-            except (asyncio.CancelledError, StopAsyncIteration):
-                pass
-        await upstream.aclose()
+        # Close the upstream so F04 finalizes the tracker (DEC-5 — no third
+        # finalize).  An in-flight ``__anext__`` (e.g. cap fired mid-await) must be
+        # cancelled AND awaited first: aclose() raises "generator is already
+        # running" while a __anext__ for the same generator is still executing.
+        try:
+            if pending is not None and not pending.done():
+                pending.cancel()
+                try:
+                    await pending
+                except (asyncio.CancelledError, StopAsyncIteration):
+                    pass
+            await upstream.aclose()
+        finally:
+            # Release the pre-open concurrency slot (DEC-6) exactly once, in its
+            # own finally so an aclose() failure can never leak it.
+            if semaphore is not None:
+                semaphore.release()
 
 
 # ---------------------------------------------------------------------------
@@ -255,19 +239,21 @@ async def stream_workflow(
     request_body: ExecuteRequest,
     request: Request,
 ) -> StreamingResponse:
-    """Run a workflow over the streaming path and return a text/event-stream response.
+    """Run a workflow over the streaming path; return a text/event-stream response.
 
-    Mirrors POST /execute/{graph_id:path} (execute.py) by appending /stream.
-    Reuses the same auth decorator, ExecuteRequest body, and graph_id
-    normalization (DEC-4).  Delegates to F04's run_workflow_stream_async.
+    Mirrors POST /execute/{graph_id:path} (execute.py) by appending /stream,
+    reusing the same auth decorator, ExecuteRequest body, and graph_id
+    normalization (DEC-4); delegates to F04's run_workflow_stream_async.  Pre-open
+    errors (auth 401/403, graph-not-found 404, invalid-inputs 400, not-initialized
+    503, concurrency 503) are ordinary JSON HTTP errors — identical shape to the
+    non-streaming endpoint (§A.3) — because the stream has not opened yet.
 
-    Pre-open errors (auth 401/403, graph-not-found 404, invalid-inputs 400,
-    not-initialized 503) are returned as ordinary JSON HTTP errors before the
-    stream opens — identical error shape to the non-streaming endpoint (§A.3).
-
-    The connection envelope's wall-clock duration cap and client-disconnect
-    cancellation are enforced inside the SSE generator (T-004).  Concurrency
-    admission (semaphore 503 gate) and the idle heartbeat are T-005.
+    Pre-open gate ordering (INT-F05-4): auth (the @requires_auth decorator, before
+    this body) → concurrency admission (semaphore 503) → [unsupported-mode
+    validation, slotted in by T-006] → open the stream.  A failed earlier gate
+    never reaches a later one (a 401 never attempts the acquire; a 503 never opens
+    a body).  The duration cap, disconnect cancel, and idle heartbeat live in the
+    generator.
     """
     config_file = getattr(request.app.state, "config_file", None)
     graph_name = _normalize_graph_identifier(graph_id)
@@ -279,46 +265,81 @@ async def stream_workflow(
             detail=f"Invalid graph identifier format: {graph_name}",
         )
 
-    # Validate request shape: streaming endpoint must not be called with
-    # batch-only or unsupported control parameters (REQ-F-006 / DEC-3).
-    # ExecuteRequest uses default Pydantic settings (extra fields forbidden via
-    # model_config if set, or FastAPI will pass them through — we rely on
-    # Pydantic's 422 for unknown fields when extra="forbid" is configured;
-    # no additional validation needed here beyond the known-field set).
+    # --- Unsupported-mode validation slot (T-006 / REQ-F-006 / AC-9) ----------
+    # T-006 adds the request-shape rejection (batch-only/unsupported params →
+    # 400/422, no silent downgrade) here — after auth, BEFORE the concurrency
+    # acquire below (so a rejected shape never holds a slot).  Left for T-006.
 
-    # Read the connection-envelope values at request time (not import time): the
-    # DI container is live here, so get_sse_config() reflects http.sse.* config
-    # with the §A.4 defaults applied.
+    # Envelope values are read at request time (live DI container), so
+    # get_sse_config() reflects http.sse.* with the §A.4 defaults applied.
     sse_config = get_app_config_service(request).get_sse_config()
     max_stream_duration_seconds = float(sse_config["max_stream_duration_seconds"])
+    idle_timeout_seconds = float(sse_config["idle_timeout_seconds"])
+    heartbeat_interval_seconds = float(sse_config["heartbeat_interval_seconds"])
+
+    # --- Concurrency gate (DEC-6 / REQ-F-004 / AC-6) --------------------------
+    # Non-blocking pre-open admission: a full pool → 503 JSON with NO slot consumed
+    # and NO event-stream body.  A blocking acquire would queue behind a held slot
+    # (forbidden — an immediate 503 is required), so guard with locked() first; in
+    # asyncio acquire() does not suspend when a slot is free, so there is no race
+    # between the locked() check and the acquire().
+    if _stream_semaphore.locked():
+        logger.warning("SSE stream rejected: max_concurrent_streams exceeded")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": (
+                    "Maximum concurrent streams reached; retry later "
+                    "(max_concurrent_streams exceeded)"
+                )
+            },
+        )
+    await _stream_semaphore.acquire()
 
     logger.info("Opening SSE stream for graph: %s", graph_name)
 
-    # Pre-open exception mapping — identical to execute.py:270-277.
-    # Errors raised here become JSON HTTP errors, not SSE events, because the
-    # StreamingResponse has not been created yet.
+    # From here the slot is held and MUST be released on every exit path.  On the
+    # success path the generator's finally owns the release (it runs on normal
+    # completion, disconnect, duration-cap, and error).  The ``handed_off`` flag +
+    # finally below guarantees the slot is freed if anything goes wrong *before*
+    # the StreamingResponse is returned (so the generator's finally would never
+    # run) — without a broad except-and-reraise.
+    handed_off = False
     try:
-        # Build the SSE generator (lazy — no F04 calls until iteration starts).
-        gen = _sse_generator(
-            graph_name,
-            request_body,
-            config_file,
-            request,
-            max_stream_duration_seconds,
-        )
-    except GraphNotFound as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except InvalidInputs as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except AgentMapNotInitialized as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        # Pre-open exception mapping — identical to execute.py:270-277.  These
+        # surface as JSON HTTP errors (not SSE events) because the
+        # StreamingResponse has not been created yet.
+        try:
+            # Build the generator (lazy — no F04 calls until iteration starts).
+            gen = _sse_generator(
+                graph_name,
+                request_body,
+                config_file,
+                request,
+                max_stream_duration_seconds,
+                idle_timeout_seconds,
+                heartbeat_interval_seconds,
+                semaphore=_stream_semaphore,
+            )
+        except GraphNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except InvalidInputs as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except AgentMapNotInitialized as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
 
-    return StreamingResponse(
-        gen,
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+        response = StreamingResponse(
+            gen,
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+        # Ownership of the slot now belongs to the generator's finally.
+        handed_off = True
+        return response
+    finally:
+        if not handed_off:
+            _stream_semaphore.release()

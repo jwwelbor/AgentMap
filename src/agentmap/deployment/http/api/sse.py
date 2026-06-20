@@ -105,3 +105,30 @@ def to_serializable(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [to_serializable(item) for item in value]
     return value
+
+
+def project_event_to_sse(event: Any) -> str:
+    """Project a WorkflowProgressEvent onto its SSE-framed wire string.
+
+    Maps ``event.event_type`` directly to the SSE ``event:`` name (node_progress,
+    completed, failed, suspended) and serialises only the populated fields as the
+    compact ``data:`` JSON (spec.md §A.3).  ``to_serializable`` handles dataclasses
+    and datetimes so the payload is always JSON-serialisable.
+    """
+    payload: Dict[str, Any] = {
+        "sequence": event.sequence,
+        "is_terminal": event.is_terminal,
+    }
+
+    if event.node_name is not None:
+        payload["node_name"] = event.node_name
+    if event.state_delta is not None:
+        payload["state_delta"] = to_serializable(event.state_delta)
+    if event.node_duration is not None:
+        payload["node_duration"] = event.node_duration
+    if event.result is not None:
+        payload["result"] = to_serializable(event.result)
+    if event.error is not None:
+        payload["error"] = event.error
+
+    return format_sse_event(event.event_type, payload)

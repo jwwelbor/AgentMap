@@ -28,6 +28,7 @@ from fastapi import FastAPI
 from agentmap.deployment.http.api.routes.execute import router as execution_router
 from agentmap.deployment.http.api.routes.stream import router as stream_router
 from agentmap.models.execution.progress_event import WorkflowProgressEvent
+from agentmap.services.auth_service import AuthContext
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -164,6 +165,8 @@ def _make_blocking_stream(
 def _make_test_app(
     auth_enabled: bool = False,
     sse_config: Optional[Dict[str, Any]] = None,
+    auth_context: Optional[Any] = None,
+    public_endpoints: Optional[List[str]] = None,
 ) -> FastAPI:
     """Create a minimal FastAPI app with both execute and stream routers.
 
@@ -177,6 +180,14 @@ def _make_test_app(
     stream_router must be registered before execution_router: the execute router
     has a greedy {graph_id:path} parameter that would otherwise match
     POST /execute/{graph_id}/stream before the stream router can.
+
+    Auth wiring (TC-F05-008): ``requires_auth("execute")`` runs against the REAL
+    decorator (never mocked — DRIFT-05).  It calls ``auth_service``'s
+    ``is_authentication_enabled()``, ``get_public_endpoints()`` and one of the
+    ``validate_*`` token methods.  When ``auth_enabled`` is True the test injects
+    the ``auth_context`` that token validation should return (so the decorator's
+    real 401/403 logic exercises), and ``public_endpoints`` (default empty so the
+    stream path is NOT public — a no-token request is a genuine 401).
     """
     app = FastAPI()
     app.include_router(stream_router)
@@ -189,6 +200,14 @@ def _make_test_app(
     mock_container = MagicMock()
     mock_auth_service = MagicMock()
     mock_auth_service.is_authentication_enabled.return_value = auth_enabled
+    # get_public_endpoints() must return a real list — the decorator iterates it.
+    mock_auth_service.get_public_endpoints.return_value = public_endpoints or []
+    # All token-validation paths return the injected auth_context (or an
+    # unauthenticated context if none supplied → real 401 from the decorator).
+    if auth_context is not None:
+        mock_auth_service.validate_api_key.return_value = auth_context
+        mock_auth_service.validate_jwt.return_value = auth_context
+        mock_auth_service.validate_supabase_token.return_value = auth_context
     mock_container.auth_service.return_value = mock_auth_service
     mock_container.app_config_service.return_value.get_sse_config.return_value = (
         merged_sse
@@ -1226,6 +1245,346 @@ class TestSSEStreamEnvelope(IsolatedAsyncioTestCase):
             "A stream completing within the cap must not emit a duration-cap error",
         )
 
+    # ------------------------------------------------------------------
+    # TC-F05-007 — Idle heartbeat is an SSE comment, never a typed event
+    # ------------------------------------------------------------------
+    #
+    # Caller-path contract (test-plan.md TC-F05-007 / INT-F05-3):
+    #   ENTRYPOINT: POST /execute/{graph_id}/stream with idle_timeout_seconds=0
+    #     (heartbeat engages immediately) and a small heartbeat_interval; the fake
+    #     upstream yields n1 then holds (gated) before the terminal so the route is
+    #     idle and must emit keepalive comments.
+    #   LOWEST ALLOWED MOCK SEAM: get_sse_config() injects the heartbeat envelope;
+    #     the fake run_workflow_stream_async yields n1, waits on a gate, then yields
+    #     the terminal.  Timing is made DETERMINISTIC by the gate (no real sleep):
+    #     the driver releases the gate only AFTER it has observed a ':keepalive'
+    #     comment chunk, so at least one heartbeat is guaranteed without racing the
+    #     wall clock.
+    #   FORBIDDEN MOCKS: the heartbeat emission itself — the route must produce the
+    #     real ':keepalive\\n\\n' comment through the real StreamingResponse.
+    #   COUNTER-FACTUAL: an impl that emits 'event: heartbeat\\ndata: ...' (a typed
+    #     event) instead of a comment would add a third typed event between n1 and
+    #     the terminal → the "exactly 2 typed events" assertion fails. An impl that
+    #     never emits a heartbeat would hang on the gate (the driver only releases
+    #     after seeing a keepalive) → the bounded run trips its timeout and fails.
+
+    def _heartbeat_app(self) -> FastAPI:
+        return _make_test_app(
+            sse_config={
+                # Heartbeat engages immediately (no idle grace) and fires fast so
+                # at least one keepalive is produced while the upstream is gated.
+                "idle_timeout_seconds": 0,
+                "heartbeat_interval_seconds": 0.05,
+                "max_stream_duration_seconds": 1800,
+            }
+        )
+
+    async def _run_heartbeat_stream(self) -> bytes:
+        """Yield n1, idle (gated) until a heartbeat is observed, then terminal.
+
+        Returns the full raw SSE body.  The gate is released by the driver the
+        moment a ':keepalive' comment chunk is seen, so the heartbeat path is
+        exercised deterministically and the stream then completes promptly.
+        """
+        app = self._heartbeat_app()
+        terminal_gate = asyncio.Event()
+        n1 = self._make_n1()
+        terminal = WorkflowProgressEvent(
+            event_type="completed",
+            sequence=1,
+            is_terminal=True,
+            result={"success": True, "outputs": {"n1": "result-n1"}},
+        )
+
+        def _factory(*_a, **_kw):
+            async def _gen():
+                yield n1
+                # Idle window: the route has no upstream event to forward, so it
+                # must emit heartbeat comments until the gate releases.
+                await terminal_gate.wait()
+                yield terminal
+
+            return _gen()
+
+        driver = SseAsgiDriver(app, "/execute/slow-workflow/stream")
+
+        def _on_body(chunk: bytes) -> bool:
+            if b":keepalive" in chunk and not terminal_gate.is_set():
+                terminal_gate.set()
+            return False  # never disconnect
+
+        try:
+            with patch(
+                "agentmap.deployment.http.api.routes.stream."
+                "run_workflow_stream_async",
+                side_effect=_factory,
+            ):
+                # A working heartbeat releases the gate quickly; a missing
+                # heartbeat hangs on the gate and trips this bound (loud failure,
+                # not a suite hang).
+                await asyncio.wait_for(driver.run(_on_body), timeout=5)
+        finally:
+            terminal_gate.set()
+            await asyncio.sleep(0)
+
+        return driver.raw_body
+
+    async def test_heartbeat_emits_keepalive_comment(self):
+        """Raw SSE bytes must contain at least one ':keepalive' comment (AC-7)."""
+        raw = await self._run_heartbeat_stream()
+        comment_lines = [line for line in raw.split(b"\n") if line.startswith(b":")]
+        self.assertTrue(
+            any(b":keepalive" in line for line in comment_lines),
+            f"Expected a ':keepalive' comment line in the stream, got: {raw!r}",
+        )
+
+    async def test_heartbeat_is_not_a_typed_event(self):
+        """Only node_progress + completed are typed events; heartbeat is not (AC-7).
+
+        Counter-factual: an impl emitting 'event: heartbeat' would make this 3.
+        """
+        raw = await self._run_heartbeat_stream()
+        events = parse_sse_bytes(raw)
+        event_names = [e.event_name for e in events]
+        self.assertEqual(
+            event_names,
+            ["node_progress", "completed"],
+            f"Heartbeat must not appear as a typed event; got: {event_names}",
+        )
+
+    async def test_heartbeat_has_no_data_line(self):
+        """Heartbeat is a bare comment — it must not carry a 'data:' field (AC-7)."""
+        raw = await self._run_heartbeat_stream()
+        # Find the keepalive comment and confirm the surrounding framing carries
+        # no 'data:' for it (a comment block is just ':keepalive\n\n').
+        text = raw.decode("utf-8", errors="replace")
+        self.assertIn(":keepalive", text)
+        # No typed event named 'heartbeat'/'keepalive' may exist.
+        self.assertNotIn("event: heartbeat", text)
+        self.assertNotIn("event: keepalive", text)
+
+    async def test_heartbeat_stream_completes_with_terminal(self):
+        """The connection stays alive through the idle window and then terminates.
+
+        The heartbeat is a keepalive, NOT a kill switch: after the idle window the
+        terminal still arrives and the stream closes cleanly.
+        """
+        raw = await self._run_heartbeat_stream()
+        events = parse_sse_bytes(raw)
+        self.assertEqual(events[-1].event_name, "completed")
+        self.assertTrue(events[-1].data.get("is_terminal"))
+
+    # ------------------------------------------------------------------
+    # TC-F05-006 — Concurrency limit: 503 JSON pre-open; slot not consumed
+    # ------------------------------------------------------------------
+    #
+    # Caller-path contract (test-plan.md TC-F05-006 / DRIFT-04 / INT-F05-4):
+    #   ENTRYPOINT: POST /execute/{graph_id}/stream when the module-level
+    #     asyncio.Semaphore has no free slot (one stream already holds the only
+    #     slot with max_concurrent_streams=1).
+    #   LOWEST ALLOWED MOCK SEAM: hold the single slot by keeping one real stream
+    #     open (a gated, never-completing fake) during the second request — the
+    #     real pre-open semaphore check executes.  We rebind the module semaphore
+    #     to capacity 1 for the test and restore it in finally (the production
+    #     default is 100, impractical to fill by holding 100 connections).
+    #   FORBIDDEN MOCKS: the semaphore logic itself; the pre-open admission must
+    #     run for real.
+    #   COUNTER-FACTUAL: an impl that opens the SSE body THEN checks concurrency
+    #     cannot return 503 (status is fixed once the body starts) → the rejected
+    #     response would be text/event-stream, not application/json. An impl using
+    #     a BLOCKING acquire would make the second request hang waiting for the
+    #     held slot instead of returning 503 → the bounded wait_for trips.
+
+    def _patch_semaphore(self, capacity: int):
+        """Rebind stream._stream_semaphore to *capacity*; return a restorer.
+
+        The module aliases the semaphore from sse.py, so the route reads
+        ``stream._stream_semaphore``.  Rebinding that attribute is the documented
+        fallback in the test plan (Codex finding #3) when holding the full default
+        pool (100) is impractical.
+        """
+        import agentmap.deployment.http.api.routes.stream as stream_module
+
+        original = stream_module._stream_semaphore
+        stream_module._stream_semaphore = asyncio.Semaphore(capacity)
+        self.addCleanup(setattr, stream_module, "_stream_semaphore", original)
+        return stream_module
+
+    async def test_concurrency_limit_returns_503_json_pre_open(self):
+        """Second concurrent stream over the limit → 503 application/json (AC-6)."""
+        stream_module = self._patch_semaphore(1)
+        app = _make_test_app()
+
+        held_open = asyncio.Event()  # keeps the first stream occupying the slot
+        first_started = asyncio.Event()
+
+        def _holding_factory(*_a, **_kw):
+            async def _gen():
+                first_started.set()
+                yield self._make_n1()
+                await held_open.wait()  # hold the slot until the test releases it
+
+            return _gen()
+
+        async def _completing_factory_call(*_a, **_kw):
+            # Second request's upstream should never be reached (rejected pre-open)
+            async def _gen():
+                yield self._make_n1()
+
+            return _gen()
+
+        first_driver = SseAsgiDriver(app, "/execute/wf-a/stream")
+        first_task = None
+        try:
+            with patch(
+                "agentmap.deployment.http.api.routes.stream."
+                "run_workflow_stream_async",
+                side_effect=_holding_factory,
+            ):
+                # Open the first stream and keep it open (it holds the only slot).
+                first_task = asyncio.ensure_future(first_driver.run(lambda _c: False))
+                await asyncio.wait_for(first_started.wait(), timeout=5)
+                # Sanity: the slot is now consumed.
+                self.assertEqual(stream_module._stream_semaphore._value, 0)
+
+                # Second request must be rejected pre-open with 503 JSON.
+                with patch(
+                    "agentmap.deployment.http.api.routes.stream."
+                    "run_workflow_stream_async",
+                    side_effect=_completing_factory_call,
+                ) as second_upstream:
+                    status, headers, body = await asyncio.wait_for(
+                        _collect_sse_response(app, "/execute/wf-b/stream"),
+                        timeout=5,
+                    )
+
+                self.assertEqual(status, 503)
+                self.assertIn("application/json", headers.get("content-type", ""))
+                self.assertNotIn("text/event-stream", headers.get("content-type", ""))
+                self.assertNotIn(b"event:", body)
+                # Pre-open rejection: the upstream facade is never invoked.
+                second_upstream.assert_not_called()
+        finally:
+            held_open.set()
+            if first_task is not None:
+                await asyncio.wait_for(first_task, timeout=5)
+
+    async def test_concurrency_rejection_does_not_consume_slot(self):
+        """After a 503, the held slot is unchanged and a later stream succeeds (AC-6).
+
+        This proves the rejection consumed no slot: once the holder releases, the
+        single slot is free again and a fresh request opens normally.
+        """
+        stream_module = self._patch_semaphore(1)
+        app = _make_test_app()
+
+        held_open = asyncio.Event()
+        first_started = asyncio.Event()
+
+        def _holding_factory(*_a, **_kw):
+            async def _gen():
+                first_started.set()
+                yield self._make_n1()
+                await held_open.wait()
+
+            return _gen()
+
+        first_driver = SseAsgiDriver(app, "/execute/wf-a/stream")
+        first_task = None
+        try:
+            with patch(
+                "agentmap.deployment.http.api.routes.stream."
+                "run_workflow_stream_async",
+                side_effect=_holding_factory,
+            ):
+                first_task = asyncio.ensure_future(first_driver.run(lambda _c: False))
+                await asyncio.wait_for(first_started.wait(), timeout=5)
+
+                value_before = stream_module._stream_semaphore._value
+                status, _, _ = await asyncio.wait_for(
+                    _collect_sse_response(app, "/execute/wf-b/stream"),
+                    timeout=5,
+                )
+                self.assertEqual(status, 503)
+                value_after = stream_module._stream_semaphore._value
+                self.assertEqual(
+                    value_before,
+                    value_after,
+                    "A rejected (503) request must not consume a stream slot",
+                )
+        finally:
+            held_open.set()
+            if first_task is not None:
+                await asyncio.wait_for(first_task, timeout=5)
+
+        # Holder released → slot free → a fresh stream must succeed (200).
+        self.assertEqual(stream_module._stream_semaphore._value, 1)
+        terminal = WorkflowProgressEvent(
+            event_type="completed",
+            sequence=0,
+            is_terminal=True,
+            result={"success": True},
+        )
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=lambda *a, **kw: _make_fake_stream(terminal),
+        ):
+            status2, headers2, _ = await _collect_sse_response(
+                app, "/execute/wf-c/stream"
+            )
+        self.assertEqual(status2, 200)
+        self.assertIn("text/event-stream", headers2.get("content-type", ""))
+
+    async def test_under_limit_request_succeeds(self):
+        """Sub-case A (N-1=0 active): a request with a free slot opens normally."""
+        self._patch_semaphore(1)
+        app = _make_test_app()
+        terminal = WorkflowProgressEvent(
+            event_type="completed",
+            sequence=0,
+            is_terminal=True,
+            result={"success": True},
+        )
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=lambda *a, **kw: _make_fake_stream(terminal),
+        ):
+            status, headers, _ = await _collect_sse_response(app, "/execute/wf/stream")
+        self.assertEqual(status, 200)
+        self.assertIn("text/event-stream", headers.get("content-type", ""))
+
+    async def test_slot_released_after_normal_completion(self):
+        """The slot is released in finally after a normal stream completes (AC-6 maint).
+
+        Two sequential streams on a capacity-1 pool both succeed: if the first did
+        not release its slot, the second would 503.
+        """
+        stream_module = self._patch_semaphore(1)
+        app = _make_test_app()
+        terminal = WorkflowProgressEvent(
+            event_type="completed",
+            sequence=0,
+            is_terminal=True,
+            result={"success": True},
+        )
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=lambda *a, **kw: _make_fake_stream(terminal),
+        ):
+            status1, _, _ = await _collect_sse_response(app, "/execute/wf1/stream")
+            self.assertEqual(status1, 200)
+            self.assertEqual(
+                stream_module._stream_semaphore._value,
+                1,
+                "Slot must be released after the first stream completes",
+            )
+            status2, _, _ = await _collect_sse_response(app, "/execute/wf2/stream")
+            self.assertEqual(
+                status2,
+                200,
+                "Second sequential stream must succeed (slot was released)",
+            )
+
 
 # ---------------------------------------------------------------------------
 # TC-F05-012 — First node event reaches client BEFORE workflow completes
@@ -1383,6 +1742,207 @@ class TestSSEStreamIncrementalDelivery(IsolatedAsyncioTestCase):
 
         self.assertIn("text/event-stream", headers.get("content-type", ""))
         self.assertNotIn("gzip", headers.get("content-encoding", ""))
+
+
+# ---------------------------------------------------------------------------
+# TC-F05-008 — Auth rejection: 401/403 pre-open, parity with non-streaming
+# ---------------------------------------------------------------------------
+
+
+class TestSSEStreamAuth(IsolatedAsyncioTestCase):
+    """TC-F05-008 (EP classes A-E) + INT-F05-4 gate ordering (auth before concurrency).
+
+    Caller-path contract (test-plan.md TC-F05-008 / DRIFT-05 / INT-F05-4):
+      ENTRYPOINT: POST /execute/{graph_id}/stream with varying auth headers; the
+        REAL @requires_auth("execute") decorator must run and reject BEFORE the
+        handler body (and before the concurrency acquire).
+      LOWEST ALLOWED MOCK SEAM: a fake AuthService on app.state.container whose
+        is_authentication_enabled() / validate_* / get_public_endpoints() drive
+        the real decorator logic per sub-case.
+      FORBIDDEN MOCKS: requires_auth itself (it must execute the real 401/403
+        branches).
+      COUNTER-FACTUAL: an impl missing the decorator (or applying auth inside the
+        generator) would return 200 + text/event-stream instead of 401/403 → the
+        status assertions fail.  An impl that acquires a concurrency slot before
+        auth would let a 503 win over a 401 in the ordering test.
+    """
+
+    @staticmethod
+    def _terminal_factory(*_a, **_kw):
+        """Upstream that should run only when auth passes (sub-cases D/E)."""
+
+        async def _gen():
+            yield WorkflowProgressEvent(
+                event_type="completed",
+                sequence=0,
+                is_terminal=True,
+                result={"success": True, "outputs": {}},
+            )
+
+        return _gen()
+
+    async def _post(
+        self,
+        app: FastAPI,
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        path: str = "/execute/any-graph/stream",
+        body: Optional[Dict[str, Any]] = None,
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            return await client.post(path, json=body or {"inputs": {}}, headers=headers)
+
+    # --- Sub-case A: no token, auth enabled → 401 ---
+
+    async def test_no_token_returns_401_pre_open(self):
+        """Auth enabled + no token → 401 application/json, no SSE opened (AC-8 A)."""
+        app = _make_test_app(auth_enabled=True)
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._terminal_factory,
+        ) as upstream:
+            response = await self._post(app)
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("application/json", response.headers.get("content-type", ""))
+        self.assertNotIn("text/event-stream", response.headers.get("content-type", ""))
+        self.assertNotIn(b"event:", response.content)
+        upstream.assert_not_called()
+
+    async def test_no_token_sets_www_authenticate_header(self):
+        """401 must carry WWW-Authenticate: Bearer (AC-8 A)."""
+        app = _make_test_app(auth_enabled=True)
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._terminal_factory,
+        ):
+            response = await self._post(app)
+        self.assertEqual(response.headers.get("www-authenticate"), "Bearer")
+
+    # --- Sub-case B: invalid token → 401 ---
+
+    async def test_invalid_token_returns_401(self):
+        """Auth enabled + invalid API key (unauthenticated context) → 401 (AC-8 B)."""
+        invalid_ctx = AuthContext(authenticated=False, auth_method="api_key")
+        app = _make_test_app(auth_enabled=True, auth_context=invalid_ctx)
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._terminal_factory,
+        ) as upstream:
+            response = await self._post(app, headers={"X-API-Key": "bad-key"})
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn("text/event-stream", response.headers.get("content-type", ""))
+        upstream.assert_not_called()
+
+    # --- Sub-case C: valid token, no execute permission → 403 ---
+
+    async def test_valid_token_without_execute_permission_returns_403(self):
+        """Auth enabled + valid token lacking 'execute' → 403, no stream (AC-8 C)."""
+        ctx = AuthContext(
+            authenticated=True,
+            auth_method="api_key",
+            user_id="u1",
+            permissions=["read"],  # no 'execute', no 'admin'
+        )
+        app = _make_test_app(auth_enabled=True, auth_context=ctx)
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._terminal_factory,
+        ) as upstream:
+            response = await self._post(app, headers={"X-API-Key": "valid-key"})
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("application/json", response.headers.get("content-type", ""))
+        self.assertNotIn("text/event-stream", response.headers.get("content-type", ""))
+        upstream.assert_not_called()
+
+    # --- Sub-case D: auth disabled → 200 stream ---
+
+    async def test_auth_disabled_opens_stream_200(self):
+        """Auth disabled → stream opens 200 text/event-stream (AC-8 D)."""
+        app = _make_test_app(auth_enabled=False)
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._terminal_factory,
+        ):
+            response = await self._post(app)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/event-stream", response.headers.get("content-type", ""))
+
+    # --- Sub-case E: valid token + execute permission → 200 stream ---
+
+    async def test_valid_token_with_execute_permission_opens_stream(self):
+        """Auth enabled + valid token with 'execute' → 200 stream (AC-8 E)."""
+        ctx = AuthContext(
+            authenticated=True,
+            auth_method="api_key",
+            user_id="u1",
+            permissions=["execute"],
+        )
+        app = _make_test_app(auth_enabled=True, auth_context=ctx)
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._terminal_factory,
+        ):
+            response = await self._post(app, headers={"X-API-Key": "valid-key"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/event-stream", response.headers.get("content-type", ""))
+
+    # --- Parity with the non-streaming endpoint ---
+
+    async def test_401_parity_with_non_streaming_endpoint(self):
+        """The streaming 401 status + WWW-Authenticate must match /execute (AC-8)."""
+        app = _make_test_app(auth_enabled=True)
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._terminal_factory,
+        ):
+            stream_resp = await self._post(app)
+        # Same app, same auth config, non-streaming endpoint, no token.
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            exec_resp = await client.post("/execute/any-graph", json={"inputs": {}})
+
+        self.assertEqual(stream_resp.status_code, exec_resp.status_code)
+        self.assertEqual(stream_resp.status_code, 401)
+        self.assertEqual(
+            stream_resp.headers.get("www-authenticate"),
+            exec_resp.headers.get("www-authenticate"),
+        )
+
+    # --- INT-F05-4: gate ordering — auth runs before the concurrency gate ---
+
+    async def test_auth_checked_before_concurrency_gate(self):
+        """A request with BOTH bad auth AND a full pool returns 401, not 503.
+
+        INT-F05-4 ordering guarantee: auth → concurrency.  We exhaust the
+        semaphore (capacity 0) AND send no token; the auth decorator must reject
+        with 401 before the handler ever attempts the (failing) concurrency
+        acquire that would otherwise yield 503.
+
+        Counter-factual: an impl that acquires the slot before running auth would
+        return 503 here (the pool is empty), failing the 401 assertion.
+        """
+        import agentmap.deployment.http.api.routes.stream as stream_module
+
+        original = stream_module._stream_semaphore
+        stream_module._stream_semaphore = asyncio.Semaphore(0)  # no slots at all
+        self.addCleanup(setattr, stream_module, "_stream_semaphore", original)
+
+        app = _make_test_app(auth_enabled=True)
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._terminal_factory,
+        ) as upstream:
+            response = await self._post(app)  # no token
+
+        self.assertEqual(
+            response.status_code,
+            401,
+            "Auth must be evaluated before the concurrency gate (401 wins over 503)",
+        )
+        upstream.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
