@@ -1165,6 +1165,165 @@ class GraphRunnerService:
                 validate_agents,
             )
 
+    async def _assemble_for_async_run(
+        self,
+        bundle: GraphBundle,
+        initial_state: dict,
+        validate_agents: bool,
+    ) -> tuple:
+        """Shared assembly helper for async run paths (D-7 extract).
+
+        Covers phases 2–5 of the async pipeline — scoped registry creation,
+        execution tracker creation, subgraph bundle resolution, agent
+        instantiation (+ optional validation), async graph assembly, and
+        checkpoint config derivation — so that both ``_run_core_async`` and
+        the upcoming ``run_stream_async`` share identical assembly behaviour
+        with no code duplication.
+
+        This is a pure refactor of what ``_run_core_async`` previously did
+        inline; no behavioral change to the non-streaming path (REQ-NF-001,
+        AC-10, T-E06-F04-003).
+
+        Args:
+            bundle: Prepared GraphBundle with all metadata.
+            initial_state: Initial state dict for the run (used to pre-resolve
+                subgraph bundles).
+            validate_agents: If True, validate agent instantiation and raise
+                RuntimeError on failure.
+
+        Returns:
+            A 4-tuple ``(executable_graph, execution_tracker,
+            execution_config, requires_checkpoint)`` where:
+
+            - ``executable_graph``: the compiled LangGraph graph object ready
+              for ``ainvoke`` / ``astream``.
+            - ``execution_tracker``: the execution tracker for this run.
+            - ``execution_config``: ``{"configurable": {"thread_id": ...}}``
+              when checkpoint support is active, otherwise ``None``.
+            - ``requires_checkpoint``: ``True`` when the bundle requires
+              checkpoint support, ``False`` otherwise.
+
+        Raises:
+            RuntimeError: If agent instantiation validation fails, if
+                checkpoint mode is required but no thread_id is available,
+                or if no agent instances are found in the bundle.
+        """
+        graph_name = bundle.graph_name or ""
+
+        # Phase 2: Create isolated scoped registry for this run.
+        # NOTE: scoped_registry is stored in a run-local variable only.
+        # Writing it back to the shared ``bundle`` object is concurrency-
+        # unsafe: two concurrent run_async calls on the same bundle would
+        # overwrite each other's registry (NB-B / AC-009 fix).
+        self._record_phase_event("workflow.phase.registry_creation")
+        self.logger.debug(
+            f"[GraphRunnerService] Async Phase 2: Creating scoped registry "
+            f"for {graph_name}"
+        )
+        scoped_registry = self.declaration_registry.create_scoped_registry_for_bundle(
+            bundle
+        )
+        # Do NOT write back to bundle.scoped_registry (concurrency safety).
+        self.logger.debug(
+            f"[GraphRunnerService] Scoped registry created with "
+            f"{len(scoped_registry.get_all_agent_types())} agents and "
+            f"{len(scoped_registry.get_all_service_names())} services"
+        )
+
+        # Phase 3: Create execution tracker
+        self._record_phase_event("workflow.phase.tracker_creation")
+        self.logger.debug(
+            "[GraphRunnerService] Async Phase 3: Setting up execution tracking"
+        )
+        execution_tracker = self.execution_tracking.create_tracker()
+
+        # Phase 3.5: Pre-resolve subgraph bundles
+        self._resolve_subgraph_bundles(bundle, initial_state)
+
+        # Phase 4: Instantiate agents
+        self._record_phase_event("workflow.phase.agent_instantiation")
+        self.logger.debug(
+            f"[GraphRunnerService] Async Phase 4: Instantiating agents "
+            f"for {graph_name}"
+        )
+        bundle_with_instances = self.graph_instantiation.instantiate_agents(
+            bundle, execution_tracker
+        )
+
+        if validate_agents:
+            validation = self.graph_instantiation.validate_instantiation(
+                bundle_with_instances
+            )
+            if not validation["valid"]:
+                raise RuntimeError(
+                    f"Agent instantiation validation failed: {validation}"
+                )
+
+        # Phase 5: Assembly — async path
+        self._record_phase_event("workflow.phase.graph_assembly")
+        self.logger.debug(
+            f"[GraphRunnerService] Async Phase 5: Assembling graph " f"for {graph_name}"
+        )
+
+        from agentmap.models.graph import Graph
+
+        graph = Graph(
+            name=bundle_with_instances.graph_name or "",
+            nodes=bundle_with_instances.nodes or {},
+            entry_point=bundle_with_instances.entry_point,
+        )
+
+        if not bundle_with_instances.node_instances:
+            raise RuntimeError("No agent instances found in bundle.node_registry")
+
+        node_definitions = create_node_registry_from_bundle(
+            bundle_with_instances, self.logger
+        )
+
+        requires_checkpoint = self.graph_bundle_service.requires_checkpoint_support(
+            bundle
+        )
+
+        execution_config = None
+
+        if requires_checkpoint:
+            thread_id = getattr(execution_tracker, "thread_id", None)
+            if not thread_id:
+                raise RuntimeError(
+                    "Checkpoint execution requires execution tracker with thread_id"
+                )
+
+            execution_config = {"configurable": {"thread_id": thread_id}}
+            self.logger.debug(
+                f"[GraphRunnerService] Async assembling graph '{graph_name}' "
+                f"WITH checkpoint support (thread_id={thread_id})"
+            )
+            executable_graph = self.graph_assembly.assemble_with_checkpoint_async(
+                graph=graph,
+                agent_instances=bundle_with_instances.node_instances,
+                node_definitions=node_definitions,
+                checkpointer=self.graph_checkpoint,
+            )
+        else:
+            self.logger.debug(
+                f"[GraphRunnerService] Async assembling graph '{graph_name}' "
+                f"WITHOUT checkpoint support"
+            )
+            executable_graph = self.graph_assembly.assemble_graph_async(
+                graph=graph,
+                agent_instances=bundle_with_instances.node_instances,
+                orchestrator_node_registry=node_definitions,
+            )
+
+        self.logger.debug("[GraphRunnerService] Async graph assembly completed")
+
+        return (
+            executable_graph,
+            execution_tracker,
+            execution_config,
+            requires_checkpoint,
+        )
+
     async def _run_core_async(
         self,
         bundle: GraphBundle,
@@ -1178,119 +1337,28 @@ class GraphRunnerService:
 
         Mirrors ``_run_core`` phase-by-phase, substituting async assembly
         and async execution calls (REQ-F-004, REQ-NF-002).
+
+        Phases 2–5 (scoped registry → tracker → subgraph bundles → agent
+        instantiation → async assembly → checkpoint config) are delegated to
+        ``_assemble_for_async_run`` so that the streaming sibling method
+        can share identical assembly behaviour (D-7 extract, T-E06-F04-003).
         """
         graph_name = bundle.graph_name or ""
         execution_tracker = None
         executable_graph = None
 
         try:
-            # Phase 2: Create isolated scoped registry for this run.
-            # NOTE: scoped_registry is stored in a run-local variable only.
-            # Writing it back to the shared ``bundle`` object is concurrency-
-            # unsafe: two concurrent run_async calls on the same bundle would
-            # overwrite each other's registry (NB-B / AC-009 fix).
-            self._record_phase_event("workflow.phase.registry_creation")
-            self.logger.debug(
-                f"[GraphRunnerService] Async Phase 2: Creating scoped registry "
-                f"for {graph_name}"
+            # Phases 2–5: shared assembly (D-7 extract)
+            (
+                executable_graph,
+                execution_tracker,
+                execution_config,
+                requires_checkpoint,
+            ) = await self._assemble_for_async_run(
+                bundle=bundle,
+                initial_state=initial_state,
+                validate_agents=validate_agents,
             )
-            scoped_registry = (
-                self.declaration_registry.create_scoped_registry_for_bundle(bundle)
-            )
-            # Do NOT write back to bundle.scoped_registry (concurrency safety).
-            self.logger.debug(
-                f"[GraphRunnerService] Scoped registry created with "
-                f"{len(scoped_registry.get_all_agent_types())} agents and "
-                f"{len(scoped_registry.get_all_service_names())} services"
-            )
-
-            # Phase 3: Create execution tracker
-            self._record_phase_event("workflow.phase.tracker_creation")
-            self.logger.debug(
-                "[GraphRunnerService] Async Phase 3: Setting up execution tracking"
-            )
-            execution_tracker = self.execution_tracking.create_tracker()
-
-            # Phase 3.5: Pre-resolve subgraph bundles
-            self._resolve_subgraph_bundles(bundle, initial_state)
-
-            # Phase 4: Instantiate agents
-            self._record_phase_event("workflow.phase.agent_instantiation")
-            self.logger.debug(
-                f"[GraphRunnerService] Async Phase 4: Instantiating agents "
-                f"for {graph_name}"
-            )
-            bundle_with_instances = self.graph_instantiation.instantiate_agents(
-                bundle, execution_tracker
-            )
-
-            if validate_agents:
-                validation = self.graph_instantiation.validate_instantiation(
-                    bundle_with_instances
-                )
-                if not validation["valid"]:
-                    raise RuntimeError(
-                        f"Agent instantiation validation failed: {validation}"
-                    )
-
-            # Phase 5: Assembly — async path
-            self._record_phase_event("workflow.phase.graph_assembly")
-            self.logger.debug(
-                f"[GraphRunnerService] Async Phase 5: Assembling graph "
-                f"for {graph_name}"
-            )
-
-            from agentmap.models.graph import Graph
-
-            graph = Graph(
-                name=bundle_with_instances.graph_name or "",
-                nodes=bundle_with_instances.nodes or {},
-                entry_point=bundle_with_instances.entry_point,
-            )
-
-            if not bundle_with_instances.node_instances:
-                raise RuntimeError("No agent instances found in bundle.node_registry")
-
-            node_definitions = create_node_registry_from_bundle(
-                bundle_with_instances, self.logger
-            )
-
-            requires_checkpoint = self.graph_bundle_service.requires_checkpoint_support(
-                bundle
-            )
-
-            execution_config = None
-
-            if requires_checkpoint:
-                thread_id = getattr(execution_tracker, "thread_id", None)
-                if not thread_id:
-                    raise RuntimeError(
-                        "Checkpoint execution requires execution tracker with thread_id"
-                    )
-
-                execution_config = {"configurable": {"thread_id": thread_id}}
-                self.logger.debug(
-                    f"[GraphRunnerService] Async assembling graph '{graph_name}' "
-                    f"WITH checkpoint support (thread_id={thread_id})"
-                )
-                executable_graph = self.graph_assembly.assemble_with_checkpoint_async(
-                    graph=graph,
-                    agent_instances=bundle_with_instances.node_instances,
-                    node_definitions=node_definitions,
-                    checkpointer=self.graph_checkpoint,
-                )
-            else:
-                self.logger.debug(
-                    f"[GraphRunnerService] Async assembling graph '{graph_name}' "
-                    f"WITHOUT checkpoint support"
-                )
-                executable_graph = self.graph_assembly.assemble_graph_async(
-                    graph=graph,
-                    agent_instances=bundle_with_instances.node_instances,
-                    orchestrator_node_registry=node_definitions,
-                )
-
-            self.logger.debug("[GraphRunnerService] Async graph assembly completed")
 
             # Phase 6: Execution — async
             self._record_phase_event("workflow.phase.execution")

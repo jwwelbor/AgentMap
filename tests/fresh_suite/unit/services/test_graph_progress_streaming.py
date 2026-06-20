@@ -4,6 +4,7 @@ Unit tests for E06-F04: Graph Progress Streaming via Runtime Facade.
 Test classes in this file:
   - TestWorkflowProgressEventModel — data model field-contract assertions (T-E06-F04-002)
   - TestAstreamShapeSmoke — TC-F04-D9 (T-E06-F04-001)
+  - TestAssembleForAsyncRunHelper — TC-F04-010 regression gate (T-E06-F04-003)
 
 TC-F04-D9: Empirically verify that LangGraph's .astream(stream_mode="updates")
 on the installed langgraph version (1.0.5, per epic A2 / engineering-context §B)
@@ -40,9 +41,11 @@ Framework: unittest.IsolatedAsyncioTestCase for async tests.
 """
 
 import dataclasses
+import inspect
 import unittest
 from importlib.metadata import version
-from typing import Any, Dict, Optional, TypedDict
+from typing import Any, Dict, Optional, Tuple, TypedDict
+from unittest.mock import AsyncMock, MagicMock, create_autospec
 
 from langgraph.graph import END, StateGraph
 
@@ -710,6 +713,495 @@ class TestAstreamShapeSmoke(unittest.IsolatedAsyncioTestCase):
             "result_from_node2",
             f"node2 delta value mismatch: {node2_delta}",
         )
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers for TestAssembleForAsyncRunHelper
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_bundle_for_assembly(
+    graph_name: str = "test_graph",
+    node_count: int = 2,
+    checkpoint: bool = False,
+) -> MagicMock:
+    """Create a minimal mock GraphBundle for assembly helper tests."""
+    bundle = MagicMock(name="mock_bundle")
+    bundle.graph_name = graph_name
+    nodes: Dict[str, MagicMock] = {}
+    for i in range(node_count):
+        node = MagicMock()
+        node.agent_type = "default"
+        nodes[f"node_{i}"] = node
+    bundle.nodes = nodes
+    bundle.entry_point = "node_0"
+    bundle.csv_hash = None
+    bundle.node_instances = None
+    bundle.scoped_registry = None
+    bundle.missing_services = set()
+    return bundle
+
+
+def _make_graph_runner_for_assembly(
+    checkpoint: bool = False,
+) -> Tuple[Any, Dict[str, Any]]:
+    """Create a GraphRunnerService with all dependencies mocked.
+
+    Returns:
+        (service, mocks_dict)
+    """
+    from agentmap.services.config.app_config_service import AppConfigService
+    from agentmap.services.declaration_registry_service import (
+        DeclarationRegistryService,
+    )
+    from agentmap.services.execution_tracking_service import ExecutionTrackingService
+    from agentmap.services.graph.graph_agent_instantiation_service import (
+        GraphAgentInstantiationService,
+    )
+    from agentmap.services.graph.graph_assembly_service import GraphAssemblyService
+    from agentmap.services.graph.graph_bootstrap_service import GraphBootstrapService
+    from agentmap.services.graph.graph_bundle_service import GraphBundleService
+    from agentmap.services.graph.graph_checkpoint_service import GraphCheckpointService
+    from agentmap.services.graph.graph_execution_service import GraphExecutionService
+    from agentmap.services.graph.graph_runner_service import GraphRunnerService
+    from agentmap.services.interaction_handler_service import InteractionHandlerService
+    from agentmap.services.logging_service import LoggingService
+
+    mock_app_config = create_autospec(AppConfigService, instance=True)
+    mock_bootstrap = create_autospec(GraphBootstrapService, instance=True)
+    mock_instantiation = create_autospec(GraphAgentInstantiationService, instance=True)
+    mock_assembly = create_autospec(GraphAssemblyService, instance=True)
+    mock_execution = create_autospec(GraphExecutionService, instance=True)
+    mock_tracking = create_autospec(ExecutionTrackingService, instance=True)
+    mock_logging = create_autospec(LoggingService, instance=True)
+    mock_logging.get_class_logger.return_value = MagicMock(name="mock_logger")
+    mock_interaction = create_autospec(InteractionHandlerService, instance=True)
+    mock_checkpoint = create_autospec(GraphCheckpointService, instance=True)
+    mock_bundle_svc = create_autospec(GraphBundleService, instance=True)
+    mock_declaration = create_autospec(DeclarationRegistryService, instance=True)
+
+    service = GraphRunnerService(
+        app_config_service=mock_app_config,
+        graph_bootstrap_service=mock_bootstrap,
+        graph_agent_instantiation_service=mock_instantiation,
+        graph_assembly_service=mock_assembly,
+        graph_execution_service=mock_execution,
+        execution_tracking_service=mock_tracking,
+        logging_service=mock_logging,
+        interaction_handler_service=mock_interaction,
+        graph_checkpoint_service=mock_checkpoint,
+        graph_bundle_service=mock_bundle_svc,
+        declaration_registry_service=mock_declaration,
+    )
+
+    mocks = {
+        "app_config": mock_app_config,
+        "instantiation": mock_instantiation,
+        "assembly": mock_assembly,
+        "execution": mock_execution,
+        "tracking": mock_tracking,
+        "logging": mock_logging,
+        "bundle_svc": mock_bundle_svc,
+        "declaration": mock_declaration,
+        "interaction": mock_interaction,
+        "checkpoint": mock_checkpoint,
+    }
+
+    # Common setup: scoped registry, tracker, agent instantiation
+    mock_scoped_registry = MagicMock()
+    mock_scoped_registry.get_all_agent_types.return_value = ["agent1"]
+    mock_scoped_registry.get_all_service_names.return_value = []
+    mock_declaration.create_scoped_registry_for_bundle.return_value = (
+        mock_scoped_registry
+    )
+
+    mock_tracker = MagicMock()
+    mock_tracker.thread_id = "test-thread-id"
+    mock_tracking.create_tracker.return_value = mock_tracker
+
+    node_instances = {"node_0": MagicMock(), "node_1": MagicMock()}
+    bundle_with_instances = MagicMock()
+    bundle_with_instances.graph_name = "test_graph"
+    bundle_with_instances.nodes = {"node_0": MagicMock(), "node_1": MagicMock()}
+    bundle_with_instances.entry_point = "node_0"
+    bundle_with_instances.node_instances = node_instances
+
+    def _instantiate_side_effect(b, tracker):
+        b.node_instances = node_instances
+        return bundle_with_instances
+
+    mock_instantiation.instantiate_agents.side_effect = _instantiate_side_effect
+
+    mock_compiled = MagicMock()
+    mock_bundle_svc.requires_checkpoint_support.return_value = checkpoint
+    mocks["bundle_svc"].requires_checkpoint_support.return_value = checkpoint
+
+    if checkpoint:
+        mock_assembly.assemble_with_checkpoint_async.return_value = mock_compiled
+    else:
+        mock_assembly.assemble_graph_async.return_value = mock_compiled
+
+    mocks["mock_compiled"] = mock_compiled
+    mocks["mock_tracker"] = mock_tracker
+    mocks["bundle_with_instances"] = bundle_with_instances
+
+    return service, mocks
+
+
+# ---------------------------------------------------------------------------
+# TC-F04-010 — TestAssembleForAsyncRunHelper (T-E06-F04-003)
+# ---------------------------------------------------------------------------
+
+
+class TestAssembleForAsyncRunHelper(unittest.IsolatedAsyncioTestCase):
+    """TC-F04-010: Regression gate — _assemble_for_async_run extracted from _run_core_async.
+
+    ENTRYPOINT:
+      Direct call to GraphRunnerService._assemble_for_async_run(bundle, initial_state,
+      validate_agents) — internal-only unit test justified because this is explicitly
+      the unit being extracted (T-E06-F04-003 goal: verify helper returns same
+      assembly as _run_core_async phases 2-5).
+
+    LOWEST ALLOWED MOCK SEAM:
+      GraphAssemblyService, GraphAgentInstantiationService, ExecutionTrackingService,
+      DeclarationRegistryService, GraphBundleService — all mocked via create_autospec.
+
+    FORBIDDEN MOCKS:
+      Do NOT mock _assemble_for_async_run itself; must call it for real.
+      Do NOT route through _run_core_async for phase extraction verification.
+
+    COUNTER-FACTUAL:
+      An impl that does not extract the helper would raise AttributeError on
+      service._assemble_for_async_run(...) — the method simply would not exist.
+      An impl that extracts the helper but _run_core_async still duplicates phases 2-5
+      would fail the structural-body assertion checking for _assemble_for_async_run
+      in _run_core_async source.
+      An impl that accidentally makes _run_core_async reference run_stream_async or
+      stream_compiled_graph_async would fail the non-reference body assertion.
+    """
+
+    # ------------------------------------------------------------------
+    # TC-F04-010-1: _assemble_for_async_run exists on GraphRunnerService
+    # ------------------------------------------------------------------
+
+    def test_assemble_for_async_run_method_exists(self) -> None:
+        """_assemble_for_async_run is a method on GraphRunnerService.
+
+        COUNTER-FACTUAL: A pre-refactor impl without extraction would raise
+        AttributeError or return False from hasattr.
+        """
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
+
+        self.assertTrue(
+            hasattr(GraphRunnerService, "_assemble_for_async_run"),
+            "GraphRunnerService must have a _assemble_for_async_run method "
+            "(D-7 extract — T-E06-F04-003); it was not found",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-010-2: helper accepts (bundle, initial_state, validate_agents) args
+    # ------------------------------------------------------------------
+
+    def test_assemble_for_async_run_signature(self) -> None:
+        """_assemble_for_async_run accepts (self, bundle, initial_state, validate_agents).
+
+        COUNTER-FACTUAL: An impl with wrong parameter names/order would fail
+        the signature.parameters assertion.
+        """
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
+
+        sig = inspect.signature(GraphRunnerService._assemble_for_async_run)
+        params = list(sig.parameters.keys())
+        # Must have 'bundle', 'initial_state', 'validate_agents' (and 'self')
+        self.assertIn(
+            "bundle",
+            params,
+            f"_assemble_for_async_run must have 'bundle' parameter; got {params}",
+        )
+        self.assertIn(
+            "initial_state",
+            params,
+            f"_assemble_for_async_run must have 'initial_state' parameter; got {params}",
+        )
+        self.assertIn(
+            "validate_agents",
+            params,
+            f"_assemble_for_async_run must have 'validate_agents' parameter; got {params}",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-010-3: helper returns a 4-tuple
+    # ------------------------------------------------------------------
+
+    async def test_assemble_for_async_run_returns_4_tuple(self) -> None:
+        """_assemble_for_async_run returns (executable_graph, execution_tracker,
+        execution_config, requires_checkpoint) as a 4-element tuple.
+
+        COUNTER-FACTUAL: An impl that returns 3 or 5 elements, or a dict,
+        would fail the len(result) == 4 assertion.
+        """
+        service, mocks = _make_graph_runner_for_assembly(checkpoint=False)
+        bundle = _make_mock_bundle_for_assembly()
+
+        result = await service._assemble_for_async_run(
+            bundle=bundle,
+            initial_state={"input": "hello"},
+            validate_agents=False,
+        )
+
+        self.assertIsInstance(
+            result,
+            tuple,
+            f"_assemble_for_async_run must return a tuple, got {type(result).__name__!r}",
+        )
+        self.assertEqual(
+            len(result),
+            4,
+            f"_assemble_for_async_run must return a 4-tuple "
+            f"(executable_graph, execution_tracker, execution_config, requires_checkpoint), "
+            f"got {len(result)} elements",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-010-4: non-checkpoint path returns correct tuple elements
+    # ------------------------------------------------------------------
+
+    async def test_assemble_for_async_run_non_checkpoint_path(self) -> None:
+        """Non-checkpoint path: returns (compiled_graph, tracker, None, False).
+
+        executable_graph is the return value of assemble_graph_async.
+        execution_config is None (no thread_id config needed).
+        requires_checkpoint is False.
+
+        COUNTER-FACTUAL: An impl that always uses the checkpoint path would
+        call assemble_with_checkpoint_async and set requires_checkpoint=True,
+        failing the assertFalse(requires_checkpoint).
+        """
+        service, mocks = _make_graph_runner_for_assembly(checkpoint=False)
+        bundle = _make_mock_bundle_for_assembly()
+
+        executable_graph, execution_tracker, execution_config, requires_checkpoint = (
+            await service._assemble_for_async_run(
+                bundle=bundle,
+                initial_state={"input": "hello"},
+                validate_agents=False,
+            )
+        )
+
+        # executable_graph must be what assemble_graph_async returned
+        self.assertIs(
+            executable_graph,
+            mocks["mock_compiled"],
+            "executable_graph must be the return value of assemble_graph_async",
+        )
+        # execution_tracker must be what create_tracker returned
+        self.assertIs(
+            execution_tracker,
+            mocks["mock_tracker"],
+            "execution_tracker must be the return value of create_tracker()",
+        )
+        # execution_config is None for non-checkpoint runs
+        self.assertIsNone(
+            execution_config,
+            "execution_config must be None for non-checkpoint runs",
+        )
+        # requires_checkpoint must be False
+        self.assertFalse(
+            requires_checkpoint,
+            "requires_checkpoint must be False for non-checkpoint runs",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-010-5: checkpoint path returns (compiled_graph, tracker, config, True)
+    # ------------------------------------------------------------------
+
+    async def test_assemble_for_async_run_checkpoint_path(self) -> None:
+        """Checkpoint path: returns (compiled_graph, tracker, config, True).
+
+        execution_config must contain configurable.thread_id.
+        requires_checkpoint is True.
+
+        COUNTER-FACTUAL: An impl that ignores the checkpoint flag would always
+        return execution_config=None, failing the assertIsNotNone assertion.
+        """
+        service, mocks = _make_graph_runner_for_assembly(checkpoint=True)
+        bundle = _make_mock_bundle_for_assembly()
+
+        executable_graph, execution_tracker, execution_config, requires_checkpoint = (
+            await service._assemble_for_async_run(
+                bundle=bundle,
+                initial_state={"input": "hello"},
+                validate_agents=False,
+            )
+        )
+
+        self.assertIs(
+            executable_graph,
+            mocks["mock_compiled"],
+            "executable_graph must be the return value of assemble_with_checkpoint_async",
+        )
+        self.assertIs(
+            execution_tracker,
+            mocks["mock_tracker"],
+            "execution_tracker must be the return value of create_tracker()",
+        )
+        self.assertIsNotNone(
+            execution_config,
+            "execution_config must not be None for checkpoint runs",
+        )
+        self.assertIn(
+            "configurable",
+            execution_config,
+            "execution_config must have 'configurable' key for checkpoint runs",
+        )
+        self.assertIn(
+            "thread_id",
+            execution_config["configurable"],
+            "execution_config['configurable'] must have 'thread_id'",
+        )
+        self.assertTrue(
+            requires_checkpoint,
+            "requires_checkpoint must be True for checkpoint runs",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-010-6: _run_core_async calls _assemble_for_async_run (structural)
+    # ------------------------------------------------------------------
+
+    def test_run_core_async_source_calls_assemble_for_async_run(self) -> None:
+        """_run_core_async source body contains a call to _assemble_for_async_run.
+
+        This is the structural AC-10 assertion that the refactor actually
+        introduced the shared helper call in the existing non-streaming path.
+
+        COUNTER-FACTUAL: A pre-refactor impl where _run_core_async still
+        contains its own inline phases 2-5 (without calling the helper)
+        would fail this string-search assertion.
+        """
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
+
+        source = inspect.getsource(GraphRunnerService._run_core_async)
+        self.assertIn(
+            "_assemble_for_async_run",
+            source,
+            "_run_core_async must call _assemble_for_async_run (D-7 refactor); "
+            "call not found in method source — the shared assembly helper was not wired in",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-010-7: _run_core_async body does NOT reference streaming methods
+    # ------------------------------------------------------------------
+
+    def test_run_core_async_does_not_reference_run_stream_async(self) -> None:
+        """_run_core_async body must NOT contain 'run_stream_async'.
+
+        Non-streaming run path must remain independent of streaming methods.
+
+        COUNTER-FACTUAL: An impl that accidentally routes _run_core_async
+        through the streaming path would contain 'run_stream_async' in its
+        source, and this test would catch the coupling.
+        """
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
+
+        source = inspect.getsource(GraphRunnerService._run_core_async)
+        self.assertNotIn(
+            "run_stream_async",
+            source,
+            "_run_core_async must NOT reference run_stream_async "
+            "(non-streaming path must remain independent)",
+        )
+
+    def test_run_core_async_does_not_reference_stream_compiled_graph_async(
+        self,
+    ) -> None:
+        """_run_core_async body must NOT contain 'stream_compiled_graph_async'.
+
+        COUNTER-FACTUAL: A buggy refactor that replaces the ainvoke call with
+        stream_compiled_graph_async in _run_core_async would break non-streaming
+        behavior — this structural assertion catches it.
+        """
+        from agentmap.services.graph.graph_runner_service import GraphRunnerService
+
+        source = inspect.getsource(GraphRunnerService._run_core_async)
+        self.assertNotIn(
+            "stream_compiled_graph_async",
+            source,
+            "_run_core_async must NOT reference stream_compiled_graph_async "
+            "(non-streaming path must use execute_compiled_graph_async only)",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-010-8: execute_compiled_graph_async source does NOT contain astream
+    # ------------------------------------------------------------------
+
+    def test_execute_compiled_graph_async_source_does_not_contain_astream(
+        self,
+    ) -> None:
+        """execute_compiled_graph_async must NOT contain 'astream' in its source.
+
+        This confirms the existing ainvoke-based method was not modified by the
+        T-E06-F04-003 refactor.
+
+        COUNTER-FACTUAL: A regression that accidentally routes
+        execute_compiled_graph_async through .astream() would produce an
+        AsyncGenerator instead of an ExecutionResult, breaking the non-streaming
+        contract; this source assertion catches the modification.
+        """
+        from agentmap.services.graph.graph_execution_service import (
+            GraphExecutionService,
+        )
+
+        source = inspect.getsource(GraphExecutionService.execute_compiled_graph_async)
+        self.assertNotIn(
+            "astream",
+            source,
+            "execute_compiled_graph_async must NOT contain 'astream' "
+            "(non-streaming path must use ainvoke only; "
+            "stream_compiled_graph_async is the separate streaming method)",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-010-9: _run_core_async behavior is byte-equivalent after refactor
+    # ------------------------------------------------------------------
+
+    async def test_run_core_async_completes_successfully_after_refactor(self) -> None:
+        """_run_core_async still returns ExecutionResult after the D-7 refactor.
+
+        COUNTER-FACTUAL: An impl where the helper extraction broke the call
+        chain (e.g., wrong return unpacking) would raise AttributeError/TypeError
+        inside _run_core_async before execution.execute_compiled_graph_async is called.
+        """
+        from agentmap.models.execution.result import ExecutionResult
+
+        service, mocks = _make_graph_runner_for_assembly(checkpoint=False)
+        bundle = _make_mock_bundle_for_assembly()
+
+        # Set up the execution result
+        mock_result = MagicMock(spec=ExecutionResult)
+        mock_result.success = True
+        mock_result.total_duration = 1.5
+        mock_result.error = None
+
+        mocks["execution"].execute_compiled_graph_async = AsyncMock(
+            return_value=mock_result
+        )
+
+        result = await service._run_core_async(
+            bundle=bundle,
+            initial_state={"input": "hello"},
+            parent_graph_name=None,
+            parent_tracker=None,
+            is_subgraph=False,
+            validate_agents=False,
+        )
+
+        self.assertIs(
+            result,
+            mock_result,
+            "_run_core_async must return the ExecutionResult from "
+            "execute_compiled_graph_async after the D-7 refactor",
+        )
+        mocks["execution"].execute_compiled_graph_async.assert_awaited_once()
 
 
 if __name__ == "__main__":
