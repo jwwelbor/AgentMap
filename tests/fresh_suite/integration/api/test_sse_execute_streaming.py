@@ -15,6 +15,7 @@ TC-F05-002 (disconnect cancel), TC-F05-005 (duration cap), TC-F05-006/007
 TC-F05-012 (incremental delivery) belong to T-004/T-005.
 """
 
+import asyncio
 import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -84,11 +85,94 @@ async def _make_fake_stream(*events: WorkflowProgressEvent):
         yield event
 
 
-def _make_test_app(auth_enabled: bool = False) -> FastAPI:
+# Default SSE envelope (matches AppConfigService.get_sse_config() §A.4 defaults).
+# Individual tests override entries (e.g. a tiny max_stream_duration_seconds for
+# the duration-cap BVA) via the sse_config kwarg on _make_test_app.
+_DEFAULT_SSE_CONFIG: Dict[str, Any] = {
+    "max_stream_duration_seconds": 1800,
+    "idle_timeout_seconds": 30,
+    "heartbeat_interval_seconds": 15,
+    "max_concurrent_streams": 100,
+}
+
+
+def _make_cancellable_stream(
+    events: List[WorkflowProgressEvent],
+    *,
+    gate_after: int,
+    n2_gate: "asyncio.Event",
+    flags: Dict[str, Any],
+):
+    """Gated, cancellation-recording fake for ``run_workflow_stream_async``.
+
+    Yields the first ``gate_after`` events, then sets ``flags['n2_entered']`` and
+    blocks on ``n2_gate`` (this is where the "next node" would run).  When the
+    consumer cancels (client disconnect or duration cap → route calls
+    ``aclose()`` / the StreamingResponse generator is closed → GeneratorExit /
+    CancelledError propagates into this generator), the ``finally`` block records
+    ``flags['cancellation_received'] = True``.
+
+    This mirrors the F04 TC-F04-006 cancellation gate (``test_graph_progress_
+    streaming.py``) at the HTTP transport layer: the hard contract asserted is the
+    upstream generator's ``finally`` ran (proxy for F04's tracker finalization on
+    GeneratorExit) and the next node was never entered (no orphaned work) —
+    DRIFT-02.
+    """
+
+    async def _gen():
+        try:
+            for index, event in enumerate(events):
+                yield event
+                flags["last_yielded_seq"] = event.sequence
+                if index + 1 == gate_after:
+                    # Reached the gate point: the "next node" begins here.
+                    flags["n2_entered"] = True
+                    await n2_gate.wait()
+        finally:
+            # Runs on GeneratorExit / CancelledError when the consumer cancels.
+            flags["cancellation_received"] = True
+
+    return _gen()
+
+
+def _make_blocking_stream(
+    first_events: List[WorkflowProgressEvent],
+    *,
+    block_gate: "asyncio.Event",
+    flags: Dict[str, Any],
+):
+    """Fake that yields ``first_events`` then blocks forever on ``block_gate``.
+
+    Used for the duration-cap BVA (TC-F05-005 sub-case A): the upstream never
+    completes on its own, so the only thing that can terminate the stream is the
+    route's wall-clock cap firing.  Records ``cancellation_received`` in
+    ``finally`` so the test can assert the upstream was cancelled when the cap
+    fires (the route called ``aclose()``).
+    """
+
+    async def _gen():
+        try:
+            for event in first_events:
+                yield event
+            await block_gate.wait()  # never set → upstream cannot self-terminate
+        finally:
+            flags["cancellation_received"] = True
+
+    return _gen()
+
+
+def _make_test_app(
+    auth_enabled: bool = False,
+    sse_config: Optional[Dict[str, Any]] = None,
+) -> FastAPI:
     """Create a minimal FastAPI app with both execute and stream routers.
 
     Auth is disabled by default so tests can focus on the streaming contract.
     The mock auth service is attached via app.state.container.
+
+    The container's ``app_config_service().get_sse_config()`` returns the §A.4
+    envelope defaults merged with any ``sse_config`` override, so the route can
+    read ``max_stream_duration_seconds`` (duration cap) at request time.
 
     stream_router must be registered before execution_router: the execute router
     has a greedy {graph_id:path} parameter that would otherwise match
@@ -98,10 +182,17 @@ def _make_test_app(auth_enabled: bool = False) -> FastAPI:
     app.include_router(stream_router)
     app.include_router(execution_router)
 
+    merged_sse = dict(_DEFAULT_SSE_CONFIG)
+    if sse_config:
+        merged_sse.update(sse_config)
+
     mock_container = MagicMock()
     mock_auth_service = MagicMock()
     mock_auth_service.is_authentication_enabled.return_value = auth_enabled
     mock_container.auth_service.return_value = mock_auth_service
+    mock_container.app_config_service.return_value.get_sse_config.return_value = (
+        merged_sse
+    )
     app.state.container = mock_container
 
     return app
@@ -115,8 +206,12 @@ async def _collect_sse_response(
     """Drive a POST request to *path* on *app* and collect the full SSE body.
 
     Returns (status_code, headers_dict, raw_body_bytes).
-    Uses httpx.AsyncClient with ASGITransport so headers are readable before
-    the full body arrives (true async streaming transport).
+    Uses httpx.AsyncClient with ASGITransport.  NOTE: httpx's ASGITransport runs
+    the ASGI app to completion and buffers the body, so this helper is suitable
+    only for streams that terminate on their own (happy path, terminal states,
+    and the duration-cap path which self-terminates when the cap fires).  Tests
+    that must observe a chunk mid-stream or inject a client disconnect use
+    ``SseAsgiDriver`` instead, which drives the ASGI app directly.
     """
     if body is None:
         body = {"inputs": {}}
@@ -126,6 +221,111 @@ async def _collect_sse_response(
     ) as client:
         response = await client.post(path, json=body)
         return response.status_code, dict(response.headers), response.content
+
+
+class SseAsgiDriver:
+    """Drive a FastAPI app's SSE route directly over ASGI for streaming control.
+
+    httpx's ``ASGITransport`` buffers the whole response (it runs the app to
+    completion before returning), so it cannot observe an event mid-stream or
+    abort a connection between events.  This driver speaks the ASGI protocol
+    directly against the real app: it sends the request body, then captures each
+    ``http.response.body`` message as the route emits it, and can inject an
+    ``http.disconnect`` at a chosen point.  The route handler, StreamingResponse
+    lifecycle, SSE framing, and disconnect→cancel chain all execute for real;
+    only ``run_workflow_stream_async`` is mocked (the allowed seam).
+
+    ``on_body`` is invoked with each non-empty body chunk; returning ``True``
+    requests a client disconnect (the next ``receive()`` yields
+    ``http.disconnect`` synchronously, so ``Request.is_disconnected()`` — which
+    does a non-blocking receive — observes it).
+    """
+
+    def __init__(
+        self,
+        app: FastAPI,
+        path: str,
+        *,
+        body: Optional[Dict[str, Any]] = None,
+        spec_version: str = "2.4",
+    ) -> None:
+        self._app = app
+        self._path = path
+        self._body_bytes = json.dumps(body if body is not None else {"inputs": {}})
+        self._body_bytes_enc = self._body_bytes.encode("utf-8")
+        self._spec_version = spec_version
+        self.status_code: Optional[int] = None
+        self.headers: Dict[str, str] = {}
+        self.body_chunks: List[bytes] = []
+        self.disconnect_on_start = False
+        self._disconnect = False
+        self._request_sent = False
+
+    @property
+    def raw_body(self) -> bytes:
+        return b"".join(self.body_chunks)
+
+    def _scope(self) -> Dict[str, Any]:
+        return {
+            "type": "http",
+            "asgi": {"version": "3.0", "spec_version": self._spec_version},
+            "http_version": "1.1",
+            "method": "POST",
+            "path": self._path,
+            "raw_path": self._path.encode("utf-8"),
+            "query_string": b"",
+            "root_path": "",
+            "scheme": "http",
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(self._body_bytes_enc)).encode()),
+            ],
+            "server": ("testserver", 80),
+            "client": ("testclient", 12345),
+        }
+
+    async def run(self, on_body) -> None:
+        """Run the request to completion (or disconnect), invoking on_body.
+
+        on_body(chunk: bytes) -> bool: return True to trigger a client
+        disconnect after this chunk.
+        """
+
+        async def receive():
+            if not self._request_sent:
+                self._request_sent = True
+                return {
+                    "type": "http.request",
+                    "body": self._body_bytes_enc,
+                    "more_body": False,
+                }
+            if self._disconnect:
+                # Synchronous return: Request.is_disconnected() uses an
+                # immediately-cancelled scope around receive(), so the message
+                # must be ready without awaiting to be observed.
+                return {"type": "http.disconnect"}
+            # Connection stays open until the test triggers a disconnect or the
+            # route finishes on its own.
+            await asyncio.sleep(3600)
+
+        async def send(message):
+            mtype = message["type"]
+            if mtype == "http.response.start":
+                self.status_code = message["status"]
+                self.headers = {
+                    k.decode("latin-1").lower(): v.decode("latin-1")
+                    for k, v in message.get("headers", [])
+                }
+                if self.disconnect_on_start:
+                    self._disconnect = True
+            elif mtype == "http.response.body":
+                chunk = message.get("body", b"")
+                if chunk:
+                    self.body_chunks.append(chunk)
+                    if on_body(chunk):
+                        self._disconnect = True
+
+        await self._app(self._scope(), receive, send)
 
 
 # ---------------------------------------------------------------------------
@@ -690,6 +890,499 @@ class TestSSEStreamTerminalStates(IsolatedAsyncioTestCase):
         terminals = [e for e in events if e.data.get("is_terminal")]
         self.assertEqual(len(terminals), 1)
         self.assertEqual(terminals[0].event_name, "suspended")
+
+
+# ---------------------------------------------------------------------------
+# TC-F05-002 — Client disconnect cancels upstream work; tracker finalized
+# ---------------------------------------------------------------------------
+
+
+class TestSSEStreamClientCancellation(IsolatedAsyncioTestCase):
+    """TC-F05-002: client disconnect cancels the upstream generator.
+
+    Caller-path contract (test-plan.md TC-F05-002 / INT-F05-2):
+      ENTRYPOINT: POST /execute/{graph_id}/stream via httpx.AsyncClient +
+        ASGITransport; client reads the first node_progress event, then aborts
+        the connection (exits the client.stream() context).
+      LOWEST ALLOWED MOCK SEAM: a fake run_workflow_stream_async that gates
+        before "n2", records n2_entered, and records cancellation_received in its
+        finally block (proxy for F04's tracker finalization on GeneratorExit).
+      FORBIDDEN MOCKS: request.is_disconnected(), aclose(), the asyncio cancel
+        propagation — the real disconnect→cancel chain executes.
+      HARD CONTRACT (DRIFT-02): cancellation_received == True and
+        n2_entered == False.  The `cancelled` wire event is best-effort only and
+        is NOT asserted (the socket may already be closed).
+      COUNTER-FACTUAL: an impl that ignores disconnect (no is_disconnected poll,
+        no aclose) never sets cancellation_received and eventually enters n2 —
+        these assertions would fail.
+    """
+
+    def _make_n1(self) -> WorkflowProgressEvent:
+        return WorkflowProgressEvent(
+            event_type="node_progress",
+            sequence=0,
+            is_terminal=False,
+            node_name="n1",
+            state_delta={"output": "result-n1"},
+            node_duration=0.01,
+        )
+
+    def _make_n2(self) -> WorkflowProgressEvent:
+        return WorkflowProgressEvent(
+            event_type="node_progress",
+            sequence=1,
+            is_terminal=False,
+            node_name="n2",
+            state_delta={"output": "result-n2"},
+            node_duration=0.01,
+        )
+
+    async def _drive_disconnect(
+        self,
+        gate_after: int,
+        spec_version: str = "2.4",
+    ) -> Dict[str, Any]:
+        """Open the stream, disconnect after the first chunk, return fake's flags.
+
+        gate_after: number of events the fake yields before blocking on n2_gate.
+            1 = disconnect after n1 (sub-case B); 2 = disconnect after both nodes
+            but before the (gated) terminal (sub-case C).
+        """
+        app = _make_test_app()
+        n2_gate = asyncio.Event()
+        flags: Dict[str, Any] = {
+            "n2_entered": False,
+            "cancellation_received": False,
+        }
+
+        def _factory(*_a, **_kw):
+            return _make_cancellable_stream(
+                [self._make_n1(), self._make_n2()],
+                gate_after=gate_after,
+                n2_gate=n2_gate,
+                flags=flags,
+            )
+
+        driver = SseAsgiDriver(
+            app, "/execute/slow-workflow/stream", spec_version=spec_version
+        )
+
+        def _on_body(_chunk: bytes) -> bool:
+            # Disconnect as soon as the route delivers the first chunk.
+            return True
+
+        try:
+            with patch(
+                "agentmap.deployment.http.api.routes.stream."
+                "run_workflow_stream_async",
+                side_effect=_factory,
+            ):
+                # Bound the whole drive so a regression that ignores disconnect
+                # (and would otherwise wait on the gate forever) fails loudly
+                # rather than hanging the suite.
+                await asyncio.wait_for(driver.run(_on_body), timeout=5)
+        finally:
+            n2_gate.set()  # cleanup: unblock any non-cancelled coroutine
+            await asyncio.sleep(0)
+
+        return flags
+
+    async def test_disconnect_after_n1_cancels_upstream(self):
+        """Sub-case B: disconnect after n1 → upstream finally ran (tracker final)."""
+        flags = await self._drive_disconnect(gate_after=1)
+        self.assertTrue(
+            flags["cancellation_received"],
+            "Upstream generator's finally must run on disconnect (proxy for F04 "
+            "tracker finalization) — route must aclose() the upstream generator",
+        )
+
+    async def test_disconnect_after_n1_does_not_enter_n2(self):
+        """Sub-case B counter-factual: no orphaned work past the cancel point."""
+        flags = await self._drive_disconnect(gate_after=1)
+        self.assertFalse(
+            flags["n2_entered"],
+            "n2 must NOT be entered after client disconnect — the graph must not "
+            "continue running once the client is gone",
+        )
+
+    async def test_disconnect_cancels_upstream_under_taskgroup_path(self):
+        """Sub-case B under ASGI spec<2.4 (StreamingResponse disconnect-listener).
+
+        Two disconnect mechanisms exist depending on asgi.spec_version: the
+        is_disconnected() poll (>=2.4) and StreamingResponse's task-group
+        listener (<2.4) which cancels the body generator. The route must finalize
+        the upstream under BOTH; this covers the task-group cancel path.
+        """
+        flags = await self._drive_disconnect(gate_after=1, spec_version="2.3")
+        self.assertTrue(
+            flags["cancellation_received"],
+            "Upstream must be finalized even when disconnect arrives as a "
+            "task-cancellation (spec<2.4 StreamingResponse listener path)",
+        )
+        self.assertFalse(
+            flags["n2_entered"],
+            "No orphaned work on the task-group cancel path either",
+        )
+
+    async def test_disconnect_before_first_event_no_node_work(self):
+        """Sub-case A: client closes at response.start, before any event.
+
+        When the disconnect is observable before the route pulls the first event,
+        the route must stop without entering any node work and without hanging.
+        The upstream generator is never advanced (its body never runs), so there
+        is no tracker to leak — the correct post-condition here is "no node work
+        + clean completion + no n2", not the upstream finally (which only runs if
+        the generator was started).
+        """
+        app = _make_test_app()
+        started = {"flag": False}
+
+        def _factory(*_a, **_kw):
+            async def _gen():
+                started["flag"] = True
+                yield self._make_n1()
+                yield self._make_n2()
+
+            return _gen()
+
+        driver = SseAsgiDriver(app, "/execute/slow-workflow/stream")
+        driver.disconnect_on_start = True
+
+        with patch(
+            "agentmap.deployment.http.api.routes.stream." "run_workflow_stream_async",
+            side_effect=_factory,
+        ):
+            # Must complete promptly (no hang) and not raise.
+            await asyncio.wait_for(driver.run(lambda _c: False), timeout=5)
+
+        # The route observed the disconnect before pulling; no events delivered.
+        events = parse_sse_bytes(driver.raw_body)
+        node_events = [e for e in events if e.event_name == "node_progress"]
+        self.assertEqual(
+            node_events,
+            [],
+            "No node_progress event must be delivered when the client is already "
+            "disconnected before the first pull",
+        )
+
+    async def test_disconnect_after_all_nodes_before_terminal_cancels(self):
+        """Sub-case C: disconnect after both nodes but before the terminal.
+
+        The fake yields n1 + n2 then gates before the terminal; the client
+        disconnects after the first delivered chunk, so the upstream is cancelled
+        while it is blocked waiting to emit the terminal.
+        """
+        flags = await self._drive_disconnect(gate_after=2)
+        self.assertTrue(
+            flags["cancellation_received"],
+            "Disconnect while the upstream is blocked before its terminal must "
+            "still finalize the upstream (no leak)",
+        )
+
+
+# ---------------------------------------------------------------------------
+# TC-F05-005 — Duration cap terminates with event: failed / stream_duration_exceeded
+# ---------------------------------------------------------------------------
+
+
+class TestSSEStreamEnvelope(IsolatedAsyncioTestCase):
+    """TC-F05-005 (BVA A/B): wall-clock duration cap enforcement.
+
+    Caller-path contract (test-plan.md TC-F05-005 / INT-F05-3):
+      ENTRYPOINT: POST /execute/{graph_id}/stream with max_stream_duration_seconds
+        injected small via get_sse_config(); fake upstream blocks indefinitely.
+      LOWEST ALLOWED MOCK SEAM: get_sse_config() returns the small cap; the fake
+        run_workflow_stream_async yields n1 then blocks on a never-set Event.
+      FORBIDDEN MOCKS: the terminal event production (event: failed +
+        error: stream_duration_exceeded) and asyncio.wait_for / the timeout — the
+        route must produce the terminal through the real framing path with a real
+        (small) timeout.
+      COUNTER-FACTUAL: an impl that kills the connection abruptly (no terminal)
+        leaves zero terminal events → the len(terminal)==1 / failed assertions
+        fail.  An impl that emits event: cancelled instead of failed (DRIFT-03)
+        fails the event-name assertion.
+    """
+
+    def _make_n1(self) -> WorkflowProgressEvent:
+        return WorkflowProgressEvent(
+            event_type="node_progress",
+            sequence=0,
+            is_terminal=False,
+            node_name="n1",
+            state_delta={"output": "result-n1"},
+            node_duration=0.01,
+        )
+
+    async def _run_capped_stream(self) -> tuple[List[SseEvent], Dict[str, Any]]:
+        """Sub-case A: tiny cap + never-completing upstream → cap fires."""
+        app = _make_test_app(
+            sse_config={
+                "max_stream_duration_seconds": 0.1,
+                # Disable heartbeat for this test (out of scope for T-004).
+                "heartbeat_interval_seconds": 1000,
+                "idle_timeout_seconds": 1000,
+            }
+        )
+        block_gate = asyncio.Event()  # never set
+        flags: Dict[str, Any] = {"cancellation_received": False}
+
+        def _factory(*_a, **_kw):
+            return _make_blocking_stream(
+                [self._make_n1()], block_gate=block_gate, flags=flags
+            )
+
+        try:
+            with patch(
+                "agentmap.deployment.http.api.routes.stream."
+                "run_workflow_stream_async",
+                side_effect=_factory,
+            ):
+                # Bound generously above the 0.1s cap: a working cap terminates
+                # well within this; a broken cap (upstream blocks forever) trips
+                # the bound and fails the test loudly instead of hanging.
+                status, _, body = await asyncio.wait_for(
+                    _collect_sse_response(app, "/execute/slow-workflow/stream"),
+                    timeout=5,
+                )
+            self.assertEqual(status, 200)
+            events = parse_sse_bytes(body)
+        finally:
+            block_gate.set()
+            await asyncio.sleep(0)
+
+        return events, flags
+
+    async def test_duration_cap_emits_failed_terminal(self):
+        """Sub-case A: cap reached → exactly one terminal event: failed."""
+        events, _ = await self._run_capped_stream()
+        terminal_events = [e for e in events if e.data.get("is_terminal")]
+        self.assertEqual(
+            len(terminal_events),
+            1,
+            f"Duration cap must emit exactly one terminal event, got: {events}",
+        )
+        self.assertEqual(
+            terminal_events[-1].event_name,
+            "failed",
+            "Duration cap terminal must be 'failed', NOT 'cancelled' (DRIFT-03)",
+        )
+
+    async def test_duration_cap_error_code_is_stream_duration_exceeded(self):
+        """Sub-case A: terminal data carries error 'stream_duration_exceeded'."""
+        events, _ = await self._run_capped_stream()
+        terminal = [e for e in events if e.event_name == "failed"][-1]
+        # Documented code may live at data.error or data.result.error.
+        error_code = terminal.data.get("error")
+        if error_code is None:
+            error_code = terminal.data.get("result", {}).get("error")
+        self.assertEqual(
+            error_code,
+            "stream_duration_exceeded",
+            "Duration-cap terminal must carry the documented error code",
+        )
+
+    async def test_duration_cap_cancels_upstream(self):
+        """Sub-case A: hitting the cap cancels the upstream generator (finally ran)."""
+        _, flags = await self._run_capped_stream()
+        self.assertTrue(
+            flags["cancellation_received"],
+            "On duration cap the route must aclose() the upstream generator so "
+            "F04 finalizes the tracker (DEC-5)",
+        )
+
+    async def test_duration_cap_n1_delivered_before_termination(self):
+        """Sub-case A: n1 still reaches the client before the cap terminal."""
+        events, _ = await self._run_capped_stream()
+        self.assertGreaterEqual(len(events), 2, f"Expected n1 + terminal: {events}")
+        self.assertEqual(events[0].event_name, "node_progress")
+        self.assertEqual(events[-1].event_name, "failed")
+
+    async def test_under_cap_completes_normally(self):
+        """Sub-case B: a stream finishing within the cap is NOT cap-terminated."""
+        app = _make_test_app(sse_config={"max_stream_duration_seconds": 1800})
+        node1 = self._make_n1()
+        terminal = WorkflowProgressEvent(
+            event_type="completed",
+            sequence=1,
+            is_terminal=True,
+            result={"success": True, "outputs": {"n1": "result-n1"}},
+        )
+
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=lambda *a, **kw: _make_fake_stream(node1, terminal),
+        ):
+            status, _, body = await _collect_sse_response(
+                app, "/execute/fast-workflow/stream"
+            )
+
+        self.assertEqual(status, 200)
+        events = parse_sse_bytes(body)
+        self.assertEqual(events[-1].event_name, "completed")
+        # No duration-cap failure injected.
+        self.assertNotIn(
+            "stream_duration_exceeded",
+            body.decode("utf-8", errors="replace"),
+            "A stream completing within the cap must not emit a duration-cap error",
+        )
+
+
+# ---------------------------------------------------------------------------
+# TC-F05-012 — First node event reaches client BEFORE workflow completes
+# ---------------------------------------------------------------------------
+
+
+class TestSSEStreamIncrementalDelivery(IsolatedAsyncioTestCase):
+    """TC-F05-012: no transport buffering — n1 observed before the terminal.
+
+    Caller-path contract (test-plan.md TC-F05-012):
+      ENTRYPOINT: POST /execute/{graph_id}/stream via httpx.AsyncClient + ASGI
+        transport, reading SSE events incrementally.
+      LOWEST ALLOWED MOCK SEAM: fake run_workflow_stream_async with an
+        asyncio.Event gate: yields n1, waits on n2_gate, then yields the terminal.
+      FORBIDDEN MOCKS: the HTTP transport (must use a real async client) and
+        asyncio.sleep as the gate.
+      COUNTER-FACTUAL: a buffering impl (GZip, missing X-Accel-Buffering,
+        full-response accumulation) never delivers n1 until after n2_gate.set() —
+        the "n1 received while gate still unset" assertion fails.
+    """
+
+    async def test_first_event_arrives_before_gate_released(self):
+        """n1 must reach the client while n2/terminal is still gated (no buffering).
+
+        The fake yields n1, then blocks on n2_gate before the terminal. The
+        SseAsgiDriver observes each http.response.body the route emits; when the
+        n1 chunk arrives we record whether n2_gate is still unset (it must be) and
+        THEN release the gate so the terminal is produced. A buffering transport
+        (GZip / full-response accumulation) would not deliver n1 until the whole
+        stream finished, so n2_gate would already be set — the assertion fails.
+        """
+        app = _make_test_app()
+        n2_gate = asyncio.Event()
+        n1 = WorkflowProgressEvent(
+            event_type="node_progress",
+            sequence=0,
+            is_terminal=False,
+            node_name="n1",
+            state_delta={"output": "result-n1"},
+            node_duration=0.01,
+        )
+        terminal = WorkflowProgressEvent(
+            event_type="completed",
+            sequence=1,
+            is_terminal=True,
+            result={"success": True, "outputs": {"n1": "result-n1"}},
+        )
+
+        def _factory(*_a, **_kw):
+            async def _gen():
+                yield n1
+                await n2_gate.wait()
+                yield terminal
+
+            return _gen()
+
+        gate_set_when_n1_seen: Dict[str, Any] = {"value": None}
+        driver = SseAsgiDriver(app, "/execute/gate-workflow/stream")
+
+        def _on_body(chunk: bytes) -> bool:
+            if gate_set_when_n1_seen["value"] is None and b"node_progress" in chunk:
+                # n1 reached the client. Capture gate state, then release it.
+                gate_set_when_n1_seen["value"] = n2_gate.is_set()
+                n2_gate.set()
+            return False  # never disconnect
+
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=_factory,
+        ):
+            await asyncio.wait_for(driver.run(_on_body), timeout=5)
+
+        self.assertEqual(driver.status_code, 200)
+        self.assertIs(
+            gate_set_when_n1_seen["value"],
+            False,
+            "n1 must reach the client BEFORE n2_gate is released — a buffering "
+            "transport would only deliver n1 after the whole stream completes",
+        )
+        events = parse_sse_bytes(driver.raw_body)
+        self.assertEqual(events[0].event_name, "node_progress")
+        self.assertEqual(events[-1].event_name, "completed")
+
+    async def test_first_event_chunk_is_separate_from_terminal(self):
+        """n1 is flushed as its own ASGI body message, not coalesced with terminal.
+
+        Counter-factual: a buffering impl would emit a single body chunk
+        containing both events; incremental delivery requires n1 to be sent before
+        the terminal exists.
+        """
+        app = _make_test_app()
+        n2_gate = asyncio.Event()
+        n1 = WorkflowProgressEvent(
+            event_type="node_progress", sequence=0, is_terminal=False, node_name="n1"
+        )
+        terminal = WorkflowProgressEvent(
+            event_type="completed",
+            sequence=1,
+            is_terminal=True,
+            result={"success": True},
+        )
+
+        def _factory(*_a, **_kw):
+            async def _gen():
+                yield n1
+                await n2_gate.wait()
+                yield terminal
+
+            return _gen()
+
+        first_chunk_had_terminal: Dict[str, Any] = {"value": None}
+        driver = SseAsgiDriver(app, "/execute/gate-workflow/stream")
+
+        def _on_body(chunk: bytes) -> bool:
+            if first_chunk_had_terminal["value"] is None:
+                # Inspect the very first delivered chunk: it must carry n1 but NOT
+                # the terminal (which is still gated and does not yet exist).
+                first_chunk_had_terminal["value"] = b"completed" in chunk
+                n2_gate.set()
+            return False
+
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=_factory,
+        ):
+            await asyncio.wait_for(driver.run(_on_body), timeout=5)
+
+        self.assertIs(
+            first_chunk_had_terminal["value"],
+            False,
+            "The first delivered chunk must contain n1 only — the terminal must "
+            "not be coalesced into it (no transport buffering)",
+        )
+
+    async def test_incremental_delivery_content_type_is_event_stream(self):
+        """The incremental path keeps Content-Type: text/event-stream (no GZip)."""
+        app = _make_test_app()
+        n1 = WorkflowProgressEvent(
+            event_type="node_progress", sequence=0, is_terminal=False, node_name="n1"
+        )
+        terminal = WorkflowProgressEvent(
+            event_type="completed",
+            sequence=1,
+            is_terminal=True,
+            result={"success": True},
+        )
+
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=lambda *a, **kw: _make_fake_stream(n1, terminal),
+        ):
+            _, headers, _ = await _collect_sse_response(
+                app, "/execute/gate-workflow/stream"
+            )
+
+        self.assertIn("text/event-stream", headers.get("content-type", ""))
+        self.assertNotIn("gzip", headers.get("content-encoding", ""))
 
 
 # ---------------------------------------------------------------------------
