@@ -232,11 +232,18 @@ Error responses include detailed validation information and suggestions for reso
             from agentmap.deployment.http.api.routes.execute import (
                 router as execution_router,
             )
+            from agentmap.deployment.http.api.routes.stream import (
+                router as stream_router,
+            )
             from agentmap.deployment.http.api.routes.workflows import (
                 router as workflow_router,
             )
 
-            # Include existing routers
+            # SSE streaming router must be included BEFORE execution_router so the
+            # more-specific path /execute/{graph_id:path}/stream takes precedence
+            # over the greedy {graph_id:path} pattern in execution_router (E06-F05
+            # T-003, DEC-4).  This is purely additive — no existing routes changed.
+            app.include_router(stream_router)
             app.include_router(execution_router)
             app.include_router(workflow_router)
             app.include_router(admin_router)
