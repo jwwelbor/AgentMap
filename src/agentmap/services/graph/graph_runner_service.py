@@ -1577,6 +1577,7 @@ class GraphRunnerService:
         initial_state: Optional[dict] = None,
         *,
         validate_agents: bool = False,
+        profile: Optional[str] = None,
     ) -> AsyncGenerator[Any, None]:
         """Stream graph execution as ordered WorkflowProgressEvents (E06-F04, T-005).
 
@@ -1584,6 +1585,14 @@ class GraphRunnerService:
         (D-7) for identical assembly, then drives
         ``GraphExecutionService.stream_compiled_graph_async`` instead of
         ``execute_compiled_graph_async`` (D-2, D-3).
+
+        Args:
+            bundle: Prepared GraphBundle for the run.
+            initial_state: Initial state dict (defaults to ``{}``).
+            validate_agents: If True, validate agent instantiation during assembly.
+            profile: Optional profile/environment name threaded into the terminal
+                event's ``metadata`` so the streaming terminal result matches the
+                ``run_workflow_async`` return for the same input (AC-3, B-5).
 
         Yields:
             ``WorkflowProgressEvent`` — one per completed node with
@@ -1594,6 +1603,15 @@ class GraphRunnerService:
 
         Terminal result dict shape is identical to ``run_workflow_async``
         for the same input (SC-3, C1, D-4).
+
+        Suspension (REQ-F-007 / AC-8b) is detected on all three paths the
+        non-streaming run uses, and each yields a *resumable* ``suspended``
+        terminal carrying a real ``thread_id`` and populated ``interrupt_info``:
+          1. ``GraphInterrupt`` raised mid-stream (LangGraph pattern).
+          2. ``ExecutionInterruptedException`` raised mid-stream (legacy
+             human-interaction pattern).
+          3. A checkpoint interrupt that lets ``.astream()`` complete normally,
+             detected post-stream via ``get_state()`` when checkpointing is active.
 
         Raises:
             asyncio.CancelledError: Propagated without swallowing (REQ-F-006).
@@ -1613,9 +1631,16 @@ class GraphRunnerService:
             initial_state = {}
 
         sequence = 0
-        # Pre-declare so the GeneratorExit/CancelledError handlers can reference it
-        # even if assembly has not yet completed (to avoid NameError on cancel).
+        # Pre-declare so the except handlers can reference these even if assembly
+        # has not yet completed (avoids UnboundLocalError on an early raise — e.g.
+        # the GeneratorExit/CancelledError handlers, and the except-GraphInterrupt
+        # handler which reads executable_graph via _build_graph_interrupt_result).
+        # executable_graph=None also makes the "graph not assembled" guard in
+        # _build_graph_interrupt_result provably reachable.
         execution_tracker: Any = None
+        executable_graph: Any = None
+        execution_config: Optional[Dict[str, Any]] = None
+        requires_checkpoint: bool = False
 
         # Telemetry: open span explicitly before the iteration so it wraps
         # the full stream lifetime.  Use explicit open/close (not a `with` block)
@@ -1667,12 +1692,40 @@ class GraphRunnerService:
                 if isinstance(item, _TerminalStreamResult):
                     # D-8: terminal ExecutionResult — build and yield terminal event
                     result = item.result
+
+                    # B-3 (REQ-F-007 / AC-8b): post-stream suspension detection.
+                    # A checkpoint interrupt can let .astream() complete normally
+                    # (no GraphInterrupt raised); the suspension is only visible in
+                    # the checkpoint state.  Mirror the non-streaming post-execution
+                    # check (_run_core_async :1380-1424): when checkpointing is
+                    # active and get_state() shows pending tasks, emit a resumable
+                    # 'suspended' terminal instead of 'completed'.
+                    if result.success and requires_checkpoint and execution_config:
+                        suspended = self._detect_post_stream_suspension(
+                            bundle=bundle,
+                            graph_name=graph_name,
+                            executable_graph=executable_graph,
+                            execution_config=execution_config,
+                            execution_tracker=execution_tracker,
+                            profile=profile,
+                        )
+                        if suspended is not None:
+                            # NB: the stream loop completed normally, so
+                            # stream_compiled_graph_async already finalized the
+                            # tracker (graph_execution_service.py:522).  Do NOT
+                            # re-finalize here — that matches the non-streaming
+                            # post-stream suspension path, which also does not
+                            # re-finalize (avoids the N-1 double-finalize).
+                            yield WorkflowProgressEvent(
+                                event_type="suspended",
+                                sequence=sequence,
+                                is_terminal=True,
+                                result=suspended,
+                            )
+                            return
+
                     result_dict = self._shape_streaming_result(
-                        result,
-                        graph_name,
-                        requires_checkpoint,
-                        executable_graph,
-                        execution_config,
+                        result, graph_name, profile=profile
                     )
                     event_type = "completed" if result.success else "failed"
                     yield WorkflowProgressEvent(
@@ -1695,25 +1748,75 @@ class GraphRunnerService:
                     )
                     sequence += 1
 
-        except GraphInterrupt:
-            # Suspension: finalize tracker (AC-11), then yield a suspended terminal
-            # event (REQ-F-007, AC-8b).
+        except GraphInterrupt as e:
+            # Suspension (LangGraph pattern): build a *resumable* suspended terminal
+            # carrying the real thread_id + interrupt_info, then finalize the tracker
+            # (AC-11) and yield it (REQ-F-007, AC-8b, B-2).  Mirrors the non-streaming
+            # except-GraphInterrupt block (_run_core_async :1471-1526).
             self.logger.info(
                 f"[GraphRunnerService] Streaming graph interrupted: {graph_name}"
             )
+            self._record_phase_event("workflow.interrupted")
+            result_dict = self._build_graph_interrupt_result(
+                error=e,
+                bundle=bundle,
+                graph_name=graph_name,
+                executable_graph=executable_graph,
+                execution_tracker=execution_tracker,
+                profile=profile,
+            )
             self._finalize_tracker_safe(execution_tracker)
-            result_dict: Dict[str, Any] = {
-                "success": False,
-                "interrupted": True,
-                "thread_id": None,
-                "interrupt_info": {},
-                "metadata": {"graph_name": graph_name},
-            }
             yield WorkflowProgressEvent(
                 event_type="suspended",
                 sequence=sequence,
                 is_terminal=True,
                 result=result_dict,
+            )
+            return
+
+        except ExecutionInterruptedException as e:
+            # Suspension (legacy human-interaction pattern, B-1): an Exception
+            # subclass that MUST map to 'suspended', not 'failed'.  Persist the
+            # interaction for resume (parity with the non-streaming runner
+            # :1528-1546), finalize the tracker (AC-11), then yield a resumable
+            # suspended terminal carrying thread_id + interaction_request (parity
+            # with the run_workflow_async facade handler).
+            self.logger.info(
+                f"[GraphRunnerService] Streaming graph interrupted (legacy "
+                f"pattern) in thread: {e.thread_id}"
+            )
+            self._record_phase_event("workflow.interrupted.legacy")
+            if self.interaction_handler:
+                self.interaction_handler.handle_execution_interruption(
+                    exception=e,
+                    bundle=bundle,
+                    bundle_context=create_bundle_context(bundle),
+                )
+            else:
+                self.logger.warning(
+                    f"No interaction handler configured. Interaction "
+                    f"for thread {e.thread_id} not handled."
+                )
+            self._finalize_tracker_safe(execution_tracker)
+            yield WorkflowProgressEvent(
+                event_type="suspended",
+                sequence=sequence,
+                is_terminal=True,
+                result={
+                    "success": False,
+                    "interrupted": True,
+                    "thread_id": e.thread_id,
+                    "interaction_request": e.interaction_request,
+                    "message": (
+                        f"Execution interrupted for human interaction in "
+                        f"thread: {e.thread_id}"
+                    ),
+                    "metadata": {
+                        "graph_name": graph_name,
+                        "profile": profile,
+                        "checkpoint_available": True,
+                    },
+                },
             )
             return
 
@@ -1745,7 +1848,7 @@ class GraphRunnerService:
                     "outputs": initial_state,
                     "execution_id": None,
                     "execution_summary": None,
-                    "metadata": {"graph_name": graph_name},
+                    "metadata": {"graph_name": graph_name, "profile": profile},
                     "error": error_str,
                 },
                 error=error_str,
@@ -1776,18 +1879,162 @@ class GraphRunnerService:
                 f"stream cancellation: {finalize_err}"
             )
 
+    def _detect_post_stream_suspension(
+        self,
+        bundle: GraphBundle,
+        graph_name: str,
+        executable_graph: Any,
+        execution_config: Dict[str, Any],
+        execution_tracker: Any,
+        profile: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Detect a checkpoint suspension after a normal stream completion (B-3).
+
+        Mirrors the non-streaming post-execution suspension check
+        (``_run_core_async`` :1380-1424): when checkpointing is active, a
+        checkpoint interrupt can let ``.astream()`` finish without raising
+        ``GraphInterrupt`` — the only evidence is a pending task in the
+        checkpoint state.  Returns a resumable ``suspended`` result dict when a
+        pending interrupt is found, otherwise ``None`` (the run truly completed).
+
+        Returns:
+            A suspended result dict (parity with ``run_workflow_async``), or
+            ``None`` when there is no pending interrupt.
+        """
+        thread_id = getattr(execution_tracker, "thread_id", None)
+        if not thread_id:
+            self.logger.warning(
+                "Missing thread_id after async streaming checkpoint execution; "
+                "cannot inspect state"
+            )
+            return None
+
+        state = executable_graph.get_state(execution_config)
+        if not getattr(state, "tasks", None):
+            return None
+
+        return self._build_suspended_result(
+            bundle=bundle,
+            graph_name=graph_name,
+            thread_id=thread_id,
+            state=state,
+            execution_tracker=execution_tracker,
+            profile=profile,
+        )
+
+    def _build_graph_interrupt_result(
+        self,
+        error: GraphInterrupt,
+        bundle: GraphBundle,
+        graph_name: str,
+        executable_graph: Any,
+        execution_tracker: Any,
+        profile: Optional[str],
+    ) -> Dict[str, Any]:
+        """Build a resumable suspended result for a mid-stream GraphInterrupt (B-2).
+
+        Mirrors the non-streaming ``except GraphInterrupt`` block
+        (``_run_core_async`` :1471-1526): pull the real ``thread_id`` from the
+        tracker, read ``get_state``, and populate the interrupt payload via the
+        interrupt handler so the streamed suspension is resumable.
+        """
+        thread_id = execution_tracker.thread_id if execution_tracker else None
+        if not thread_id:
+            self.logger.error(
+                "Cannot handle streaming interrupt: no thread_id available"
+            )
+            raise RuntimeError("Cannot handle interrupt: no thread_id") from error
+        if executable_graph is None:
+            raise RuntimeError(
+                "Cannot handle interrupt: graph not assembled"
+            ) from error
+
+        config = {"configurable": {"thread_id": thread_id}}
+        state = executable_graph.get_state(config)
+        return self._build_suspended_result(
+            bundle=bundle,
+            graph_name=graph_name,
+            thread_id=thread_id,
+            state=state,
+            execution_tracker=execution_tracker,
+            profile=profile,
+        )
+
+    def _build_suspended_result(
+        self,
+        bundle: GraphBundle,
+        graph_name: str,
+        thread_id: str,
+        state: Any,
+        execution_tracker: Any,
+        profile: Optional[str],
+    ) -> Dict[str, Any]:
+        """Shape a resumable suspended result dict from LangGraph state.
+
+        Single source of truth for the GraphInterrupt (B-2) and post-stream
+        ``get_state`` (B-3) suspension paths.  Extracts interrupt metadata via
+        the same handler the non-streaming path uses, emits the resume
+        instructions / status side-effects for parity, then returns a result
+        dict byte-shape-equivalent to ``run_workflow_async``'s interrupted
+        return (``success``/``interrupted``/``thread_id``/``interrupt_info``/
+        ``metadata`` incl. ``profile``).
+        """
+        interrupt_details: Optional[Dict[str, Any]] = None
+        if getattr(state, "tasks", None):
+            interrupt_details = self.interrupt_handler.handle_langgraph_interrupt(
+                state=state,
+                bundle=bundle,
+                thread_id=thread_id,
+                execution_tracker=execution_tracker,
+            )
+            interrupt_type = (
+                interrupt_details.get("type", "unknown")
+                if interrupt_details
+                else self.interrupt_handler.extract_interrupt_type_from_state(state)
+            )
+            self.interrupt_handler.display_resume_instructions(
+                thread_id=thread_id,
+                bundle=bundle,
+                interrupt_type=interrupt_type,
+            )
+        else:
+            interrupt_type = "unknown"
+
+        self.interrupt_handler.log_interrupt_status(
+            graph_name, thread_id, interrupt_type
+        )
+
+        interrupt_info = dict(interrupt_details) if interrupt_details else {}
+        interrupt_info.setdefault("type", interrupt_type)
+        interrupt_info.setdefault("node_name", "unknown")
+
+        return {
+            "success": False,
+            "interrupted": True,
+            "thread_id": thread_id,
+            "message": f"Execution interrupted in thread: {thread_id}",
+            "interrupt_info": interrupt_info,
+            "metadata": {
+                "graph_name": graph_name,
+                "profile": profile,
+                "checkpoint_available": True,
+                "interrupt_type": interrupt_info.get("type", "unknown"),
+                "node_name": interrupt_info.get("node_name", "unknown"),
+            },
+        }
+
     def _shape_streaming_result(
         self,
         result: ExecutionResult,
         graph_name: str,
-        requires_checkpoint: bool,
-        executable_graph: Any,
-        execution_config: Optional[Dict[str, Any]],
+        profile: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Map ExecutionResult to a result dict identical to run_workflow_async (D-4).
 
         This is the single source of truth for terminal-event result shaping
-        in the streaming path (spec §3.6 terminal-result shaping).
+        in the streaming path (spec §3.6 terminal-result shaping).  ``profile``
+        is threaded into ``metadata`` for parity with ``run_workflow_async``
+        (B-5, AC-3).
         """
         if result.success:
             return {
@@ -1795,7 +2042,7 @@ class GraphRunnerService:
                 "outputs": result.final_state,
                 "execution_id": getattr(result, "execution_id", None),
                 "execution_summary": result.execution_summary,
-                "metadata": {"graph_name": graph_name},
+                "metadata": {"graph_name": graph_name, "profile": profile},
             }
 
         # Check for suspended/interrupted state
@@ -1813,6 +2060,7 @@ class GraphRunnerService:
                 "execution_summary": result.execution_summary,
                 "metadata": {
                     "graph_name": graph_name,
+                    "profile": profile,
                     "checkpoint_available": True,
                     "interrupt_type": interrupt_info.get("type", "unknown"),
                     "node_name": interrupt_info.get("node_name", "unknown"),
@@ -1825,7 +2073,7 @@ class GraphRunnerService:
             "outputs": result.final_state,
             "execution_id": getattr(result, "execution_id", None),
             "execution_summary": result.execution_summary,
-            "metadata": {"graph_name": graph_name},
+            "metadata": {"graph_name": graph_name, "profile": profile},
             "error": result.error,
         }
 

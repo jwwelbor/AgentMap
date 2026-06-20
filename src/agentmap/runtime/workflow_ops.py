@@ -863,7 +863,7 @@ async def run_workflow_stream_async(
 
         graph_runner: GraphRunnerService = container.graph_runner_service()
         async for event in graph_runner.run_stream_async(
-            bundle, inputs, validate_agents=new_bundle
+            bundle, inputs, validate_agents=new_bundle, profile=profile
         ):
             yield event
 
