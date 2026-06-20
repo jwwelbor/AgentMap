@@ -2091,6 +2091,10 @@ def _make_graph_runner_for_streaming(
 
     # --- fake compiled graph ---
     astream_factory_holder: Dict[str, Any] = {"fn": None}
+    # get_state holder: tests that exercise the suspension paths (B-2/B-3) set a
+    # state object whose .tasks carry interrupt info via mocks['set_get_state'].
+    # Default state has no pending tasks (no suspension).
+    get_state_holder: Dict[str, Any] = {"state": None}
 
     def _default_astream_factory(initial_state):
         return _make_node_updates(("n1", {"output": "v1"}), ("n2", {"output": "v2"}))
@@ -2104,9 +2108,22 @@ def _make_graph_runner_for_streaming(
         async def ainvoke(self, initial_state, config=None):
             return dict(initial_state)
 
+        def get_state(self, config=None):
+            """Return the configured state snapshot (default: no pending tasks)."""
+            state = get_state_holder["state"]
+            if state is None:
+                empty = MagicMock(name="empty_state_snapshot")
+                empty.tasks = []
+                return empty
+            return state
+
     mock_compiled = _DynamicFakeGraph(_default_astream_factory)
     mock_bundle_svc.requires_checkpoint_support.return_value = False
     mock_assembly.assemble_graph_async.return_value = mock_compiled
+    # Both assembly paths must return the SAME fake graph so the checkpoint path
+    # (used when requires_checkpoint=True) exercises the configurable get_state()
+    # rather than an unstubbed autospec MagicMock (B-3 post-stream detection).
+    mock_assembly.assemble_with_checkpoint_async.return_value = mock_compiled
 
     # --- optional telemetry ---
     fake_telemetry = None
@@ -2140,13 +2157,27 @@ def _make_graph_runner_for_streaming(
         "mock_summary": mock_summary,
         "mock_compiled": mock_compiled,
         "astream_factory_holder": astream_factory_holder,
+        "get_state_holder": get_state_holder,
         "fake_telemetry": fake_telemetry,
+        "bundle_svc": mock_bundle_svc,
+        "interaction": mock_interaction,
     }
 
     def _set_astream_factory(fn: Any) -> None:
         astream_factory_holder["fn"] = fn
 
+    def _set_get_state(state: Any) -> None:
+        """Configure the fake compiled graph's get_state() return value."""
+        get_state_holder["state"] = state
+
+    def _set_requires_checkpoint(value: bool) -> None:
+        """Toggle whether the bundle requires checkpoint support (enables the
+        post-stream get_state suspension detection path, B-3)."""
+        mock_bundle_svc.requires_checkpoint_support.return_value = value
+
     mocks["set_astream_factory"] = _set_astream_factory
+    mocks["set_get_state"] = _set_get_state
+    mocks["set_requires_checkpoint"] = _set_requires_checkpoint
     return service, mocks
 
 
@@ -2165,6 +2196,28 @@ def _make_mock_bundle_for_streaming(graph_name: str = "test-graph") -> MagicMock
     bundle.scoped_registry = None
     bundle.missing_services = set()
     return bundle
+
+
+def _make_interrupt_state(
+    interrupt_type: str = "human_interaction", node_name: str = "n1"
+) -> MagicMock:
+    """Build a fake LangGraph state snapshot carrying a pending interrupt task.
+
+    Mirrors the shape ``GraphInterruptHandler.extract_interrupt_metadata`` reads:
+    ``state.tasks[0].interrupts[0].value`` is a dict with ``type``/``node_name``.
+    Used by the suspension tests (B-2 GraphInterrupt payload, B-3 post-stream
+    get_state detection) so the real interrupt-handling path is exercised end to
+    end rather than mocked away.
+    """
+    interrupt = MagicMock(name="interrupt")
+    interrupt.value = {"type": interrupt_type, "node_name": node_name}
+
+    task = MagicMock(name="pregel_task")
+    task.interrupts = [interrupt]
+
+    state = MagicMock(name="state_snapshot")
+    state.tasks = [task]
+    return state
 
 
 async def _collect_stream_events(runner: Any, bundle: Any, inputs: Dict) -> list:
@@ -2412,15 +2465,25 @@ class TestRunWorkflowStreamAsyncErrorPaths(unittest.IsolatedAsyncioTestCase):
     async def test_run_stream_async_graph_interrupt_yields_suspended_terminal(
         self,
     ) -> None:
-        """TC-F04-008b: GraphInterrupt from .astream() → suspended terminal event.
+        """TC-F04-008b: GraphInterrupt from .astream() → resumable suspended terminal.
 
-        Fake .astream() yields n1 update then raises GraphInterrupt.
+        Fake .astream() yields n1 update then raises GraphInterrupt.  The fake
+        compiled graph's get_state() returns a state carrying a pending interrupt
+        task, so the runner must populate the suspended payload via the real
+        interrupt-handling path (B-2): a non-None thread_id (from the tracker) and
+        a populated interrupt_info — exactly the payload run_workflow_async returns.
+
         Expected: [n1_progress, suspended_terminal]; no exception propagates.
 
-        COUNTER-FACTUAL: A buggy impl that converts GraphInterrupt to event_type='failed'
-        would fail assertEqual(terminal.event_type, 'suspended').
-        A buggy impl that lets GraphInterrupt propagate out of the generator would
-        fail the no-exception assertion.
+        COUNTER-FACTUAL (B-2 — this is the assertion that failed under the old code):
+          The old except-GraphInterrupt block hardcoded thread_id=None and
+          interrupt_info={}, so a streamed suspension was not resumable.  This test
+          asserts thread_id == "test-thread-id" and a non-empty interrupt_info,
+          which FAILS against that hardcoded payload.
+          A buggy impl that converts GraphInterrupt to event_type='failed' would
+          fail assertEqual(terminal.event_type, 'suspended').
+          A buggy impl that lets GraphInterrupt propagate would fail the
+          no-exception assertion.
         """
         from langgraph.errors import GraphInterrupt
 
@@ -2433,6 +2496,11 @@ class TestRunWorkflowStreamAsyncErrorPaths(unittest.IsolatedAsyncioTestCase):
             raise GraphInterrupt("human-input-needed")
 
         mocks["set_astream_factory"](interrupt_after_n1)
+        # get_state() returns a snapshot with a pending human-interaction interrupt
+        # so handle_langgraph_interrupt can extract real metadata (B-2 parity).
+        mocks["set_get_state"](
+            _make_interrupt_state(interrupt_type="human_interaction", node_name="n1")
+        )
         bundle = _make_mock_bundle_for_streaming("interruptible-graph")
 
         events: list = []
@@ -2474,11 +2542,268 @@ class TestRunWorkflowStreamAsyncErrorPaths(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(e1.state_delta, "Terminal event state_delta must be None")
         self.assertIsNotNone(e1.result, "Suspended terminal must carry a result dict")
         # Suspended result follows interrupt shape (REQ-F-007 / AC-8b)
-        # success=False for interrupted runs
         self.assertFalse(
             e1.result.get("success", True),
             "Suspended terminal result['success'] must be False",
         )
+        self.assertTrue(
+            e1.result.get("interrupted"),
+            "Suspended terminal result['interrupted'] must be True",
+        )
+        # B-2: payload must be resumable — real thread_id from the tracker, NOT None.
+        self.assertEqual(
+            e1.result.get("thread_id"),
+            "test-thread-id",
+            "Suspended terminal must carry the real thread_id (B-2); the old code "
+            "hardcoded thread_id=None, making the checkpoint unresumable",
+        )
+        # B-2: interrupt_info must be populated (not the old hardcoded {}).
+        interrupt_info = e1.result.get("interrupt_info")
+        self.assertIsInstance(
+            interrupt_info,
+            dict,
+            "Suspended terminal must carry an interrupt_info dict (B-2)",
+        )
+        self.assertTrue(
+            interrupt_info,
+            "interrupt_info must be non-empty (B-2); the old code hardcoded {}",
+        )
+        self.assertEqual(
+            interrupt_info.get("type"),
+            "human_interaction",
+            "interrupt_info must carry the real interrupt type extracted from state",
+        )
+        self.assertEqual(
+            interrupt_info.get("node_name"),
+            "n1",
+            "interrupt_info must carry the interrupting node name extracted from state",
+        )
+        # B-5: metadata must carry the profile key for parity with run_workflow_async.
+        self.assertIn(
+            "metadata",
+            e1.result,
+            "Suspended terminal result must carry a metadata dict",
+        )
+        self.assertIn(
+            "profile",
+            e1.result["metadata"],
+            "Suspended terminal metadata must contain a 'profile' key (B-5 parity "
+            "with run_workflow_async)",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-008b (B-1): legacy ExecutionInterruptedException → suspended terminal
+    # ------------------------------------------------------------------
+
+    async def test_run_stream_async_legacy_interrupt_yields_suspended_terminal(
+        self,
+    ) -> None:
+        """B-1: ExecutionInterruptedException (legacy human-interaction interrupt)
+        must map to a 'suspended' terminal carrying thread_id + interaction_request
+        — NOT a 'failed' terminal.
+
+        ExecutionInterruptedException is an Exception subclass.  The old code had
+        no dedicated handler, so it fell into `except Exception` and was emitted as
+        'failed'.  This test drives .astream() to raise it and asserts a resumable
+        'suspended' terminal (parity with run_workflow_async's
+        except ExecutionInterruptedException at workflow_ops.py:786-798).
+
+        COUNTER-FACTUAL: the old code yields event_type='failed' here, which fails
+        assertEqual(terminal.event_type, 'suspended').
+        """
+        from agentmap.exceptions.agent_exceptions import (
+            ExecutionInterruptedException,
+        )
+        from agentmap.models.execution import WorkflowProgressEvent
+        from agentmap.models.human_interaction import (
+            HumanInteractionRequest,
+            InteractionType,
+        )
+
+        runner, mocks = _make_graph_runner_for_streaming()
+
+        interaction_request = HumanInteractionRequest(
+            thread_id="legacy-thread-42",
+            node_name="approval_node",
+            interaction_type=InteractionType.APPROVAL,
+            prompt="Approve?",
+        )
+
+        async def legacy_interrupt_after_n1(initial_state):
+            yield {"n1": {"output": "partial"}}
+            raise ExecutionInterruptedException(
+                thread_id="legacy-thread-42",
+                interaction_request=interaction_request,
+                checkpoint_data={},
+            )
+
+        mocks["set_astream_factory"](legacy_interrupt_after_n1)
+        bundle = _make_mock_bundle_for_streaming("legacy-interrupt-graph")
+
+        events: list = []
+        exception_raised = False
+        try:
+            async for event in runner.run_stream_async(
+                bundle, initial_state={"input": "x"}, validate_agents=False
+            ):
+                events.append(event)
+        except Exception:
+            exception_raised = True
+
+        self.assertFalse(
+            exception_raised,
+            "run_stream_async must NOT let ExecutionInterruptedException propagate; "
+            "a 'suspended' terminal event must be yielded (B-1)",
+        )
+        self.assertEqual(
+            len(events),
+            2,
+            f"Expected [n1_progress, suspended_terminal] = 2 events, got {len(events)}",
+        )
+
+        e1 = events[1]
+        self.assertIsInstance(e1, WorkflowProgressEvent)
+        self.assertEqual(
+            e1.event_type,
+            "suspended",
+            "B-1: legacy ExecutionInterruptedException must map to 'suspended', "
+            f"not 'failed' — got {e1.event_type!r}",
+        )
+        self.assertTrue(e1.is_terminal)
+        self.assertIsNotNone(e1.result, "Suspended terminal must carry a result dict")
+        self.assertFalse(e1.result.get("success", True))
+        self.assertTrue(e1.result.get("interrupted"))
+        self.assertEqual(
+            e1.result.get("thread_id"),
+            "legacy-thread-42",
+            "B-1: suspended terminal must carry the real thread_id from the "
+            "ExecutionInterruptedException",
+        )
+        self.assertEqual(
+            e1.result.get("interaction_request"),
+            interaction_request,
+            "B-1: suspended terminal must carry the interaction_request (parity "
+            "with run_workflow_async)",
+        )
+        self.assertIn(
+            "profile",
+            e1.result.get("metadata", {}),
+            "B-5: suspended terminal metadata must contain a 'profile' key",
+        )
+        # Resume side-effect parity: the legacy interrupt must be persisted via the
+        # interaction handler (mirrors the non-streaming runner) so the thread is
+        # resumable, exactly as the non-streaming path does.
+        mocks["interaction"].handle_execution_interruption.assert_called_once()
+
+    # ------------------------------------------------------------------
+    # TC-F04-008b (B-3): post-stream get_state suspension → suspended terminal
+    # ------------------------------------------------------------------
+
+    async def test_run_stream_async_post_stream_get_state_suspension(self) -> None:
+        """B-3: a checkpoint interrupt that lets .astream() finish normally must be
+        detected via post-stream get_state() and emitted as 'suspended', NOT
+        'completed'.
+
+        This is the primary checkpoint-based suspension mechanism: the stream loop
+        completes (a terminal ExecutionResult is produced with success=True), but
+        get_state() shows a pending interrupt task.  The runner must inspect
+        get_state() (when requires_checkpoint) before emitting the terminal and
+        convert a would-be 'completed' into 'suspended' (parity with the
+        non-streaming post-execution check at graph_runner_service.py:1380-1424).
+
+        COUNTER-FACTUAL: the old code emitted 'completed' here (it never called
+        get_state after a normal stream completion), which fails
+        assertEqual(terminal.event_type, 'suspended').
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        runner, mocks = _make_graph_runner_for_streaming()
+
+        # Stream completes normally (no exception) — two node updates then exhausts.
+        async def normal_completion(initial_state):
+            yield {"n1": {"output": "v1"}}
+            yield {"n2": {"output": "v2"}}
+
+        mocks["set_astream_factory"](normal_completion)
+        # Checkpoint is required, and the post-run state shows a pending interrupt.
+        mocks["set_requires_checkpoint"](True)
+        mocks["set_get_state"](
+            _make_interrupt_state(interrupt_type="suspend", node_name="n2")
+        )
+        bundle = _make_mock_bundle_for_streaming("checkpoint-suspend-graph")
+
+        events: list = []
+        exception_raised = False
+        try:
+            async for event in runner.run_stream_async(
+                bundle, initial_state={"input": "x"}, validate_agents=False
+            ):
+                events.append(event)
+        except Exception:
+            exception_raised = True
+
+        self.assertFalse(exception_raised, "No exception must propagate (B-3)")
+        self.assertGreaterEqual(
+            len(events),
+            1,
+            "At least a terminal event must be yielded",
+        )
+        terminal = events[-1]
+        self.assertIsInstance(terminal, WorkflowProgressEvent)
+        self.assertTrue(terminal.is_terminal, "Last event must be terminal")
+        self.assertEqual(
+            terminal.event_type,
+            "suspended",
+            "B-3: a checkpoint interrupt detected post-stream via get_state must be "
+            f"'suspended', not 'completed' — got {terminal.event_type!r}",
+        )
+        self.assertIsNotNone(terminal.result)
+        self.assertFalse(terminal.result.get("success", True))
+        self.assertTrue(terminal.result.get("interrupted"))
+        self.assertEqual(
+            terminal.result.get("thread_id"),
+            "test-thread-id",
+            "B-3: suspended terminal must carry the real thread_id",
+        )
+        self.assertIn(
+            "profile",
+            terminal.result.get("metadata", {}),
+            "B-5: suspended terminal metadata must contain a 'profile' key",
+        )
+
+    async def test_run_stream_async_completed_when_no_pending_tasks(self) -> None:
+        """B-3 negative: with checkpoint enabled but NO pending interrupt task,
+        a normally-completing stream must still emit 'completed' (the post-stream
+        get_state check must NOT misclassify a clean completion as suspended).
+
+        COUNTER-FACTUAL: an over-eager impl that treats any checkpoint run as
+        suspended would fail assertEqual(terminal.event_type, 'completed').
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        runner, mocks = _make_graph_runner_for_streaming()
+
+        async def normal_completion(initial_state):
+            yield {"n1": {"output": "v1"}}
+            yield {"n2": {"output": "v2"}}
+
+        mocks["set_astream_factory"](normal_completion)
+        mocks["set_requires_checkpoint"](True)
+        # Default get_state returns a snapshot with empty .tasks (no interrupt).
+
+        bundle = _make_mock_bundle_for_streaming("checkpoint-clean-graph")
+
+        events = await _collect_stream_events(runner, bundle, {"input": "x"})
+        terminal = events[-1]
+        self.assertIsInstance(terminal, WorkflowProgressEvent)
+        self.assertTrue(terminal.is_terminal)
+        self.assertEqual(
+            terminal.event_type,
+            "completed",
+            "A clean checkpoint completion (no pending tasks) must emit 'completed', "
+            f"got {terminal.event_type!r}",
+        )
+        self.assertTrue(terminal.result.get("success"))
 
     # ------------------------------------------------------------------
     # TC-F04-008a: setup errors raise BEFORE any event (facade-level)
@@ -4187,6 +4512,176 @@ class TestRunWorkflowStreamAsyncParityWithAsync(unittest.IsolatedAsyncioTestCase
             terminal.result,
             "Successful streaming terminal result must NOT contain 'interrupted' "
             "key (parity with run_workflow_async success shape)",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-003 / AC-3 / B-5 — FACADE-LEVEL run-twice byte-equivalence
+    # ------------------------------------------------------------------
+
+    async def test_facade_run_twice_streaming_terminal_equals_non_streaming_result(
+        self,
+    ) -> None:
+        """AC-3 / SC-3 / B-5: run the SAME graph + SAME inputs through BOTH public
+        facades and assert the streaming terminal result dict EQUALS the
+        non-streaming result dict — including ``metadata.profile``.
+
+        This is the run-twice byte-equivalence test the UAT (B-5) found missing.
+        The prior tests in this class compare the *runner* methods
+        (``run_async`` / ``run_stream_async``) and the prior ``profile`` test
+        (``test_run_stream_async_*`` line ~2581) only asserts ``profile`` is
+        *present* on the runner's suspended terminal.  Neither drives the public
+        facade pair, and that gap is exactly what masked B-5: the streaming
+        terminal was missing ``metadata.profile`` because ``profile`` is shaped
+        in TWO different places — ``run_workflow_async`` shapes it at the facade
+        (``workflow_ops.py:758-761``) while the streaming path shapes it in the
+        runner's ``_shape_streaming_result`` (``graph_runner_service.py:2045``).
+        Only a facade-to-facade equality comparison exercises both shaping sites
+        on the same input.
+
+        ENTRYPOINT (public facade pair, production caller signature):
+          await run_workflow_async(graph_name, inputs, profile=...)         → dict
+          run_workflow_stream_async(graph_name, inputs, profile=...)        → events
+        Both facades are patched onto the SAME real GraphRunnerService (built by
+        ``_make_parity_runner``) and the SAME bundle, so the real ``run_async``,
+        real ``run_stream_async``, and real ``_shape_streaming_result`` all run.
+
+        LOWEST ALLOWED MOCK SEAM:
+          - The fake compiled graph (``.ainvoke()`` / ``.astream()``) from
+            ``_make_parity_runner`` — the deepest seam.
+          - ``RuntimeManager.get_container`` returns a fake container whose
+            ``graph_runner_service()`` is the REAL parity runner (NOT a mock),
+            so the facade → runner → execution → graph chain executes for real
+            on both paths.
+
+        FORBIDDEN MOCKS:
+          - Do NOT mock ``run_workflow_async`` / ``run_workflow_stream_async``.
+          - Do NOT mock ``run_async`` / ``run_stream_async`` / the runner's
+            ``_shape_streaming_result`` — those are the units under test.
+          - Do NOT compare a hand-picked subset of keys: the assertion is full
+            dict equality (a weakened subset is the B-4 failure mode that let
+            the impl ship with a missing key).
+
+        COUNTER-FACTUAL (proven before commit):
+          If the streaming terminal drops ``metadata.profile`` (i.e. revert the
+          B-5 fix so ``_shape_streaming_result`` emits
+          ``{"graph_name": graph_name}``), the non-streaming dict still carries
+          ``metadata.profile`` and ``assertEqual(stream_result, non_stream)``
+          FAILS.  With the fix in place both dicts are fully equal.  Verified by
+          temporarily reverting the fix during development: equality failed with
+          ``ns.metadata={'graph_name':...,'profile':'prod'}`` vs
+          ``st.metadata={'graph_name':...}``.
+        """
+        from agentmap.models.execution import WorkflowProgressEvent
+        from agentmap.runtime.workflow_ops import (
+            run_workflow_async,
+            run_workflow_stream_async,
+        )
+
+        # Same graph, same inputs, same profile drive BOTH facades.
+        graph_name = "parity-graph"
+        inputs = {"input": "byte-equivalence-check"}
+        profile = "prod"
+
+        final_state = {"output": "materialized-text"}
+        # One REAL runner instance services both facade calls (proves both paths
+        # produce equivalent results from the same execution machinery).
+        service, _mocks = self._make_parity_runner(final_state)
+        bundle = self._make_parity_bundle(graph_name=graph_name)
+
+        # Fake container that hands BOTH facades the SAME real runner + same bundle.
+        fake_bundle_service = MagicMock(name="fake_bundle_service")
+        fake_bundle_service.get_or_create_bundle.return_value = (bundle, False)
+        fake_config_service = MagicMock(name="fake_config_service")
+        fake_config_service.get_csv_path.return_value = "/fake/graphs.csv"
+        fake_container = MagicMock(name="fake_container")
+        fake_container.graph_runner_service.return_value = service
+        fake_container.graph_bundle_service.return_value = fake_bundle_service
+        fake_container.app_config_service.return_value = fake_config_service
+
+        with (
+            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=fake_container,
+            ),
+        ):
+            # --- Run 1: non-streaming facade -> result dict ---
+            non_stream_result = await run_workflow_async(
+                graph_name, inputs, profile=profile
+            )
+
+            # --- Run 2: streaming facade -> consume generator, take terminal ---
+            stream_events: list = []
+            async for event in run_workflow_stream_async(
+                graph_name, inputs, profile=profile
+            ):
+                stream_events.append(event)
+
+        terminal = next(
+            (
+                e
+                for e in stream_events
+                if isinstance(e, WorkflowProgressEvent) and e.is_terminal
+            ),
+            None,
+        )
+        self.assertIsNotNone(
+            terminal, "Streaming facade must yield exactly one terminal event"
+        )
+        self.assertIsNotNone(
+            terminal.result, "Streaming terminal event must carry a result dict"
+        )
+        stream_result = terminal.result
+
+        self.assertIsInstance(
+            non_stream_result,
+            dict,
+            "run_workflow_async (non-streaming facade) must return a dict",
+        )
+
+        # Both fakes are deterministic: execution_summary is a shared mock object,
+        # execution_id resolves to None on both paths (ExecutionResult has no
+        # execution_id field), and outputs merge the same final_state.  There are
+        # NO non-deterministic fields to normalize here, so we compare the FULL
+        # dicts directly (not a weakened subset — that subset weakening was the
+        # B-4 failure mode).  If a future fake introduces a real per-run id or
+        # timestamp, normalize it explicitly here with a comment.
+        self.assertEqual(
+            stream_result,
+            non_stream_result,
+            "AC-3 / SC-3: the streaming terminal result dict must be byte-equal "
+            "to the non-streaming run_workflow_async result for the same graph + "
+            f"inputs + profile.\nstreaming  = {stream_result}\n"
+            f"non-stream = {non_stream_result}",
+        )
+
+        # B-5 (explicit, named so the regression is unmistakable): metadata.profile
+        # MUST be present and equal in BOTH results.  The streaming terminal
+        # previously DROPPED this key (graph_runner_service.py:1798 vs
+        # workflow_ops.py:758-761), and that divergence shipped because no test
+        # compared the two metadata dicts.
+        self.assertIn(
+            "profile",
+            non_stream_result["metadata"],
+            "B-5: non-streaming metadata must contain 'profile'",
+        )
+        self.assertIn(
+            "profile",
+            stream_result["metadata"],
+            "B-5: streaming terminal metadata must contain 'profile' — the missing "
+            "key that this run-twice test exists to catch",
+        )
+        self.assertEqual(
+            stream_result["metadata"]["profile"],
+            non_stream_result["metadata"]["profile"],
+            "B-5: metadata.profile must be EQUAL across the streaming and "
+            "non-streaming facades for the same profile argument",
+        )
+        self.assertEqual(
+            stream_result["metadata"]["profile"],
+            profile,
+            "B-5: metadata.profile must carry the caller's profile argument "
+            f"({profile!r}), not None or a default",
         )
 
 
