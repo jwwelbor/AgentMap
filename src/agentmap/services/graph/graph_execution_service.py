@@ -7,7 +7,8 @@ Simplified to focus on execution rather than graph building.
 
 import asyncio
 import time
-from typing import Any, Dict, Optional
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator, Dict, Optional, Tuple, Union
 
 from langgraph.errors import GraphInterrupt
 
@@ -17,6 +18,30 @@ from agentmap.services.execution_policy_service import ExecutionPolicyService
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.state_adapter_service import StateAdapterService
+
+
+@dataclass
+class _TerminalStreamResult:
+    """D-8 typed terminal sentinel for ``stream_compiled_graph_async``.
+
+    **D-8 disambiguation mechanism**: ``stream_compiled_graph_async`` yields
+    ``(node_name, state_delta)`` tuples for each node update.  When the stream
+    is exhausted and the ``ExecutionResult`` is finalized, the generator yields
+    this sentinel as its final item.
+
+    Using a typed sentinel (rather than a dict key or a bare ``ExecutionResult``
+    instance) guarantees that a graph node literally named ``"result"`` (or any
+    other string) cannot be confused with the terminal signal:
+    - ``isinstance(item, _TerminalStreamResult)`` is ``False`` for all node-update
+      tuples, even those whose ``node_name`` is ``"result"``.
+    - ``isinstance(item, _TerminalStreamResult)`` is ``True`` only for this class.
+
+    **Callers** (``GraphRunnerService.run_stream_async``, T-E06-F04-005) must
+    check ``isinstance(item, _TerminalStreamResult)`` to detect the terminal and
+    extract ``item.result``.
+    """
+
+    result: ExecutionResult
 
 
 class GraphExecutionService:
@@ -412,6 +437,144 @@ class GraphExecutionService:
                 total_duration=execution_time,
                 error=str(e),
             )
+
+    async def stream_compiled_graph_async(
+        self,
+        executable_graph: Any,
+        graph_name: str,
+        initial_state: Dict[str, Any],
+        execution_tracker: Any,
+        config: Optional[Dict[str, Any]] = None,
+    ) -> AsyncGenerator[
+        Union[Tuple[str, Dict[str, Any]], "_TerminalStreamResult"], None
+    ]:
+        """Stream a pre-compiled/assembled graph asynchronously, yielding per-node progress.
+
+        Iterates ``executable_graph.astream(stream_mode="updates")``.  For each
+        completed super-step LangGraph yields ``{node_name: state_delta_dict}``; this
+        method yields ``(node_name, state_delta)`` tuples to the caller for each node
+        in execution order.  Deltas are merged into a running ``final_state`` so the
+        terminal ``ExecutionResult`` reflects the fully accumulated state — parity with
+        ``execute_compiled_graph_async`` which returns the full state from ``ainvoke``.
+
+        **D-8 disambiguation mechanism:** node-update items are **yielded** as
+        ``(node_name: str, state_delta: dict)`` tuples.  After stream exhaustion
+        the terminal ``ExecutionResult`` is wrapped in a ``_TerminalStreamResult``
+        sentinel and **yielded as the final item**.  Callers check
+        ``isinstance(item, _TerminalStreamResult)`` to detect the terminal and
+        extract ``item.result``.
+
+        This typed-sentinel approach guarantees a graph node literally named
+        ``"result"`` (or ``"terminal"``, or any other string) cannot be confused
+        with the terminal signal: ``isinstance(("result", {...}), _TerminalStreamResult)``
+        is always ``False``; only the last yielded item is a ``_TerminalStreamResult``.
+
+        **Additive only (REQ-NF-001 / C5):** ``execute_compiled_graph_async`` is
+        unchanged.  This is a sibling method; the two paths are independent.
+
+        **TD-026 / D-5:** Final text is taken from the materialized graph state
+        (``final_state`` after delta merging), never from delta concatenation.
+        This method does NOT import ``call_llm_stream_async`` or ``LLMStreamChunk``.
+
+        Args:
+            executable_graph: Compiled graph with an ``astream`` async-generator surface.
+            graph_name: Name of the graph (for tracking and logging).
+            initial_state: Initial state dictionary passed to ``astream``.
+            execution_tracker: Pre-created execution tracker (from ``_assemble_for_async_run``).
+            config: Optional LangGraph config (e.g., ``{"configurable": {"thread_id": ...}}``).
+
+        Yields:
+            ``(node_name: str, state_delta: dict)`` tuples — one per completed
+            super-step from ``.astream(stream_mode="updates")``.  ``state_delta``
+            is always a materialized ``dict``, never an iterator (Constraint C1).
+            The final yielded item is a ``_TerminalStreamResult`` sentinel (D-8).
+
+        Raises:
+            GraphInterrupt: Re-raised without wrapping (same parity as
+                ``execute_compiled_graph_async:349``).
+            asyncio.CancelledError: Re-raised after finalizing the tracker
+                (parity with ``:353-369``).
+        """
+        self.logger.info(
+            f"[GraphExecutionService] Streaming graph (async): {graph_name}"
+        )
+
+        start_time = time.time()
+        # Accumulate node deltas into final_state so the terminal result is the
+        # fully merged state (parity with ainvoke which returns complete state).
+        final_state: Dict[str, Any] = dict(initial_state)
+
+        try:
+            async for update in executable_graph.astream(
+                initial_state, config=config, stream_mode="updates"
+            ):
+                # Each update is {node_name: state_delta_dict} per LangGraph
+                # stream_mode="updates" (one key per completed super-step in linear graphs;
+                # multiple keys possible in parallel graphs).  Confirmed shape: TC-F04-D9.
+                for node_name, state_delta in update.items():
+                    # Merge this node's delta into running final_state (Constraint C1:
+                    # state_delta is a materialized dict — never an iterator).
+                    final_state.update(state_delta)
+                    yield (node_name, dict(state_delta))
+
+            # Stream exhausted — finalize tracker and build ExecutionResult.
+            # Identical to execute_compiled_graph_async:316-340.
+            self.execution_tracking.complete_execution(execution_tracker)
+            execution_summary = self.execution_tracking.to_summary(
+                execution_tracker, graph_name, final_state
+            )
+
+            execution_time = time.time() - start_time
+            graph_success = self.execution_policy.evaluate_success_policy(
+                execution_summary
+            )
+
+            final_state = self.state_adapter.set_value(
+                final_state, "__execution_summary", execution_summary
+            )
+            final_state = self.state_adapter.set_value(
+                final_state, "__policy_success", graph_success
+            )
+
+            result = ExecutionResult(
+                graph_name=graph_name,
+                success=graph_success,
+                final_state=final_state,
+                execution_summary=execution_summary,
+                total_duration=execution_time,
+                error=None,
+            )
+
+            self.logger.info(
+                f"[GraphExecutionService] Streaming graph completed: '{graph_name}' "
+                f"in {execution_time:.2f}s"
+            )
+
+            # D-8: yield the terminal ExecutionResult wrapped in a typed sentinel.
+            # A node named "result" (or any string) cannot collide with this because
+            # isinstance(("result", {...}), _TerminalStreamResult) is always False.
+            yield _TerminalStreamResult(result=result)
+
+        except GraphInterrupt:
+            # Re-raise intentional interrupts without wrapping (parity with :349).
+            raise
+
+        except asyncio.CancelledError:
+            # Propagate cancellation; finalize tracker to avoid leaks (parity with :353-369).
+            execution_time = time.time() - start_time
+            self.logger.info(
+                f"[GraphExecutionService] Streaming graph cancelled: '{graph_name}' "
+                f"after {execution_time:.2f}s — finalizing tracker"
+            )
+            try:
+                if execution_tracker is not None:
+                    self.execution_tracking.complete_execution(execution_tracker)
+            except Exception as finalize_err:
+                self.logger.warning(
+                    f"[GraphExecutionService] Tracker finalization failed on "
+                    f"cancellation: {finalize_err}"
+                )
+            raise
 
     def get_service_info(self) -> Dict[str, Any]:
         """

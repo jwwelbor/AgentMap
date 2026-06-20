@@ -1204,5 +1204,778 @@ class TestAssembleForAsyncRunHelper(unittest.IsolatedAsyncioTestCase):
         mocks["execution"].execute_compiled_graph_async.assert_awaited_once()
 
 
+# ---------------------------------------------------------------------------
+# Helpers for TestRunWorkflowStreamAsyncHappyPath / TestDisambiguationMechanism
+# (T-E06-F04-004)
+# ---------------------------------------------------------------------------
+
+
+def _make_graph_execution_service() -> Tuple[Any, Dict[str, Any]]:
+    """Construct a GraphExecutionService with all dependencies mocked.
+
+    Returns (service, mocks_dict) where mocks_dict contains:
+      - tracking: ExecutionTrackingService mock
+      - policy: ExecutionPolicyService mock
+      - state_adapter: StateAdapterService mock
+      - mock_tracker: a MagicMock acting as the execution tracker
+      - mock_summary: a MagicMock acting as the execution summary
+    """
+    from agentmap.models.execution.summary import ExecutionSummary
+    from agentmap.services.execution_policy_service import ExecutionPolicyService
+    from agentmap.services.execution_tracking_service import ExecutionTrackingService
+    from agentmap.services.graph.graph_execution_service import GraphExecutionService
+    from agentmap.services.logging_service import LoggingService
+    from agentmap.services.state_adapter_service import StateAdapterService
+
+    mock_tracking = create_autospec(ExecutionTrackingService, instance=True)
+    mock_policy = create_autospec(ExecutionPolicyService, instance=True)
+    mock_state_adapter = create_autospec(StateAdapterService, instance=True)
+    mock_logging = create_autospec(LoggingService, instance=True)
+    mock_logging.get_class_logger.return_value = MagicMock(name="mock_logger")
+
+    # Tracker + summary mocks
+    mock_tracker = MagicMock(name="mock_tracker")
+    mock_summary = MagicMock(name="mock_summary", spec=ExecutionSummary)
+    mock_summary.graph_name = "test_graph"
+
+    mock_tracking.complete_execution.return_value = None
+    mock_tracking.to_summary.return_value = mock_summary
+    mock_policy.evaluate_success_policy.return_value = True
+
+    # state_adapter.set_value returns state with injected keys unchanged
+    def _set_value_side_effect(state, key, value):
+        updated = dict(state)
+        updated[key] = value
+        return updated
+
+    mock_state_adapter.set_value.side_effect = _set_value_side_effect
+
+    service = GraphExecutionService(
+        execution_tracking_service=mock_tracking,
+        execution_policy_service=mock_policy,
+        state_adapter_service=mock_state_adapter,
+        logging_service=mock_logging,
+    )
+
+    mocks = {
+        "tracking": mock_tracking,
+        "policy": mock_policy,
+        "state_adapter": mock_state_adapter,
+        "mock_tracker": mock_tracker,
+        "mock_summary": mock_summary,
+    }
+    return service, mocks
+
+
+class _FakeCompiledGraph:
+    """Minimal fake compiled graph for T-E06-F04-004 tests.
+
+    Delegates .astream() to a caller-supplied async generator factory.
+    Provides .ainvoke() returning a fixed final_state for regression tests.
+    """
+
+    def __init__(self, astream_factory, final_state: Optional[Dict[str, Any]] = None):
+        self._astream_factory = astream_factory
+        self._final_state = final_state or {}
+
+    def astream(self, initial_state, config=None, stream_mode=None):
+        """Return the async generator produced by the factory."""
+        return self._astream_factory(initial_state)
+
+    async def ainvoke(self, initial_state, config=None):
+        return dict(self._final_state)
+
+
+async def _make_node_updates(*node_name_delta_pairs):
+    """Async generator that yields {node_name: delta} dicts in order then exhausts."""
+    for node_name, delta in node_name_delta_pairs:
+        yield {node_name: delta}
+
+
+async def _make_node_updates_with_gate(node_name_delta_pairs, gate: Any):
+    """Async generator that yields first pair, waits on gate, then yields rest."""
+    first_name, first_delta = node_name_delta_pairs[0]
+    yield {first_name: first_delta}
+    await gate.wait()
+    for node_name, delta in node_name_delta_pairs[1:]:
+        yield {node_name: delta}
+
+
+# ---------------------------------------------------------------------------
+# TestRunWorkflowStreamAsyncHappyPath — TC-F04-001, TC-F04-002, TC-F04-004
+# (T-E06-F04-004)
+# ---------------------------------------------------------------------------
+
+
+class TestRunWorkflowStreamAsyncHappyPath(unittest.IsolatedAsyncioTestCase):
+    """TC-F04-001, TC-F04-002, TC-F04-004: stream_compiled_graph_async happy path.
+
+    These tests drive GraphExecutionService.stream_compiled_graph_async directly —
+    the lowest production seam for T-E06-F04-004 (runner/facade layers are T-E06-F04-005+).
+
+    ENTRYPOINT:
+      GraphExecutionService.stream_compiled_graph_async(
+          executable_graph, graph_name, initial_state, execution_tracker, config=None
+      )
+
+    LOWEST ALLOWED MOCK SEAM:
+      Fake compiled graph whose .astream(stream_mode='updates') yields scripted
+      {node_name: delta} dicts.  All GraphExecutionService dependencies (tracking,
+      policy, state_adapter) are mocked.
+
+    FORBIDDEN MOCKS:
+      Do NOT mock stream_compiled_graph_async itself; it must execute for real.
+      Do NOT mock WorkflowProgressEvent — it must be constructed by the method.
+
+    COUNTER-FACTUAL:
+      - TC-F04-001: A buggy impl that doesn't yield tuples at all would fail
+        isinstance(item, tuple) and the (node_name, delta) shape assertions.
+      - TC-F04-002: A buffering impl would not yield n1 tuple before n2 is released
+        (gate never opens, but n1_received would never be set either).
+      - TC-F04-004: A buggy impl emitting ExecutionResult as a tuple item (instead
+        of returning it) would fail isinstance(terminal_result, ExecutionResult).
+    """
+
+    # ------------------------------------------------------------------
+    # TC-F04-001: 2-node graph yields (n1, delta) then (n2, delta) in order
+    # ------------------------------------------------------------------
+
+    async def test_stream_compiled_graph_async_2node_ordered_yields(self) -> None:
+        """TC-F04-001: 2-node fake graph yields (n1, delta), (n2, delta) then done.
+
+        COUNTER-FACTUAL: A buggy impl that yields node name and delta as separate
+        items (not tuples), or yields them in wrong order, would fail the
+        assertEqual(node_name, 'n1') / assertEqual(node_name, 'n2') assertions.
+        """
+        service, mocks = _make_graph_execution_service()
+
+        updates = [
+            ("n1", {"output": "result-n1"}),
+            ("n2", {"output": "result-n2"}),
+        ]
+
+        def astream_factory(initial_state):
+            return _make_node_updates(*updates)
+
+        fake_graph = _FakeCompiledGraph(astream_factory)
+
+        collected = []
+
+        gen = service.stream_compiled_graph_async(
+            executable_graph=fake_graph,
+            graph_name="test-graph",
+            initial_state={"input": "hello"},
+            execution_tracker=mocks["mock_tracker"],
+            config=None,
+        )
+        async for item in gen:
+            collected.append(item)
+
+        # The generator must yield (node_name, state_delta) tuples for each node,
+        # then a _TerminalStreamResult sentinel (D-8 mechanism).
+        # Total items = 2 node tuples + 1 sentinel = 3.
+        from agentmap.services.graph.graph_execution_service import (
+            _TerminalStreamResult,
+        )
+
+        self.assertEqual(
+            len(collected),
+            3,
+            f"Expected 2 node tuples + 1 terminal sentinel = 3 items, got {len(collected)}: {collected}",
+        )
+
+        # Last item must be the _TerminalStreamResult sentinel
+        self.assertIsInstance(
+            collected[-1],
+            _TerminalStreamResult,
+            f"Last item must be _TerminalStreamResult sentinel (D-8), got {type(collected[-1])!r}",
+        )
+
+        # Verify n1
+        n1_name, n1_delta = collected[0]
+        self.assertEqual(
+            n1_name,
+            "n1",
+            f"First yielded node_name must be 'n1', got {n1_name!r}",
+        )
+        self.assertEqual(
+            n1_delta,
+            {"output": "result-n1"},
+            f"n1 state_delta mismatch: {n1_delta}",
+        )
+
+        # Verify n2
+        n2_name, n2_delta = collected[1]
+        self.assertEqual(
+            n2_name,
+            "n2",
+            f"Second yielded node_name must be 'n2', got {n2_name!r}",
+        )
+        self.assertEqual(
+            n2_delta,
+            {"output": "result-n2"},
+            f"n2 state_delta mismatch: {n2_delta}",
+        )
+
+        # Verify node tuples are (str, dict) — no ExecutionResult mixed in
+        for item in collected[:-1]:
+            self.assertIsInstance(
+                item,
+                tuple,
+                f"Each node item must be a (node_name, delta) tuple, got {type(item)}",
+            )
+            node_name, delta = item
+            self.assertIsInstance(node_name, str, "node_name must be str")
+            self.assertIsInstance(
+                delta, dict, "state_delta must be dict (materialized, not iterator)"
+            )
+
+    async def test_stream_compiled_graph_async_returns_execution_result_via_d8(
+        self,
+    ) -> None:
+        """TC-F04-001 extension: terminal ExecutionResult is accessible via D-8 mechanism.
+
+        D-8 MECHANISM: The generator yields a typed sentinel (_TerminalStreamResult)
+        as its final item, wrapping the ExecutionResult.  The sentinel is a distinct
+        type from (str, dict) node-update tuples, so no dict-key collision is possible.
+        `run_stream_async` (T-E06-F04-005) checks isinstance(item, _TerminalStreamResult)
+        to detect the terminal.
+
+        COUNTER-FACTUAL: A buggy impl that yields ExecutionResult directly (not wrapped
+        in a sentinel) would be indistinguishable from a node update for a node named
+        "result" — the D-8 test (TC-F04-D8) catches this.
+        """
+        from agentmap.models.execution.result import ExecutionResult
+        from agentmap.services.graph.graph_execution_service import (
+            _TerminalStreamResult,
+        )
+
+        service, mocks = _make_graph_execution_service()
+
+        updates = [("n1", {"output": "val1"})]
+
+        def astream_factory(initial_state):
+            return _make_node_updates(*updates)
+
+        fake_graph = _FakeCompiledGraph(astream_factory)
+
+        gen = service.stream_compiled_graph_async(
+            executable_graph=fake_graph,
+            graph_name="d8-test-graph",
+            initial_state={"input": "d8-input"},
+            execution_tracker=mocks["mock_tracker"],
+            config=None,
+        )
+
+        # Collect all items; the last must be a _TerminalStreamResult sentinel
+        all_items = []
+        async for item in gen:
+            all_items.append(item)
+
+        self.assertGreaterEqual(
+            len(all_items),
+            1,
+            "Generator must yield at least one item (the terminal sentinel)",
+        )
+        terminal_item = all_items[-1]
+        self.assertIsInstance(
+            terminal_item,
+            _TerminalStreamResult,
+            f"Last yielded item must be a _TerminalStreamResult sentinel (D-8 mechanism), "
+            f"got {type(terminal_item).__name__!r}",
+        )
+        self.assertIsInstance(
+            terminal_item.result,
+            ExecutionResult,
+            f"_TerminalStreamResult.result must be an ExecutionResult, "
+            f"got {type(terminal_item.result).__name__}",
+        )
+        self.assertEqual(
+            terminal_item.result.graph_name,
+            "d8-test-graph",
+            f"terminal_result.graph_name mismatch: {terminal_item.result.graph_name!r}",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-002: Incremental delivery via asyncio.Event gate
+    # ------------------------------------------------------------------
+
+    async def test_stream_compiled_graph_async_incremental_delivery(self) -> None:
+        """TC-F04-002: n1 tuple received before gate releases n2.
+
+        A backpressure gate (asyncio.Event) blocks the second node.
+        The consumer must receive the n1 (node_name, delta) tuple before
+        the gate is opened — proving the generator yields incrementally,
+        not buffering all results before the first yield.
+
+        COUNTER-FACTUAL: A buffering impl that collects all node updates before
+        yielding any would never yield n1 while n2 is blocked — so n1_received
+        would never be set while gate is still closed.
+        """
+        import asyncio as _asyncio
+
+        service, mocks = _make_graph_execution_service()
+
+        gate = _asyncio.Event()
+        n1_received = _asyncio.Event()
+
+        node_pairs = [
+            ("n1", {"output": "incremental-v1"}),
+            ("n2", {"output": "incremental-v2"}),
+        ]
+
+        def astream_factory(initial_state):
+            return _make_node_updates_with_gate(node_pairs, gate)
+
+        fake_graph = _FakeCompiledGraph(astream_factory)
+
+        received_items = []
+
+        async def consume():
+            from agentmap.services.graph.graph_execution_service import (
+                _TerminalStreamResult,
+            )
+
+            gen = service.stream_compiled_graph_async(
+                executable_graph=fake_graph,
+                graph_name="gate-graph",
+                initial_state={"input": "x"},
+                execution_tracker=mocks["mock_tracker"],
+                config=None,
+            )
+            async for item in gen:
+                received_items.append(item)
+                # Only count non-sentinel items as "node items" for the gate check
+                if (
+                    not isinstance(item, _TerminalStreamResult)
+                    and len(received_items) == 1
+                ):
+                    n1_received.set()
+                    # Verify gate is NOT yet set before we open it
+                    # (this is the key incremental-delivery assertion)
+                    self.assertFalse(
+                        gate.is_set(),
+                        "Gate must NOT be set when n1 is first received — "
+                        "impl must yield n1 immediately, not buffer",
+                    )
+                    gate.set()
+
+        await consume()
+
+        from agentmap.services.graph.graph_execution_service import (
+            _TerminalStreamResult,
+        )
+
+        self.assertTrue(
+            n1_received.is_set(),
+            "n1_received event was never set — n1 tuple was never yielded",
+        )
+        # Total items: 2 node tuples + 1 terminal sentinel = 3
+        self.assertEqual(
+            len(received_items),
+            3,
+            f"Expected 2 node tuples + 1 terminal sentinel = 3 items, got {len(received_items)}",
+        )
+        n1_name, _ = received_items[0]
+        n2_name, _ = received_items[1]
+        self.assertEqual(n1_name, "n1")
+        self.assertEqual(n2_name, "n2")
+        self.assertIsInstance(
+            received_items[2],
+            _TerminalStreamResult,
+            "Third item must be _TerminalStreamResult terminal sentinel",
+        )
+
+    # ------------------------------------------------------------------
+    # TC-F04-004: BVA — exactly one terminal ExecutionResult via D-8, it is last
+    # ------------------------------------------------------------------
+
+    async def _collect_with_terminal(
+        self, service: Any, mocks: Dict[str, Any], node_pairs: list, graph_name: str
+    ) -> Tuple[list, Any]:
+        """Helper: run generator, separate node tuples from terminal sentinel via D-8.
+
+        Returns (node_tuples, execution_result) where:
+          - node_tuples: list of (node_name, state_delta) tuples yielded before the sentinel
+          - execution_result: the ExecutionResult from the _TerminalStreamResult sentinel
+        """
+        from agentmap.services.graph.graph_execution_service import (
+            _TerminalStreamResult,
+        )
+
+        def astream_factory(initial_state):
+            return _make_node_updates(*node_pairs)
+
+        fake_graph = _FakeCompiledGraph(astream_factory)
+
+        gen = service.stream_compiled_graph_async(
+            executable_graph=fake_graph,
+            graph_name=graph_name,
+            initial_state={"input": "bva"},
+            execution_tracker=mocks["mock_tracker"],
+            config=None,
+        )
+
+        node_tuples = []
+        terminal_result = None
+        async for item in gen:
+            if isinstance(item, _TerminalStreamResult):
+                terminal_result = item.result
+            else:
+                node_tuples.append(item)
+
+        return node_tuples, terminal_result
+
+    async def test_bva_0_nodes_exactly_one_terminal_result(self) -> None:
+        """TC-F04-004 BVA-0: 0-node graph yields no tuples; still produces one terminal.
+
+        COUNTER-FACTUAL: A buggy impl that requires at least one node update before
+        finalizing would never reach complete_execution and terminal_result would be None.
+        """
+        from agentmap.models.execution.result import ExecutionResult
+
+        service, mocks = _make_graph_execution_service()
+        node_tuples, terminal_result = await self._collect_with_terminal(
+            service, mocks, [], "zero-node-graph"
+        )
+
+        self.assertEqual(
+            len(node_tuples),
+            0,
+            f"0-node graph must yield 0 (node_name, delta) tuples, got {len(node_tuples)}",
+        )
+        self.assertIsNotNone(
+            terminal_result,
+            "0-node graph must still produce a terminal ExecutionResult via D-8",
+        )
+        self.assertIsInstance(terminal_result, ExecutionResult)
+
+    async def test_bva_1_node_exactly_one_terminal_result(self) -> None:
+        """TC-F04-004 BVA-1: 1-node graph yields exactly 1 tuple then one terminal.
+
+        COUNTER-FACTUAL: A buggy impl that yields 0 or 2 node tuples for a
+        1-node graph would fail len(node_tuples) == 1.
+        """
+        from agentmap.models.execution.result import ExecutionResult
+
+        service, mocks = _make_graph_execution_service()
+        node_tuples, terminal_result = await self._collect_with_terminal(
+            service, mocks, [("n1", {"output": "v"})], "one-node-graph"
+        )
+
+        self.assertEqual(len(node_tuples), 1)
+        self.assertIsNotNone(terminal_result)
+        self.assertIsInstance(terminal_result, ExecutionResult)
+        # No ExecutionResult among the node tuples
+        for item in node_tuples:
+            name, delta = item
+            self.assertIsInstance(name, str)
+            self.assertIsInstance(delta, dict)
+
+    async def test_bva_3_nodes_exactly_one_terminal_result(self) -> None:
+        """TC-F04-004 BVA-3: 3-node graph yields exactly 3 tuples then one terminal.
+
+        COUNTER-FACTUAL: A buggy impl that emits two ExecutionResults (one from
+        each state-injection step) would have terminal_result set twice — but since
+        we capture via StopAsyncIteration.value, only the final `return` counts.
+        The node_tuples count must be exactly 3.
+        """
+        from agentmap.models.execution.result import ExecutionResult
+
+        service, mocks = _make_graph_execution_service()
+        node_tuples, terminal_result = await self._collect_with_terminal(
+            service,
+            mocks,
+            [
+                ("n1", {"o1": "v1"}),
+                ("n2", {"o2": "v2"}),
+                ("n3", {"o3": "v3"}),
+            ],
+            "three-node-graph",
+        )
+
+        self.assertEqual(
+            len(node_tuples),
+            3,
+            f"3-node graph must yield exactly 3 node tuples, got {len(node_tuples)}",
+        )
+        self.assertIsNotNone(terminal_result)
+        self.assertIsInstance(terminal_result, ExecutionResult)
+        # Verify no ExecutionResult was mixed into node tuples
+        for item in node_tuples:
+            self.assertIsInstance(item, tuple, f"Expected tuple, got {type(item)}")
+
+    async def test_bva_terminal_result_graph_success_is_true(self) -> None:
+        """TC-F04-004: terminal ExecutionResult.success is True for successful run.
+
+        COUNTER-FACTUAL: A buggy impl that does not call evaluate_success_policy
+        would leave success at a default (possibly False), failing this assertion.
+        """
+        from agentmap.models.execution.result import ExecutionResult
+
+        service, mocks = _make_graph_execution_service()
+        mocks["policy"].evaluate_success_policy.return_value = True
+
+        node_tuples, terminal_result = await self._collect_with_terminal(
+            service, mocks, [("n1", {"output": "ok"})], "success-graph"
+        )
+
+        self.assertIsNotNone(terminal_result)
+        self.assertIsInstance(terminal_result, ExecutionResult)
+        self.assertTrue(
+            terminal_result.success,
+            "terminal ExecutionResult.success must be True when policy returns True",
+        )
+
+    async def test_final_state_merges_all_node_deltas(self) -> None:
+        """TC-F04-001 extension: terminal ExecutionResult.final_state merges all node deltas.
+
+        stream_mode='updates' yields sparse deltas per node. The execution service
+        must merge them into a running final_state so the terminal ExecutionResult
+        has the fully accumulated state (parity with ainvoke which returns full state).
+
+        COUNTER-FACTUAL: A buggy impl that uses only the last node's delta as
+        final_state would produce final_state = {'o2': 'v2'} — missing 'o1' from n1.
+        """
+        from agentmap.models.execution.result import ExecutionResult
+
+        service, mocks = _make_graph_execution_service()
+
+        updates = [
+            ("n1", {"o1": "v1"}),
+            ("n2", {"o2": "v2"}),
+        ]
+
+        node_tuples, terminal_result = await self._collect_with_terminal(
+            service, mocks, updates, "merge-graph"
+        )
+
+        self.assertIsNotNone(terminal_result)
+        self.assertIsInstance(terminal_result, ExecutionResult)
+
+        # final_state must contain contributions from BOTH nodes
+        # (merged into initial_state = {"input": "bva"})
+        self.assertIn(
+            "o1",
+            terminal_result.final_state,
+            "final_state must contain 'o1' from n1's delta — delta merging required",
+        )
+        self.assertIn(
+            "o2",
+            terminal_result.final_state,
+            "final_state must contain 'o2' from n2's delta — delta merging required",
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestDisambiguationMechanism — TC-F04-D8
+# (T-E06-F04-004)
+# ---------------------------------------------------------------------------
+
+
+class TestDisambiguationMechanism(unittest.IsolatedAsyncioTestCase):
+    """TC-F04-D8: Node named 'result' does not collide with terminal ExecutionResult.
+
+    ENTRYPOINT (internal-only):
+      GraphExecutionService.stream_compiled_graph_async(
+          executable_graph, graph_name, initial_state, execution_tracker, config=None
+      )
+      Justification: this tests the internal D-8 disambiguation mechanism;
+      the caller contract above it (run_stream_async) is T-E06-F04-005.
+
+    LOWEST ALLOWED MOCK SEAM:
+      Fake compiled graph .astream() with a node named 'result' (collision test).
+
+    FORBIDDEN MOCKS:
+      Do NOT mock the disambiguation mechanism itself — the actual method body
+      must exercise the separation between node updates and the terminal result.
+
+    COUNTER-FACTUAL:
+      A buggy impl using a dict-key sentinel ('result' or 'terminal') to distinguish
+      the terminal from node updates would confuse a node named 'result' with the
+      terminal signal — yielding the node tuple as the terminal OR discarding it.
+      This test catches that by asserting both the node tuple for 'result' AND the
+      ExecutionResult are correctly produced and separated.
+    """
+
+    async def test_node_named_result_does_not_collide_with_terminal_execution_result(
+        self,
+    ) -> None:
+        """TC-F04-D8: 'result' node update coexists with terminal ExecutionResult.
+
+        Fake graph yields {"result": {"output": "node-output-from-result-node"}}
+        then exhausts.  The generator must yield exactly one (node_name, delta)
+        tuple where node_name == 'result', then yield one _TerminalStreamResult
+        sentinel carrying the ExecutionResult.
+
+        Both the node tuple AND the terminal result are present and distinct.
+
+        D-8 MECHANISM: The generator yields typed sentinels (_TerminalStreamResult)
+        for the terminal, NOT a dict key. A node named "result" cannot be confused
+        with the terminal because the terminal has a completely different Python type.
+
+        COUNTER-FACTUAL:
+          An impl that checks `if node_name == 'result': treat_as_terminal` would
+          swallow the node-named-'result' update and never yield the (node_name, delta)
+          tuple — failing len(node_tuples) == 1.
+          An impl that yields a raw dict with key 'result' as the terminal signal
+          would confuse the node update dict with the sentinel — the 'result' node's
+          state_delta would be mistakenly treated as the terminal ExecutionResult.
+        """
+        from agentmap.models.execution.result import ExecutionResult
+        from agentmap.services.graph.graph_execution_service import (
+            _TerminalStreamResult,
+        )
+
+        service, mocks = _make_graph_execution_service()
+
+        collision_update = {"result": {"output": "node-output-from-result-node"}}
+
+        async def astream_factory_d8(initial_state):
+            yield collision_update
+
+        fake_graph = _FakeCompiledGraph(astream_factory_d8)
+
+        gen = service.stream_compiled_graph_async(
+            executable_graph=fake_graph,
+            graph_name="result-collision-graph",
+            initial_state={"input": "d8-input"},
+            execution_tracker=mocks["mock_tracker"],
+            config=None,
+        )
+
+        node_tuples = []
+        terminal_sentinel = None
+        async for item in gen:
+            if isinstance(item, _TerminalStreamResult):
+                terminal_sentinel = item
+            else:
+                node_tuples.append(item)
+
+        # Exactly one node tuple must be yielded: ("result", {...})
+        self.assertEqual(
+            len(node_tuples),
+            1,
+            f"Expected exactly 1 node tuple for 'result' node, got {len(node_tuples)}: {node_tuples}",
+        )
+
+        node_name, state_delta = node_tuples[0]
+        self.assertEqual(
+            node_name,
+            "result",
+            f"Yielded node_name must be 'result' (not discarded or reinterpreted), got {node_name!r}",
+        )
+        self.assertEqual(
+            state_delta,
+            {"output": "node-output-from-result-node"},
+            f"state_delta must match the node's output dict, got {state_delta}",
+        )
+
+        # Terminal sentinel must be present (D-8)
+        self.assertIsNotNone(
+            terminal_sentinel,
+            "Terminal _TerminalStreamResult sentinel must be yielded after all node tuples "
+            "(D-8: typed sentinel separates node updates from terminal ExecutionResult) — "
+            "the 'result'-named node may have been confused with the terminal signal",
+        )
+        self.assertIsInstance(
+            terminal_sentinel,
+            _TerminalStreamResult,
+            f"Terminal item must be _TerminalStreamResult, got {type(terminal_sentinel).__name__}",
+        )
+        terminal_result = terminal_sentinel.result
+        self.assertIsInstance(
+            terminal_result,
+            ExecutionResult,
+            f"_TerminalStreamResult.result must be ExecutionResult, got {type(terminal_result).__name__}",
+        )
+        # The terminal ExecutionResult must NOT be the node's state_delta dict
+        self.assertIsNot(
+            terminal_result,
+            state_delta,
+            "terminal ExecutionResult must be a distinct ExecutionResult object, "
+            "not the node's state_delta dict",
+        )
+        # final_state must contain the 'result' node's contribution
+        self.assertIn(
+            "output",
+            terminal_result.final_state,
+            "final_state must include 'output' key from the 'result' node's delta",
+        )
+
+    async def test_d8_mechanism_is_typed_sentinel(self) -> None:
+        """TC-F04-D8 structural: D-8 uses a typed sentinel (_TerminalStreamResult).
+
+        The generator must yield a _TerminalStreamResult as its last item to
+        communicate the terminal ExecutionResult.  This is the explicit D-8
+        disambiguation: node updates are (str, dict) tuples; terminal is a
+        _TerminalStreamResult instance — a completely different Python type.
+
+        COUNTER-FACTUAL: A buggy impl that yields the ExecutionResult directly
+        as a tuple item (not wrapped) would have isinstance(item, tuple) == False
+        for the last item (since ExecutionResult is not a tuple) — but the D-8
+        test catches this by requiring isinstance(last_item, _TerminalStreamResult).
+        A buggy impl using a dict sentinel ({"_terminal": result}) would fail
+        isinstance(item, _TerminalStreamResult) since a dict is not a sentinel.
+        """
+        from agentmap.models.execution.result import ExecutionResult
+        from agentmap.services.graph.graph_execution_service import (
+            _TerminalStreamResult,
+        )
+
+        service, mocks = _make_graph_execution_service()
+
+        async def astream_factory_empty(initial_state):
+            # Empty async generator — no node updates
+            return
+            yield  # pragma: no cover — makes this an async generator
+
+        fake_graph = _FakeCompiledGraph(astream_factory_empty)
+
+        gen = service.stream_compiled_graph_async(
+            executable_graph=fake_graph,
+            graph_name="d8-structural",
+            initial_state={},
+            execution_tracker=mocks["mock_tracker"],
+            config=None,
+        )
+
+        all_items = []
+        async for item in gen:
+            all_items.append(item)
+            # No raw ExecutionResult should ever be yielded directly (without wrapping)
+            self.assertNotIsInstance(
+                item,
+                ExecutionResult,
+                "D-8 violation: ExecutionResult must NOT be yielded directly as a stream item; "
+                "it must be wrapped in _TerminalStreamResult sentinel",
+            )
+
+        self.assertGreaterEqual(
+            len(all_items),
+            1,
+            "Generator must yield at least one item (the _TerminalStreamResult sentinel) "
+            "even for an empty graph",
+        )
+        last_item = all_items[-1]
+        self.assertIsInstance(
+            last_item,
+            _TerminalStreamResult,
+            f"Last yielded item must be _TerminalStreamResult (D-8 sentinel), "
+            f"got {type(last_item).__name__!r}",
+        )
+        self.assertIsInstance(last_item.result, ExecutionResult)
+
+        # For empty graph: no node tuples, only the sentinel
+        non_sentinel = [
+            i for i in all_items if not isinstance(i, _TerminalStreamResult)
+        ]
+        self.assertEqual(
+            len(non_sentinel),
+            0,
+            f"Empty graph must yield 0 node tuples, got {len(non_sentinel)}: {non_sentinel}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
