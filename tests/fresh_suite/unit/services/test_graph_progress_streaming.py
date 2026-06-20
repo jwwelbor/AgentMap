@@ -2842,11 +2842,18 @@ class TestTelemetrySpanLifecycle(unittest.IsolatedAsyncioTestCase):
     # ------------------------------------------------------------------
 
     async def test_telemetry_span_closes_on_failed_path(self) -> None:
-        """TC-F04-011-B: span closes when a node raises RuntimeError.
+        """TC-F04-011-B: span closes and tracker is finalized when a node raises RuntimeError.
 
-        COUNTER-FACTUAL: A buggy impl that only closes the span on clean completion
-        would leave span open on failure; if the span is managed by start_span context
-        manager, __exit__ would not be called.
+        COUNTER-FACTUAL (BUG-001 lock-in):
+          The pre-fix run_stream_async only called _finalize_tracker_safe inside the
+          GeneratorExit / CancelledError handlers but NOT inside the `except Exception`
+          block.  A buggy impl missing that call would leave
+          runner_tracking.complete_execution.call_count == 0 after a failed run,
+          causing the assert_called_once() assertion below to fail.
+
+          Separately: a buggy impl that only closes the span on clean completion
+          would leave the span open on failure (start_span context manager __exit__
+          not called).
         """
         runner, mocks, fake_telemetry = self._get_runner_with_fake_telemetry()
 
@@ -2872,15 +2879,41 @@ class TestTelemetrySpanLifecycle(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(terminal_events[0].result)
         self.assertFalse(terminal_events[0].result.get("success", True))
 
+        # BUG-001 lock-in: execution tracker must be finalized exactly once.
+        # run_stream_async's `except Exception` block calls _finalize_tracker_safe,
+        # which delegates to self.execution_tracking.complete_execution (runner_tracking).
+        # A pre-fix impl that skipped _finalize_tracker_safe here would leave
+        # call_count == 0, failing this assertion.
+        mocks["runner_tracking"].complete_execution.assert_called_once()
+
+        # Span: if opened, must be closed even on the failed path.
+        open_count = fake_telemetry.start_span.call_count
+        if open_count > 0:
+            cm = fake_telemetry.start_span.return_value
+            self.assertGreater(
+                cm.__exit__.call_count,
+                0,
+                "Telemetry span must be closed (context manager __exit__ called) "
+                "on the failed path",
+            )
+
     # ------------------------------------------------------------------
     # Sub-case C: suspended path
     # ------------------------------------------------------------------
 
     async def test_telemetry_span_closes_on_suspended_path(self) -> None:
-        """TC-F04-011-C: span closes when GraphInterrupt → suspended terminal.
+        """TC-F04-011-C: span closes and tracker is finalized when GraphInterrupt → suspended.
 
-        COUNTER-FACTUAL: A buggy impl that only closes the span on 'completed'
-        and 'failed' would leave the span open on 'suspended'.
+        COUNTER-FACTUAL (BUG-001 lock-in):
+          The pre-fix run_stream_async only called _finalize_tracker_safe inside the
+          GeneratorExit / CancelledError handlers but NOT inside the `except GraphInterrupt`
+          block.  A buggy impl missing that call would leave
+          runner_tracking.complete_execution.call_count == 0 after a suspended run,
+          causing the assert_called_once() assertion below to fail.
+
+          Separately: a buggy impl that only closes the span on 'completed' or 'failed'
+          but not on 'suspended' would leave the span open (start_span context manager
+          __exit__ not called).
         """
         from langgraph.errors import GraphInterrupt
 
@@ -2900,10 +2933,23 @@ class TestTelemetrySpanLifecycle(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(terminal_events), 1)
         self.assertEqual(terminal_events[0].event_type, "suspended")
 
-        # Tracker must still be finalized on suspended path
-        # (GraphInterrupt handling: tracker finalized before building suspended event)
-        # Note: depending on implementation, tracker may or may not be called on interrupt
-        # The test validates the span lifecycle primarily; tracker is validated in TC-F04-006
+        # BUG-001 lock-in: execution tracker must be finalized exactly once.
+        # run_stream_async's `except GraphInterrupt` block calls _finalize_tracker_safe,
+        # which delegates to self.execution_tracking.complete_execution (runner_tracking).
+        # A pre-fix impl that skipped _finalize_tracker_safe here would leave
+        # call_count == 0, failing this assertion.
+        mocks["runner_tracking"].complete_execution.assert_called_once()
+
+        # Span: if opened, must be closed even on the suspended path.
+        open_count = fake_telemetry.start_span.call_count
+        if open_count > 0:
+            cm = fake_telemetry.start_span.return_value
+            self.assertGreater(
+                cm.__exit__.call_count,
+                0,
+                "Telemetry span must be closed (context manager __exit__ called) "
+                "on the suspended path",
+            )
 
     # ------------------------------------------------------------------
     # Sub-case D: consumer-cancelled path
