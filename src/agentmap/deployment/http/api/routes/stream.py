@@ -13,18 +13,15 @@ Design decisions (spec.md E06-F05):
   DEC-5  — Cancellation via async-generator lifecycle; rely on F04 finalization only.
   DEC-6  — Module-level asyncio.Semaphore for concurrency admission.
 
-Scope by task: T-002 framing helpers + semaphore + router; T-003 handler happy
-path + terminal events + registration; T-004 disconnect cancel + duration cap +
-incremental delivery; T-005 idle heartbeat (AC-7) + concurrency 503 pre-open gate
-(AC-6) + auth rejection (AC-8), with pre-open ordering auth -> concurrency ->
-[unsupported-mode validation, added by T-006].
+Pre-open gate ordering (spec §A.7): auth -> unsupported-mode (422) -> concurrency
+(503) -> open.  In-stream: duration cap, disconnect cancel, idle heartbeat.
 """
 
 import asyncio
 import logging
 from typing import Any, AsyncGenerator, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from agentmap.deployment.http.api.dependencies import (
@@ -48,6 +45,9 @@ from agentmap.deployment.http.api.sse import stream_semaphore as _stream_semapho
 from agentmap.deployment.http.api.sse import (  # noqa: F401
     to_serializable as _to_serializable,
 )
+from agentmap.deployment.http.api.sse import (
+    validate_streaming_request_shape as _validate_streaming_request_shape,
+)
 from agentmap.exceptions.runtime_exceptions import (
     AgentMapNotInitialized,
     GraphNotFound,
@@ -63,13 +63,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Streaming"])
 
-# Documented duration-cap error code, surfaced as a terminal ``event: failed``
-# payload when the wall-clock cap is reached (spec.md §A.3 / §A.4, AC-5).
+# Duration-cap error code → terminal ``event: failed`` payload (spec §A.3/§A.4, AC-5).
 _DURATION_EXCEEDED_ERROR = "stream_duration_exceeded"
 
 # Max time the loop blocks on one upstream event before waking to re-check the
-# disconnect flag, the deadline, and the heartbeat tick.  A timeout does NOT
-# cancel the in-flight event (it is shielded) — the loop wakes and resumes.
+# disconnect flag, deadline, and heartbeat tick (the in-flight event is shielded).
 _EVENT_POLL_INTERVAL_SECONDS = 1.0
 
 # Floor for the per-iteration wait budget (heartbeat_interval may be 0 in tests);
@@ -101,15 +99,14 @@ async def _sse_generator(
     the hard contract is upstream cancel + F04 finalization via aclose(), not the
     wire event), (2) enforce the monotonic duration cap → terminal ``failed`` with
     ``stream_duration_exceeded`` (AC-5 / DRIFT-03: ``failed``, not ``cancelled``),
-    and (3) emit an idle ``:keepalive`` SSE *comment* — never a typed event — once
-    ``idle_timeout_seconds`` has elapsed, at ``heartbeat_interval_seconds`` cadence
+    and (3) emit an idle ``:keepalive`` SSE *comment* — never a typed event — at the
+    ``heartbeat_interval_seconds`` cadence once ``idle_timeout_seconds`` elapses
     (AC-7); the duration deadline stays authoritative (heartbeats never extend it).
 
-    ``CancelledError``/``GeneratorExit`` are re-raised after cleanup, never
-    swallowed (F04-lesson).  The ``finally`` closes the upstream via ``aclose()``
-    so F04's finalizer runs (DEC-5; F05 adds no third finalize) and releases the
-    pre-open concurrency ``semaphore`` slot exactly once on every exit path
-    (normal, disconnect, duration-cap, error) (DEC-6).
+    ``CancelledError``/``GeneratorExit`` are re-raised after cleanup, never swallowed
+    (F04-lesson).  The ``finally`` closes the upstream via ``aclose()`` so F04's
+    finalizer runs (DEC-5; no third finalize) and releases the ``semaphore`` slot
+    exactly once on every exit path (normal, disconnect, duration-cap, error) (DEC-6).
     """
     upstream = run_workflow_stream_async(
         graph_name=graph_name,
@@ -238,7 +235,7 @@ async def stream_workflow(
     graph_id: str,
     request_body: ExecuteRequest,
     request: Request,
-) -> StreamingResponse:
+) -> Response:
     """Run a workflow over the streaming path; return a text/event-stream response.
 
     Mirrors POST /execute/{graph_id:path} (execute.py) by appending /stream,
@@ -248,12 +245,13 @@ async def stream_workflow(
     503, concurrency 503) are ordinary JSON HTTP errors — identical shape to the
     non-streaming endpoint (§A.3) — because the stream has not opened yet.
 
-    Pre-open gate ordering (INT-F05-4): auth (the @requires_auth decorator, before
-    this body) → concurrency admission (semaphore 503) → [unsupported-mode
-    validation, slotted in by T-006] → open the stream.  A failed earlier gate
-    never reaches a later one (a 401 never attempts the acquire; a 503 never opens
-    a body).  The duration cap, disconnect cancel, and idle heartbeat live in the
-    generator.
+    Pre-open gate ordering (INT-F05-4 / spec §A.7): auth (the @requires_auth
+    decorator, before this body) → unsupported-mode validation (422 on an
+    out-of-shape body, REQ-F-006) → concurrency admission (semaphore 503) → open the
+    stream.  A failed earlier gate never reaches a later one (a 401 never validates
+    the shape; a rejected shape never attempts the acquire, so it never holds a
+    slot; a 503 never opens a body).  The duration cap, disconnect cancel, and idle
+    heartbeat live in the generator.
     """
     config_file = getattr(request.app.state, "config_file", None)
     graph_name = _normalize_graph_identifier(graph_id)
@@ -265,24 +263,33 @@ async def stream_workflow(
             detail=f"Invalid graph identifier format: {graph_name}",
         )
 
-    # --- Unsupported-mode validation slot (T-006 / REQ-F-006 / AC-9) ----------
-    # T-006 adds the request-shape rejection (batch-only/unsupported params →
-    # 400/422, no silent downgrade) here — after auth, BEFORE the concurrency
-    # acquire below (so a rejected shape never holds a slot).  Left for T-006.
+    # --- Unsupported-mode validation (T-006 / REQ-F-006 / AC-9 / DEC-3) --------
+    # Reject out-of-shape requests (422) BEFORE the concurrency acquire, so a
+    # rejected shape never holds a slot nor opens a body (spec §A.7).  Validate the
+    # RAW body, NOT request_body: ExecuteRequest has extra='ignore' so an unknown
+    # field (batch_mode) is silently dropped — relying on it would be a silent
+    # downgrade (MED-1).  model_fields is the single source of allowed fields (AC-10).
+    try:
+        _validate_streaming_request_shape(
+            await request.json(), ExecuteRequest.model_fields
+        )
+    except HTTPException:
+        # Operational-only log (AC-11: no payload), then re-raise for the 422 JSON.
+        logger.info("SSE request rejected: unsupported request shape")
+        raise
 
-    # Envelope values are read at request time (live DI container), so
-    # get_sse_config() reflects http.sse.* with the §A.4 defaults applied.
+    # Envelope read at request time (live DI), so get_sse_config() reflects
+    # http.sse.* with §A.4 defaults applied.
     sse_config = get_app_config_service(request).get_sse_config()
     max_stream_duration_seconds = float(sse_config["max_stream_duration_seconds"])
     idle_timeout_seconds = float(sse_config["idle_timeout_seconds"])
     heartbeat_interval_seconds = float(sse_config["heartbeat_interval_seconds"])
 
     # --- Concurrency gate (DEC-6 / REQ-F-004 / AC-6) --------------------------
-    # Non-blocking pre-open admission: a full pool → 503 JSON with NO slot consumed
-    # and NO event-stream body.  A blocking acquire would queue behind a held slot
-    # (forbidden — an immediate 503 is required), so guard with locked() first; in
-    # asyncio acquire() does not suspend when a slot is free, so there is no race
-    # between the locked() check and the acquire().
+    # Non-blocking pre-open admission: a full pool → 503 JSON, NO slot consumed, NO
+    # body.  Guard with locked() first (a blocking acquire would queue behind a held
+    # slot — forbidden); in asyncio acquire() never suspends when a slot is free, so
+    # there is no race between the locked() check and the acquire().
     if _stream_semaphore.locked():
         logger.warning("SSE stream rejected: max_concurrent_streams exceeded")
         return JSONResponse(
@@ -298,17 +305,14 @@ async def stream_workflow(
 
     logger.info("Opening SSE stream for graph: %s", graph_name)
 
-    # From here the slot is held and MUST be released on every exit path.  On the
-    # success path the generator's finally owns the release (it runs on normal
-    # completion, disconnect, duration-cap, and error).  The ``handed_off`` flag +
-    # finally below guarantees the slot is freed if anything goes wrong *before*
-    # the StreamingResponse is returned (so the generator's finally would never
-    # run) — without a broad except-and-reraise.
+    # Slot is now held and MUST be released on every exit path.  On success the
+    # generator's finally owns the release; the ``handed_off`` flag + finally below
+    # frees it if anything fails BEFORE the StreamingResponse is returned (so the
+    # generator's finally would never run) — without a broad except-and-reraise.
     handed_off = False
     try:
-        # Pre-open exception mapping — identical to execute.py:270-277.  These
-        # surface as JSON HTTP errors (not SSE events) because the
-        # StreamingResponse has not been created yet.
+        # Pre-open exception mapping — identical to execute.py:270-277; surfaces as
+        # JSON HTTP errors (not SSE events) since the StreamingResponse isn't created.
         try:
             # Build the generator (lazy — no F04 calls until iteration starts).
             gen = _sse_generator(

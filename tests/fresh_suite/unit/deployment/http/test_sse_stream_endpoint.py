@@ -254,8 +254,13 @@ class TestSSEContentCapturePolicy(unittest.TestCase):
     COUNTER-FACTUAL: if stream.py has 'logger.info(state_delta)', this test fails.
     """
 
+    # Full AC-11 forbidden-keyword set (spec.md AC-11 / task spec line 43).
+    # ``result`` and ``outputs`` are also asserted individually below because they
+    # are common variable names an implementer might inadvertently log.
     _FORBIDDEN_IN_LOG_LINES = [
         "state_delta",
+        "result",
+        "outputs",
         "node_state",
         "completion",
         "prompt",
@@ -331,6 +336,26 @@ class TestSSEContentCapturePolicy(unittest.TestCase):
                 "result",
                 line,
                 f"stream.py logger call references 'result' payload content: {line.strip()}",
+            )
+
+    def test_no_outputs_keyword_in_logger_lines(self):
+        """'outputs' must not appear in any logger call in stream.py (AC-11).
+
+        'outputs' is a forbidden payload keyword per AC-11 / TC-F05-011, asserted
+        individually because — like 'result' — it is a common variable name an
+        implementer might inadvertently interpolate into a log line.
+
+        Counter-factual: logger.info(f"Run outputs: {outputs}") would fail here.
+        """
+        source = self._read_source()
+        logger_lines = [
+            line for line in source.splitlines() if "logger." in line or "log." in line
+        ]
+        for line in logger_lines:
+            self.assertNotIn(
+                "outputs",
+                line,
+                f"stream.py logger call references 'outputs' payload content: {line.strip()}",
             )
 
 

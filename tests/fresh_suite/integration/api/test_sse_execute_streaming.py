@@ -1946,6 +1946,299 @@ class TestSSEStreamAuth(IsolatedAsyncioTestCase):
 
 
 # ---------------------------------------------------------------------------
+# TC-F05-009 — Unsupported-mode request rejected pre-open; no silent downgrade
+# ---------------------------------------------------------------------------
+
+
+class TestSSEStreamUnsupportedMode(IsolatedAsyncioTestCase):
+    """TC-F05-009 (AC-9 / REQ-F-006): a streaming request whose shape is unsupported
+    for graph-progress streaming (e.g. carrying a batch-only / unsupported control
+    parameter) is rejected with HTTP 400/422 + application/json BEFORE the stream
+    opens, with no silent downgrade to the non-streaming facade.
+
+    Caller-Path Contract (test-plan.md TC-F05-009):
+      ENTRYPOINT: POST /execute/{graph_id}/stream with an unsupported request shape.
+      LOWEST ALLOWED MOCK SEAM: spy on run_workflow_stream_async (and, for the
+        no-downgrade sub-case, run_workflow_async) to confirm NEITHER is called on
+        rejection; the route handler's own request-shape validation runs for real.
+      FORBIDDEN MOCKS: the validation logic itself must NOT be mocked.
+      COUNTER-FACTUAL: a buggy impl that strips the unsupported parameter (or relies
+        on the Pydantic model, which with the project-default extra='ignore' silently
+        DROPS unknown fields) and calls run_workflow_stream_async anyway would set
+        the spy's call_count to 1, failing assert_not_called().
+
+    MED-1: ExecuteRequest is a Pydantic v2 model with the default extra='ignore', so
+    an unknown field like ``batch_mode`` is silently dropped (NOT rejected) by the
+    model.  These tests therefore prove the rejection comes from the handler reading
+    the RAW request body — see test_pydantic_alone_would_not_reject_batch_mode.
+    """
+
+    @staticmethod
+    def _stream_factory(*_a, **_kw):
+        """Upstream that must run ONLY when the request shape is accepted."""
+
+        async def _gen():
+            yield WorkflowProgressEvent(
+                event_type="completed",
+                sequence=0,
+                is_terminal=True,
+                result={"success": True, "outputs": {}},
+            )
+
+        return _gen()
+
+    async def _post(
+        self,
+        app: FastAPI,
+        body: Dict[str, Any],
+        *,
+        path: str = "/execute/any-graph/stream",
+        headers: Optional[Dict[str, str]] = None,
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            return await client.post(path, json=body, headers=headers)
+
+    # --- MED-1 premise: the model alone cannot reject the unsupported field -----
+
+    def test_pydantic_alone_would_not_reject_batch_mode(self):
+        """ExecuteRequest silently drops batch_mode (extra='ignore') — the gate is
+        NOT the model.
+
+        This locks the MED-1 premise the rest of the suite depends on: a handler
+        that validated only via ExecuteRequest would accept this body and open the
+        stream.  The behavioural sub-cases below prove the route rejects it anyway,
+        which is only possible via the raw-body check.
+        """
+        from agentmap.deployment.http.api.routes.execute import ExecuteRequest
+
+        model = ExecuteRequest(**{"inputs": {}, "batch_mode": True})
+        # Pydantic did NOT raise, and the unknown field is gone from the model.
+        self.assertFalse(hasattr(model, "batch_mode"))
+        self.assertEqual(
+            set(model.model_dump().keys()),
+            {"inputs", "execution_id", "force_create"},
+        )
+
+    # --- Sub-case A: batch-only parameter in the body → 400/422, no stream ------
+
+    async def test_batch_mode_param_rejected_pre_open(self):
+        """{"inputs": {}, "batch_mode": true} → 400/422 application/json, no stream.
+
+        Counter-factual: a handler that opens the stream on this body returns 200 +
+        text/event-stream and calls the upstream spy → both assertions fail.
+        """
+        app = _make_test_app()
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._stream_factory,
+        ) as upstream:
+            response = await self._post(app, {"inputs": {}, "batch_mode": True})
+
+        self.assertIn(
+            response.status_code,
+            (400, 422),
+            f"unsupported shape must be 400/422, got {response.status_code}",
+        )
+        self.assertIn("application/json", response.headers.get("content-type", ""))
+        self.assertNotIn("text/event-stream", response.headers.get("content-type", ""))
+        self.assertNotIn(b"event:", response.content)
+        # No silent downgrade to the streaming facade.
+        upstream.assert_not_called()
+
+    async def test_rejection_body_documents_the_error(self):
+        """The 400/422 body is JSON carrying a documented error message (spec §A.3)."""
+        app = _make_test_app()
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._stream_factory,
+        ):
+            response = await self._post(app, {"inputs": {}, "batch_mode": True})
+
+        payload = response.json()
+        self.assertIn("detail", payload)
+        # The documented message names the offending control parameter so the
+        # client learns WHY the shape was rejected (no silent behaviour).
+        self.assertIn("batch_mode", json.dumps(payload))
+
+    async def test_rejection_log_line_carries_no_input_payload(self):
+        """The reject log line is operational only — no input payload content (AC-11).
+
+        test-plan line 117: 'log line contains no input payload content'.  We send a
+        recognisably-sensitive input value alongside the unsupported flag and assert
+        it never appears in the captured logs.
+        """
+        import logging
+
+        app = _make_test_app()
+        with self.assertLogs(
+            "agentmap.deployment.http.api.routes.stream", level=logging.INFO
+        ) as captured:
+            with patch(
+                "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+                side_effect=self._stream_factory,
+            ):
+                await self._post(
+                    app,
+                    {"inputs": {"secret": "SENSITIVE-INPUT"}, "batch_mode": True},
+                )
+
+        joined = "\n".join(captured.output)
+        self.assertNotIn("SENSITIVE-INPUT", joined)
+
+    async def test_future_unsupported_flag_also_rejected(self):
+        """Attack-class enumeration: a future explicit token-through-graph flag is
+        likewise rejected (any out-of-shape control parameter, not just batch_mode).
+
+        Counter-factual: a gate that allow-lists ONLY batch_mode would let this
+        through, opening the stream and calling the upstream spy.
+        """
+        app = _make_test_app()
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._stream_factory,
+        ) as upstream:
+            response = await self._post(app, {"inputs": {}, "stream_llm_tokens": True})
+
+        self.assertIn(response.status_code, (400, 422))
+        self.assertNotIn("text/event-stream", response.headers.get("content-type", ""))
+        upstream.assert_not_called()
+
+    # --- Sub-case B: no silent downgrade to the non-streaming facade ------------
+
+    async def test_valid_request_never_calls_non_streaming_facade(self):
+        """A valid streaming request opens the stream and NEVER calls run_workflow_async.
+
+        Counter-factual: an impl that falls back to the buffered run would call
+        run_workflow_async (the non-streaming facade), failing assert_not_called().
+        """
+        app = _make_test_app()
+        with (
+            patch(
+                "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+                side_effect=self._stream_factory,
+            ) as stream_upstream,
+            patch(
+                "agentmap.deployment.http.api.routes.execute.run_workflow_async",
+                new_callable=AsyncMock,
+            ) as non_streaming,
+        ):
+            response = await self._post(app, {"inputs": {}})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/event-stream", response.headers.get("content-type", ""))
+        stream_upstream.assert_called_once()
+        non_streaming.assert_not_called()
+
+    async def test_rejection_calls_neither_facade(self):
+        """On an unsupported-mode rejection, NEITHER facade is called (no downgrade)."""
+        app = _make_test_app()
+        with (
+            patch(
+                "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+                side_effect=self._stream_factory,
+            ) as stream_upstream,
+            patch(
+                "agentmap.deployment.http.api.routes.execute.run_workflow_async",
+                new_callable=AsyncMock,
+            ) as non_streaming,
+        ):
+            response = await self._post(app, {"inputs": {}, "batch_mode": True})
+
+        self.assertIn(response.status_code, (400, 422))
+        stream_upstream.assert_not_called()
+        non_streaming.assert_not_called()
+
+    # --- Sub-case: a valid, supported body is still accepted (no over-rejection) -
+
+    async def test_supported_body_with_known_fields_opens_stream(self):
+        """The supported ExecuteRequest fields (inputs/execution_id/force_create) are
+        accepted — the gate rejects unsupported shapes only, never valid ones.
+
+        Counter-factual: a gate that rejected any field beyond ``inputs`` would 422
+        this legitimate request, failing the 200 assertion.
+        """
+        app = _make_test_app()
+        body = {
+            "inputs": {"x": 1},
+            "execution_id": "client-123",
+            "force_create": True,
+        }
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._stream_factory,
+        ) as upstream:
+            response = await self._post(app, body)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/event-stream", response.headers.get("content-type", ""))
+        upstream.assert_called_once()
+
+    # --- INT-F05-4: ordering — auth → concurrency → unsupported-mode -----------
+
+    async def test_bad_auth_with_batch_mode_returns_401_not_422(self):
+        """A request with BOTH bad auth AND batch_mode returns 401, not 422.
+
+        INT-F05-4 ordering guarantee: auth runs first.  An unauthenticated request
+        must be rejected by the auth decorator (401) before the handler body ever
+        reaches the unsupported-mode validation (which would otherwise yield 422).
+
+        Counter-factual: an impl that validates the request shape BEFORE auth would
+        return 422 here, failing the 401 assertion.
+        """
+        app = _make_test_app(auth_enabled=True)  # no token supplied → 401
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._stream_factory,
+        ) as upstream:
+            response = await self._post(app, {"inputs": {}, "batch_mode": True})
+
+        self.assertEqual(
+            response.status_code,
+            401,
+            "Auth must be evaluated before the unsupported-mode gate (401 over 422)",
+        )
+        upstream.assert_not_called()
+
+    async def test_unsupported_shape_rejected_before_concurrency_acquire(self):
+        """An unsupported shape is rejected BEFORE the concurrency acquire, so a
+        rejected request never holds a stream slot.
+
+        Canonical pre-open order (stream.py slot comment + spec §A.7 sequence):
+        auth → unsupported-mode validation → concurrency acquire → open.  Even with
+        the pool exhausted (semaphore at 0), an unsupported shape returns 400/422 —
+        the validation runs first — and the semaphore counter is untouched.
+
+        Counter-factual: an impl that placed the validation AFTER the acquire would
+        either 503 here (pool full, never reaching the validation) or consume/leak a
+        slot — failing the 400/422 assertion or the untouched-counter assertion.
+        """
+        import agentmap.deployment.http.api.routes.stream as stream_module
+
+        original = stream_module._stream_semaphore
+        stream_module._stream_semaphore = asyncio.Semaphore(0)  # no slots
+        self.addCleanup(setattr, stream_module, "_stream_semaphore", original)
+
+        app = _make_test_app()
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._stream_factory,
+        ) as upstream:
+            response = await self._post(app, {"inputs": {}, "batch_mode": True})
+
+        self.assertIn(
+            response.status_code,
+            (400, 422),
+            "unsupported shape must be rejected before the concurrency acquire "
+            "(a rejected shape never holds a slot)",
+        )
+        upstream.assert_not_called()
+        # The slot must NOT have been consumed by a rejected request.
+        self.assertEqual(stream_module._stream_semaphore._value, 0)
+
+
+# ---------------------------------------------------------------------------
 # TC-F05-010 — Existing non-streaming endpoints unchanged after F05 registration
 # ---------------------------------------------------------------------------
 

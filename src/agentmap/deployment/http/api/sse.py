@@ -18,7 +18,9 @@ import asyncio
 import json
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Iterable
+
+from fastapi import HTTPException
 
 # ---------------------------------------------------------------------------
 # Module-level concurrency semaphore (DEC-6)
@@ -79,6 +81,68 @@ def format_sse_heartbeat() -> str:
         SSE comment string ':keepalive\\n\\n'.
     """
     return ":keepalive\n\n"
+
+
+# ---------------------------------------------------------------------------
+# Transport-boundary unsupported-mode validation (REQ-F-006 / AC-9 / DEC-3)
+# ---------------------------------------------------------------------------
+
+# Documented HTTP status for an out-of-shape streaming request (spec.md §A.6 maps
+# unsupported-mode to 400/422; we use 422 — "the body parsed but its *shape* is
+# not acceptable for this endpoint" — consistent with FastAPI's own model 422).
+UNSUPPORTED_MODE_STATUS = 422
+
+
+def validate_streaming_request_shape(
+    raw_body: Any,
+    allowed_fields: Iterable[str],
+) -> None:
+    """Reject a streaming request whose body carries an unsupported control field.
+
+    The graph-progress streaming endpoint reuses ``ExecuteRequest`` verbatim (C6 —
+    one canonical invocation shape), whose supported fields are exactly
+    ``allowed_fields`` (``inputs``, ``execution_id``, ``force_create``).  Because
+    ``ExecuteRequest`` is a Pydantic v2 model with the project-default
+    ``extra='ignore'``, an unknown field (e.g. a batch-only ``batch_mode`` flag or a
+    future explicit token-through-graph flag) is **silently dropped** by the model —
+    it never raises.  AC-9 / REQ-F-006 require such out-of-shape requests to be
+    rejected **explicitly** before the stream opens, with **no silent downgrade**.
+
+    This helper therefore inspects the *raw* request body (the dict produced by
+    ``await request.json()``), independently of the parsed model, and raises
+    ``HTTPException(422)`` naming the offending parameter(s) if any key falls outside
+    ``allowed_fields``.  The caller invokes this in the pre-open gate (after auth,
+    before the concurrency acquire) so a rejected shape never opens a
+    ``text/event-stream`` body and never holds a concurrency slot.
+
+    Args:
+        raw_body: The parsed JSON request body.  Only ``dict`` bodies are inspected;
+            a non-dict body (array/scalar) is left to FastAPI's own model binding,
+            which already rejects it with 422 before the handler runs.
+        allowed_fields: The set of field names the endpoint supports — pass
+            ``ExecuteRequest.model_fields`` so there is a single source of truth and
+            no duplicated field list.
+
+    Raises:
+        HTTPException: status 422 with a documented ``detail`` naming the unsupported
+            parameter(s) when ``raw_body`` carries any key outside ``allowed_fields``.
+    """
+    if not isinstance(raw_body, dict):
+        # FastAPI's ExecuteRequest binding owns the non-object rejection.
+        return
+
+    allowed = set(allowed_fields)
+    unsupported = sorted(key for key in raw_body if key not in allowed)
+    if unsupported:
+        raise HTTPException(
+            status_code=UNSUPPORTED_MODE_STATUS,
+            detail=(
+                "Unsupported streaming request parameter(s): "
+                f"{', '.join(unsupported)}. The streaming endpoint supports only "
+                f"{', '.join(sorted(allowed))}; batch-only or non-streaming control "
+                "parameters are rejected (no silent downgrade)."
+            ),
+        )
 
 
 def to_serializable(value: Any) -> Any:
