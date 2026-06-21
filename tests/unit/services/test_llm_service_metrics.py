@@ -171,13 +171,14 @@ class TestAC1InstrumentsCreatedAtInit:
     """AC1 / TC-737: Instruments created once in __init__."""
 
     def test_create_histogram_called_for_duration(self):
-        """create_histogram called with METRIC_LLM_DURATION."""
+        """create_histogram called with METRIC_LLM_DURATION (plus TTFT in E06-F03)."""
         mock_telemetry, _, instruments = _make_mock_telemetry()
         _make_llm_service(telemetry_service=mock_telemetry)
 
-        mock_telemetry.create_histogram.assert_called_once()
-        call_args = mock_telemetry.create_histogram.call_args
-        assert call_args[0][0] == METRIC_LLM_DURATION
+        # E06-F03 adds a second create_histogram call for METRIC_LLM_TTFT.
+        # Assert METRIC_LLM_DURATION is present among the calls (not necessarily the only call).
+        called_names = [c[0][0] for c in mock_telemetry.create_histogram.call_args_list]
+        assert METRIC_LLM_DURATION in called_names
 
     def test_create_counter_called_five_times(self):
         """create_counter called 9 times: tokens_input, tokens_output, errors,

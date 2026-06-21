@@ -25,6 +25,7 @@ from .runtime.workflow_ops import (
     resume_workflow_async,
     run_workflow,
     run_workflow_async,
+    run_workflow_stream_async,
     validate_workflow,
     validate_workflow_async,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "get_container",
     "run_workflow",
     "run_workflow_async",
+    "run_workflow_stream_async",
     "resume_workflow",
     "resume_workflow_async",
     "list_graphs",

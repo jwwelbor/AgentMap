@@ -52,6 +52,8 @@ llm = [
     "langchain-openai>=0.3.17",
     "langchain-anthropic>=0.3.0",
     "langchain-google-genai",
+    "anthropic>=0.40.0",
+    "openai>=1.0.0",
 ]
 storage = [
     "firebase-admin",
@@ -76,6 +78,7 @@ all = [
     "unstructured",
     "python-docx",
     "faiss-cpu",
+    "anthropic>=0.40.0",
     "openai>=1.0.0",
     "google-genai>=1.0.0",
 ]

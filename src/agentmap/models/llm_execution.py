@@ -50,6 +50,39 @@ class LLMResponse:
 
 
 @dataclass
+class LLMStreamChunk:
+    """
+    Normalized chunk from a provider streaming response.
+
+    Emitted by the provider streaming seam as an async iterator. Most chunks
+    carry only ``text_delta`` (an incremental text fragment). The terminal
+    chunk (``is_final=True``) additionally carries ``usage``, ``finish_reason``,
+    ``resolved_provider``, and ``resolved_model`` — the same fields
+    ``LLMResponse`` carries — so the streaming path (E06-F03) can reconstruct
+    the existing non-streaming result contract.
+
+    ``chunk_index`` is a zero-based, monotonically increasing counter assigned
+    by the seam. It is NOT the provider's sequence number.
+
+    Non-frozen by design (deviation from ``LLMResponse``): the seam accumulates
+    the terminal chunk's fields progressively as native events arrive (input
+    tokens at message_start, output tokens + stop_reason at message_delta).
+    A frozen dataclass would force reconstruction at each accumulation step.
+    ``LLMUsage``, ``LLMRequest``, and the batch models are likewise non-frozen.
+    """
+
+    text_delta: str  # incremental text fragment; "" on the terminal chunk
+    chunk_index: int  # 0-based ordering counter, seam-assigned
+    is_final: bool  # True on exactly one chunk (the last)
+
+    # Terminal-only fields (None on non-final chunks)
+    usage: Optional["LLMUsage"] = None
+    finish_reason: Optional[str] = None
+    resolved_provider: Optional[str] = None
+    resolved_model: Optional[str] = None
+
+
+@dataclass
 class LLMRequest:
     """
     Caller-owned specification for a single LLM call within a fan-out submission.

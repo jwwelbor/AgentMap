@@ -8,6 +8,7 @@ These protocols define what services must provide.
 from typing import (
     TYPE_CHECKING,
     Any,
+    AsyncIterator,
     Dict,
     Iterator,
     List,
@@ -26,6 +27,7 @@ from agentmap.models.llm_execution import (
     LLMMessage,
     LLMRequest,
     LLMResponse,
+    LLMStreamChunk,
 )
 
 # Declaration system imports
@@ -109,6 +111,46 @@ class BatchAdapterProtocol(Protocol):
         ``output_file_id``).  Adapters that fetch by ``provider_batch_id``
         (e.g. Anthropic) ignore it.  Adapters that serve inline results (e.g.
         Gemini) may also ignore it.
+        """
+        ...
+
+
+@runtime_checkable
+class StreamSeamProtocol(Protocol):
+    """
+    Protocol for the provider streaming seam.
+
+    Given normalized messages and resolved parameters, yields normalized
+    ``LLMStreamChunk`` objects. One narrow substrate boundary: the service
+    (E06-F03) depends only on this interface, never on a provider client
+    library inline. Per-provider event parsing lives behind this interface.
+
+    ``stream()`` is an async generator: it yields ``LLMStreamChunk`` instances
+    lazily as provider events arrive. Exactly one terminal chunk with
+    ``is_final=True`` is emitted as the last item.
+    """
+
+    provider_name: str
+
+    def stream(
+        self,
+        messages: List[LLMMessage],
+        params: Dict[str, Any],
+        *,
+        client: Optional[Any] = None,
+        credentials: Optional[Dict[str, Any]] = None,
+    ) -> AsyncIterator[LLMStreamChunk]:
+        """
+        Yield normalized ``LLMStreamChunk`` objects for the given messages.
+
+        ``messages`` is a list of normalized message dicts (role + content).
+        ``params`` carries resolved call parameters (model, max_tokens, etc.).
+        ``client`` is an optional pre-constructed provider client.
+        ``credentials`` is an optional dict of provider credentials.
+
+        The last yielded chunk has ``is_final=True``; all prior chunks have
+        ``is_final=False``.  ``chunk_index`` is zero-based and increases by 1
+        per emitted chunk.
         """
         ...
 
@@ -198,6 +240,52 @@ class LLMServiceProtocol(Protocol):
 
         Returns:
             LLMResponse with text, resolved provider/model, and usage
+        """
+        ...
+
+    async def call_llm_stream_async(
+        self,
+        messages: List[LLMMessage],
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        routing_context: Optional[Dict[str, Any]] = None,
+        cache_system_prompt: bool = False,
+        **kwargs,
+    ) -> AsyncIterator[LLMStreamChunk]:
+        """
+        Call LLM asynchronously and return an async iterator of streaming chunks.
+
+        Mirrors ``call_llm_async`` with the same parameter list. Yields ordered
+        non-final ``LLMStreamChunk`` objects (``is_final=False``, increasing
+        ``chunk_index``, non-empty ``text_delta``) followed by exactly one terminal
+        chunk (``is_final=True``, ``text_delta=""``) carrying normalized
+        ``usage``, ``finish_reason``, ``resolved_provider``, and ``resolved_model``.
+
+        The terminal chunk's fields reconstruct the full ``LLMResponse`` contract
+        (text = Σ text_delta; usage/finish_reason/resolved_provider/resolved_model
+        copied directly from the terminal chunk).  First-chunk resilience applies:
+        retry + provider fallback before the first delivered chunk; after the first
+        chunk a provider error surfaces as a terminal stream error with no replay.
+
+        Args:
+            messages: List of message dictionaries with role and content
+            provider: Optional LLM provider ("openai", "anthropic", "google", etc.)
+            model: Optional model override
+            temperature: Optional temperature override
+            routing_context: Optional routing context for intelligent routing
+            cache_system_prompt: When True, inject provider-specific prompt-caching
+                                 metadata into system messages (Anthropic only)
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            AsyncIterator[LLMStreamChunk] — ordered non-final chunks then one
+            terminal chunk with is_final=True.
+
+        Raises:
+            LLMServiceError: For unsupported streaming modes (Gemini, batch
+                             streaming, unverified prompt-caching) — raised before
+                             any chunk is delivered.
         """
         ...
 

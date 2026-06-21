@@ -149,6 +149,9 @@ STORAGE_RESOURCE: str = "agentmap.storage.resource"
 METRIC_LLM_DURATION: str = "agentmap.llm.duration"
 """Histogram recording LLM call duration in seconds."""
 
+METRIC_LLM_TTFT: str = "agentmap.llm.ttft"
+"""Histogram recording LLM streaming time-to-first-token in seconds (E06-F03)."""
+
 METRIC_LLM_TOKENS_INPUT: str = "agentmap.llm.tokens.input"
 """Counter for input (prompt) tokens consumed by LLM calls."""
 

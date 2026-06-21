@@ -4,7 +4,7 @@ import asyncio
 import json
 import threading
 from pathlib import Path
-from typing import Any, Dict, NoReturn, Optional
+from typing import Any, AsyncGenerator, Dict, NoReturn, Optional
 
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.exceptions.runtime_exceptions import (
@@ -802,6 +802,106 @@ async def run_workflow_async(
         raise GraphNotFound(graph_name, f"Workflow file not found: {e}")
     except ValueError as e:
         raise InvalidInputs(str(e))
+    except Exception as e:
+        raise RuntimeError(f"Unexpected error during workflow execution: {e}")
+
+
+async def run_workflow_stream_async(
+    graph_name: str,
+    inputs: Dict[str, Any],
+    *,
+    profile: Optional[str] = None,
+    resume_token: Optional[str] = None,
+    config_file: Optional[str] = None,
+    force_create: bool = False,
+) -> AsyncGenerator[Any, None]:
+    """Streaming sibling of ``run_workflow_async`` (E06-F04, REQ-F-001).
+
+    Performs the same prelude as ``run_workflow_async`` (ensure_initialized,
+    resolve CSV path, get_or_create_bundle), then iterates
+    ``GraphRunnerService.run_stream_async`` and yields one
+    ``WorkflowProgressEvent`` per completed node followed by a single
+    terminal event carrying the same result dict ``run_workflow_async`` would
+    return for the same input (SC-3, C1).
+
+    Args:
+        graph_name: Graph name or CSV-file path.
+        inputs: Input state dict for the graph run.
+        profile: Optional configuration profile name (reserved; not yet used).
+        resume_token: Optional resume token (reserved; not used for fresh runs).
+        config_file: Optional config YAML path (overrides default init).
+        force_create: If True, forces bundle re-creation even if cached.
+
+    Yields:
+        ``WorkflowProgressEvent`` — ``node_progress`` events (``is_terminal=False``)
+        for each completed node, then exactly one terminal event
+        (``is_terminal=True``, ``event_type`` one of ``completed``/``failed``/
+        ``suspended``).
+
+    Raises:
+        GraphNotFound: If the graph is not found (raised before any event).
+        InvalidInputs: If inputs are invalid (raised before any event).
+        AgentMapNotInitialized: If the runtime is not initialized.
+        asyncio.CancelledError: Propagated without swallowing.
+        GeneratorExit: Propagated without swallowing.
+    """
+    from agentmap.models.execution import WorkflowProgressEvent  # noqa: F401
+
+    ensure_initialized(config_file=config_file)
+
+    try:
+        container = RuntimeManager.get_container()
+        csv_path, resolved_graph_name = _resolve_csv_path(graph_name, container)
+
+        graph_bundle_service: GraphBundleService = container.graph_bundle_service()
+        bundle, new_bundle = graph_bundle_service.get_or_create_bundle(
+            csv_path=csv_path,
+            graph_name=resolved_graph_name,
+            config_path=config_file,
+            force_create=force_create,
+        )
+
+        graph_runner: GraphRunnerService = container.graph_runner_service()
+        # Thread the raw caller ``graph_name`` (not the resolved bundle name) so the
+        # streaming terminal's ``metadata.graph_name`` echoes the caller identifier,
+        # matching ``run_workflow_async`` for ``workflow::graph``-form names (NB-1).
+        async for event in graph_runner.run_stream_async(
+            bundle,
+            inputs,
+            validate_agents=new_bundle,
+            profile=profile,
+            graph_name=graph_name,
+        ):
+            yield event
+
+    except ExecutionInterruptedException as e:
+        yield WorkflowProgressEvent(
+            event_type="suspended",
+            sequence=0,
+            is_terminal=True,
+            result={
+                "success": False,
+                "interrupted": True,
+                "thread_id": e.thread_id,
+                "interaction_request": e.interaction_request,
+                "message": (
+                    f"Execution interrupted for human interaction in thread: {e.thread_id}"
+                ),
+                "metadata": {
+                    "graph_name": graph_name,
+                    "profile": profile,
+                    "checkpoint_available": True,
+                },
+            },
+        )
+    except (GraphNotFound, InvalidInputs, AgentMapNotInitialized):
+        raise
+    except FileNotFoundError as e:
+        raise GraphNotFound(graph_name, f"Workflow file not found: {e}")
+    except ValueError as e:
+        raise InvalidInputs(str(e))
+    except (asyncio.CancelledError, GeneratorExit):
+        raise
     except Exception as e:
         raise RuntimeError(f"Unexpected error during workflow execution: {e}")
 

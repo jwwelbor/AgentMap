@@ -13,7 +13,16 @@ import mimetypes
 import random
 import re
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import (
+    Any,
+    AsyncGenerator,
+    AsyncIterator,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 from uuid import uuid4
 
 from agentmap.exceptions import (
@@ -33,12 +42,14 @@ from agentmap.models.llm_execution import (
     LLMMessage,
     LLMRequest,
     LLMResponse,
+    LLMStreamChunk,
     LLMUsage,
 )
 from agentmap.services.config import AppConfigService
 from agentmap.services.config.llm_models_config_service import LLMModelsConfigService
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
+from agentmap.services.llm.stream_seam import stream_provider
 from agentmap.services.llm_batch_errors import (
     LLMBatchCancelNotSupportedError,
     LLMBatchExpiredError,
@@ -86,6 +97,7 @@ from agentmap.services.telemetry.constants import (
     METRIC_LLM_ROUTING_CACHE_HIT,
     METRIC_LLM_TOKENS_INPUT,
     METRIC_LLM_TOKENS_OUTPUT,
+    METRIC_LLM_TTFT,
     ROUTING_CACHE_HIT,
     ROUTING_CIRCUIT_BREAKER_STATE,
     ROUTING_COMPLEXITY,
@@ -194,12 +206,18 @@ class LLMService:
         self._metric_batch_poll = None
         self._metric_batch_results_fetched = None
         self._metric_batch_cancel = None
+        self._metric_ttft = None  # E06-F03: streaming time-to-first-token histogram
         if telemetry_service is not None:
             try:
                 self._metric_duration = telemetry_service.create_histogram(
                     METRIC_LLM_DURATION,
                     unit="s",
                     description="LLM call duration",
+                )
+                self._metric_ttft = telemetry_service.create_histogram(
+                    METRIC_LLM_TTFT,
+                    unit="s",
+                    description="LLM streaming time-to-first-token",
                 )
                 self._metric_tokens_input = telemetry_service.create_counter(
                     METRIC_LLM_TOKENS_INPUT,
@@ -1335,6 +1353,131 @@ class LLMService:
                 )
                 await asyncio.sleep(delay)
 
+        self._circuit_breaker.record_failure(provider, model)
+        self._record_error_metric(last_error, provider, model)
+        self._record_circuit_breaker_metric_on_open(provider, model)
+        raise last_error  # type: ignore[misc]
+
+    async def _invoke_with_resilience_stream_async(
+        self,
+        messages: List[Any],
+        params: Dict[str, Any],
+        provider: str,
+        model: str,
+        streaming_client: Any,
+        credentials: Optional[Dict[str, Any]],
+    ) -> AsyncGenerator["LLMStreamChunk", None]:
+        """Streaming resilience generator: retry loop + circuit breaker + first-chunk cut point.
+
+        Mirrors ``_invoke_with_resilience_async`` (:1263) but is an **async generator**
+        that yields ``LLMStreamChunk`` instances.  Key design decisions:
+
+        - ``first_chunk_delivered`` is **per-attempt** (reset on each retry) so that a
+          transient pre-first-chunk failure is correctly identified as retryable even if a
+          previous attempt had already delivered a chunk.
+        - Errors **before** the first chunk → retryable: retry loop + circuit-breaker
+          failure + ``_record_circuit_breaker_metric_on_open`` on non-retryable or
+          exhaustion.
+        - Errors **after** the first chunk → terminal: ``record_failure`` + re-raise;
+          ``_record_circuit_breaker_metric_on_open`` is NOT called because the CB already
+          captures the failure via ``record_failure`` and post-first-chunk errors must not
+          influence fallback eligibility (REQ-F-004, REQ-F-005).
+        - Clean completion → ``record_success`` + ``_record_circuit_breaker_metric_on_close``.
+
+        Args:
+            messages: Normalized ``LLMMessage`` dicts (not LangChain objects).
+            params: Resolved call parameters (model, max_tokens, temperature, …).
+            provider: Canonical provider key used for circuit-breaker keying.
+            model: Model name used for circuit-breaker keying.
+            streaming_client: Pre-constructed streaming-aware client (from F02 factory).
+            credentials: Provider credentials dict forwarded to the seam.
+
+        Yields:
+            ``LLMStreamChunk`` objects from the provider seam.
+
+        Raises:
+            ``LLMProviderError``: When the circuit breaker is open (before any chunk).
+            Provider-specific errors: Re-raised after circuit-breaker recording.
+        """
+        # Record circuit-breaker state on current span (mirrors :1277)
+        self._record_circuit_breaker_state(provider, model)
+
+        if self._circuit_breaker.is_open(provider, model):
+            raise LLMProviderError(
+                f"Circuit breaker open for {provider}:{model} -- "
+                f"skipping call (resets after "
+                f"{self._circuit_breaker.reset}s)"
+            )
+
+        retry_cfg = self._resilience_config.get("retry", {})
+        max_attempts = retry_cfg.get("max_attempts", 3)
+        backoff_base = retry_cfg.get("backoff_base", 2.0)
+        backoff_max = retry_cfg.get("backoff_max", 30.0)
+        jitter = retry_cfg.get("jitter", True)
+
+        last_error: Optional[Exception] = None
+
+        for attempt in range(1, max_attempts + 1):
+            # first_chunk_delivered is per-attempt — reset at the top of each retry
+            first_chunk_delivered = False
+            try:
+                self._logger.debug(
+                    f"LLM streaming call to {provider}:{model} "
+                    f"(attempt {attempt}/{max_attempts})"
+                )
+                async for chunk in stream_provider(
+                    provider,
+                    messages,
+                    params,
+                    client=streaming_client,
+                    credentials=credentials,
+                ):
+                    # Cut point: once the first chunk is yielded, errors are terminal
+                    first_chunk_delivered = True
+                    yield chunk
+
+                # Clean completion
+                was_open = self._circuit_breaker.is_open(provider, model)
+                self._circuit_breaker.record_success(provider, model)
+                self._record_circuit_breaker_metric_on_close(was_open, provider, model)
+                return
+
+            except Exception as e:
+                if first_chunk_delivered:
+                    # Post-first-chunk error: terminal, no retry, no fallback.
+                    # CB still records the failure (REQ-F-005); no _on_open metric
+                    # (the failure is already accounted for, post-first-chunk path
+                    # must not trigger fallback eligibility tracking).
+                    self._circuit_breaker.record_failure(provider, model)
+                    self._record_error_metric(e, provider, model)
+                    raise
+
+                # Pre-first-chunk error: classify and decide retry vs immediate fail
+                typed_error = classify_llm_error(e, provider)
+                last_error = typed_error
+
+                if not is_retryable(typed_error):
+                    # Non-retryable: fail immediately (mirrors :1335–1339)
+                    self._circuit_breaker.record_failure(provider, model)
+                    self._record_error_metric(typed_error, provider, model)
+                    self._record_circuit_breaker_metric_on_open(provider, model)
+                    raise typed_error
+
+                if attempt == max_attempts:
+                    break
+
+                delay = min(backoff_base ** (attempt - 1), backoff_max)
+                if jitter:
+                    delay = delay * (0.5 + random.random())
+
+                self._logger.warning(
+                    f"Retryable streaming error on {provider}:{model} "
+                    f"(attempt {attempt}/{max_attempts}): {typed_error}. "
+                    f"Retrying in {delay:.1f}s"
+                )
+                await asyncio.sleep(delay)
+
+        # All retries exhausted (mirrors :1355–1358)
         self._circuit_breaker.record_failure(provider, model)
         self._record_error_metric(last_error, provider, model)
         self._record_circuit_breaker_metric_on_open(provider, model)
@@ -2842,5 +2985,512 @@ class LLMService:
         try:
             if was_open and not self._circuit_breaker.is_open(provider, model):
                 self._metric_circuit_breaker.add(-1)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # E06-F03: Streaming entry point skeleton
+    # Five sibling methods mirroring the non-streaming async chain.
+    # Non-streaming methods are byte-untouched (REQ-NF-001, SC-2c).
+    # ------------------------------------------------------------------
+
+    async def call_llm_stream_async(
+        self,
+        messages: List[LLMMessage],
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        routing_context: Optional[Dict[str, Any]] = None,
+        cache_system_prompt: bool = False,
+        **kwargs: Any,
+    ) -> AsyncIterator[LLMStreamChunk]:
+        """Return an async iterator of ``LLMStreamChunk`` for token-streaming.
+
+        Mirrors ``call_llm_async`` (:425) with the same parameter list. Dispatches
+        to the telemetry wrapper when ``_telemetry_service`` is set; otherwise
+        iterates ``_call_llm_stream_async_core`` directly (REQ-F-001).
+
+        The caller iterates the result with ``async for chunk in ...``. Non-final
+        chunks carry ``text_delta`` and ``chunk_index``; exactly one terminal chunk
+        (``is_final=True``) closes the stream with accumulated usage/finish_reason
+        and reconstructed provider/model identity (REQ-F-011, SC-1).
+        """
+        kwargs["cache_system_prompt"] = cache_system_prompt
+        if self._telemetry_service is not None:
+            async for chunk in self._call_llm_stream_async_with_telemetry(
+                messages, provider, model, temperature, routing_context, **kwargs
+            ):
+                yield chunk
+        else:
+            async for chunk in self._call_llm_stream_async_core(
+                messages, provider, model, temperature, routing_context, **kwargs
+            ):
+                yield chunk
+
+    async def _call_llm_stream_async_with_telemetry(
+        self,
+        messages: List[LLMMessage],
+        provider: Optional[str],
+        model: Optional[str],
+        temperature: Optional[float],
+        routing_context: Optional[Dict[str, Any]],
+        **kwargs: Any,
+    ) -> AsyncGenerator[LLMStreamChunk, None]:
+        """Streaming telemetry wrapper — explicit span management (REQ-F-010).
+
+        Opens the span via ``__enter__``/``try-finally __exit__`` (NOT a ``with``
+        block) so the span survives across all ``yield`` suspension points and is
+        guaranteed to close on completion, error, or ``GeneratorExit`` (caller
+        abandonment / asyncio cancellation).
+
+        Records TTFT once on the first delivered chunk, total duration on clean
+        completion (REQ-F-009). Captures content once at completion (REQ-NF-002, C9).
+
+        This is the sibling of ``_call_llm_async_with_telemetry`` (:461).
+        """
+        assert self._telemetry_service is not None
+
+        initial_attributes: Dict[str, Any] = {}
+        if provider:
+            initial_attributes[GEN_AI_SYSTEM] = self._provider_utils.normalize_provider(
+                provider
+            )
+        if model:
+            initial_attributes[GEN_AI_REQUEST_MODEL] = model
+
+        # Explicit span open — must NOT use `with` so the span survives yields.
+        span_cm = self._telemetry_service.start_span(
+            LLM_CALL_SPAN, attributes=initial_attributes
+        )
+        span = span_cm.__enter__()
+
+        t0 = time.monotonic()
+        ttft_duration: Optional[float] = None
+        # Under routing, ``provider``/``model`` are None at call time; the resolved
+        # identity only appears on the terminal chunk. Capture it there so the TTFT
+        # and duration metrics carry the real provider/model dimensions, not "".
+        resolved_provider = provider
+        resolved_model = model
+        accumulated_text: List[str] = []
+
+        try:
+            async for chunk in self._call_llm_stream_async_core(
+                messages, provider, model, temperature, routing_context, **kwargs
+            ):
+                if ttft_duration is None:
+                    ttft_duration = time.monotonic() - t0
+                if chunk.is_final:
+                    resolved_provider = chunk.resolved_provider or resolved_provider
+                    resolved_model = chunk.resolved_model or resolved_model
+                if chunk.text_delta:
+                    accumulated_text.append(chunk.text_delta)
+                yield chunk
+
+            # Clean completion — capture content once, record TTFT + total duration
+            # against the resolved provider/model identity.
+            self._capture_llm_content(span, messages, "".join(accumulated_text))
+            self._set_span_status_ok(span)
+            if ttft_duration is not None:
+                self._record_ttft_metric(
+                    ttft_duration, resolved_provider or "", resolved_model or ""
+                )
+            self._record_duration_metric(
+                time.monotonic() - t0, resolved_provider or "", resolved_model or ""
+            )
+        except Exception as e:
+            self._record_span_exception_safe(span, e)
+            raise
+        finally:
+            span_cm.__exit__(None, None, None)
+
+    async def _call_llm_stream_async_core(
+        self,
+        messages: List[LLMMessage],
+        provider: Optional[str],
+        model: Optional[str],
+        temperature: Optional[float],
+        routing_context: Optional[Dict[str, Any]],
+        **kwargs: Any,
+    ) -> AsyncGenerator[LLMStreamChunk, None]:
+        """Routing dispatch for the streaming path (REQ-F-002).
+
+        Mirrors ``_call_llm_async_core`` (:638): routes through the streaming
+        routing variant when a routing_context and routing service are present;
+        raises ``LLMServiceError`` when no provider and no routing_context.
+        """
+        if routing_context is not None and self.routing_service:
+            if model is not None:
+                self._logger.warning(
+                    "[LLMService] 'model' parameter is ignored when routing_context "
+                    "is provided. Use routing_context['model_override'] to force a "
+                    "specific model."
+                )
+            if provider is not None:
+                self._logger.warning(
+                    "[LLMService] 'provider' parameter is ignored when routing_context "
+                    "is provided. Use routing_context['provider_preference'] to "
+                    "influence provider selection or "
+                    "routing_context['fallback_provider'] to set the fallback."
+                )
+            async for chunk in self._call_llm_stream_async_with_routing(
+                messages,
+                routing_context,
+                temperature=temperature,
+                model=model,
+                **kwargs,
+            ):
+                yield chunk
+            return
+        if not provider:
+            raise LLMServiceError(
+                "provider is required when routing_context is not provided."
+            )
+        async for chunk in self._call_llm_stream_async_direct(
+            provider,
+            messages,
+            model,
+            temperature,
+            **kwargs,
+        ):
+            yield chunk
+
+    async def _call_llm_stream_async_with_routing(
+        self,
+        messages: List[LLMMessage],
+        routing_context: Dict[str, Any],
+        temperature: Optional[float] = None,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[LLMStreamChunk, None]:
+        """Streaming routing variant — sibling of ``_call_llm_async_with_routing`` (:924).
+
+        Resolves the routing decision (identical logic to the non-streaming sibling)
+        then delegates to ``_call_llm_stream_async_direct`` with the resolved
+        provider/model.  The routing resolution block is byte-equivalent to
+        ``_call_llm_async_with_routing``; only the terminal delegate call differs
+        (``_call_llm_stream_async_direct`` instead of ``_call_llm_async_direct``).
+        """
+        if not self.routing_service:
+            raise LLMServiceError("Routing requested but no routing service available")
+
+        # Narrow try to routing decision only — _call_llm_stream_async_direct errors
+        # must propagate as-is; the broad except was re-labeling downstream errors as
+        # routing failures and silently swapping to fallback_provider.
+        try:
+            context = self._create_routing_context(routing_context, messages)
+            available_providers = self._provider_utils.get_available_providers()
+
+            if not available_providers:
+                raise LLMServiceError("No providers configured")
+
+            prompt = self._message_utils.extract_prompt_from_messages(messages)
+            decision = self.routing_service.route_request(
+                prompt=prompt,
+                task_type=context.task_type,
+                available_providers=available_providers,
+                routing_context=context,
+            )
+
+            self._logger.info(
+                f"Routing decision: {decision.provider}:{decision.model} "
+                f"(complexity: {decision.complexity}, "
+                f"confidence: {decision.confidence:.2f})"
+            )
+
+            self._record_routing_attributes(decision)
+
+            node_max_tokens = routing_context.get("max_tokens")
+            if node_max_tokens is None:
+                node_max_tokens = kwargs.pop("max_tokens", None)
+
+            resolved_max_tokens = (
+                node_max_tokens if node_max_tokens is not None else decision.max_tokens
+            )
+            if resolved_max_tokens == 0:
+                self._logger.debug(
+                    "max_tokens=0 resolved to no limit (provider default)"
+                )
+                kwargs["max_tokens"] = 0
+                resolved_max_tokens = None
+            elif resolved_max_tokens is not None:
+                source = (
+                    "node context" if node_max_tokens is not None else "activity config"
+                )
+                self._logger.debug(
+                    f"max_tokens={resolved_max_tokens} (source: {source})"
+                )
+                kwargs["max_tokens"] = resolved_max_tokens
+
+            if resolved_max_tokens is not None:
+                self._set_current_span_attributes(
+                    {GEN_AI_REQUEST_MAX_TOKENS: resolved_max_tokens}
+                )
+
+        except LLMServiceError:
+            raise
+        except Exception as e:
+            # PRE-selection routing failure only (the decision block above). The
+            # resolved delegate call is OUTSIDE this try (below), so a post-selection
+            # provider error propagates as-is and never reaches here — it must NOT be
+            # silently re-routed to the fallback provider, which would rewrite the
+            # resolved (provider, model) identity. Mirrors the intent of
+            # _call_llm_async_with_routing:1019.
+            self._logger.error(f"Routing failed: {e}")
+            fallback_provider = routing_context.get("fallback_provider", "anthropic")
+            self._logger.warning(
+                f"Falling back to {fallback_provider} due to pre-selection routing failure"
+            )
+            self._record_fallback_metric("routing_fallback")
+            fallback_max_tokens = routing_context.get("max_tokens")
+            if fallback_max_tokens is not None and "max_tokens" not in kwargs:
+                kwargs["max_tokens"] = fallback_max_tokens
+            async for chunk in self._call_llm_stream_async_direct(
+                provider=fallback_provider,
+                messages=messages,
+                model=model,
+                temperature=temperature,
+                routing_context=routing_context,
+                **kwargs,
+            ):
+                yield chunk
+            return
+
+        # Post-selection delegation — OUTSIDE the try so errors from the resolved
+        # call propagate unchanged and never trigger the pre-selection routing
+        # fallback above (CR-fix: the broad except previously caught downstream
+        # provider errors and silently swapped to fallback_provider).
+        async for chunk in self._call_llm_stream_async_direct(
+            provider=decision.provider,
+            messages=messages,
+            model=decision.model,
+            temperature=temperature,
+            routing_context=routing_context,
+            **kwargs,
+        ):
+            yield chunk
+
+    def _validate_streaming_support(
+        self,
+        provider: str,
+        messages: List[Dict[str, Any]],
+        routing_context: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Service-boundary unsupported-mode gate for streaming requests.
+
+        Rejects three classes of bad requests **before any chunk is delivered**,
+        mirroring the placement of ``_validate_prompt_caching_support`` at :1058:
+
+        1. **Gemini token streaming**: ``provider == "google"`` — not implemented
+           in this epic (E06 Open Question 3 / out-of-scope item 4); callers should
+           use ``call_llm_async`` instead.
+        2. **Batch-incompatible streaming param**: ``"stream"`` present in ``kwargs``
+           (per ``_BATCH_INCOMPATIBLE_PARAMS`` in ``_param_resolution.py:115``) —
+           consistent with the existing batch rejection ("Batch submissions do not
+           support streaming").
+        3. **Unverified prompt-caching**: delegates to
+           ``_validate_prompt_caching_support`` with
+           ``execution_path="call_llm_stream_async"`` so the proven caching gate
+           applies before first chunk.
+
+        Args:
+            provider: Already-normalized provider string (called after
+                ``normalize_provider``; must equal ``"google"`` for Gemini guard).
+            messages: Message list forwarded to ``_validate_prompt_caching_support``.
+            routing_context: Optional routing context forwarded to the caching
+                validator so routing-level ``requires_prompt_caching`` flags are
+                honoured.
+            **kwargs: Caller kwargs forwarded from ``call_llm_stream_async``; must
+                include ``cache_system_prompt`` when supplied by the caller.
+
+        Raises:
+            LLMServiceError: On any of the three rejection conditions above.
+
+        REQ-F-007; Constraint C4; Scenarios 7 & 10.
+        """
+        # 1. Gemini / Google token streaming — not supported in this epic.
+        if provider == "google":
+            raise LLMServiceError(
+                "Token streaming is not supported for provider 'google' "
+                "(E06 Open Question 3 / out-of-scope item 4). "
+                "Use call_llm_async instead."
+            )
+
+        # 2. Batch-incompatible streaming param: 'stream' in kwargs.
+        if "stream" in kwargs:
+            raise LLMServiceError(
+                "Streaming entry point received batch-incompatible parameter 'stream'. "
+                "Batch submissions do not support streaming."
+            )
+
+        # 3. Unverified prompt-caching — reuse the existing caching gate.
+        cache_system_prompt: bool = kwargs.get("cache_system_prompt", False)
+        self._validate_prompt_caching_support(
+            provider=provider,
+            messages=messages,
+            routing_context=routing_context,
+            execution_path="call_llm_stream_async",
+            cache_system_prompt=cache_system_prompt,
+        )
+
+    async def _call_llm_stream_async_direct(
+        self,
+        provider: str,
+        messages: List[LLMMessage],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        routing_context: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[LLMStreamChunk, None]:
+        """Direct streaming provider invocation with resilience and fallback.
+
+        Mirrors ``_call_llm_async_direct`` (:1048) but is an async generator that
+        yields ``LLMStreamChunk`` instances from ``_invoke_with_resilience_stream_async``.
+
+        Key differences from the non-streaming sibling:
+        - Obtains a streaming-aware client via ``get_or_create_client(..., streaming=True)``.
+        - Passes normalized ``LLMMessage`` dicts directly to ``stream_provider`` —
+          no LangChain conversion (research-report §2.1; AC-13).
+        - Pre-first-chunk fallback: on error before any chunk is delivered with
+          fallback eligible, calls ``try_with_fallback_async`` and materializes
+          its ``LLMResponse`` into a single synthetic terminal ``LLMStreamChunk``
+          (AC-18; REQ-F-006).
+        - ``_extract_llm_usage`` / ``_extract_finish_reason`` are NOT called —
+          the seam already normalizes these into the terminal chunk (AC-2).
+
+        Signature is **provider-first** to mirror the call site in
+        ``_call_llm_stream_async_core`` (positional: provider, messages, model,
+        temperature, **kwargs), matching how ``_call_llm_async_core`` (:678) calls
+        ``_call_llm_async_direct``.
+
+        ``cache_system_prompt`` travels in ``**kwargs`` and is popped here (mirrors
+        ``_call_llm_async_direct`` :1073) so its caller-supplied value reaches
+        ``_validate_streaming_support`` correctly (AC-11 cache-rejection gate must
+        not silently see False).
+        """
+        original_messages = messages
+
+        # Pop cache_system_prompt BEFORE forwarding kwargs to the provider/validator.
+        # Mirrors _call_llm_async_direct :1073.
+        cache_system_prompt: bool = kwargs.pop("cache_system_prompt", False)
+
+        # Normalize provider then apply the unsupported-mode gate (T-E06-F03-003).
+        # Gate fires AFTER normalize_provider and BEFORE get_or_create_client /
+        # _invoke_with_resilience_stream_async (mirrors _validate_prompt_caching_support
+        # placement at :1058 in _call_llm_async_direct).
+        provider = self._provider_utils.normalize_provider(provider)
+        self._validate_streaming_support(
+            provider,
+            messages,
+            routing_context,
+            cache_system_prompt=cache_system_prompt,
+            **kwargs,
+        )
+
+        config = self._provider_utils.get_provider_config(provider)
+
+        max_tokens = kwargs.pop("max_tokens", None)
+        if model or temperature is not None or max_tokens is not None:
+            config = config.copy()
+            if model:
+                config["model"] = model
+            if temperature is not None:
+                config["temperature"] = temperature
+            if max_tokens == 0:
+                config.pop("max_tokens", None)
+            elif max_tokens is not None:
+                config["max_tokens"] = max_tokens
+
+        current_model = config.get("model", "unknown")
+
+        # Build the params dict: everything from config except api_key
+        # (credentials are forwarded separately so the seam can build its own SDK
+        # client when needed — REQ-NF-004, AC-13).
+        params: Dict[str, Any] = {k: v for k, v in config.items() if k != "api_key"}
+
+        # Obtain the F02 streaming-aware client (AC-12).
+        streaming_client = self._client_factory.get_or_create_client(
+            provider, config, streaming=True
+        )
+
+        # Extract credentials from config for the seam (REQ-NF-004).
+        api_key = config.get("api_key")
+        credentials: Optional[Dict[str, Any]] = (
+            {"api_key": api_key} if api_key else None
+        )
+
+        # Track whether any chunk has been delivered to the caller.
+        # Only pre-first-chunk errors are eligible for fallback (REQ-F-006).
+        first_chunk_delivered = False
+
+        try:
+            async for chunk in self._invoke_with_resilience_stream_async(
+                messages,
+                params,
+                provider,
+                current_model,
+                streaming_client,
+                credentials,
+            ):
+                first_chunk_delivered = True
+                yield chunk
+
+        except Exception as e:
+            if first_chunk_delivered:
+                # Post-first-chunk error: terminal, no retry, no fallback (REQ-F-004).
+                raise
+
+            # Pre-first-chunk error: check fallback eligibility (mirrors :1124).
+            if self.features_registry and self.routing_config:
+                resp = await self._fallback_handler.try_with_fallback_async(
+                    provider,
+                    current_model,
+                    original_messages,
+                    e,
+                    self._provider_utils.get_provider_config,
+                    self._client_factory.get_or_create_client,
+                    self._message_utils.convert_messages_to_langchain,
+                    **kwargs,
+                )
+                # Materialize the fallback LLMResponse. The non-streaming fallback
+                # returns a COMPLETE response, so deliver its text as a non-final
+                # chunk (the streaming text contract — non-final chunks carry
+                # ``text_delta``) before the terminal chunk that carries the
+                # fallback's identity/usage. (CR-fix to AC-18: the fallback's answer
+                # text must not be dropped for direct call_llm_stream_async callers.)
+                if resp.text:
+                    yield LLMStreamChunk(
+                        text_delta=resp.text,
+                        chunk_index=0,
+                        is_final=False,
+                    )
+                yield LLMStreamChunk(
+                    text_delta="",
+                    chunk_index=1 if resp.text else 0,
+                    is_final=True,
+                    usage=resp.usage,
+                    finish_reason=resp.finish_reason,
+                    resolved_provider=resp.resolved_provider,
+                    resolved_model=resp.resolved_model,
+                )
+                return
+
+            raise
+
+    def _record_ttft_metric(self, ttft: float, provider: str, model: str) -> None:
+        """Record LLM streaming time-to-first-token on the TTFT histogram.
+
+        Mirrors ``_record_duration_metric`` (:2705). No-op when ``_metric_ttft``
+        or ``_telemetry_service`` is None. Error-isolated (never raises).
+
+        REQ-F-008, REQ-F-009.
+        """
+        if self._telemetry_service is None or self._metric_ttft is None:
+            return
+        try:
+            self._metric_ttft.record(
+                ttft,
+                {METRIC_DIM_PROVIDER: provider, METRIC_DIM_MODEL: model},
+            )
         except Exception:
             pass

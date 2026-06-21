@@ -257,3 +257,16 @@ routing:
     cache_ttl: 300
     # Maximum cache size
     max_cache_size: 1000
+
+# HTTP transport settings
+http:
+  # SSE (Server-Sent Events) connection envelope — spec.md E06-F05 §A.4
+  sse:
+    # Hard wall-clock cap per stream; on breach → event: failed + stream_duration_exceeded
+    max_stream_duration_seconds: 1800
+    # Idle window (no node event) before heartbeat keepalive engages (not a kill switch)
+    idle_timeout_seconds: 30
+    # Cadence of :keepalive SSE comment lines while idle (well under 60s proxy timeout)
+    heartbeat_interval_seconds: 15
+    # Global asyncio.Semaphore cap; over-limit → pre-open HTTP 503
+    max_concurrent_streams: 100

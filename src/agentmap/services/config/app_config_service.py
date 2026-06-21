@@ -494,6 +494,31 @@ class AppConfigService:
             "summary": summary,
         }
 
+    # HTTP / SSE transport accessors
+    def get_sse_config(self) -> Dict[str, Any]:
+        """Get SSE transport connection-envelope configuration with default values.
+
+        Reads http.sse.* via the existing get_value(path, default) dot-notation
+        pattern.  Defaults are the §A.4 values from spec.md (E06-F05):
+
+          max_stream_duration_seconds  — 1800  (30 min hard wall-clock cap)
+          idle_timeout_seconds         — 30    (idle-window before heartbeat)
+          heartbeat_interval_seconds   — 15    (keepalive comment cadence)
+          max_concurrent_streams       — 100   (global asyncio.Semaphore cap)
+
+        Returns:
+            Dict with the four envelope keys, user config merged over defaults.
+        """
+        defaults = {
+            "max_stream_duration_seconds": 1800,
+            "idle_timeout_seconds": 30,
+            "heartbeat_interval_seconds": 15,
+            "max_concurrent_streams": 100,
+        }
+
+        sse_config = self.get_value("http.sse", {})
+        return self._merge_with_defaults(sse_config, defaults)
+
     # Config file path accessor for debugging mostly
     def get_config_file_path(self) -> Optional[Path]:
         """Get the path to the main configuration file that was used during initialization."""
