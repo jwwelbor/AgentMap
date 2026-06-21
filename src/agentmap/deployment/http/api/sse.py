@@ -284,13 +284,53 @@ def to_serializable(value: Any) -> Any:
     return value
 
 
-def project_event_to_sse(event: Any) -> str:
+# Terminal ``event_type``s whose ``result`` is normalized through the SAME
+# ``_build_execute_response`` the non-streaming endpoint applies, so the SSE wire
+# shape == ExecuteResponse (spec §A.3 ``completed``/``failed`` rows; UAT HIGH-2).
+# ``suspended`` is deliberately EXCLUDED: spec §A.3's ``suspended`` row requires the
+# raw F04 shape (``interrupted: true``, ``thread_id``, ``interrupt_info``,
+# ``metadata.checkpoint_available``) — fields ``ExecuteResponse`` does not model —
+# so its result is forwarded unchanged.
+_EXECUTE_RESPONSE_TERMINALS = frozenset({"completed", "failed"})
+
+
+def _normalize_terminal_result(
+    runtime_result: Dict[str, Any],
+    graph_name: str,
+) -> Dict[str, Any]:
+    """Normalize an F04 terminal ``result`` into the ExecuteResponse wire shape.
+
+    Reuses ``_build_execute_response`` (the ONE canonical path, imported from
+    ``execute.py`` — no copy, no circular import since ``execute.py`` imports
+    neither ``sse.py`` nor ``stream.py``) so the terminal ``completed``/``failed``
+    SSE ``result`` carries the SAME derived ``status``/``message`` and sanitized
+    ``outputs`` the non-streaming endpoint returns (spec §A.3; UAT HIGH-2).
+
+    ``execution_id`` is ``None`` here — the streaming route's pre-open priming does
+    not thread the client-supplied id into F04's result, exactly as the JSON path
+    passes the request's ``execution_id`` (absent → ``None``).
+    """
+    # Local import keeps the module-import graph acyclic and explicit at the seam.
+    from agentmap.deployment.http.api.routes.execute import _build_execute_response
+
+    response = _build_execute_response(graph_name, runtime_result, execution_id=None)
+    return response.model_dump()
+
+
+def project_event_to_sse(event: Any, graph_name: str = "") -> str:
     """Project a WorkflowProgressEvent onto its SSE-framed wire string.
 
     Maps ``event.event_type`` directly to the SSE ``event:`` name (node_progress,
     completed, failed, suspended) and serialises only the populated fields as the
     compact ``data:`` JSON (spec.md §A.3).  ``to_serializable`` handles dataclasses
     and datetimes so the payload is always JSON-serialisable.
+
+    For ``completed``/``failed`` terminal events the ``result`` is normalized
+    through ``_build_execute_response`` so the wire shape matches the non-streaming
+    ``ExecuteResponse`` (success/status/outputs/execution_summary/metadata/
+    thread_id/error; spec §A.3, UAT HIGH-2).  ``suspended`` keeps its raw F04 shape
+    (see ``_EXECUTE_RESPONSE_TERMINALS``); ``graph_name`` is used only to derive the
+    ExecuteResponse ``message``.
     """
     payload: Dict[str, Any] = {
         "sequence": event.sequence,
@@ -304,7 +344,10 @@ def project_event_to_sse(event: Any) -> str:
     if event.node_duration is not None:
         payload["node_duration"] = event.node_duration
     if event.result is not None:
-        payload["result"] = to_serializable(event.result)
+        if event.is_terminal and event.event_type in _EXECUTE_RESPONSE_TERMINALS:
+            payload["result"] = _normalize_terminal_result(event.result, graph_name)
+        else:
+            payload["result"] = to_serializable(event.result)
     if event.error is not None:
         payload["error"] = event.error
 

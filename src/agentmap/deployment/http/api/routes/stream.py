@@ -174,7 +174,7 @@ async def _sse_generator(
                 seeded_event = None
                 last_event_time = loop.time()
                 last_heartbeat_time = last_event_time
-                yield _project_event_to_sse(event)
+                yield _project_event_to_sse(event, graph_name)
                 if event.is_terminal:
                     return  # exactly-one-terminal: never loop past an F04 terminal
                 continue
@@ -216,7 +216,7 @@ async def _sse_generator(
             # Reset the idle/heartbeat window: a real event just flowed.
             last_event_time = loop.time()
             last_heartbeat_time = last_event_time
-            yield _project_event_to_sse(event)
+            yield _project_event_to_sse(event, graph_name)
             if event.is_terminal:
                 return  # exactly-one-terminal: never loop past an F04 terminal
 

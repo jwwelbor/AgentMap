@@ -2813,3 +2813,135 @@ class TestSSENoDuplicateTerminalAfterDisconnect(IsolatedAsyncioTestCase):
             [],
             "No `cancelled` event may follow a primed terminal (REQ-F-002)",
         )
+
+
+# ---------------------------------------------------------------------------
+# UAT HIGH-2 — Terminal SSE payload matches the ExecuteResponse contract (spec §A.3)
+# ---------------------------------------------------------------------------
+
+
+class TestSSETerminalPayloadMatchesExecuteResponse(IsolatedAsyncioTestCase):
+    """UAT HIGH-2: the terminal `completed`/`failed`/`suspended` data.result must
+    reconstruct the §A.3 ExecuteResponse fields (success/status/outputs/
+    execution_summary/metadata/thread_id/error) with `status` correctly derived —
+    the same normalization the non-streaming endpoint applies via
+    _build_execute_response. F04's raw result lacks the derived `status`/`message`.
+
+    Caller-path contract:
+      ENTRYPOINT: POST /execute/{graph_id}/stream; the terminal data.result is the
+        wire shape consumers read.
+      LOWEST ALLOWED MOCK SEAM: a fake run_workflow_stream_async whose terminal
+        event carries an F04-shaped result dict (no `status`).
+      FORBIDDEN MOCKS: _build_execute_response / the projection — the real
+        normalization runs.
+      COUNTER-FACTUAL: the pre-fix projection forwards event.result unchanged, so
+        `status` is absent → the status assertions fail.
+    """
+
+    async def _terminal_result(self, terminal: WorkflowProgressEvent) -> Dict[str, Any]:
+        app = _make_test_app()
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=lambda *a, **kw: _make_fake_stream(terminal),
+        ):
+            _, _, body = await _collect_sse_response(app, "/execute/wf/stream")
+        events = parse_sse_bytes(body)
+        return events[-1].data.get("result", {})
+
+    async def test_completed_terminal_result_has_derived_status_completed(self):
+        """A successful run's terminal result.status must be derived as 'completed'."""
+        terminal = WorkflowProgressEvent(
+            event_type="completed",
+            sequence=0,
+            is_terminal=True,
+            # F04-shaped result: no `status` field (the JSON endpoint derives it).
+            result={
+                "success": True,
+                "outputs": {"answer": "42"},
+                "metadata": {"graph_name": "wf"},
+            },
+        )
+        result = await self._terminal_result(terminal)
+        self.assertEqual(
+            result.get("status"),
+            "completed",
+            "Terminal result must carry the derived status (spec §A.3)",
+        )
+
+    async def test_completed_terminal_result_has_execute_response_fields(self):
+        """Terminal result must carry the full §A.3 field set."""
+        terminal = WorkflowProgressEvent(
+            event_type="completed",
+            sequence=0,
+            is_terminal=True,
+            result={
+                "success": True,
+                "outputs": {"answer": "42"},
+                "metadata": {"graph_name": "wf"},
+            },
+        )
+        result = await self._terminal_result(terminal)
+        for field_name in (
+            "success",
+            "status",
+            "outputs",
+            "execution_summary",
+            "metadata",
+            "thread_id",
+            "error",
+        ):
+            self.assertIn(
+                field_name,
+                result,
+                f"Terminal result must include §A.3 field '{field_name}'",
+            )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("outputs"), {"answer": "42"})
+
+    async def test_failed_terminal_result_status_is_failed(self):
+        """A failed run's terminal result.status must be derived as 'failed'."""
+        terminal = WorkflowProgressEvent(
+            event_type="failed",
+            sequence=0,
+            is_terminal=True,
+            error="boom",
+            result={"success": False, "error": "boom"},
+        )
+        result = await self._terminal_result(terminal)
+        self.assertEqual(
+            result.get("status"),
+            "failed",
+            "A failed run's terminal result.status must be 'failed'",
+        )
+        self.assertEqual(result.get("error"), "boom")
+
+    async def test_suspended_terminal_preserves_spec_a3_shape(self):
+        """A suspended terminal keeps the §A.3 suspended-row shape (NOT normalized).
+
+        The spec §A.3 wire table's `suspended` row requires the raw F04 shape
+        (`interrupted: true`, `thread_id`, `interrupt_info`,
+        `metadata.checkpoint_available`) — which `ExecuteResponse` does NOT model
+        (it has no `interrupted` field). HIGH-2 reconciliation therefore normalizes
+        ONLY `completed`/`failed` through _build_execute_response and leaves
+        `suspended` untouched, so the documented suspend/resume payload survives.
+        """
+        terminal = WorkflowProgressEvent(
+            event_type="suspended",
+            sequence=0,
+            is_terminal=True,
+            result={
+                "success": False,
+                "interrupted": True,
+                "thread_id": "thread-xyz",
+                "interrupt_info": {"type": "human_input"},
+                "metadata": {"checkpoint_available": True},
+            },
+        )
+        result = await self._terminal_result(terminal)
+        self.assertTrue(
+            result.get("interrupted"),
+            "Suspended terminal must keep `interrupted: true` (spec §A.3 row)",
+        )
+        self.assertEqual(result.get("thread_id"), "thread-xyz")
+        self.assertEqual(result.get("interrupt_info"), {"type": "human_input"})
+        self.assertTrue(result.get("metadata", {}).get("checkpoint_available"))
