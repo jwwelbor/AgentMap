@@ -27,6 +27,10 @@ from fastapi import FastAPI
 
 from agentmap.deployment.http.api.routes.execute import router as execution_router
 from agentmap.deployment.http.api.routes.stream import router as stream_router
+from agentmap.deployment.http.api.sse_concurrency import (
+    get_stream_semaphore,
+    reset_stream_semaphore,
+)
 from agentmap.exceptions.runtime_exceptions import (
     AgentMapNotInitialized,
     GraphNotFound,
@@ -1384,41 +1388,43 @@ class TestSSEStreamEnvelope(IsolatedAsyncioTestCase):
     # ------------------------------------------------------------------
     #
     # Caller-path contract (test-plan.md TC-F05-006 / DRIFT-04 / INT-F05-4):
-    #   ENTRYPOINT: POST /execute/{graph_id}/stream when the module-level
+    #   ENTRYPOINT: POST /execute/{graph_id}/stream when the config-sized
     #     asyncio.Semaphore has no free slot (one stream already holds the only
     #     slot with max_concurrent_streams=1).
-    #   LOWEST ALLOWED MOCK SEAM: hold the single slot by keeping one real stream
-    #     open (a gated, never-completing fake) during the second request — the
-    #     real pre-open semaphore check executes.  We rebind the module semaphore
-    #     to capacity 1 for the test and restore it in finally (the production
-    #     default is 100, impractical to fill by holding 100 connections).
-    #   FORBIDDEN MOCKS: the semaphore logic itself; the pre-open admission must
-    #     run for real.
+    #   LOWEST ALLOWED MOCK SEAM: set max_concurrent_streams=1 via get_sse_config()
+    #     (the test-plan-PREFERRED seam) and hold the single slot by keeping one real
+    #     stream open (a gated, never-completing fake) during the second request — the
+    #     real pre-open semaphore check, sized from config, executes.  The singleton
+    #     is reset per test so it rebuilds from the injected config.
+    #   FORBIDDEN MOCKS: the semaphore logic, and rebinding the semaphore object —
+    #     the limit MUST come from config (CR BLOCKER-1: object-rebinding masked the
+    #     inert-config bug, so these tests now drive the limit through config only).
     #   COUNTER-FACTUAL: an impl that opens the SSE body THEN checks concurrency
     #     cannot return 503 (status is fixed once the body starts) → the rejected
     #     response would be text/event-stream, not application/json. An impl using
     #     a BLOCKING acquire would make the second request hang waiting for the
     #     held slot instead of returning 503 → the bounded wait_for trips.
 
-    def _patch_semaphore(self, capacity: int):
-        """Rebind stream._stream_semaphore to *capacity*; return a restorer.
+    def setUp(self) -> None:
+        # The concurrency limit is a process-wide singleton sized from config on
+        # first use; reset before/after each test so the injected
+        # max_concurrent_streams takes effect and does not leak (CR BLOCKER-1).
+        reset_stream_semaphore()
+        self.addCleanup(reset_stream_semaphore)
 
-        The module aliases the semaphore from sse.py, so the route reads
-        ``stream._stream_semaphore``.  Rebinding that attribute is the documented
-        fallback in the test plan (Codex finding #3) when holding the full default
-        pool (100) is impractical.
+    @staticmethod
+    def _capacity_one_app() -> FastAPI:
+        """App whose get_sse_config() reports max_concurrent_streams=1 (the seam).
+
+        Driving the limit through config (not an object rebind) is what proves the
+        config→limit binding the CR demanded; the singleton (reset in setUp) is
+        built from this value on the first request.
         """
-        import agentmap.deployment.http.api.routes.stream as stream_module
-
-        original = stream_module._stream_semaphore
-        stream_module._stream_semaphore = asyncio.Semaphore(capacity)
-        self.addCleanup(setattr, stream_module, "_stream_semaphore", original)
-        return stream_module
+        return _make_test_app(sse_config={"max_concurrent_streams": 1})
 
     async def test_concurrency_limit_returns_503_json_pre_open(self):
-        """Second concurrent stream over the limit → 503 application/json (AC-6)."""
-        stream_module = self._patch_semaphore(1)
-        app = _make_test_app()
+        """Second concurrent stream over the configured limit → 503 JSON (AC-6)."""
+        app = self._capacity_one_app()
 
         held_open = asyncio.Event()  # keeps the first stream occupying the slot
         first_started = asyncio.Event()
@@ -1449,8 +1455,8 @@ class TestSSEStreamEnvelope(IsolatedAsyncioTestCase):
                 # Open the first stream and keep it open (it holds the only slot).
                 first_task = asyncio.ensure_future(first_driver.run(lambda _c: False))
                 await asyncio.wait_for(first_started.wait(), timeout=5)
-                # Sanity: the slot is now consumed.
-                self.assertEqual(stream_module._stream_semaphore._value, 0)
+                # Sanity: the config-sized (cap 1) pool now has its slot consumed.
+                self.assertEqual(get_stream_semaphore(1)._value, 0)
 
                 # Second request must be rejected pre-open with 503 JSON.
                 with patch(
@@ -1480,8 +1486,7 @@ class TestSSEStreamEnvelope(IsolatedAsyncioTestCase):
         This proves the rejection consumed no slot: once the holder releases, the
         single slot is free again and a fresh request opens normally.
         """
-        stream_module = self._patch_semaphore(1)
-        app = _make_test_app()
+        app = self._capacity_one_app()
 
         held_open = asyncio.Event()
         first_started = asyncio.Event()
@@ -1505,13 +1510,13 @@ class TestSSEStreamEnvelope(IsolatedAsyncioTestCase):
                 first_task = asyncio.ensure_future(first_driver.run(lambda _c: False))
                 await asyncio.wait_for(first_started.wait(), timeout=5)
 
-                value_before = stream_module._stream_semaphore._value
+                value_before = get_stream_semaphore(1)._value
                 status, _, _ = await asyncio.wait_for(
                     _collect_sse_response(app, "/execute/wf-b/stream"),
                     timeout=5,
                 )
                 self.assertEqual(status, 503)
-                value_after = stream_module._stream_semaphore._value
+                value_after = get_stream_semaphore(1)._value
                 self.assertEqual(
                     value_before,
                     value_after,
@@ -1523,7 +1528,7 @@ class TestSSEStreamEnvelope(IsolatedAsyncioTestCase):
                 await asyncio.wait_for(first_task, timeout=5)
 
         # Holder released → slot free → a fresh stream must succeed (200).
-        self.assertEqual(stream_module._stream_semaphore._value, 1)
+        self.assertEqual(get_stream_semaphore(1)._value, 1)
         terminal = WorkflowProgressEvent(
             event_type="completed",
             sequence=0,
@@ -1542,8 +1547,7 @@ class TestSSEStreamEnvelope(IsolatedAsyncioTestCase):
 
     async def test_under_limit_request_succeeds(self):
         """Sub-case A (N-1=0 active): a request with a free slot opens normally."""
-        self._patch_semaphore(1)
-        app = _make_test_app()
+        app = self._capacity_one_app()
         terminal = WorkflowProgressEvent(
             event_type="completed",
             sequence=0,
@@ -1564,8 +1568,7 @@ class TestSSEStreamEnvelope(IsolatedAsyncioTestCase):
         Two sequential streams on a capacity-1 pool both succeed: if the first did
         not release its slot, the second would 503.
         """
-        stream_module = self._patch_semaphore(1)
-        app = _make_test_app()
+        app = self._capacity_one_app()
         terminal = WorkflowProgressEvent(
             event_type="completed",
             sequence=0,
@@ -1579,7 +1582,7 @@ class TestSSEStreamEnvelope(IsolatedAsyncioTestCase):
             status1, _, _ = await _collect_sse_response(app, "/execute/wf1/stream")
             self.assertEqual(status1, 200)
             self.assertEqual(
-                stream_module._stream_semaphore._value,
+                get_stream_semaphore(1)._value,
                 1,
                 "Slot must be released after the first stream completes",
             )
@@ -1589,6 +1592,168 @@ class TestSSEStreamEnvelope(IsolatedAsyncioTestCase):
                 200,
                 "Second sequential stream must succeed (slot was released)",
             )
+
+
+# ---------------------------------------------------------------------------
+# TC-F05-006 (config binding) — max_concurrent_streams config DRIVES the limit
+# ---------------------------------------------------------------------------
+
+
+class TestSSEStreamConcurrencyConfigBinding(IsolatedAsyncioTestCase):
+    """TC-F05-006 (CR BLOCKER-1): the limit is sourced from config, not hardcoded.
+
+    The sibling ``TestSSEStreamEnvelope`` concurrency tests prove the 503 *mechanism*
+    by configuring the limit through ``get_sse_config()['max_concurrent_streams']``.
+    This class adds the specific binding proof the code review demanded: that the
+    *configured value* is the *enforced value*, exercised purely through the config
+    seam — never by rebinding the semaphore object.
+
+    Caller-path contract (test-plan.md TC-F05-006 — "set max_concurrent_streams=N in
+    config and hold one connection open"; the preferred seam, not the object-rebind
+    fallback):
+      ENTRYPOINT: POST /execute/{graph_id}/stream with ``max_concurrent_streams=N``
+        injected via ``_make_test_app(sse_config=...)`` (i.e. through
+        ``get_sse_config()``), the process-wide singleton reset so the route builds it
+        from that live config value on the first request.
+      LOWEST ALLOWED MOCK SEAM: ``get_sse_config()`` returns the small cap (via
+        ``_make_test_app``); N real streams are held open (gated, never-completing
+        fakes) so the real pre-open semaphore admission executes.
+      FORBIDDEN MOCKS: the semaphore object/logic, and ANY rebinding of
+        ``stream._stream_semaphore`` — the binding under test is config → limit, so a
+        test that sets the limit by swapping the object would not exercise it.
+      COUNTER-FACTUAL: the shipped bug — a hardcoded ``Semaphore(100)`` that ignores
+        ``max_concurrent_streams`` — admits the (N+1)th concurrent stream (200
+        text/event-stream) instead of rejecting it (503 JSON) for any N < 100, so
+        ``test_config_value_drives_concurrency_limit`` and
+        ``test_different_config_value_changes_threshold`` both FAIL on the old code.
+    """
+
+    def setUp(self) -> None:
+        # Each test builds the singleton from its own injected config; reset before
+        # and after so neither a prior test's pool nor this one's leaks (the
+        # singleton is process-wide).
+        reset_stream_semaphore()
+        self.addCleanup(reset_stream_semaphore)
+
+    @staticmethod
+    def _make_n1() -> WorkflowProgressEvent:
+        return WorkflowProgressEvent(
+            event_type="node_progress",
+            sequence=0,
+            is_terminal=False,
+            node_name="n1",
+            state_delta={"output": "result-n1"},
+            node_duration=0.01,
+        )
+
+    async def _hold_n_streams_then_probe(
+        self, *, max_concurrent_streams: int
+    ) -> tuple[int, Dict[str, str], bytes, List[asyncio.Task], asyncio.Event]:
+        """Open ``max_concurrent_streams`` gated streams, then probe one more.
+
+        Returns ``(probe_status, probe_headers, probe_body, holder_tasks,
+        release_gate)``.  The caller MUST set ``release_gate`` and await
+        ``holder_tasks`` to tear the held streams down.  The held streams each
+        occupy one slot via a never-completing gated fake; the probe is the
+        (N+1)th concurrent request, which must be rejected pre-open if (and only
+        if) the configured ``max_concurrent_streams`` actually sized the pool.
+        """
+        app = _make_test_app(
+            sse_config={"max_concurrent_streams": max_concurrent_streams}
+        )
+        release_gate = asyncio.Event()
+        started_events = [asyncio.Event() for _ in range(max_concurrent_streams)]
+
+        def _holding_factory(index: int):
+            def _factory(*_a, **_kw):
+                async def _gen():
+                    started_events[index].set()
+                    yield self._make_n1()
+                    await release_gate.wait()  # hold the slot until released
+
+                return _gen()
+
+            return _factory
+
+        holder_tasks: List[asyncio.Task] = []
+        # Open exactly N concurrent streams, each holding one slot.
+        for index in range(max_concurrent_streams):
+            driver = SseAsgiDriver(app, f"/execute/holder-{index}/stream")
+            with patch(
+                "agentmap.deployment.http.api.routes.stream."
+                "run_workflow_stream_async",
+                side_effect=_holding_factory(index),
+            ):
+                holder_tasks.append(asyncio.ensure_future(driver.run(lambda _c: False)))
+                await asyncio.wait_for(started_events[index].wait(), timeout=5)
+
+        # Probe the (N+1)th request: with the pool full it must be a pre-open 503.
+        def _probe_factory(*_a, **_kw):
+            async def _gen():
+                yield self._make_n1()
+
+            return _gen()
+
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=_probe_factory,
+        ):
+            status, headers, body = await asyncio.wait_for(
+                _collect_sse_response(app, "/execute/probe/stream"), timeout=5
+            )
+
+        return status, headers, body, holder_tasks, release_gate
+
+    async def test_config_value_drives_concurrency_limit(self):
+        """max_concurrent_streams=1 → the 2nd concurrent request is rejected 503.
+
+        Drives the limit ONLY through config (no object rebind).  On the shipped
+        bug (hardcoded Semaphore(100)) the 2nd stream is admitted (200), so this
+        assertion FAILS on the old code.
+        """
+        status, headers, body, tasks, gate = await self._hold_n_streams_then_probe(
+            max_concurrent_streams=1
+        )
+        try:
+            self.assertEqual(
+                status,
+                503,
+                "With max_concurrent_streams=1 configured, the 2nd concurrent "
+                "stream must be rejected 503 — the configured value must be the "
+                "enforced value (CR BLOCKER-1)",
+            )
+            self.assertIn("application/json", headers.get("content-type", ""))
+            self.assertNotIn("text/event-stream", headers.get("content-type", ""))
+            self.assertNotIn(b"event:", body)
+        finally:
+            gate.set()
+            for task in tasks:
+                await asyncio.wait_for(task, timeout=5)
+
+    async def test_different_config_value_changes_threshold(self):
+        """max_concurrent_streams=2 admits 2 concurrent streams; the 3rd is 503.
+
+        The threshold tracks the configured value (2 here vs 1 above): the pool
+        admits exactly N and rejects N+1.  On the shipped bug the threshold is
+        always 100 regardless of config, so a config of 2 would still admit a 3rd
+        stream — this assertion FAILS on the old code.
+        """
+        status, headers, body, tasks, gate = await self._hold_n_streams_then_probe(
+            max_concurrent_streams=2
+        )
+        try:
+            self.assertEqual(
+                status,
+                503,
+                "With max_concurrent_streams=2 configured, the 3rd concurrent "
+                "stream must be rejected 503 (threshold tracks the config value)",
+            )
+            self.assertIn("application/json", headers.get("content-type", ""))
+            self.assertNotIn(b"event:", body)
+        finally:
+            gate.set()
+            for task in tasks:
+                await asyncio.wait_for(task, timeout=5)
 
 
 # ---------------------------------------------------------------------------
@@ -1921,21 +2086,23 @@ class TestSSEStreamAuth(IsolatedAsyncioTestCase):
     async def test_auth_checked_before_concurrency_gate(self):
         """A request with BOTH bad auth AND a full pool returns 401, not 503.
 
-        INT-F05-4 ordering guarantee: auth → concurrency.  We exhaust the
-        semaphore (capacity 0) AND send no token; the auth decorator must reject
-        with 401 before the handler ever attempts the (failing) concurrency
-        acquire that would otherwise yield 503.
+        INT-F05-4 ordering guarantee: auth → concurrency.  We exhaust the pool by
+        configuring max_concurrent_streams=0 (via get_sse_config(), not an object
+        rebind — CR BLOCKER-1) AND send no token; the auth decorator must reject
+        with 401 before the handler ever attempts the (failing) concurrency acquire
+        that would otherwise yield 503.
 
         Counter-factual: an impl that acquires the slot before running auth would
         return 503 here (the pool is empty), failing the 401 assertion.
         """
-        import agentmap.deployment.http.api.routes.stream as stream_module
+        # Empty config-sized pool: every acquire fails.  Reset the singleton so it
+        # rebuilds from this injected value, and again after so it does not leak.
+        reset_stream_semaphore()
+        self.addCleanup(reset_stream_semaphore)
 
-        original = stream_module._stream_semaphore
-        stream_module._stream_semaphore = asyncio.Semaphore(0)  # no slots at all
-        self.addCleanup(setattr, stream_module, "_stream_semaphore", original)
-
-        app = _make_test_app(auth_enabled=True)
+        app = _make_test_app(
+            auth_enabled=True, sse_config={"max_concurrent_streams": 0}
+        )
         with patch(
             "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
             side_effect=self._terminal_factory,
@@ -2212,20 +2379,20 @@ class TestSSEStreamUnsupportedMode(IsolatedAsyncioTestCase):
 
         Canonical pre-open order (stream.py slot comment + spec §A.7 sequence):
         auth → unsupported-mode validation → concurrency acquire → open.  Even with
-        the pool exhausted (semaphore at 0), an unsupported shape returns 400/422 —
-        the validation runs first — and the semaphore counter is untouched.
+        the pool exhausted (max_concurrent_streams=0 via config, NOT an object
+        rebind — CR BLOCKER-1), an unsupported shape returns 400/422 — the
+        validation runs first — and no slot is consumed.
 
         Counter-factual: an impl that placed the validation AFTER the acquire would
         either 503 here (pool full, never reaching the validation) or consume/leak a
         slot — failing the 400/422 assertion or the untouched-counter assertion.
         """
-        import agentmap.deployment.http.api.routes.stream as stream_module
+        # Empty config-sized pool; reset the singleton so it rebuilds from this
+        # injected value (and again after, so a 0-slot pool does not leak).
+        reset_stream_semaphore()
+        self.addCleanup(reset_stream_semaphore)
 
-        original = stream_module._stream_semaphore
-        stream_module._stream_semaphore = asyncio.Semaphore(0)  # no slots
-        self.addCleanup(setattr, stream_module, "_stream_semaphore", original)
-
-        app = _make_test_app()
+        app = _make_test_app(sse_config={"max_concurrent_streams": 0})
         with patch(
             "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
             side_effect=self._stream_factory,
@@ -2239,8 +2406,9 @@ class TestSSEStreamUnsupportedMode(IsolatedAsyncioTestCase):
             "(a rejected shape never holds a slot)",
         )
         upstream.assert_not_called()
-        # The slot must NOT have been consumed by a rejected request.
-        self.assertEqual(stream_module._stream_semaphore._value, 0)
+        # The slot must NOT have been consumed by a rejected request (cap-0 pool
+        # stays at 0 — validation rejected before any acquire).
+        self.assertEqual(get_stream_semaphore(0)._value, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -2381,10 +2549,14 @@ class TestSSEStreamPreOpenErrors(IsolatedAsyncioTestCase):
         The slot is acquired before priming; if priming raises, the handler's
         pre-existing release path must free it so the next request is admitted.
         """
-        import agentmap.deployment.http.api.routes.stream as stream_module
+        # Small config-sized pool (cap 2) so a leaked slot would be observable;
+        # reset the singleton so it rebuilds from this value (and after, no leak).
+        reset_stream_semaphore()
+        self.addCleanup(reset_stream_semaphore)
 
-        app = _make_test_app()
-        value_before = stream_module._stream_semaphore._value
+        app = _make_test_app(sse_config={"max_concurrent_streams": 2})
+        # Build the pool now so value_before reflects the configured capacity.
+        value_before = get_stream_semaphore(2)._value
 
         with patch(
             "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
@@ -2399,7 +2571,7 @@ class TestSSEStreamPreOpenErrors(IsolatedAsyncioTestCase):
 
         self.assertEqual(status, 404)
         self.assertEqual(
-            stream_module._stream_semaphore._value,
+            get_stream_semaphore(2)._value,
             value_before,
             "A pre-open prelude failure (404) must not consume a stream slot",
         )

@@ -11,7 +11,7 @@ Design decisions (spec.md E06-F05):
   DEC-3  — No direct-LLM stream symbols imported (AC-9 / TD-026 structural isolation).
   DEC-4  — New module per-domain router (not edits to execute.py).
   DEC-5  — Cancellation via async-generator lifecycle; rely on F04 finalization only.
-  DEC-6  — Module-level asyncio.Semaphore for concurrency admission.
+  DEC-6  — Config-sized process-wide asyncio.Semaphore for concurrency admission.
 
 Pre-open gate ordering (spec §A.7) is documented on ``stream_workflow``: auth ->
 unsupported-mode -> concurrency -> prime upstream -> open.
@@ -30,10 +30,9 @@ from agentmap.deployment.http.api.dependencies import (
 )
 from agentmap.deployment.http.api.routes.execute import ExecuteRequest
 
-# SSE wire helpers + projection + semaphore live in sse.py so this module stays
-# under the 350-line limit (spec.md §A.1), re-aliased to the private names this
-# module and the unit tests reference.  _to_serializable is a test-only re-export
-# (TestSSEModuleScaffold) — the projection that used it now lives in sse.py.
+# SSE wire helpers + projection live in sse.py and the concurrency limiter in
+# sse_concurrency.py (both split out to keep modules under the 350-line limit,
+# spec.md §A.1); re-aliased to the private names this module + the unit tests use.
 from agentmap.deployment.http.api.sse import (
     aclose_upstream_and_release as _aclose_upstream_and_release,
 )
@@ -51,12 +50,14 @@ from agentmap.deployment.http.api.sse import prime_upstream as _prime_upstream
 from agentmap.deployment.http.api.sse import (
     project_event_to_sse as _project_event_to_sse,
 )
-from agentmap.deployment.http.api.sse import stream_semaphore as _stream_semaphore
 from agentmap.deployment.http.api.sse import (  # noqa: F401
     to_serializable as _to_serializable,
 )
 from agentmap.deployment.http.api.sse import (
     validate_streaming_request_shape as _validate_streaming_request_shape,
+)
+from agentmap.deployment.http.api.sse_concurrency import (
+    try_acquire_stream_slot as _try_acquire_stream_slot,
 )
 from agentmap.exceptions.runtime_exceptions import (
     AgentMapNotInitialized,
@@ -274,18 +275,20 @@ async def stream_workflow(
         raise
 
     # Envelope read at request time (live DI), so get_sse_config() reflects
-    # http.sse.* with §A.4 defaults applied.
+    # http.sse.* with §A.4 defaults applied.  max_concurrent_streams is the ONE
+    # canonical source of the concurrency limit (CR BLOCKER-1; see
+    # try_acquire_stream_slot): the config value sizes the pool, int-coerced.
     sse_config = get_app_config_service(request).get_sse_config()
     max_stream_duration_seconds = float(sse_config["max_stream_duration_seconds"])
     idle_timeout_seconds = float(sse_config["idle_timeout_seconds"])
     heartbeat_interval_seconds = float(sse_config["heartbeat_interval_seconds"])
+    max_concurrent_streams = int(sse_config["max_concurrent_streams"])
 
     # --- Concurrency gate (DEC-6 / REQ-F-004 / AC-6) --------------------------
-    # Non-blocking pre-open admission: a full pool → 503 JSON, NO slot consumed, NO
-    # body.  Guard with locked() first (a blocking acquire would queue behind a held
-    # slot — forbidden); in asyncio acquire() never suspends when a slot is free, so
-    # there is no race between the locked() check and the acquire().
-    if _stream_semaphore.locked():
+    # Non-blocking pre-open admission sized from config: a held slot on success, or
+    # None when the config-sized pool is full → 503 JSON, NO slot consumed, NO body.
+    semaphore = await _try_acquire_stream_slot(max_concurrent_streams)
+    if semaphore is None:
         logger.warning("SSE stream rejected: max_concurrent_streams exceeded")
         return JSONResponse(
             status_code=503,
@@ -296,20 +299,17 @@ async def stream_workflow(
                 )
             },
         )
-    await _stream_semaphore.acquire()
 
     logger.info("Opening SSE stream for graph: %s", graph_name)
 
-    # Slot is now held and MUST be released on every exit path.  On success the
+    # Slot is held and MUST be released on every exit path.  On success the
     # generator's finally owns the release; the ``handed_off`` flag + finally below
-    # frees it if anything fails BEFORE the StreamingResponse is returned (so the
-    # generator's finally would never run) — without a broad except-and-reraise.
-    # This also frees the slot when a pre-open prelude error is mapped to JSON below.
+    # frees it if anything fails (incl. a pre-open prelude error mapped to JSON)
+    # BEFORE the StreamingResponse is returned — without a broad except-and-reraise.
     handed_off = False
     try:
-        # Build the lazy upstream, then PRIME it one step (spec §A.3 / CR BLOCKER-2) so
-        # F04's prelude exceptions map to pre-open JSON instead of aborting a committed
-        # 200 — see ``_prime_upstream``; the primed event is replayed by the generator.
+        # Build the lazy upstream, then PRIME it one step (spec §A.3 / CR BLOCKER-2;
+        # see ``_prime_upstream``) so F04's prelude exceptions map to pre-open JSON.
         upstream = run_workflow_stream_async(
             graph_name=graph_name,
             inputs=request_body.inputs,
@@ -333,7 +333,7 @@ async def stream_workflow(
                 max_stream_duration_seconds,
                 idle_timeout_seconds,
                 heartbeat_interval_seconds,
-                semaphore=_stream_semaphore,
+                semaphore=semaphore,
             ),
             media_type="text/event-stream",
             headers={
@@ -347,4 +347,4 @@ async def stream_workflow(
         return response
     finally:
         if not handed_off:
-            _stream_semaphore.release()
+            semaphore.release()

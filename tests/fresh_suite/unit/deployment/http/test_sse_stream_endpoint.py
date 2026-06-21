@@ -8,8 +8,8 @@ Test classes in this file:
                               call_llm_stream_async or LLMStreamChunk (AC-9 / TC-F05-009)
   - TestSSEContentCapturePolicy — White-box source assertion: no logger call emits payload
                               content (AC-11 / TC-F05-011)
-  - TestSSESemaphore        — Module-level asyncio.Semaphore exists and has the right behaviour
-                              (DEC-6, pre-open acquire/release contract)
+  - TestSSESemaphore        — Config-sized concurrency singleton + admission accessors
+                              (DEC-6 / CR BLOCKER-1: config sizes the semaphore)
 
 Caller-Path Contracts (per test-plan.md):
 
@@ -33,12 +33,15 @@ Caller-Path Contracts (per test-plan.md):
       A buggy stream.py that imports LLMStreamChunk would fail the "not in source" assertion.
 
   TestSSESemaphore:
-    ENTRYPOINT (internal): agentmap.deployment.http.api.routes.stream._stream_semaphore
-    Internal-only justification: the semaphore is a module attribute; testing its existence and
-    capacity directly is the lowest-cost verification without needing a full HTTP test.
+    ENTRYPOINT (internal): agentmap.deployment.http.api.sse_concurrency accessors
+    (get_stream_semaphore / try_acquire_stream_slot / reset_stream_semaphore).
+    Internal-only justification: the limiter is a config-sized process-wide singleton;
+    testing its sizing/identity/acquire-release directly is the lowest-cost verification
+    without needing a full HTTP test (TC-F05-006 covers the route gate).
     COUNTER-FACTUAL:
-      A missing _stream_semaphore attribute would raise AttributeError.
-      A semaphore with capacity 0 would block every acquire, failing the "acquirable" assertion.
+      A capacity that ignored the configured value (the shipped bug) would fail the
+      capacity-matches-config assertion. A blocking try-acquire would hang the
+      returns-None-when-full assertion.
 """
 
 import asyncio
@@ -360,67 +363,91 @@ class TestSSEContentCapturePolicy(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# TestSSESemaphore — module-level asyncio.Semaphore existence + behaviour (DEC-6)
+# TestSSESemaphore — config-sized concurrency singleton + admission (DEC-6)
 # ---------------------------------------------------------------------------
 
 
 class TestSSESemaphore(unittest.IsolatedAsyncioTestCase):
-    """Tests that the module-level _stream_semaphore exists, is an asyncio.Semaphore,
-    and correctly gates concurrent stream admission (DEC-6).
+    """Tests the config-sized stream-admission semaphore primitive (DEC-6; CR BLOCKER-1).
 
-    ENTRYPOINT (internal-only): agentmap.deployment.http.api.routes.stream._stream_semaphore
-    accessed directly as a module attribute.
+    ENTRYPOINT (internal): the sse_concurrency accessors —
+    ``get_stream_semaphore(max_concurrent_streams)``, ``try_acquire_stream_slot(...)``,
+    and ``reset_stream_semaphore()``.
 
-    Internal-only justification: DEC-6 specifies a module-level asyncio.Semaphore; the test
-    verifies the attribute contract — existence, type, and acquire/release semantics.
-    A full HTTP-layer test (TC-F05-006) exercises the gate at the route level; this test
-    isolates the semaphore primitive.
+    Internal-only justification: DEC-6 specifies a process-wide asyncio.Semaphore
+    SIZED FROM CONFIG (CR BLOCKER-1 — a hardcoded literal was the defect).  This test
+    verifies the primitive's contract — config sizing, singleton identity, acquire/
+    release semantics, and the non-blocking try-acquire — in isolation.  A full
+    HTTP-layer test (TC-F05-006) exercises the gate through the route at request time.
 
-    LOWEST ALLOWED MOCK SEAM: direct attribute access on the module.
-    FORBIDDEN MOCKS: do not mock asyncio.Semaphore itself.
+    LOWEST ALLOWED MOCK SEAM: none — call the real accessors with a small cap.
+    FORBIDDEN MOCKS: asyncio.Semaphore itself, and any rebinding of the singleton
+    object (the binding under test is config → limit).
     COUNTER-FACTUAL:
-      A missing _stream_semaphore attribute raises AttributeError.
-      A semaphore with capacity 0 fails the "acquire succeeds" assertion.
+      A capacity that ignored max_concurrent_streams (the shipped bug) would fail
+      test_semaphore_capacity_matches_config (a cap-2 request would have _value 100).
+      A try-acquire that blocked instead of returning None when full would hang
+      test_try_acquire_returns_none_when_full.
     """
 
     def setUp(self):
-        """Import the stream module to access the semaphore."""
-        import agentmap.deployment.http.api.routes.stream as stream_module
-
-        self._stream_module = stream_module
-
-    def test_stream_semaphore_exists(self):
-        """_stream_semaphore attribute must exist on the stream module (DEC-6)."""
-        self.assertTrue(
-            hasattr(self._stream_module, "_stream_semaphore"),
-            "stream module must have a module-level _stream_semaphore attribute",
+        """Import the config-sized concurrency accessors; reset the singleton."""
+        from agentmap.deployment.http.api.sse_concurrency import (
+            get_stream_semaphore,
+            reset_stream_semaphore,
+            try_acquire_stream_slot,
         )
 
-    def test_stream_semaphore_is_asyncio_semaphore(self):
-        """_stream_semaphore must be an asyncio.Semaphore instance."""
+        self._get_stream_semaphore = get_stream_semaphore
+        self._reset_stream_semaphore = reset_stream_semaphore
+        self._try_acquire_stream_slot = try_acquire_stream_slot
+        # Each test builds the singleton from its own cap; reset before/after.
+        reset_stream_semaphore()
+        self.addCleanup(reset_stream_semaphore)
+
+    def test_get_stream_semaphore_returns_asyncio_semaphore(self):
+        """The accessor must return an asyncio.Semaphore (DEC-6)."""
         self.assertIsInstance(
-            self._stream_module._stream_semaphore,
+            self._get_stream_semaphore(5),
             asyncio.Semaphore,
-            "_stream_semaphore must be an asyncio.Semaphore",
+            "get_stream_semaphore must return an asyncio.Semaphore",
         )
 
-    async def test_semaphore_is_acquirable(self):
-        """Semaphore has positive capacity: acquire must succeed without blocking.
+    def test_semaphore_is_a_singleton(self):
+        """Repeat calls return the SAME object — one semaphore shared by all requests.
 
-        Counter-factual: a semaphore with capacity 0 would deadlock here.
+        Counter-factual: a per-request semaphore (new object each call) would limit
+        nothing; ``assertIs`` fails if a fresh object is returned.
         """
-        sem = self._stream_module._stream_semaphore
-        # Non-blocking acquire must succeed (semaphore has capacity > 0)
-        acquired = sem._value > 0  # Check internal counter without consuming a slot
-        self.assertTrue(acquired, "_stream_semaphore must have capacity > 0")
+        first = self._get_stream_semaphore(5)
+        second = self._get_stream_semaphore(5)
+        self.assertIs(first, second, "the admission semaphore must be a singleton")
+
+    def test_semaphore_capacity_matches_config(self):
+        """Capacity is sized from the configured value, NOT a hardcoded default.
+
+        This is the unit-level binding proof for CR BLOCKER-1: a cap of 3 yields a
+        semaphore whose initial _value is 3 (the shipped bug — hardcoded 100 — would
+        give 100 here).
+        """
+        sem = self._get_stream_semaphore(3)
+        self.assertEqual(
+            sem._value, 3, "semaphore capacity must equal the configured limit"
+        )
+
+    def test_reset_rebuilds_from_new_config(self):
+        """After reset, the next call re-sizes the pool from the new config value.
+
+        Counter-factual: if reset did not clear the singleton, the second call would
+        keep the cap-2 pool and _value would be 2, not 7.
+        """
+        self.assertEqual(self._get_stream_semaphore(2)._value, 2)
+        self._reset_stream_semaphore()
+        self.assertEqual(self._get_stream_semaphore(7)._value, 7)
 
     async def test_semaphore_acquire_release_roundtrip(self):
-        """Acquire then release the semaphore; counter is restored.
-
-        This verifies the acquire/release mechanism that the route handler uses
-        in its finally block (DEC-6: slot released regardless of exit path).
-        """
-        sem = self._stream_module._stream_semaphore
+        """Acquire then release the semaphore; counter is restored (DEC-6 finally)."""
+        sem = self._get_stream_semaphore(2)
         initial_value = sem._value
 
         async with sem:
@@ -434,16 +461,28 @@ class TestSSESemaphore(unittest.IsolatedAsyncioTestCase):
             final_value, initial_value, "Slot must be restored after release"
         )
 
-    async def test_semaphore_capacity_positive(self):
-        """Semaphore capacity (initial value) must be > 0 (default 100 per spec §A.4)."""
-        sem = self._stream_module._stream_semaphore
-        # asyncio.Semaphore does not expose initial value directly;
-        # we can try to acquire once and confirm it worked
-        acquired = await asyncio.wait_for(
-            asyncio.ensure_future(sem.acquire()), timeout=0.1
-        )
-        self.assertTrue(acquired, "_stream_semaphore must be acquirable (capacity > 0)")
-        sem.release()  # restore
+    async def test_try_acquire_holds_slot_then_releases(self):
+        """try_acquire_stream_slot returns the semaphore with a slot HELD (AC-6)."""
+        sem = await self._try_acquire_stream_slot(2)
+        self.assertIsNotNone(sem, "a free pool must admit (return the semaphore)")
+        self.assertEqual(sem._value, 1, "an admitted request holds one slot")
+        sem.release()
+        self.assertEqual(sem._value, 2, "release restores the slot")
+
+    async def test_try_acquire_returns_none_when_full(self):
+        """try_acquire_stream_slot returns None (no block) when the pool is full (AC-6).
+
+        Counter-factual: a blocking acquire would hang here instead of returning
+        None — the bounded wait_for would trip.
+        """
+        sem = self._get_stream_semaphore(1)
+        await sem.acquire()  # exhaust the only slot
+        try:
+            result = await asyncio.wait_for(self._try_acquire_stream_slot(1), timeout=1)
+            self.assertIsNone(result, "a full pool must reject (return None)")
+            self.assertEqual(sem._value, 0, "a rejected admission consumes no slot")
+        finally:
+            sem.release()
 
 
 # ---------------------------------------------------------------------------
@@ -458,7 +497,7 @@ class TestSSEModuleScaffold(unittest.TestCase):
       - `router` is an APIRouter
       - `_format_sse_event` and `_format_sse_heartbeat` are callable
       - `_to_serializable` exists (mirrors execute.py:130 pattern)
-      - `_stream_semaphore` is present
+      - `_try_acquire_stream_slot` is wired (the config-sized admission seam, DEC-6)
 
     These are structural assertions; behaviour is covered by the other test classes.
     """
@@ -494,12 +533,18 @@ class TestSSEModuleScaffold(unittest.TestCase):
         )
         self.assertTrue(callable(self._mod._to_serializable))
 
-    def test_stream_semaphore_attribute(self):
-        """_stream_semaphore must be present as a module-level attribute."""
+    def test_concurrency_admission_seam_wired(self):
+        """The config-sized admission helper must be wired into the route (DEC-6).
+
+        The concurrency limiter moved to sse_concurrency.py (split for the 350-line
+        limit); the route reaches it via _try_acquire_stream_slot.  A missing wiring
+        would mean the concurrency gate could not source its config-sized semaphore.
+        """
         self.assertTrue(
-            hasattr(self._mod, "_stream_semaphore"),
-            "stream module must have _stream_semaphore",
+            hasattr(self._mod, "_try_acquire_stream_slot"),
+            "stream module must wire _try_acquire_stream_slot (config-sized admission)",
         )
+        self.assertTrue(callable(self._mod._try_acquire_stream_slot))
 
 
 if __name__ == "__main__":

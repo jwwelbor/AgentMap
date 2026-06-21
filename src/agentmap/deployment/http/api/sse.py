@@ -8,10 +8,12 @@ pieces of the SSE transport:
   * ``format_sse_event``      — frame an event block (``event:``/``data:``/blank).
   * ``format_sse_heartbeat``  — frame a ``:keepalive`` SSE comment line.
   * ``to_serializable``       — JSON-friendly projection of dataclasses/datetimes.
-  * ``stream_semaphore``      — module-level concurrency-admission semaphore.
+  * ``prime_upstream``        — pull F04's first event pre-open (§A.3 error contract).
 
-``routes/stream.py`` re-exports these (private-aliased) so existing call sites and
-tests that reference them via the route module continue to resolve unchanged.
+The concurrency limiter (DEC-6 semaphore) lives in ``sse_concurrency.py`` (split out
+to keep both modules under the 350-line limit).  ``routes/stream.py`` re-exports
+these (private-aliased) so existing call sites and tests that reference them via the
+route module continue to resolve unchanged.
 """
 
 import asyncio
@@ -28,20 +30,6 @@ from agentmap.exceptions.runtime_exceptions import (
     GraphNotFound,
     InvalidInputs,
 )
-
-# ---------------------------------------------------------------------------
-# Module-level concurrency semaphore (DEC-6)
-#
-# Sized from get_sse_config()["max_concurrent_streams"].  At import time we
-# cannot call get_sse_config() because the DI container has not started yet;
-# we use the documented default (100 per spec.md §A.4) so the semaphore is
-# always ready.  The route handler reads the live config for other envelope
-# values (duration cap, heartbeat cadence) at request time.
-# ---------------------------------------------------------------------------
-
-DEFAULT_MAX_CONCURRENT_STREAMS = 100
-stream_semaphore: asyncio.Semaphore = asyncio.Semaphore(DEFAULT_MAX_CONCURRENT_STREAMS)
-
 
 # ---------------------------------------------------------------------------
 # Pre-open priming (spec.md §A.3 — pre-open error contract; CR BLOCKER-2)
