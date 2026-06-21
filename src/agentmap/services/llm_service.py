@@ -3065,27 +3065,37 @@ class LLMService:
         span = span_cm.__enter__()
 
         t0 = time.monotonic()
-        ttft_recorded = False
+        ttft_duration: Optional[float] = None
+        # Under routing, ``provider``/``model`` are None at call time; the resolved
+        # identity only appears on the terminal chunk. Capture it there so the TTFT
+        # and duration metrics carry the real provider/model dimensions, not "".
+        resolved_provider = provider
+        resolved_model = model
         accumulated_text: List[str] = []
 
         try:
             async for chunk in self._call_llm_stream_async_core(
                 messages, provider, model, temperature, routing_context, **kwargs
             ):
-                if not ttft_recorded:
-                    self._record_ttft_metric(
-                        time.monotonic() - t0, provider or "", model or ""
-                    )
-                    ttft_recorded = True
+                if ttft_duration is None:
+                    ttft_duration = time.monotonic() - t0
+                if chunk.is_final:
+                    resolved_provider = chunk.resolved_provider or resolved_provider
+                    resolved_model = chunk.resolved_model or resolved_model
                 if chunk.text_delta:
                     accumulated_text.append(chunk.text_delta)
                 yield chunk
 
-            # Clean completion — capture content once, record total duration.
+            # Clean completion — capture content once, record TTFT + total duration
+            # against the resolved provider/model identity.
             self._capture_llm_content(span, messages, "".join(accumulated_text))
             self._set_span_status_ok(span)
+            if ttft_duration is not None:
+                self._record_ttft_metric(
+                    ttft_duration, resolved_provider or "", resolved_model or ""
+                )
             self._record_duration_metric(
-                time.monotonic() - t0, provider or "", model or ""
+                time.monotonic() - t0, resolved_provider or "", resolved_model or ""
             )
         except Exception as e:
             self._record_span_exception_safe(span, e)

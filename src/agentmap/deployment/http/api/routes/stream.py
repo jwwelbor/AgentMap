@@ -271,6 +271,10 @@ async def stream_workflow(
     # RAW body, NOT request_body: ExecuteRequest has extra='ignore' so an unknown
     # field (batch_mode) is silently dropped — relying on it would be a silent
     # downgrade (MED-1).  model_fields is the single source of allowed fields (AC-10).
+    # NOTE: a malformed/empty body is already rejected with 422 by FastAPI when it
+    # parses the ``request_body: ExecuteRequest`` parameter, BEFORE this handler runs.
+    # So ``request.json()`` here cannot raise (reaching this point means the body
+    # parsed as valid JSON); no extra guard is needed.
     try:
         _validate_streaming_request_shape(
             await request.json(), ExecuteRequest.model_fields

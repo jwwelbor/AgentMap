@@ -2219,6 +2219,35 @@ class TestSSEStreamUnsupportedMode(IsolatedAsyncioTestCase):
         # No silent downgrade to the streaming facade.
         upstream.assert_not_called()
 
+    async def test_malformed_json_body_is_client_error_not_500_and_no_stream(self):
+        """PR #176 review (false-positive guard): a malformed/empty body is rejected
+        by FastAPI's ``request_body: ExecuteRequest`` parsing with a 422 BEFORE the
+        handler runs — it is a clean client error, never an unhandled 500, and the
+        stream never opens / the upstream is never reached.
+        """
+        app = _make_test_app()
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._stream_factory,
+        ) as upstream:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+            ) as client:
+                response = await client.post(
+                    "/execute/any-graph/stream",
+                    content=b"{not valid json",
+                    headers={"content-type": "application/json"},
+                )
+
+        self.assertEqual(
+            response.status_code,
+            422,
+            f"malformed JSON must be a 422 client error, got {response.status_code}",
+        )
+        self.assertLess(response.status_code, 500, "must never be a 5xx")
+        self.assertNotIn("text/event-stream", response.headers.get("content-type", ""))
+        upstream.assert_not_called()
+
     async def test_rejection_body_documents_the_error(self):
         """The 400/422 body is JSON carrying a documented error message (spec §A.3)."""
         app = _make_test_app()

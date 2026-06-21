@@ -45,6 +45,29 @@ class TestLLMClientFactoryCacheKey(unittest.TestCase):
         self.assertIs(client_a, client_b)
         mock_create.assert_called_once_with("openai", config, False)
 
+    def test_api_key_none_does_not_crash_cache_key(self):
+        """PR #176 review: config with api_key=None must not raise when building
+        the cache key. ``config.get('api_key', '')`` returns None when the key is
+        present-but-None, so the old ``[:8]`` slice raised TypeError.
+
+        Counter-factual: with the unsafe ``config.get('api_key', '')[:8]`` this call
+        raises ``TypeError: 'NoneType' object is not subscriptable``.
+        """
+        config = {
+            "api_key": None,
+            "model": "gpt-4o-mini",
+            "temperature": 0.4,
+            "max_tokens": 256,
+        }
+        created = Mock(name="client")
+
+        with patch.object(
+            self.factory, "_create_langchain_client", return_value=created
+        ):
+            client = self.factory.get_or_create_client("openai", config)
+
+        self.assertIs(client, created)
+
     def test_different_temperature_creates_distinct_cached_clients(self):
         """Different temperatures must not collide in the client cache key.
 

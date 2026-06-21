@@ -285,6 +285,67 @@ class TestCallLLMStreamAsyncSkeletonExists(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# PR #176 review: streaming telemetry must use the RESOLVED provider/model
+# ---------------------------------------------------------------------------
+
+
+class TestStreamTelemetryResolvedIdentity(unittest.IsolatedAsyncioTestCase):
+    """Under routing, ``provider``/``model`` are None at call time; the TTFT and
+    duration metrics must be recorded with the resolved identity taken from the
+    terminal chunk, not empty-string dimensions.
+
+    Counter-factual: recording with the initial ``provider or ""`` / ``model or ""``
+    (the pre-fix behaviour) yields ``("", "")`` under routing, failing the asserts.
+    """
+
+    async def test_metrics_use_resolved_identity_under_routing(self):
+        telemetry = _make_telemetry_fake()
+        svc = _make_llm_service(telemetry_service=telemetry)
+
+        ttft_calls = []
+        dur_calls = []
+        svc._record_ttft_metric = lambda d, p, m: ttft_calls.append((p, m))
+        svc._record_duration_metric = lambda d, p, m: dur_calls.append((p, m))
+
+        async def fake_core(
+            messages, provider, model, temperature, routing_context, **kwargs
+        ):
+            yield LLMStreamChunk(text_delta="hello", chunk_index=0, is_final=False)
+            yield LLMStreamChunk(
+                text_delta="",
+                chunk_index=1,
+                is_final=True,
+                resolved_provider="openai",
+                resolved_model="gpt-4o",
+            )
+
+        svc._call_llm_stream_async_core = fake_core
+
+        # Routing path: provider/model are None at call time.
+        collected = []
+        async for chunk in svc._call_llm_stream_async_with_telemetry(
+            [{"role": "user", "content": "hi"}],
+            None,
+            None,
+            None,
+            {"task_type": "qa"},
+        ):
+            collected.append(chunk)
+
+        self.assertEqual(len(collected), 2)
+        self.assertEqual(
+            ttft_calls,
+            [("openai", "gpt-4o")],
+            "TTFT must use the resolved identity, not empty strings",
+        )
+        self.assertEqual(
+            dur_calls,
+            [("openai", "gpt-4o")],
+            "duration must use the resolved identity, not empty strings",
+        )
+
+
+# ---------------------------------------------------------------------------
 # TC-F03-007 (async path): dispatch skeleton — telemetry vs no-telemetry
 # ---------------------------------------------------------------------------
 

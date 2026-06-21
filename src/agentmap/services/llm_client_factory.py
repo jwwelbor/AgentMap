@@ -46,8 +46,11 @@ class LLMClientFactory:
         # clients for the same (provider, config) are cached separately.
         max_tok = config.get("max_tokens")
         temperature = config.get("temperature", 0.7)
+        # ``api_key`` may be present-but-None (keys are often optionally loaded);
+        # ``or ""`` guards against ``None[:8]`` raising TypeError.
+        api_key_prefix = (config.get("api_key") or "")[:8]
         cache_key = (
-            f"{provider}_{config.get('model')}_{config.get('api_key', '')[:8]}_"
+            f"{provider}_{config.get('model')}_{api_key_prefix}_"
             f"{max_tok}_{temperature!r}_{streaming}"
         )
 
