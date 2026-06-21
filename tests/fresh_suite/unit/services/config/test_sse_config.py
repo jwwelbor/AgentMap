@@ -271,7 +271,7 @@ class TestSseConfigYamlRoundTrip(unittest.TestCase):
 
         import yaml  # pyyaml is already a project dependency
 
-        yaml_path = pathlib.Path("/home/jwwel/projects/agentmap/agentmap_config.yaml")
+        yaml_path = pathlib.Path(__file__).resolve().parents[5] / "agentmap_config.yaml"
         with open(yaml_path, "r") as f:
             data = yaml.safe_load(f)
 
@@ -286,7 +286,7 @@ class TestSseConfigYamlRoundTrip(unittest.TestCase):
 
         import yaml
 
-        yaml_path = pathlib.Path("/home/jwwel/projects/agentmap/agentmap_config.yaml")
+        yaml_path = pathlib.Path(__file__).resolve().parents[5] / "agentmap_config.yaml"
         with open(yaml_path, "r") as f:
             data = yaml.safe_load(f)
 
@@ -312,7 +312,7 @@ class TestSseConfigYamlRoundTrip(unittest.TestCase):
 
         from agentmap.services.config.config_service import ConfigService
 
-        yaml_path = pathlib.Path("/home/jwwel/projects/agentmap/agentmap_config.yaml")
+        yaml_path = pathlib.Path(__file__).resolve().parents[5] / "agentmap_config.yaml"
         if not yaml_path.exists():
             self.skipTest("agentmap_config.yaml not found — skipping round-trip test")
 
