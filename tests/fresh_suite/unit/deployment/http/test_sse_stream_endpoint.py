@@ -547,5 +547,100 @@ class TestSSEModuleScaffold(unittest.TestCase):
         self.assertTrue(callable(self._mod._try_acquire_stream_slot))
 
 
+# ---------------------------------------------------------------------------
+# UAT HIGH-1 — Deadline lapse AFTER the terminal yield must NOT emit a 2nd terminal
+# ---------------------------------------------------------------------------
+
+
+class TestSSEGeneratorNoSecondTerminalOnDeadline(unittest.IsolatedAsyncioTestCase):
+    """UAT HIGH-1 (deadline branch): if the duration deadline lapses in the window
+    AFTER F04's terminal event is yielded but BEFORE the next pull, the generator
+    must NOT emit a second terminal (`failed`/`stream_duration_exceeded`).
+
+    Driven at the generator entrypoint (_sse_generator) directly because the
+    deadline-after-terminal window is a wall-clock race that the loop's monotonic
+    clock controls; a deterministic test patches the running loop's `time()` so the
+    deadline is fresh on the iteration that replays the primed terminal and lapsed
+    on the (buggy) following iteration.
+
+    COUNTER-FACTUAL: the pre-fix generator (no `return` after the replayed terminal)
+    loops back, the deadline check fires, and it emits a SECOND terminal
+    `failed`/`stream_duration_exceeded`. With the fix it returns after the terminal
+    yield, so only the one `completed` frame is produced. (Verified: reverting the
+    replay-path `return` makes this test see two terminals.)
+    """
+
+    async def test_deadline_after_primed_terminal_no_second_failed(self):
+        import agentmap.deployment.http.api.routes.stream as stream_module
+        from agentmap.models.execution.progress_event import WorkflowProgressEvent
+
+        terminal = WorkflowProgressEvent(
+            event_type="completed",
+            sequence=0,
+            is_terminal=True,
+            result={"success": True, "outputs": {}},
+        )
+
+        async def _empty_upstream():
+            # Exhausted upstream: the terminal arrives via the primed-replay path.
+            return
+            yield  # pragma: no cover (makes this an async generator)
+
+        class _FakeRequest:
+            async def is_disconnected(self) -> bool:
+                return False
+
+        loop = asyncio.get_running_loop()
+        real_time = loop.time
+        base = real_time()
+        # Clock script: keep time at `base` until the terminal has been replayed,
+        # then jump well past the (10s) cap so a buggy post-terminal loop would
+        # see the deadline lapsed.  The replay path consumes the first few time()
+        # reads (start, iter-1 remaining, last_event_time); only a SECOND loop
+        # iteration (the bug) reads time() again — that read must be past-deadline.
+        calls = {"n": 0}
+
+        def _fake_time():
+            calls["n"] += 1
+            # First 3 reads (start + iter-1 remaining + last_event_time) stay at base;
+            # any later read (only reached by the buggy 2nd iteration) is past cap.
+            return base if calls["n"] <= 3 else base + 100.0
+
+        loop.time = _fake_time  # type: ignore[assignment]
+        try:
+            gen = stream_module._sse_generator(
+                upstream=_empty_upstream(),
+                primed_first_event=terminal,
+                primed_exhausted=False,
+                graph_name="wf",
+                request=_FakeRequest(),
+                max_stream_duration_seconds=10.0,
+                idle_timeout_seconds=1000.0,
+                heartbeat_interval_seconds=1000.0,
+                semaphore=None,
+            )
+            frames = [frame async for frame in gen]
+        finally:
+            loop.time = real_time  # type: ignore[assignment]
+
+        body = "".join(frames)
+        self.assertEqual(
+            body.count("event: completed"),
+            1,
+            f"Exactly one terminal `completed` expected; got: {body!r}",
+        )
+        self.assertNotIn(
+            "stream_duration_exceeded",
+            body,
+            "No duration-cap terminal may follow the F04 terminal (REQ-F-002/AC-5)",
+        )
+        # Total terminal frames (completed + any failed) must be exactly one.
+        self.assertEqual(
+            body.count("event: failed") + body.count("event: completed"),
+            1,
+            f"Exactly one terminal event expected; got: {body!r}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

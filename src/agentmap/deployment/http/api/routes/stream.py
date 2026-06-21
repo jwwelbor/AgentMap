@@ -121,6 +121,11 @@ async def _sse_generator(
     *comment* — never a typed event — at ``heartbeat_interval_seconds`` once
     ``idle_timeout_seconds`` elapses (AC-7; the deadline stays authoritative).
 
+    Exactly-one-terminal (UAT HIGH-1 / REQ-F-002 / AC-1 / AC-5): the loop ``return``s
+    immediately after yielding any F04 terminal event, so a disconnect or deadline
+    lapse in the post-terminal/pre-pull window cannot re-enter the (1)/(2) gates and
+    emit a SECOND terminal (``cancelled``/``failed``).
+
     ``CancelledError``/``GeneratorExit`` are re-raised after cleanup, never swallowed
     (F04-lesson); the ``finally`` delegates upstream finalization + slot release to
     ``_aclose_upstream_and_release`` on every exit path (DEC-5/DEC-6).
@@ -170,6 +175,8 @@ async def _sse_generator(
                 last_event_time = loop.time()
                 last_heartbeat_time = last_event_time
                 yield _project_event_to_sse(event)
+                if event.is_terminal:
+                    return  # exactly-one-terminal: never loop past an F04 terminal
                 continue
 
             # (3b) Await the next event, bounded so we wake to re-check (1)/(2) and
@@ -210,6 +217,8 @@ async def _sse_generator(
             last_event_time = loop.time()
             last_heartbeat_time = last_event_time
             yield _project_event_to_sse(event)
+            if event.is_terminal:
+                return  # exactly-one-terminal: never loop past an F04 terminal
 
     except asyncio.CancelledError:
         # Task cancellation (e.g. client disconnect surfaced by the ASGI server).

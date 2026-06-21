@@ -2703,3 +2703,113 @@ class TestSSEStreamRegressionNonStreaming(IsolatedAsyncioTestCase):
             execute_py,
             "execute.py must not reference stream_router (router registration belongs in server.py)",
         )
+
+
+# ---------------------------------------------------------------------------
+# UAT HIGH-1 — No SECOND terminal event after F04's terminal (REQ-F-002 / AC-1 / AC-5)
+# ---------------------------------------------------------------------------
+
+
+class TestSSENoDuplicateTerminalAfterDisconnect(IsolatedAsyncioTestCase):
+    """UAT HIGH-1: a client disconnect (or deadline lapse) in the window AFTER F04's
+    terminal event but BEFORE the generator's next pull must NOT emit a second
+    terminal event.
+
+    Caller-path contract:
+      ENTRYPOINT: POST /execute/{graph_id}/stream via SseAsgiDriver; the client
+        disconnects the moment it receives the terminal chunk (on_body returns
+        True on the terminal frame), so the generator's NEXT loop iteration would
+        observe is_disconnected()==True.
+      LOWEST ALLOWED MOCK SEAM: a fake run_workflow_stream_async yielding the
+        scripted node/terminal events; the real disconnect→is_disconnected chain,
+        StreamingResponse lifecycle, and SSE framing all execute.
+      FORBIDDEN MOCKS: request.is_disconnected(), the terminal-event production,
+        the SSE framing — all real.
+      HARD CONTRACT (REQ-F-002 / AC-1 / AC-5): exactly ONE terminal event; it is
+        last; no second `cancelled` follows the F04 terminal.
+      COUNTER-FACTUAL: the pre-fix generator (no `return` after the terminal yield)
+        loops back, sees is_disconnected()==True, and emits a SECOND terminal
+        `cancelled` — these assertions then fail. (Verified: reverting the two
+        `return` statements makes test_a/test_c emit two terminals.)
+    """
+
+    @staticmethod
+    def _terminal_event() -> WorkflowProgressEvent:
+        return WorkflowProgressEvent(
+            event_type="completed",
+            sequence=1,
+            is_terminal=True,
+            result={"success": True, "outputs": {"n1": "result-n1"}},
+        )
+
+    @staticmethod
+    def _node_event() -> WorkflowProgressEvent:
+        return WorkflowProgressEvent(
+            event_type="node_progress",
+            sequence=0,
+            is_terminal=False,
+            node_name="n1",
+            state_delta={"output": "result-n1"},
+            node_duration=0.01,
+        )
+
+    async def _drive_disconnect_on_terminal(
+        self, *events: WorkflowProgressEvent
+    ) -> List[SseEvent]:
+        """Drive the stream, disconnecting the instant the terminal chunk arrives."""
+        app = _make_test_app()
+        driver = SseAsgiDriver(app, "/execute/wf/stream")
+
+        def _on_body(chunk: bytes) -> bool:
+            # Disconnect as soon as the terminal frame is delivered, so the next
+            # generator iteration (if any) observes the disconnect.
+            return b"event: completed" in chunk or b"event: failed" in chunk
+
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=lambda *a, **kw: _make_fake_stream(*events),
+        ):
+            await asyncio.wait_for(driver.run(_on_body), timeout=5)
+
+        return parse_sse_bytes(driver.raw_body)
+
+    async def test_a_disconnect_after_terminal_no_second_cancelled(self):
+        """Disconnect after the completed terminal → no second `cancelled`."""
+        events = await self._drive_disconnect_on_terminal(
+            self._node_event(), self._terminal_event()
+        )
+        terminals = [e for e in events if e.data.get("is_terminal")]
+        self.assertEqual(
+            len(terminals),
+            1,
+            f"Exactly one terminal expected; got {[e.event_name for e in events]}",
+        )
+        self.assertEqual(events[-1].event_name, "completed")
+        cancelled = [e for e in events if e.event_name == "cancelled"]
+        self.assertEqual(
+            cancelled,
+            [],
+            "No `cancelled` event may follow the F04 terminal (REQ-F-002)",
+        )
+
+    async def test_c_primed_terminal_then_disconnect_one_terminal(self):
+        """The primed FIRST event is itself terminal, then client disconnects.
+
+        Exercises the replay path: F04 yields a terminal as its very first (and
+        only) event; the route primes + replays it, then the client disconnects.
+        The replay path must `return` so no second `cancelled` is emitted.
+        """
+        events = await self._drive_disconnect_on_terminal(self._terminal_event())
+        terminals = [e for e in events if e.data.get("is_terminal")]
+        self.assertEqual(
+            len(terminals),
+            1,
+            f"Exactly one terminal expected; got {[e.event_name for e in events]}",
+        )
+        self.assertEqual(events[0].event_name, "completed")
+        cancelled = [e for e in events if e.event_name == "cancelled"]
+        self.assertEqual(
+            cancelled,
+            [],
+            "No `cancelled` event may follow a primed terminal (REQ-F-002)",
+        )
