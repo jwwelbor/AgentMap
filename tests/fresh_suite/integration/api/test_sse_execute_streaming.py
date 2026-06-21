@@ -27,6 +27,11 @@ from fastapi import FastAPI
 
 from agentmap.deployment.http.api.routes.execute import router as execution_router
 from agentmap.deployment.http.api.routes.stream import router as stream_router
+from agentmap.exceptions.runtime_exceptions import (
+    AgentMapNotInitialized,
+    GraphNotFound,
+    InvalidInputs,
+)
 from agentmap.models.execution.progress_event import WorkflowProgressEvent
 from agentmap.services.auth_service import AuthContext
 
@@ -2241,6 +2246,163 @@ class TestSSEStreamUnsupportedMode(IsolatedAsyncioTestCase):
 # ---------------------------------------------------------------------------
 # TC-F05-010 — Existing non-streaming endpoints unchanged after F05 registration
 # ---------------------------------------------------------------------------
+
+
+class TestSSEStreamPreOpenErrors(IsolatedAsyncioTestCase):
+    """Pre-open error mapping for F04 startup exceptions (spec §A.3, CR BLOCKER-2).
+
+    ``run_workflow_stream_async`` is a LAZY async generator: its prelude
+    (``ensure_initialized`` / bundle resolution / graph lookup) does not run until
+    the first ``__anext__``.  F04 raises ``GraphNotFound`` / ``InvalidInputs`` /
+    ``AgentMapNotInitialized`` from that prelude *before any event*
+    (``workflow_ops.py`` docstring "raised before any event").  Spec §A.3 requires
+    these to surface as ordinary JSON HTTP errors (404 / 400 / 503) **before** the
+    ``text/event-stream`` body opens — "a failure to even start the run looks
+    identical to the non-streaming endpoint".
+
+    The original handler wrapped only the *lazy generator construction* in the
+    ``except`` clauses, so no prelude code ran inside the ``try`` and the mapping was
+    dead code: a nonexistent graph returned ``200 text/event-stream`` and then a
+    broken mid-stream abort.  The fix primes the upstream one step **pre-open** so the
+    prelude exception is mapped to JSON before the response is committed.
+
+    Caller-path contract:
+      ENTRYPOINT: ``POST /execute/{graph_id}/stream`` via the real ASGI app.
+      LOWEST ALLOWED MOCK SEAM: ``run_workflow_stream_async`` replaced with a fake
+        async generator that RAISES the F04 prelude exception on its first
+        ``__anext__`` — exactly what the real facade does for a missing graph /
+        invalid inputs / uninitialized runtime (raised before any event).
+      FORBIDDEN MOCKS: the SSE framing / StreamingResponse path, the
+        ``StreamingResponse`` status machinery — the route must decide the status
+        pre-open.
+      COUNTER-FACTUAL: if the validation lives INSIDE the lazy generator (the old
+        code), Starlette commits ``200`` + ``text/event-stream`` at
+        ``http.response.start`` BEFORE the first ``__anext__`` runs, so the response
+        is ``200 text/event-stream`` (then aborts mid-stream).  These tests assert
+        ``application/json`` + the documented status + NO ``event:`` bytes, so they
+        FAIL on the old (validation-in-generator) code and PASS only when the
+        prelude exception is surfaced pre-open.
+    """
+
+    @staticmethod
+    def _raising_stream_factory(exc: Exception):
+        """Return a side_effect that yields an async generator raising *exc* first.
+
+        Mirrors ``run_workflow_stream_async``'s shape (``async def`` + ``yield``)
+        and F04's "raised before any event" contract: the prelude raises on the
+        first ``__anext__`` before any ``WorkflowProgressEvent`` is yielded.
+        """
+
+        def _factory(*_a, **_kw):
+            async def _gen():
+                raise exc
+                yield  # pragma: no cover — unreachable; makes this an async gen
+
+            return _gen()
+
+        return _factory
+
+    async def test_unknown_graph_returns_404_json_pre_open(self):
+        """Nonexistent graph → pre-open 404 JSON, never a text/event-stream 200.
+
+        This is the headline BLOCKER-2 case: ``GraphNotFound`` from F04's prelude
+        must map to a 404 JSON error before the stream opens (spec §A.3).
+        """
+        app = _make_test_app()
+
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._raising_stream_factory(
+                GraphNotFound("missing-workflow::missing-graph")
+            ),
+        ):
+            status, headers, body = await asyncio.wait_for(
+                _collect_sse_response(app, "/execute/missing-graph/stream"),
+                timeout=5,
+            )
+
+        # Pre-open contract (§A.3): JSON error, NOT a streaming response.
+        self.assertEqual(
+            status,
+            404,
+            "A nonexistent graph must map to a pre-open 404 (GraphNotFound), not a "
+            "200 text/event-stream that aborts mid-stream",
+        )
+        self.assertIn("application/json", headers.get("content-type", ""))
+        self.assertNotIn("text/event-stream", headers.get("content-type", ""))
+        # The stream must NOT have opened: no SSE framing in the body.
+        self.assertNotIn(b"event:", body)
+        self.assertNotIn(b"data:", body)
+        # Error detail surfaces, identical-shaped to the non-streaming endpoint.
+        detail = json.loads(body).get("detail", "")
+        self.assertIn("not found", detail.lower())
+
+    async def test_invalid_inputs_returns_400_json_pre_open(self):
+        """InvalidInputs from F04's prelude → pre-open 400 JSON (spec §A.3)."""
+        app = _make_test_app()
+
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._raising_stream_factory(
+                InvalidInputs("bad input payload")
+            ),
+        ):
+            status, headers, body = await asyncio.wait_for(
+                _collect_sse_response(app, "/execute/some-graph/stream"),
+                timeout=5,
+            )
+
+        self.assertEqual(status, 400)
+        self.assertIn("application/json", headers.get("content-type", ""))
+        self.assertNotIn("text/event-stream", headers.get("content-type", ""))
+        self.assertNotIn(b"event:", body)
+
+    async def test_not_initialized_returns_503_json_pre_open(self):
+        """AgentMapNotInitialized from F04's prelude → pre-open 503 JSON (spec §A.3)."""
+        app = _make_test_app()
+
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._raising_stream_factory(AgentMapNotInitialized()),
+        ):
+            status, headers, body = await asyncio.wait_for(
+                _collect_sse_response(app, "/execute/some-graph/stream"),
+                timeout=5,
+            )
+
+        self.assertEqual(status, 503)
+        self.assertIn("application/json", headers.get("content-type", ""))
+        self.assertNotIn("text/event-stream", headers.get("content-type", ""))
+        self.assertNotIn(b"event:", body)
+
+    async def test_pre_open_error_does_not_consume_concurrency_slot(self):
+        """A pre-open prelude failure must release the concurrency slot (no leak).
+
+        The slot is acquired before priming; if priming raises, the handler's
+        pre-existing release path must free it so the next request is admitted.
+        """
+        import agentmap.deployment.http.api.routes.stream as stream_module
+
+        app = _make_test_app()
+        value_before = stream_module._stream_semaphore._value
+
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=self._raising_stream_factory(
+                GraphNotFound("missing-workflow::missing-graph")
+            ),
+        ):
+            status, _, _ = await asyncio.wait_for(
+                _collect_sse_response(app, "/execute/missing-graph/stream"),
+                timeout=5,
+            )
+
+        self.assertEqual(status, 404)
+        self.assertEqual(
+            stream_module._stream_semaphore._value,
+            value_before,
+            "A pre-open prelude failure (404) must not consume a stream slot",
+        )
 
 
 class TestSSEStreamRegressionNonStreaming(IsolatedAsyncioTestCase):

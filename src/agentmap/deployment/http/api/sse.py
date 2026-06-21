@@ -18,9 +18,16 @@ import asyncio
 import json
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
-from typing import Any, Dict, Iterable
+from typing import Any, AsyncGenerator, Dict, Iterable, Optional, Tuple
 
 from fastapi import HTTPException
+from fastapi.responses import JSONResponse
+
+from agentmap.exceptions.runtime_exceptions import (
+    AgentMapNotInitialized,
+    GraphNotFound,
+    InvalidInputs,
+)
 
 # ---------------------------------------------------------------------------
 # Module-level concurrency semaphore (DEC-6)
@@ -34,6 +41,105 @@ from fastapi import HTTPException
 
 DEFAULT_MAX_CONCURRENT_STREAMS = 100
 stream_semaphore: asyncio.Semaphore = asyncio.Semaphore(DEFAULT_MAX_CONCURRENT_STREAMS)
+
+
+# ---------------------------------------------------------------------------
+# Pre-open priming (spec.md §A.3 — pre-open error contract; CR BLOCKER-2)
+# ---------------------------------------------------------------------------
+
+
+async def prime_upstream(
+    upstream: AsyncGenerator[Any, None],
+) -> Tuple[Optional[Any], bool]:
+    """Pull the first upstream event so F04's prelude runs *before* the stream opens.
+
+    ``run_workflow_stream_async`` is a lazy async generator: its prelude
+    (``ensure_initialized`` / bundle resolution / graph lookup) does not execute
+    until the first ``__anext__``, which — if iteration is deferred into
+    ``StreamingResponse`` — happens only *after* Starlette has committed
+    ``http.response.start`` (``200`` + ``text/event-stream``).  F04 raises
+    ``GraphNotFound`` / ``InvalidInputs`` / ``AgentMapNotInitialized`` from that
+    prelude "before any event", so deferring the first pull makes those pre-open
+    errors surface as a broken mid-stream abort instead of the JSON HTTP error spec
+    §A.3 requires.
+
+    Priming the first event here — in the route handler, *before* the
+    ``StreamingResponse`` is constructed — lets those three exceptions propagate to
+    the caller, which maps them to ``404`` / ``400`` / ``503`` JSON pre-open (spec
+    §A.3: "a failure to even start the run looks identical to the non-streaming
+    endpoint").  The first event is returned so the route can replay it as the first
+    SSE frame; the steady-state loop then drains the remaining events from the same
+    ``upstream``, so cancellation / ``aclose()`` finalization (DEC-5) is unchanged.
+
+    Args:
+        upstream: The unstarted async generator from ``run_workflow_stream_async``.
+
+    Returns:
+        ``(first_event, exhausted)`` — ``first_event`` is the primed
+        ``WorkflowProgressEvent`` (replay it before resuming iteration), or ``None``
+        with ``exhausted=True`` if the generator ended without yielding any event
+        (defensive; F04 always yields a terminal).
+
+    Raises:
+        GraphNotFound / InvalidInputs / AgentMapNotInitialized: propagated unchanged
+            from F04's prelude so the route maps them to pre-open JSON.  (F04 already
+            normalizes ``FileNotFoundError``/``ValueError`` to these before raising.)
+    """
+    try:
+        first_event = await upstream.__anext__()
+    except StopAsyncIteration:
+        return None, True
+    return first_event, False
+
+
+async def aclose_upstream_and_release(
+    pending: "Optional[asyncio.Future[Any]]",
+    upstream: AsyncGenerator[Any, None],
+    semaphore: Optional[asyncio.Semaphore],
+) -> None:
+    """Finalize the stream's upstream and release its concurrency slot (DEC-5/DEC-6).
+
+    Closes ``upstream`` via ``aclose()`` so F04's finalizer runs (DEC-5 — no third
+    finalize), then releases the ``semaphore`` slot exactly once.  An in-flight
+    ``__anext__`` (e.g. the duration cap fired mid-await) is cancelled AND awaited
+    first: ``aclose()`` raises "generator is already running" while a ``__anext__``
+    for the same generator is still executing.  The release lives in its own
+    ``finally`` so an ``aclose()`` failure can never leak the slot.  Intended to be
+    called from the route generator's ``finally`` (every exit path: normal,
+    disconnect, duration-cap, error).
+    """
+    try:
+        if pending is not None and not pending.done():
+            pending.cancel()
+            try:
+                await pending
+            except (asyncio.CancelledError, StopAsyncIteration):
+                pass
+        await upstream.aclose()
+    finally:
+        if semaphore is not None:
+            semaphore.release()
+
+
+# Pre-open exception → HTTP status (spec §A.3; mirrors execute.py:270-277).
+_PRE_OPEN_ERROR_STATUS = {
+    GraphNotFound: 404,
+    InvalidInputs: 400,
+    AgentMapNotInitialized: 503,
+}
+
+
+def pre_open_error_response(exc: Exception) -> JSONResponse:
+    """Map an F04 prelude exception to its pre-open JSON HTTP error (spec §A.3).
+
+    ``GraphNotFound``→404, ``InvalidInputs``→400, ``AgentMapNotInitialized``→503,
+    matching the non-streaming endpoint's mapping (``execute.py:270-277``) so a
+    failure to even start the run looks identical on both endpoints.  Returned as a
+    ``JSONResponse`` (not a raised ``HTTPException``) so the route can hand it back
+    directly from the pre-open path, before the ``text/event-stream`` body opens.
+    """
+    status_code = _PRE_OPEN_ERROR_STATUS[type(exc)]
+    return JSONResponse(status_code=status_code, content={"detail": str(exc)})
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +170,25 @@ def format_sse_event(event_name: str, data_dict: Dict[str, Any]) -> str:
     """
     data_json = json.dumps(data_dict)
     return f"event: {event_name}\ndata: {data_json}\n\n"
+
+
+def format_duration_exceeded_terminal(error_code: str) -> str:
+    """Frame the duration-cap terminal ``event: failed`` (spec §A.3/§A.4, AC-5).
+
+    Server-enforced failure surfaced through the documented ``error_code``
+    (``stream_duration_exceeded``) as a terminal ``failed`` event — not
+    ``cancelled`` (DRIFT-03).  ``sequence`` is ``-1`` (server-originated, outside
+    F04's sequence space) and ``is_terminal`` is True.
+    """
+    return format_sse_event(
+        "failed",
+        {
+            "sequence": -1,
+            "is_terminal": True,
+            "error": error_code,
+            "result": {"success": False, "error": error_code},
+        },
+    )
 
 
 def format_sse_heartbeat() -> str:

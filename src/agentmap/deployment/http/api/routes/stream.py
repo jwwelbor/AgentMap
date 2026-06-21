@@ -13,8 +13,8 @@ Design decisions (spec.md E06-F05):
   DEC-5  — Cancellation via async-generator lifecycle; rely on F04 finalization only.
   DEC-6  — Module-level asyncio.Semaphore for concurrency admission.
 
-Pre-open gate ordering (spec §A.7): auth -> unsupported-mode (422) -> concurrency
-(503) -> open.  In-stream: duration cap, disconnect cancel, idle heartbeat.
+Pre-open gate ordering (spec §A.7) is documented on ``stream_workflow``: auth ->
+unsupported-mode -> concurrency -> prime upstream -> open.
 """
 
 import asyncio
@@ -34,10 +34,20 @@ from agentmap.deployment.http.api.routes.execute import ExecuteRequest
 # under the 350-line limit (spec.md §A.1), re-aliased to the private names this
 # module and the unit tests reference.  _to_serializable is a test-only re-export
 # (TestSSEModuleScaffold) — the projection that used it now lives in sse.py.
+from agentmap.deployment.http.api.sse import (
+    aclose_upstream_and_release as _aclose_upstream_and_release,
+)
+from agentmap.deployment.http.api.sse import (
+    format_duration_exceeded_terminal as _format_duration_exceeded_terminal,
+)
 from agentmap.deployment.http.api.sse import format_sse_event as _format_sse_event
 from agentmap.deployment.http.api.sse import (
     format_sse_heartbeat as _format_sse_heartbeat,
 )
+from agentmap.deployment.http.api.sse import (
+    pre_open_error_response as _pre_open_error_response,
+)
+from agentmap.deployment.http.api.sse import prime_upstream as _prime_upstream
 from agentmap.deployment.http.api.sse import (
     project_event_to_sse as _project_event_to_sse,
 )
@@ -81,44 +91,47 @@ def _normalize_graph_identifier(identifier: str) -> str:
 
 
 async def _sse_generator(
+    upstream: AsyncGenerator[Any, None],
+    primed_first_event: Optional[Any],
+    primed_exhausted: bool,
     graph_name: str,
-    request_body: ExecuteRequest,
-    config_file: Optional[str],
     request: Request,
     max_stream_duration_seconds: float,
     idle_timeout_seconds: float,
     heartbeat_interval_seconds: float,
     semaphore: Optional["asyncio.Semaphore"] = None,
 ) -> AsyncGenerator[str, None]:
-    """Drive run_workflow_stream_async and frame output as SSE, with envelope.
+    """Frame an already-primed run_workflow_stream_async as SSE, with envelope.
 
-    Per-event timed-wait loop (LOW-1 / INT-F05-3): each upstream event is awaited
-    under ``asyncio.wait_for`` (the in-flight ``__anext__`` is shielded so an idle
-    wake never cancels it), so the loop wakes periodically to (1) check
-    ``request.is_disconnected()`` and emit a best-effort ``cancelled`` (DRIFT-02:
-    the hard contract is upstream cancel + F04 finalization via aclose(), not the
-    wire event), (2) enforce the monotonic duration cap → terminal ``failed`` with
-    ``stream_duration_exceeded`` (AC-5 / DRIFT-03: ``failed``, not ``cancelled``),
-    and (3) emit an idle ``:keepalive`` SSE *comment* — never a typed event — at the
-    ``heartbeat_interval_seconds`` cadence once ``idle_timeout_seconds`` elapses
-    (AC-7); the duration deadline stays authoritative (heartbeats never extend it).
+    The handler primes the first event *pre-open* (``_prime_upstream``; see its
+    docstring for the spec §A.3 / CR BLOCKER-2 rationale), so this generator receives
+    the already-built ``upstream`` plus that ``primed_first_event``
+    (``primed_exhausted=True`` if the upstream yielded nothing), replays it as the
+    first SSE frame, then drains the rest from the same ``upstream`` — so cancellation
+    / ``aclose()`` finalization (DEC-5) still acts on the original generator.
+
+    Per-event timed-wait loop (LOW-1 / INT-F05-3): each *subsequent* event is awaited
+    under ``asyncio.wait_for`` (the in-flight ``__anext__`` is shielded so an idle wake
+    never cancels it), so the loop wakes to (1) check ``request.is_disconnected()`` and
+    emit a best-effort ``cancelled`` (DRIFT-02: the hard contract is upstream cancel +
+    F04 finalization via aclose(), not the wire event), (2) enforce the monotonic
+    duration cap → terminal ``failed`` with ``stream_duration_exceeded`` (AC-5 /
+    DRIFT-03: ``failed``, not ``cancelled``), and (3) emit an idle ``:keepalive`` SSE
+    *comment* — never a typed event — at ``heartbeat_interval_seconds`` once
+    ``idle_timeout_seconds`` elapses (AC-7; the deadline stays authoritative).
 
     ``CancelledError``/``GeneratorExit`` are re-raised after cleanup, never swallowed
-    (F04-lesson).  The ``finally`` closes the upstream via ``aclose()`` so F04's
-    finalizer runs (DEC-5; no third finalize) and releases the ``semaphore`` slot
-    exactly once on every exit path (normal, disconnect, duration-cap, error) (DEC-6).
+    (F04-lesson); the ``finally`` delegates upstream finalization + slot release to
+    ``_aclose_upstream_and_release`` on every exit path (DEC-5/DEC-6).
     """
-    upstream = run_workflow_stream_async(
-        graph_name=graph_name,
-        inputs=request_body.inputs,
-        force_create=request_body.force_create,
-        config_file=config_file,
-    )
-
     loop = asyncio.get_running_loop()
     start = loop.time()
     deadline = start + max_stream_duration_seconds
     pending: Optional["asyncio.Future[Any]"] = None
+
+    # Replay the pre-open-primed first event before resuming iteration (``None`` once
+    # consumed; ``None`` from the start if the upstream yielded nothing).
+    seeded_event: Optional[Any] = None if primed_exhausted else primed_first_event
 
     # Heartbeat bookkeeping (AC-7): idle window is measured from the last event
     # (not stream start); last_heartbeat_time paces the keepalive cadence.
@@ -127,8 +140,9 @@ async def _sse_generator(
 
     try:
         while True:
-            # (1) Disconnect gate — checked BEFORE pulling the next event so a
-            #     disconnect stops the upstream, not one more node (no orphan, AC-2).
+            # (1) Disconnect gate — checked BEFORE replaying/pulling the next event so
+            #     a disconnect stops the upstream, not one more node, and so a client
+            #     already gone at response.start never receives the primed event (AC-2).
             if await request.is_disconnected():
                 logger.info(
                     "SSE stream cancelled: %s reason=client_disconnect", graph_name
@@ -145,28 +159,25 @@ async def _sse_generator(
                     graph_name,
                     _DURATION_EXCEEDED_ERROR,
                 )
-                yield _format_sse_event(
-                    "failed",
-                    {
-                        "sequence": -1,
-                        "is_terminal": True,
-                        "error": _DURATION_EXCEEDED_ERROR,
-                        "result": {
-                            "success": False,
-                            "error": _DURATION_EXCEEDED_ERROR,
-                        },
-                    },
-                )
+                yield _format_duration_exceeded_terminal(_DURATION_EXCEEDED_ERROR)
                 return
 
-            # (3) Await the next event, bounded so we wake to re-check (1)/(2) and
+            # (3a) Replay the primed first event (no await — already in hand).
+            if seeded_event is not None:
+                event = seeded_event
+                seeded_event = None
+                last_event_time = loop.time()
+                last_heartbeat_time = last_event_time
+                yield _project_event_to_sse(event)
+                continue
+
+            # (3b) Await the next event, bounded so we wake to re-check (1)/(2) and
             #     pace heartbeats.  ``pending`` is shielded so it survives a wake.
             if pending is None:
                 pending = asyncio.ensure_future(upstream.__anext__())
 
-            # Wake at the soonest of: the deadline, the poll interval, and the
-            # next heartbeat tick (clamped to a positive floor for forward
-            # progress when heartbeat_interval is 0).
+            # Wake at the soonest of the deadline, the poll interval, and the next
+            # heartbeat tick (clamped to a positive floor when heartbeat_interval=0).
             budget = min(remaining, _EVENT_POLL_INTERVAL_SECONDS)
             if heartbeat_interval_seconds > 0:
                 budget = min(budget, heartbeat_interval_seconds)
@@ -205,23 +216,9 @@ async def _sse_generator(
         # finalizes the tracker (F04-lesson / REQ-F-003).
         raise
     finally:
-        # Close the upstream so F04 finalizes the tracker (DEC-5 — no third
-        # finalize).  An in-flight ``__anext__`` (e.g. cap fired mid-await) must be
-        # cancelled AND awaited first: aclose() raises "generator is already
-        # running" while a __anext__ for the same generator is still executing.
-        try:
-            if pending is not None and not pending.done():
-                pending.cancel()
-                try:
-                    await pending
-                except (asyncio.CancelledError, StopAsyncIteration):
-                    pass
-            await upstream.aclose()
-        finally:
-            # Release the pre-open concurrency slot (DEC-6) exactly once, in its
-            # own finally so an aclose() failure can never leak it.
-            if semaphore is not None:
-                semaphore.release()
+        # Finalize the upstream (DEC-5) and release the concurrency slot (DEC-6) on
+        # every exit path — see ``_aclose_upstream_and_release``.
+        await _aclose_upstream_and_release(pending, upstream, semaphore)
 
 
 # ---------------------------------------------------------------------------
@@ -238,19 +235,17 @@ async def stream_workflow(
 ) -> Response:
     """Run a workflow over the streaming path; return a text/event-stream response.
 
-    Mirrors POST /execute/{graph_id:path} (execute.py) by appending /stream,
-    reusing the same auth decorator, ExecuteRequest body, and graph_id
-    normalization (DEC-4); delegates to F04's run_workflow_stream_async.  Pre-open
-    errors (auth 401/403, graph-not-found 404, invalid-inputs 400, not-initialized
-    503, concurrency 503) are ordinary JSON HTTP errors — identical shape to the
-    non-streaming endpoint (§A.3) — because the stream has not opened yet.
+    Mirrors POST /execute/{graph_id:path} (execute.py) by appending /stream, reusing
+    the same auth decorator, ExecuteRequest body, and graph_id normalization (DEC-4);
+    delegates to F04's run_workflow_stream_async.  Pre-open errors (auth 401/403,
+    graph-not-found 404, invalid-inputs 400, not-initialized 503, concurrency 503) are
+    ordinary JSON HTTP errors — identical shape to the non-streaming endpoint (§A.3) —
+    because the stream has not opened yet.
 
-    Pre-open gate ordering (INT-F05-4 / spec §A.7): auth (the @requires_auth
-    decorator, before this body) → unsupported-mode validation (422 on an
-    out-of-shape body, REQ-F-006) → concurrency admission (semaphore 503) → open the
-    stream.  A failed earlier gate never reaches a later one (a 401 never validates
-    the shape; a rejected shape never attempts the acquire, so it never holds a
-    slot; a 503 never opens a body).  The duration cap, disconnect cancel, and idle
+    Pre-open gate ordering (INT-F05-4 / spec §A.7): auth (@requires_auth, before this
+    body) → unsupported-mode validation (422) → concurrency admission (semaphore 503)
+    → prime the upstream (404/400/503 from F04's prelude) → open the stream.  A failed
+    earlier gate never reaches a later one.  Duration cap, disconnect cancel, and idle
     heartbeat live in the generator.
     """
     config_file = getattr(request.app.state, "config_file", None)
@@ -309,31 +304,37 @@ async def stream_workflow(
     # generator's finally owns the release; the ``handed_off`` flag + finally below
     # frees it if anything fails BEFORE the StreamingResponse is returned (so the
     # generator's finally would never run) — without a broad except-and-reraise.
+    # This also frees the slot when a pre-open prelude error is mapped to JSON below.
     handed_off = False
     try:
-        # Pre-open exception mapping — identical to execute.py:270-277; surfaces as
-        # JSON HTTP errors (not SSE events) since the StreamingResponse isn't created.
+        # Build the lazy upstream, then PRIME it one step (spec §A.3 / CR BLOCKER-2) so
+        # F04's prelude exceptions map to pre-open JSON instead of aborting a committed
+        # 200 — see ``_prime_upstream``; the primed event is replayed by the generator.
+        upstream = run_workflow_stream_async(
+            graph_name=graph_name,
+            inputs=request_body.inputs,
+            force_create=request_body.force_create,
+            config_file=config_file,
+        )
         try:
-            # Build the generator (lazy — no F04 calls until iteration starts).
-            gen = _sse_generator(
+            primed_first_event, primed_exhausted = await _prime_upstream(upstream)
+        except (GraphNotFound, InvalidInputs, AgentMapNotInitialized) as exc:
+            # Pre-open JSON error (404/400/503) — _pre_open_error_response maps it
+            # exactly like the non-streaming endpoint; the stream never opens.
+            return _pre_open_error_response(exc)
+
+        response = StreamingResponse(
+            _sse_generator(
+                upstream,
+                primed_first_event,
+                primed_exhausted,
                 graph_name,
-                request_body,
-                config_file,
                 request,
                 max_stream_duration_seconds,
                 idle_timeout_seconds,
                 heartbeat_interval_seconds,
                 semaphore=_stream_semaphore,
-            )
-        except GraphNotFound as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
-        except InvalidInputs as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-        except AgentMapNotInitialized as exc:
-            raise HTTPException(status_code=503, detail=str(exc))
-
-        response = StreamingResponse(
-            gen,
+            ),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
