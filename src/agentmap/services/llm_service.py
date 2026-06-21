@@ -3216,26 +3216,15 @@ class LLMService:
                     {GEN_AI_REQUEST_MAX_TOKENS: resolved_max_tokens}
                 )
 
-            async for chunk in self._call_llm_stream_async_direct(
-                provider=decision.provider,
-                messages=messages,
-                model=decision.model,
-                temperature=temperature,
-                routing_context=routing_context,
-                **kwargs,
-            ):
-                yield chunk
-
-        except LLMResolvedCallError:
-            # Post-selection provider failure — routing already resolved a concrete
-            # (provider, model) before the call failed. Preserve that identity
-            # intact; do NOT trigger the routing-fallback retry path, which would
-            # silently rewrite the resolved identity with the fallback provider.
-            # Mirrors the identical guard in _call_llm_async_with_routing:1019.
-            raise
         except LLMServiceError:
             raise
         except Exception as e:
+            # PRE-selection routing failure only (the decision block above). The
+            # resolved delegate call is OUTSIDE this try (below), so a post-selection
+            # provider error propagates as-is and never reaches here — it must NOT be
+            # silently re-routed to the fallback provider, which would rewrite the
+            # resolved (provider, model) identity. Mirrors the intent of
+            # _call_llm_async_with_routing:1019.
             self._logger.error(f"Routing failed: {e}")
             fallback_provider = routing_context.get("fallback_provider", "anthropic")
             self._logger.warning(
@@ -3254,6 +3243,21 @@ class LLMService:
                 **kwargs,
             ):
                 yield chunk
+            return
+
+        # Post-selection delegation — OUTSIDE the try so errors from the resolved
+        # call propagate unchanged and never trigger the pre-selection routing
+        # fallback above (CR-fix: the broad except previously caught downstream
+        # provider errors and silently swapped to fallback_provider).
+        async for chunk in self._call_llm_stream_async_direct(
+            provider=decision.provider,
+            messages=messages,
+            model=decision.model,
+            temperature=temperature,
+            routing_context=routing_context,
+            **kwargs,
+        ):
+            yield chunk
 
     def _validate_streaming_support(
         self,
@@ -3438,11 +3442,21 @@ class LLMService:
                     self._message_utils.convert_messages_to_langchain,
                     **kwargs,
                 )
-                # Materialize the fallback LLMResponse as a single synthetic
-                # terminal LLMStreamChunk carrying the fallback's identity (AC-18).
+                # Materialize the fallback LLMResponse. The non-streaming fallback
+                # returns a COMPLETE response, so deliver its text as a non-final
+                # chunk (the streaming text contract — non-final chunks carry
+                # ``text_delta``) before the terminal chunk that carries the
+                # fallback's identity/usage. (CR-fix to AC-18: the fallback's answer
+                # text must not be dropped for direct call_llm_stream_async callers.)
+                if resp.text:
+                    yield LLMStreamChunk(
+                        text_delta=resp.text,
+                        chunk_index=0,
+                        is_final=False,
+                    )
                 yield LLMStreamChunk(
                     text_delta="",
-                    chunk_index=0,
+                    chunk_index=1 if resp.text else 0,
                     is_final=True,
                     usage=resp.usage,
                     finish_reason=resp.finish_reason,

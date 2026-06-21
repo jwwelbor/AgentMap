@@ -607,6 +607,51 @@ class TestCallLLMStreamAsyncWithRouting(unittest.IsolatedAsyncioTestCase):
             ):
                 pass
 
+    async def test_post_selection_error_propagates_without_rerouting_to_fallback(self):
+        """CR-fix (identity guard): once routing resolves a concrete (provider, model),
+        an error from the resolved delegate call must PROPAGATE unchanged and must NOT
+        be silently re-routed to ``fallback_provider``.
+
+        Counter-factual: with the resolved delegate inside the wrapper's try (the bug),
+        the broad ``except Exception`` re-invokes direct with fallback_provider and the
+        caller silently receives a different provider's output. This test pins the fix.
+        """
+        from agentmap.exceptions import LLMProviderError
+
+        svc, _decision = self._make_svc_with_routing_decision(
+            provider="openai", model="gpt-4o"
+        )
+
+        direct_calls = []
+
+        async def fake_direct(
+            provider, messages, model=None, temperature=None, **kwargs
+        ):
+            direct_calls.append(provider)
+            # The resolved provider call fails post-selection.
+            raise LLMProviderError("resolved provider failed after selection")
+            yield  # make this an async generator
+
+        svc._call_llm_stream_async_direct = fake_direct
+
+        # fallback_provider is anthropic by default; it must NOT be invoked.
+        routing_context = {"task_type": "qa", "fallback_provider": "anthropic"}
+
+        with self.assertRaises(LLMProviderError):
+            async for _chunk in svc._call_llm_stream_async_with_routing(
+                messages=[{"role": "user", "content": "hi"}],
+                routing_context=routing_context,
+            ):
+                pass
+
+        # Direct was called exactly once — with the RESOLVED provider — and the
+        # error propagated as-is. No silent re-route to the fallback provider.
+        self.assertEqual(
+            direct_calls,
+            ["openai"],
+            "post-selection error must propagate, not re-route to fallback_provider",
+        )
+
 
 # ---------------------------------------------------------------------------
 # TC-F03-008: LLMServiceProtocol declares call_llm_stream_async
@@ -1774,11 +1819,14 @@ class TestCallLLMStreamAsyncDirectFallback(unittest.IsolatedAsyncioTestCase):
         svc._fallback_handler = MagicMock()
         return svc, cb_mock
 
-    async def test_retries_exhausted_fallback_yields_synthetic_terminal_chunk(self):
+    async def test_retries_exhausted_fallback_materializes_text_then_terminal(self):
         """TC-F03-010: When all max_attempts raise before any chunk and fallback
-        is eligible, try_with_fallback_async is called exactly once and its
-        LLMResponse is materialized as a single synthetic terminal LLMStreamChunk
-        (is_final=True, text_delta="").
+        is eligible, try_with_fallback_async is called exactly once and its complete
+        LLMResponse is materialized as a non-final chunk carrying the fallback's
+        text, followed by a terminal chunk (is_final=True, text_delta="").
+
+        CR-fix to AC-18: the fallback's answer text must NOT be dropped — a direct
+        ``call_llm_stream_async`` caller must receive the fallback completion's text.
         """
         from agentmap.exceptions import LLMRateLimitError
         from agentmap.models.llm_execution import LLMResponse
@@ -1818,16 +1866,22 @@ class TestCallLLMStreamAsyncDirectFallback(unittest.IsolatedAsyncioTestCase):
         # try_with_fallback_async called exactly once
         svc._fallback_handler.try_with_fallback_async.assert_called_once()
 
-        # Caller receives exactly one chunk — the synthetic terminal chunk
+        # Caller receives the fallback text (non-final) then the terminal chunk.
         self.assertEqual(
-            len(collected), 1, "Must receive exactly one synthetic terminal chunk"
+            len(collected), 2, "Must receive a text chunk then the terminal chunk"
         )
-        synthetic = collected[0]
+        text_chunk, terminal = collected
+        self.assertFalse(text_chunk.is_final, "First chunk must be non-final")
+        self.assertEqual(
+            text_chunk.text_delta,
+            "fallback text",
+            "Fallback completion text must be delivered, not dropped",
+        )
         self.assertTrue(
-            synthetic.is_final, "Synthetic chunk must be terminal (is_final=True)"
+            terminal.is_final, "Last chunk must be terminal (is_final=True)"
         )
         self.assertEqual(
-            synthetic.text_delta, "", "Synthetic terminal chunk must have text_delta=''"
+            terminal.text_delta, "", "Terminal chunk must have text_delta=''"
         )
 
     async def test_fallback_synthetic_chunk_carries_fallback_provider_model(self):
@@ -1870,8 +1924,10 @@ class TestCallLLMStreamAsyncDirectFallback(unittest.IsolatedAsyncioTestCase):
             ):
                 collected.append(chunk)
 
-        self.assertEqual(len(collected), 1)
-        synthetic = collected[0]
+        # Text chunk then terminal; identity lives on the terminal chunk.
+        self.assertEqual(len(collected), 2)
+        synthetic = collected[-1]
+        self.assertTrue(synthetic.is_final)
         # Must carry fallback's identity, not the original request's
         self.assertEqual(
             synthetic.resolved_provider,
@@ -1925,7 +1981,9 @@ class TestCallLLMStreamAsyncDirectFallback(unittest.IsolatedAsyncioTestCase):
             ):
                 collected.append(chunk)
 
-        synthetic = collected[0]
+        # usage/finish_reason live on the terminal chunk (after the text chunk).
+        synthetic = collected[-1]
+        self.assertTrue(synthetic.is_final)
         self.assertEqual(synthetic.usage, fallback_usage)
         self.assertEqual(synthetic.finish_reason, "length")
 
