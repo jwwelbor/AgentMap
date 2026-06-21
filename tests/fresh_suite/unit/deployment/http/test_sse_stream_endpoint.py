@@ -496,7 +496,6 @@ class TestSSEModuleScaffold(unittest.TestCase):
     Verifies the module scaffold (DEC-4: per-domain router pattern):
       - `router` is an APIRouter
       - `_format_sse_event` and `_format_sse_heartbeat` are callable
-      - `_to_serializable` exists (mirrors execute.py:130 pattern)
       - `_try_acquire_stream_slot` is wired (the config-sized admission seam, DEC-6)
 
     These are structural assertions; behaviour is covered by the other test classes.
@@ -524,14 +523,6 @@ class TestSSEModuleScaffold(unittest.TestCase):
         """_format_sse_heartbeat must be a callable."""
         self.assertTrue(hasattr(self._mod, "_format_sse_heartbeat"))
         self.assertTrue(callable(self._mod._format_sse_heartbeat))
-
-    def test_to_serializable_exists(self):
-        """_to_serializable must exist (mirrors execute.py:130 pattern per task spec)."""
-        self.assertTrue(
-            hasattr(self._mod, "_to_serializable"),
-            "stream module must have _to_serializable helper",
-        )
-        self.assertTrue(callable(self._mod._to_serializable))
 
     def test_concurrency_admission_seam_wired(self):
         """The config-sized admission helper must be wired into the route (DEC-6).

@@ -50,9 +50,6 @@ from agentmap.deployment.http.api.sse import prime_upstream as _prime_upstream
 from agentmap.deployment.http.api.sse import (
     project_event_to_sse as _project_event_to_sse,
 )
-from agentmap.deployment.http.api.sse import (  # noqa: F401
-    to_serializable as _to_serializable,
-)
 from agentmap.deployment.http.api.sse import (
     validate_streaming_request_shape as _validate_streaming_request_shape,
 )
